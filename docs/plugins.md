@@ -994,6 +994,41 @@ render: ({ terminal }) => html`
 
 Review command strings carefully. They are trusted shell commands executed in the workspace terminal.
 
+## Presentation density and semantic tokens
+
+Users choose **Comfortable**, **Compact**, or a validated custom presentation profile under **Settings → Appearance**. Preview is immediate; explicit Apply stores the browser-local choice across restarts. Custom profiles can override every token below within PI WEB's documented bounds. Compact mode tightens spacing and chrome without reducing the application body-text size. Coarse-pointer environments retain touch-safe controls and rows.
+
+Plugin custom elements and rendered panel content can consume these inherited semantic variables:
+
+| Variable | Role |
+| --- | --- |
+| `--pi-control-min-size` | Minimum interactive-control block size. |
+| `--pi-control-padding-block` | Vertical control padding. |
+| `--pi-control-padding-inline` | Horizontal control padding. |
+| `--pi-list-row-padding-block` | Vertical padding for list rows. |
+| `--pi-list-row-padding-inline` | Horizontal padding for list rows. |
+| `--pi-panel-padding` | Inset for panel and section content. |
+| `--pi-toolbar-gap` | Spacing between related toolbar controls. |
+| `--pi-message-padding` | Inset for message-like content. |
+| `--pi-message-gap` | Spacing between message-like siblings. |
+| `--pi-content-max-width` | Host-recommended maximum content width. |
+
+Use these variables by semantic role and provide a fallback when supporting older PI WEB releases, for example:
+
+```css
+:host {
+  display: block;
+  padding: var(--pi-panel-padding, 12px);
+}
+
+button {
+  min-height: var(--pi-control-min-size, 34px);
+  padding: var(--pi-control-padding-block, 7px) var(--pi-control-padding-inline, 9px);
+}
+```
+
+The variables are a stable styling interface. PI WEB selectors, shadow-root structure, element names, and undocumented CSS variables remain private. Plugins must not inject global CSS or assume that compact density replaces responsive behavior.
+
 ## Private and experimental PI WEB APIs
 
 PI WEB's `/api/...` HTTP and WebSocket routes and runtime-only fields are private implementation details. They exist because plugins are trusted browser code, and because some capabilities may be evaluated there before they are designed as stable helpers.

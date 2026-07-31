@@ -2,6 +2,7 @@ export const MOBILE_PROMPT_ENTER_MEDIA_QUERY = "(pointer: coarse), (max-width: 7
 export const PROMPT_ENTER_PREFERENCE_STORAGE_KEY = "pi-web.promptEnterPreference";
 
 export type PromptEnterPreference = "auto" | "send" | "newline";
+export type PromptStreamingBehavior = "steer" | "followUp" | undefined;
 export type PromptEnterMedia = Pick<MediaQueryList, "matches">;
 export type PromptEnterPreferenceStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -36,6 +37,12 @@ export function shouldSendPromptOnEnter(media = createMobilePromptEnterMedia(), 
   if (preference === "send") return true;
   if (preference === "newline") return false;
   return media?.matches !== true;
+}
+
+export function promptStreamingBehaviorForEnter(canSteer: boolean, isCompacting: boolean, primaryModifier: boolean): PromptStreamingBehavior {
+  if (primaryModifier && canSteer && !isCompacting) return "steer";
+  if (canSteer || isCompacting) return "followUp";
+  return undefined;
 }
 
 export function shouldUsePromptEnterShiftShortcut(shiftKey: boolean, explicitShiftKeyActive: boolean, media = createMobilePromptEnterMedia()): boolean {

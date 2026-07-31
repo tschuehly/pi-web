@@ -15,6 +15,8 @@ describe("settings-dialog session daemon machine targeting", () => {
     const configSpy = vi.spyOn(configApi, "config").mockResolvedValue(config);
     const pluginsSpy = vi.spyOn(pluginsApi, "plugins").mockResolvedValue(plugins);
     const dialog = new SettingsDialog();
+    const onConfigLoaded = vi.fn();
+    dialog.onConfigLoaded = onConfigLoaded;
 
     await callDialogPromise(dialog, "loadConfig");
 
@@ -22,6 +24,7 @@ describe("settings-dialog session daemon machine targeting", () => {
     expect(pluginsSpy.mock.calls).toEqual([[]]);
     expect(getDialogProperty(dialog, "configResponse")).toBe(config);
     expect(getDialogProperty(dialog, "pluginsResponse")).toBe(plugins);
+    expect(onConfigLoaded).toHaveBeenCalledWith(config.effectiveConfig);
     expect(getDialogProperty(dialog, "error")).toBe("");
     expect(getDialogProperty(dialog, "loading")).toBe(false);
   });

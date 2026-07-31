@@ -160,7 +160,6 @@ export function createCoreActions(): PluginAction[] {
     {
       id: "session.start",
       title: "Start Session",
-      shortcut: "mod+enter",
       group: "Session",
       enabled: hasWorkspace,
       run: (context) => context.startSession(),

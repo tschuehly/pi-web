@@ -1,6 +1,6 @@
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
-import { defaultKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
@@ -18,6 +18,9 @@ import { customElement, property, query } from "lit/decorators.js";
 export class CodeViewer extends LitElement {
   @property() content = "";
   @property() language: string | undefined;
+  @property({ type: Boolean }) editable = false;
+  @property({ attribute: false }) onDirtyChange?: (dirty: boolean) => void;
+  @property({ attribute: false }) onSave?: (content: string) => void | Promise<void>;
   @query(".host") private editorHost?: HTMLDivElement;
 
   private view: EditorView | undefined;
@@ -27,7 +30,7 @@ export class CodeViewer extends LitElement {
   }
 
   override updated(changed: Map<string, unknown>): void {
-    if (changed.has("content") || changed.has("language")) this.recreateEditor();
+    if (changed.has("content") || changed.has("language") || changed.has("editable")) this.recreateEditor();
   }
 
   override disconnectedCallback(): void {
@@ -40,6 +43,15 @@ export class CodeViewer extends LitElement {
     return html`<div class="host"></div>`;
   }
 
+  getContent(): string {
+    return this.view?.state.doc.toString() ?? this.content;
+  }
+
+  save(): void {
+    if (!this.editable) return;
+    void this.onSave?.(this.getContent());
+  }
+
   private recreateEditor(): void {
     if (!this.editorHost) return;
     this.view?.destroy();
@@ -49,17 +61,27 @@ export class CodeViewer extends LitElement {
         doc: this.content,
         extensions: [
           lineNumbers(),
-          keymap.of(defaultKeymap),
+          history(),
+          keymap.of([
+            { key: "Mod-s", preventDefault: true, run: () => { this.save(); return true; } },
+            ...historyKeymap,
+            ...defaultKeymap,
+          ]),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          EditorState.readOnly.of(true),
-          EditorView.editable.of(false),
+          EditorState.readOnly.of(!this.editable),
+          EditorView.editable.of(this.editable),
           EditorView.lineWrapping,
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) this.onDirtyChange?.(update.state.doc.toString() !== this.content);
+          }),
           viewerTheme,
+          ...(this.editable ? [] : [readOnlyViewerTheme]),
           ...bidiTextExtensions(this.language),
           ...languageExtensions(this.language),
         ],
       }),
     });
+    this.onDirtyChange?.(false);
   }
 
   static override styles = css`
@@ -90,11 +112,14 @@ const viewerTheme = EditorView.theme({
   ".cm-activeLine": {
     backgroundColor: "transparent",
   },
-  ".cm-content": {
-    caretColor: "transparent",
-  },
   "&.cm-focused": {
     outline: "none",
+  },
+});
+
+const readOnlyViewerTheme = EditorView.theme({
+  ".cm-content": {
+    caretColor: "transparent",
   },
 });
 

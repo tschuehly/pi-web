@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MOBILE_PROMPT_ENTER_MEDIA_QUERY,
   parsePromptEnterPreference,
+  promptStreamingBehaviorForEnter,
   PROMPT_ENTER_PREFERENCE_STORAGE_KEY,
   readPromptEnterPreference,
   shouldSendPromptOnEnter,
@@ -35,6 +36,13 @@ describe("promptEnterBehavior", () => {
     expect(shouldSendPromptOnEnterShortcut(true, { matches: true } satisfies PromptEnterMedia, "auto")).toBe(true);
     expect(shouldSendPromptOnEnterShortcut(true, undefined, "send")).toBe(false);
     expect(shouldSendPromptOnEnterShortcut(true, undefined, "newline")).toBe(true);
+  });
+
+  it("uses the primary-modifier Enter shortcut to steer active work", () => {
+    expect(promptStreamingBehaviorForEnter(true, false, true)).toBe("steer");
+    expect(promptStreamingBehaviorForEnter(true, false, false)).toBe("followUp");
+    expect(promptStreamingBehaviorForEnter(true, true, true)).toBe("followUp");
+    expect(promptStreamingBehaviorForEnter(false, false, true)).toBeUndefined();
   });
 
   it("ignores implicit Shift state on mobile-like keyboards", () => {

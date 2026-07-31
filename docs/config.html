@@ -105,6 +105,7 @@
             <a href="#session-tools">Session tools</a>
             <a href="#extension-dialogs">Extension dialogs</a>
             <a href="#prompt-completions">Prompt completions</a>
+            <a href="#presentation-profiles">Presentation profiles</a>
             <a href="#completion-tools">Completion tools</a>
           </aside>
 
@@ -120,7 +121,7 @@
                 Each PI WEB machine has its own config. When using Fleet/machine federation, Settings uses the selected
                 machine for config that affects work running there: the Pi-compatible agent profile and companion CLI,
                 session daemon tools, PI WEB plugin enablement, external path access, and upload defaults. Gateway/browser-only settings stay local to the gateway:
-                keyboard shortcuts, remote machine registry/tokens, and gateway host/port/allowed-hosts.
+                presentation-profile definitions, keyboard shortcuts, remote machine registry/tokens, and gateway host/port/allowed-hosts.
               </p>
               <p>
                 Pi package settings are separate from PI WEB config. They live in Pi's package-manager settings on the
@@ -178,6 +179,7 @@
                 <li><code>pathAccess</code>: applies on the next request; existing file views may need a browser refresh.</li>
                 <li><code>uploads.defaultFolder</code>: applies to newly opened Files upload dialogs and new direct drag/drop batches after config/workspace refresh.</li>
                 <li><code>plugins</code>: reload the browser tab after changing PI WEB plugin enablement.</li>
+                <li><code>presentationProfiles</code>: use <strong>Settings → Appearance → Reload profiles</strong>; active-profile changes remain pending until previewed and applied.</li>
                 <li>Pi package install/remove/update: not a PI WEB config key; after a mutation, type <code>/reload</code> in each idle PI WEB session on the target machine to refresh ordinary Pi resources such as extensions, skills, prompt templates, themes, and context/system prompt files. Reload the browser page separately for PI WEB browser plugin changes. If a global Pi extension adds or removes a provider, or changes a provider's connection settings, manually restart <code>pi-web-sessiond.service</code>; <code>/reload</code> cannot change the startup provider baseline. A known provider refreshing only its own model list is applied without a restart. See <a href="#pi-extension-provider-baseline">Pi extension provider baseline</a>.</li>
                 <li><code>shortcuts</code>: saved settings apply in the browser after config refresh/save.</li>
               </ul>
@@ -219,6 +221,19 @@
     "workspace-tasks": { "enabled": true },
     "updates": { "enabled": true },
     "info": { "enabled": false }
+  },
+  "presentationProfiles": {
+    "agent-compact": {
+      "version": 1,
+      "title": "Agent compact",
+      "description": "Dense review layout with a wider evidence column.",
+      "extends": "compact",
+      "tokens": {
+        "--pi-panel-padding": "6px",
+        "--pi-message-gap": "5px",
+        "--pi-content-max-width": "1100px"
+      }
+    }
   },
   "shortcuts": {
     "core:view.chat": "mod+1",
@@ -452,6 +467,14 @@ worktree_path="$1"
                       <td>Global</td>
                       <td>Not core local config; plugins may read their own project files</td>
                       <td>Reload browser tab</td>
+                    </tr>
+                    <tr>
+                      <td>Presentation profiles</td>
+                      <td><code>presentationProfiles.&lt;id&gt;</code></td>
+                      <td>—</td>
+                      <td>Gateway global definitions + browser-local active choice</td>
+                      <td>Not supported locally</td>
+                      <td>Reload in Appearance; preview and Apply</td>
                     </tr>
                     <tr>
                       <td>Keyboard shortcuts</td>
@@ -971,6 +994,44 @@ worktree_path="$1"
                   parameter of <code>spawn_session</code>.
                 </li>
               </ul>
+            </section>
+
+            <section id="presentation-profiles">
+              <h2>Presentation profiles</h2>
+              <p>
+                <code>presentationProfiles</code> is a gateway-global, agent-editable map of declarative non-color
+                presentation profiles. It is never read from project config or a selected remote machine. Each browser
+                independently chooses its active profile under <strong>Settings → Appearance</strong>.
+              </p>
+              <p>
+                Profiles use ids matching <code>^[a-z][a-z0-9.-]*$</code>, version <code>1</code>, a title and
+                description, a base of <code>comfortable</code> or <code>compact</code>, and only published semantic
+                tokens. Invalid profiles are isolated and shown with their validation error without hiding valid siblings.
+              </p>
+              <div class="table-scroll" role="region" aria-label="Presentation profile token bounds" tabindex="0">
+                <table>
+                  <thead><tr><th scope="col">Token</th><th scope="col">Allowed value</th></tr></thead>
+                  <tbody>
+                    <tr><td><code>--pi-control-min-size</code></td><td><code>24px</code>–<code>64px</code></td></tr>
+                    <tr><td><code>--pi-control-padding-block</code>, <code>--pi-list-row-padding-block</code></td><td><code>0px</code>–<code>24px</code></td></tr>
+                    <tr><td><code>--pi-control-padding-inline</code>, <code>--pi-list-row-padding-inline</code></td><td><code>0px</code>–<code>32px</code></td></tr>
+                    <tr><td><code>--pi-panel-padding</code>, <code>--pi-message-padding</code>, <code>--pi-message-gap</code></td><td><code>0px</code>–<code>48px</code></td></tr>
+                    <tr><td><code>--pi-toolbar-gap</code></td><td><code>0px</code>–<code>32px</code></td></tr>
+                    <tr><td><code>--pi-content-max-width</code></td><td><code>320px</code>–<code>2400px</code>, or <code>none</code></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p>
+                Unknown fields or tokens, selectors, arbitrary declarations, executable values, unsupported units, and
+                out-of-range values are rejected. Coarse-pointer layouts still enforce touch-safe floors. Profiles cannot
+                change body text, focus behavior, responsive topology, protected controls, or theme colors.
+              </p>
+              <p>
+                Selection begins a temporary preview. <strong>Apply profile</strong> stores the complete validated
+                resolution in that browser; <strong>Cancel</strong> restores the previous resolution. Later edits to the
+                active profile remain pending while the last valid revision stays active. Agents should edit only the
+                global config path shown in Appearance and leave preview and activation to the user.
+              </p>
             </section>
 
             <section id="completion-tools">

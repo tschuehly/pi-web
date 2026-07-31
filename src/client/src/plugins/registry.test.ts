@@ -363,7 +363,6 @@ describe("PluginRegistry", () => {
       ["core:workspace.refresh-files", "mod+shift+f"],
       ["core:workspace.refresh-git", "mod+shift+g"],
       ["core:workspace.refresh-current", "mod+shift+r"],
-      ["core:session.start", "mod+enter"],
       ["core:session.stop", "mod+."],
     ]);
     expect(new Set(shortcuts.map(([, shortcut]) => shortcut)).size).toBe(shortcuts.length);

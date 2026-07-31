@@ -187,6 +187,7 @@ export function savePiWebConfig(config: PiWebConfig, options: LoadOptions = {}):
   delete existing["allowedHosts"];
   delete existing["shortcuts"];
   delete existing["plugins"];
+  delete existing["presentationProfiles"];
   delete existing["pathAccess"];
   delete existing["uploads"];
   delete existing["maxUploadBytes"];
@@ -214,6 +215,7 @@ function piWebConfigRecord(config: PiWebConfig): Record<string, unknown> {
     ...(config.allowedHosts !== undefined ? { allowedHosts: config.allowedHosts } : {}),
     ...(config.shortcuts !== undefined ? { shortcuts: config.shortcuts } : {}),
     ...(config.plugins !== undefined ? { plugins: config.plugins } : {}),
+    ...(config.presentationProfiles !== undefined ? { presentationProfiles: config.presentationProfiles } : {}),
     ...(config.pathAccess !== undefined ? { pathAccess: config.pathAccess } : {}),
     ...(config.uploads !== undefined ? { uploads: config.uploads } : {}),
     ...(config.maxUploadBytes !== undefined ? { maxUploadBytes: config.maxUploadBytes } : {}),
@@ -231,6 +233,7 @@ function parsePiWebConfig(value: Record<string, unknown>, path: string): PiWebCo
     ...(value["allowedHosts"] !== undefined ? { allowedHosts: parseAllowedHosts(value["allowedHosts"], path) } : {}),
     ...(value["shortcuts"] !== undefined ? { shortcuts: parseShortcuts(value["shortcuts"], path) } : {}),
     ...(value["plugins"] !== undefined ? { plugins: parsePlugins(value["plugins"], path) } : {}),
+    ...(value["presentationProfiles"] !== undefined ? { presentationProfiles: parsePresentationProfiles(value["presentationProfiles"], path) } : {}),
     ...(value["pathAccess"] !== undefined ? { pathAccess: parsePathAccessConfig(value["pathAccess"], path) } : {}),
     ...(value["uploads"] !== undefined ? { uploads: parseUploadsConfig(value["uploads"], path) } : {}),
     ...(value["maxUploadBytes"] !== undefined ? { maxUploadBytes: parseMaxUploadBytes(value["maxUploadBytes"], "maxUploadBytes", path) } : {}),
@@ -497,6 +500,11 @@ function parseShortcuts(value: unknown, path: string): Record<string, string | n
     }
     return [actionId, shortcut];
   }));
+}
+
+function parsePresentationProfiles(value: unknown, path: string): NonNullable<PiWebConfigValues["presentationProfiles"]> {
+  if (!isRecord(value)) throw new Error(`PI WEB config presentationProfiles must be an object: ${path}`);
+  return Object.fromEntries(Object.entries(value));
 }
 
 function parsePlugins(value: unknown, path: string): NonNullable<PiWebConfigValues["plugins"]> {

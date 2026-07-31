@@ -43,6 +43,7 @@ describe("config routes", () => {
       subsessions: true,
       shortcuts: { "core:view.chat": "mod+1", "core:session.stop": null },
       plugins: { info: { enabled: false, settings: { note: "hidden" } } },
+      presentationProfiles: { review: { version: 1, title: "Review", description: "Dense", extends: "compact", tokens: { "--pi-panel-padding": "6px" } }, invalid: { version: 2 } },
       pathAccess: { allowedPaths: ["/tmp"] },
       uploads: { defaultFolder: "uploads\\manual" },
       maxUploadBytes: 1234,
@@ -62,6 +63,17 @@ describe("config routes", () => {
     expect(response.statusCode).toBe(200);
     expect(savedConfig).toEqual(expectedConfig);
     expect(response.json<PiWebConfigResponse>().config).toEqual(expectedConfig);
+  });
+
+  it("rejects presentation profiles on the selected-machine config route", async () => {
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/machines/local/config",
+      payload: { config: { presentationProfiles: { review: {} } } },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toHaveProperty("error", "PI WEB selected-machine config key is not allowed: presentationProfiles");
   });
 
   it("rejects invalid config payloads before writing", async () => {

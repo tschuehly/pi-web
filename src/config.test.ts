@@ -46,6 +46,30 @@ describe("PI WEB config persistence", () => {
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({ future: { enabled: true }, port: 9000, allowedHosts: [], pathAccess: { allowedPaths: ["/new"] }, uploads: { defaultFolder: "new" } });
   });
 
+  it("preserves agent-authored presentation profiles for isolated browser validation", async () => {
+    const presentationProfiles = {
+      "agent-compact": {
+        version: 1,
+        title: "Agent compact",
+        description: "Dense review layout",
+        extends: "compact",
+        tokens: { "--pi-panel-padding": "6px" },
+      },
+      invalid: { version: 7, tokens: { "--pi-private": "url(https://example.test)" } },
+    };
+
+    savePiWebConfig({ presentationProfiles }, testOptions());
+
+    expect(loadPiWebConfig(testOptions()).config.presentationProfiles).toEqual(presentationProfiles);
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({ presentationProfiles });
+  });
+
+  it("rejects a non-object presentation profile collection", async () => {
+    await writeFile(configPath, `${JSON.stringify({ presentationProfiles: [] }, null, 2)}\n`, "utf8");
+
+    expect(() => loadPiWebConfig(testOptions())).toThrow("PI WEB config presentationProfiles must be an object");
+  });
+
   it("rejects invalid plugin config", async () => {
     await writeFile(configPath, `${JSON.stringify({ plugins: { info: { enabled: "no" } } }, null, 2)}\n`, "utf8");
 

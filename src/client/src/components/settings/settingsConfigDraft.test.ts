@@ -85,6 +85,17 @@ describe("settings config drafts", () => {
     })).toEqual({ allowedHosts: ["example.local", "192.168.1.20"] });
   });
 
+  it("preserves gateway presentation profiles when saving unrelated general settings", () => {
+    const presentationProfiles = {
+      review: { version: 1, title: "Review", description: "Dense", extends: "compact", tokens: { "--pi-panel-padding": "6px" } },
+      invalid: { version: 2 },
+    };
+
+    const saved = gatewayServerConfigFromDraft({ host: "", port: "", allowedHostsMode: "list", allowedHostsText: "" }, { presentationProfiles });
+
+    expect(saved.presentationProfiles).toBe(presentationProfiles);
+  });
+
   it("builds selected-machine access/upload patches only from selected-machine-safe fields", () => {
     const patch = machineAccessConfigPatchFromDraft({
       allowedPathsText: "/tmp\n~/SDKs\n",

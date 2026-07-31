@@ -14,13 +14,27 @@
         --pi-control-font-size: 16px;
         --pi-control-font-family: system-ui, sans-serif;
         --pi-control-monospace-font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        --pi-bg: #0d1117;
-        --pi-surface: #161b22;
-        --pi-surface-hover: #21262d;
+        --pi-control-min-size: 32px;
+        --pi-control-padding-block: 6px;
+        --pi-control-padding-inline: 8px;
+        --pi-list-row-padding-block: 6px;
+        --pi-list-row-padding-inline: 8px;
+        --pi-list-primary-display: flex;
+        --pi-list-secondary-display: block;
+        --pi-list-secondary-margin-inline: 0px;
+        --pi-list-row-white-space: normal;
+        --pi-panel-padding: 10px;
+        --pi-toolbar-gap: 6px;
+        --pi-message-padding: 10px;
+        --pi-message-gap: 10px;
+        --pi-content-max-width: none;
+        --pi-bg: #080a0f;
+        --pi-surface: #10141c;
+        --pi-surface-hover: #181e28;
         --pi-terminal-bg: #05070a;
         --pi-terminal-text: #e6edf3;
-        --pi-border: #30363d;
-        --pi-border-muted: #21262d;
+        --pi-border: #293140;
+        --pi-border-muted: #171c25;
         --pi-text: #e6edf3;
         --pi-text-secondary: #c9d1d9;
         --pi-text-bright: #f0f6fc;
@@ -28,7 +42,7 @@
         --pi-dim: #6e7681;
         --pi-accent: #58a6ff;
         --pi-accent-border: #2f81f7;
-        --pi-selection-bg: #0d2847;
+        --pi-selection-bg: #122238;
         --pi-success: #3fb950;
         --pi-success-border: #238636;
         --pi-success-bg: #0f1b12;
@@ -49,6 +63,30 @@
         --pi-bg-overlay: #0d1117e6;
         --pi-success-bg-overlay: #0f1b12ee;
         --pi-terminal-selection: #264f78;
+      }
+      :root[data-pi-web-density="compact"] {
+        --pi-control-min-size: 26px;
+        --pi-control-padding-block: 3px;
+        --pi-control-padding-inline: 6px;
+        --pi-list-row-padding-block: 2px;
+        --pi-list-row-padding-inline: 5px;
+        --pi-list-primary-display: inline-flex;
+        --pi-list-secondary-display: inline;
+        --pi-list-secondary-margin-inline: 5px;
+        --pi-list-row-white-space: nowrap;
+        --pi-panel-padding: 6px;
+        --pi-toolbar-gap: 3px;
+        --pi-message-padding: 6px;
+        --pi-message-gap: 6px;
+      }
+      @media (pointer: coarse) {
+        :root {
+          --pi-control-min-size: 44px !important;
+          --pi-control-padding-block: 9px !important;
+          --pi-control-padding-inline: 10px !important;
+          --pi-list-row-padding-block: 9px !important;
+          --pi-list-row-padding-inline: 10px !important;
+        }
       }
       html, body { margin: 0; height: 100%; overflow: hidden; background: var(--pi-bg); color: var(--pi-text); }
       body { min-height: 100dvh; }

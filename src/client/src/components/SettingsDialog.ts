@@ -1,8 +1,10 @@
 import { css, html, LitElement, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { AppAction } from "../actions";
+import { builtInPresentationProfile, type PresentationProfileDefinition, type ResolvedPresentationProfile } from "../presentationProfiles";
 import { configApi, piPackagesApi, pluginsApi, type Machine, type MachineRuntime, type PiPackageMutationResponse, type PiPackageScope, type PiPackagesResponse, type PiWebConfigResponse, type PiWebConfigValues, type PiWebPluginsResponse } from "../api";
 import type { SettingsSection } from "../settingsRoute";
+import "./settings/SettingsAppearancePanel";
 import "./settings/SettingsGeneralPanel";
 import "./settings/SettingsSessiondPanel";
 import "./settings/SettingsPackagesPanel";
@@ -19,11 +21,20 @@ import { mergeSelectedMachineSessiondConfig } from "./settings/settingsSessiondC
 export class SettingsDialog extends LitElement {
   @property({ attribute: false }) section: SettingsSection = "general";
   @property({ attribute: false }) actions: AppAction[] = [];
+  @property({ attribute: false }) presentationProfiles: readonly PresentationProfileDefinition[] = [];
+  @property({ attribute: false }) presentationProfileErrors: Readonly<Record<string, string>> = {};
+  @property({ attribute: false }) activePresentationProfile: ResolvedPresentationProfile = builtInPresentationProfile("comfortable");
+  @property({ attribute: false }) previewPresentationProfile?: ResolvedPresentationProfile;
+  @property({ type: Boolean }) activePresentationProfileChanged = false;
   @property({ attribute: false }) machine: Machine | undefined;
   @property({ attribute: false }) machineRuntime: MachineRuntime | undefined;
   @property({ attribute: false }) onNavigate?: (section: SettingsSection) => void;
   @property({ attribute: false }) onClose?: () => void;
+  @property({ attribute: false }) onConfigLoaded?: (config: PiWebConfigValues) => void;
   @property({ attribute: false }) onConfigSaved?: (config: PiWebConfigValues) => void;
+  @property({ attribute: false }) onPreviewPresentationProfile?: (profileId: string) => void;
+  @property({ attribute: false }) onApplyPresentationPreview?: () => void;
+  @property({ attribute: false }) onCancelPresentationPreview?: () => void;
   @property({ attribute: false }) onRefreshMachineRuntime?: (machineId: string) => void | Promise<void>;
   @state() private configResponse: PiWebConfigResponse | undefined;
   @state() private accessConfigResponse: PiWebConfigResponse | undefined;
@@ -97,6 +108,7 @@ export class SettingsDialog extends LitElement {
           </header>
           <div class="settings-body">
             <nav class="settings-nav" aria-label="Settings sections">
+              ${this.renderNavButton("appearance", "Appearance", "This browser")}
               ${this.renderNavButton("general", "General", "Gateway + selected machine")}
               ${this.renderNavButton("sessiond", "Session daemon", "Selected machine")}
               ${this.renderNavButton("packages", "Pi packages", "Selected machine")}
@@ -116,6 +128,25 @@ export class SettingsDialog extends LitElement {
     // Keep the section -> panel routing in sync with the public
     // `activeSettingsPanelTag` seam below, which tests assert against instead of
     // scraping this template's markup.
+    if (this.section === "appearance") {
+      return html`
+        <settings-appearance-panel
+          .configPath=${this.configResponse?.path ?? ""}
+          .configModifiedAt=${this.configResponse?.modifiedAt ?? ""}
+          .loading=${this.loading}
+          .error=${this.error}
+          .profiles=${this.presentationProfiles}
+          .profileErrors=${this.presentationProfileErrors}
+          .activeProfile=${this.activePresentationProfile}
+          .previewProfile=${this.previewPresentationProfile}
+          .activeProfileChanged=${this.activePresentationProfileChanged}
+          .onReload=${() => this.loadConfig()}
+          .onPreview=${(profileId: string) => this.onPreviewPresentationProfile?.(profileId)}
+          .onApplyPreview=${() => this.onApplyPresentationPreview?.()}
+          .onCancelPreview=${() => this.onCancelPresentationPreview?.()}
+        ></settings-appearance-panel>
+      `;
+    }
     if (this.section === "sessiond") {
       return html`
         <settings-sessiond-panel
@@ -220,7 +251,10 @@ export class SettingsDialog extends LitElement {
       });
       if (!this.isCurrentLoad(requestSeq)) return;
 
-      if (result.config !== undefined) this.configResponse = result.config;
+      if (result.config !== undefined) {
+        this.configResponse = result.config;
+        this.onConfigLoaded?.(result.config.effectiveConfig);
+      }
       if (result.plugins !== undefined) this.pluginsResponse = result.plugins;
       this.error = result.error;
     } finally {
@@ -558,27 +592,27 @@ export class SettingsDialog extends LitElement {
   static override styles = css`
     :host { position: fixed; inset: 0; z-index: 30; color: var(--pi-text); font: 14px system-ui, sans-serif; }
     .backdrop { box-sizing: border-box; width: 100%; height: 100dvh; display: grid; place-items: center; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: var(--pi-overlay); overflow: hidden; }
-    .settings-shell { width: min(980px, 100%); max-height: min(760px, 100%); min-height: min(620px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr); border: 1px solid var(--pi-border); border-radius: 14px; background: var(--pi-bg); box-shadow: 0 20px 60px var(--pi-shadow-strong); overflow: hidden; }
-    .settings-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--pi-border); }
+    .settings-shell { width: min(900px, 100%); max-height: min(720px, 100%); min-height: min(560px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr); border-radius: 10px; background: var(--pi-bg); box-shadow: 0 24px 72px var(--pi-shadow-strong); overflow: hidden; }
+    .settings-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; background: var(--pi-surface); }
     .eyebrow { display: block; color: var(--pi-muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-    h1 { margin: 0; font-size: 20px; line-height: 1.2; }
-    button { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; font: inherit; cursor: pointer; }
-    .close-button { width: 34px; height: 34px; display: grid; place-items: center; border: 0; background: transparent; color: var(--pi-muted); padding: 0; font-size: 24px; }
+    h1 { margin: 0; font-size: 18px; line-height: 1.2; }
+    button { min-height: var(--pi-control-min-size); border: 0; border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); padding: var(--pi-control-padding-block) var(--pi-control-padding-inline); font: inherit; cursor: pointer; }
+    .close-button { width: max(34px, var(--pi-control-min-size)); height: max(34px, var(--pi-control-min-size)); display: grid; place-items: center; border: 0; background: transparent; color: var(--pi-muted); padding: 0; font-size: 24px; }
     .close-button:hover, .close-button:focus { color: var(--pi-text); background: var(--pi-surface-hover); }
-    .settings-body { min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
-    .settings-nav { min-height: 0; padding: 10px; border-right: 1px solid var(--pi-border); background: var(--pi-surface); overflow: auto; }
-    .settings-nav button { display: grid; gap: 2px; width: 100%; margin: 0 0 6px; text-align: left; border-color: transparent; background: transparent; }
+    .settings-body { min-height: 0; display: grid; grid-template-columns: 196px minmax(0, 1fr); }
+    .settings-nav { min-height: 0; padding: var(--pi-panel-padding); background: var(--pi-surface); overflow: auto; }
+    .settings-nav button { display: grid; gap: 2px; width: 100%; margin: 0 0 var(--pi-toolbar-gap); text-align: left; border-color: transparent; background: transparent; }
     .settings-nav button:hover, .settings-nav button:focus { background: var(--pi-surface-hover); }
-    .settings-nav button.selected { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
+    .settings-nav button.selected { color: var(--pi-text-bright); background: var(--pi-selection-bg); }
     .settings-nav small { color: var(--pi-muted); }
-    .settings-content { min-width: 0; min-height: 0; overflow: auto; padding: 18px; }
+    .settings-content { min-width: 0; min-height: 0; overflow: auto; padding: calc(var(--pi-panel-padding) * 1.25); }
 
     @media (max-width: 760px) {
       .backdrop { padding: 0; place-items: stretch; }
       .settings-shell { width: 100%; height: 100dvh; max-height: none; min-height: 0; border: 0; border-radius: 0; }
       .settings-header { padding: max(12px, env(safe-area-inset-top)) 12px 12px; }
       .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-      .settings-nav { display: flex; gap: 8px; padding: 8px; border-right: 0; border-bottom: 1px solid var(--pi-border); overflow-x: auto; overflow-y: hidden; }
+      .settings-nav { display: flex; gap: 6px; padding: 6px; border-right: 0; overflow-x: auto; overflow-y: hidden; }
       .settings-nav button { flex: 0 0 auto; width: auto; min-width: 128px; margin: 0; }
       .settings-content { padding: 14px 12px calc(18px + env(safe-area-inset-bottom)); }
     }
@@ -590,6 +624,7 @@ function errorMessage(error: unknown): string {
 }
 
 export type SettingsPanelTag =
+  | "settings-appearance-panel"
   | "settings-general-panel"
   | "settings-sessiond-panel"
   | "settings-packages-panel"
@@ -606,6 +641,8 @@ export type SettingsPanelTag =
  */
 export function activeSettingsPanelTag(section: SettingsSection): SettingsPanelTag {
   switch (section) {
+    case "appearance":
+      return "settings-appearance-panel";
     case "sessiond":
       return "settings-sessiond-panel";
     case "packages":

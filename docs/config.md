@@ -11,7 +11,7 @@ PI WEB uses two config files:
 - **Global PI WEB config:** `$PI_WEB_CONFIG`, or `$XDG_CONFIG_HOME/pi-web/config.json`, or `~/.config/pi-web/config.json`.
 - **Project-local PI WEB config:** `<project>/.pi-web/config.json` for commit-able project settings.
 
-Each PI WEB machine has its own config. When using Fleet/machine federation, Settings uses the selected machine for config that affects work running there: the Pi-compatible agent profile and companion CLI, session daemon tools, PI WEB plugin enablement, external path access, and upload defaults. Gateway/browser-only settings stay local to the gateway: keyboard shortcuts, remote machine registry/tokens, and gateway host/port/allowed-hosts.
+Each PI WEB machine has its own config. When using Fleet/machine federation, Settings uses the selected machine for config that affects work running there: the Pi-compatible agent profile and companion CLI, session daemon tools, PI WEB plugin enablement, external path access, and upload defaults. Gateway/browser-only settings stay local to the gateway: presentation-profile definitions, keyboard shortcuts, remote machine registry/tokens, and gateway host/port/allowed-hosts.
 
 Pi package settings are separate from PI WEB config. They live in Pi's package-manager settings on the target machine and are managed by Pi (`pi install`, `pi remove`, `pi update`) or **Settings → Pi packages**. In a federated setup, **Settings → Pi packages** targets the currently selected machine. The PI WEB `plugins` config key only enables or disables discovered PI WEB browser plugins on the machine whose config you are editing; it does not install, remove, or update Pi packages.
 
@@ -43,6 +43,7 @@ Process restarts depend on the key:
 - `pathAccess`: applies on the next request; existing file views may need a browser refresh.
 - `uploads.defaultFolder`: applies to newly opened Files upload dialogs and new direct drag/drop batches after config/workspace refresh.
 - `plugins`: reload the browser tab after changing PI WEB plugin enablement.
+- `presentationProfiles`: open **Settings → Appearance** and choose **Reload profiles**. Changes to the active custom profile remain pending until previewed and explicitly applied.
 - Pi package install/remove/update: not a PI WEB config key; after a mutation, type `/reload` in each idle PI WEB session on the target machine to refresh ordinary Pi resources such as extensions, skills, prompt templates, themes, and context/system prompt files. Reload the browser page separately for PI WEB browser plugin changes. If a global Pi extension adds or removes a provider, or changes a provider's connection settings, manually restart `pi-web-sessiond.service`; `/reload` cannot change the startup provider baseline. A known provider refreshing only its own model list is applied without a restart. See [Pi extension provider baseline](#pi-extension-provider-baseline).
 - `shortcuts`: saved settings apply in the browser after config refresh/save.
 
@@ -71,6 +72,19 @@ Process restarts depend on the key:
     "workspace-tasks": { "enabled": true },
     "updates": { "enabled": true },
     "info": { "enabled": false }
+  },
+  "presentationProfiles": {
+    "agent-compact": {
+      "version": 1,
+      "title": "Agent compact",
+      "description": "Dense review layout with a wider evidence column.",
+      "extends": "compact",
+      "tokens": {
+        "--pi-panel-padding": "6px",
+        "--pi-message-gap": "5px",
+        "--pi-content-max-width": "1100px"
+      }
+    }
   },
   "shortcuts": {
     "core:view.chat": "mod+1",
@@ -162,6 +176,7 @@ Rows with JSON key `—` are runtime-only environment variables, not config-file
 | Agent can post question forms | `askUser` | `PI_WEB_ASK_USER` | Global/session daemon | Not supported locally | Restart session daemon on that machine |
 | Extension dialog auto-cancel timeout | `extensionDialogsTimeoutMs` | — | Global/session daemon | Not supported locally | Restart session daemon on that machine |
 | Plugin enablement/settings | `plugins.<id>.enabled`, `plugins.<id>.settings` | — | Global | Not core local config; plugins may read their own project files | Reload browser tab |
+| Presentation profiles | `presentationProfiles.<id>` | — | Gateway global definitions + browser-local active choice | Not supported locally | Reload in Appearance; preview and Apply |
 | Keyboard shortcuts | `shortcuts.<actionId>` | — | Global | Not supported locally | Applies after settings save/config refresh |
 | Project config version | `version` | — | Project | Project-local only; must be `1` when present | Next project-config read |
 | **Runtime-only environment variables** |  |  |  |  |  |
@@ -362,6 +377,29 @@ Plugins are enabled by default. Set `plugins.<id>.enabled` to `false` to remove 
 ```
 
 Reload the browser tab after changing plugin enablement. Already-loaded plugin JavaScript is not unloaded from the current page.
+
+### Presentation profiles
+
+`presentationProfiles` is a gateway-global, agent-editable map of declarative non-color presentation profiles. It is never read from project config or a selected remote machine. Each browser independently chooses its active profile under **Settings → Appearance**.
+
+A custom profile must use an id matching `^[a-z][a-z0-9.-]*$`, set `version` to `1`, provide a title and description, extend `comfortable` or `compact`, and contain only published semantic tokens. Unknown fields, unknown tokens, executable values, selectors, arbitrary declarations, unsupported units, and values outside the documented bounds are rejected by that profile without hiding valid siblings.
+
+All numeric overrides use finite `px` values:
+
+| Token | Allowed value |
+| --- | --- |
+| `--pi-control-min-size` | `24px`–`64px` |
+| `--pi-control-padding-block`, `--pi-list-row-padding-block` | `0px`–`24px` |
+| `--pi-control-padding-inline`, `--pi-list-row-padding-inline` | `0px`–`32px` |
+| `--pi-panel-padding`, `--pi-message-padding`, `--pi-message-gap` | `0px`–`48px` |
+| `--pi-toolbar-gap` | `0px`–`32px` |
+| `--pi-content-max-width` | `320px`–`2400px`, or `none` |
+
+Coarse-pointer layouts enforce touch-safe control and row floors after profile resolution. Profiles cannot change body text, focus behavior, responsive topology, protected controls, or theme colors.
+
+Editing a profile does not activate it. Selecting a profile starts a temporary preview; **Apply profile** persists the complete validated resolution in that browser and **Cancel** restores the previous resolution. If an agent changes the active profile later, PI WEB keeps the last valid applied revision until the user reloads profiles, previews the update, and applies it. Missing or invalid active definitions likewise retain the last valid browser snapshot so the user can recover to a built-in profile.
+
+Agents should edit only the global config file shown in Appearance, create or modify a named profile, and leave activation to the user. Do not add `presentationProfiles` to a repository's `.pi-web/config.json`.
 
 ### Shortcut config
 

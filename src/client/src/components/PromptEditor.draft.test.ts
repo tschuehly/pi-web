@@ -54,6 +54,28 @@ describe("PromptEditor draft replacement", () => {
     expect(transaction["selection"]["head"]).toBe(4);
   });
 
+  it("routes Command/Ctrl+Enter to steering while a response is active", () => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn();
+    editor.canSteer = true;
+    editor.onSend = onSend;
+    Reflect.set(editor, "draft", "Adjust the implementation");
+    const handleEditorKeyDown: unknown = Reflect.get(editor, "handleEditorKeyDown");
+    if (!isEditorKeyDownHandler(handleEditorKeyDown)) throw new Error("Expected PromptEditor keydown handler");
+
+    const handled = handleEditorKeyDown.call(editor, {
+      key: "Enter",
+      metaKey: true,
+      ctrlKey: false,
+      shiftKey: false,
+      defaultPrevented: false,
+      isComposing: false,
+    }, { composing: false });
+
+    expect(handled).toBe(true);
+    expect(onSend).toHaveBeenCalledWith("Adjust the implementation", "steer", undefined, undefined);
+  });
+
   it("clears an existing durable draft and CodeMirror document", () => {
     const editor = new PromptEditor();
     editor.machineId = "local";
@@ -78,6 +100,10 @@ describe("PromptEditor draft replacement", () => {
     expect(Reflect.get(editor, "currentInputMode")).toEqual({ kind: "normal" });
   });
 });
+
+function isEditorKeyDownHandler(value: unknown): value is (event: Partial<KeyboardEvent>, view: { composing: boolean }) => boolean {
+  return typeof value === "function";
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

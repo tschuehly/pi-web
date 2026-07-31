@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { agentDirEnvSource, hasAgentDirEnvOverride, hasAgentSessionDirEnvOverride, loadPiWebConfig, parseAgentConfig, parseUploadsConfig, resolveEffectivePiWebConfig, savePiWebConfig, type AgentPathHost, type LoadOptions, type PiWebConfig } from "../config.js";
 import type { PiWebAgentDirEnvSource, PiWebConfigEnvOverrides, PiWebConfigResponse, PiWebConfigValues } from "../shared/apiTypes.js";
@@ -38,6 +39,7 @@ export function currentPiWebConfigResponse(options: LoadOptions = {}): PiWebConf
   return {
     path: loaded.path,
     exists: loaded.exists,
+    ...configModifiedAt(loaded.path, loaded.exists),
     config: loaded.config,
     effectiveConfig: effective.config,
     envOverrides: piWebConfigEnvOverrides(env, effective.config),
@@ -113,6 +115,7 @@ export function parsePiWebConfigResponseBody(value: unknown, source = "PI WEB co
   return {
     path: requireResponseString(record, "path", source),
     exists: requireResponseBoolean(record, "exists", source),
+    ...optionalResponseStringField(record, "modifiedAt", source),
     config: parseConfigRequest(record["config"], "portable"),
     effectiveConfig: parseConfigRequest(record["effectiveConfig"], "portable"),
     envOverrides: parsePiWebConfigEnvOverridesResponse(record["envOverrides"], source),
@@ -127,6 +130,7 @@ function parseConfigRequest(value: unknown, agentPathHost: AgentPathHost = "curr
   const allowedHosts = value["allowedHosts"];
   const shortcuts = value["shortcuts"];
   const plugins = value["plugins"];
+  const presentationProfiles = value["presentationProfiles"];
   const pathAccess = value["pathAccess"];
   const uploads = value["uploads"];
   const maxUploadBytes = value["maxUploadBytes"];
@@ -145,6 +149,7 @@ function parseConfigRequest(value: unknown, agentPathHost: AgentPathHost = "curr
   if (allowedHosts !== undefined) config.allowedHosts = parseAllowedHostsRequest(allowedHosts);
   if (shortcuts !== undefined) config.shortcuts = parseShortcutsRequest(shortcuts);
   if (plugins !== undefined) config.plugins = parsePluginsRequest(plugins);
+  if (presentationProfiles !== undefined) config.presentationProfiles = parsePresentationProfilesRequest(presentationProfiles);
   if (pathAccess !== undefined) config.pathAccess = parsePathAccessRequest(pathAccess);
   if (uploads !== undefined) config.uploads = parseUploadsConfig(uploads, "request");
   if (maxUploadBytes !== undefined) config.maxUploadBytes = parseMaxUploadBytesRequest(maxUploadBytes);
@@ -227,6 +232,11 @@ function parseAgentRequest(value: unknown, pathHost: AgentPathHost): NonNullable
   return parseAgentConfig(value, "request", pathHost);
 }
 
+function parsePresentationProfilesRequest(value: unknown): NonNullable<PiWebConfig["presentationProfiles"]> {
+  if (!isRecord(value)) throw new Error("PI WEB config presentationProfiles must be an object");
+  return Object.fromEntries(Object.entries(value));
+}
+
 function parsePluginsRequest(value: unknown): NonNullable<PiWebConfig["plugins"]> {
   if (!isRecord(value) || Array.isArray(value)) throw new Error("PI WEB config plugins must be an object");
   return Object.fromEntries(Object.entries(value).map(([pluginId, config]) => {
@@ -267,6 +277,13 @@ function requireResponseString(record: Record<string, unknown>, key: string, sou
   return value;
 }
 
+function optionalResponseStringField(record: Record<string, unknown>, key: string, source: string): Record<string, string> {
+  const value = record[key];
+  if (value === undefined) return {};
+  if (typeof value !== "string" || value === "") throw new Error(`${source} ${key} must be a non-empty string`);
+  return { [key]: value };
+}
+
 function requireResponseBoolean(record: Record<string, unknown>, key: string, source: string): boolean {
   const value = record[key];
   if (typeof value !== "boolean") throw new Error(`${source} field must be a boolean: ${key}`);
@@ -303,6 +320,15 @@ function isEnvSet(value: string | undefined): boolean {
 
 function isConfigValidationError(error: unknown): boolean {
   return error instanceof Error && (error.message.startsWith("PI WEB config") || error.message.startsWith("PI WEB selected-machine config"));
+}
+
+function configModifiedAt(path: string, exists: boolean): { modifiedAt?: string } {
+  if (!exists) return {};
+  try {
+    return { modifiedAt: statSync(path).mtime.toISOString() };
+  } catch {
+    return {};
+  }
 }
 
 function errorMessage(error: unknown): string {

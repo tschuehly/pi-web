@@ -20,6 +20,8 @@ import { SessionStorageSessionSelectionMemory } from "../controllers/sessionSele
 import { SessionStorageTerminalSelectionMemory } from "../controllers/terminalSelection";
 import { SessionStorageWorkspaceSelectionMemory } from "../controllers/workspaceSelection";
 import { KeyboardShortcutDispatcher } from "../keyboardShortcuts";
+import { readStoredPiWebDensity } from "../density";
+import { applyPresentationProfile, builtInPresentationProfile, inspectPresentationProfiles, presentationProfileChanged, readStoredPresentationProfile, resolvePresentationProfile, writeStoredPresentationProfile, type PresentationProfileDefinition, type ResolvedPresentationProfile } from "../presentationProfiles";
 import { selectedMachineId } from "../controllers/types";
 import { machineSessionKey } from "../machineKeys";
 import { resolveParentSessionLocation, type ParentSessionLocation } from "../parentSessionLocation";
@@ -242,6 +244,10 @@ export class PiWebApp extends LitElement {
   private readonly machinePluginLoadPromises = new Map<string, Promise<void>>();
   private gatewayPluginLoadPromise: Promise<void> | undefined;
   private themePreference: ThemePreference = readStoredThemePreference() ?? DEFAULT_THEME_PREFERENCE;
+  @state() private activePresentationProfile: ResolvedPresentationProfile = initialPresentationProfile();
+  @state() private previewPresentationProfile: ResolvedPresentationProfile | undefined;
+  @state() private presentationProfiles: PresentationProfileDefinition[] = [];
+  @state() private presentationProfileErrors: Record<string, string> = {};
   @state() private activeThemeId: QualifiedContributionId = CLASSIC_THEME_ID;
   @state() private isRefreshingApp = false;
   @state() private sessionCleanupDialog: SessionCleanupDialogState | undefined;
@@ -372,6 +378,7 @@ export class PiWebApp extends LitElement {
     window.addEventListener("keydown", this.onKeyDown, GLOBAL_SHORTCUT_LISTENER_OPTIONS);
     this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
     this.applyPreferredTheme(false);
+    applyPresentationProfile(this.activePresentationProfile);
     this.connectRealtime();
     this.syncSessionUnreadMachines();
     this.piWebStatusTimer = window.setInterval(() => { this.schedulePiWebStatusRefresh(); }, PI_WEB_STATUS_REFRESH_MS);
@@ -500,6 +507,9 @@ export class PiWebApp extends LitElement {
   private applyClientConfig(config: PiWebConfigValues): void {
     this.shortcutConfig = config.shortcuts ?? {};
     this.workspaceUploadDefaultFolder = effectiveWorkspaceUploadFolder(config);
+    const inspection = inspectPresentationProfiles(config.presentationProfiles);
+    this.presentationProfiles = inspection.profiles;
+    this.presentationProfileErrors = inspection.errors;
   }
 
   private async refreshAppData(): Promise<void> {
@@ -910,6 +920,7 @@ export class PiWebApp extends LitElement {
   }
 
   private closeSettings(): void {
+    this.cancelPresentationPreview();
     this.settingsSection = undefined;
     writeSettingsSection(undefined);
   }
@@ -920,7 +931,9 @@ export class PiWebApp extends LitElement {
   }
 
   private restoreSettingsRoute(): void {
-    this.settingsSection = readSettingsSection();
+    const nextSection = readSettingsSection();
+    if (this.settingsSection !== undefined && nextSection === undefined) this.cancelPresentationPreview();
+    this.settingsSection = nextSection;
   }
 
   private handleWorkspaceChange(previous: AppState, next: AppState) {
@@ -1553,7 +1566,7 @@ export class PiWebApp extends LitElement {
         workspaceUploadDefaultFolder: workspaceEffectiveUploadFolder(workspace.effectiveConfig, this.workspaceUploadDefaultFolder),
         onRefreshFiles: () => { void this.files.refreshFiles(); },
         onExpandDir: (path: string) => { void this.files.expandDir(path); },
-        onSelectFile: (path: string) => { void this.files.selectFile(path); },
+        onSelectFile: (path: string) => this.files.selectFile(path),
         onStartWorkspaceUpload: (files, options) => this.files.startWorkspaceUpload(files, options),
         onCancelWorkspaceUpload: (batchId) => { this.files.cancelWorkspaceUpload(batchId); },
         onClearWorkspaceUpload: (batchId) => { this.files.clearWorkspaceUpload(batchId); },
@@ -1967,6 +1980,33 @@ export class PiWebApp extends LitElement {
     this.applyPreferredTheme(true);
   }
 
+  private previewPresentation(profileId: string): void {
+    const profile = resolvePresentationProfile(profileId, this.presentationProfiles);
+    if (profile === undefined) return;
+    this.previewPresentationProfile = profile;
+    applyPresentationProfile(profile);
+  }
+
+  private applyPresentationPreview(): void {
+    const profile = this.previewPresentationProfile;
+    if (profile === undefined) return;
+    this.activePresentationProfile = profile;
+    this.previewPresentationProfile = undefined;
+    applyPresentationProfile(profile);
+    writeStoredPresentationProfile(profile);
+  }
+
+  private cancelPresentationPreview(): void {
+    if (this.previewPresentationProfile === undefined) return;
+    this.previewPresentationProfile = undefined;
+    applyPresentationProfile(this.activePresentationProfile);
+  }
+
+  private activePresentationProfileChanged(): boolean {
+    const available = resolvePresentationProfile(this.activePresentationProfile.id, this.presentationProfiles);
+    return presentationProfileChanged(this.activePresentationProfile, available);
+  }
+
   private applyPreferredTheme(persist: boolean): void {
     const theme = this.resolveCurrentThemePreference().activeTheme;
     if (theme === undefined) return;
@@ -2184,12 +2224,36 @@ export class PiWebApp extends LitElement {
         ${state.machineDialogOpen ? html`<machine-dialog .error=${state.error} .onSubmit=${(input: MachineDialogSubmit) => this.submitMachineDialog(input)} .onCancel=${() => { this.setState({ machineDialogOpen: false }); }}></machine-dialog>` : null}
         ${this.sessionCleanupDialog !== undefined ? html`<session-cleanup-dialog .preview=${this.sessionCleanupDialog.preview} .previewRequest=${this.sessionCleanupDialog.previewRequest} .result=${this.sessionCleanupDialog.result} .loading=${this.sessionCleanupDialog.loading === true} .running=${this.sessionCleanupDialog.running === true} .error=${this.sessionCleanupDialog.error ?? ""} .onPreview=${(request: SessionCleanupRequest) => { void this.previewSessionCleanup(request); }} .onRun=${(request: SessionCleanupRequest) => { void this.runSessionCleanup(request); }} .onClose=${() => { this.closeSessionCleanupDialog(); }}></session-cleanup-dialog>` : null}
         ${state.themeDialog !== undefined ? html`<command-picker title=${state.themeDialog.title} .options=${state.themeDialog.options} .selectedValue=${state.themeDialog.selectedValue} .onPick=${(value: string) => { this.pickTheme(value); }} .onCancel=${() => { this.setState({ themeDialog: undefined }); }}></command-picker>` : null}
-        ${this.settingsSection !== undefined ? html`<settings-dialog .section=${this.settingsSection} .machine=${state.selectedMachine} .machineRuntime=${this.selectedMachineRuntime()} .actions=${this.getDefaultActions()} .onNavigate=${(section: SettingsSection) => { this.navigateSettings(section); }} .onClose=${() => { this.closeSettings(); }} .onConfigSaved=${(config: PiWebConfigValues) => { this.applyClientConfig(config); }} .onRefreshMachineRuntime=${async (machineId: string) => { await this.machines.refreshMachineRuntime(machineId); }}></settings-dialog>` : null}
+        ${this.settingsSection !== undefined ? html`
+          <settings-dialog
+            .section=${this.settingsSection}
+            .actions=${this.getDefaultActions()}
+            .presentationProfiles=${this.presentationProfiles}
+            .presentationProfileErrors=${this.presentationProfileErrors}
+            .activePresentationProfile=${this.activePresentationProfile}
+            .previewPresentationProfile=${this.previewPresentationProfile}
+            .activePresentationProfileChanged=${this.activePresentationProfileChanged()}
+            .machine=${state.selectedMachine}
+            .machineRuntime=${this.selectedMachineRuntime()}
+            .onNavigate=${(section: SettingsSection) => { this.navigateSettings(section); }}
+            .onClose=${() => { this.closeSettings(); }}
+            .onConfigLoaded=${(config: PiWebConfigValues) => { this.applyClientConfig(config); }}
+            .onConfigSaved=${(config: PiWebConfigValues) => { this.applyClientConfig(config); }}
+            .onPreviewPresentationProfile=${(profileId: string) => { this.previewPresentation(profileId); }}
+            .onApplyPresentationPreview=${() => { this.applyPresentationPreview(); }}
+            .onCancelPresentationPreview=${() => { this.cancelPresentationPreview(); }}
+            .onRefreshMachineRuntime=${(machineId: string) => this.machines.refreshMachineRuntime(machineId)}
+          ></settings-dialog>
+        ` : null}
       </div>
     `;
   }
 
   static override styles = appStyles;
+}
+
+function initialPresentationProfile(): ResolvedPresentationProfile {
+  return readStoredPresentationProfile() ?? builtInPresentationProfile(readStoredPiWebDensity());
 }
 
 function createPluginRegistry(): PluginRegistry {

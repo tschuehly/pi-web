@@ -1356,6 +1356,7 @@ export function parsePiWebConfigResponse(value: unknown): PiWebConfigResponse {
   return {
     path: requireString(record, "path"),
     exists: requireBoolean(record, "exists"),
+    ...optionalField("modifiedAt", optionalString(record, "modifiedAt")),
     config: parsePiWebConfigValues(record["config"]),
     effectiveConfig: parsePiWebConfigValues(record["effectiveConfig"]),
     envOverrides: parsePiWebConfigEnvOverrides(record["envOverrides"]),
@@ -1370,6 +1371,7 @@ function parsePiWebConfigValues(value: unknown): PiWebConfigValues {
     ...optionalField("allowedHosts", optionalAllowedHosts(record["allowedHosts"])),
     ...optionalField("shortcuts", optionalShortcuts(record["shortcuts"])),
     ...optionalField("plugins", optionalPlugins(record["plugins"])),
+    ...optionalField("presentationProfiles", optionalPresentationProfiles(record["presentationProfiles"])),
     ...optionalField("pathAccess", optionalPathAccess(record["pathAccess"])),
     ...optionalField("uploads", optionalUploads(record["uploads"])),
     ...optionalField("maxUploadBytes", optionalNumber(record, "maxUploadBytes")),
@@ -1434,6 +1436,12 @@ function optionalShortcuts(value: unknown): PiWebShortcutConfig | undefined {
     if (shortcut !== null && (typeof shortcut !== "string" || shortcut === "")) throw new Error("Invalid PI WEB shortcut field");
     return [actionId, shortcut];
   }));
+}
+
+function optionalPresentationProfiles(value: unknown): PiWebConfigValues["presentationProfiles"] | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || Array.isArray(value)) throw new Error("Invalid PI WEB presentationProfiles field");
+  return Object.fromEntries(Object.entries(value));
 }
 
 function optionalPlugins(value: unknown): PiWebPluginConfigMap | undefined {

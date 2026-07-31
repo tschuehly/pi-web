@@ -64,6 +64,26 @@ describe("API parsers", () => {
     });
   });
 
+  it("preserves valid and invalid presentation profile entries for isolated UI validation", () => {
+    const presentationProfiles = {
+      review: { version: 1, title: "Review", description: "Dense", extends: "compact", tokens: { "--pi-panel-padding": "6px" } },
+      invalid: { version: 2, tokens: { "--pi-private": "url(https://example.test)" } },
+    };
+
+    const parsed = parsePiWebConfigResponse({
+      path: "/tmp/config.json",
+      exists: true,
+      modifiedAt: "2026-07-29T12:00:00.000Z",
+      config: { presentationProfiles },
+      effectiveConfig: { presentationProfiles },
+      envOverrides: { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, agentCommand: false, agentDir: false, agentSessionDir: false },
+    });
+
+    expect(parsed.modifiedAt).toBe("2026-07-29T12:00:00.000Z");
+    expect(parsed.config.presentationProfiles).toEqual(presentationProfiles);
+    expect(parsed.effectiveConfig.presentationProfiles).toEqual(presentationProfiles);
+  });
+
   it("parses PI WEB runtime responses including the daemon-owned active profile", () => {
     expect(parsePiWebRuntimeResponse({
       packageName: "@jmfederico/pi-web",

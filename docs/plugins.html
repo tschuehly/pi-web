@@ -97,6 +97,7 @@
             <a href="#built-in-plugins">Built-in plugins</a>
             <a href="#manage-plugins">Manage PI WEB plugins</a>
             <a href="#remote-machine-plugins">Remote machine plugins</a>
+            <a href="#presentation-density">Presentation density</a>
             <a href="#production">Production usage</a>
             <a href="#agent-docs">AI-friendly docs</a>
             <a href="#develop">Develop and debug</a>
@@ -445,6 +446,35 @@ After editing, check the manifest endpoint and browser-console failure cases.</c
                 <code>new URL("./asset.json", import.meta.url)</code>. If a remote plugin constructs absolute asset URLs,
                 it should use the <code>pluginId</code> from <code>activate()</code>; hard-coded
                 <code>/pi-web-plugins/&lt;original-id&gt;/...</code> URLs may point at the gateway instead of the remote machine.
+              </p>
+            </section>
+
+            <section id="presentation-density">
+              <h2>Presentation density</h2>
+              <p>
+                Users choose <strong>Comfortable</strong>, <strong>Compact</strong>, or a validated custom profile under
+                <strong>Settings → Appearance</strong>. Preview applies immediately; explicit Apply stores the
+                browser-local choice across restarts. Custom profiles can override every token below within documented
+                bounds. Compact tightens spacing and chrome without shrinking body text; coarse-pointer layouts retain
+                touch-safe controls.
+              </p>
+              <p>Plugin custom elements can adopt PI WEB density through inherited semantic variables:</p>
+              <ul>
+                <li><code>--pi-control-min-size</code>, <code>--pi-control-padding-block</code>, and <code>--pi-control-padding-inline</code></li>
+                <li><code>--pi-list-row-padding-block</code> and <code>--pi-list-row-padding-inline</code></li>
+                <li><code>--pi-panel-padding</code> and <code>--pi-toolbar-gap</code></li>
+                <li><code>--pi-message-padding</code>, <code>--pi-message-gap</code>, and <code>--pi-content-max-width</code></li>
+              </ul>
+              <div class="code-card">
+                <pre><code>:host { padding: var(--pi-panel-padding, 12px); }
+button {
+  min-height: var(--pi-control-min-size, 34px);
+  padding: var(--pi-control-padding-block, 7px) var(--pi-control-padding-inline, 9px);
+}</code></pre>
+              </div>
+              <p>
+                Use variables by semantic role and include fallbacks for older hosts. These variables are stable; PI WEB
+                selectors, element structure, and undocumented variables remain private. Plugins must not inject global CSS.
               </p>
             </section>
 

@@ -22,18 +22,29 @@ export interface WorkspaceUploadScope {
 export class WorkspaceFilesPanel extends LitElement {
   @property({ attribute: false }) context: WorkspacePanelContext | undefined;
   @query("#workspace-upload-input") private uploadInput?: HTMLInputElement;
+  @query("code-viewer") private codeViewer?: HTMLElement & { save(): void };
   @state() private pendingUpload: PendingWorkspaceUploadReview | undefined;
   @state() private destinationFolder = "";
   @state() private overwrite = false;
   @state() private createDirs = true;
   @state() private formError = "";
   @state() private dragActive = false;
+  @state() private editingFilePath: string | undefined;
+  @state() private fileDirty = false;
+  @state() private fileSaving = false;
+  @state() private fileSaveError = "";
   private dragDepth = 0;
 
   protected override willUpdate(changedProperties: PropertyValues<this>): void {
     if (!changedProperties.has("context")) return;
     const previous = changedProperties.get("context");
-    if (previous !== undefined && this.context !== undefined && workspaceContextKey(previous) !== workspaceContextKey(this.context)) this.resetPendingUpload();
+    if (previous === undefined || this.context === undefined) return;
+    if (workspaceContextKey(previous) !== workspaceContextKey(this.context)) {
+      this.resetPendingUpload();
+      this.resetFileEditing();
+    } else if (previous.selectedFilePath !== this.context.selectedFilePath) {
+      this.resetFileEditing();
+    }
   }
 
   override render(): TemplateResult {
@@ -91,7 +102,7 @@ export class WorkspaceFilesPanel extends LitElement {
 
   private selectTreeEntry(context: WorkspacePanelContext, entry: FileTreeEntry): void {
     if (entry.type === "directory") context.onExpandDir(entry.path);
-    else context.onSelectFile(entry.path);
+    else void context.onSelectFile(entry.path);
   }
 
   private renderFileViewer(context: WorkspacePanelContext): TemplateResult {
@@ -103,9 +114,28 @@ export class WorkspaceFilesPanel extends LitElement {
     if (file === undefined) return html`<p class="muted">Select a file.</p>`;
     if (file.mediaType === "image") return this.renderImageViewer(context, file);
     loadCodeViewer();
+    const editing = this.editingFilePath === file.path;
     return html`
-      <div class="viewer-header"><strong>${file.path}</strong><small>${file.language ?? "text"}${file.truncated ? " · truncated" : ""}</small></div>
-      <code-viewer .content=${file.content} .language=${file.language}></code-viewer>
+      <div class="viewer-header">
+        <strong>${file.path}</strong>
+        <div class="viewer-file-actions">
+          <small>${file.language ?? "text"}${file.truncated ? " · truncated" : this.fileDirty ? " · unsaved" : ""}</small>
+          ${editing
+            ? html`
+                <button ?disabled=${!this.fileDirty || this.fileSaving} @click=${() => { this.codeViewer?.save(); }}>${this.fileSaving ? "Saving…" : "Save"}</button>
+                <button ?disabled=${this.fileSaving} @click=${() => { this.resetFileEditing(); }}>Cancel</button>
+              `
+            : html`<button ?disabled=${file.truncated} title=${file.truncated ? "Truncated files cannot be edited safely" : "Edit file"} @click=${() => { this.startFileEditing(file); }}>Edit</button>`}
+        </div>
+      </div>
+      ${this.fileSaveError === "" ? null : html`<div class="file-save-error" role="alert">${this.fileSaveError}</div>`}
+      <code-viewer
+        .content=${file.content}
+        .language=${file.language}
+        .editable=${editing}
+        .onDirtyChange=${(dirty: boolean) => { this.fileDirty = dirty; }}
+        .onSave=${(content: string) => this.saveFile(context, file, content)}
+      ></code-viewer>
     `;
   }
 
@@ -226,6 +256,33 @@ export class WorkspaceFilesPanel extends LitElement {
     `;
   }
 
+  private startFileEditing(file: FileContentResponse): void {
+    if (file.truncated || file.binary || file.mediaType === "image") return;
+    this.editingFilePath = file.path;
+    this.fileDirty = false;
+    this.fileSaveError = "";
+  }
+
+  private async saveFile(context: WorkspacePanelContext, file: FileContentResponse, content: string): Promise<void> {
+    if (this.editingFilePath !== file.path || this.fileSaving) return;
+    this.fileSaving = true;
+    this.fileSaveError = "";
+    try {
+      await saveWorkspaceTextFile(context, file.path, content);
+      this.resetFileEditing();
+    } catch (error) {
+      this.fileSaveError = error instanceof Error ? error.message : String(error);
+      this.fileSaving = false;
+    }
+  }
+
+  private resetFileEditing(): void {
+    this.editingFilePath = undefined;
+    this.fileDirty = false;
+    this.fileSaving = false;
+    this.fileSaveError = "";
+  }
+
   private readonly openFilePicker = (): void => {
     this.uploadInput?.click();
   };
@@ -333,6 +390,10 @@ export class WorkspaceFilesPanel extends LitElement {
       :host { flex: 1 1 auto; }
       .files-panel { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
       .toolbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+      .viewer-file-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+      .viewer-file-actions small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .viewer-file-actions button { padding: 3px 7px; }
+      .file-save-error { flex: 0 0 auto; border-bottom: 1px solid var(--pi-danger); background: color-mix(in srgb, var(--pi-danger) 10%, transparent); color: var(--pi-danger); padding: 7px 9px; overflow-wrap: anywhere; }
       .toolbar .toolbar-actions button { margin-left: 0; }
       .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
       .drop-overlay { position: absolute; inset: 52px 10px 10px; z-index: 15; display: grid; place-items: center; border: 2px dashed var(--pi-accent); border-radius: 12px; background: color-mix(in srgb, var(--pi-bg-overlay) 90%, var(--pi-accent) 10%); color: var(--pi-text); opacity: 0; pointer-events: none; transition: opacity .12s ease; }
@@ -415,6 +476,15 @@ export function workspaceFileViewerStatusLabel(
   if (file.mediaType === "image") return undefined;
   if (file.binary) return `Binary file: ${file.path} · ${formatFileSize(file.size)}`;
   return undefined;
+}
+
+export async function saveWorkspaceTextFile(
+  context: Pick<WorkspacePanelContext, "files" | "onSelectFile">,
+  path: string,
+  content: string,
+): Promise<void> {
+  await context.files.writeFile(path, content, { createDirs: false, overwrite: true });
+  await context.onSelectFile(path);
 }
 
 export function startDirectWorkspaceUpload(

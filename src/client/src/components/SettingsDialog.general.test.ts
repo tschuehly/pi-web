@@ -13,6 +13,7 @@ describe("settings-dialog general settings machine targeting", () => {
     // The old global "scope-note"/"This tab edits:" wrapper is gone: each section
     // now maps to exactly one panel element. Assert that public routing contract
     // (`activeSettingsPanelTag`) instead of scraping the rendered template markup.
+    expect(activeSettingsPanelTag("appearance")).toBe("settings-appearance-panel");
     expect(activeSettingsPanelTag("general")).toBe("settings-general-panel");
     expect(activeSettingsPanelTag("sessiond")).toBe("settings-sessiond-panel");
     expect(activeSettingsPanelTag("packages")).toBe("settings-packages-panel");

@@ -68,12 +68,16 @@ export interface PiWebAgentConfig {
   dir?: string;
 }
 
+export type PiWebPresentationProfileConfigMap = Record<string, unknown>;
+
 export interface PiWebConfigValues {
   host?: string;
   port?: number;
   allowedHosts?: string[] | true;
   shortcuts?: PiWebShortcutConfig;
   plugins?: PiWebPluginConfigMap;
+  /** Gateway-owned, declarative presentation profiles. Individual entries are validated and isolated by the browser. */
+  presentationProfiles?: PiWebPresentationProfileConfigMap;
   /** External filesystem roots PI WEB may expose outside a workspace. */
   pathAccess?: PiWebPathAccessConfig;
   /** Workspace-relative defaults for manual file uploads. */
@@ -176,6 +180,7 @@ export interface PiWebConfigEnvOverrides {
 export interface PiWebConfigResponse {
   path: string;
   exists: boolean;
+  modifiedAt?: string;
   config: PiWebConfigValues;
   effectiveConfig: PiWebConfigValues;
   envOverrides: PiWebConfigEnvOverrides;

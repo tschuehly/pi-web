@@ -9,7 +9,7 @@ import type { WorkspaceUploadBatchState } from "../workspaceUploadState";
 // rationale. Viewer content messaging is asserted via the public
 // workspaceFileViewerStatusLabel seam instead of scraping Lit markup.
 import { findOptionalTemplateEventHandlerAfterMarker, templateClickHandlerForText, templateEventHandlerAfterMarker } from "../templateInspection.testSupport";
-import { WorkspaceFilesPanel, startDirectWorkspaceUpload, uploadBatchProgressValue, uploadBatchStatusLabel, workspaceFileViewerStatusLabel, workspaceUploadBatchesForScope, workspaceUploadReviewDefaults, workspaceUploadReviewError } from "./WorkspaceFilesPanel";
+import { WorkspaceFilesPanel, saveWorkspaceTextFile, startDirectWorkspaceUpload, uploadBatchProgressValue, uploadBatchStatusLabel, workspaceFileViewerStatusLabel, workspaceUploadBatchesForScope, workspaceUploadReviewDefaults, workspaceUploadReviewError } from "./WorkspaceFilesPanel";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -90,6 +90,33 @@ describe("workspaceFileViewerStatusLabel", () => {
       selectedFilePath: "logo.png",
       selectedFileContent: { ...binaryFileContent("logo.png", 10), mediaType: "image" },
     }))).toBeUndefined();
+  });
+});
+
+describe("workspace text-file editing", () => {
+  it("overwrites the selected file and reloads its authoritative content", async () => {
+    const writeFile = vi.fn<WorkspacePanelContext["files"]["writeFile"]>(() => Promise.resolve({
+      path: "src/main.ts",
+      size: 18,
+      modifiedAt: "2026-06-25T00:01:00.000Z",
+      created: false,
+    }));
+    const onSelectFile = vi.fn<WorkspacePanelContext["onSelectFile"]>(() => Promise.resolve());
+    const context = workspacePanelContext({ files: { ...workspacePanelContext().files, writeFile }, onSelectFile });
+
+    await saveWorkspaceTextFile(context, "src/main.ts", "export const x = 1;");
+
+    expect(writeFile).toHaveBeenCalledWith("src/main.ts", "export const x = 1;", { createDirs: false, overwrite: true });
+    expect(onSelectFile).toHaveBeenCalledWith("src/main.ts");
+  });
+
+  it("does not reload when the write fails", async () => {
+    const writeFile = vi.fn<WorkspacePanelContext["files"]["writeFile"]>(() => Promise.reject(new Error("write denied")));
+    const onSelectFile = vi.fn<WorkspacePanelContext["onSelectFile"]>();
+    const context = workspacePanelContext({ files: { ...workspacePanelContext().files, writeFile }, onSelectFile });
+
+    await expect(saveWorkspaceTextFile(context, "README.md", "changed")).rejects.toThrow("write denied");
+    expect(onSelectFile).not.toHaveBeenCalled();
   });
 });
 

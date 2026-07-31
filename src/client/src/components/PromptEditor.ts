@@ -13,7 +13,7 @@ import { machineSessionKey } from "../machineKeys";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
-import { createMobilePromptEnterMedia, readPromptEnterPreference, shouldSendPromptOnEnterShortcut, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
+import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, readPromptEnterPreference, shouldSendPromptOnEnterShortcut, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge } from "./promptEditorIcons";
 import { thinkingGauge, thinkingLevelLabel } from "../../../shared/thinkingLevels";
@@ -410,9 +410,10 @@ export class PromptEditor extends LitElement {
     }
     if (event.defaultPrevented || event.isComposing || view.composing) return false;
 
+    const primaryModifier = event.metaKey || event.ctrlKey;
     const shiftKey = shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia);
     this.explicitShiftKeyActive = false;
-    return this.handleEditorEnter(view, shiftKey);
+    return this.handleEditorEnter(view, shiftKey, primaryModifier);
   }
 
   private handleEditorKeyUp(event: KeyboardEvent): boolean {
@@ -425,7 +426,11 @@ export class PromptEditor extends LitElement {
     return false;
   }
 
-  private handleEditorEnter(view: EditorView, shiftKey: boolean): boolean {
+  private handleEditorEnter(view: EditorView, shiftKey: boolean, primaryModifier: boolean): boolean {
+    if (primaryModifier) {
+      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, primaryModifier));
+      return true;
+    }
     if (!shiftKey && this.completions.length) {
       const completion = this.completions[this.selectedIndex];
       if (completion !== undefined) this.pick(completion);
