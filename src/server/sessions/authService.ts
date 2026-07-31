@@ -121,7 +121,7 @@ export class AuthService {
   }
 
   async authProviders(mode: "login" | "logout", authType?: AuthType): Promise<AuthProvidersResponse> {
-    await this.runtime.refresh();
+    await this.runtime.refresh({ allowNetwork: false });
     const providers = mode === "logout" ? await getLogoutProviderOptions(this.runtime) : getLoginProviderOptions(this.runtime, authType);
     return { providers };
   }
@@ -184,7 +184,7 @@ export class AuthService {
   }
 
   private async requireApiKeyLoginProvider(providerId: string) {
-    await this.runtime.refresh();
+    await this.runtime.refresh({ allowNetwork: false });
     const provider = getLoginProviderOptions(this.runtime, "api_key").find((option) => option.id === providerId);
     if (provider !== undefined) return provider;
 
@@ -196,7 +196,7 @@ export class AuthService {
   }
 
   private async requireOAuthLoginProvider(providerId: string) {
-    await this.runtime.refresh();
+    await this.runtime.refresh({ allowNetwork: false });
     const provider = getLoginProviderOptions(this.runtime, "oauth").find((option) => option.id === providerId);
     if (provider === undefined) throw new Error(`OAuth provider not found: ${providerId}`);
     return provider;
