@@ -3,12 +3,12 @@ import { selectedMachineId, type GetState, type SetState } from "./types";
 import type { WorkspaceController } from "./workspaceController";
 
 export interface ProjectControllerDependencies {
-  api?: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject">;
+  api?: Pick<typeof defaultApi, "projects" | "addProject" | "relocateProject" | "closeProject">;
   onProjectsApplied?: (machineId: string) => void;
 }
 
 export class ProjectController {
-  private readonly api: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject">;
+  private readonly api: Pick<typeof defaultApi, "projects" | "addProject" | "relocateProject" | "closeProject">;
   private readonly onProjectsApplied: ((machineId: string) => void) | undefined;
 
   constructor(
@@ -48,6 +48,22 @@ export class ProjectController {
       this.setState({ projects: [...projects.filter((p) => p.id !== project.id), project], projectDialogOpen: false });
       this.onProjectsApplied?.(machineId);
       await this.workspaces.selectProject(project);
+    } catch (error) {
+      if (selectedMachineId(this.getState()) === machineId) this.setState({ error: String(error) });
+    }
+  }
+
+  async relocateProject(projectId: string, path: string) {
+    if (path.trim() === "") return;
+    const machineId = selectedMachineId(this.getState());
+    try {
+      const project = await this.api.relocateProject(projectId, path.trim(), machineId);
+      if (selectedMachineId(this.getState()) !== machineId) return;
+      const wasSelected = this.getState().selectedProject?.id === projectId;
+      this.setState({ projects: this.getState().projects.map((candidate) => candidate.id === projectId ? project : candidate) });
+      this.workspaces.forgetProject(projectId);
+      this.onProjectsApplied?.(machineId);
+      if (wasSelected) await this.workspaces.selectProject(project);
     } catch (error) {
       if (selectedMachineId(this.getState()) === machineId) this.setState({ error: String(error) });
     }

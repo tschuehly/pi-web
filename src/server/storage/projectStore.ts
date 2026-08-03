@@ -71,6 +71,19 @@ export class ProjectStore {
     return (await this.list()).find((p) => p.id === id);
   }
 
+  async updatePath(id: string, path: string): Promise<Project | undefined> {
+    const data = await this.read();
+    const index = data.projects.findIndex((project) => project.id === id);
+    if (index === -1) return undefined;
+    if (data.projects.some((project) => project.id !== id && project.path === path)) throw new Error("A project already uses this path");
+    const current = data.projects[index];
+    if (current === undefined) return undefined;
+    const updated = { ...current, path };
+    data.projects[index] = updated;
+    await this.write(data);
+    return updated;
+  }
+
   async remove(id: string): Promise<boolean> {
     const data = await this.read();
     const projects = data.projects.filter((p) => p.id !== id);

@@ -1,11 +1,31 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Project, WorkspaceActivity } from "../api";
 import { ProjectList } from "./ProjectList";
 
 afterEach(() => {
   document.body.replaceChildren();
+});
+
+describe("project actions", () => {
+  it("offers to change a moved project's location", async () => {
+    const movedProject = project("project-a");
+    const list = await mountProjectList([movedProject], new Set());
+    const onRelocate = vi.fn();
+    list.onRelocate = onRelocate;
+    await list.updateComplete;
+
+    const menuToggle = list.shadowRoot?.querySelector<HTMLButtonElement>(".action-menu-toggle");
+    menuToggle?.click();
+    await list.updateComplete;
+    const relocate = [...(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".action-menu-panel button") ?? [])]
+      .find((button) => button.textContent.trim() === "Change location…");
+
+    expect(relocate).toBeDefined();
+    relocate?.click();
+    expect(onRelocate).toHaveBeenCalledWith(movedProject);
+  });
 });
 
 describe("project unread indicator", () => {

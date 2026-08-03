@@ -65,6 +65,15 @@ function registerLocalProjectRoutes(app: FastifyInstance, projects: ProjectServi
     }
   });
 
+  app.patch<{ Params: { projectId: string }; Body: { path: string } }>(`${prefix}/projects/:projectId`, async (request, reply) => {
+    try {
+      return await projects.relocate(request.params.projectId, request.body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return reply.code(message === "Project not found" ? 404 : 400).send({ error: message });
+    }
+  });
+
   app.delete<{ Params: { projectId: string } }>(`${prefix}/projects/:projectId`, async (request, reply) => {
     try {
       await projects.close(request.params.projectId);

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PiWebConfigValues, TerminalCommandRun, Workspace } from "../../../shared/apiTypes";
-import { configApi, filesApi, machinesApi, piPackagesApi, piWebApi, pluginsApi, SessionTreeForkUnavailableError, sessionsApi, terminalsApi, workspacesApi } from "./clients";
+import { configApi, filesApi, machinesApi, piPackagesApi, piWebApi, pluginsApi, projectsApi, SessionTreeForkUnavailableError, sessionsApi, terminalsApi, workspacesApi } from "./clients";
 
 const workspace: Workspace = {
   id: "w/1",
@@ -90,6 +90,19 @@ describe("machine-scoped runtime API", () => {
     expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/runtime");
     expect(fetchCall(fetchMock, 1)[0]).toBe("https://pi.example.test/api/machines/remote%20a/runtime?refresh=1");
     expect(fetchCall(fetchMock, 1)[1]?.cache).toBe("no-store");
+  });
+});
+
+describe("project API", () => {
+  it("relinks a project through its machine-scoped route", async () => {
+    const relocated = { id: "p /1", name: "Example", path: "/new/location", createdAt: "now" };
+    const fetchMock = stubJsonFetch(relocated);
+
+    await expect(projectsApi.relocateProject(relocated.id, relocated.path, "remote a")).resolves.toEqual(relocated);
+
+    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/projects/p%20%2F1");
+    expect(fetchCall(fetchMock, 0)[1]?.method).toBe("PATCH");
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 0)[1]))).toEqual({ path: "/new/location" });
   });
 });
 

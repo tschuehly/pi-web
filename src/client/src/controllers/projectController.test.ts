@@ -39,6 +39,7 @@ describe("ProjectController", () => {
         api: {
           projects: vi.fn().mockResolvedValue([currentProject]),
           addProject: vi.fn(),
+          relocateProject: vi.fn(),
           closeProject: vi.fn(),
         },
         onProjectsApplied,
@@ -73,6 +74,7 @@ describe("ProjectController", () => {
         api: {
           projects: vi.fn(),
           addProject: vi.fn().mockResolvedValue(addedProject),
+          relocateProject: vi.fn(),
           closeProject: vi.fn(),
         },
         onProjectsApplied,
@@ -84,6 +86,40 @@ describe("ProjectController", () => {
     expect(events).toEqual(["applied", "select"]);
     expect(onProjectsApplied).toHaveBeenCalledOnce();
     expect(selectProject).toHaveBeenCalledOnce();
+  });
+
+  it("relinks the selected project and reloads it from the new location", async () => {
+    const original = project("moved", "/old");
+    const relocated = { ...original, path: "/new" };
+    let state: AppState = {
+      ...initialAppState(),
+      projects: [original],
+      selectedProject: original,
+      workspacesByProjectId: { [original.id]: [workspace(original.id, original.path)] },
+    };
+    const forgetProject = vi.fn();
+    const selectProject = vi.fn().mockResolvedValue(undefined);
+    const relocateProject = vi.fn().mockResolvedValue(relocated);
+    const controller = new ProjectController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      { selectProject, forgetProject, clearSelection: vi.fn() },
+      {
+        api: {
+          projects: vi.fn(),
+          addProject: vi.fn(),
+          relocateProject,
+          closeProject: vi.fn(),
+        },
+      },
+    );
+
+    await controller.relocateProject(original.id, " /new ");
+
+    expect(relocateProject).toHaveBeenCalledWith(original.id, "/new", "local");
+    expect(state.projects).toEqual([relocated]);
+    expect(forgetProject).toHaveBeenCalledWith(original.id);
+    expect(selectProject).toHaveBeenCalledWith(relocated);
   });
 
   it("notifies after closing a project without changing the existing clear-selection flow", async () => {
@@ -121,6 +157,7 @@ describe("ProjectController", () => {
         api: {
           projects: vi.fn(),
           addProject: vi.fn(),
+          relocateProject: vi.fn(),
           closeProject: vi.fn().mockResolvedValue(undefined),
         },
         onProjectsApplied,

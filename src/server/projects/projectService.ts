@@ -19,6 +19,17 @@ export class ProjectService {
     return this.store.add(input.name === undefined ? { path: resolved } : { name: input.name, path: resolved });
   }
 
+  async relocate(id: string, input: { path: string }): Promise<Project> {
+    await this.requireProject(id);
+    const requestedPath = expandUserPath(input.path);
+    const resolved = await realpath(requestedPath);
+    const s = await stat(resolved);
+    if (!s.isDirectory()) throw new Error("Project path must be a directory");
+    const project = await this.store.updatePath(id, resolved);
+    if (project === undefined) throw new Error("Project not found");
+    return project;
+  }
+
   async close(id: string): Promise<void> {
     if (!(await this.store.remove(id))) throw new Error("Project not found");
   }

@@ -18,6 +18,7 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
   @property({ type: Boolean, reflect: true }) collapsible = false;
   @property({ type: Boolean, reflect: true }) collapsed = false;
   @property({ attribute: false }) onSelect?: (project: Project) => void;
+  @property({ attribute: false }) onRelocate?: (project: Project) => void;
   @property({ attribute: false }) onClose?: (project: Project) => void;
   @property({ attribute: false }) onToggleCollapsed?: () => void;
   @property({ attribute: false }) onFocusPreviousSection?: () => void | Promise<void>;
@@ -72,6 +73,7 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
                   <button class="action-menu-toggle" title="Project actions" aria-label=${`Actions for ${project.name}`} @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleMenu(project.id, event.currentTarget); }}>⋯</button>
                   ${this.openMenuProjectId === project.id ? html`
                     <div class="action-menu-panel" style=${this.menuStyle}>
+                      <button title="Point this project to a folder that moved" @click=${() => { this.relocate(project); }}>Change location…</button>
                       <button title="Close project" @click=${() => { this.close(project); }}>Close</button>
                     </div>
                   ` : null}
@@ -113,6 +115,11 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
     }
     this.menuStyle = actionMenuPanelStyle(target, { constrainTo: "viewport" });
     this.openMenuProjectId = projectId;
+  }
+
+  private relocate(project: Project) {
+    this.openMenuProjectId = undefined;
+    this.onRelocate?.(project);
   }
 
   private close(project: Project) {

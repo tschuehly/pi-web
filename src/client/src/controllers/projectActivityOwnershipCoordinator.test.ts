@@ -623,6 +623,7 @@ describe("ProjectActivityOwnershipCoordinator", () => {
           api: {
             projects: vi.fn().mockResolvedValue([candidate]),
             addProject: vi.fn(),
+            relocateProject: vi.fn(),
             closeProject: vi.fn(),
           },
           onProjectsApplied: (machineId) => { ownershipTasks.push(coordinator.handleProjectsApplied(machineId)); },

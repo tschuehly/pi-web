@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Project, Workspace } from "./types.js";
@@ -29,6 +29,29 @@ describe("buildApp project routes", () => {
 
     const emptyListResponse = await appTestContext.app.inject({ method: "GET", url: "/api/projects" });
     expect(emptyListResponse.json<Project[]>()).toEqual([]);
+  });
+
+  it("relinks a project after its folder moves while preserving project identity", async () => {
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "Example", path: appTestContext.projectDir, create: true },
+    });
+    const original = addResponse.json<Project>();
+    const movedPath = join(appTestContext.tempDir, "moved-project");
+    await rename(appTestContext.projectDir, movedPath);
+
+    const relocateResponse = await appTestContext.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${original.id}`,
+      payload: { path: movedPath },
+    });
+
+    expect(relocateResponse.statusCode).toBe(200);
+    const relocated = relocateResponse.json<Project>();
+    expect(relocated).toEqual({ ...original, path: movedPath });
+    const listResponse = await appTestContext.app.inject({ method: "GET", url: "/api/projects" });
+    expect(listResponse.json<Project[]>()).toEqual([relocated]);
   });
 
   it("returns stable errors for invalid project requests", async () => {

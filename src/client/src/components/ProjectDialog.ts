@@ -1,12 +1,13 @@
 import { LitElement, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
-import { api, type FileSuggestion } from "../api";
+import { api, type FileSuggestion, type Project } from "../api";
 import { css } from "lit";
 
 @customElement("project-dialog")
 export class ProjectDialog extends LitElement {
   @property({ attribute: false }) onSubmit?: (path: string, create: boolean) => void;
   @property({ attribute: false }) onCancel?: () => void;
+  @property({ attribute: false }) project?: Project;
   @property() machineId = "local";
   @state() private path = "";
   @state() private createMissing = true;
@@ -19,6 +20,10 @@ export class ProjectDialog extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    if (this.project !== undefined) {
+      this.path = this.project.path;
+      this.createMissing = false;
+    }
     void this.loadSuggestions();
   }
 
@@ -53,7 +58,7 @@ export class ProjectDialog extends LitElement {
 
   private submit() {
     if (this.path.trim() === "") return;
-    this.onSubmit?.(this.path, this.createMissing);
+    this.onSubmit?.(this.path, this.project === undefined && this.createMissing);
   }
 
   private onPathInput(event: InputEvent) {
@@ -92,7 +97,7 @@ export class ProjectDialog extends LitElement {
       <div class="backdrop" @click=${() => this.onCancel?.()}>
         <section @click=${(event: Event) => { event.stopPropagation(); }}>
           <header>
-            <strong>Add project</strong>
+            <strong>${this.project === undefined ? "Add project" : "Change project location"}</strong>
             <button @click=${() => { this.onCancel?.(); }} aria-label="Close">×</button>
           </header>
           <div class="body">
@@ -100,6 +105,7 @@ export class ProjectDialog extends LitElement {
               Project folder
               <input .value=${this.path} @input=${(event: InputEvent) => { this.onPathInput(event); }} @keydown=${(event: KeyboardEvent) => { this.onKeyDown(event); }} placeholder="/path/to/project or ~/code/project" autofocus />
             </label>
+            ${this.project === undefined ? null : html`<p class="hint relocation-hint">Choose the folder after moving it. PI WEB will update its location; it will not move files.</p>`}
             <div class="suggestions">
               ${this.loading ? html`<div class="hint">Loading folders…</div>` : null}
               ${this.suggestions.map((suggestion, index) => html`
@@ -107,16 +113,18 @@ export class ProjectDialog extends LitElement {
                   ${suggestion.path}
                 </button>
               `)}
-              ${!this.loading && this.suggestions.length === 0 ? html`<div class="hint">No matching folders. Enter a new path to create it.</div>` : null}
+              ${!this.loading && this.suggestions.length === 0 ? html`<div class="hint">${this.project === undefined ? "No matching folders. Enter a new path to create it." : "No matching folders. Enter the moved folder’s path."}</div>` : null}
             </div>
-            <label class="check">
-              <input type="checkbox" .checked=${this.createMissing} @change=${(event: InputEvent) => { this.onCreateMissingChange(event); }} />
-              Create the folder if it does not exist
-            </label>
+            ${this.project === undefined ? html`
+              <label class="check">
+                <input type="checkbox" .checked=${this.createMissing} @change=${(event: InputEvent) => { this.onCreateMissingChange(event); }} />
+                Create the folder if it does not exist
+              </label>
+            ` : null}
           </div>
           <footer>
             <button @click=${() => { this.onCancel?.(); }}>Cancel</button>
-            <button class="primary" ?disabled=${this.path.trim() === ""} @click=${() => { this.submit(); }}>Add project</button>
+            <button class="primary" ?disabled=${this.path.trim() === ""} @click=${() => { this.submit(); }}>${this.project === undefined ? "Add project" : "Update location"}</button>
           </footer>
         </section>
       </div>
@@ -137,6 +145,7 @@ export class ProjectDialog extends LitElement {
     .suggestions button { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; border-bottom: 1px solid var(--pi-border); border-radius: 0; background: transparent; color: var(--pi-text); padding: 8px 10px; text-align: left; font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .suggestions button.selected, .suggestions button:hover { background: var(--pi-selection-bg); }
     .hint { padding: 12px; color: var(--pi-muted); }
+    .relocation-hint { margin: 0; padding: 0; }
     button { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; }
     header button { border: 0; background: transparent; color: var(--pi-muted); font-size: 22px; padding: 0 8px; }
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-border); }
