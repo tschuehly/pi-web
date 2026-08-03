@@ -51,6 +51,7 @@ export class AppNavigationPanel extends LitElement {
   @property({ attribute: false }) onToggleWorkspaces?: () => void;
   @property({ attribute: false }) onToggleSessions?: () => void;
   @property({ attribute: false }) onSelectProject?: (project: Project) => void | Promise<void>;
+  @property({ attribute: false }) onAddProject?: () => void | Promise<void>;
   @property({ attribute: false }) onRelocateProject?: (project: Project) => void | Promise<void>;
   @property({ attribute: false }) onCloseProject?: (project: Project) => void | Promise<void>;
   @property({ attribute: false }) onSelectWorkspace?: (workspace: Workspace) => void | Promise<void>;
@@ -141,6 +142,7 @@ export class AppNavigationPanel extends LitElement {
         .collapsed=${this.projectsCollapsed}
         .onToggleCollapsed=${() => { this.onToggleProjects?.(); }}
         .onSelect=${(project: Project) => this.onSelectProject?.(project)}
+        .onAdd=${() => this.onAddProject?.()}
         .onRelocate=${(project: Project) => this.onRelocateProject?.(project)}
         .onClose=${(project: Project) => this.onCloseProject?.(project)}
         .onFocusPreviousSection=${() => { this.focusPreviousFrom("projects"); }}

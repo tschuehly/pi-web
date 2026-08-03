@@ -9,6 +9,19 @@ afterEach(() => {
 });
 
 describe("project actions", () => {
+  it("adds projects from the Projects heading", async () => {
+    const list = await mountProjectList([], new Set());
+    const onAdd = vi.fn();
+    list.onAdd = onAdd;
+    await list.updateComplete;
+
+    const addButton = list.shadowRoot?.querySelector<HTMLButtonElement>(".add-project");
+    expect(addButton?.getAttribute("aria-label")).toBe("Add project");
+    addButton?.click();
+
+    expect(onAdd).toHaveBeenCalledOnce();
+  });
+
   it("offers to change a moved project's location", async () => {
     const movedProject = project("project-a");
     const list = await mountProjectList([movedProject], new Set());

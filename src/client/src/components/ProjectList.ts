@@ -1,4 +1,4 @@
-import { LitElement, html, type PropertyValues } from "lit";
+import { LitElement, css, html, svg, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { Project, Workspace, WorkspaceActivity } from "../api";
 import { projectActivityIndicator } from "../workspaceActivity";
@@ -18,6 +18,7 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
   @property({ type: Boolean, reflect: true }) collapsible = false;
   @property({ type: Boolean, reflect: true }) collapsed = false;
   @property({ attribute: false }) onSelect?: (project: Project) => void;
+  @property({ attribute: false }) onAdd?: () => void | Promise<void>;
   @property({ attribute: false }) onRelocate?: (project: Project) => void;
   @property({ attribute: false }) onClose?: (project: Project) => void;
   @property({ attribute: false }) onToggleCollapsed?: () => void;
@@ -54,7 +55,12 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
   override render() {
     return html`
       <section>
-        <h2>${this.renderHeading()}</h2>
+        <h2>
+          ${this.renderHeading()}
+          <button class="add-project" title="Add project" aria-label="Add project" @click=${() => { void this.onAdd?.(); }}>
+            ${folderPlusIcon()}
+          </button>
+        </h2>
         ${this.collapsed ? null : html`
           <div class="list-body">
             ${this.projects.map((project) => html`
@@ -127,5 +133,22 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
     if (confirm(`Close ${project.name}?\n\nThis only removes it from PI WEB; it will not change the project folder.`)) this.onClose?.(project);
   }
 
-  static override styles = listStyles;
+  static override styles = [
+    listStyles,
+    css`
+      .add-project { flex: 0 0 auto; display: grid; place-items: center; width: var(--pi-control-min-size); min-height: var(--pi-control-min-size); padding: 0; background: transparent; color: var(--pi-muted); }
+      .add-project:hover { color: var(--pi-text); background: var(--pi-surface-hover); }
+      .add-project svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    `,
+  ];
+}
+
+function folderPlusIcon() {
+  return svg`
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 7.5h6l2 2h10v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path>
+      <path d="M3 7.5V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2.5"></path>
+      <path d="M12 12.5v5M9.5 15h5"></path>
+    </svg>
+  `;
 }

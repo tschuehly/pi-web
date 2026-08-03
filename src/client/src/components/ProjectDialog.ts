@@ -10,7 +10,7 @@ export class ProjectDialog extends LitElement {
   @property({ attribute: false }) project?: Project;
   @property() machineId = "local";
   @state() private path = "";
-  @state() private createMissing = true;
+  @state() private createMissing = false;
   @state() private suggestions: FileSuggestion[] = [];
   @state() private selected = 0;
   @state() private loading = false;
@@ -22,7 +22,6 @@ export class ProjectDialog extends LitElement {
     super.connectedCallback();
     if (this.project !== undefined) {
       this.path = this.project.path;
-      this.createMissing = false;
     }
     void this.loadSuggestions();
   }
@@ -113,7 +112,7 @@ export class ProjectDialog extends LitElement {
                   ${suggestion.path}
                 </button>
               `)}
-              ${!this.loading && this.suggestions.length === 0 ? html`<div class="hint">${this.project === undefined ? "No matching folders. Enter a new path to create it." : "No matching folders. Enter the moved folder’s path."}</div>` : null}
+              ${!this.loading && this.suggestions.length === 0 ? html`<div class="hint">${this.project === undefined ? "No matching folders. Enter a new path and enable folder creation if needed." : "No matching folders. Enter the moved folder’s path."}</div>` : null}
             </div>
             ${this.project === undefined ? html`
               <label class="check">

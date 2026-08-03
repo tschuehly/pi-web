@@ -53,12 +53,6 @@ export function createCoreActions(): PluginAction[] {
       run: (context) => context.removeSelectedMachine(),
     },
     {
-      id: "project.add",
-      title: "Add Project",
-      group: "Project",
-      run: (context) => context.addProject(),
-    },
-    {
       id: "auth.login",
       title: "Configure Provider Authentication",
       description: "Run /login without tying authentication to a session",

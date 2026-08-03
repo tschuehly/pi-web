@@ -24,6 +24,7 @@ import { readStoredPiWebDensity } from "../density";
 import { applyPresentationProfile, builtInPresentationProfile, inspectPresentationProfiles, presentationProfileChanged, readStoredPresentationProfile, resolvePresentationProfile, writeStoredPresentationProfile, type PresentationProfileDefinition, type ResolvedPresentationProfile } from "../presentationProfiles";
 import { selectedMachineId } from "../controllers/types";
 import { machineSessionKey } from "../machineKeys";
+import { nativeDirectoryPicker } from "../nativeHost";
 import { resolveParentSessionLocation, type ParentSessionLocation } from "../parentSessionLocation";
 import { sessionCleanupRequestKey } from "../sessionCleanupUi";
 import { selectedNotificationView } from "../sessionNotifications";
@@ -1288,6 +1289,7 @@ export class PiWebApp extends LitElement {
         .onToggleWorkspaces=${() => { this.navigationSections.toggle("workspaces"); }}
         .onToggleSessions=${() => { this.navigationSections.toggle("sessions"); }}
         .onSelectProject=${(project: Project) => this.selectNavigationItem("projects", "workspaces", () => this.workspaces.selectProject(project))}
+        .onAddProject=${() => this.addProject()}
         .onRelocateProject=${(project: Project) => { this.relocatingProject = project; }}
         .onCloseProject=${(project: Project) => this.projects.closeProject(project.id)}
         .onSelectWorkspace=${(workspace: Workspace) => this.selectNavigationItem("workspaces", "sessions", () => this.workspaces.selectWorkspace(workspace))}
@@ -1462,7 +1464,7 @@ export class PiWebApp extends LitElement {
       return this.state.projects.length === 0
         ? {
             title: "No projects yet",
-            body: "Use Actions → Add Project to add a folder. Workspace tools will appear here after you choose a workspace.",
+            body: "Use the folder-plus button beside Projects to add a folder. Workspace tools will appear here after you choose a workspace.",
           }
         : {
             title: "Select a project",
@@ -1739,6 +1741,21 @@ export class PiWebApp extends LitElement {
     };
   }
 
+  private async addProject(): Promise<void> {
+    const picker = nativeDirectoryPicker(selectedMachineId(this.state));
+    if (picker === undefined) {
+      this.setState({ projectDialogOpen: true });
+      return;
+    }
+
+    try {
+      const path = await picker.pickDirectory();
+      if (path !== null) await this.projects.addProject(path, false);
+    } catch (error) {
+      this.setState({ error: `Failed to choose project folder: ${errorMessage(error)}` });
+    }
+  }
+
   private createPluginRuntimeContext(): PluginRuntimeContext {
     const createContext = (origin: string): PluginRuntimeContext => installPluginRuntimeScope({
       state: this.state,
@@ -1749,7 +1766,7 @@ export class PiWebApp extends LitElement {
       },
       openActionPalette: () => { this.setState({ actionPaletteOpen: true }); },
       focusPrompt: () => { void this.focusChatComposer(); },
-      addProject: () => { this.setState({ projectDialogOpen: true }); },
+      addProject: () => this.addProject(),
       addMachine: () => { this.openMachineDialog(); },
       refreshSelectedMachine: async () => {
         await Promise.all([this.machines.refreshMachineHealth(), this.machines.refreshMachineRuntime()]);
