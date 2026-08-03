@@ -375,11 +375,29 @@ describe("PluginRegistry", () => {
     expect(registry.getThemes().map((theme) => ({ id: theme.id, colorScheme: theme.colorScheme }))).toEqual([
       { id: "themes:pi-web-dark", colorScheme: "dark" },
       { id: "themes:pi-web-light", colorScheme: "light" },
+      { id: "themes:github-light", colorScheme: "light" },
+      { id: "themes:github-dark", colorScheme: "dark" },
       { id: "themes:classic", colorScheme: "dark" },
     ]);
     expect(registry.getThemePairs().map((pair) => ({ id: pair.id, light: pair.light, dark: pair.dark }))).toEqual([
       { id: "themes:pi-web", light: "themes:pi-web-light", dark: "themes:pi-web-dark" },
+      { id: "themes:github", light: "themes:github-light", dark: "themes:github-dark" },
     ]);
+
+    const githubLight = registry.getThemes().find((theme) => theme.id === "themes:github-light");
+    const githubDark = registry.getThemes().find((theme) => theme.id === "themes:github-dark");
+    expect(githubLight?.tokens).toMatchObject({
+      "--pi-bg": "#f6f8fa",
+      "--pi-surface": "#ffffff",
+      "--pi-text": "#1f2328",
+      "--pi-accent": "#0969da",
+    });
+    expect(githubDark?.tokens).toMatchObject({
+      "--pi-bg": "#0d1117",
+      "--pi-surface": "#151b23",
+      "--pi-text": "#f0f6fc",
+      "--pi-accent": "#4493f8",
+    });
   });
 
   it("collects theme contributions in contribution order", () => {
