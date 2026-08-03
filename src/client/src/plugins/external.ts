@@ -1,10 +1,11 @@
 import { machineScopedPluginId } from "../../../shared/machinePluginIds";
 import { resolveAppUrl, type AppUrlContext } from "../appUrl";
-import type { PiWebPlugin, PiWebPluginRegistration } from "./types";
+import type { PiWebPlugin, PiWebPluginRegistration, PluginService } from "./types";
 
 export interface PluginManifestEntry {
   id: string;
   module: string;
+  service?: string;
   machineSpecific: boolean;
 }
 
@@ -33,6 +34,7 @@ export async function loadExternalPlugins(manifestUrl = "pi-web-plugins/manifest
       registrations.push({
         id: options.machineId === undefined ? entry.id : machineScopedPluginId(options.machineId, entry.id),
         plugin,
+        ...(entry.service === undefined ? {} : { service: createPluginService(resolvePluginModuleUrl(entry.service, resolvedManifestUrl)) }),
         machineSpecific: entry.machineSpecific,
         ...(options.machineId === undefined ? {} : { machineId: options.machineId, sourcePluginId: entry.id }),
       });
@@ -52,6 +54,26 @@ async function importPluginModule(moduleUrl: string): Promise<unknown> {
   return import(/* @vite-ignore */ moduleUrl);
 }
 
+function createPluginService(serviceUrl: string): PluginService {
+  return {
+    async request(operation: string, input?: unknown): Promise<unknown> {
+      if (operation.trim() === "") throw new Error("Plugin service operation must not be empty.");
+      const response = await fetch(serviceUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ operation, ...(input === undefined ? {} : { input }) }),
+      });
+      const body: unknown = await response.json().catch(() => undefined);
+      if (!response.ok) throw new Error(serviceErrorMessage(body, response.status));
+      return body;
+    },
+  };
+}
+
+function serviceErrorMessage(body: unknown, status: number): string {
+  return isRecord(body) && typeof body["error"] === "string" ? body["error"] : `Plugin service request failed (${String(status)}).`;
+}
+
 async function fetchPluginManifest(manifestUrl: string): Promise<PluginManifest | undefined> {
   const response = await fetch(manifestUrl, { cache: "no-store" });
   if (response.status === 404) return undefined;
@@ -64,7 +86,9 @@ function parseManifest(value: unknown): PluginManifest {
   return {
     plugins: value["plugins"].map((entry) => {
       if (!isRecord(entry) || typeof entry["id"] !== "string" || entry["id"] === "" || typeof entry["module"] !== "string" || entry["module"] === "") throw new Error("Invalid plugin manifest entry");
-      return { id: entry["id"], module: entry["module"], machineSpecific: parseMachineSpecific(entry["machineSpecific"]) };
+      const service = entry["service"];
+      if (service !== undefined && (typeof service !== "string" || service === "")) throw new Error("Invalid plugin manifest entry");
+      return { id: entry["id"], module: entry["module"], ...(service === undefined ? {} : { service }), machineSpecific: parseMachineSpecific(entry["machineSpecific"]) };
     }),
   };
 }

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { loadPiWebConfig, piWebDataDir, type PiWebConfig } from "../config.js";
 import type { PiWebPluginInfo, PiWebPluginsResponse, PiWebPluginScope } from "../shared/apiTypes.js";
@@ -16,9 +16,20 @@ export interface PiWebPluginManifest {
 export interface PiWebPluginManifestEntry {
   id: string;
   module: string;
+  service?: string;
   source: string;
   scope: PiWebPluginScope;
   machineSpecific: boolean;
+}
+
+export interface PiWebPluginServiceRequest {
+  operation: string;
+  input?: unknown;
+}
+
+interface PiWebPluginServiceModule {
+  apiVersion: 1;
+  handle(request: PiWebPluginServiceRequest): unknown;
 }
 
 export interface ConfiguredPiPackage {
@@ -36,6 +47,7 @@ interface PluginRecord {
   id: string;
   root: string;
   entryFile: string;
+  serviceFile?: string;
   version: string;
   source: string;
   scope: PiWebPluginScope;
@@ -64,6 +76,7 @@ interface PiWebPackageConfig {
 interface PiWebPluginEntry {
   id: string;
   module: string;
+  service?: string;
   machineSpecific: boolean;
 }
 
@@ -114,10 +127,21 @@ export class PiWebPluginService {
   }
 
   async manifest(): Promise<PiWebPluginManifest> {
+    const config = await this.configProvider();
     return {
-      plugins: (await this.plugins()).plugins
-        .filter((plugin) => plugin.enabled)
-        .map((plugin) => ({ id: plugin.id, module: plugin.module, source: plugin.source, scope: plugin.scope, machineSpecific: plugin.machineSpecific })),
+      plugins: (await this.discoverPlugins())
+        .filter((plugin) => config.plugins?.[plugin.id]?.enabled !== false)
+        .map((plugin) => {
+          const info = this.pluginInfo(plugin, config);
+          return {
+            id: info.id,
+            module: info.module,
+            ...(plugin.serviceFile === undefined ? {} : { service: `/api/pi-web-plugins/${encodeURIComponent(plugin.id)}/service` }),
+            source: info.source,
+            scope: info.scope,
+            machineSpecific: info.machineSpecific,
+          };
+        }),
     };
   }
 
@@ -127,9 +151,21 @@ export class PiWebPluginService {
     return { plugins: plugins.map((plugin) => this.pluginInfo(plugin, config)) };
   }
 
+  async invoke(pluginId: string, request: PiWebPluginServiceRequest): Promise<unknown> {
+    if (!isPiWebPluginId(pluginId)) throw new PiWebPluginServiceUnavailableError();
+    if (!isServiceRequest(request)) throw new PiWebPluginServiceRequestError("Plugin service request must contain a non-empty operation.");
+    const plugin = await this.findEnabledPlugin(pluginId);
+    if (plugin?.serviceFile === undefined) throw new PiWebPluginServiceUnavailableError();
+
+    const servicePath = join(plugin.root, plugin.serviceFile);
+    const loaded: unknown = await import(`${pathToFileURL(servicePath).href}?v=${encodeURIComponent(plugin.version)}`);
+    const service = parseServiceModule(loaded, pluginId);
+    return await service.handle(structuredClone(request));
+  }
+
   async readAsset(pluginId: string, assetPath: string): Promise<{ content: Buffer; contentType: string } | undefined> {
     if (!isPiWebPluginId(pluginId)) return undefined;
-    const plugin = await this.findPlugin(pluginId);
+    const plugin = await this.findEnabledPlugin(pluginId);
     if (plugin === undefined) return undefined;
 
     const resolved = resolve(plugin.root, assetPath);
@@ -175,6 +211,11 @@ export class PiWebPluginService {
     const records = new Map<string, PluginRecord>();
     for (const plugin of await this.discoverPiPackagePlugins(packageProvider)) addUnique(records, plugin);
     return records.get(pluginId);
+  }
+
+  private async findEnabledPlugin(pluginId: string): Promise<PluginRecord | undefined> {
+    const [plugin, config] = await Promise.all([this.findPlugin(pluginId), this.configProvider()]);
+    return plugin !== undefined && config.plugins?.[pluginId]?.enabled !== false ? plugin : undefined;
   }
 
   private async currentPackageProvider(): Promise<PiPackageProvider | undefined> {
@@ -298,7 +339,21 @@ async function discoverPluginEntries(root: string, config: PiWebPackageConfig): 
     const entryPath = join(root, entry.module);
     const entryStat = await stat(entryPath).catch(() => undefined);
     if (entryStat?.isFile() !== true) throw new Error(`PI WEB plugin module not found for ${entry.id}: ${entry.module}`);
-    plugins.push({ id: entry.id, root, entryFile: entry.module, version: String(Math.floor(entryStat.mtimeMs)), machineSpecific: entry.machineSpecific });
+    let serviceVersion = 0;
+    if (entry.service !== undefined) {
+      if (!isSafeRelativePath(entry.service)) throw new Error(`Unsafe PI WEB plugin service path for ${entry.id}: ${entry.service}`);
+      const serviceStat = await stat(join(root, entry.service)).catch(() => undefined);
+      if (serviceStat?.isFile() !== true) throw new Error(`PI WEB plugin service module not found for ${entry.id}: ${entry.service}`);
+      serviceVersion = serviceStat.mtimeMs;
+    }
+    plugins.push({
+      id: entry.id,
+      root,
+      entryFile: entry.module,
+      ...(entry.service === undefined ? {} : { serviceFile: entry.service }),
+      version: String(Math.floor(Math.max(entryStat.mtimeMs, serviceVersion))),
+      machineSpecific: entry.machineSpecific,
+    });
   }
   return plugins;
 }
@@ -327,9 +382,11 @@ function parsePluginEntries(piWeb: Record<string, unknown>, packagePath: string)
     if (!isRecord(entry)) throw new Error(`PI WEB plugin entry ${String(index + 1)} must be an object in ${packagePath}`);
     const id = entry["id"];
     const module = entry["module"];
+    const service = entry["service"];
     if (typeof id !== "string" || !isPiWebPluginId(id)) throw new Error(`Invalid PI WEB plugin id in ${packagePath}: ${String(id)}`);
     if (typeof module !== "string" || module === "") throw new Error(`Invalid PI WEB plugin module for ${id} in ${packagePath}`);
-    return { id, module, machineSpecific: parseMachineSpecific(entry["machineSpecific"], packagePath, id) };
+    if (service !== undefined && (typeof service !== "string" || service === "")) throw new Error(`Invalid PI WEB plugin service module for ${id} in ${packagePath}`);
+    return { id, module, ...(service === undefined ? {} : { service }), machineSpecific: parseMachineSpecific(entry["machineSpecific"], packagePath, id) };
   });
 }
 
@@ -379,6 +436,35 @@ function contentTypeFor(path: string): string {
   if (lowerPath.endsWith(".html")) return "text/html; charset=utf-8";
   if (lowerPath.endsWith(".svg")) return "image/svg+xml";
   return "application/octet-stream";
+}
+
+function isServiceRequest(value: unknown): value is PiWebPluginServiceRequest {
+  return isRecord(value) && typeof value["operation"] === "string" && value["operation"].trim() !== "";
+}
+
+function parseServiceModule(value: unknown, pluginId: string): PiWebPluginServiceModule {
+  if (!isRecord(value) || !isRecord(value["default"])) throw new Error(`PI WEB plugin service ${pluginId} did not export an object.`);
+  const service = value["default"];
+  if (!isPluginServiceModule(service)) throw new Error(`PI WEB plugin service ${pluginId} has an unsupported interface.`);
+  return service;
+}
+
+function isPluginServiceModule(value: Record<string, unknown>): value is Record<string, unknown> & PiWebPluginServiceModule {
+  return value["apiVersion"] === 1 && typeof value["handle"] === "function";
+}
+
+export class PiWebPluginServiceUnavailableError extends Error {
+  constructor() {
+    super("Plugin service is unavailable.");
+    this.name = "PiWebPluginServiceUnavailableError";
+  }
+}
+
+export class PiWebPluginServiceRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PiWebPluginServiceRequestError";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

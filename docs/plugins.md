@@ -350,7 +350,7 @@ A package can expose one or more PI WEB plugin modules. There is exactly one sup
   "private": true,
   "piWeb": {
     "plugins": [
-      { "id": "review", "module": "dist/review.js" },
+      { "id": "review", "module": "dist/review.js", "service": "dist/review-service.js" },
       { "id": "dashboard", "module": "dist/dashboard.js", "machineSpecific": true }
     ]
   }
@@ -363,6 +363,8 @@ Rules:
 - Each entry must have an explicit `id` and `module`.
 - `id` must match `^[a-z][a-z0-9.-]*$`.
 - `module` must be a safe relative path inside the plugin package root.
+- `service` is optional. It must be a safe relative path to a trusted Node.js module inside the
+  package root. PI WEB loads it in the web/API process, never in the session daemon.
 - `machineSpecific` is optional and must be a boolean; omit it for the default portable gateway behavior.
 - Duplicate plugin ids are not auto-renamed; later duplicates are skipped.
 - Legacy shortcuts such as `piWeb.plugin`, string entries in `piWeb.plugins`, `piWeb.id` fallback ids, and no-`package.json` fallbacks are not supported.
@@ -421,6 +423,9 @@ interface PluginActivationContext {
   pluginId: string;
   html: typeof import("lit").html;
   svg: typeof import("lit").svg;
+  service?: {
+    request(operation: string, input?: unknown): Promise<unknown>;
+  };
 }
 
 interface PluginActivationResult {
@@ -437,6 +442,8 @@ export default {
   activate: ({ pluginId, html }) => ({
     contributions: {
       actions: [],
+      navigationEntries: [],
+      primaryViews: [],
       workspacePanels: [],
       workspaceLabels: [],
     },
@@ -445,6 +452,33 @@ export default {
 ```
 
 `activate()` is called once when the UI loads the plugin. Keep it cheap: define contributions there, but move expensive or async work into actions, custom elements, or explicit user interactions.
+
+### Optional web-process service
+
+A plugin that must reach durable state without workspace files, terminals, or private routes may
+add `service` metadata. The service module default-exports this interface:
+
+```js
+export default {
+  apiVersion: 1,
+  async handle({ operation, input }) {
+    return { operation, input };
+  },
+};
+```
+
+PI WEB exposes the browser-side `context.service.request(operation, input)` only for that plugin.
+The host transports opaque JSON and returns the service's JSON result; operation names, request
+validation, state semantics, revisions, and receipts remain plugin-owned. Disabled plugins and
+plugins without a declared service return no service capability. Service paths are package-root
+confined, and malformed requests are rejected before module invocation.
+
+Service modules are fully trusted Node.js code with the web/API process's user permissions. They can
+read files, access the network, and affect PI WEB availability, so install them only from sources
+you trust. They are reconstructed when the web/API process restarts and must persist durable state
+outside process memory. They do not run in or extend the long-lived session daemon. Service
+capabilities currently come from the gateway plugin manifest; federated remote-plugin service
+transport is not yet public.
 
 The plugin id comes from `package.json`, not from the JavaScript module. Contribution ids are local to the plugin and PI WEB qualifies them internally as:
 
@@ -461,6 +495,9 @@ For example, plugin `info` with action `workspace.show-path` becomes `info:works
 ```ts
 interface PluginContributions {
   actions?: PluginAction[];
+  navigationEntries?: NavigationEntryContribution[];
+  primaryViews?: PrimaryViewContribution[];
+  sessionStartGuards?: SessionStartGuardContribution[];
   workspacePanels?: WorkspacePanelContribution[];
   workspaceLabels?: WorkspaceLabelContribution[];
 }
@@ -571,6 +608,115 @@ Use `focusPrompt()` on `PluginRuntimeContext` to move focus to the prompt editor
 - Future PI WEB versions may allow users to override or disable action shortcuts by action id, so plugins should treat `shortcut` as a default rather than a guaranteed final binding.
 - Choose shortcuts carefully to avoid conflicts. There is no user-facing shortcut override or conflict resolver yet.
 - Local text input, terminal input, list navigation, and dialog keys such as Enter, Escape, and arrow keys do not need to be plugin actions unless they are app-level commands.
+
+### Session-start guards
+
+A plugin that owns a required session-home workflow may disable PI WEB's ordinary new-session button
+and direct users to its own attended launch surface:
+
+```js
+sessionStartGuards: [{
+  id: "required-session-home",
+  disabledReason: () => "Start new sessions from a Workstream.",
+}],
+```
+
+Returning `undefined` leaves ordinary starts enabled. A guard changes presentation only; the plugin's
+launch surface must still persist and enforce its own association protocol. It grants no authority or
+recovery guarantee.
+
+### Navigation entries and primary views
+
+Navigation entries open plugin-owned views in PI WEB's main content region. Use them for substantial
+experiences that need more room than a workspace panel. PI WEB retains its navigation, connection
+context, settings and action access, workspace tools, responsive layout, and the built-in
+Conversation destination around the contributed view.
+
+Contribute the view and a separate entry that points to its local id:
+
+```js
+const viewState = { status: "loading", items: [] };
+
+primaryViews: [
+  {
+    id: "overview.view",
+    title: "Overview",
+    ariaLabel: "Project overview",
+    render: (context) => html`
+      <my-overview .context=${context} .state=${viewState}></my-overview>
+    `,
+  },
+],
+navigationEntries: [
+  {
+    id: "overview.navigation",
+    title: "Overview",
+    primaryView: "overview.view",
+    order: 100,
+    badge: () => viewState.status === "ready" ? viewState.items.length : undefined,
+  },
+],
+```
+
+The host qualifies both ids with the plugin id. `primaryView` is a local primary-view id owned by
+the same plugin. Entries whose target view is unavailable or hidden are omitted. Entries appear in
+the desktop navigation, responsive navigation, mobile main tabs, and the action palette. The
+selected qualified view is preserved in the URL and per-machine browser session state.
+
+```ts
+interface PrimaryViewContribution {
+  id: string;
+  title: string;
+  ariaLabel?: string;
+  order?: number;
+  visible?: (context: PrimaryViewContext) => boolean;
+  render: (context: PrimaryViewContext) => TemplateResult;
+}
+
+interface NavigationEntryContribution {
+  id: string;
+  title: string;
+  primaryView: string;
+  icon?: TemplateResult;
+  order?: number;
+  visible?: (context: PrimaryViewContext) => boolean;
+  badge?: (context: PrimaryViewContext) => string | number | TemplateResult | undefined;
+}
+
+interface PrimaryViewContext {
+  machine: PluginMachine;
+  project?: { id: string; name: string; path: string };
+  workspace?: Workspace;
+  session?: { id: string; archived?: boolean };
+  connection: { status: "connected" | "reconnecting"; message?: string };
+  host: { requestRender(): void };
+  sessions?: {
+    currentLocation(): { machineId: string; projectId?: string; workspaceId: string } | undefined;
+    start(options: { startupToken: string; initialPrompt: string }): Promise<{ id: string; location: PluginSessionLocation }>;
+    open(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
+    prompt(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }, message: string): Promise<void>;
+    findByStartupToken(startupToken: string, location?: Partial<PluginSessionLocation>): Promise<{ id: string; location: PluginSessionLocation } | undefined>;
+  };
+}
+```
+
+The optional attended-session helper lets a primary view start, reopen, or prompt an ordinary PI WEB
+session without calling private routes. `startupToken` is an opaque plugin-provided idempotency and
+reconciliation label; PI WEB remembers successful associations in browser-local state so a view can
+reconcile a pending launch after replacement. These helpers grant no background execution,
+workspace isolation, managed authority, or recovery guarantee. A plugin remains responsible for
+persisting its own association protocol before requesting a launch.
+
+Keep contribution callbacks synchronous and cheap. A custom element may own async loading and call
+`context.host.requestRender()` when plugin-owned state changes. It must render explicit loading,
+empty, error, and reconnect states. PI WEB isolates a synchronous render failure and offers a route
+back to Conversation. The primary-view surface receives focus only when the user opens it; routine
+plugin rerenders do not steal focus.
+
+Use the optional `icon` in responsive tabs and navigation. Use `currentColor` in SVG icons so themes
+remain authoritative. Primary views must remain usable at 320 px, with keyboard-only input, and
+under coarse-pointer target floors. They cannot hide or replace PI WEB-owned authentication,
+connectivity, settings, recovery, workspace, or Conversation controls.
 
 ### Workspace panels
 

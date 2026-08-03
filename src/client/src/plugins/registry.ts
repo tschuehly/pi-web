@@ -1,5 +1,5 @@
 import { html, svg } from "lit";
-import type { PiWebPluginRegistration, PluginAction, PluginRuntimeContext, QualifiedContributionId, QualifiedPluginAction, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspaceLabelContribution, QualifiedWorkspacePanelContribution, ThemeContribution, ThemePairContribution, WorkspaceLabelContext, WorkspaceLabelContribution, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelContribution } from "./types";
+import type { NavigationEntryContribution, PiWebPluginRegistration, PluginAction, PluginRuntimeContext, PrimaryViewContext, PrimaryViewContribution, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPluginAction, QualifiedPrimaryViewContribution, QualifiedSessionStartGuardContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspaceLabelContribution, QualifiedWorkspacePanelContribution, SessionStartGuardContribution, ThemeContribution, ThemePairContribution, WorkspaceLabelContext, WorkspaceLabelContribution, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelContribution } from "./types";
 
 const idPattern = /^[a-z][a-z0-9.-]*$/u;
 const localIdPattern = /^[a-z][a-z0-9.-]*$/u;
@@ -16,6 +16,9 @@ type RegisteredPluginAction = Omit<PluginAction, "id"> & {
 
 export class PluginRegistry {
   private readonly actions: RegisteredPluginAction[] = [];
+  private readonly navigationEntries: QualifiedNavigationEntryContribution[] = [];
+  private readonly primaryViews: QualifiedPrimaryViewContribution[] = [];
+  private readonly sessionStartGuards: QualifiedSessionStartGuardContribution[] = [];
   private readonly workspacePanels: QualifiedWorkspacePanelContribution[] = [];
   private readonly workspaceLabels: QualifiedWorkspaceLabelContribution[] = [];
   private readonly themes: QualifiedThemeContribution[] = [];
@@ -36,9 +39,12 @@ export class PluginRegistry {
 
     const apiVersion: unknown = plugin.apiVersion;
     if (apiVersion !== 1) throw new Error(`Unsupported plugin API version for ${id}: ${String(apiVersion)}`);
-    const result = plugin.activate({ apiVersion: 1, pluginId: id, html, svg });
+    const result = plugin.activate({ apiVersion: 1, pluginId: id, html, svg, ...(registration.service === undefined ? {} : { service: registration.service }) });
     const contributions = result.contributions;
     for (const action of contributions.actions ?? []) this.actions.push(this.qualifyAction(id, action, registration.machineId, registration.sourcePluginId));
+    for (const view of contributions.primaryViews ?? []) this.primaryViews.push(this.qualifyPrimaryView(id, view, registration.machineId, registration.sourcePluginId));
+    for (const entry of contributions.navigationEntries ?? []) this.navigationEntries.push(this.qualifyNavigationEntry(id, entry, registration.machineId, registration.sourcePluginId));
+    for (const guard of contributions.sessionStartGuards ?? []) this.sessionStartGuards.push(this.qualifySessionStartGuard(id, guard, registration.machineId, registration.sourcePluginId));
     for (const panel of contributions.workspacePanels ?? []) this.workspacePanels.push(this.qualifyWorkspacePanel(id, panel, registration.machineId, registration.sourcePluginId));
     for (const contribution of contributions.workspaceLabels ?? []) this.workspaceLabels.push(this.qualifyWorkspaceLabelContribution(id, contribution, registration.machineId, registration.sourcePluginId));
     if (registration.machineId === undefined) {
@@ -78,6 +84,32 @@ export class PluginRegistry {
     });
   }
 
+  getNavigationEntries(context: PrimaryViewContext): QualifiedNavigationEntryContribution[] {
+    const visibleViews = new Set(this.getPrimaryViews(context).map((view) => view.id));
+    return this.navigationEntries
+      .filter((entry) => visibleViews.has(entry.primaryView) && contributionVisible(entry, context))
+      .sort((left, right) => (left.order ?? 1000) - (right.order ?? 1000) || left.title.localeCompare(right.title));
+  }
+
+  getPrimaryViews(context: PrimaryViewContext): QualifiedPrimaryViewContribution[] {
+    return this.primaryViews
+      .filter((view) => contributionVisible(view, context))
+      .sort((left, right) => (left.order ?? 1000) - (right.order ?? 1000) || left.title.localeCompare(right.title));
+  }
+
+  getPrimaryView(id: QualifiedContributionId, context: PrimaryViewContext): QualifiedPrimaryViewContribution | undefined {
+    return this.getPrimaryViews(context).find((view) => view.id === id);
+  }
+
+  getSessionStartDisabledReason(context: PrimaryViewContext): string | undefined {
+    for (const guard of this.sessionStartGuards) {
+      if (!this.isContributionActive(guard.pluginId, guard.machineId, context.machine.id, guard.sourcePluginId)) continue;
+      const reason = guard.disabledReason(context);
+      if (reason !== undefined && reason.trim() !== "") return reason;
+    }
+    return undefined;
+  }
+
   getWorkspacePanels(): QualifiedWorkspacePanelContribution[] {
     return [...this.workspacePanels].sort((left, right) => (left.order ?? 1000) - (right.order ?? 1000) || left.title.localeCompare(right.title));
   }
@@ -102,6 +134,39 @@ export class PluginRegistry {
   private qualifyAction(pluginId: string, action: PluginAction, machineId: string | undefined, sourcePluginId: string | undefined): RegisteredPluginAction {
     const id = this.qualify(pluginId, action.id);
     return { ...action, id, pluginId, localId: action.id, ...(machineId === undefined ? {} : { machineId }), ...(sourcePluginId === undefined ? {} : { sourcePluginId }) };
+  }
+
+  private qualifyPrimaryView(pluginId: string, view: PrimaryViewContribution, machineId: string | undefined, sourcePluginId: string | undefined): QualifiedPrimaryViewContribution {
+    const id = this.qualify(pluginId, view.id);
+    const visible = view.visible;
+    return {
+      ...view,
+      id,
+      pluginId,
+      localId: view.id,
+      ...(machineId === undefined ? {} : { machineId }),
+      visible: (context) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) && (visible?.(context) ?? true),
+    };
+  }
+
+  private qualifyNavigationEntry(pluginId: string, entry: NavigationEntryContribution, machineId: string | undefined, sourcePluginId: string | undefined): QualifiedNavigationEntryContribution {
+    const id = this.qualify(pluginId, entry.id);
+    const visible = entry.visible;
+    const badge = entry.badge;
+    return {
+      ...entry,
+      id,
+      pluginId,
+      localId: entry.id,
+      primaryView: this.qualifyReference(pluginId, entry.primaryView),
+      ...(machineId === undefined ? {} : { machineId }),
+      visible: (context) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) && (visible?.(context) ?? true),
+      ...(badge === undefined ? {} : { badge: (context: PrimaryViewContext) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) ? badge(context) : undefined }),
+    };
+  }
+
+  private qualifySessionStartGuard(pluginId: string, guard: SessionStartGuardContribution, machineId: string | undefined, sourcePluginId: string | undefined): QualifiedSessionStartGuardContribution {
+    return { ...guard, id: this.qualify(pluginId, guard.id), pluginId, localId: guard.id, ...(machineId === undefined ? {} : { machineId }), ...(sourcePluginId === undefined ? {} : { sourcePluginId }) };
   }
 
   private qualifyWorkspacePanel(pluginId: string, panel: WorkspacePanelContribution, machineId: string | undefined, sourcePluginId: string | undefined): QualifiedWorkspacePanelContribution {
@@ -243,4 +308,13 @@ function formatUnknownValue(value: unknown): string {
 
 function runtimeContextMachineId(context: PluginRuntimeContext): string {
   return context.state.selectedMachine?.id ?? "local";
+}
+
+function contributionVisible(contribution: { id: string; visible?: (context: PrimaryViewContext) => boolean }, context: PrimaryViewContext): boolean {
+  try {
+    return contribution.visible?.(context) !== false;
+  } catch (error) {
+    console.warn(`Failed to evaluate contribution visibility ${contribution.id}`, error);
+    return false;
+  }
 }

@@ -6,7 +6,7 @@ import { SessionList } from "./SessionList";
 
 afterEach(() => {
   document.body.replaceChildren();
-  localStorage.clear();
+  window.localStorage.clear();
 });
 
 describe("SessionList bulk selection toolbar", () => {

@@ -17,7 +17,7 @@ import { registerGitRoutes } from "./gitRoutes.js";
 import { registerTerminalProxyRoutes } from "./terminalProxyRoutes.js";
 import { registerWorkspaceDeletionRoutes } from "./workspaces/workspaceDeletionRoutes.js";
 import { createFilePiWebConfigService, registerConfigRoutes, registerLocalMachineConfigRoutes, type PiWebConfigService } from "./configRoutes.js";
-import { PiWebPluginService } from "./piWebPluginService.js";
+import { PiWebPluginService, PiWebPluginServiceRequestError, PiWebPluginServiceUnavailableError, type PiWebPluginServiceRequest } from "./piWebPluginService.js";
 import { createActiveProfilePiPackageService, type PiPackageService } from "./piPackageService.js";
 import { registerPiPackageRoutes } from "./piPackageRoutes.js";
 import { createPiWebStatusCache, type PiWebStatusCache } from "./piWebStatusCache.js";
@@ -40,7 +40,7 @@ export interface AppDependencies {
   machines?: MachineService;
   sessionDaemon?: SessionProxyDaemon;
   agentProfileProvider?: ActiveAgentProfileProvider;
-  piWebPlugins?: Pick<PiWebPluginService, "manifest" | "plugins" | "readAsset">;
+  piWebPlugins?: Pick<PiWebPluginService, "manifest" | "plugins" | "readAsset" | "invoke">;
   piPackages?: PiPackageService;
   piWebStatusCache?: PiWebStatusCache;
   config?: PiWebConfigService;
@@ -184,6 +184,17 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
       if (asset === undefined) return reply.code(404).send({ error: "Plugin asset not found" });
       return reply.type(asset.contentType).send(asset.content);
     });
+  });
+
+  app.post<{ Params: { pluginId: string }; Body: PiWebPluginServiceRequest }>("/api/pi-web-plugins/:pluginId/service", async (request, reply) => {
+    try {
+      return await piWebPlugins.invoke(request.params.pluginId, request.body);
+    } catch (error) {
+      if (error instanceof PiWebPluginServiceUnavailableError) return reply.code(404).send({ error: error.message });
+      if (error instanceof PiWebPluginServiceRequestError) return reply.code(400).send({ error: error.message });
+      request.log.error({ err: error, pluginId: request.params.pluginId }, "PI WEB plugin service request failed");
+      return reply.code(500).send({ error: "Plugin service request failed." });
+    }
   });
 
   app.get<{ Querystring: { refresh?: string } }>("/api/pi-web/status", async (request) => request.query.refresh === "1"

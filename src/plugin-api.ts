@@ -40,11 +40,18 @@ export interface PiWebPlugin {
   activate: (context: PluginActivationContext) => PluginActivationResult;
 }
 
+export interface PluginService {
+  /** Send an opaque JSON request to this plugin's optional web-process service module. */
+  request(operation: string, input?: unknown): Promise<unknown>;
+}
+
 export interface PluginActivationContext {
   apiVersion: 1;
   pluginId: PluginId;
   html: HtmlTemplateTag;
   svg: SvgTemplateTag;
+  /** Present only when this plugin declares a trusted web-process service module. */
+  service?: PluginService;
 }
 
 export interface PluginActivationResult {
@@ -53,6 +60,9 @@ export interface PluginActivationResult {
 
 export interface PluginContributions {
   actions?: PluginAction[];
+  navigationEntries?: NavigationEntryContribution[];
+  primaryViews?: PrimaryViewContribution[];
+  sessionStartGuards?: SessionStartGuardContribution[];
   workspacePanels?: WorkspacePanelContribution[];
   workspaceLabels?: WorkspaceLabelContribution[];
   themes?: ThemeContribution[];
@@ -154,6 +164,61 @@ export type WorkspacePanelFiles = WorkspaceFiles;
 
 export interface WorkspaceHost {
   requestRender(): void;
+}
+
+export interface PluginSessionLocation {
+  machineId: string;
+  projectId?: string;
+  workspaceId: string;
+}
+
+export interface PluginSessionHost {
+  currentLocation(): PluginSessionLocation | undefined;
+  start(options: { startupToken: string; initialPrompt: string }): Promise<{ id: string; location: PluginSessionLocation }>;
+  open(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
+  prompt(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }, message: string): Promise<void>;
+  findByStartupToken(startupToken: string, location?: Partial<PluginSessionLocation>): Promise<{ id: string; location: PluginSessionLocation } | undefined>;
+}
+
+export type PluginConnectionStatus = "connected" | "reconnecting";
+
+export interface PrimaryViewContext {
+  machine: PluginMachine;
+  project?: { id: string; name: string; path: string };
+  workspace?: Workspace;
+  session?: { id: string; archived?: boolean };
+  connection: {
+    status: PluginConnectionStatus;
+    message?: string;
+  };
+  host: WorkspaceHost;
+  /** Attended session launch/navigation. It grants no managed Run authority. */
+  sessions?: PluginSessionHost;
+}
+
+export interface SessionStartGuardContribution {
+  id: LocalContributionId;
+  /** Return a reason to disable PI WEB's ordinary new-session control. */
+  disabledReason: (context: PrimaryViewContext) => string | undefined;
+}
+
+export interface PrimaryViewContribution {
+  id: LocalContributionId;
+  title: string;
+  ariaLabel?: string;
+  order?: number;
+  visible?: (context: PrimaryViewContext) => boolean;
+  render: (context: PrimaryViewContext) => TemplateResult;
+}
+
+export interface NavigationEntryContribution {
+  id: LocalContributionId;
+  title: string;
+  primaryView: LocalContributionId;
+  icon?: TemplateResult;
+  order?: number;
+  visible?: (context: PrimaryViewContext) => boolean;
+  badge?: (context: PrimaryViewContext) => string | number | TemplateResult | undefined;
 }
 
 export type WorkspacePanelHost = WorkspaceHost;

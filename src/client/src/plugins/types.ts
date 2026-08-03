@@ -1,6 +1,6 @@
 import type { TemplateResult } from "lit";
 import type { AppAction } from "../actions";
-import type { DeleteWorkspaceFileResponse, FileContentResponse, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitStatusResponse, Machine, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, RunTerminalCommandInput, TerminalCommandRun, TerminalCommandRunFilter, TerminalCommandRunHandle, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse, Workspace } from "../api";
+import type { DeleteWorkspaceFileResponse, FileContentResponse, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitStatusResponse, Machine, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, Project, RunTerminalCommandInput, SessionInfo, TerminalCommandRun, TerminalCommandRunFilter, TerminalCommandRunHandle, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse, Workspace } from "../api";
 import type { AppState } from "../appState";
 import type { SettingsSection } from "../settingsRoute";
 import type { LocalContributionId, PluginId, QualifiedContributionId } from "./ids";
@@ -12,6 +12,7 @@ export type SvgTemplateTag = (strings: TemplateStringsArray, ...values: unknown[
 export interface PiWebPluginRegistration {
   id: PluginId;
   plugin: PiWebPlugin;
+  service?: PluginService;
   machineId?: string;
   sourcePluginId?: PluginId;
   machineSpecific?: boolean;
@@ -23,11 +24,16 @@ export interface PiWebPlugin {
   activate: (context: PluginActivationContext) => PluginActivationResult;
 }
 
+export interface PluginService {
+  request(operation: string, input?: unknown): Promise<unknown>;
+}
+
 export interface PluginActivationContext {
   apiVersion: 1;
   pluginId: PluginId;
   html: HtmlTemplateTag;
   svg: SvgTemplateTag;
+  service?: PluginService;
 }
 
 export interface PluginActivationResult {
@@ -36,6 +42,9 @@ export interface PluginActivationResult {
 
 export interface PluginContributions {
   actions?: PluginAction[];
+  navigationEntries?: NavigationEntryContribution[];
+  primaryViews?: PrimaryViewContribution[];
+  sessionStartGuards?: SessionStartGuardContribution[];
   workspacePanels?: WorkspacePanelContribution[];
   workspaceLabels?: WorkspaceLabelContribution[];
   themes?: ThemeContribution[];
@@ -58,6 +67,84 @@ export interface WorkspaceFiles {
 
 export interface WorkspaceHost {
   requestRender(): void;
+}
+
+export interface PluginSessionLocation {
+  machineId: string;
+  projectId?: string;
+  workspaceId: string;
+}
+
+export interface PluginSessionHost {
+  currentLocation(): PluginSessionLocation | undefined;
+  start(options: { startupToken: string; initialPrompt: string }): Promise<{ id: string; location: PluginSessionLocation }>;
+  open(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
+  prompt(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }, message: string): Promise<void>;
+  findByStartupToken(startupToken: string, location?: Partial<PluginSessionLocation>): Promise<{ id: string; location: PluginSessionLocation } | undefined>;
+}
+
+export type PluginConnectionStatus = "connected" | "reconnecting";
+
+export interface PrimaryViewContext {
+  machine: PluginMachine;
+  project?: Pick<Project, "id" | "name" | "path">;
+  workspace?: Workspace;
+  session?: Pick<SessionInfo, "id" | "archived">;
+  connection: {
+    status: PluginConnectionStatus;
+    message?: string;
+  };
+  host: WorkspaceHost;
+  sessions?: PluginSessionHost;
+}
+
+export interface SessionStartGuardContribution {
+  id: LocalContributionId;
+  disabledReason: (context: PrimaryViewContext) => string | undefined;
+}
+
+export interface QualifiedSessionStartGuardContribution extends SessionStartGuardContribution {
+  id: QualifiedContributionId;
+  pluginId: PluginId;
+  localId: LocalContributionId;
+  machineId?: string;
+  sourcePluginId?: PluginId;
+}
+
+export type PrimaryViewIcon = TemplateResult;
+
+export interface PrimaryViewContribution {
+  id: LocalContributionId;
+  title: string;
+  ariaLabel?: string;
+  order?: number;
+  visible?: (context: PrimaryViewContext) => boolean;
+  render: (context: PrimaryViewContext) => TemplateResult;
+}
+
+export interface QualifiedPrimaryViewContribution extends PrimaryViewContribution {
+  id: QualifiedContributionId;
+  pluginId: PluginId;
+  localId: LocalContributionId;
+  machineId?: string;
+}
+
+export interface NavigationEntryContribution {
+  id: LocalContributionId;
+  title: string;
+  primaryView: LocalContributionId;
+  icon?: PrimaryViewIcon;
+  order?: number;
+  visible?: (context: PrimaryViewContext) => boolean;
+  badge?: (context: PrimaryViewContext) => string | number | TemplateResult | undefined;
+}
+
+export interface QualifiedNavigationEntryContribution extends Omit<NavigationEntryContribution, "primaryView"> {
+  id: QualifiedContributionId;
+  pluginId: PluginId;
+  localId: LocalContributionId;
+  machineId?: string;
+  primaryView: QualifiedContributionId;
 }
 
 export interface WorkspaceContext {

@@ -34,6 +34,7 @@ const tree: SessionTreeSnapshot = {
 
 beforeEach(() => {
   Object.defineProperty(globalThis, "localStorage", { value: new MemoryStorage(), configurable: true });
+  Object.defineProperty(globalThis, "sessionStorage", { value: new MemoryStorage(), configurable: true });
 });
 
 describe("SessionController session tree navigation", () => {

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFile, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -126,7 +126,7 @@ describe("Docker command assets", () => {
     expect(await readFile(join(installDir, "Dockerfile"), "utf8")).toContain("COPY pi-web-docker /usr/local/bin/pi-web-docker");
     expect(await readFile(join(installDir, "pi-web-docker"), "utf8")).toContain("Usage: pi-web-docker");
     const env = await readFile(join(installDir, ".env"), "utf8");
-    expect(env).toContain(`PI_WEB_DOCKER_INSTALL_DIR=${installDir}`);
+    expect(env).toContain(`PI_WEB_DOCKER_INSTALL_DIR=${await realpath(installDir)}`);
     expect(env).toContain("PI_WEB_DOCKER_REF=test-assets");
   });
 
@@ -529,7 +529,7 @@ async function createDevRepoFixture(): Promise<string> {
   await chmod(join(devRoot, "docker", "internal", "dev", "compose"), 0o755);
   await copyFile(join(repoRoot, "docker", "internal", "host-profile.sh"), join(devRoot, "docker", "internal", "host-profile.sh"));
   await writeFile(join(devRoot, "docker", "compose.dev.yml"), "name: pi-web-dev\nservices: {}\n", "utf8");
-  return devRoot;
+  return realpath(devRoot);
 }
 
 async function createDevRepoFixtureWithFakeHelper(logPath: string): Promise<string> {
@@ -541,7 +541,7 @@ set -eu
 printf 'allow=%s args=%s\n' "\${PI_WEB_DOCKER_ALLOW_ROOT:-}" "$*" >>${shellSingleQuote(logPath)}
 `, "utf8");
   await chmod(helperPath, 0o755);
-  return devRoot;
+  return realpath(devRoot);
 }
 
 async function createCleanDevGitRepoWithFakeHelper(logPath: string): Promise<string> {

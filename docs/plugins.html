@@ -14,7 +14,7 @@
     <meta property="og:title" content="PI WEB plugins — extend the Pi web UI" />
     <meta
       property="og:description"
-      content="Customize PI WEB with trusted browser-side plugins for actions, workspace panels, labels, terminals, and files."
+      content="Customize PI WEB with trusted browser-side plugins for actions, navigation, primary views, workspace panels, labels, terminals, and files."
     />
     <meta property="og:url" content="https://pi-web.dev/plugins" />
     <meta property="og:image" content="https://pi-web.dev/assets/pi-web-banner.png" />
@@ -23,7 +23,7 @@
     <meta name="twitter:title" content="PI WEB plugins — extend the Pi web UI" />
     <meta
       name="twitter:description"
-      content="Customize PI WEB with trusted browser-side plugins for actions, workspace panels, labels, terminals, and files."
+      content="Customize PI WEB with trusted browser-side plugins for actions, navigation, primary views, workspace panels, labels, terminals, and files."
     />
     <meta name="twitter:image" content="https://pi-web.dev/assets/pi-web-banner.png" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
@@ -79,8 +79,8 @@
           <p class="eyebrow"><span class="pulse"></span> Plugin development</p>
           <h1>Customize PI WEB with UI plugins.</h1>
           <p>
-            Plugins are trusted browser-side ES modules. They can add actions, workspace panels, and compact workspace
-            labels to the PI WEB UI.
+            Plugins are trusted browser-side ES modules. They can add actions, navigation entries, primary views,
+            workspace panels, and compact workspace labels to the PI WEB UI.
           </p>
         </div>
       </section>
@@ -110,13 +110,15 @@
               <p>Plugins can add small, focused UI extensions to PI WEB:</p>
               <ul>
                 <li><strong>Action palette commands</strong> for custom workflows.</li>
+                <li><strong>Navigation entries and primary views</strong> for first-class main-region experiences.</li>
                 <li><strong>Workspace tools and panels</strong> next to Files, Git, and Terminal.</li>
                 <li><strong>Workspace labels</strong> in the workspace list, header, and status bar.</li>
                 <li><strong>Static assets</strong> served from the plugin folder.</li>
                 <li><strong>Browser-side integrations</strong> using documented PI WEB plugin context helpers.</li>
               </ul>
               <p>
-                Plugins cannot extend the session daemon or add server-side hooks. They run in the browser UI only.
+                Plugins run in the browser UI. A plugin may also declare an optional trusted JSON service module that
+                runs in the web/API process; it cannot extend the long-lived session daemon.
                 Use documented context helpers for the stable API surface. Daring plugins can reach into PI WEB
                 internals, but those private surfaces are experimental: they may graduate into stable helpers, change
                 shape, or disappear.
@@ -542,7 +544,10 @@ button {
                 Install only plugins you trust.
               </p>
               <p>
-                Plugins do not run inside the session daemon and do not provide server-side hooks.
+                A plugin may declare an optional Node.js service module for typed JSON requests from its own browser
+                module. That module runs with the web/API process's user permissions and can access files and the
+                network, so treat it as fully trusted server-side code. It does not run inside or extend the session
+                daemon. See the <a href="plugins.md">plugin API reference</a> for the service metadata and interface.
               </p>
             </section>
           </div>

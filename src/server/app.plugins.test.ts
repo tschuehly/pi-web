@@ -33,6 +33,17 @@ describe("buildApp PI WEB plugin routes", () => {
     expect(missingResponse.statusCode).toBe(404);
   });
 
+  it("transports typed JSON requests to a plugin web-process service", async () => {
+    const response = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/pi-web-plugins/fake/service",
+      payload: { operation: "watch", input: { afterSequence: 4 } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ received: { operation: "watch", input: { afterSequence: 4 } } });
+  });
+
   it("proxies remote machine plugin lists for settings", async () => {
     const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
     const remote = addResponse.json<{ id: string }>();

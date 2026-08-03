@@ -16,7 +16,7 @@ import {
 afterEach(() => {
   vi.useRealTimers();
   document.body.replaceChildren();
-  localStorage.clear();
+  window.localStorage.clear();
 });
 
 describe("extension-dialog-card confirm dialog", () => {

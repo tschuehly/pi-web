@@ -183,18 +183,29 @@ export class SessionController {
     this.deselectSession({ forgetRememberedSelection: true });
   }
 
-  async startSession() {
+  async startSession(): Promise<void> {
+    try {
+      await this.startSessionWithOptions();
+    } catch {
+      // The ordinary navigation flow renders the controller's failed pending row.
+    }
+  }
+
+  async startSessionWithOptions(options: { startupToken?: string; initialPrompt?: string } = {}): Promise<SessionInfo | undefined> {
     const workspace = this.getState().selectedWorkspace;
-    if (!workspace) return;
+    if (!workspace) return undefined;
     const machineId = selectedMachineId(this.getState());
-    const pending = this.createPendingSessionStart(workspace, machineId);
+    const pending = this.createPendingSessionStart(workspace, machineId, options.startupToken);
     this.pendingSessionStarts.set(pending.tempId, pending);
     this.insertAndSelectPendingSession(pending.session);
+    if (options.initialPrompt !== undefined) await this.send(options.initialPrompt);
     try {
       const session = await this.api.startSession(workspace.path, machineId, pending.tempId);
       await this.resolvePendingSessionStart(pending.tempId, session);
+      return session;
     } catch (error) {
       this.failPendingSessionStart(pending.tempId, error);
+      throw error;
     }
   }
 
@@ -1099,8 +1110,8 @@ export class SessionController {
     });
   }
 
-  private createPendingSessionStart(workspace: Workspace, machineId: string): PendingSessionStart {
-    const tempId = `pending-session-${String(++this.pendingSessionStartSeq)}-${Date.now().toString(36)}`;
+  private createPendingSessionStart(workspace: Workspace, machineId: string, startupToken?: string): PendingSessionStart {
+    const tempId = startupToken ?? `pending-session-${String(++this.pendingSessionStartSeq)}-${Date.now().toString(36)}`;
     const now = new Date().toISOString();
     const session: ClientPendingStartSessionInfo = {
       id: tempId,

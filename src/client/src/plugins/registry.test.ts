@@ -7,7 +7,15 @@ import { machineScopedPluginId } from "../../../shared/machinePluginIds";
 import { corePlugin } from "./core";
 import { PluginRegistry } from "./registry";
 import { themePackPlugin } from "./themes";
-import type { PluginRuntimeContext, ThemeTokens, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "./types";
+import type { PluginActivationContext, PluginRuntimeContext, PrimaryViewContext, ThemeTokens, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "./types";
+
+function createPrimaryViewContext(machineId = "local"): PrimaryViewContext {
+  return {
+    machine: { id: machineId, name: machineId, kind: machineId === "local" ? "local" : "remote" },
+    connection: { status: "connected" },
+    host: { requestRender: vi.fn() },
+  };
+}
 
 function createContext(statePatch: Partial<AppState> = {}) {
   const calls: string[] = [];
@@ -91,6 +99,66 @@ describe("PluginRegistry", () => {
 
     expect(panel?.icon).toBeDefined();
     expect(panel?.render(createWorkspacePanelContext("local"))).toBeDefined();
+  });
+
+  it("passes the plugin-scoped service only to its activation context", async () => {
+    const registry = new PluginRegistry();
+    const request = vi.fn(() => Promise.resolve({ accepted: true }));
+    const activate = vi.fn((context: PluginActivationContext) => {
+      expect(context.apiVersion).toBe(1);
+      return { contributions: {} };
+    });
+
+    registry.register({ id: "example", service: { request }, plugin: { apiVersion: 1, name: "Example", activate } });
+
+    const context = activate.mock.calls[0]?.[0];
+    await expect(context?.service?.request("create", { title: "Example" })).resolves.toEqual({ accepted: true });
+    expect(request).toHaveBeenCalledWith("create", { title: "Example" });
+  });
+
+  it("qualifies and orders navigation entries with their visible primary views", () => {
+    const registry = new PluginRegistry();
+    registry.register({
+      id: "example",
+      plugin: {
+        apiVersion: 1,
+        name: "Example",
+        activate: () => ({
+          contributions: {
+            primaryViews: [
+              { id: "views.hidden", title: "Hidden", visible: () => false, render: () => html`<p>Hidden</p>` },
+              { id: "views.work", title: "Work", render: () => html`<p>Work</p>` },
+            ],
+            navigationEntries: [
+              { id: "nav.hidden", title: "Hidden", primaryView: "views.hidden", order: 1 },
+              { id: "nav.work", title: "Work", primaryView: "views.work", order: 2, badge: () => 3 },
+            ],
+          },
+        }),
+      },
+    });
+    const context = createPrimaryViewContext();
+
+    const entries = registry.getNavigationEntries(context);
+    const view = registry.getPrimaryView("example:views.work", context);
+
+    expect(entries.map((entry) => [entry.id, entry.primaryView])).toEqual([["example:nav.work", "example:views.work"]]);
+    expect(entries[0]?.badge?.(context)).toBe(3);
+    expect(view?.render(context)).toBeDefined();
+  });
+
+  it("returns an active plugin's ordinary session-start guard reason", () => {
+    const registry = new PluginRegistry();
+    registry.register({
+      id: "example",
+      plugin: {
+        apiVersion: 1,
+        name: "Example",
+        activate: () => ({ contributions: { sessionStartGuards: [{ id: "workstream-home", disabledReason: () => "Start from a Workstream." }] } }),
+      },
+    });
+
+    expect(registry.getSessionStartDisabledReason(createPrimaryViewContext())).toBe("Start from a Workstream.");
   });
 
   it("exposes the prompt helper to workspace panel callbacks", () => {

@@ -48,6 +48,28 @@ describe("PiWebPluginService", () => {
     expect(asset?.content.toString("utf8")).toContain("export default");
   });
 
+  it("loads an optional trusted web-process service behind the plugin id", async () => {
+    const pluginDir = join(tempDir, "plugins", "workstreams");
+    await writePlugin(pluginDir, {
+      packageJson: { piWeb: { plugins: [{ id: "workstreams", module: "pi-web-plugin.js", service: "service.js" }] } },
+      files: {
+        "pi-web-plugin.js": "export default { apiVersion: 1, name: 'Workstreams', activate: () => ({ contributions: {} }) };",
+        "service.js": "export default { apiVersion: 1, handle: ({ operation, input }) => ({ operation, input }) };",
+      },
+    });
+    const service = new PiWebPluginService({ roots: [{ path: join(tempDir, "plugins"), source: "test", scope: "local" }], packageProvider: false });
+
+    await expect(service.manifest()).resolves.toMatchObject({
+      plugins: [{ id: "workstreams", service: "/api/pi-web-plugins/workstreams/service" }],
+    });
+    await expect(service.invoke("workstreams", { operation: "list", input: { includeClosed: true } })).resolves.toEqual({
+      operation: "list",
+      input: { includeClosed: true },
+    });
+    await expect(service.invoke("workstreams", { operation: "" })).rejects.toMatchObject({ name: "PiWebPluginServiceRequestError" });
+    await expect(service.invoke("missing", { operation: "list" })).rejects.toMatchObject({ name: "PiWebPluginServiceUnavailableError" });
+  });
+
   it("preserves content types for extension-only asset names", async () => {
     const pluginDir = join(tempDir, "plugins", "extension-only");
     await writePlugin(pluginDir, {

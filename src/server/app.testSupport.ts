@@ -111,6 +111,7 @@ export function registerAppTestHooks(): void {
         manifest: () => Promise.resolve({ plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false }] }),
         plugins: () => Promise.resolve({ plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true }] }),
         readAsset: fakePiWebPluginAsset,
+        invoke: (_pluginId, request) => Promise.resolve({ received: request }),
       },
       clientDist: false,
       logger: false,

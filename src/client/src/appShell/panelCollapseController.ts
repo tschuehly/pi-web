@@ -35,18 +35,18 @@ export class PanelCollapseController implements ReactiveController {
     this.host.requestUpdate();
   }
 
-  shellClass(mainView: AppState["mainView"]): string {
+  shellClass(mainView: AppState["mainView"], primaryView = false): string {
     return [
       "shell",
-      mainViewClass(mainView),
+      mainViewClass(mainView, primaryView),
       ...(this.navigationPanelCollapsed ? ["navigation-panel-collapsed"] : []),
       ...(this.workspacePanelCollapsed ? ["workspace-panel-collapsed"] : []),
     ].join(" ");
   }
 }
 
-export function mainViewClass(mainView: AppState["mainView"]): "navigation-view" | "chat-view" | "workspace-view" {
+export function mainViewClass(mainView: AppState["mainView"], primaryView = false): "navigation-view" | "chat-view" | "primary-view" | "workspace-view" {
   if (mainView === "navigation") return "navigation-view";
   if (mainView === "chat") return "chat-view";
-  return "workspace-view";
+  return primaryView ? "primary-view" : "workspace-view";
 }

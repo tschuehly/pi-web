@@ -1,7 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, query } from "lit/decorators.js";
 import type { Machine, MachineHealth, Project, SessionActivity, SessionInfo, SessionStatus, Workspace, WorkspaceActivity } from "../../api";
-import type { WorkspaceLabelItem } from "../../plugins/types";
+import type { QualifiedContributionId, QualifiedNavigationEntryContribution, WorkspaceLabelItem } from "../../plugins/types";
 import type { NavigationSection } from "../../appShell/navigationState";
 import { NAVIGATION_SECTION_ORDER } from "../../appShell/navigationState";
 import { EMPTY_UNREAD_PRESENCE, type UnreadPresence } from "../../unreadPresence";
@@ -12,6 +12,7 @@ import "../MachineSwitcher";
 import "../ProjectList";
 import "../WorkspaceList";
 import "../SessionList";
+import "./AppPrimaryNavigation";
 
 export type NavigationFocusTarget = NavigationSection | "chat";
 
@@ -36,6 +37,10 @@ export class AppNavigationPanel extends LitElement {
   @property({ attribute: false }) workspacesByProjectId: Record<string, Workspace[]> = {};
   @property({ attribute: false }) deletingWorkspaceIds: string[] = [];
   @property({ attribute: false }) workspaceLabelItems: (workspace: Workspace) => WorkspaceLabelItem[] = () => [];
+  @property({ attribute: false }) primaryNavigationEntries: QualifiedNavigationEntryContribution[] = [];
+  @property({ attribute: false }) selectedMainView: "navigation" | "chat" | QualifiedContributionId = "chat";
+  @property({ attribute: false }) primaryNavigationBadge: (entry: QualifiedNavigationEntryContribution) => unknown = () => undefined;
+  @property({ attribute: false }) onSelectPrimaryView?: (view: "chat" | QualifiedContributionId) => void;
   @property({ attribute: false }) refreshControl: unknown;
   @property({ type: Boolean, reflect: true }) collapsible = false;
   @property({ type: Boolean, reflect: true }) compact = false;
@@ -116,6 +121,12 @@ export class AppNavigationPanel extends LitElement {
           <button title="Show Actions" aria-label="Show Actions" @click=${() => { this.onShowActions?.(); }}>Actions</button>
         </div>
       </header>
+      <app-primary-navigation
+        .entries=${this.primaryNavigationEntries}
+        .selectedView=${this.selectedMainView}
+        .badgeFor=${this.primaryNavigationBadge}
+        .onSelect=${this.onSelectPrimaryView}
+      ></app-primary-navigation>
       ${this.compact && shouldShowMachinesSection(this.machines) ? html`
         <machine-list
           .machines=${this.machines}
@@ -227,6 +238,7 @@ export class AppNavigationPanel extends LitElement {
     machine-switcher { flex: 1 1 auto; min-width: 0; }
     :host([compact]) header { display: none; }
     .header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--pi-toolbar-gap); }
+    app-primary-navigation { flex: 0 0 auto; }
     /* Expanded sections share the panel height equally, so collapsing one
        section distributes its space to every remaining section, not just the
        session list. Collapsed sections keep only their heading height. */

@@ -7,7 +7,7 @@ import { AskUserCard, type AskUserSubmitCallback } from "./AskUserCard";
 
 afterEach(() => {
   document.body.replaceChildren();
-  localStorage.clear();
+  window.localStorage.clear();
 });
 
 describe("ask-user-card live form", () => {
