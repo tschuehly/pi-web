@@ -628,9 +628,17 @@ recovery guarantee.
 ### Navigation entries and primary views
 
 Navigation entries open plugin-owned views in PI WEB's main content region. Use them for substantial
-experiences that need more room than a workspace panel. PI WEB retains its navigation, connection
-context, settings and action access, workspace tools, responsive layout, and the built-in
+experiences that need more room than a workspace panel. By default PI WEB retains its navigation,
+connection context, settings and action access, workspace tools, responsive layout, and the built-in
 Conversation destination around the contributed view.
+
+A primary view may set `layout: "dedicated"` when it needs to own the full shell, such as a
+cross-repository attention surface. PI WEB then suppresses its outer navigation, context bar, mobile
+tabs, and workspace panel. The plugin must keep connectivity and scope visible and provide an
+explicit route back to its portfolio. `layout` may be a callback when a single primary view switches
+between an ordinary portfolio and a dedicated detail shell. It composes PI WEB-owned Chat, Files,
+Git, and Terminal through `context.surfaceHost.mount()` rather than recreating those surfaces or
+reaching into PI WEB's DOM.
 
 Contribute the view and a separate entry that points to its local id:
 
@@ -667,6 +675,7 @@ selected qualified view is preserved in the URL and per-machine browser session 
 interface PrimaryViewContribution {
   id: string;
   title: string;
+  layout?: "default" | "dedicated" | ((context: PrimaryViewContext) => "default" | "dedicated");
   ariaLabel?: string;
   order?: number;
   visible?: (context: PrimaryViewContext) => boolean;
@@ -689,19 +698,33 @@ interface PrimaryViewContext {
   workspace?: Workspace;
   session?: { id: string; archived?: boolean };
   connection: { status: "connected" | "reconnecting"; message?: string };
-  host: { requestRender(): void };
+  host: { requestRender(): void; openActions?: () => void };
   sessions?: {
     currentLocation(): { machineId: string; projectId?: string; workspaceId: string } | undefined;
     start(options: { startupToken: string; initialPrompt: string }): Promise<{ id: string; location: PluginSessionLocation }>;
+    select(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
     open(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
     prompt(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }, message: string): Promise<void>;
     findByStartupToken(startupToken: string, location?: Partial<PluginSessionLocation>): Promise<{ id: string; location: PluginSessionLocation } | undefined>;
   };
+  surfaceHost?: {
+    mount(container: HTMLElement, surface: "chat" | "files" | "git" | "terminal"): void;
+    activate?(surface: "chat" | "files" | "git" | "terminal"): void;
+    registerSelectionHandler?(handler: (surface: "chat" | "files" | "git" | "terminal") => void): () => void;
+  };
 }
 ```
 
-The optional attended-session helper lets a primary view start, reopen, or prompt an ordinary PI WEB
-session without calling private routes. `startupToken` is an opaque plugin-provided idempotency and
+`host.openActions()` keeps PI WEB's host-owned action, settings, authentication, and recovery entry
+point available when a dedicated layout suppresses the ordinary shell chrome. A dedicated view can
+call `surfaceHost.activate()` before mounting Files or Git so host controllers refresh the selected
+checkout, and register a selection handler so PI WEB's standard Chat, Files, Git, and Terminal actions
+and shortcuts remain contextual to the dedicated shell. The added host methods are optional for
+compatibility with older hosts.
+
+The optional attended-session helper lets a primary view start, select, reopen, or prompt an ordinary
+PI WEB session without calling private routes. `select()` changes the selected session and checkout
+while preserving the current primary view; `open()` selects the same location and navigates to Chat. `startupToken` is an opaque plugin-provided idempotency and
 reconciliation label; PI WEB remembers successful associations in browser-local state so a view can
 reconcile a pending launch after replacement. These helpers grant no background execution,
 workspace isolation, managed authority, or recovery guarantee. A plugin remains responsible for
@@ -715,8 +738,10 @@ plugin rerenders do not steal focus.
 
 Use the optional `icon` in responsive tabs and navigation. Use `currentColor` in SVG icons so themes
 remain authoritative. Primary views must remain usable at 320 px, with keyboard-only input, and
-under coarse-pointer target floors. They cannot hide or replace PI WEB-owned authentication,
-connectivity, settings, recovery, workspace, or Conversation controls.
+under coarse-pointer target floors. Default primary views cannot hide or replace PI WEB-owned
+authentication, connectivity, settings, recovery, workspace, or Conversation controls. Dedicated
+views may replace the surrounding chrome, but not those capabilities or their authority; they must
+mount PI WEB-owned workspace and conversation surfaces through the typed host.
 
 ### Workspace panels
 

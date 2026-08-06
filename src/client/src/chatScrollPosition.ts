@@ -93,8 +93,8 @@ export class ChatScrollController {
     }, delayMs);
   }
 
-  savePosition(sessionId: string, scroller: ChatScrollViewport | undefined, anchors: ChatScrollElement[], bottomThreshold = DEFAULT_BOTTOM_SAVE_THRESHOLD): ChatScrollSaveResult {
-    if (sessionId === "" || scroller === undefined || !hasUsableScrollViewport(scroller)) return "skipped";
+  savePosition(sessionId: string, scroller: ChatScrollViewport | null | undefined, anchors: ChatScrollElement[], bottomThreshold = DEFAULT_BOTTOM_SAVE_THRESHOLD): ChatScrollSaveResult {
+    if (sessionId === "" || scroller == null || !hasUsableScrollViewport(scroller)) return "skipped";
     try {
       if (isNearScrollBottom(scroller, bottomThreshold)) {
         const position: ChatBottomScrollPosition = { mode: "bottom" };
@@ -113,15 +113,15 @@ export class ChatScrollController {
     }
   }
 
-  restorePosition(sessionId: string, scroller: ChatScrollViewport | undefined, anchors: ChatScrollElement[], options?: { fallbackToBottom?: boolean | undefined }): ChatScrollRestoreResult {
+  restorePosition(sessionId: string, scroller: ChatScrollViewport | null | undefined, anchors: ChatScrollElement[], options?: { fallbackToBottom?: boolean | undefined }): ChatScrollRestoreResult {
     const stored = this.readPosition(sessionId);
     if (stored === undefined) return this.scrollToBottom(scroller);
     return this.restoreExplicitPosition(stored, scroller, anchors, options);
   }
 
-  restoreExplicitPosition(position: ChatScrollPosition, scroller: ChatScrollViewport | undefined, anchors: ChatScrollElement[], options?: { fallbackToBottom?: boolean | undefined }): ChatScrollRestoreResult {
+  restoreExplicitPosition(position: ChatScrollPosition, scroller: ChatScrollViewport | null | undefined, anchors: ChatScrollElement[], options?: { fallbackToBottom?: boolean | undefined }): ChatScrollRestoreResult {
     if (position.mode === "bottom") return this.scrollToBottom(scroller);
-    if (scroller === undefined || !hasUsableScrollViewport(scroller)) return { status: "skipped" };
+    if (scroller == null || !hasUsableScrollViewport(scroller)) return { status: "skipped" };
     const anchor = findAnchorById(anchors, position.anchorId);
     if (anchor === undefined) {
       if (options?.fallbackToBottom === false) return { status: "missing", position };
@@ -145,8 +145,8 @@ export class ChatScrollController {
     }
   }
 
-  scrollToBottom(scroller: ChatScrollViewport | undefined): ChatScrollRestoreResult {
-    if (scroller === undefined || !hasUsableScrollViewport(scroller)) return { status: "skipped" };
+  scrollToBottom(scroller: ChatScrollViewport | null | undefined): ChatScrollRestoreResult {
+    if (scroller == null || !hasUsableScrollViewport(scroller)) return { status: "skipped" };
     scroller.scrollTop = scroller.scrollHeight;
     return { status: "bottom" };
   }

@@ -67,6 +67,7 @@ export interface WorkspaceFiles {
 
 export interface WorkspaceHost {
   requestRender(): void;
+  openActions?: () => void;
 }
 
 export interface PluginSessionLocation {
@@ -78,12 +79,20 @@ export interface PluginSessionLocation {
 export interface PluginSessionHost {
   currentLocation(): PluginSessionLocation | undefined;
   start(options: { startupToken: string; initialPrompt: string }): Promise<{ id: string; location: PluginSessionLocation }>;
+  select(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
   open(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
   prompt(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }, message: string): Promise<void>;
   findByStartupToken(startupToken: string, location?: Partial<PluginSessionLocation>): Promise<{ id: string; location: PluginSessionLocation } | undefined>;
 }
 
 export type PluginConnectionStatus = "connected" | "reconnecting";
+export type PrimaryViewSurface = "chat" | "files" | "git" | "terminal";
+
+export interface PrimaryViewSurfaceHost {
+  mount(container: HTMLElement, surface: PrimaryViewSurface): void;
+  activate?: (surface: PrimaryViewSurface) => void;
+  registerSelectionHandler?: (handler: (surface: PrimaryViewSurface) => void) => () => void;
+}
 
 export interface PrimaryViewContext {
   machine: PluginMachine;
@@ -96,6 +105,7 @@ export interface PrimaryViewContext {
   };
   host: WorkspaceHost;
   sessions?: PluginSessionHost;
+  surfaceHost?: PrimaryViewSurfaceHost;
 }
 
 export interface SessionStartGuardContribution {
@@ -116,6 +126,7 @@ export type PrimaryViewIcon = TemplateResult;
 export interface PrimaryViewContribution {
   id: LocalContributionId;
   title: string;
+  layout?: "default" | "dedicated" | ((context: PrimaryViewContext) => "default" | "dedicated");
   ariaLabel?: string;
   order?: number;
   visible?: (context: PrimaryViewContext) => boolean;

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { html } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { DeleteWorkspaceFileResponse, FileContentResponse, FileTreeResponse, MoveWorkspaceFileResponse, SessionInfo, SessionStatus, WriteWorkspaceFileResponse, Workspace } from "../api";
@@ -7,7 +8,7 @@ import { machineScopedPluginId } from "../../../shared/machinePluginIds";
 import { corePlugin } from "./core";
 import { PluginRegistry } from "./registry";
 import { themePackPlugin } from "./themes";
-import type { PluginActivationContext, PluginRuntimeContext, PrimaryViewContext, ThemeTokens, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "./types";
+import type { PluginActivationContext, PluginRuntimeContext, PrimaryViewContext, PrimaryViewSurface, ThemeTokens, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "./types";
 
 function createPrimaryViewContext(machineId = "local"): PrimaryViewContext {
   return {
@@ -127,7 +128,7 @@ describe("PluginRegistry", () => {
           contributions: {
             primaryViews: [
               { id: "views.hidden", title: "Hidden", visible: () => false, render: () => html`<p>Hidden</p>` },
-              { id: "views.work", title: "Work", render: () => html`<p>Work</p>` },
+              { id: "views.work", title: "Work", layout: "dedicated", render: () => html`<p>Work</p>` },
             ],
             navigationEntries: [
               { id: "nav.hidden", title: "Hidden", primaryView: "views.hidden", order: 1 },
@@ -144,7 +145,44 @@ describe("PluginRegistry", () => {
 
     expect(entries.map((entry) => [entry.id, entry.primaryView])).toEqual([["example:nav.work", "example:views.work"]]);
     expect(entries[0]?.badge?.(context)).toBe(3);
+    expect(view?.layout).toBe("dedicated");
     expect(view?.render(context)).toBeDefined();
+  });
+
+  it("preserves the dedicated primary-view surface host public seam", () => {
+    const registry = new PluginRegistry();
+    const mountSurface = vi.fn<(container: HTMLElement, surface: PrimaryViewSurface) => void>();
+    registry.register({
+      id: "example",
+      plugin: {
+        apiVersion: 1,
+        name: "Example",
+        activate: () => ({
+          contributions: {
+            primaryViews: [{
+              id: "views.work",
+              title: "Work",
+              layout: "dedicated",
+              render: (context) => {
+                const container = document.createElement("div");
+                context.surfaceHost?.mount(container, "chat");
+                return html`${container}`;
+              },
+            }],
+          },
+        }),
+      },
+    });
+    const context: PrimaryViewContext = {
+      ...createPrimaryViewContext(),
+      surfaceHost: { mount: mountSurface },
+    };
+
+    const view = registry.getPrimaryView("example:views.work", context);
+
+    expect(view?.layout).toBe("dedicated");
+    expect(view?.render(context)).toBeDefined();
+    expect(mountSurface).toHaveBeenCalledWith(expect.anything(), "chat");
   });
 
   it("returns an active plugin's ordinary session-start guard reason", () => {

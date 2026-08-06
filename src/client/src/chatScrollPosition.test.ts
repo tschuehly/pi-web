@@ -90,6 +90,12 @@ describe("ChatScrollController", () => {
     expect(storage.getItem(key)).toBe("old");
   });
 
+  it("skips saving after the scroll viewport has disconnected", () => {
+    const controller = new ChatScrollController(new MemoryScrollStorage(), new ManualScheduler());
+
+    expect(controller.savePosition("s1", null, [])).toBe("skipped");
+  });
+
   it("saves and restores the visible anchor nearest the viewport top", () => {
     const storage = new MemoryScrollStorage();
     const controller = new ChatScrollController(storage, new ManualScheduler());

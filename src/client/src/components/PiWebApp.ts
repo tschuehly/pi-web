@@ -1,4 +1,4 @@
-import { LitElement, html } from "lit";
+import { LitElement, css, html, render as renderTemplate } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 import { configApi, effectiveWorkspaceUploadFolder, sessionsApi, terminalsApi, workspacesApi, workspaceEffectiveUploadFolder, type AskUserSubmission, type ExtensionDialogAnswer, type Machine, type MachineHealth, type PiWebConfigValues, type PiWebShortcutConfig, type Project, type SessionCleanupExecuteResponse, type SessionCleanupPreviewResponse, type SessionCleanupRequest, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type TerminalCommandRun, type TerminalUiEvent, type Workspace } from "../api";
 import type { AppAction } from "../actions";
@@ -32,7 +32,7 @@ import { SessionUnreadController } from "../sessionUnread";
 import { deriveUnreadPresence, EMPTY_UNREAD_PRESENCE, sameUnreadPresence, type UnreadPresence } from "../unreadPresence";
 import { initialSessionWarningVisibilityState, reconcileSessionWarningVisibility, toggleSessionWarnings } from "../sessionWarningVisibility";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
-import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PrimaryViewContext, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
+import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PrimaryViewContext, PrimaryViewSurface, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
 import { corePlugin } from "../plugins/core";
 import { themePackPlugin } from "../plugins/themes";
@@ -113,6 +113,8 @@ export class PiWebApp extends LitElement {
   @query("#navigation-panel") private navigationPanelFrame?: HTMLElement;
   @query("#workspace-panel") private workspacePanelFrame?: HTMLElement;
   @query("app-primary-view") private primaryViewHost?: AppPrimaryView;
+  private primaryViewSurfaceSelectionHandler: ((surface: PrimaryViewSurface) => void) | undefined;
+  private readonly primaryViewSurfaceMounts = new Map<HTMLElement, PrimaryViewSurface>();
 
   private readonly sessionUnread = new SessionUnreadController({
     onChange: (machineId) => {
@@ -295,6 +297,7 @@ export class PiWebApp extends LitElement {
     // deduplicates acknowledgements for the observed completion order.
     this.committedChatIdentity = selectedChatIdentity(this.state);
     this.syncSelectedSessionReadState();
+    this.refreshPrimaryViewSurfaceMounts();
   }
 
   private syncSessionWarningVisibility(): void {
@@ -411,6 +414,8 @@ export class PiWebApp extends LitElement {
     this.realtime.close();
     this.closeMachineActivitySockets();
     this.git.dispose();
+    this.primaryViewSurfaceMounts.clear();
+    this.primaryViewSurfaceSelectionHandler = undefined;
     if (this.piWebStatusTimer !== undefined) window.clearInterval(this.piWebStatusTimer);
     this.piWebStatusTimer = undefined;
     this.clearScheduledPiWebStatusRefresh();
@@ -1482,6 +1487,7 @@ export class PiWebApp extends LitElement {
           rememberPluginSessionAssociation(options.startupToken, { id: session.id, location });
           return { id: session.id, location };
         },
+        select: async (location) => { await this.selectPluginSession(location); },
         open: async (location) => { await this.openPluginSession(location); },
         prompt: async (location, message) => {
           await this.openPluginSession(location);
@@ -1489,7 +1495,49 @@ export class PiWebApp extends LitElement {
         },
         findByStartupToken: (startupToken) => Promise.resolve(recallPluginSessionAssociation(startupToken)),
       },
+      surfaceHost: {
+        mount: (container, surface) => { this.mountPrimaryViewSurface(container, surface); },
+        activate: (surface) => { this.activatePrimaryViewSurface(surface); },
+        registerSelectionHandler: (handler) => {
+          this.primaryViewSurfaceSelectionHandler = handler;
+          return () => {
+            if (this.primaryViewSurfaceSelectionHandler === handler) this.primaryViewSurfaceSelectionHandler = undefined;
+          };
+        },
+      },
     };
+  }
+
+  private mountPrimaryViewSurface(container: HTMLElement, surface: PrimaryViewSurface): void {
+    const mountedSurface = this.primaryViewSurfaceMounts.get(container);
+    if (mountedSurface !== undefined && mountedSurface !== surface) {
+      throw new Error(`Primary view surface container is already mounted as ${mountedSurface}.`);
+    }
+    this.primaryViewSurfaceMounts.set(container, surface);
+    renderTemplate(this.renderPrimaryViewSurface(surface), container);
+  }
+
+  private refreshPrimaryViewSurfaceMounts(): void {
+    for (const [container, surface] of this.primaryViewSurfaceMounts) {
+      if (!container.isConnected) {
+        this.primaryViewSurfaceMounts.delete(container);
+        continue;
+      }
+      renderTemplate(this.renderPrimaryViewSurface(surface), container);
+    }
+  }
+
+  private activatePrimaryViewSurface(surface: PrimaryViewSurface): void {
+    if (surface === "files") void this.files.refreshFiles();
+    else if (surface === "git") void this.git.refreshGit();
+  }
+
+  private selectDedicatedPrimaryViewSurface(surface: PrimaryViewSurface): boolean {
+    if (this.primaryViewLayout(this.selectedPrimaryView()) !== "dedicated") return false;
+    const handler = this.primaryViewSurfaceSelectionHandler;
+    if (handler === undefined) return false;
+    handler(surface);
+    return true;
   }
 
   private currentPluginSessionLocation(): PluginSessionLocation | undefined {
@@ -1498,7 +1546,21 @@ export class PiWebApp extends LitElement {
     return { machineId: selectedMachineId(this.state), projectId: workspace.projectId, workspaceId: workspace.id };
   }
 
+  private async selectPluginSession(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void> {
+    const retainedView = this.primaryViewLayout(this.selectedPrimaryView()) === "dedicated" ? this.state.mainView : undefined;
+    await this.selectPluginSessionLocation(location);
+    if (retainedView !== undefined && this.state.mainView !== retainedView) {
+      this.setState({ mainView: retainedView });
+      this.updateUrl();
+    }
+  }
+
   private async openPluginSession(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void> {
+    await this.selectPluginSessionLocation(location);
+    await this.focusChatComposer();
+  }
+
+  private async selectPluginSessionLocation(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void> {
     if (location.machineId !== undefined && location.machineId !== selectedMachineId(this.state)) {
       const machine = this.state.machines.find((candidate) => candidate.id === location.machineId);
       if (machine === undefined) throw new Error(`Machine ${location.machineId} is unavailable.`);
@@ -1517,7 +1579,27 @@ export class PiWebApp extends LitElement {
         await this.workspaces.selectProject(project, { workspaceId: location.workspaceId, sessionId: location.sessionId });
       }
     }
-    await this.focusChatComposer();
+  }
+
+  private renderPrimaryViewSurface(surface: PrimaryViewSurface) {
+    if (surface === "chat") {
+      const session = this.state.selectedSession;
+      if (session === undefined) return html`<div class="empty">Select a Workstream session to open Chat.</div>`;
+      return this.renderSelectedChatSurface(this.state, session);
+    }
+    const workspace = this.state.selectedWorkspace;
+    if (workspace === undefined) return html`<div class="empty">Select a session checkout to open ${surfaceLabel(surface)}.</div>`;
+    const tool = primaryViewWorkspaceTool(surface);
+    return html`
+      <workspace-panel
+        .workspace=${workspace}
+        .panelContext=${this.createWorkspacePanelContext(workspace)}
+        .tool=${tool}
+        .panels=${this.visibleWorkspacePanels()}
+        .hideToolTabs=${true}
+        .onSelectTool=${() => undefined}
+      ></workspace-panel>
+    `;
   }
 
   private visiblePrimaryNavigationEntries(): QualifiedNavigationEntryContribution[] {
@@ -1527,6 +1609,17 @@ export class PiWebApp extends LitElement {
   private selectedPrimaryView(): QualifiedPrimaryViewContribution | undefined {
     if (this.state.mainView === "navigation" || this.state.mainView === "chat") return undefined;
     return this.plugins.getPrimaryView(this.state.mainView, this.createPrimaryViewContext());
+  }
+
+  private primaryViewLayout(primaryView: QualifiedPrimaryViewContribution | undefined): "default" | "dedicated" {
+    const layout = primaryView?.layout;
+    if (typeof layout !== "function") return layout ?? "default";
+    try {
+      return layout(this.createPrimaryViewContext());
+    } catch (error) {
+      console.warn(`Failed to resolve primary view layout ${primaryView?.id ?? "unknown"}`, error);
+      return "default";
+    }
   }
 
   private isPrimaryViewSelection(primaryView = this.selectedPrimaryView()): boolean {
@@ -1645,6 +1738,7 @@ export class PiWebApp extends LitElement {
   private createWorkspaceHost(): WorkspaceHost {
     return {
       requestRender: () => { this.requestUpdate(); },
+      openActions: () => { this.setState({ actionPaletteOpen: true }); },
     };
   }
 
@@ -1886,7 +1980,9 @@ export class PiWebApp extends LitElement {
         openSettings: (section) => { this.openSettings(section); },
       },
       openActionPalette: () => { this.setState({ actionPaletteOpen: true }); },
-      focusPrompt: () => { void this.focusChatComposer(); },
+      focusPrompt: () => {
+        if (!this.selectDedicatedPrimaryViewSurface("chat")) void this.focusChatComposer();
+      },
       addProject: () => this.addProject(),
       addMachine: () => { this.openMachineDialog(); },
       refreshSelectedMachine: async () => {
@@ -1899,7 +1995,13 @@ export class PiWebApp extends LitElement {
       openThemePicker: () => { this.openThemeDialog(); },
       openModelPicker: () => this.openModelDialog(),
       openThinkingLevelPicker: () => this.openThinkingDialog(),
-      selectMainView: (view) => { this.selectMainView(view); },
+      selectMainView: (view) => {
+        const surface = view === "core:workspace.files" ? "files"
+          : view === "core:workspace.git" ? "git"
+            : view === "core:workspace.terminal" ? "terminal"
+              : undefined;
+        if (surface === undefined || !this.selectDedicatedPrimaryViewSurface(surface)) this.selectMainView(view);
+      },
       selectWorkspaceTool: (tool) => { this.openWorkspaceTool(tool); },
       openTerminal: (options) => { this.openTerminal(options); },
       refreshFiles: () => this.files.refreshFiles(),
@@ -2270,9 +2372,19 @@ export class PiWebApp extends LitElement {
     void this.openThinkingDialog();
   };
 
-  private renderChatView(state: AppState, session: SessionInfo) {
+  private renderChatView(state: AppState, session: SessionInfo, hosted = false) {
     return html`
-      <chat-view .sessionId=${session.id} .messages=${state.messages} .messageStart=${state.messagePageStart} .messageEnd=${state.messagePageEnd} .messageTotal=${state.messagePageTotal} .hasMore=${state.messagePageStart > 0} .loadingMore=${state.isLoadingEarlierMessages} .isSendingPrompt=${state.sendingPrompts[session.id] === true} .isCompacting=${state.status?.isCompacting === true} .pendingMessageCount=${state.status?.pendingMessageCount ?? 0} .clientQueuedMessages=${state.clientQueuedSessionMessages[session.id] ?? []} .status=${state.status} .activity=${state.activity} .pendingAsk=${state.pendingAsk} .pendingDialogs=${state.pendingDialogs} .closedDialogs=${state.closedDialogs} .onAnswerDialog=${this.handleAnswerDialog} .onCancelDialog=${this.handleCancelDialog} .onDismissClosedDialog=${this.handleDismissClosedDialog} .askDraftSessionId=${machineSessionKey(selectedMachineId(state), session.id)} .onSubmitAsk=${this.handleSubmitAsk} .notificationInbox=${selectedNotificationView(state.selectedNotificationInbox)} .onClearServerQueue=${this.handleClearServerQueue} .onDismissWarning=${this.handleDismissWarning} .onDismissNotification=${this.handleDismissNotification} .onDismissAllNotifications=${this.handleDismissAllNotifications} .warningsVisible=${!this.sessionWarningVisibility.collapsed} .onToggleWarnings=${this.handleToggleWarnings} .onLoadMore=${() => this.withChatPrependTransition(() => this.sessions.loadEarlierMessages())}></chat-view>
+      <chat-view style=${hosted ? "flex:1 1 auto;min-height:0;overflow:hidden" : ""} .sessionId=${session.id} .messages=${state.messages} .messageStart=${state.messagePageStart} .messageEnd=${state.messagePageEnd} .messageTotal=${state.messagePageTotal} .hasMore=${state.messagePageStart > 0} .loadingMore=${state.isLoadingEarlierMessages} .isSendingPrompt=${state.sendingPrompts[session.id] === true} .isCompacting=${state.status?.isCompacting === true} .pendingMessageCount=${state.status?.pendingMessageCount ?? 0} .clientQueuedMessages=${state.clientQueuedSessionMessages[session.id] ?? []} .status=${state.status} .activity=${state.activity} .pendingAsk=${state.pendingAsk} .pendingDialogs=${state.pendingDialogs} .closedDialogs=${state.closedDialogs} .onAnswerDialog=${this.handleAnswerDialog} .onCancelDialog=${this.handleCancelDialog} .onDismissClosedDialog=${this.handleDismissClosedDialog} .askDraftSessionId=${machineSessionKey(selectedMachineId(state), session.id)} .onSubmitAsk=${this.handleSubmitAsk} .notificationInbox=${selectedNotificationView(state.selectedNotificationInbox)} .onClearServerQueue=${this.handleClearServerQueue} .onDismissWarning=${this.handleDismissWarning} .onDismissNotification=${this.handleDismissNotification} .onDismissAllNotifications=${this.handleDismissAllNotifications} .warningsVisible=${!this.sessionWarningVisibility.collapsed} .onToggleWarnings=${this.handleToggleWarnings} .onLoadMore=${() => this.withChatPrependTransition(() => this.sessions.loadEarlierMessages())}></chat-view>
+    `;
+  }
+
+  private renderSelectedChatSurface(state: AppState, session: SessionInfo) {
+    return html`
+      <div style="flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+        ${this.renderChatView(state, session, true)}
+        <prompt-editor style="flex:0 0 auto" .sessionId=${session.id} .cwd=${state.selectedWorkspace?.path} .machineId=${selectedMachineId(state)} .projectId=${state.selectedWorkspace?.projectId} .workspaceId=${state.selectedWorkspace?.id} .workspaceScopedFileSuggestions=${this.supportsWorkspaceFileSuggestions()} .disabled=${session.archived === true} .canSteer=${state.status?.isStreaming === true} .isCompacting=${state.status?.isCompacting === true} .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0} .status=${state.status} .availableThinkingLevels=${state.availableThinkingLevels} .sending=${state.sendingPrompts[session.id] === true} .onSend=${this.handleSendPrompt} .onStop=${this.handleStopActiveWork} .onSelectModel=${this.handleSelectModel} .onSelectThinking=${this.handleSelectThinking}></prompt-editor>
+        ${this.renderStatusBar(state)}
+      </div>
     `;
   }
 
@@ -2349,13 +2461,15 @@ export class PiWebApp extends LitElement {
     const state = this.state;
     const primaryView = this.selectedPrimaryView();
     const primaryViewSelected = this.isPrimaryViewSelection(primaryView);
+    const dedicated = this.primaryViewLayout(primaryView) === "dedicated";
+    const shellClass = `${this.panelCollapse.shellClass(state.mainView, primaryViewSelected)}${dedicated ? " dedicated-shell" : ""}`;
     return html`
-      <div class=${this.panelCollapse.shellClass(state.mainView, primaryViewSelected)} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
-        <aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>
-        ${this.renderNavigationPanelEdgeControl()}
+      <div class=${shellClass} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+        ${dedicated ? null : html`<aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>`}
+        ${dedicated ? null : this.renderNavigationPanelEdgeControl()}
         <main class=${mainViewClass(state.mainView, primaryViewSelected)}>
-          ${this.renderContextBar()}
-          ${this.renderMobileMainTabs()}
+          ${dedicated ? null : this.renderContextBar()}
+          ${dedicated ? null : this.renderMobileMainTabs()}
           ${state.error ? html`<div class="error">${state.error}</div>` : null}
           <div class="mobile-navigation-panel">${this.appShell.isMobileNavigationLayout ? this.renderNavigationPanel() : null}</div>
           ${primaryViewSelected ? html`
@@ -2374,8 +2488,8 @@ export class PiWebApp extends LitElement {
 
           ` : html`<div class="empty">${this.sessionEmptyMessage()}</div>`}
         </main>
-        ${this.renderWorkspacePanelEdgeControl()}
-        ${this.renderWorkspacePanel()}
+        ${dedicated ? null : this.renderWorkspacePanelEdgeControl()}
+        ${dedicated ? null : this.renderWorkspacePanel()}
         ${state.actionPaletteOpen ? html`<action-palette .actions=${this.getActions()} .onRun=${(action: AppAction) => { this.setState({ actionPaletteOpen: false }); this.runAction(action); }} .onCancel=${() => { this.setState({ actionPaletteOpen: false }); }}></action-palette>` : null}
         ${state.authDialog !== undefined ? html`<auth-dialog .state=${state.authDialog} .onChooseMethod=${(authType: "oauth" | "api_key") => { void this.auth.chooseLoginMethod(authType); }} .onSelectProvider=${(providerId: string, authType: "oauth" | "api_key") => { void this.auth.selectLoginProvider(providerId, authType); }} .onLogoutProvider=${(providerId: string) => { void this.auth.logoutProvider(providerId); }} .onOAuthInput=${(value: string) => { this.auth.updateOAuthInput(value); }} .onOAuthRespond=${(value?: string) => { void this.auth.respondOAuth(value); }} .onOAuthCancel=${() => { void this.auth.cancelOAuth(); }} .onCancel=${() => { this.auth.closeDialog(); }}></auth-dialog>` : null}
         ${this.renderSessionTreeNavigator(state)}
@@ -2409,7 +2523,18 @@ export class PiWebApp extends LitElement {
     `;
   }
 
-  static override styles = appStyles;
+  static override styles = [appStyles, css`
+    .shell.dedicated-shell { grid-template-columns: minmax(0, 1fr); }
+    .shell.dedicated-shell > main { grid-column: 1; grid-row: 1; }
+  `];
+}
+
+function primaryViewWorkspaceTool(surface: Exclude<PrimaryViewSurface, "chat">): QualifiedContributionId {
+  return `core:workspace.${surface}`;
+}
+
+function surfaceLabel(surface: PrimaryViewSurface): string {
+  return surface === "git" ? "Git" : `${surface[0]?.toUpperCase() ?? ""}${surface.slice(1)}`;
 }
 
 function initialPresentationProfile(): ResolvedPresentationProfile {

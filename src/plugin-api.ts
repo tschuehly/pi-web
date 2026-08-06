@@ -164,6 +164,8 @@ export type WorkspacePanelFiles = WorkspaceFiles;
 
 export interface WorkspaceHost {
   requestRender(): void;
+  /** Open PI WEB's host-owned action and settings entry point. */
+  openActions?: () => void;
 }
 
 export interface PluginSessionLocation {
@@ -175,12 +177,25 @@ export interface PluginSessionLocation {
 export interface PluginSessionHost {
   currentLocation(): PluginSessionLocation | undefined;
   start(options: { startupToken: string; initialPrompt: string }): Promise<{ id: string; location: PluginSessionLocation }>;
+  /** Change the selected checkout/session without leaving the active primary view. */
+  select(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
+  /** Change the selected checkout/session and navigate to Chat. */
   open(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
   prompt(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }, message: string): Promise<void>;
   findByStartupToken(startupToken: string, location?: Partial<PluginSessionLocation>): Promise<{ id: string; location: PluginSessionLocation } | undefined>;
 }
 
 export type PluginConnectionStatus = "connected" | "reconnecting";
+export type PrimaryViewSurface = "chat" | "files" | "git" | "terminal";
+
+export interface PrimaryViewSurfaceHost {
+  /** Mount a PI WEB-owned surface backed by the host's current state and controllers. */
+  mount(container: HTMLElement, surface: PrimaryViewSurface): void;
+  /** Prepare the selected checkout for a surface without leaving the active primary view. */
+  activate?: (surface: PrimaryViewSurface) => void;
+  /** Route PI WEB's standard surface actions and shortcuts through a dedicated primary view. */
+  registerSelectionHandler?: (handler: (surface: PrimaryViewSurface) => void) => () => void;
+}
 
 export interface PrimaryViewContext {
   machine: PluginMachine;
@@ -194,6 +209,8 @@ export interface PrimaryViewContext {
   host: WorkspaceHost;
   /** Attended session launch/navigation. It grants no managed Run authority. */
   sessions?: PluginSessionHost;
+  /** PI WEB-owned surfaces that a primary view can compose into its render tree. */
+  surfaceHost?: PrimaryViewSurfaceHost;
 }
 
 export interface SessionStartGuardContribution {
@@ -205,6 +222,8 @@ export interface SessionStartGuardContribution {
 export interface PrimaryViewContribution {
   id: LocalContributionId;
   title: string;
+  /** Dedicated views own the full app shell and suppress PI WEB's outer chrome. */
+  layout?: "default" | "dedicated" | ((context: PrimaryViewContext) => "default" | "dedicated");
   ariaLabel?: string;
   order?: number;
   visible?: (context: PrimaryViewContext) => boolean;
