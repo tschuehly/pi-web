@@ -45,6 +45,10 @@ vi.mock("node:os", async (importOriginal) => {
   };
 });
 
+vi.mock("../piWebVersionReport.js", () => ({
+  packageVersion: () => "1.202607.3",
+}));
+
 vi.mock("../sessiond/sessiondOwnership.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../sessiond/sessiondOwnership.js")>();
   return {

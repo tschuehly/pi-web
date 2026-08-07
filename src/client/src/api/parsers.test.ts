@@ -76,7 +76,7 @@ describe("API parsers", () => {
       modifiedAt: "2026-07-29T12:00:00.000Z",
       config: { presentationProfiles },
       effectiveConfig: { presentationProfiles },
-      envOverrides: { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, agentCommand: false, agentDir: false, agentSessionDir: false },
+      envOverrides: { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false, agentCommand: false, agentDir: false, agentSessionDir: false },
     });
 
     expect(parsed.modifiedAt).toBe("2026-07-29T12:00:00.000Z");

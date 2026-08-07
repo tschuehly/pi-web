@@ -198,7 +198,7 @@ function project(id: string, path: string): Project {
 }
 
 function workspace(id: string, projectId: string, path: string): Workspace {
-  return { id, projectId, path, label: id, isMain: false, isGitRepo: true, isGitWorktree: true };
+  return { id, projectId, path, label: id, isMain: false, isGitRepo: true, isGitWorktree: true, effectiveConfig: {} };
 }
 
 function session(id: string, cwd: string): SessionInfo {

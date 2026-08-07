@@ -518,7 +518,7 @@ function testProject(): Project {
 }
 
 function testWorkspace(): Workspace {
-  return { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true, isGitRepo: true, isGitWorktree: false };
+  return { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true, isGitRepo: true, isGitWorktree: false, effectiveConfig: {} };
 }
 
 function pendingAskStatus(sessionId: string, askId: string): SessionStatus {

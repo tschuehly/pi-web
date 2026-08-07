@@ -89,6 +89,7 @@ vi.mock("./sessions/piSessionManagerGateway.js", () => ({ createPiSessionManager
 vi.mock("./sessions/sessionRoutes.js", () => ({ registerSessionRoutes: vi.fn() }));
 vi.mock("./sessions/sessionNotificationStore.js", () => ({ SessionNotificationStore: class { readonly fixture = true; } }));
 vi.mock("./sessions/sessionUnreadStore.js", () => ({
+  defaultSessionUnreadFilePath: vi.fn(() => "/tmp/fake-session-unread.json"),
   FileSessionUnreadPersistence: class { readonly fixture = true; },
   SessionUnreadStore: class {
     load() { return Promise.resolve(); }
@@ -98,7 +99,10 @@ vi.mock("./sessions/sessionUnreadStore.js", () => ({
 vi.mock("./sessions/spawnTargetResolver.js", () => ({ ProjectScopedSpawnTargetResolver: class { readonly fixture = true; } }));
 vi.mock("./workspaces/projectWorkspaceCwds.js", () => ({ RegisteredProjectWorkspaceCwds: class { readonly fixture = true; } }));
 vi.mock("./projects/projectService.js", () => ({ ProjectService: class { readonly fixture = true; } }));
-vi.mock("./storage/projectStore.js", () => ({ ProjectStore: class { readonly fixture = true; } }));
+vi.mock("./storage/projectStore.js", () => ({
+  ProjectStore: class { readonly fixture = true; },
+  projectStorePath: vi.fn(() => "/tmp/fake-projects.json"),
+}));
 vi.mock("./workspaces/workspaceService.js", () => ({ WorkspaceService: class { readonly fixture = true; } }));
 vi.mock("./terminals/terminalService.js", () => ({
   TerminalService: class {
@@ -123,6 +127,7 @@ vi.mock("../config.js", () => ({
   }),
   maxUploadBytes: () => 1_024,
   offlineModeEnabled: () => true,
+  piWebDataDir: (env: NodeJS.ProcessEnv) => env["PI_WEB_DATA_DIR"] ?? "/tmp/fake-pi-web-data",
 }));
 vi.mock("../sessiond/activeAgentProfile.js", () => ({
   createActiveAgentProfileDescriptor: () => ({ command: "pi", dir: "/tmp/fake-agent", sessionDirEnvKeys: [] }),
@@ -132,6 +137,7 @@ vi.mock("./sessiond/sessionServiceDependencies.js", () => ({ sessionServiceDepen
 const originalSocketPath = process.env["PI_WEB_SESSIOND_SOCKET"];
 const originalPort = process.env["PI_WEB_SESSIOND_PORT"];
 let fixtureRoot: string | undefined;
+let configuredSocketPath: string | undefined;
 
 async function closeFakeServers(): Promise<void> {
   const servers = fakeRuntime.servers.splice(0);
@@ -159,6 +165,7 @@ afterEach(async () => {
   else process.env["PI_WEB_SESSIOND_PORT"] = originalPort;
   if (fixtureRoot !== undefined) await rm(fixtureRoot, { recursive: true, force: true });
   fixtureRoot = undefined;
+  configuredSocketPath = undefined;
 });
 
 describe("session daemon socket ownership", () => {
@@ -210,12 +217,17 @@ describe("session daemon socket ownership", () => {
 async function isolatedSocketPath(): Promise<string> {
   fixtureRoot = await mkdtemp(join(tmpdir(), "pi-web-sessiond-contention-"));
   const socketPath = join(fixtureRoot, "sessiond.sock");
+  configuredSocketPath = socketPath;
   process.env["PI_WEB_SESSIOND_SOCKET"] = socketPath;
   delete process.env["PI_WEB_SESSIOND_PORT"];
   return socketPath;
 }
 
 async function startSessionDaemon(): Promise<void> {
+  // Each import represents a separate daemon process launched with the same
+  // configured socket. The real daemon scrubs its own process.env after
+  // capturing daemonEnvironment; that must not mutate a later process's env.
+  if (configuredSocketPath !== undefined) process.env["PI_WEB_SESSIOND_SOCKET"] = configuredSocketPath;
   vi.resetModules();
   await import("./sessiond.js");
 }
