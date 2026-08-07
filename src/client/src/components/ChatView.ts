@@ -1,8 +1,8 @@
-import { LitElement, html } from "lit";
+import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { ChatDisclosureController } from "../chatDisclosure";
-import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
+import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
@@ -344,7 +344,9 @@ export class ChatView extends LitElement {
   }
 
   protected override update(changed: Map<string, unknown>): void {
-    const prependAnchor = this.isPrependingMessages(changed) ? this.capturePrependScrollAnchor() : undefined;
+    const prepending = this.isPrependingMessages(changed);
+    if (prepending) this.expandCurrentExchangeHistory();
+    const prependAnchor = prepending ? this.capturePrependScrollAnchor() : undefined;
     super.update(changed);
     if (prependAnchor !== undefined) this.restorePrependScrollAnchor(prependAnchor);
   }
@@ -382,6 +384,7 @@ export class ChatView extends LitElement {
 
   override render() {
     const groups = this.groupedMessages();
+    const exchange = currentExchangeGroups(this.messages, groups, this.messageStart, this.hasMore);
     return html`
       ${this.renderTopNotices()}
       ${this.renderNotificationLiveRegions()}
@@ -389,15 +392,14 @@ export class ChatView extends LitElement {
         ${this.renderConversationRail()}
         <div class="chat" @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
           ${this.renderHistoryBoundary()}
-          ${repeat(
-            groups,
-            (group) => group.kind === "group" ? this.groupRenderKey(group.startIndex) : this.messageAnchorKey(group.index),
-            (group, index) => {
-              if (group.kind === "group") return this.renderMessageGroup(group.messages, group.startIndex, group.endIndex, this.isLiveTailGroup(groups, index));
-              if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, group.toolName);
-              return this.renderMessage(group.message, group.index);
-            },
-          )}
+          ${exchange.history.length === 0 ? null : html`
+            <details class="exchange-history">
+              <summary>Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
+              <div class="exchange-history-body">${this.renderGroups(exchange.history, false)}</div>
+            </details>
+          `}
+          ${exchange.startsOutsideLoadedPage ? html`<div class="exchange-boundary" role="note">Current loaded tail · the latest user message is in earlier history</div>` : null}
+          ${this.renderGroups(exchange.current, true)}
           ${this.renderQueuedMessages()}
           ${this.renderSessionActivity()}
           ${this.renderOpenAsk()}
@@ -407,6 +409,18 @@ export class ChatView extends LitElement {
       </div>
       ${this.renderImageZoom()}
     `;
+  }
+
+  private renderGroups(groups: ChatGroup[], containsLiveTail: boolean) {
+    return repeat(
+      groups,
+      (group) => group.kind === "group" ? this.groupRenderKey(group.startIndex) : this.messageAnchorKey(group.index),
+      (group, index) => {
+        if (group.kind === "group") return this.renderMessageGroup(group.messages, group.startIndex, group.endIndex, containsLiveTail && this.isLiveTailGroup(groups, index));
+        if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, group.toolName);
+        return this.renderMessage(group.message, group.index);
+      },
+    );
   }
 
   private renderTopNotices() {
@@ -681,10 +695,20 @@ export class ChatView extends LitElement {
       <ask-user-card
         data-scroll-anchor-id=${`ask:${this.pendingAsk.askId}`}
         .ask=${this.pendingAsk}
+        .compact=${this.pendingAsk.questions.length === 1}
         .draftSessionId=${this.askDraftSessionId}
         .onSubmit=${this.onSubmitAsk}
       ></ask-user-card>
     `;
+  }
+
+  async focusPendingAsk(askId: string): Promise<boolean> {
+    if (this.pendingAsk?.askId !== askId) return false;
+    await this.updateComplete;
+    const card = this.renderRoot.querySelector<import("./AskUserCard").AskUserCard>(`ask-user-card[data-scroll-anchor-id="ask:${CSS.escape(askId)}"]`);
+    if (card === null) return false;
+    card.scrollIntoView({ block: "start", behavior: "smooth" });
+    return card.focusFirstUnanswered();
   }
 
   private renderExtensionDialogs() {
@@ -1140,8 +1164,10 @@ export class ChatView extends LitElement {
       this.restoreScrollFrame = undefined;
       if (this.sessionId !== sessionId) return;
       this.withSuppressedScrollSave(() => {
-        if (this.pendingAsk !== undefined && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenAskToTop()) return;
-        if (this.pendingDialogs.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenDialogToTop()) return;
+        const savedPosition = this.scrollController.readPosition(sessionId);
+        if (this.pendingAsk !== undefined && savedPosition === undefined && this.alignOpenAskToTop()) return;
+        if (this.pendingDialogs.length > 0 && savedPosition === undefined && this.alignOpenDialogToTop()) return;
+        if (savedPosition?.mode === "anchor") this.expandHistoryForAnchor(savedPosition.anchorId);
         const result = this.scrollController.restorePosition(sessionId, this.chat, this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
         this.handleScrollRestoreResult(sessionId, result);
       });
@@ -1156,6 +1182,7 @@ export class ChatView extends LitElement {
       this.restoreScrollFrame = undefined;
       if (this.sessionId !== sessionId) return;
       this.withSuppressedScrollSave(() => {
+        this.expandHistoryForAnchor(position.anchorId);
         const result = this.scrollController.restoreExplicitPosition(position, this.chat, this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
         this.handleScrollRestoreResult(sessionId, result);
       });
@@ -1180,6 +1207,21 @@ export class ChatView extends LitElement {
     chat.scrollTop = 0;
     this.syncScrollMetrics();
     this.requestLoadMore();
+  }
+
+  private expandCurrentExchangeHistory(): void {
+    const history = this.renderRoot.querySelector<HTMLDetailsElement>("details.exchange-history");
+    if (history !== null) history.open = true;
+  }
+
+  private expandHistoryForAnchor(anchorId: string | undefined): void {
+    if (anchorId === undefined) return;
+    const match = /^(?:m|g|e):(\d+)$/.exec(anchorId);
+    if (match === null) return;
+    const index = Number(match[1]);
+    const exchange = currentExchangeGroups(this.messages, this.groupedMessages(), this.messageStart, this.hasMore);
+    if (exchange.startsAt === undefined || index >= exchange.startsAt) return;
+    this.expandCurrentExchangeHistory();
   }
 
   private shouldFallbackToBottomForMissingAnchor(): boolean {
@@ -1214,6 +1256,7 @@ export class ChatView extends LitElement {
 
   restorePrependScrollAnchor(anchor: PrependScrollAnchor | undefined): void {
     if (!this.chat || !anchor) return;
+    this.expandHistoryForAnchor(anchor.markerId);
     this.suppressLoadMoreRequests = true;
     this.suppressScrollSave = true;
     const token = this.prependRestoreToken + 1;
@@ -1337,5 +1380,11 @@ export class ChatView extends LitElement {
     return chatGroupScrollMarkerId(endIndex);
   }
 
-  static override styles = chatStyles;
+  static override styles = [chatStyles, css`
+    .exchange-history { margin: 4px 0 14px; border-block: 1px solid var(--pi-border-muted); color: var(--pi-muted); }
+    .exchange-history > summary { padding: 9px 4px; cursor: pointer; font-size: 12px; font-weight: 650; }
+    .exchange-history > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .exchange-history-body { padding-top: 6px; }
+    .exchange-boundary { margin: 6px 0 14px; padding: 8px 10px; border-block: 1px solid var(--pi-border-muted); color: var(--pi-muted); font-size: 12px; text-align: center; }
+  `];
 }

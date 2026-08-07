@@ -5,6 +5,41 @@ export type ChatGroup =
   | { kind: "tool-image"; message: ChatLine; index: number; toolName?: string }
   | { kind: "group"; messages: ChatLine[]; startIndex: number; endIndex: number };
 
+export interface CurrentExchangeGroups {
+  history: ChatGroup[];
+  current: ChatGroup[];
+  startsAt: number | undefined;
+  startsOutsideLoadedPage: boolean;
+}
+
+/**
+ * Split loaded chat at the latest ordinary user message. Compaction and branch
+ * summaries are protocol history, not a new exchange, even if they carry a
+ * user-like role. When an earlier page may contain the user turn, the loaded
+ * tail remains current behind an explicit history boundary.
+ */
+export function currentExchangeGroups(messages: ChatLine[], groups: ChatGroup[], messageStart: number, hasMore: boolean): CurrentExchangeGroups {
+  let localStart = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user" && message.source !== "compaction" && message.source !== "branch_summary") {
+      localStart = index;
+      break;
+    }
+  }
+  if (localStart < 0) {
+    return { history: [], current: groups, startsAt: undefined, startsOutsideLoadedPage: hasMore && messageStart > 0 };
+  }
+  const startsAt = messageStart + localStart;
+  const split = groups.findIndex((group) => groupEndIndex(group) >= startsAt);
+  if (split <= 0) return { history: [], current: groups, startsAt, startsOutsideLoadedPage: false };
+  return { history: groups.slice(0, split), current: groups.slice(split), startsAt, startsOutsideLoadedPage: false };
+}
+
+function groupEndIndex(group: ChatGroup): number {
+  return group.kind === "group" ? group.endIndex : group.index;
+}
+
 export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGroup[] {
   const groups: ChatGroup[] = [];
   let eventMessages: ChatLine[] = [];

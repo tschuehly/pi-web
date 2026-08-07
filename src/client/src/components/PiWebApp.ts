@@ -32,7 +32,7 @@ import { SessionUnreadController } from "../sessionUnread";
 import { deriveUnreadPresence, EMPTY_UNREAD_PRESENCE, sameUnreadPresence, type UnreadPresence } from "../unreadPresence";
 import { initialSessionWarningVisibilityState, reconcileSessionWarningVisibility, toggleSessionWarnings } from "../sessionWarningVisibility";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
-import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PrimaryViewContext, PrimaryViewSurface, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
+import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PrimaryViewContext, PrimaryViewSurface, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, SessionAttentionItem, SessionAttentionSnapshot, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
 import { corePlugin } from "../plugins/core";
 import { themePackPlugin } from "../plugins/themes";
@@ -72,6 +72,7 @@ import "./WorkspacePanel";
 import type { WorkspacePanelEmptyState } from "./WorkspacePanel";
 import "./appShell/AppContextBar";
 import "./appShell/AppMobileMainTabs";
+import "./appShell/AppPiMenu";
 import "./appShell/AppPrimaryView";
 import type { AppPrimaryView } from "./appShell/AppPrimaryView";
 import type { AppMobileMainTab, AppMobileMainTabIcon } from "./appShell/AppMobileMainTabs";
@@ -115,6 +116,10 @@ export class PiWebApp extends LitElement {
   @query("app-primary-view") private primaryViewHost?: AppPrimaryView;
   private primaryViewSurfaceSelectionHandler: ((surface: PrimaryViewSurface) => void) | undefined;
   private readonly primaryViewSurfaceMounts = new Map<HTMLElement, PrimaryViewSurface>();
+  private readonly sessionAttentionWatchers = new Set<(snapshot: SessionAttentionSnapshot) => void>();
+  private readonly observedSessionAttention = new Map<string, SessionAttentionItem>();
+  private sessionAttentionSequence = 0;
+  private sessionAttentionFingerprint = "";
 
   private readonly sessionUnread = new SessionUnreadController({
     onChange: (machineId) => {
@@ -289,6 +294,7 @@ export class PiWebApp extends LitElement {
   protected override willUpdate(): void {
     this.toggleAttribute("pwa-display-mode", this.appShell.isPwaDisplayMode);
     this.syncSessionWarningVisibility();
+    this.observeSessionAttention();
   }
 
   protected override updated(): void {
@@ -298,6 +304,7 @@ export class PiWebApp extends LitElement {
     this.committedChatIdentity = selectedChatIdentity(this.state);
     this.syncSelectedSessionReadState();
     this.refreshPrimaryViewSurfaceMounts();
+    this.publishSessionAttentionSnapshot();
   }
 
   private syncSessionWarningVisibility(): void {
@@ -1505,7 +1512,86 @@ export class PiWebApp extends LitElement {
           };
         },
       },
+      preferences: this.createPluginPreferencesHost(),
+      attention: {
+        snapshot: () => this.sessionAttentionSnapshot(),
+        watch: (handler) => {
+          this.sessionAttentionWatchers.add(handler);
+          handler(this.sessionAttentionSnapshot());
+          return () => { this.sessionAttentionWatchers.delete(handler); };
+        },
+        focus: (item) => this.focusSessionAttention(item),
+        requestNotificationPermission: () => typeof Notification === "undefined" ? Promise.resolve("denied") : Notification.requestPermission(),
+      },
     };
+  }
+
+  private createPluginPreferencesHost() {
+    const selected = this.state.mainView;
+    const namespace = typeof selected === "string" && selected.includes(":") ? selected.slice(0, selected.indexOf(":")) : "core";
+    const storageKey = (key: string) => `pi-web.plugin.${namespace}.${key}`;
+    return {
+      get: (key: string): string | undefined => {
+        try { return localStorage.getItem(storageKey(key)) ?? undefined; } catch { return undefined; }
+      },
+      set: (key: string, value: string | undefined): void => {
+        try {
+          if (value === undefined) localStorage.removeItem(storageKey(key));
+          else localStorage.setItem(storageKey(key), value);
+        } catch { /* Presentation memory is optional. */ }
+      },
+    };
+  }
+
+  private observeSessionAttention(): void {
+    const machineId = selectedMachineId(this.state);
+    const projectId = this.state.selectedProject?.id;
+    const workspaceId = this.state.selectedWorkspace?.id;
+    const listedSessionIds = new Set(this.state.sessions.map((session) => session.id));
+    for (const [identity, item] of this.observedSessionAttention) {
+      if (item.machineId !== machineId || listedSessionIds.has(item.sessionId)) this.observedSessionAttention.delete(identity);
+    }
+    for (const session of this.state.sessions) {
+      const ask = this.state.sessionStatuses[session.id]?.pendingAsk;
+      if (ask === undefined || session.archived === true) continue;
+      const identity = JSON.stringify([machineId, session.id, ask.askId]);
+      this.observedSessionAttention.set(identity, {
+        identity,
+        machineId,
+        ...(projectId === undefined ? {} : { projectId }),
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+        sessionId: session.id,
+        askId: ask.askId,
+        ask: structuredClone(ask),
+      });
+    }
+  }
+
+  private sessionAttentionSnapshot(): SessionAttentionSnapshot {
+    const machineId = selectedMachineId(this.state);
+    const items = [...this.observedSessionAttention.values()]
+      .sort((left, right) => left.identity.localeCompare(right.identity))
+      .map((item) => Object.freeze(structuredClone(item)));
+    const reconnectComplete = this.state.selectedMachine === undefined || this.state.machineStatuses[machineId]?.ok !== false;
+    return Object.freeze({ sequence: this.sessionAttentionSequence, reconnectComplete, items: Object.freeze(items) });
+  }
+
+  private publishSessionAttentionSnapshot(): void {
+    const candidate = this.sessionAttentionSnapshot();
+    const fingerprint = JSON.stringify([candidate.reconnectComplete, candidate.items]);
+    if (fingerprint === this.sessionAttentionFingerprint) return;
+    this.sessionAttentionFingerprint = fingerprint;
+    this.sessionAttentionSequence += 1;
+    const snapshot = this.sessionAttentionSnapshot();
+    for (const watcher of this.sessionAttentionWatchers) watcher(snapshot);
+  }
+
+  private async focusSessionAttention(item: Pick<SessionAttentionItem, "machineId" | "projectId" | "workspaceId" | "sessionId" | "askId">): Promise<boolean> {
+    await this.selectPluginSessionLocation(item);
+    this.selectMainView("chat");
+    await this.updateComplete;
+    await nextFrame();
+    return await this.chatView?.focusPendingAsk(item.askId) ?? false;
   }
 
   private mountPrimaryViewSurface(container: HTMLElement, surface: PrimaryViewSurface): void {
@@ -2457,6 +2543,29 @@ export class PiWebApp extends LitElement {
     return html`<app-refresh-control .onReload=${() => { this.hardReloadApp(); }}></app-refresh-control>`;
   }
 
+  private renderPiMenu() {
+    const machine = this.state.selectedMachine;
+    const reconnecting = machine !== undefined && this.state.machineStatuses[machine.id]?.ok === false;
+    return html`
+      <div class="pi-menu-frame">
+        <app-pi-menu
+          .entries=${this.visiblePrimaryNavigationEntries()}
+          .projects=${this.state.projects}
+          .selectedView=${this.state.mainView}
+          .selectedProject=${this.state.selectedProject}
+          .connectionLabel=${reconnecting ? "Reconnecting" : "Connected"}
+          .onSelectView=${(view: "chat" | QualifiedContributionId) => this.selectPrimaryNavigationView(view)}
+          .onSelectProject=${(project: Project) => this.workspaces.selectProject(project)}
+          .onShowProjects=${() => this.focusNavigationSection("projects")}
+          .onShowActions=${() => { this.setState({ actionPaletteOpen: true }); }}
+          .onConfigureAuth=${() => { void this.auth.openLogin(); }}
+          .onRecover=${() => this.refreshAppData()}
+          .onOpenSettings=${() => { this.openSettings(); }}
+        ></app-pi-menu>
+      </div>
+    `;
+  }
+
   override render() {
     const state = this.state;
     const primaryView = this.selectedPrimaryView();
@@ -2465,6 +2574,7 @@ export class PiWebApp extends LitElement {
     const shellClass = `${this.panelCollapse.shellClass(state.mainView, primaryViewSelected)}${dedicated ? " dedicated-shell" : ""}`;
     return html`
       <div class=${shellClass} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+        ${dedicated ? this.renderPiMenu() : null}
         ${dedicated ? null : html`<aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>`}
         ${dedicated ? null : this.renderNavigationPanelEdgeControl()}
         <main class=${mainViewClass(state.mainView, primaryViewSelected)}>
@@ -2524,8 +2634,12 @@ export class PiWebApp extends LitElement {
   }
 
   static override styles = [appStyles, css`
-    .shell.dedicated-shell { grid-template-columns: minmax(0, 1fr); }
+    .shell.dedicated-shell { position: relative; grid-template-columns: minmax(0, 1fr); }
+    .dedicated-shell > .pi-menu-frame { position: fixed; z-index: 90; inset: 8px auto auto 8px; pointer-events: none; }
+    .dedicated-shell > .pi-menu-frame app-pi-menu { pointer-events: auto; }
     .shell.dedicated-shell > main { grid-column: 1; grid-row: 1; }
+    .shell.dedicated-shell > main app-primary-view { padding-top: 0; }
+    @media (max-width: 720px) { .pi-menu-frame { inset: 6px auto auto 6px; } }
   `];
 }
 

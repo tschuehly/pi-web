@@ -42,6 +42,8 @@ export class AskUserCard extends LitElement {
   /** Machine-scoped session cache key used by the ask draft store. */
   @property({ attribute: false }) draftSessionId = "";
   @property({ attribute: false }) onSubmit?: AskUserSubmitCallback;
+  /** Use the concise decision treatment for a single live question. */
+  @property({ type: Boolean, reflect: true }) compact = false;
 
   @state() private answers: AskDraftAnswers = {};
   @state() private confirmingPartialSubmit = false;
@@ -64,15 +66,25 @@ export class AskUserCard extends LitElement {
     return null;
   }
 
+  async focusFirstUnanswered(): Promise<boolean> {
+    const ask = this.ask;
+    if (ask === undefined) return false;
+    await this.updateComplete;
+    const question = unansweredQuestions(ask.questions, this.answers)[0] ?? ask.questions[0];
+    if (question === undefined) return false;
+    this.focusQuestion(ask.questions.indexOf(question));
+    return true;
+  }
+
   private renderOpenAsk(ask: PendingAskUser): TemplateResult {
     const count = answeredCount(ask.questions, this.answers);
     const unanswered = unansweredQuestions(ask.questions, this.answers);
     return html`
       <article class="card open-card" aria-labelledby="ask-user-heading">
         <header class="card-header">
-          <h2 id="ask-user-heading">Questions</h2>
+          <h2 id="ask-user-heading">${this.compact && ask.questions.length === 1 ? "Decision" : "Questions"}</h2>
           <span class="header-status" role="status" aria-live="polite" aria-atomic="true">
-            ${count} of ${ask.questions.length} answered
+            ${this.compact && ask.questions.length === 1 ? (count === 1 ? "Ready to send" : "Needs your answer") : `${String(count)} of ${String(ask.questions.length)} answered`}
           </span>
         </header>
         <form class="ask-form" @submit=${(event: SubmitEvent) => { this.handleSubmit(event, ask); }}>
@@ -405,6 +417,11 @@ export class AskUserCard extends LitElement {
       border-radius: 10px;
       background: var(--pi-surface);
     }
+    :host([compact]) { margin-top: 10px; }
+    :host([compact]) .open-card { border-color: var(--pi-accent-border); background: color-mix(in srgb, var(--pi-accent) 4%, var(--pi-surface)); }
+    :host([compact]) .card-header { position: static; box-shadow: none; }
+    :host([compact]) fieldset.question { padding-block: 12px; }
+    :host([compact]) .form-footer { padding-block: 9px; }
     .card-header {
       position: sticky;
       top: var(--pi-chat-sticky-top, 0px);

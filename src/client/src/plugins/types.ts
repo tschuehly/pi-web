@@ -1,6 +1,6 @@
 import type { TemplateResult } from "lit";
 import type { AppAction } from "../actions";
-import type { DeleteWorkspaceFileResponse, FileContentResponse, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitStatusResponse, Machine, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, Project, RunTerminalCommandInput, SessionInfo, TerminalCommandRun, TerminalCommandRunFilter, TerminalCommandRunHandle, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse, Workspace } from "../api";
+import type { DeleteWorkspaceFileResponse, FileContentResponse, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitStatusResponse, Machine, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, PendingAskUser, Project, RunTerminalCommandInput, SessionInfo, TerminalCommandRun, TerminalCommandRunFilter, TerminalCommandRunHandle, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse, Workspace } from "../api";
 import type { AppState } from "../appState";
 import type { SettingsSection } from "../settingsRoute";
 import type { LocalContributionId, PluginId, QualifiedContributionId } from "./ids";
@@ -70,6 +70,34 @@ export interface WorkspaceHost {
   openActions?: () => void;
 }
 
+export interface PluginPreferencesHost {
+  get(key: string): string | undefined;
+  set(key: string, value: string | undefined): void;
+}
+
+export interface SessionAttentionItem {
+  identity: string;
+  machineId: string;
+  projectId?: string;
+  workspaceId?: string;
+  sessionId: string;
+  askId: string;
+  ask: PendingAskUser;
+}
+
+export interface SessionAttentionSnapshot {
+  sequence: number;
+  reconnectComplete: boolean;
+  items: readonly SessionAttentionItem[];
+}
+
+export interface SessionAttentionHost {
+  snapshot(): SessionAttentionSnapshot;
+  watch(handler: (snapshot: SessionAttentionSnapshot) => void): () => void;
+  focus(item: Pick<SessionAttentionItem, "machineId" | "projectId" | "workspaceId" | "sessionId" | "askId">): Promise<boolean>;
+  requestNotificationPermission?(): Promise<NotificationPermission>;
+}
+
 export interface PluginSessionLocation {
   machineId: string;
   projectId?: string;
@@ -106,6 +134,8 @@ export interface PrimaryViewContext {
   host: WorkspaceHost;
   sessions?: PluginSessionHost;
   surfaceHost?: PrimaryViewSurfaceHost;
+  preferences?: PluginPreferencesHost;
+  attention?: SessionAttentionHost;
 }
 
 export interface SessionStartGuardContribution {

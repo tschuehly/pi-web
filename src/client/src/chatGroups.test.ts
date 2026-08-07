@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupChatMessages, summarizeChatGroup } from "./chatGroups";
+import { currentExchangeGroups, groupChatMessages, summarizeChatGroup } from "./chatGroups";
 import type { ChatLine } from "./components/shared";
 
 const text = (role: ChatLine["role"], value: string): ChatLine => ({ role, parts: [{ type: "text", text: value }] });
@@ -105,6 +105,35 @@ describe("groupChatMessages", () => {
       { role: "assistant", parts: [{ type: "toolCall", toolName: "read", summary: "newer" }] },
       text("assistant", "answer"),
     ], 8)[0]).toMatchObject({ kind: "group", startIndex: 8, endIndex: 9 });
+  });
+});
+
+describe("currentExchangeGroups", () => {
+  it("collapses everything before the latest ordinary user turn", () => {
+    const messages = [text("user", "old"), text("assistant", "old answer"), text("user", "current"), text("assistant", "current answer")];
+    const groups = groupChatMessages(messages, 10);
+
+    expect(currentExchangeGroups(messages, groups, 10, false)).toMatchObject({
+      startsAt: 12,
+      startsOutsideLoadedPage: false,
+      history: [{ kind: "message", index: 10 }, { kind: "message", index: 11 }],
+      current: [{ kind: "message", index: 12 }, { kind: "message", index: 13 }],
+    });
+  });
+
+  it("does not treat compaction or branch summaries as exchange starts", () => {
+    const messages: ChatLine[] = [
+      text("assistant", "loaded tail"),
+      { ...text("user", "summary"), source: "compaction" },
+    ];
+    const groups = groupChatMessages(messages, 20);
+
+    expect(currentExchangeGroups(messages, groups, 20, true)).toMatchObject({
+      startsAt: undefined,
+      startsOutsideLoadedPage: true,
+      history: [],
+      current: groups,
+    });
   });
 });
 

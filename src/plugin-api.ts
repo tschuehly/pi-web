@@ -1,5 +1,5 @@
 import type { TemplateResult } from "lit";
-import type { FileContentResponse, FileTreeResponse, MachineKind, PiWebStatusResponse, TerminalCommandRunHandle, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse, DeleteWorkspaceFileResponse, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse } from "./shared/apiTypes.js";
+import type { FileContentResponse, FileTreeResponse, MachineKind, PendingAskUser, PiWebStatusResponse, TerminalCommandRunHandle, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse, DeleteWorkspaceFileResponse, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse } from "./shared/apiTypes.js";
 
 export type {
   FileContentMediaType,
@@ -168,6 +168,34 @@ export interface WorkspaceHost {
   openActions?: () => void;
 }
 
+export interface PluginPreferencesHost {
+  get(key: string): string | undefined;
+  set(key: string, value: string | undefined): void;
+}
+
+export interface SessionAttentionItem {
+  identity: string;
+  machineId: string;
+  projectId?: string;
+  workspaceId?: string;
+  sessionId: string;
+  askId: string;
+  ask: PendingAskUser;
+}
+
+export interface SessionAttentionSnapshot {
+  sequence: number;
+  reconnectComplete: boolean;
+  items: readonly SessionAttentionItem[];
+}
+
+export interface SessionAttentionHost {
+  snapshot(): SessionAttentionSnapshot;
+  watch(handler: (snapshot: SessionAttentionSnapshot) => void): () => void;
+  focus(item: Pick<SessionAttentionItem, "machineId" | "projectId" | "workspaceId" | "sessionId" | "askId">): Promise<boolean>;
+  requestNotificationPermission?(): Promise<NotificationPermission>;
+}
+
 export interface PluginSessionLocation {
   machineId: string;
   projectId?: string;
@@ -211,6 +239,10 @@ export interface PrimaryViewContext {
   sessions?: PluginSessionHost;
   /** PI WEB-owned surfaces that a primary view can compose into its render tree. */
   surfaceHost?: PrimaryViewSurfaceHost;
+  /** Browser-local, plugin-namespaced presentation preferences. */
+  preferences?: PluginPreferencesHost;
+  /** Immutable live pending-ask projection across observed sessions. */
+  attention?: SessionAttentionHost;
 }
 
 export interface SessionStartGuardContribution {

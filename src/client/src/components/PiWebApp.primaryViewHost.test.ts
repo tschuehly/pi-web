@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { html, render as renderTemplate } from "lit";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Project, SessionInfo, Workspace } from "../api";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Machine, Project, SessionInfo, SessionStatus, Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
 import type { PluginRuntimeContext, PrimaryViewContext } from "../plugins/types";
 import { PluginRegistry } from "../plugins/registry";
@@ -12,10 +12,15 @@ import { AppPrimaryView } from "./appShell/AppPrimaryView";
 
 const DEDICATED_VIEW = "example:views.work";
 
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } }))));
+});
+
 afterEach(() => {
   document.body.replaceChildren();
   localStorage.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("PiWebApp primary-view host", () => {
@@ -38,6 +43,7 @@ describe("PiWebApp primary-view host", () => {
 
     const shell = requiredElement(document.body, ".shell", HTMLDivElement);
     expect(shell.classList.contains("dedicated-shell")).toBe(true);
+    expect(shell.querySelector("app-pi-menu")).not.toBeNull();
     expect(directChild(shell, "aside")).toBeUndefined();
     expect(directChild(shell, "workspace-panel")).toBeUndefined();
     expect(document.querySelector("app-context-bar")).toBeNull();
@@ -55,6 +61,19 @@ describe("PiWebApp primary-view host", () => {
       "core:workspace.terminal",
     ]);
     expect(workspaceSurfaces.every((panel) => panel.hideToolTabs)).toBe(true);
+  });
+
+  it("keeps the fixed Pi menu out of the default shell navigation composition", () => {
+    const app = createDedicatedApp(() => html`<p>Work</p>`);
+    setAppState(app, { ...appState(app), mainView: "chat" });
+
+    const container = document.createElement("div");
+    renderTemplate(app.render(), container);
+
+    const shell = requiredElement(container, ".shell", HTMLDivElement);
+    expect(shell.classList.contains("dedicated-shell")).toBe(false);
+    expect(shell.querySelector("app-pi-menu")).toBeNull();
+    expect(directChild(shell, "aside")).toBeDefined();
   });
 
   it("refreshes mounted surfaces in place instead of disconnecting their host elements", () => {
@@ -84,6 +103,85 @@ describe("PiWebApp primary-view host", () => {
     openActions?.();
 
     expect(appState(app).actionPaletteOpen).toBe(true);
+  });
+
+  it("exposes namespaced preferences and a pure immutable pending-ask snapshot", () => {
+    const app = createDedicatedApp(() => html`<p>Work</p>`);
+    const state = appState(app);
+    const session = requiredSession(state.sessions[0]);
+    setAppState(app, { ...state, sessionStatuses: { [session.id]: pendingAskStatus(session.id, "ask-1") } });
+    const context = primaryViewContext(app);
+
+    context.preferences?.set("selected-session:work", session.id);
+    expect(context.preferences?.get("selected-session:work")).toBe(session.id);
+    expect(context.attention?.snapshot().items).toEqual([]);
+
+    observeSessionAttention(app);
+    const snapshot = context.attention?.snapshot();
+    expect(snapshot?.reconnectComplete).toBe(true);
+    expect(snapshot?.items).toHaveLength(1);
+    expect(snapshot?.items[0]).toMatchObject({ sessionId: session.id, askId: "ask-1" });
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot?.items)).toBe(true);
+    expect(Object.isFrozen(snapshot?.items[0])).toBe(true);
+  });
+
+  it("prunes unobservable asks when attention observation moves to another machine", () => {
+    const app = createDedicatedApp(() => html`<p>Work</p>`);
+    const machineA = testMachine("machine-a");
+    const machineB = testMachine("machine-b");
+    const sessionA = testSession("session-a");
+    const sessionB = testSession("session-b");
+    setAppState(app, {
+      ...appState(app),
+      machines: [machineA, machineB],
+      selectedMachine: machineA,
+      sessions: [sessionA],
+      selectedSession: sessionA,
+      sessionStatuses: { [sessionA.id]: pendingAskStatus(sessionA.id, "ask-a") },
+    });
+    observeSessionAttention(app);
+    publishSessionAttention(app);
+    const context = primaryViewContext(app);
+    const watched: (readonly string[])[] = [];
+    const release = context.attention?.watch((snapshot) => { watched.push(snapshot.items.map((item) => item.identity)); });
+
+    setAppState(app, {
+      ...appState(app),
+      selectedMachine: machineB,
+      sessions: [sessionB],
+      selectedSession: sessionB,
+      sessionStatuses: {},
+    });
+    observeSessionAttention(app);
+    publishSessionAttention(app);
+
+    expect(context.attention?.snapshot().items).toEqual([]);
+    expect(watched.at(-1)).toEqual([]);
+    release?.();
+  });
+
+  it("retains observed asks across workspaces on the same connected machine", () => {
+    const app = createDedicatedApp(() => html`<p>Work</p>`);
+    const sessionA = testSession("session-a");
+    const sessionB = testSession("session-b");
+    setAppState(app, {
+      ...appState(app),
+      sessions: [sessionA],
+      selectedSession: sessionA,
+      sessionStatuses: { [sessionA.id]: pendingAskStatus(sessionA.id, "ask-a") },
+    });
+    observeSessionAttention(app);
+
+    setAppState(app, {
+      ...appState(app),
+      sessions: [sessionB],
+      selectedSession: sessionB,
+      sessionStatuses: { [sessionB.id]: pendingAskStatus(sessionB.id, "ask-b") },
+    });
+    observeSessionAttention(app);
+
+    expect(primaryViewContext(app).attention?.snapshot().items.map((item) => item.askId)).toEqual(["ask-a", "ask-b"]);
   });
 
   it("routes core surface actions through a dedicated primary view", () => {
@@ -161,6 +259,20 @@ function createDedicatedApp(render: (context: PrimaryViewContext) => ReturnType<
     mainView: DEDICATED_VIEW,
   });
   return app;
+}
+
+function observeSessionAttention(app: PiWebApp): void {
+  invokeAppMethod(app, "observeSessionAttention");
+}
+
+function publishSessionAttention(app: PiWebApp): void {
+  invokeAppMethod(app, "publishSessionAttentionSnapshot");
+}
+
+function invokeAppMethod(app: PiWebApp, name: string): void {
+  const method: unknown = Reflect.get(app, name);
+  if (typeof method !== "function") throw new Error(`PiWebApp.${name} was unavailable`);
+  Reflect.apply(method, app, []);
 }
 
 function refreshMountedPrimaryViewSurfaces(app: PiWebApp): void {
@@ -250,10 +362,39 @@ function testWorkspace(): Workspace {
   return { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true, isGitRepo: true, isGitWorktree: false };
 }
 
-function testSession(): SessionInfo {
+function testMachine(id: string): Machine {
   return {
-    id: "session-1",
-    path: "/tmp/session-1.jsonl",
+    id,
+    name: id,
+    kind: "remote",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function pendingAskStatus(sessionId: string, askId: string): SessionStatus {
+  return {
+    sessionId,
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+    pendingAsk: { askId, askedAt: "2026-01-01T00:00:00.000Z", questions: [{ id: "q1", question: "Proceed?", options: [{ value: "yes", label: "Yes" }] }] },
+  };
+}
+
+function requiredSession(session: SessionInfo | undefined): SessionInfo {
+  if (session === undefined) throw new Error("Expected session");
+  return session;
+}
+
+function testSession(id = "session-1"): SessionInfo {
+  return {
+    id,
+    path: `/tmp/${id}.jsonl`,
     cwd: "/repo",
     created: "2026-01-01T00:00:00.000Z",
     modified: "2026-01-01T00:00:00.000Z",

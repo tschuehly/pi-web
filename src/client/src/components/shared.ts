@@ -371,26 +371,21 @@ export const chatStyles = css`
   }
   .chat { --pi-chat-sticky-top: calc(-1 * var(--pi-panel-padding)); height: 100%; min-height: 0; overflow: auto; overflow-anchor: none; padding: var(--pi-panel-padding) var(--pi-panel-padding) 56px; box-sizing: border-box; }
   .scroll-marker { display: block; height: 0; overflow: hidden; pointer-events: none; }
-  .activity-dock { position: absolute; left: 16px; right: 16px; bottom: 12px; z-index: 20; display: flex; align-items: center; gap: 8px; min-width: 0; box-sizing: border-box; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-bg-overlay); color: var(--pi-muted); padding: 8px 12px; font-size: 13px; pointer-events: none; box-shadow: 0 8px 28px var(--pi-shadow); backdrop-filter: blur(6px); }
-  .activity-dock.active { border-color: var(--pi-success-border); color: var(--pi-success); background: var(--pi-success-bg-overlay); }
+  .activity-dock { position: absolute; left: var(--pi-panel-padding); bottom: 12px; z-index: 20; display: flex; align-items: center; gap: 8px; min-width: 0; max-width: calc(100% - 2 * var(--pi-panel-padding)); box-sizing: border-box; background: var(--pi-bg-overlay); color: var(--pi-muted); padding: 4px 7px; font-size: 12px; pointer-events: none; }
+  .activity-dock.active { color: var(--pi-success); }
   .activity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
   .activity-dock.active .dot { animation: pulse 1s ease-in-out infinite; opacity: 1; }
-  .msg { max-width: var(--pi-content-max-width); min-width: 0; box-sizing: border-box; margin: 0 0 var(--pi-message-gap); padding: var(--pi-message-padding); border: 0; border-radius: 6px; background: var(--pi-surface); overflow: visible; }
-  .msg.assistant, .msg.tool-image-output { background: var(--pi-surface); }
-  .msg.user { background: var(--pi-selection-bg); }
-  .msg.tool { background: var(--pi-warning-surface); color: var(--pi-warning); }
-  .msg.tool-execution-shell, .msg.ask-user-record-shell { padding: 0; border: 0; background: transparent; color: var(--pi-text); }
+  .msg { max-width: var(--pi-content-max-width); min-width: 0; box-sizing: border-box; margin: 0 0 var(--pi-message-gap); padding: 0 2px var(--pi-message-padding); border: 0; background: transparent; overflow: visible; }
+  .msg.tool { color: var(--pi-warning); }
+  .msg.tool-execution-shell, .msg.ask-user-record-shell { padding: 0 2px var(--pi-message-padding); color: var(--pi-text); }
   .msg.ask-user-record-shell ask-user-card { margin: 0 auto; }
   .msg.system { color: var(--pi-danger); }
-  .msg.bash { background: var(--pi-success-bg); }
-  .msg.skill { background: var(--pi-purple-surface); }
-  .msg.event-group { padding: 0; background: var(--pi-bg); color: var(--pi-muted); }
-  .msg.event-group.live { background: var(--pi-success-bg); }
-  .msg.event-group > summary { position: sticky; top: -26px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 9px 9px 0 0; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-bg); color: var(--pi-muted); }
-  .msg.event-group.live > summary { border-bottom-color: var(--pi-success-border); background: var(--pi-success-bg); color: var(--pi-success); }
+  .msg.event-group { padding: 0 0 var(--pi-message-padding); color: var(--pi-muted); }
+  .msg.event-group > summary { position: sticky; top: -26px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-bg); color: var(--pi-muted); }
+  .msg.event-group.live > summary { border-bottom-color: var(--pi-success-border); color: var(--pi-success); }
   .msg.event-group > summary .label { margin: 0; }
-  .group-body { padding: 0 12px 12px; }
+  .group-body { padding: 0 2px; }
   .chat-image { display: block; max-width: 100%; max-height: 320px; margin: 8px 0 0; border: 1px solid var(--pi-border-muted); border-radius: 8px; object-fit: contain; cursor: zoom-in; }
   .chat-image:focus-visible { outline: 2px solid var(--pi-accent, var(--pi-success-border)); outline-offset: 2px; }
   dialog.image-zoom { position: fixed; inset: 0; margin: auto; max-width: calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)); max-height: calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: visible; }
@@ -420,19 +415,16 @@ export const chatStyles = css`
   .queued-message:first-of-type { padding-top: 0; border-top: 0; }
   .queued-kind { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; }
   .queued-dialogs { margin: -8px 0 14px; padding: 0 4px; color: var(--pi-muted); font-size: 12px; text-align: center; }
-  .session-activity { max-width: 100%; min-width: 0; box-sizing: border-box; display: grid; gap: 4px; margin: 0 0 var(--pi-message-gap); padding: var(--pi-message-padding); border: 0; border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); overflow: hidden; }
-  .session-activity.compacting { background: var(--pi-purple-surface); }
+  .session-activity { max-width: 100%; min-width: 0; box-sizing: border-box; display: grid; gap: 4px; margin: 0 0 var(--pi-message-gap); padding: 8px 2px; border-top: 1px solid var(--pi-border-muted); border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-text); overflow: hidden; }
   .session-activity strong { color: var(--pi-purple); }
   .session-activity span, .session-activity small { color: var(--pi-muted); }
   .history-boundary small { color: var(--pi-dim); }
   .msg-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; margin-bottom: 8px; }
-  .msg > .msg-header { position: sticky; top: calc(var(--pi-panel-padding) * -1); z-index: 4; margin: calc(var(--pi-message-padding) * -1) calc(var(--pi-message-padding) * -1) var(--pi-toolbar-gap); padding: var(--pi-control-padding-block) var(--pi-control-padding-inline); border-radius: 6px 6px 0 0; background: inherit; }
-  .msg.user > .msg-header { border-bottom-color: color-mix(in srgb, var(--pi-accent-border) 35%, transparent); background: var(--pi-selection-bg); }
+  .msg > .msg-header { position: sticky; top: calc(var(--pi-panel-padding) * -1); z-index: 4; margin: 0 0 var(--pi-toolbar-gap); padding: 3px 0; background: var(--pi-bg-overlay); }
   .msg.assistant > .msg-header .label, .msg.tool-image-output > .msg-header .label { color: var(--pi-text-secondary); }
   .msg.user > .msg-header .label { color: var(--pi-accent); }
-  .msg.tool > .msg-header { border-bottom-color: color-mix(in srgb, var(--pi-warning-border) 35%, transparent); background: var(--pi-warning-surface); }
-  .msg.bash > .msg-header { border-bottom-color: color-mix(in srgb, var(--pi-success) 35%, transparent); background: var(--pi-success-bg); }
-  .msg.skill > .msg-header { border-bottom-color: color-mix(in srgb, var(--pi-purple-border) 35%, transparent); background: var(--pi-purple-surface); }
+  .msg.bash > .msg-header .label { color: var(--pi-success); }
+  .msg.skill > .msg-header .label { color: var(--pi-purple); }
   .group-msg > .msg-header { position: sticky; top: -26px; z-index: 4; margin: -10px 0 8px; padding: 7px 0 6px; border-bottom: 1px solid color-mix(in srgb, var(--pi-border-muted) 35%, transparent); background: var(--pi-bg); }
   .msg-header-trailing { min-width: 0; flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .msg-actions { flex: 0 0 auto; display: inline-flex; gap: 6px; opacity: 0; transition: opacity .12s ease; }
@@ -461,7 +453,7 @@ export const chatStyles = css`
   .summary { color: var(--pi-muted); margin-left: 6px; }
   .part:is(details) { border-top: 1px solid var(--pi-border); padding-top: 8px; }
   .part > formatted-text { display: block; max-width: 100%; min-width: 0; overflow: visible; }
-  .skill-invocation, .skill-read { border-radius: 6px; background: var(--pi-bg); padding: 8px 10px; }
+  .skill-invocation, .skill-read { padding: 6px 0; }
   .skill-invocation > summary, .skill-read > strong { color: var(--pi-purple); }
   .skill-invocation > small, .skill-read > small { display: block; margin: 6px 0 0; color: var(--pi-muted); }
   summary { cursor: pointer; color: var(--pi-muted); }
@@ -484,7 +476,7 @@ export const formattedTextStyles = css`
   pre code { border: 0; padding: 0; background: transparent; }
   .code-copy-button { position: absolute; top: 6px; right: 6px; z-index: 1; display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 0; font: 14px system-ui, sans-serif; line-height: 1; cursor: pointer; }
   .code-copy-button:hover, .code-copy-button:focus { color: var(--pi-text); border-color: var(--pi-accent); }
-  blockquote { border-left: 3px solid var(--pi-border); padding-left: 10px; color: var(--pi-muted); }
+  blockquote { border-left: 1px solid var(--pi-border); padding-left: 10px; color: var(--pi-muted); }
   a { color: var(--pi-accent); }
   h1, h2, h3, h4 { margin: 14px 0 8px; line-height: 1.2; }
   h1:first-child, h2:first-child, h3:first-child, h4:first-child { margin-top: 0; }
@@ -565,7 +557,7 @@ export const actionPaletteStyles = css`
 
 export const promptEditorStyles = css`
   :host { position: relative; z-index: 5; display: block; color: var(--pi-text); font: 14px system-ui, sans-serif; }
-  footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--pi-toolbar-gap); padding: var(--pi-panel-padding); background: var(--pi-surface); }
+  footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--pi-toolbar-gap); padding: var(--pi-panel-padding); border-top: 1px solid var(--pi-border-muted); background: var(--pi-bg); }
   footer.shell-mode { border-top-color: var(--pi-success); background: var(--pi-success-bg); }
   .editor-wrap { position: relative; min-width: 0; }
   .actions { display: flex; gap: var(--pi-toolbar-gap); align-items: center; justify-content: flex-end; flex-wrap: nowrap; white-space: nowrap; }

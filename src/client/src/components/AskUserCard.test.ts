@@ -47,6 +47,22 @@ describe("ask-user-card live form", () => {
     expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 2 answered");
   });
 
+  it("renders a concise single-question decision and focuses its first unanswered control", async () => {
+    const card = new AskUserCard();
+    card.ask = openAsk([question("ship", "Ship this change?", [option("yes", "Yes"), option("no", "No")])]);
+    card.compact = true;
+    card.draftSessionId = "local:session-1";
+    document.body.append(card);
+    await card.updateComplete;
+    const root = renderRoot(card);
+
+    expect(card.hasAttribute("compact")).toBe(true);
+    expect(root.querySelector("h2")?.textContent).toBe("Decision");
+    expect(root.textContent).toContain("Needs your answer");
+    expect(await card.focusFirstUnanswered()).toBe(true);
+    expect(root.activeElement).toBe(inputWithValue(root, "yes"));
+  });
+
   it("accumulates several checkbox values for a multi-select question", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([
