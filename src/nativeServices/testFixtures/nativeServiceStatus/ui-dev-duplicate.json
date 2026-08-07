@@ -1,0 +1,34 @@
+{
+  "name": "ui-dev-duplicate",
+  "serviceFiles": ["sessiond", "uiDev"],
+  "observations": {
+    "manager": [
+      { "component": "sessiond", "label": "com.pi-web.sessiond", "pid": 4701, "state": "running" },
+      { "component": "uiDev", "label": "com.pi-web.ui-dev", "pid": 4702, "state": "running" }
+    ],
+    "processes": [
+      { "component": "sessiond", "pid": 4701, "ppid": 1, "executable": "/opt/homebrew/bin/node", "command": "/workspace/dist/server/sessiond.js", "version": "1.202607.3" },
+      { "component": "uiDev", "pid": 4702, "ppid": 1, "executable": "/opt/homebrew/bin/node", "command": "tsx src/server/index.ts", "version": "dev" },
+      { "component": "uiDev", "pid": 4703, "ppid": 4699, "executable": "/usr/local/bin/node", "command": "tsx src/server/index.ts", "version": "dev" }
+    ],
+    "lock": { "state": "owned", "pid": 4701 },
+    "socket": { "state": "responsive", "pid": 4701 }
+  },
+  "expected": {},
+  "expectedComponents": [
+    {
+      "component": "sessiond",
+      "ownership": "managed",
+      "health": "healthy"
+    },
+    {
+      "component": "uiDev",
+      "ownership": "conflict",
+      "health": "unhealthy",
+      "instances": [
+        { "pid": 4702, "executable": "/opt/homebrew/bin/node", "serviceManagerLabel": "com.pi-web.ui-dev", "componentVersion": "dev" },
+        { "pid": 4703, "executable": "/usr/local/bin/node", "serviceManagerLabel": null, "componentVersion": "dev" }
+      ]
+    }
+  ]
+}

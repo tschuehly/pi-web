@@ -8,6 +8,7 @@ interface FakeRuntimeState {
   nextOwner: string;
   ownersBySocket: Map<string, string>;
   servers: Server[];
+  tcpStarts: number;
 }
 
 function createFakeRuntimeState(): FakeRuntimeState {
@@ -15,6 +16,7 @@ function createFakeRuntimeState(): FakeRuntimeState {
     nextOwner: "direct",
     ownersBySocket: new Map(),
     servers: [],
+    tcpStarts: 0,
   };
 }
 
@@ -29,9 +31,13 @@ vi.mock("fastify", () => ({
     register: vi.fn(() => Promise.resolve()),
     get: vi.fn(),
     close: vi.fn(() => Promise.resolve()),
-    listen: vi.fn(async (options: { path?: string }) => {
+    listen: vi.fn(async (options: { path?: string; port?: number }) => {
       const socketPath = options.path;
-      if (socketPath === undefined) throw new Error("The contention fixture requires an isolated Unix socket path");
+      if (socketPath === undefined) {
+        if (options.port === undefined) throw new Error("Expected a Unix socket path or TCP port");
+        fakeRuntime.tcpStarts += 1;
+        return;
+      }
       const owner = fakeRuntime.nextOwner;
       const server = createServer((request, response) => {
         if (request.url === "/health") {
@@ -144,6 +150,7 @@ beforeEach(() => {
 afterEach(async () => {
   await closeFakeServers();
   fakeRuntime.ownersBySocket.clear();
+  fakeRuntime.tcpStarts = 0;
   vi.restoreAllMocks();
   vi.resetModules();
   if (originalSocketPath === undefined) delete process.env["PI_WEB_SESSIOND_SOCKET"];
@@ -161,10 +168,13 @@ describe("session daemon socket ownership", () => {
     await startSessionDaemon();
 
     fakeRuntime.nextOwner = "direct:4102";
-    const secondStarted = await startSessionDaemon().then(() => true, () => false);
+    const failure = await startSessionDaemon().then(() => undefined, (error: unknown) => error);
 
-    expect({ secondStarted, owner: fakeRuntime.ownersBySocket.get(socketPath) }).toEqual({
-      secondStarted: false,
+    expect({
+      code: errorCode(failure),
+      owner: fakeRuntime.ownersBySocket.get(socketPath),
+    }).toEqual({
+      code: "SESSIOND_DUPLICATE_OWNER",
       owner: "direct:4101",
     });
   });
@@ -174,12 +184,26 @@ describe("session daemon socket ownership", () => {
     await bindFakeOwner(socketPath, "launchd:com.pi-web.sessiond:5101");
 
     fakeRuntime.nextOwner = "direct:5102";
-    const directStarted = await startSessionDaemon().then(() => true, () => false);
+    const failure = await startSessionDaemon().then(() => undefined, (error: unknown) => error);
 
-    expect({ directStarted, owner: fakeRuntime.ownersBySocket.get(socketPath) }).toEqual({
-      directStarted: false,
+    expect({
+      code: errorCode(failure),
+      owner: fakeRuntime.ownersBySocket.get(socketPath),
+    }).toEqual({
+      code: "SESSIOND_DUPLICATE_OWNER",
       owner: "launchd:com.pi-web.sessiond:5101",
     });
+  });
+
+  it("preserves explicitly configured TCP-port mode without claiming Unix socket ownership", async () => {
+    const socketPath = await isolatedSocketPath();
+    await bindFakeOwner(socketPath, "unix-owner:5201");
+    process.env["PI_WEB_SESSIOND_PORT"] = "18504";
+
+    await expect(startSessionDaemon()).resolves.toBeUndefined();
+
+    expect(fakeRuntime.tcpStarts).toBe(1);
+    expect(fakeRuntime.ownersBySocket.get(socketPath)).toBe("unix-owner:5201");
   });
 });
 
@@ -194,6 +218,10 @@ async function isolatedSocketPath(): Promise<string> {
 async function startSessionDaemon(): Promise<void> {
   vi.resetModules();
   await import("./sessiond.js");
+}
+
+function errorCode(value: unknown): unknown {
+  return typeof value === "object" && value !== null ? Reflect.get(value, "code") : undefined;
 }
 
 async function bindFakeOwner(socketPath: string, owner: string): Promise<void> {

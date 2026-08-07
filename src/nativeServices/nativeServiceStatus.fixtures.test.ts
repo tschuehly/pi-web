@@ -13,8 +13,10 @@ interface StatusFixture {
     manager: { label: string; pid: number; state: string }[];
     processes: { pid: number; ppid: number; executable: string; command: string }[];
     lock: unknown;
+    socket: { state: "responsive" | "absent"; pid: number | null };
   };
   expected: Record<string, unknown>;
+  expectedComponents?: Record<string, unknown>[];
 }
 
 interface FakeHostState {
@@ -39,6 +41,20 @@ vi.mock("node:os", async (importOriginal) => {
     ...original,
     homedir: () => fakeHost.home,
     userInfo: () => ({ uid: 501, gid: 20, username: "fixture-user", homedir: fakeHost.home, shell: "/bin/zsh" }),
+  };
+});
+
+vi.mock("../sessiond/sessiondOwnership.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../sessiond/sessiondOwnership.js")>();
+  return {
+    ...original,
+    probeSessiondHealth: () => {
+      const socket = fakeHost.fixture?.observations.socket;
+      if (socket?.state === "responsive") {
+        return Promise.resolve({ state: "responsive" as const, pid: socket.pid ?? undefined });
+      }
+      return Promise.resolve({ state: "stale" as const, detail: "fixture socket absent" });
+    },
   };
 });
 
@@ -76,6 +92,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 const fixtureNames = ["managed", "unmanaged", "duplicate", "stale-lock", "conflict"] as const;
+const generalizedFixtureNames = ["web-duplicate", "ui-dev-duplicate", "partial-health"] as const;
 const originalArgv = [...process.argv];
 const originalDataDir = process.env["PI_WEB_DATA_DIR"];
 const originalSocketPath = process.env["PI_WEB_SESSIOND_SOCKET"];
@@ -101,8 +118,8 @@ describe("pi-web status --json ownership fixtures", () => {
     const fixture = await loadFixture(fixtureName);
     await installFixture(fixture);
 
-    const stdout = await runStatusJson();
-    const report = parseStatusJson(stdout, fixture.name);
+    const stdout = await runCliJson("status");
+    const report = parseCliJson(stdout, `status fixture ${fixture.name}`);
     const components = report["components"];
     expect(Array.isArray(components)).toBe(true);
     if (!Array.isArray(components)) throw new Error("Expected status components");
@@ -111,9 +128,40 @@ describe("pi-web status --json ownership fixtures", () => {
 
     expect(sessiond).toMatchObject(fixture.expected);
   });
+
+  it.each(generalizedFixtureNames)("reports every component and instance in the %s fixture", async (fixtureName) => {
+    const fixture = await loadFixture(fixtureName);
+    await installFixture(fixture);
+
+    const report = parseCliJson(await runCliJson("status"), `status fixture ${fixture.name}`);
+    const components = report["components"];
+    expect(Array.isArray(components)).toBe(true);
+    if (!Array.isArray(components)) throw new Error("Expected status components");
+
+    expect(components.map((component) => isRecord(component) ? component["component"] : undefined))
+      .toEqual(fixture.expectedComponents?.map((component) => component["component"]));
+    expect(components).toMatchObject(fixture.expectedComponents ?? []);
+  });
+
+  it("emits attended doctor JSON for unmanaged duplicates without sending a signal", async () => {
+    const fixture = await loadFixture("duplicate");
+    await installFixture(fixture);
+
+    const report = parseCliJson(await runCliJson("doctor"), "duplicate doctor fixture");
+
+    expect(report).toMatchObject({
+      ok: false,
+      conflicts: [{
+        component: "sessiond",
+        kind: "unmanaged-process-conflict",
+        cleanup: { attended: true, requiresAcknowledgement: true, performed: false },
+      }],
+    });
+    expect(fakeHost.runnerCalls.some((call) => call.command === "kill" && call.args[0] !== "-0")).toBe(false);
+  });
 });
 
-async function loadFixture(name: typeof fixtureNames[number]): Promise<StatusFixture> {
+async function loadFixture(name: typeof fixtureNames[number] | typeof generalizedFixtureNames[number]): Promise<StatusFixture> {
   const path = fileURLToPath(new URL(`./testFixtures/nativeServiceStatus/${name}.json`, import.meta.url));
   const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
   if (!isStatusFixture(parsed)) throw new Error(`Invalid native-service status fixture: ${path}`);
@@ -142,9 +190,9 @@ async function installFixture(fixture: StatusFixture): Promise<void> {
   await writeFile(join(dataDir, "sessiond.lock"), `${JSON.stringify(fixture.observations.lock)}\n`, "utf8");
 }
 
-async function runStatusJson(): Promise<string> {
+async function runCliJson(command: "status" | "doctor"): Promise<string> {
   const cliPath = fileURLToPath(new URL("../cli.ts", import.meta.url));
-  process.argv = [process.execPath, cliPath, "status", "--json"];
+  process.argv = [process.execPath, cliPath, command, "--json"];
   vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
   const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
   const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -158,14 +206,14 @@ async function runStatusJson(): Promise<string> {
   return log.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
 }
 
-function parseStatusJson(stdout: string, fixtureName: string): Record<string, unknown> {
+function parseCliJson(stdout: string, scenario: string): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(stdout);
     if (isRecord(parsed)) return parsed;
   } catch {
-    // The explicit error below preserves the current text output in the red failure.
+    // The explicit error below preserves unexpected CLI output in the failure.
   }
-  throw new Error(`Expected pi-web status --json to emit a JSON object for fixture ${fixtureName}. Received:\n${stdout}`);
+  throw new Error(`Expected pi-web --json output for ${scenario}. Received:\n${stdout}`);
 }
 
 function commandResult(status: number, stdout: string, stderr: string): { status: number; stdout: string; stderr: string; error: undefined } {
@@ -177,13 +225,22 @@ function isStatusFixture(value: unknown): value is StatusFixture {
   const serviceFiles = value["serviceFiles"];
   const manager = value["observations"]["manager"];
   const processes = value["observations"]["processes"];
+  const expectedComponents = value["expectedComponents"];
   return Array.isArray(serviceFiles)
     && serviceFiles.every(isServiceId)
     && Array.isArray(manager)
     && manager.every(isManagerObservation)
     && Array.isArray(processes)
     && processes.every(isProcessObservation)
-    && "lock" in value["observations"];
+    && "lock" in value["observations"]
+    && isSocketObservation(value["observations"]["socket"])
+    && (expectedComponents === undefined || (Array.isArray(expectedComponents) && expectedComponents.every(isRecord)));
+}
+
+function isSocketObservation(value: unknown): value is StatusFixture["observations"]["socket"] {
+  return isRecord(value)
+    && (value["state"] === "responsive" || value["state"] === "absent")
+    && (typeof value["pid"] === "number" || value["pid"] === null);
 }
 
 function isServiceId(value: unknown): value is ServiceId {

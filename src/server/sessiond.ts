@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-import { mkdir, rm } from "node:fs/promises";
-import { dirname } from "node:path";
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import { WorkspaceActivityService } from "./activity/workspaceActivityService.js";
@@ -22,6 +20,11 @@ import { ProjectService } from "./projects/projectService.js";
 import { ProjectStore, projectStorePath } from "./storage/projectStore.js";
 import { WorkspaceService } from "./workspaces/workspaceService.js";
 import { sessiondSocketPath } from "../sessiond/config.js";
+import {
+  acquireSessiondOwnership,
+  releaseSessiondOwnership,
+  type SessiondLockRecord,
+} from "../sessiond/sessiondOwnership.js";
 import { TerminalService } from "./terminals/terminalService.js";
 import { registerTerminalRoutes } from "./terminals/terminalRoutes.js";
 import { getPiWebRuntimeComponent } from "./piWebStatus.js";
@@ -40,6 +43,7 @@ const activeAgentProfile = createActiveAgentProfileDescriptor({
   sessionDirEnvKeys: agentSessionDirEnvKeys(config.agent.command),
 });
 const app = Fastify({ logger: true, bodyLimit: maxUploadBytes(daemonEnvironment, config) });
+let sessiondOwnership: SessiondLockRecord | undefined;
 await app.register(fastifyWebsocket);
 
 // Agent-executed processes (bash tool, terminals, subsessions) are spawned from
@@ -135,6 +139,8 @@ function registerSessionDaemonRoutes({ eventHub, workspaceActivity, auth, sessio
 
   app.get("/health", () => ({
     ok: true,
+    pid: process.pid,
+    executable: process.execPath,
     activeSessions: sessions.activeCount(),
     checkedAt: new Date().toISOString(),
     version: {
@@ -169,6 +175,11 @@ async function listenSessionDaemon({ auth, sessions, terminals, unreadStore, cat
     await attempt("dispose sessions", () => sessions.dispose());
     await attempt("flush session unread state", () => unreadStore.flush());
     await attempt("close server", () => app.close());
+    const ownership = sessiondOwnership;
+    if (ownership !== undefined) {
+      await attempt("release daemon ownership", () => releaseSessiondOwnership(ownership));
+      sessiondOwnership = undefined;
+    }
   }
 
   process.once("SIGINT", (signal) => { void shutdown(signal); });
@@ -182,9 +193,13 @@ async function listenSessionDaemon({ auth, sessions, terminals, unreadStore, cat
     await app.listen({ port, host });
   } else {
     const path = sessiondSocketPath(daemonEnvironment);
-    await mkdir(dirname(path), { recursive: true });
-    await rm(path, { force: true });
-    await app.listen({ path });
-    process.on("exit", () => void rm(path, { force: true }));
+    sessiondOwnership = await acquireSessiondOwnership({ socketPath: path });
+    try {
+      await app.listen({ path });
+    } catch (error: unknown) {
+      await releaseSessiondOwnership(sessiondOwnership);
+      sessiondOwnership = undefined;
+      throw error;
+    }
   }
 }

@@ -1,0 +1,41 @@
+{
+  "name": "partial-health",
+  "serviceFiles": ["sessiond", "web"],
+  "observations": {
+    "manager": [
+      { "component": "sessiond", "label": "com.pi-web.sessiond", "pid": 4801, "state": "running" },
+      { "component": "web", "label": "com.pi-web.web", "pid": 4802, "state": "starting" }
+    ],
+    "processes": [
+      { "component": "sessiond", "pid": 4801, "ppid": 1, "executable": "/opt/homebrew/bin/node", "command": "/workspace/dist/server/sessiond.js", "version": "1.202607.3" },
+      { "component": "web", "pid": 4802, "ppid": 1, "executable": "/opt/homebrew/bin/node", "command": "/workspace/dist/server/index.js", "version": "1.202607.3" },
+      { "component": "uiDev", "pid": 4803, "ppid": 4799, "executable": "/usr/local/bin/node", "command": "tsx src/server/index.ts", "version": "dev" }
+    ],
+    "lock": { "state": "owned", "pid": 4801 },
+    "socket": { "state": "responsive", "pid": 4801 }
+  },
+  "expected": {},
+  "expectedComponents": [
+    {
+      "component": "sessiond",
+      "ownership": "managed",
+      "health": "healthy"
+    },
+    {
+      "component": "web",
+      "ownership": "managed",
+      "health": "starting",
+      "instances": [
+        { "pid": 4802, "executable": "/opt/homebrew/bin/node", "serviceManagerLabel": "com.pi-web.web", "componentVersion": "1.202607.3" }
+      ]
+    },
+    {
+      "component": "uiDev",
+      "ownership": "unmanaged",
+      "health": "unknown",
+      "instances": [
+        { "pid": 4803, "executable": "/usr/local/bin/node", "serviceManagerLabel": null, "componentVersion": "dev" }
+      ]
+    }
+  ]
+}

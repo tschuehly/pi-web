@@ -41,6 +41,15 @@ import {
   nativeServicePrerequisiteShellCheck,
 } from "./nativeServices/serviceProbe.js";
 import { renderLaunchdPlist, renderSystemdUnit } from "./nativeServices/serviceRendering.js";
+import { collectNativeServiceStatus } from "./nativeServices/nativeServiceStatus.js";
+import {
+  createLifecycleDoctorReport,
+  formatLifecycleDoctorConflicts,
+} from "./nativeServices/lifecycleDoctor.js";
+import {
+  planRestartServiceAction,
+  type RestartComponent,
+} from "./nativeServices/serviceActionPlan.js";
 
 const PI_WEB_PACKAGE_NAME = "@jmfederico/pi-web";
 
@@ -738,16 +747,45 @@ function launchdServiceAction(action: "start" | "stop" | "restart", refs: Servic
   for (const ref of startOrder(refs)) launchdStart(ref);
 }
 
-function serviceAction(action: "start" | "stop" | "restart" | "status"): void {
+async function serviceAction(action: "start" | "stop" | "restart" | "status", args: string[]): Promise<void> {
   const backend = requireServiceBackend(`pi-web ${action}`);
   if (action === "status") {
+    if (args.length === 1 && args[0] === "--json") {
+      console.log(JSON.stringify(await collectNativeServiceStatus(), null, 2));
+      return;
+    }
+    if (args.length > 0) throw new Error(`Unknown status option: ${args[0] ?? ""}`);
     if (!printServiceStatusReport(backend)) process.exitCode = 1;
     return;
   }
 
-  const refs = installedServiceRefs(backend);
+  let refs = installedServiceRefs(backend);
+  if (action === "restart") {
+    const component = parseRestartComponent(args);
+    if (component !== undefined) {
+      const plan = planRestartServiceAction([...installedServiceIds(backend)], component);
+      refs = plan.serviceIds.map((id) => serviceRefs[id]);
+      if (refs.length === 0) throw new Error(`No installed ${component} service component was found.`);
+      for (const warning of plan.warnings) console.log(`! ${warning}`);
+    }
+  } else if (args.length > 0) {
+    throw new Error(`\`pi-web ${action}\` does not accept options.`);
+  }
   if (backend.kind === "systemd") systemdServiceAction(action, refs);
   else launchdServiceAction(action, refs);
+}
+
+function parseRestartComponent(args: readonly string[]): RestartComponent | undefined {
+  if (args.length === 0) return undefined;
+  const [option, value, ...rest] = args;
+  const component = option?.startsWith("--component=") === true ? option.slice("--component=".length) : value;
+  const validShape = option?.startsWith("--component=") === true
+    ? args.length === 1
+    : option === "--component" && rest.length === 0;
+  if (!validShape || (component !== "ui" && component !== "sessiond")) {
+    throw new Error("restart requires `--component ui` or `--component sessiond`.");
+  }
+  return component;
 }
 
 function logs(): void {
@@ -976,7 +1014,15 @@ export function doctorExitCode(
   return generalReadinessOk && nativeServicePlanOk && nodePtyRuntimeOk ? 0 : 1;
 }
 
-async function doctor(): Promise<void> {
+async function doctor(args: string[]): Promise<void> {
+  if (args.length === 1 && args[0] === "--json") {
+    const report = createLifecycleDoctorReport(await collectNativeServiceStatus());
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
+  if (args.length > 0) throw new Error(`Unknown doctor option: ${args[0] ?? ""}`);
+
   const backend = currentServiceBackend();
   console.log(`Platform: ${platformLabel()}`);
   console.log(`Service backend: ${backend?.label ?? "manual run only"}`);
@@ -1032,7 +1078,14 @@ async function doctor(): Promise<void> {
     console.log(`\n${manualRunAdvice()}`);
   }
 
-  if (doctorExitCode(generalReadinessOk, nativeServicePlanOk, nodePtyNativeModuleOk && nodePtySpawnHelperOk) !== 0) process.exitCode = 1;
+  const lifecycleReport = createLifecycleDoctorReport(await collectNativeServiceStatus());
+  const lifecycleLines = formatLifecycleDoctorConflicts(lifecycleReport);
+  if (lifecycleLines.length > 0) {
+    console.log("\nLifecycle ownership conflicts:");
+    for (const line of lifecycleLines) console.log(line);
+  }
+
+  if (doctorExitCode(generalReadinessOk, nativeServicePlanOk, nodePtyNativeModuleOk && nodePtySpawnHelperOk) !== 0 || !lifecycleReport.ok) process.exitCode = 1;
 }
 
 function printNodePtyNativeModuleCheck(): boolean {
@@ -1057,8 +1110,10 @@ function help(): void {
 Usage:
   pi-web install [--dev] [--host 127.0.0.1] [--port 8504] [--config ~/.config/pi-web/config.json]
   pi-web uninstall
-  pi-web start|stop|restart|status|logs
-  pi-web doctor
+  pi-web start|stop|restart [--component ui|sessiond]
+  pi-web status [--json]
+  pi-web logs
+  pi-web doctor [--json]
   pi-web version
 
 Recommended install:
@@ -1074,9 +1129,9 @@ async function main(): Promise<void> {
   const [command = "help", ...args] = process.argv.slice(2);
   if (command === "install") await install(args);
   else if (command === "uninstall") await uninstall();
-  else if (command === "start" || command === "stop" || command === "restart" || command === "status") serviceAction(command);
+  else if (command === "start" || command === "stop" || command === "restart" || command === "status") await serviceAction(command, args);
   else if (command === "logs") logs();
-  else if (command === "doctor") await doctor();
+  else if (command === "doctor") await doctor(args);
   else if (command === "version") await printPiWebVersionReport();
   else if (command === "--version" || command === "-v") console.log(packageVersion());
   else if (command === "help" || command === "--help" || command === "-h") help();
