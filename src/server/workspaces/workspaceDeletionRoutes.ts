@@ -59,9 +59,10 @@ async function deleteWorkspace(projects: ProjectService, workspaces: WorkspaceSe
 
   // Single composed command: `&&` is the fail-closed guarantee — a non-zero hook exit prevents the removal.
   const quotedTargetPath = shellQuote(targetWorkspace.path);
+  const removalCommand = `git worktree repair ${quotedTargetPath} && git worktree remove ${quotedTargetPath}`;
   const command = hookExecutable
-    ? `${shellQuote(hookPath)} ${quotedTargetPath} && git worktree remove ${quotedTargetPath}`
-    : `git worktree remove ${quotedTargetPath}`;
+    ? `${shellQuote(hookPath)} ${quotedTargetPath} && ${removalCommand}`
+    : removalCommand;
 
   const deleteResponse = await requestJson(daemon, "POST", "/terminal-command-runs", {
     origin: "core",

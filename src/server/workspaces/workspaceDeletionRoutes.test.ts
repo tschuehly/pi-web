@@ -97,7 +97,7 @@ afterEach(async () => {
 });
 
 describe("workspace deletion routes", () => {
-  it("closes target workspace terminals before starting deletion from the main workspace", async () => {
+  it("closes target terminals and repairs moved worktree metadata before deletion", async () => {
     const response = await app.inject({ method: "DELETE", url: "/api/projects/p1/workspaces/feature" });
 
     expect(response.statusCode).toBe(200);
@@ -114,7 +114,7 @@ describe("workspace deletion routes", () => {
           workspaceId: "main",
           cwd: "/repo",
           title: "Delete workspace: feature/branch",
-          command: "git worktree remove '/repo/feature path'",
+          command: "git worktree repair '/repo/feature path' && git worktree remove '/repo/feature path'",
           metadata: {
             "pi.operation": "workspace.delete",
             "target.workspaceId": "feature",
@@ -143,7 +143,7 @@ describe("workspace deletion routes", () => {
           workspaceId: "main",
           cwd: "/repo",
           title: "Delete workspace: feature/branch",
-          command: `'${mainHookPath}' '/repo/feature path' && git worktree remove '/repo/feature path'`,
+          command: `'${mainHookPath}' '/repo/feature path' && git worktree repair '/repo/feature path' && git worktree remove '/repo/feature path'`,
           metadata: {
             "pi.operation": "workspace.delete",
             "target.workspaceId": "feature",
@@ -173,7 +173,7 @@ describe("workspace deletion routes", () => {
           workspaceId: "special-main",
           cwd: "/my repo",
           title: "Delete workspace: feature/special",
-          command: `'${specialHookPath}' '/my repo/wt '\\''x'\\''' && git worktree remove '/my repo/wt '\\''x'\\'''`,
+          command: `'${specialHookPath}' '/my repo/wt '\\''x'\\''' && git worktree repair '/my repo/wt '\\''x'\\''' && git worktree remove '/my repo/wt '\\''x'\\'''`,
           metadata: {
             "pi.operation": "workspace.delete",
             "target.workspaceId": "special-feature",
@@ -191,7 +191,7 @@ describe("workspace deletion routes", () => {
 
     expect(response.statusCode).toBe(200);
     const dispatch = daemonRequests.at(1);
-    expect(dispatch?.body).toMatchObject({ command: "git worktree remove '/my repo/wt '\\''x'\\'''" });
+    expect(dispatch?.body).toMatchObject({ command: "git worktree repair '/my repo/wt '\\''x'\\''' && git worktree remove '/my repo/wt '\\''x'\\'''" });
   });
 
   it("fails the deletion before closing terminals when the hook probe hits an unexpected filesystem error", async () => {
