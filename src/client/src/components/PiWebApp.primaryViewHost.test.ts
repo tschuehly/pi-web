@@ -95,6 +95,19 @@ describe("PiWebApp primary-view host", () => {
     expect(after.dataset["draftMarker"]).toBe("preserved");
   });
 
+  it("uses generic Chat language when a mounted Chat surface has no selected session", () => {
+    const app = createDedicatedApp(() => html`<p>Work</p>`);
+    setAppState(app, { ...appState(app), selectedSession: undefined });
+    const container = document.createElement("div");
+    const surfaceHost = primaryViewContext(app).surfaceHost;
+    if (surfaceHost === undefined) throw new Error("Primary surface host was unavailable");
+
+    surfaceHost.mount(container, "chat");
+
+    expect(container.textContent).toContain("Select a Chat to open it.");
+    expect(container.textContent).not.toContain("Workstream");
+  });
+
   it("keeps host action access available to a dedicated primary view", () => {
     const app = createDedicatedApp(() => html`<p>Work</p>`);
     const context = primaryViewContext(app);
@@ -203,6 +216,109 @@ describe("PiWebApp primary-view host", () => {
     unregister();
     runtime.selectMainView("core:workspace.files");
     expect(appState(app).mainView).toBe("core:workspace.files");
+  });
+
+  it("lets a generic primary view list and select native sessions across complete anchors without leaving the view", async () => {
+    const app = createAnchoredDedicatedApp();
+    const projectA = testProject();
+    const workspaceA = testWorkspace();
+    const sessionA = testSession("session-a");
+    const projectB = { ...testProject(), id: "project-2", name: "Other project", path: "/other" };
+    const workspaceB = { ...testWorkspace(), id: "workspace-2", projectId: projectB.id, path: "/other", label: "other" };
+    const sessionB = { ...testSession("session-b"), cwd: workspaceB.path, modified: "2026-01-02T00:00:00.000Z" };
+    updateAppState(app, {
+      projects: [projectA, projectB],
+      selectedProject: projectA,
+      workspaces: [workspaceA],
+      selectedWorkspace: workspaceA,
+      sessions: [sessionA],
+      selectedSession: sessionA,
+    });
+    vi.spyOn(projectsApi, "projects").mockResolvedValue([projectA, projectB]);
+    vi.spyOn(workspacesApi, "workspaces").mockImplementation((projectId) => Promise.resolve(projectId === projectA.id ? [workspaceA] : [workspaceB]));
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd) => Promise.resolve(cwd === workspaceA.path ? [sessionA] : [sessionB]));
+    const restoredSessionIds: string[] = [];
+    const firstRestore = deferred<undefined>();
+    stubRestoreRouteFor(app, async (route) => {
+      const sessionId = typeof route === "object" && route !== null && "sessionId" in route && typeof route.sessionId === "string" ? route.sessionId : undefined;
+      const selectingB = sessionId === sessionB.id;
+      restoredSessionIds.push(String(sessionId));
+      if (selectingB) await firstRestore.promise;
+      setAppState(app, {
+        ...appState(app),
+        selectedProject: selectingB ? projectB : projectA,
+        selectedWorkspace: selectingB ? workspaceB : workspaceA,
+        sessions: selectingB ? [sessionB] : [sessionA],
+        selectedSession: selectingB ? sessionB : sessionA,
+      });
+    });
+    const navigation = primaryViewContext(app).sessionNavigation;
+    if (navigation === undefined) throw new Error("Session navigation host was unavailable");
+    const release = navigation.watch(() => undefined);
+    await vi.waitFor(() => { expect(navigation.snapshot().reconnectComplete).toBe(true); });
+
+    const items = navigation.snapshot().sessions;
+    expect(items.map((item) => item.location)).toEqual([
+      { machineId: "local", projectId: "project-2", workspaceId: "workspace-2", sessionId: "session-b" },
+      { machineId: "local", projectId: "project-1", workspaceId: "workspace-1", sessionId: "session-a" },
+    ]);
+    const itemB = items.find((item) => item.sessionId === sessionB.id);
+    const itemA = items.find((item) => item.sessionId === sessionA.id);
+    if (itemA === undefined || itemB === undefined) throw new Error("Expected both native sessions");
+    expect(navigation.snapshot().selectedIdentity).toBe(itemA.identity);
+
+    const selectingB = navigation.select(itemB.location);
+    const selectingA = navigation.select(itemA.location);
+    await vi.waitFor(() => { expect(restoredSessionIds).toEqual([sessionB.id]); });
+    firstRestore.resolve(undefined);
+    await Promise.all([selectingB, selectingA]);
+
+    expect(restoredSessionIds).toEqual([sessionB.id, sessionA.id]);
+    expect(appState(app).selectedSession?.id).toBe(sessionA.id);
+    expect(appState(app).mainView).toBe(DEDICATED_VIEW);
+    release();
+  });
+
+  it("rewires the observed session catalog when the selected machine changes", async () => {
+    const app = createAnchoredDedicatedApp();
+    const local = testMachine();
+    const remote = { ...testMachine(), id: "remote", name: "Remote", kind: "remote" as const };
+    setAppState(app, { ...appState(app), machines: [local, remote], selectedMachine: local });
+    const projects = vi.spyOn(projectsApi, "projects").mockResolvedValue([]);
+    const navigation = primaryViewContext(app).sessionNavigation;
+    if (navigation === undefined) throw new Error("Session navigation host was unavailable");
+    const release = navigation.watch(() => undefined);
+    await vi.waitFor(() => { expect(navigation.snapshot()).toMatchObject({ machine: { id: "local" }, loading: false }); });
+    stubAppMethod(app, "handleMachineChange");
+    stubAppMethod(app, "syncMachineActivitySubscriptions");
+
+    updateAppState(app, { selectedMachine: remote, selectedProject: undefined, selectedWorkspace: undefined, selectedSession: undefined, sessions: [] });
+
+    await vi.waitFor(() => { expect(navigation.snapshot()).toMatchObject({ machine: { id: "remote" }, reconnectComplete: true, loading: false }); });
+    expect(projects.mock.calls.map(([machineId]) => machineId)).toEqual(["local", "remote"]);
+    release();
+  });
+
+  it("marks the observed session catalog unavailable and aborts refresh when the selected machine disconnects", async () => {
+    const app = createAnchoredDedicatedApp();
+    const pending = deferred<Project[]>();
+    let signal: AbortSignal | undefined;
+    vi.spyOn(projectsApi, "projects").mockImplementation((_machineId, requestSignal) => {
+      signal = requestSignal;
+      return pending.promise;
+    });
+    const navigation = primaryViewContext(app).sessionNavigation;
+    if (navigation === undefined) throw new Error("Session navigation host was unavailable");
+    const release = navigation.watch(() => undefined);
+    await vi.waitFor(() => { expect(signal).toBeDefined(); });
+
+    updateAppState(app, {
+      machineStatuses: { local: { machineId: "local", ok: false, checkedAt: "2026-01-01T00:00:00.000Z", status: "offline" } },
+    });
+
+    expect(signal?.aborted).toBe(true);
+    expect(navigation.snapshot()).toMatchObject({ loading: false, reconnectComplete: false, failedScopes: [{ type: "machine", machineId: "local" }] });
+    release();
   });
 
   it("selects a plugin session without leaving the dedicated view while open still navigates to Chat", async () => {
@@ -394,6 +510,12 @@ function invokeAppMethod(app: PiWebApp, name: string): void {
   Reflect.apply(method, app, []);
 }
 
+function stubAppMethod(app: PiWebApp, name: string): void {
+  if (typeof Reflect.get(app, name) !== "function" || !Reflect.set(app, name, vi.fn())) {
+    throw new Error(`PiWebApp.${name} could not be stubbed`);
+  }
+}
+
 function createAnchoredDedicatedApp(): PiWebApp {
   const app = createDedicatedApp(() => html`<p>Work</p>`);
   setAppState(app, { ...appState(app), machines: [testMachine()], selectedMachine: testMachine() });
@@ -493,6 +615,12 @@ function setAppState(app: PiWebApp, state: AppState): void {
   if (!Reflect.set(app, "state", state)) throw new Error("Could not set PiWebApp state");
 }
 
+function updateAppState(app: PiWebApp, patch: Partial<AppState>): void {
+  const method: unknown = Reflect.get(app, "setState");
+  if (typeof method !== "function") throw new Error("PiWebApp state update boundary was unavailable");
+  Reflect.apply(method, app, [patch]);
+}
+
 function requiredElement<T extends Element>(root: ParentNode, selector: string, constructor: abstract new (...args: never[]) => T): T {
   const element = root.querySelector(selector);
   if (!(element instanceof constructor)) throw new Error(`Expected ${selector}`);
@@ -549,5 +677,17 @@ function testSession(id = "session-1"): SessionInfo {
     modified: "2026-01-01T00:00:00.000Z",
     messageCount: 1,
     firstMessage: "Hello",
+  };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolvePromise: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
+  return {
+    promise,
+    resolve: (value) => {
+      if (resolvePromise === undefined) throw new Error("Deferred promise was unavailable");
+      resolvePromise(value);
+    },
   };
 }

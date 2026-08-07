@@ -34,6 +34,7 @@ import { initialSessionWarningVisibilityState, reconcileSessionWarningVisibility
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PluginSessionSelectionFailure, PluginSessionSelectionFailureCode, PrimaryViewContext, PrimaryViewSurface, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, SessionAttentionItem, SessionAttentionSnapshot, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
 import { recheckSessionLocationEvidence, resolveSessionLocation, type SessionLocationCatalog } from "../plugins/sessionLocationResolver";
+import { SessionNavigationController, sessionNavigationIdentity, type SessionNavigationScope } from "../plugins/sessionNavigationHost";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
 import { corePlugin } from "../plugins/core";
 import { themePackPlugin } from "../plugins/themes";
@@ -161,6 +162,14 @@ export class PiWebApp extends LitElement {
       },
     },
   );
+  private readonly sessionNavigation = new SessionNavigationController({
+    catalog: {
+      projects: (machineId, signal) => projectsApi.projects(machineId, signal),
+      workspaces: (projectId, machineId, signal) => workspacesApi.workspaces(projectId, machineId, signal),
+      sessions: (cwd, machineId, signal) => sessionsApi.sessions(cwd, machineId, signal),
+    },
+    select: (location) => this.selectPluginSession(location),
+  }, this.sessionNavigationScope());
   private readonly projectActivityOwnership = new ProjectActivityOwnershipCoordinator(
     () => this.state,
     (patch) => { this.setState(patch); },
@@ -422,6 +431,7 @@ export class PiWebApp extends LitElement {
     this.realtime.close();
     this.closeMachineActivitySockets();
     this.git.dispose();
+    this.sessionNavigation.dispose();
     this.primaryViewSurfaceMounts.clear();
     this.primaryViewSurfaceSelectionHandler = undefined;
     if (this.piWebStatusTimer !== undefined) window.clearInterval(this.piWebStatusTimer);
@@ -449,6 +459,8 @@ export class PiWebApp extends LitElement {
     this.handleMachineChange(previous, this.state);
     if (machineActivitySubscriptionInputsChanged(previous, this.state)) this.syncMachineActivitySubscriptions();
     this.notifications.syncEnvironment(previous, this.state);
+    this.sessionNavigation.sync(this.sessionNavigationScope());
+    if (sessionNavigationCatalogInputsChanged(previous, this.state)) this.sessionNavigation.invalidate();
   }
 
   private async loadProjectsAndRestoreRoute() {
@@ -1526,6 +1538,24 @@ export class PiWebApp extends LitElement {
         focus: (item) => this.focusSessionAttention(item),
         requestNotificationPermission: () => typeof Notification === "undefined" ? Promise.resolve("denied") : Notification.requestPermission(),
       },
+      sessionNavigation: this.sessionNavigation.host,
+    };
+  }
+
+  private sessionNavigationScope(): SessionNavigationScope {
+    const machine = pluginMachineFromState(this.state);
+    const workspace = this.state.selectedWorkspace;
+    const session = this.state.selectedSession;
+    const selectedIdentity = workspace === undefined || session === undefined ? undefined : sessionNavigationIdentity({
+      machineId: machine.id,
+      projectId: workspace.projectId,
+      workspaceId: workspace.id,
+      sessionId: session.id,
+    });
+    return {
+      machine,
+      connected: this.state.machineStatuses[machine.id]?.ok !== false,
+      ...(selectedIdentity === undefined ? {} : { selectedIdentity }),
     };
   }
 
@@ -1750,7 +1780,7 @@ export class PiWebApp extends LitElement {
   private renderPrimaryViewSurface(surface: PrimaryViewSurface) {
     if (surface === "chat") {
       const session = this.state.selectedSession;
-      if (session === undefined) return html`<div class="empty">Select a Workstream session to open Chat.</div>`;
+      if (session === undefined) return html`<div class="empty">Select a Chat to open it.</div>`;
       return this.renderSelectedChatSurface(this.state, session);
     }
     const workspace = this.state.selectedWorkspace;
@@ -2765,6 +2795,14 @@ function machineActivitySubscriptionInputsChanged(previous: AppState, next: AppS
   return previous.machines !== next.machines
     || previous.machineStatuses !== next.machineStatuses
     || (previous.selectedMachine?.id ?? "local") !== (next.selectedMachine?.id ?? "local");
+}
+
+function sessionNavigationCatalogInputsChanged(previous: AppState, next: AppState): boolean {
+  if ((previous.selectedMachine?.id ?? "local") !== (next.selectedMachine?.id ?? "local")) return false;
+  return previous.projects !== next.projects
+    || previous.workspaces !== next.workspaces
+    || previous.workspacesByProjectId !== next.workspacesByProjectId
+    || previous.sessions !== next.sessions;
 }
 
 function shouldSubscribeToMachineActivity(machine: Machine, health: MachineHealth | undefined): boolean {

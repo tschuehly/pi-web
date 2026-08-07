@@ -712,6 +712,45 @@ interface PrimaryViewContext {
     activate?(surface: "chat" | "files" | "git" | "terminal"): void;
     registerSelectionHandler?(handler: (surface: "chat" | "files" | "git" | "terminal") => void): () => void;
   };
+  sessionNavigation?: {
+    snapshot(): SessionNavigationSnapshot;
+    watch(handler: (snapshot: SessionNavigationSnapshot) => void): () => void;
+    refresh(): void;
+    select(location: SessionNavigationLocation): Promise<void>;
+  };
+}
+
+interface SessionNavigationSnapshot {
+  sequence: number;
+  machine: PluginMachine;
+  selectedIdentity: string | undefined;
+  loading: boolean;
+  reconnectComplete: boolean;
+  failedScopes: readonly SessionNavigationFailedScope[];
+  sessions: readonly SessionNavigationItem[];
+}
+
+type SessionNavigationFailedScope =
+  | { type: "machine"; machineId: string }
+  | { type: "project"; machineId: string; projectId: string }
+  | { type: "workspace"; machineId: string; projectId: string; workspaceId: string; cwd: string }
+  | { type: "session"; machineId: string; sessionId: string; locations: readonly SessionNavigationLocation[] };
+
+interface SessionNavigationItem {
+  identity: string;
+  sessionId: string;
+  title: string;
+  summary: string;
+  status: "current" | "archived";
+  modifiedAt: string;
+  location: SessionNavigationLocation;
+}
+
+interface SessionNavigationLocation {
+  machineId: string;
+  projectId: string;
+  workspaceId: string;
+  sessionId: string;
 }
 ```
 
@@ -729,6 +768,19 @@ reconciliation label; PI WEB remembers successful associations in browser-local 
 reconcile a pending launch after replacement. These helpers grant no background execution,
 workspace isolation, managed authority, or recovery guarantee. A plugin remains responsible for
 persisting its own association protocol before requesting a launch.
+
+`sessionNavigation` is the generic read-only inventory seam for existing native sessions on the
+selected machine. Call `watch()` to start observation and dispose the returned function when the
+view disconnects. Treat `sessions` as complete, including a complete empty inventory, only when
+`loading` is false and `reconnectComplete` is true. A background refresh keeps the prior complete
+inventory and completeness marker while `loading` is true; reconnect clears the marker until a new
+complete scan settles. `failedScopes` identifies machine, project, workspace, or duplicate-session
+homes that prevented a complete scan. Call `refresh()` to explicitly refresh or retry; overlapping
+requests are coalesced. Items contain only PI WEB-owned presentation metadata and complete
+machine/project/workspace locations. Duplicate native homes are omitted rather than guessed.
+Passing a listed location to `select()` preserves the active primary view, sequences rapid calls, and
+may reject with the same typed session-selection failures as `context.sessions.select()`. The host
+does not expose session creation, plugin classifications, or application state.
 
 Keep contribution callbacks synchronous and cheap. A custom element may own async loading and call
 `context.host.requestRender()` when plugin-owned state changes. It must render explicit loading,

@@ -98,6 +98,46 @@ export interface SessionAttentionHost {
   requestNotificationPermission?(): Promise<NotificationPermission>;
 }
 
+export interface SessionNavigationLocation {
+  machineId: string;
+  projectId: string;
+  workspaceId: string;
+  sessionId: string;
+}
+
+export interface SessionNavigationItem {
+  identity: string;
+  sessionId: string;
+  title: string;
+  summary: string;
+  status: "current" | "archived";
+  modifiedAt: string;
+  location: SessionNavigationLocation;
+}
+
+export type SessionNavigationFailedScope =
+  | { type: "machine"; machineId: string }
+  | { type: "project"; machineId: string; projectId: string }
+  | { type: "workspace"; machineId: string; projectId: string; workspaceId: string; cwd: string }
+  | { type: "session"; machineId: string; sessionId: string; locations: readonly SessionNavigationLocation[] };
+
+export interface SessionNavigationSnapshot {
+  sequence: number;
+  machine: PluginMachine;
+  selectedIdentity: string | undefined;
+  loading: boolean;
+  reconnectComplete: boolean;
+  failedScopes: readonly SessionNavigationFailedScope[];
+  sessions: readonly SessionNavigationItem[];
+}
+
+export interface SessionNavigationHost {
+  snapshot(): SessionNavigationSnapshot;
+  watch(handler: (snapshot: SessionNavigationSnapshot) => void): () => void;
+  refresh(): void;
+  select(location: SessionNavigationLocation): Promise<void>;
+}
+
 export interface PluginSessionLocation {
   machineId: string;
   projectId?: string;
@@ -180,6 +220,7 @@ export interface PrimaryViewContext {
   surfaceHost?: PrimaryViewSurfaceHost;
   preferences?: PluginPreferencesHost;
   attention?: SessionAttentionHost;
+  sessionNavigation?: SessionNavigationHost;
 }
 
 export interface SessionStartGuardContribution {

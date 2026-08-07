@@ -1,5 +1,6 @@
 import type { Project, SessionInfo, Workspace } from "../api";
-import type { PluginResolvedSessionLocation, PluginSessionLocationEvidence, PluginSessionLocationEvidenceRecheck, PluginSessionLocationFailedScope, PluginSessionLocationResolution } from "./types";
+import { traverseSessionCatalog } from "./sessionCatalogTraversal";
+import type { PluginResolvedSessionLocation, PluginSessionLocationEvidence, PluginSessionLocationEvidenceRecheck, PluginSessionLocationResolution } from "./types";
 
 export interface SessionLocationCatalog {
   isMachineRegistered(machineId: string): boolean;
@@ -17,57 +18,21 @@ export async function resolveSessionLocation(
     return { type: "unavailable", failedScopes: [{ type: "machine", machineId: input.machineId }] };
   }
 
-  let projects: Project[];
-  try {
-    projects = await catalog.projects(input.machineId);
-  } catch {
-    return { type: "unavailable", failedScopes: [{ type: "machine", machineId: input.machineId }] };
-  }
-
-  const workspaceResults = await Promise.allSettled(
-    projects.map(async (project) => ({ project, workspaces: await catalog.workspaces(project.id, input.machineId) })),
-  );
-  const failedScopes: PluginSessionLocationFailedScope[] = [];
-  const workspaceScopes: { project: Project; workspace: Workspace }[] = [];
-  workspaceResults.forEach((result, index) => {
-    const project = projects[index];
-    if (project === undefined) return;
-    if (result.status === "rejected") {
-      failedScopes.push({ type: "project", machineId: input.machineId, projectId: project.id });
-      return;
-    }
-    for (const workspace of result.value.workspaces) workspaceScopes.push({ project, workspace });
-  });
-
-  const sessionResults = await Promise.allSettled(
-    workspaceScopes.map(async (scope) => ({ ...scope, sessions: await catalog.sessions(scope.workspace.path, input.machineId) })),
-  );
+  const traversal = await traverseSessionCatalog(input.machineId, catalog);
   const matches: { location: PluginResolvedSessionLocation; catalogCwd: string }[] = [];
-  sessionResults.forEach((result, index) => {
-    const scope = workspaceScopes[index];
-    if (scope === undefined) return;
-    if (result.status === "rejected") {
-      failedScopes.push({
-        type: "workspace",
-        machineId: input.machineId,
-        projectId: scope.project.id,
-        workspaceId: scope.workspace.id,
-        cwd: scope.workspace.path,
-      });
-      return;
-    }
-    const matchedSession = result.value.sessions.find((session) => session.id === input.sessionId && session.cwd === scope.workspace.path);
-    if (matchedSession === undefined) return;
+  for (const scope of traversal.scopes) {
+    const matchedSession = scope.sessions.find((session) => session.id === input.sessionId && session.cwd === scope.workspace.path);
+    if (matchedSession === undefined) continue;
     matches.push({
       location: { machineId: input.machineId, projectId: scope.project.id, workspaceId: scope.workspace.id },
       catalogCwd: scope.workspace.path,
     });
-  });
+  }
 
-  if (failedScopes.length > 0) return { type: "unavailable", failedScopes };
+  if (traversal.failedScopes.length > 0) return { type: "unavailable", failedScopes: traversal.failedScopes };
   if (matches.length === 0) return { type: "missing" };
   const verifiedAt = catalog.now?.() ?? new Date().toISOString();
-  const evidenceFor = (match: typeof matches[number]) => resolutionEvidence(input, match, workspaceScopes.length, verifiedAt);
+  const evidenceFor = (match: typeof matches[number]) => resolutionEvidence(input, match, traversal.scopes.length, verifiedAt);
   if (matches.length > 1) {
     return { type: "ambiguous", locations: matches.map((match) => ({ location: match.location, evidence: evidenceFor(match) })) };
   }

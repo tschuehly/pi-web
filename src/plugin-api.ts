@@ -196,6 +196,52 @@ export interface SessionAttentionHost {
   requestNotificationPermission?(): Promise<NotificationPermission>;
 }
 
+export interface SessionNavigationLocation {
+  machineId: string;
+  projectId: string;
+  workspaceId: string;
+  sessionId: string;
+}
+
+export interface SessionNavigationItem {
+  identity: string;
+  sessionId: string;
+  title: string;
+  summary: string;
+  status: "current" | "archived";
+  modifiedAt: string;
+  location: SessionNavigationLocation;
+}
+
+export type SessionNavigationFailedScope =
+  | { type: "machine"; machineId: string }
+  | { type: "project"; machineId: string; projectId: string }
+  | { type: "workspace"; machineId: string; projectId: string; workspaceId: string; cwd: string }
+  | { type: "session"; machineId: string; sessionId: string; locations: readonly SessionNavigationLocation[] };
+
+export interface SessionNavigationSnapshot {
+  sequence: number;
+  machine: PluginMachine;
+  selectedIdentity: string | undefined;
+  /** True while PI WEB is reading a fresh catalog. */
+  loading: boolean;
+  /** True when sessions is the last complete catalog for the selected machine's current connection. */
+  reconnectComplete: boolean;
+  /** Scopes that prevented the latest scan from producing a complete catalog. */
+  failedScopes: readonly SessionNavigationFailedScope[];
+  sessions: readonly SessionNavigationItem[];
+}
+
+export interface SessionNavigationHost {
+  snapshot(): SessionNavigationSnapshot;
+  /** Starts catalog observation and returns its disposer. */
+  watch(handler: (snapshot: SessionNavigationSnapshot) => void): () => void;
+  /** Requests a coalesced refresh, or retries the latest unavailable scopes. */
+  refresh(): void;
+  /** Select a catalog item without leaving the active primary view. Rapid calls are applied in order. */
+  select(location: SessionNavigationLocation): Promise<void>;
+}
+
 export interface PluginSessionLocation {
   machineId: string;
   projectId?: string;
@@ -291,6 +337,8 @@ export interface PrimaryViewContext {
   preferences?: PluginPreferencesHost;
   /** Immutable live pending-ask projection across observed sessions. */
   attention?: SessionAttentionHost;
+  /** Complete, selected-machine native-session catalog and selection seam. */
+  sessionNavigation?: SessionNavigationHost;
 }
 
 export interface SessionStartGuardContribution {
