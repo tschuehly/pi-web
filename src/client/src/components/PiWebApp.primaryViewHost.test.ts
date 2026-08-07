@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { html, render as renderTemplate } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Machine, Project, SessionInfo, SessionStatus, Workspace } from "../api";
+import { projectsApi, sessionsApi, workspacesApi, type Machine, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
-import type { PluginRuntimeContext, PrimaryViewContext } from "../plugins/types";
+import type { PluginRuntimeContext, PluginSessionHost, PrimaryViewContext } from "../plugins/types";
 import { PluginRegistry } from "../plugins/registry";
 import { SessionController } from "../controllers/sessionController";
 import { PiWebApp } from "./PiWebApp";
@@ -13,7 +13,8 @@ import { AppPrimaryView } from "./appShell/AppPrimaryView";
 const DEDICATED_VIEW = "example:views.work";
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } }))));
+  vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network is disabled in primary-view host tests"));
+  vi.spyOn(window, "WebSocket").mockImplementation(() => { throw new Error("Unexpected WebSocket connection in primary-view host test"); });
 });
 
 afterEach(() => {
@@ -235,8 +236,7 @@ describe("PiWebApp primary-view host", () => {
     const sessions = primaryViewContext(app).sessions;
     if (sessions === undefined) throw new Error("Plugin session host was unavailable");
 
-    const failure: unknown = await sessions.open({ sessionId: "session-photoquest-anchorless" })
-      .then(() => undefined, (error: unknown) => error);
+    const failure = await rejected(sessions.open({ sessionId: "session-photoquest-anchorless" }));
 
     expect({
       message: failure instanceof Error ? failure.message : String(failure),
@@ -247,6 +247,106 @@ describe("PiWebApp primary-view host", () => {
       code: "SESSION_ANCHOR_MISSING",
       selectedWorkspaceId: "workspace-1",
     });
+  });
+
+  it("reports a typed missing-session failure when a complete anchor is stale", async () => {
+    const app = createAnchoredDedicatedApp();
+    vi.spyOn(projectsApi, "projects").mockResolvedValue([testProject()]);
+    vi.spyOn(workspacesApi, "workspaces").mockResolvedValue([testWorkspace()]);
+    vi.spyOn(sessionsApi, "sessions").mockResolvedValue([]);
+    const sessions = requiredSessionHost(app);
+
+    const failure = await rejected(sessions.open(completeAnchor()));
+
+    expect(errorCode(failure)).toBe("SESSION_MISSING");
+  });
+
+  it.each([
+    {
+      name: "machine",
+      location: { sessionId: "session-1", machineId: "missing-machine", projectId: "project-1", workspaceId: "workspace-1" },
+      arrange: () => undefined,
+      code: "SESSION_MACHINE_UNAVAILABLE",
+    },
+    {
+      name: "project",
+      location: completeAnchor(),
+      arrange: () => { vi.spyOn(projectsApi, "projects").mockResolvedValue([]); },
+      code: "SESSION_PROJECT_UNAVAILABLE",
+    },
+    {
+      name: "workspace",
+      location: completeAnchor(),
+      arrange: () => {
+        vi.spyOn(projectsApi, "projects").mockResolvedValue([testProject()]);
+        vi.spyOn(workspacesApi, "workspaces").mockResolvedValue([]);
+      },
+      code: "SESSION_WORKSPACE_UNAVAILABLE",
+    },
+  ])("reports a typed unavailable-$name failure from open", async ({ location, arrange, code }) => {
+    const app = createAnchoredDedicatedApp();
+    arrange();
+
+    const failure = await rejected(requiredSessionHost(app).open(location));
+
+    expect(errorCode(failure)).toBe(code);
+  });
+
+  it("restores an explicitly anchored session on another machine and preserves the dedicated view", async () => {
+    const app = createAnchoredDedicatedApp();
+    const remoteMachine = { ...testMachine(), id: "remote", name: "Remote", kind: "remote" as const };
+    const remoteProject = { ...testProject(), id: "project-remote" };
+    const remoteWorkspace = { ...testWorkspace(), id: "workspace-remote", projectId: remoteProject.id, path: "/remote" };
+    const remoteSession = { ...testSession(), id: "session-remote", cwd: remoteWorkspace.path };
+    setAppState(app, { ...appState(app), machines: [testMachine(), remoteMachine] });
+    vi.spyOn(projectsApi, "projects").mockResolvedValue([remoteProject]);
+    vi.spyOn(workspacesApi, "workspaces").mockResolvedValue([remoteWorkspace]);
+    vi.spyOn(sessionsApi, "sessions").mockResolvedValue([remoteSession]);
+    const restore = stubRestoreRouteFor(app, () => {
+      setAppState(app, {
+        ...appState(app),
+        selectedMachine: remoteMachine,
+        selectedProject: remoteProject,
+        selectedWorkspace: remoteWorkspace,
+        selectedSession: remoteSession,
+        sessions: [remoteSession],
+      });
+      return Promise.resolve();
+    });
+
+    await requiredSessionHost(app).select({ sessionId: remoteSession.id, machineId: remoteMachine.id, projectId: remoteProject.id, workspaceId: remoteWorkspace.id });
+
+    expect(restore).toHaveBeenCalledOnce();
+    expect(appState(app).selectedSession?.id).toBe(remoteSession.id);
+    expect(appState(app).mainView).toBe(DEDICATED_VIEW);
+  });
+
+  it("fails closed when cross-machine route restoration does not land on the requested machine", async () => {
+    const app = createAnchoredDedicatedApp();
+    const remoteMachine = { ...testMachine(), id: "remote", name: "Remote", kind: "remote" as const };
+    const remoteProject = { ...testProject(), id: "project-remote" };
+    const remoteWorkspace = { ...testWorkspace(), id: "workspace-remote", projectId: remoteProject.id, path: "/remote" };
+    const remoteSession = { ...testSession(), id: "session-remote", cwd: remoteWorkspace.path };
+    setAppState(app, { ...appState(app), machines: [testMachine(), remoteMachine] });
+    vi.spyOn(projectsApi, "projects").mockResolvedValue([remoteProject]);
+    vi.spyOn(workspacesApi, "workspaces").mockResolvedValue([remoteWorkspace]);
+    vi.spyOn(sessionsApi, "sessions").mockResolvedValue([remoteSession]);
+    stubRestoreRouteFor(app, () => Promise.resolve());
+
+    const failure = await rejected(requiredSessionHost(app).open({ sessionId: remoteSession.id, machineId: remoteMachine.id, projectId: remoteProject.id, workspaceId: remoteWorkspace.id }));
+
+    expect(errorCode(failure)).toBe("SESSION_MACHINE_UNAVAILABLE");
+    expect(appState(app).mainView).toBe(DEDICATED_VIEW);
+  });
+
+  it("reports a typed transport failure from select without navigating away from the dedicated view", async () => {
+    const app = createAnchoredDedicatedApp();
+    vi.spyOn(projectsApi, "projects").mockRejectedValue(new Error("catalog offline"));
+
+    const failure = await rejected(requiredSessionHost(app).select(completeAnchor()));
+
+    expect(errorCode(failure)).toBe("SESSION_TRANSPORT_FAILURE");
+    expect(appState(app).mainView).toBe(DEDICATED_VIEW);
   });
 });
 
@@ -292,6 +392,32 @@ function invokeAppMethod(app: PiWebApp, name: string): void {
   const method: unknown = Reflect.get(app, name);
   if (typeof method !== "function") throw new Error(`PiWebApp.${name} was unavailable`);
   Reflect.apply(method, app, []);
+}
+
+function createAnchoredDedicatedApp(): PiWebApp {
+  const app = createDedicatedApp(() => html`<p>Work</p>`);
+  setAppState(app, { ...appState(app), machines: [testMachine()], selectedMachine: testMachine() });
+  return app;
+}
+
+function stubRestoreRouteFor(app: PiWebApp, implementation: (route: unknown, replace: boolean) => Promise<void>): ReturnType<typeof vi.fn> {
+  const stub = vi.fn(implementation);
+  if (!Reflect.set(app, "restoreRouteFor", stub)) throw new Error("Could not stub route restoration");
+  return stub;
+}
+
+function requiredSessionHost(app: PiWebApp): PluginSessionHost {
+  const sessions = primaryViewContext(app).sessions;
+  if (sessions === undefined) throw new Error("Plugin session host was unavailable");
+  return sessions;
+}
+
+function completeAnchor(): { sessionId: string; machineId: string; projectId: string; workspaceId: string } {
+  return { sessionId: "session-1", machineId: "local", projectId: "project-1", workspaceId: "workspace-1" };
+}
+
+async function rejected(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(() => undefined, (error: unknown) => error);
 }
 
 function refreshMountedPrimaryViewSurfaces(app: PiWebApp): void {
@@ -377,22 +503,22 @@ function directChild(root: Element, tagName: string): Element | undefined {
   return [...root.children].find((element) => element.localName === tagName);
 }
 
+function testMachine(id = "local"): Machine {
+  return {
+    id,
+    name: id === "local" ? "Local" : id,
+    kind: id === "local" ? "local" : "remote",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
 function testProject(): Project {
   return { id: "project-1", name: "Project", path: "/repo", createdAt: "2026-01-01T00:00:00.000Z" };
 }
 
 function testWorkspace(): Workspace {
   return { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true, isGitRepo: true, isGitWorktree: false };
-}
-
-function testMachine(id: string): Machine {
-  return {
-    id,
-    name: id,
-    kind: "remote",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
 }
 
 function pendingAskStatus(sessionId: string, askId: string): SessionStatus {

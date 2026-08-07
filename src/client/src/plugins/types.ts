@@ -104,6 +104,48 @@ export interface PluginSessionLocation {
   workspaceId: string;
 }
 
+export interface PluginResolvedSessionLocation extends PluginSessionLocation {
+  projectId: string;
+}
+
+export interface PluginSessionLocationEvidence {
+  machineId: string;
+  sessionId: string;
+  location: PluginResolvedSessionLocation;
+  catalogCwd: string;
+  evidenceId: string;
+  matchedCwd: string;
+  scannedScopeCount: number;
+  verifiedAt: string;
+}
+
+export type PluginSessionLocationFailedScope =
+  | { type: "machine"; machineId: string }
+  | { type: "project"; machineId: string; projectId: string }
+  | { type: "workspace"; machineId: string; projectId: string; workspaceId: string; cwd: string };
+
+export type PluginSessionLocationResolution =
+  | { type: "found"; location: PluginResolvedSessionLocation; evidence: PluginSessionLocationEvidence }
+  | { type: "ambiguous"; locations: { location: PluginResolvedSessionLocation; evidence: PluginSessionLocationEvidence }[] }
+  | { type: "missing" }
+  | { type: "unavailable"; failedScopes: PluginSessionLocationFailedScope[] };
+
+export type PluginSessionLocationEvidenceRecheck =
+  | { type: "confirmed"; evidence: PluginSessionLocationEvidence }
+  | { type: "stale"; resolution: PluginSessionLocationResolution };
+
+export type PluginSessionSelectionFailureCode =
+  | "SESSION_ANCHOR_MISSING"
+  | "SESSION_MACHINE_UNAVAILABLE"
+  | "SESSION_PROJECT_UNAVAILABLE"
+  | "SESSION_WORKSPACE_UNAVAILABLE"
+  | "SESSION_MISSING"
+  | "SESSION_TRANSPORT_FAILURE";
+
+export interface PluginSessionSelectionFailure extends Error {
+  readonly code: PluginSessionSelectionFailureCode;
+}
+
 export interface PluginSessionHost {
   currentLocation(): PluginSessionLocation | undefined;
   start(options: { startupToken: string; initialPrompt: string }): Promise<{ id: string; location: PluginSessionLocation }>;
@@ -111,6 +153,8 @@ export interface PluginSessionHost {
   open(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void>;
   prompt(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }, message: string): Promise<void>;
   findByStartupToken(startupToken: string, location?: Partial<PluginSessionLocation>): Promise<{ id: string; location: PluginSessionLocation } | undefined>;
+  resolveSessionLocation(input: { machineId: string; sessionId: string }): Promise<PluginSessionLocationResolution>;
+  recheckSessionLocationEvidence(evidence: PluginSessionLocationEvidence): Promise<PluginSessionLocationEvidenceRecheck>;
 }
 
 export type PluginConnectionStatus = "connected" | "reconnecting";

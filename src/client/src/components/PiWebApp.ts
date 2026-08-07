@@ -1,6 +1,6 @@
 import { LitElement, css, html, render as renderTemplate } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
-import { configApi, effectiveWorkspaceUploadFolder, sessionsApi, terminalsApi, workspacesApi, workspaceEffectiveUploadFolder, type AskUserSubmission, type ExtensionDialogAnswer, type Machine, type MachineHealth, type PiWebConfigValues, type PiWebShortcutConfig, type Project, type SessionCleanupExecuteResponse, type SessionCleanupPreviewResponse, type SessionCleanupRequest, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type TerminalCommandRun, type TerminalUiEvent, type Workspace } from "../api";
+import { configApi, effectiveWorkspaceUploadFolder, projectsApi, sessionsApi, terminalsApi, workspacesApi, workspaceEffectiveUploadFolder, type AskUserSubmission, type ExtensionDialogAnswer, type Machine, type MachineHealth, type PiWebConfigValues, type PiWebShortcutConfig, type Project, type SessionCleanupExecuteResponse, type SessionCleanupPreviewResponse, type SessionCleanupRequest, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type TerminalCommandRun, type TerminalUiEvent, type Workspace } from "../api";
 import type { AppAction } from "../actions";
 import { initialAppState, type AppState } from "../appState";
 import { isSessionActive } from "../../../shared/activity";
@@ -32,7 +32,8 @@ import { SessionUnreadController } from "../sessionUnread";
 import { deriveUnreadPresence, EMPTY_UNREAD_PRESENCE, sameUnreadPresence, type UnreadPresence } from "../unreadPresence";
 import { initialSessionWarningVisibilityState, reconcileSessionWarningVisibility, toggleSessionWarnings } from "../sessionWarningVisibility";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
-import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PrimaryViewContext, PrimaryViewSurface, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, SessionAttentionItem, SessionAttentionSnapshot, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
+import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PluginSessionSelectionFailure, PluginSessionSelectionFailureCode, PrimaryViewContext, PrimaryViewSurface, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, SessionAttentionItem, SessionAttentionSnapshot, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
+import { recheckSessionLocationEvidence, resolveSessionLocation, type SessionLocationCatalog } from "../plugins/sessionLocationResolver";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
 import { corePlugin } from "../plugins/core";
 import { themePackPlugin } from "../plugins/themes";
@@ -1501,6 +1502,8 @@ export class PiWebApp extends LitElement {
           await this.sessions.send(message);
         },
         findByStartupToken: (startupToken) => Promise.resolve(recallPluginSessionAssociation(startupToken)),
+        resolveSessionLocation: (input) => resolveSessionLocation(input, this.pluginSessionLocationCatalog()),
+        recheckSessionLocationEvidence: (evidence) => recheckSessionLocationEvidence(evidence, this.pluginSessionLocationCatalog()),
       },
       surfaceHost: {
         mount: (container, surface) => { this.mountPrimaryViewSurface(container, surface); },
@@ -1647,24 +1650,101 @@ export class PiWebApp extends LitElement {
   }
 
   private async selectPluginSessionLocation(location: { sessionId: string; machineId?: string; projectId?: string; workspaceId?: string }): Promise<void> {
-    if (location.machineId !== undefined && location.machineId !== selectedMachineId(this.state)) {
-      const machine = this.state.machines.find((candidate) => candidate.id === location.machineId);
-      if (machine === undefined) throw new Error(`Machine ${location.machineId} is unavailable.`);
-      await this.selectMachineWithMemory(machine);
-    }
-    if (location.workspaceId === undefined) {
-      const session = this.state.sessions.find((candidate) => candidate.id === location.sessionId);
-      if (session === undefined) throw new Error(`Session ${location.sessionId} is not available in the selected workspace.`);
-      await this.sessions.selectSession(session);
-    } else {
-      const workspace = this.state.workspaces.find((candidate) => candidate.id === location.workspaceId);
-      if (workspace !== undefined) await this.workspaces.selectWorkspace(workspace, { sessionId: location.sessionId });
-      else {
-        const project = this.state.projects.find((candidate) => candidate.id === location.projectId);
-        if (project === undefined) throw new Error("The session's project is unavailable.");
-        await this.workspaces.selectProject(project, { workspaceId: location.workspaceId, sessionId: location.sessionId });
+    const hasNoAnchor = location.machineId === undefined && location.projectId === undefined && location.workspaceId === undefined;
+    if (hasNoAnchor) {
+      const workspace = this.state.selectedWorkspace;
+      const session = this.state.sessions.find((candidate) => candidate.id === location.sessionId && candidate.cwd === workspace?.path);
+      if (session === undefined) {
+        throw pluginSessionSelectionFailure(
+          "SESSION_ANCHOR_MISSING",
+          `Session ${location.sessionId} is not available in the selected workspace.`,
+        );
       }
+      try {
+        await this.sessions.selectSession(session, { propagateRefreshError: true });
+      } catch (error) {
+        throw pluginSessionTransportFailure(error);
+      }
+      return;
     }
+
+    if (location.machineId === undefined || location.projectId === undefined || location.workspaceId === undefined) {
+      throw pluginSessionSelectionFailure("SESSION_ANCHOR_MISSING", `Session ${location.sessionId} does not have a complete machine/project/workspace anchor.`);
+    }
+
+    const machine = this.state.machines.find((candidate) => candidate.id === location.machineId);
+    if (machine === undefined || this.state.machineStatuses[machine.id]?.ok === false) {
+      throw pluginSessionSelectionFailure("SESSION_MACHINE_UNAVAILABLE", `Machine ${location.machineId} is unavailable.`);
+    }
+
+    let projects: Project[];
+    try {
+      projects = await projectsApi.projects(machine.id);
+    } catch (error) {
+      throw pluginSessionTransportFailure(error);
+    }
+    const project = projects.find((candidate) => candidate.id === location.projectId);
+    if (project === undefined) {
+      throw pluginSessionSelectionFailure("SESSION_PROJECT_UNAVAILABLE", `Project ${location.projectId} is unavailable on machine ${machine.id}.`);
+    }
+    if (selectedMachineId(this.state) === machine.id) this.setState({ projects });
+
+    let workspaces: Workspace[];
+    try {
+      workspaces = await workspacesApi.workspaces(project.id, machine.id);
+    } catch (error) {
+      throw pluginSessionTransportFailure(error);
+    }
+    const workspace = workspaces.find((candidate) => candidate.id === location.workspaceId && candidate.projectId === project.id);
+    if (workspace === undefined) {
+      throw pluginSessionSelectionFailure("SESSION_WORKSPACE_UNAVAILABLE", `Workspace ${location.workspaceId} is unavailable in project ${project.id}.`);
+    }
+
+    let catalogSessions: SessionInfo[];
+    try {
+      catalogSessions = await sessionsApi.sessions(workspace.path, machine.id);
+    } catch (error) {
+      throw pluginSessionTransportFailure(error);
+    }
+    const session = catalogSessions.find((candidate) => candidate.id === location.sessionId && candidate.cwd === workspace.path);
+    if (session === undefined) {
+      throw pluginSessionSelectionFailure("SESSION_MISSING", `Session ${location.sessionId} is missing from workspace ${workspace.id}.`);
+    }
+
+    if (selectedMachineId(this.state) === machine.id && this.state.selectedProject?.id === project.id && this.state.selectedWorkspace?.id === workspace.id) {
+      this.setState({ sessions: catalogSessions, error: "" });
+      try {
+        await this.sessions.selectSession(session, { propagateRefreshError: true });
+      } catch (error) {
+        throw pluginSessionTransportFailure(error);
+      }
+      return;
+    }
+
+    this.setState({ error: "" });
+    await this.restoreRouteFor({ machineId: machine.id, projectId: project.id, workspaceId: workspace.id, sessionId: session.id, tool: undefined, view: undefined }, false);
+    if (this.state.error !== "") throw pluginSessionTransportFailure(new Error(this.state.error));
+    if (selectedMachineId(this.state) !== machine.id) {
+      throw pluginSessionSelectionFailure("SESSION_MACHINE_UNAVAILABLE", `Machine ${machine.id} is unavailable.`);
+    }
+    if (this.state.selectedProject?.id !== project.id) {
+      throw pluginSessionSelectionFailure("SESSION_PROJECT_UNAVAILABLE", `Project ${project.id} is unavailable on machine ${machine.id}.`);
+    }
+    if (this.state.selectedWorkspace?.id !== workspace.id) {
+      throw pluginSessionSelectionFailure("SESSION_WORKSPACE_UNAVAILABLE", `Workspace ${workspace.id} is unavailable in project ${project.id}.`);
+    }
+    if (this.state.selectedSession?.id !== session.id) {
+      throw pluginSessionSelectionFailure("SESSION_MISSING", `Session ${session.id} is missing from workspace ${workspace.id}.`);
+    }
+  }
+
+  private pluginSessionLocationCatalog(): SessionLocationCatalog {
+    return {
+      isMachineRegistered: (machineId) => this.state.machines.some((machine) => machine.id === machineId),
+      projects: (machineId) => projectsApi.projects(machineId),
+      workspaces: (projectId, machineId) => workspacesApi.workspaces(projectId, machineId),
+      sessions: (cwd, machineId) => sessionsApi.sessions(cwd, machineId),
+    };
   }
 
   private renderPrimaryViewSurface(surface: PrimaryViewSurface) {
@@ -2724,6 +2804,15 @@ function machineScopedKey(machineId: string, value: string): string {
 function remoteRouteRestoreRetryDelay(attempt: number): number {
   const index = Math.min(attempt, REMOTE_ROUTE_RESTORE_RETRY_DELAYS_MS.length - 1);
   return REMOTE_ROUTE_RESTORE_RETRY_DELAYS_MS[index] ?? 30_000;
+}
+
+function pluginSessionSelectionFailure(code: PluginSessionSelectionFailureCode, message: string, cause?: unknown): PluginSessionSelectionFailure {
+  return Object.assign(new Error(message, cause === undefined ? undefined : { cause }), { code });
+}
+
+function pluginSessionTransportFailure(cause: unknown): PluginSessionSelectionFailure {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return pluginSessionSelectionFailure("SESSION_TRANSPORT_FAILURE", `PI WEB could not complete session selection: ${detail}`, cause);
 }
 
 const PLUGIN_SESSION_ASSOCIATIONS_KEY = "pi-web:plugin-session-associations:v1";
