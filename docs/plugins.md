@@ -708,7 +708,11 @@ interface PrimaryViewContext {
     findByStartupToken(startupToken: string, location?: Partial<PluginSessionLocation>): Promise<{ id: string; location: PluginSessionLocation } | undefined>;
   };
   surfaceHost?: {
-    mount(container: HTMLElement, surface: "chat" | "files" | "git" | "terminal"): void;
+    mount(
+      container: HTMLElement,
+      surface: "chat" | "files" | "git" | "terminal",
+      options?: { chatStatusPlacement?: "bar" | "prompt-editor" },
+    ): void;
     activate?(surface: "chat" | "files" | "git" | "terminal"): void;
     registerSelectionHandler?(handler: (surface: "chat" | "files" | "git" | "terminal") => void): () => void;
   };
@@ -760,6 +764,14 @@ call `surfaceHost.activate()` before mounting Files or Git so host controllers r
 checkout, and register a selection handler so PI WEB's standard Chat, Files, Git, and Terminal actions
 and shortcuts remain contextual to the dedicated shell. The added host methods are optional for
 compatibility with older hosts.
+
+Hosted Chat keeps PI WEB's existing status bar by default. A compact dedicated layout can instead call
+`surfaceHost.mount(container, "chat", { chatStatusPlacement: "prompt-editor" })` to place context-window
+usage beside the model and thinking controls. The compact control explicitly warns at 80% context usage,
+opens to show input/output token counts, cost, and queued messages, and retains the session-warning toggle.
+At 430 pixels and narrower, ordinary context detail yields to the prompt controls; a high-context warning
+remains visible. PI WEB omits only that hosted Chat surface's separate status bar. The option has no effect
+on ordinary Conversation or other mounted surfaces.
 
 The optional attended-session helper lets a primary view start, select, reopen, or prompt an ordinary
 PI WEB session without calling private routes. `select()` changes the selected session and checkout

@@ -199,9 +199,14 @@ export interface PluginSessionHost {
 
 export type PluginConnectionStatus = "connected" | "reconnecting";
 export type PrimaryViewSurface = "chat" | "files" | "git" | "terminal";
+export type ChatStatusPlacement = "bar" | "prompt-editor";
+
+export interface PrimaryViewSurfaceMountOptions {
+  chatStatusPlacement?: ChatStatusPlacement;
+}
 
 export interface PrimaryViewSurfaceHost {
-  mount(container: HTMLElement, surface: PrimaryViewSurface): void;
+  mount(container: HTMLElement, surface: PrimaryViewSurface, options?: PrimaryViewSurfaceMountOptions): void;
   activate?: (surface: PrimaryViewSurface) => void;
   registerSelectionHandler?: (handler: (surface: PrimaryViewSurface) => void) => () => void;
 }

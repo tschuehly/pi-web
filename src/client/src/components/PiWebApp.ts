@@ -32,7 +32,7 @@ import { SessionUnreadController } from "../sessionUnread";
 import { deriveUnreadPresence, EMPTY_UNREAD_PRESENCE, sameUnreadPresence, type UnreadPresence } from "../unreadPresence";
 import { initialSessionWarningVisibilityState, reconcileSessionWarningVisibility, toggleSessionWarnings } from "../sessionWarningVisibility";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
-import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PluginSessionSelectionFailure, PluginSessionSelectionFailureCode, PrimaryViewContext, PrimaryViewSurface, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, SessionAttentionItem, SessionAttentionSnapshot, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
+import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PluginSessionSelectionFailure, PluginSessionSelectionFailureCode, PrimaryViewContext, PrimaryViewSurface, PrimaryViewSurfaceHost, PrimaryViewSurfaceMountOptions, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, SessionAttentionHost, SessionAttentionItem, SessionAttentionSnapshot, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
 import { recheckSessionLocationEvidence, resolveSessionLocation, type SessionLocationCatalog } from "../plugins/sessionLocationResolver";
 import { SessionNavigationController, sessionNavigationIdentity, type SessionNavigationScope } from "../plugins/sessionNavigationHost";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
@@ -98,6 +98,11 @@ const MIN_RESIZABLE_CHAT_WIDTH_PX = 320;
 const PANEL_EDGE_COLUMNS_WIDTH_PX = 2;
 const DESKTOP_SIDE_BY_SIDE_MEDIA_QUERY = "(min-width: 1181px)";
 
+interface MountedPrimaryViewSurface {
+  surface: PrimaryViewSurface;
+  options: Required<PrimaryViewSurfaceMountOptions>;
+}
+
 interface SessionCleanupDialogState {
   preview?: SessionCleanupPreviewResponse | undefined;
   previewRequest?: SessionCleanupRequest | undefined;
@@ -117,8 +122,28 @@ export class PiWebApp extends LitElement {
   @query("#workspace-panel") private workspacePanelFrame?: HTMLElement;
   @query("app-primary-view") private primaryViewHost?: AppPrimaryView;
   private primaryViewSurfaceSelectionHandler: ((surface: PrimaryViewSurface) => void) | undefined;
-  private readonly primaryViewSurfaceMounts = new Map<HTMLElement, PrimaryViewSurface>();
+  private readonly primaryViewSurfaceMounts = new Map<HTMLElement, MountedPrimaryViewSurface>();
   private readonly sessionAttentionWatchers = new Set<(snapshot: SessionAttentionSnapshot) => void>();
+  private readonly primaryViewSurfaceHost: PrimaryViewSurfaceHost = {
+    mount: (container, surface, options) => { this.mountPrimaryViewSurface(container, surface, options); },
+    activate: (surface) => { this.activatePrimaryViewSurface(surface); },
+    registerSelectionHandler: (handler) => {
+      this.primaryViewSurfaceSelectionHandler = handler;
+      return () => {
+        if (this.primaryViewSurfaceSelectionHandler === handler) this.primaryViewSurfaceSelectionHandler = undefined;
+      };
+    },
+  };
+  private readonly sessionAttentionHost: SessionAttentionHost = {
+    snapshot: () => this.sessionAttentionSnapshot(),
+    watch: (handler) => {
+      this.sessionAttentionWatchers.add(handler);
+      handler(this.sessionAttentionSnapshot());
+      return () => { this.sessionAttentionWatchers.delete(handler); };
+    },
+    focus: (item) => this.focusSessionAttention(item),
+    requestNotificationPermission: () => typeof Notification === "undefined" ? Promise.resolve("denied") : Notification.requestPermission(),
+  };
   private readonly observedSessionAttention = new Map<string, SessionAttentionItem>();
   private sessionAttentionSequence = 0;
   private sessionAttentionFingerprint = "";
@@ -1517,27 +1542,9 @@ export class PiWebApp extends LitElement {
         resolveSessionLocation: (input) => resolveSessionLocation(input, this.pluginSessionLocationCatalog()),
         recheckSessionLocationEvidence: (evidence) => recheckSessionLocationEvidence(evidence, this.pluginSessionLocationCatalog()),
       },
-      surfaceHost: {
-        mount: (container, surface) => { this.mountPrimaryViewSurface(container, surface); },
-        activate: (surface) => { this.activatePrimaryViewSurface(surface); },
-        registerSelectionHandler: (handler) => {
-          this.primaryViewSurfaceSelectionHandler = handler;
-          return () => {
-            if (this.primaryViewSurfaceSelectionHandler === handler) this.primaryViewSurfaceSelectionHandler = undefined;
-          };
-        },
-      },
+      surfaceHost: this.primaryViewSurfaceHost,
       preferences: this.createPluginPreferencesHost(),
-      attention: {
-        snapshot: () => this.sessionAttentionSnapshot(),
-        watch: (handler) => {
-          this.sessionAttentionWatchers.add(handler);
-          handler(this.sessionAttentionSnapshot());
-          return () => { this.sessionAttentionWatchers.delete(handler); };
-        },
-        focus: (item) => this.focusSessionAttention(item),
-        requestNotificationPermission: () => typeof Notification === "undefined" ? Promise.resolve("denied") : Notification.requestPermission(),
-      },
+      attention: this.sessionAttentionHost,
       sessionNavigation: this.sessionNavigation.host,
     };
   }
@@ -1620,29 +1627,48 @@ export class PiWebApp extends LitElement {
   }
 
   private async focusSessionAttention(item: Pick<SessionAttentionItem, "machineId" | "projectId" | "workspaceId" | "sessionId" | "askId">): Promise<boolean> {
-    await this.selectPluginSessionLocation(item);
+    const retainedDedicatedView = this.primaryViewLayout(this.selectedPrimaryView()) === "dedicated" ? this.state.mainView : undefined;
+    const alreadySelected = selectedMachineId(this.state) === item.machineId
+      && this.state.selectedProject?.id === item.projectId
+      && this.state.selectedWorkspace?.id === item.workspaceId
+      && this.state.selectedSession?.id === item.sessionId;
+    if (!alreadySelected) await this.selectPluginSession(item);
+    if (retainedDedicatedView !== undefined) {
+      this.primaryViewSurfaceSelectionHandler?.("chat");
+      // Mounted surfaces live in plugin-owned containers outside this element's
+      // render tree, so refresh them imperatively before resolving attention.
+      this.refreshPrimaryViewSurfaceMounts();
+      await nextFrame();
+      for (const [container, mount] of this.primaryViewSurfaceMounts) {
+        if (!container.isConnected || mount.surface !== "chat") continue;
+        const mountedChat = container.querySelector<ChatView>("chat-view");
+        if (mountedChat !== null && await mountedChat.focusPendingAsk(item.askId)) return true;
+      }
+      return false;
+    }
     this.selectMainView("chat");
     await this.updateComplete;
     await nextFrame();
     return await this.chatView?.focusPendingAsk(item.askId) ?? false;
   }
 
-  private mountPrimaryViewSurface(container: HTMLElement, surface: PrimaryViewSurface): void {
+  private mountPrimaryViewSurface(container: HTMLElement, surface: PrimaryViewSurface, options: PrimaryViewSurfaceMountOptions = {}): void {
     const mountedSurface = this.primaryViewSurfaceMounts.get(container);
-    if (mountedSurface !== undefined && mountedSurface !== surface) {
-      throw new Error(`Primary view surface container is already mounted as ${mountedSurface}.`);
+    if (mountedSurface !== undefined && mountedSurface.surface !== surface) {
+      throw new Error(`Primary view surface container is already mounted as ${mountedSurface.surface}.`);
     }
-    this.primaryViewSurfaceMounts.set(container, surface);
-    renderTemplate(this.renderPrimaryViewSurface(surface), container);
+    const mount = { surface, options: { chatStatusPlacement: options.chatStatusPlacement ?? "bar" } } satisfies MountedPrimaryViewSurface;
+    this.primaryViewSurfaceMounts.set(container, mount);
+    renderTemplate(this.renderPrimaryViewSurface(mount), container);
   }
 
   private refreshPrimaryViewSurfaceMounts(): void {
-    for (const [container, surface] of this.primaryViewSurfaceMounts) {
+    for (const [container, mount] of this.primaryViewSurfaceMounts) {
       if (!container.isConnected) {
         this.primaryViewSurfaceMounts.delete(container);
         continue;
       }
-      renderTemplate(this.renderPrimaryViewSurface(surface), container);
+      renderTemplate(this.renderPrimaryViewSurface(mount), container);
     }
   }
 
@@ -1777,15 +1803,15 @@ export class PiWebApp extends LitElement {
     };
   }
 
-  private renderPrimaryViewSurface(surface: PrimaryViewSurface) {
-    if (surface === "chat") {
+  private renderPrimaryViewSurface(mount: MountedPrimaryViewSurface) {
+    if (mount.surface === "chat") {
       const session = this.state.selectedSession;
       if (session === undefined) return html`<div class="empty">Select a Chat to open it.</div>`;
-      return this.renderSelectedChatSurface(this.state, session);
+      return this.renderSelectedChatSurface(this.state, session, mount.options.chatStatusPlacement);
     }
     const workspace = this.state.selectedWorkspace;
-    if (workspace === undefined) return html`<div class="empty">Select a session checkout to open ${surfaceLabel(surface)}.</div>`;
-    const tool = primaryViewWorkspaceTool(surface);
+    if (workspace === undefined) return html`<div class="empty">Select a session checkout to open ${surfaceLabel(mount.surface)}.</div>`;
+    const tool = primaryViewWorkspaceTool(mount.surface);
     return html`
       <workspace-panel
         .workspace=${workspace}
@@ -2574,12 +2600,13 @@ export class PiWebApp extends LitElement {
     `;
   }
 
-  private renderSelectedChatSurface(state: AppState, session: SessionInfo) {
+  private renderSelectedChatSurface(state: AppState, session: SessionInfo, chatStatusPlacement: "bar" | "prompt-editor" = "bar") {
+    const warningCount = this.sessionWarningVisibility.warningCount;
     return html`
       <div style="flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden">
         ${this.renderChatView(state, session, true)}
-        <prompt-editor style="flex:0 0 auto" .sessionId=${session.id} .cwd=${state.selectedWorkspace?.path} .machineId=${selectedMachineId(state)} .projectId=${state.selectedWorkspace?.projectId} .workspaceId=${state.selectedWorkspace?.id} .disabled=${session.archived === true} .canSteer=${state.status?.isStreaming === true} .isCompacting=${state.status?.isCompacting === true} .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0} .status=${state.status} .availableThinkingLevels=${state.availableThinkingLevels} .sending=${state.sendingPrompts[session.id] === true} .onSend=${this.handleSendPrompt} .onStop=${this.handleStopActiveWork} .onSelectModel=${this.handleSelectModel} .onSelectThinking=${this.handleSelectThinking}></prompt-editor>
-        ${this.renderStatusBar(state)}
+        <prompt-editor style="flex:0 0 auto" .sessionId=${session.id} .cwd=${state.selectedWorkspace?.path} .machineId=${selectedMachineId(state)} .projectId=${state.selectedWorkspace?.projectId} .workspaceId=${state.selectedWorkspace?.id} .disabled=${session.archived === true} .canSteer=${state.status?.isStreaming === true} .isCompacting=${state.status?.isCompacting === true} .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0} .status=${state.status} .chatStatusPlacement=${chatStatusPlacement} .warningCount=${warningCount} .warningsExpanded=${warningCount > 0 && !this.sessionWarningVisibility.collapsed} .onToggleWarnings=${this.handleToggleWarnings} .availableThinkingLevels=${state.availableThinkingLevels} .sending=${state.sendingPrompts[session.id] === true} .onSend=${this.handleSendPrompt} .onStop=${this.handleStopActiveWork} .onSelectModel=${this.handleSelectModel} .onSelectThinking=${this.handleSelectThinking}></prompt-editor>
+        ${chatStatusPlacement === "bar" ? this.renderStatusBar(state) : null}
       </div>
     `;
   }

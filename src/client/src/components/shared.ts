@@ -495,6 +495,7 @@ export const statusBarStyles = css`
   :host { display: block; color: var(--pi-muted); font: 12px system-ui, sans-serif; }
   .bar { display: flex; justify-content: flex-end; gap: 10px; align-items: center; min-width: 0; padding: 5px 10px; background: var(--pi-surface); white-space: nowrap; overflow: hidden; }
   span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .context.high-usage { color: var(--pi-warning); font-weight: 600; }
   .warning-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; margin-right: auto; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; line-height: 1; white-space: nowrap; cursor: pointer; }
   .warning-toggle:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
   .warning-toggle-icon { flex: 0 0 auto; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -564,6 +565,7 @@ export const promptEditorStyles = css`
   .compact-status { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--pi-muted); font-size: 12px; flex: 1 1 0; }
   .compact-status > button { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .select-model { max-width: min(42vw, 320px); }
+  .model-label-narrow { display: none; }
   .icon-button { flex: 0 0 auto; display: inline-grid; place-items: center; width: max(36px, var(--pi-control-min-size)); height: max(36px, var(--pi-control-min-size)); padding: 0; }
   .icon-button .prompt-action-icon, .icon-button .prompt-thinking-gauge { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   .icon-button .prompt-action-icon-filled { fill: currentColor; stroke: none; }
@@ -603,8 +605,18 @@ export const promptEditorStyles = css`
   }
   @media (max-width: 430px) {
     .compact-status { flex-basis: 170px; font-size: 11px; }
-    .select-model { max-width: 48vw; }
+    .select-model { max-width: 34vw; }
     button { padding: 5px 7px; }
     .icon-button { width: 34px; height: 34px; }
+  }
+  @media (max-width: 390px) {
+    .compact-status { gap: 2px; }
+    .select-model { flex: 0 0 auto; max-width: 52px; }
+    .model-label-wide { display: none; }
+    .model-label-narrow { display: inline; }
+  }
+  @media (pointer: coarse) {
+    button { min-height: max(44px, var(--pi-control-min-size)); }
+    .icon-button { min-width: max(44px, var(--pi-control-min-size)); width: max(44px, var(--pi-control-min-size)); height: max(44px, var(--pi-control-min-size)); }
   }
 `;

@@ -3,7 +3,7 @@ import { markdown, deleteMarkupBackward, insertNewlineContinueMarkup } from "@co
 import { EditorSelection, EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
-import { LitElement, html, type PropertyValues } from "lit";
+import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, type FileSuggestion, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
@@ -14,12 +14,110 @@ import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletio
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, readPromptEnterPreference, shouldSendPromptOnEnterShortcut, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
-import { promptEditorStyles, type CompletionItem } from "./shared";
+import { promptEditorStyles, renderSessionWarningIcon, type CompletionItem } from "./shared";
 import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge } from "./promptEditorIcons";
 import { thinkingGauge, thinkingLevelLabel } from "../../../shared/thinkingLevels";
+import { sessionStatusPresentation, sessionWarningControlContent } from "./sessionStatusPresentation";
 import "./AutocompleteMenu";
 
 type PendingAttachment = CapturedAttachment & { id: string };
+
+@customElement("prompt-editor-session-status")
+export class PromptEditorSessionStatus extends LitElement {
+  @property({ attribute: false }) status: SessionStatus | null | undefined = undefined;
+  @property({ type: Number }) warningCount = 0;
+  @property({ type: Boolean }) warningsExpanded = false;
+  @property({ attribute: false }) onToggleWarnings?: () => void;
+  @state() private detailsAnnouncement = "";
+
+  override render() {
+    const status = this.status;
+    if (status == null) {
+      return html`<span class="loading" role="status" aria-live="polite" aria-label="Session status loading" title="Session status loading">Loading…</span>`;
+    }
+    const presentation = sessionStatusPresentation(status);
+    const warningControl = sessionWarningControlContent(this.warningCount, this.warningsExpanded);
+    return html`
+      <div class="hosted-status">
+        <details
+          class=${presentation.contextHighUsage ? "context-status high-usage" : "context-status"}
+          aria-label="Session usage details"
+          @toggle=${this.handleDetailsToggle}
+          @keydown=${this.handleDetailsKeyDown}
+        >
+          <summary
+            title=${`${presentation.contextAccessibleLabel}; ${presentation.detailText}`}
+            aria-label=${`${presentation.contextAccessibleLabel}. Show token and cost details`}
+          >
+            <span class="context-summary-wide">${presentation.contextSummaryText}</span>
+            <span class="context-summary-narrow" aria-hidden="true">${presentation.contextCompactText}</span>
+          </summary>
+          <div class="status-details" role="status" aria-label="Session token and cost details">
+            <span>${presentation.inputText}</span>
+            <span>${presentation.outputText}</span>
+            <span>${presentation.costText}</span>
+            ${presentation.queuedText === undefined ? null : html`<span>${presentation.queuedText}</span>`}
+          </div>
+        </details>
+        ${warningControl === undefined || this.onToggleWarnings === undefined ? null : html`
+          <button
+            type="button"
+            class="warning-toggle"
+            title=${warningControl.accessibleLabel}
+            aria-label=${warningControl.accessibleLabel}
+            aria-expanded=${String(this.warningsExpanded)}
+            @click=${() => this.onToggleWarnings?.()}
+          >
+            ${renderSessionWarningIcon("warning", "warning-toggle-icon")}
+            <span>${warningControl.countText}</span>
+          </button>
+        `}
+        <span class="visually-hidden" aria-live="polite" aria-atomic="true">${this.detailsAnnouncement}</span>
+      </div>
+    `;
+  }
+
+  private readonly handleDetailsToggle = (event: Event): void => {
+    const details = event.currentTarget;
+    if (!(details instanceof HTMLDetailsElement)) return;
+    this.detailsAnnouncement = `Session usage details ${details.open ? "expanded" : "collapsed"}`;
+  };
+
+  private readonly handleDetailsKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape") return;
+    const details = event.currentTarget;
+    if (!(details instanceof HTMLDetailsElement) || !details.open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    details.open = false;
+    requestAnimationFrame(() => { details.querySelector<HTMLElement>("summary")?.focus(); });
+  };
+
+  static override styles = css`
+    :host { position: relative; flex: 0 0 auto; min-width: 0; color: var(--pi-muted); font: 12px system-ui, sans-serif; }
+    .hosted-status { display: flex; min-width: 0; align-items: center; gap: var(--pi-toolbar-gap, 5px); }
+    details { position: relative; flex: 0 0 auto; min-width: 0; }
+    summary { box-sizing: border-box; min-height: var(--pi-control-min-size); display: inline-flex; align-items: center; max-width: 100%; overflow: hidden; padding: var(--pi-control-padding-block) var(--pi-control-padding-inline); white-space: nowrap; cursor: pointer; }
+    .context-summary-narrow { display: none; }
+    summary:focus-visible, button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
+    .high-usage summary { color: var(--pi-warning); font-weight: 600; }
+    .status-details { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 4; display: flex; gap: 8px; width: max-content; max-width: min(90vw, 36rem); overflow-x: auto; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); padding: var(--pi-control-padding-block) var(--pi-control-padding-inline); box-shadow: 0 6px 18px var(--pi-shadow); white-space: nowrap; }
+    .warning-toggle { display: inline-flex; align-items: center; gap: 3px; min-height: var(--pi-control-min-size); border: 0; border-radius: 4px; background: transparent; color: inherit; padding: var(--pi-control-padding-block) var(--pi-control-padding-inline); font: inherit; cursor: pointer; }
+    .warning-toggle-icon { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .loading { display: inline-flex; align-items: center; min-height: var(--pi-control-min-size); color: var(--pi-dim); white-space: nowrap; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+    @media (max-width: 430px) {
+      .hosted-status { gap: 2px; }
+      .context-summary-wide { display: none; }
+      .context-summary-narrow { display: inline; }
+      summary, .warning-toggle { padding-inline: 5px; }
+    }
+    @media (pointer: coarse) {
+      summary, .warning-toggle { min-width: max(44px, var(--pi-control-min-size)); min-height: max(44px, var(--pi-control-min-size)); justify-content: center; }
+      .loading { min-height: max(44px, var(--pi-control-min-size)); }
+    }
+  `;
+}
 
 @customElement("prompt-editor")
 export class PromptEditor extends LitElement {
@@ -32,7 +130,20 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean }) canSteer = false;
   @property({ type: Boolean }) isCompacting = false;
   @property({ type: Boolean }) canStop = false;
-  @property({ attribute: false }) status?: SessionStatus;
+  private sessionStatus: SessionStatus | null | undefined = undefined;
+  @property({ attribute: false })
+  get status(): SessionStatus | null | undefined { return this.sessionStatus; }
+  set status(value: SessionStatus | null | undefined) {
+    this.sessionStatus = value;
+    // Token updates that the parent intentionally filters still need to reach
+    // the mounted child; assigning its public property schedules its own update.
+    const hostedStatus = this.promptEditorSessionStatus;
+    if (hostedStatus != null) hostedStatus.status = value;
+  }
+  @property() chatStatusPlacement: "bar" | "prompt-editor" = "bar";
+  @property({ type: Number }) warningCount = 0;
+  @property({ type: Boolean }) warningsExpanded = false;
+  @property({ attribute: false }) onToggleWarnings?: () => void;
   @property({ type: Boolean }) sending = false;
   @property({ attribute: false }) onSend?: (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery) => void | Promise<void>;
   @property({ attribute: false }) onStop?: () => void;
@@ -41,6 +152,7 @@ export class PromptEditor extends LitElement {
   @property({ attribute: false }) availableThinkingLevels: readonly string[] = [];
   @query(".markdown-editor") private editorHost?: HTMLDivElement;
   @query(".attachment-input") private attachmentInput?: HTMLInputElement;
+  @query("prompt-editor-session-status") private promptEditorSessionStatus?: PromptEditorSessionStatus;
   // `draft` is the live document text but is intentionally NOT reactive: it
   // changes on every keystroke and the visible text is owned by CodeMirror, not
   // by Lit's render. Re-rendering the surrounding template on each keystroke is
@@ -160,13 +272,25 @@ export class PromptEditor extends LitElement {
 
   private renderCompactStatus() {
     const status = this.status;
-    if (status === undefined) return null;
-    const model = status.model?.id ?? "no model";
-    const provider = status.model?.provider !== undefined && status.model.provider !== "" ? `${status.model.provider}/` : "";
+    if (status == null && this.chatStatusPlacement !== "prompt-editor") return null;
+    const model = status?.model?.id ?? "model unknown";
+    const provider = status?.model?.provider !== undefined && status.model.provider !== "" ? `${status.model.provider}/` : "";
+    const thinkingLabel = status == null ? "Thinking level unavailable" : `Thinking level: ${thinkingLevelLabel(status.thinkingLevel)}`;
     return html`
       <div class="compact-status" aria-label="Session status">
-        <button class="select-model" title="Select model" @click=${() => this.onSelectModel?.()}>${provider}${model}</button>
-        <button class="select-thinking icon-button" title=${`Thinking level: ${thinkingLevelLabel(status.thinkingLevel)}`} aria-label=${`Thinking level: ${thinkingLevelLabel(status.thinkingLevel)}`} @click=${() => this.onSelectThinking?.()}>${renderThinkingGauge(thinkingGauge(status.thinkingLevel, this.availableThinkingLevels))}</button>
+        <button class="select-model" title=${`Select model: ${provider}${model}`} aria-label=${`Select model: ${provider}${model}`} @click=${() => this.onSelectModel?.()}>
+          <span class="model-label-wide">${provider}${model}</span>
+          <span class="model-label-narrow" aria-hidden="true">Model</span>
+        </button>
+        <button class="select-thinking icon-button" ?disabled=${status == null} title=${thinkingLabel} aria-label=${thinkingLabel} @click=${() => this.onSelectThinking?.()}>${status == null ? "—" : renderThinkingGauge(thinkingGauge(status.thinkingLevel, this.availableThinkingLevels))}</button>
+        ${this.chatStatusPlacement === "prompt-editor" ? html`
+          <prompt-editor-session-status
+            .status=${status}
+            .warningCount=${this.warningCount}
+            .warningsExpanded=${this.warningsExpanded}
+            .onToggleWarnings=${this.onToggleWarnings}
+          ></prompt-editor-session-status>
+        ` : null}
       </div>
     `;
   }
@@ -502,14 +626,13 @@ export class PromptEditor extends LitElement {
   static override styles = promptEditorStyles;
 }
 
-// The only `status` fields the template reads directly are the model identity
-// and thinking level (shown in renderCompactStatus). Everything else the editor
-// cares about (canSteer/canStop/isCompacting/sending) is passed as a separate
-// property that Lit already diffs by value. Comparing just these fields lets us
-// ignore the per-token status churn that does not change anything on screen.
-function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus | undefined): boolean {
+// The parent template reads only model identity and thinking level. Hosted
+// token/context status is delegated to PromptEditorSessionStatus directly by the
+// status setter, while activity flags are separate primitive properties. This
+// keeps per-token status churn from re-rendering the editor-owning parent DOM.
+function sessionStatusRenderEqual(a: SessionStatus | null | undefined, b: SessionStatus | null | undefined): boolean {
   if (a === b) return true;
-  if (a === undefined || b === undefined) return false;
+  if (a == null || b == null) return false;
   return a.model?.id === b.model?.id
     && a.model?.provider === b.model?.provider
     && a.thinkingLevel === b.thinkingLevel;

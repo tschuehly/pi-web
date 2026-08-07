@@ -7,6 +7,8 @@ import type { PluginRuntimeContext, PluginSessionHost, PrimaryViewContext } from
 import { PluginRegistry } from "../plugins/registry";
 import { SessionController } from "../controllers/sessionController";
 import { PiWebApp } from "./PiWebApp";
+import { ChatView } from "./ChatView";
+import { PromptEditor } from "./PromptEditor";
 import type { WorkspacePanel } from "./WorkspacePanel";
 import { AppPrimaryView } from "./appShell/AppPrimaryView";
 
@@ -64,6 +66,41 @@ describe("PiWebApp primary-view host", () => {
     expect(workspaceSurfaces.every((panel) => panel.hideToolTabs)).toBe(true);
   });
 
+  it("keeps primary hosts and mounted Chat stable across context creation and status render updates", async () => {
+    const app = createDedicatedApp(() => html`<p>Work</p>`);
+    setAppState(app, { ...appState(app), status: hostedChatStatus(80, 1) });
+    const firstContext = primaryViewContext(app);
+    const consecutiveContext = primaryViewContext(app);
+    expect(consecutiveContext.surfaceHost).toBe(firstContext.surfaceHost);
+    expect(consecutiveContext.attention).toBe(firstContext.attention);
+
+    const appContainer = document.createElement("div");
+    const surfaceContainer = document.createElement("div");
+    document.body.append(appContainer, surfaceContainer);
+    renderTemplate(app.render(), appContainer);
+    const surfaceHost = firstContext.surfaceHost;
+    if (surfaceHost === undefined) throw new Error("Primary surface host was unavailable");
+
+    surfaceHost.mount(surfaceContainer, "chat", { chatStatusPlacement: "prompt-editor" });
+    const mountedChat = requiredElement(surfaceContainer, "chat-view", ChatView);
+    const promptEditor = requiredElement(surfaceContainer, "prompt-editor", PromptEditor);
+    await promptEditor.updateComplete;
+
+    expect(surfaceContainer.querySelector("status-bar")).toBeNull();
+    expect(promptEditor.shadowRoot?.querySelector("prompt-editor-session-status")).not.toBeNull();
+
+    setAppState(app, { ...appState(app), status: hostedChatStatus(81, 2) });
+    renderTemplate(app.render(), appContainer);
+    refreshMountedPrimaryViewSurfaces(app);
+    const refreshedContext = primaryViewContext(app);
+
+    expect(refreshedContext.surfaceHost).toBe(firstContext.surfaceHost);
+    expect(refreshedContext.attention).toBe(firstContext.attention);
+    expect(surfaceContainer.querySelector("status-bar")).toBeNull();
+    expect(requiredElement(surfaceContainer, "chat-view", ChatView)).toBe(mountedChat);
+    expect(requiredElement(surfaceContainer, "prompt-editor", PromptEditor)).toBe(promptEditor);
+  });
+
   it("keeps the fixed Pi menu out of the default shell navigation composition", () => {
     const app = createDedicatedApp(() => html`<p>Work</p>`);
     setAppState(app, { ...appState(app), mainView: "chat" });
@@ -75,6 +112,7 @@ describe("PiWebApp primary-view host", () => {
     expect(shell.classList.contains("dedicated-shell")).toBe(false);
     expect(shell.querySelector("app-pi-menu")).toBeNull();
     expect(directChild(shell, "aside")).toBeDefined();
+    expect(shell.querySelector("status-bar")).not.toBeNull();
   });
 
   it("refreshes mounted surfaces in place instead of disconnecting their host elements", () => {
@@ -173,6 +211,73 @@ describe("PiWebApp primary-view host", () => {
     expect(context.attention?.snapshot().items).toEqual([]);
     expect(watched.at(-1)).toEqual([]);
     release?.();
+  });
+
+  it("focuses mounted session attention without reselecting an already-selected identity", async () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => { callback(0); return 1; });
+    const app = createAnchoredDedicatedApp();
+    const projects = vi.spyOn(projectsApi, "projects");
+    const workspaces = vi.spyOn(workspacesApi, "workspaces");
+    const sessions = vi.spyOn(sessionsApi, "sessions");
+    const selectSession = vi.spyOn(appSessionController(app), "selectSession");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const context = primaryViewContext(app);
+    context.surfaceHost?.mount(container, "chat");
+    const mountedChat = requiredElement(container, "chat-view", ChatView);
+    const focusPendingAsk = vi.spyOn(mountedChat, "focusPendingAsk").mockResolvedValue(true);
+
+    const focused = await context.attention?.focus({
+      machineId: "local",
+      projectId: "project-1",
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      askId: "ask-mounted",
+    });
+
+    expect(focused).toBe(true);
+    expect(projects).not.toHaveBeenCalled();
+    expect(workspaces).not.toHaveBeenCalled();
+    expect(sessions).not.toHaveBeenCalled();
+    expect(selectSession).not.toHaveBeenCalled();
+    expect(appState(app).mainView).toBe(DEDICATED_VIEW);
+    expect(focusPendingAsk).toHaveBeenCalledWith("ask-mounted");
+  });
+
+  it("selects mismatched session attention before focusing the mounted chat", async () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => { callback(0); return 1; });
+    const app = createAnchoredDedicatedApp();
+    setAppState(app, { ...appState(app), selectedSession: testSession("session-other") });
+    const projects = vi.spyOn(projectsApi, "projects").mockResolvedValue([testProject()]);
+    const workspaces = vi.spyOn(workspacesApi, "workspaces").mockResolvedValue([testWorkspace()]);
+    const sessions = vi.spyOn(sessionsApi, "sessions").mockResolvedValue([testSession()]);
+    const selectSession = vi.spyOn(appSessionController(app), "selectSession").mockImplementation((session) => {
+      setAppState(app, { ...appState(app), selectedSession: session, mainView: "chat" });
+      return Promise.resolve();
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const context = primaryViewContext(app);
+    context.surfaceHost?.mount(container, "chat");
+    const mountedChat = requiredElement(container, "chat-view", ChatView);
+    const focusPendingAsk = vi.spyOn(mountedChat, "focusPendingAsk").mockResolvedValue(true);
+
+    const focused = await context.attention?.focus({
+      machineId: "local",
+      projectId: "project-1",
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      askId: "ask-mounted",
+    });
+
+    expect(focused).toBe(true);
+    expect(projects).toHaveBeenCalledWith("local");
+    expect(workspaces).toHaveBeenCalledWith("project-1", "local");
+    expect(sessions).toHaveBeenCalledWith("/repo", "local");
+    expect(selectSession).toHaveBeenCalledWith(testSession(), { propagateRefreshError: true });
+    expect(appState(app).selectedSession?.id).toBe("session-1");
+    expect(appState(app).mainView).toBe(DEDICATED_VIEW);
+    expect(focusPendingAsk).toHaveBeenCalledWith("ask-mounted");
   });
 
   it("retains observed asks across workspaces on the same connected machine", () => {
@@ -647,6 +752,22 @@ function testProject(): Project {
 
 function testWorkspace(): Workspace {
   return { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true, isGitRepo: true, isGitWorktree: false, effectiveConfig: {} };
+}
+
+function hostedChatStatus(percent: number, output: number): SessionStatus {
+  return {
+    sessionId: "session-1",
+    model: { provider: "anthropic", id: "claude", contextWindow: 200_000 },
+    thinkingLevel: "medium",
+    isStreaming: true,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 1,
+    queuedMessages: [],
+    tokens: { input: 10, output, cacheRead: 0, cacheWrite: 0, total: 10 + output },
+    cost: 0.01,
+    contextUsage: { tokens: 160_000, contextWindow: 200_000, percent },
+  };
 }
 
 function pendingAskStatus(sessionId: string, askId: string): SessionStatus {

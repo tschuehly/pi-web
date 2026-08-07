@@ -309,10 +309,16 @@ export interface PluginSessionHost {
 
 export type PluginConnectionStatus = "connected" | "reconnecting";
 export type PrimaryViewSurface = "chat" | "files" | "git" | "terminal";
+export type ChatStatusPlacement = "bar" | "prompt-editor";
+
+export interface PrimaryViewSurfaceMountOptions {
+  /** Place hosted Chat status in its existing bar or compactly beside the prompt controls. Defaults to `bar`. */
+  chatStatusPlacement?: ChatStatusPlacement;
+}
 
 export interface PrimaryViewSurfaceHost {
   /** Mount a PI WEB-owned surface backed by the host's current state and controllers. */
-  mount(container: HTMLElement, surface: PrimaryViewSurface): void;
+  mount(container: HTMLElement, surface: PrimaryViewSurface, options?: PrimaryViewSurfaceMountOptions): void;
   /** Prepare the selected checkout for a surface without leaving the active primary view. */
   activate?: (surface: PrimaryViewSurface) => void;
   /** Route PI WEB's standard surface actions and shortcuts through a dedicated primary view. */
