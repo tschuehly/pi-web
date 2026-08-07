@@ -40,6 +40,25 @@ describe("app-pi-menu", () => {
     expect(onOpenSettings).toHaveBeenCalledOnce();
   });
 
+  it("omits the active plugin destination and keeps a generic default-shell escape", async () => {
+    const menu = new AppPiMenu();
+    const onSelectView = vi.fn();
+    menu.entries = [
+      { id: "workbench:navigation", pluginId: "workbench", localId: "navigation", title: "Workstreams", primaryView: "workbench:view" },
+      { id: "other:navigation", pluginId: "other", localId: "navigation", title: "Other view", primaryView: "other:view" },
+    ];
+    menu.selectedView = "workbench:view";
+    menu.onSelectView = onSelectView;
+    document.body.append(menu);
+    await menu.updateComplete;
+    const root = required(menu.shadowRoot);
+
+    expect([...root.querySelectorAll("button")].some((candidate) => candidate.textContent.trim() === "Workstreams")).toBe(false);
+    expect(button(root, "Other view")).toBeDefined();
+    button(root, "Open default PI WEB shell").click();
+    expect(onSelectView).toHaveBeenCalledWith("chat");
+  });
+
   it("announces open state and closes on Escape with focus returned to the trigger", async () => {
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       callback(0);

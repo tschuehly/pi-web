@@ -28,8 +28,8 @@ export class AppPiMenu extends LitElement {
         <section class="menu" aria-label="Pi menu">
           <header><strong>PI WEB</strong><span class=${this.connectionLabel === "Connected" ? "connected" : "reconnecting"}>${this.connectionLabel}</span></header>
           <nav aria-label="Destinations">
-            ${this.destination("Conversation", "chat")}
-            ${this.entries.map((entry) => this.destination(entry.title, entry.primaryView))}
+            ${this.destination(this.selectedView === "chat" || this.selectedView === "navigation" ? "Conversation" : "Open default PI WEB shell", "chat")}
+            ${this.entries.filter((entry) => entry.primaryView !== this.selectedView).map((entry) => this.destination(entry.title, entry.primaryView))}
           </nav>
           <div class="group" aria-label="Projects">
             <div class="group-heading"><span>Projects</span><button type="button" @click=${() => { this.invoke(this.onShowProjects); }}>All projects</button></div>
