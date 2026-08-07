@@ -327,15 +327,23 @@ server {
                   <strong>Useful commands</strong>
                   <button class="copy-button" data-copy="#manage-commands">Copy</button>
                 </div>
-                <pre id="manage-commands"><code><span class="prompt">$</span> pi-web status
+                <pre id="manage-commands"><code><span class="prompt">$</span> pi-web status --json
+<span class="prompt">$</span> pi-web doctor --json
 <span class="prompt">$</span> pi-web logs
-<span class="prompt">$</span> pi-web restart
-<span class="prompt">$</span> pi-web doctor
+<span class="comment"># Replace only the UI/API development service; session work continues:</span>
+<span class="prompt">$</span> pi-web restart --component ui
+<span class="comment"># Restart sessiond separately; in-flight turns and terminals can be interrupted:</span>
+<span class="prompt">$</span> pi-web restart --component sessiond
 <span class="prompt">$</span> pi-web version
 
 <span class="comment"># From a checkout, install the split development services:</span>
 <span class="prompt">$</span> pi-web install --dev</code></pre>
               </div>
+              <p>
+                Structured status reports ownership, health, and every independent process owner for each component.
+                A normal watcher/runtime parent-child chain is one owner; a managed and direct tree is a conflict.
+                <code>doctor --json</code> also lists legacy wrapper or supervisor trees and never stops them automatically.
+              </p>
             </section>
 
             <section id="configure">

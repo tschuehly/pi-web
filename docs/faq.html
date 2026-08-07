@@ -238,6 +238,45 @@
               </ul>
             </article>
 
+            <article id="duplicate-services" class="faq-item">
+              <h2>Status reports duplicate or legacy process owners</h2>
+              <p>
+                Run <code>pi-web status --json</code> and <code>pi-web doctor --json</code>. Status distinguishes managed,
+                unmanaged, conflicting, and absent owners instead of guessing from a port. Doctor lists verified direct
+                development, legacy wrapper, and supervisor trees with their PIDs.
+              </p>
+              <p>
+                Finish any active turn, ask, or terminal command before cleanup. Stop only the listed process tree in an
+                attended terminal, then rerun doctor. PI WEB does not kill conflicts automatically. A refused direct
+                sessiond start with <code>SESSIOND_DUPLICATE_OWNER</code> is expected: the existing healthy socket owner
+                remains authoritative.
+              </p>
+            </article>
+
+            <article id="restart-components" class="faq-item">
+              <h2>How do I restart the UI without interrupting sessions?</h2>
+              <p>
+                Use <code>pi-web restart --component ui</code>. It replaces the Web/UI service and leaves the session-daemon
+                PID unchanged. Use <code>pi-web restart --component sessiond</code> only as a separate attended operation;
+                in-flight turns, asks, and terminals cannot be migrated to the replacement daemon.
+              </p>
+            </article>
+
+            <article id="missing-session-anchor" class="faq-item">
+              <h2>A Workstream session says its checkout anchor is unavailable</h2>
+              <p>
+                Choose <strong>Resume</strong>, then use <strong>Repair session location</strong> when PI WEB reports the
+                typed missing-anchor failure. PI WEB scans every registered workspace on the explicitly selected machine
+                by exact session identity and catalog working directory. Confirm the unique match, or choose explicitly
+                when several exact matches exist. A missing result and an unavailable partial scan require different
+                recovery; neither is converted into a guessed location.
+              </p>
+              <p>
+                The trusted plugin rechecks the selected evidence immediately before appending the repair. Closed
+                Workstreams and sessions with complete anchors remain immutable through this control.
+              </p>
+            </article>
+
             <article id="public-internet" class="faq-item">
               <h2>Can I expose PI WEB to the public internet?</h2>
               <p>
