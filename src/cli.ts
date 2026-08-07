@@ -46,10 +46,12 @@ import {
   createLifecycleDoctorReport,
   formatLifecycleDoctorConflicts,
 } from "./nativeServices/lifecycleDoctor.js";
+import { waitForSessiondShutdown, waitForSessiondStartup } from "./nativeServices/sessiondShutdownWait.js";
 import {
   planRestartServiceAction,
   type RestartComponent,
 } from "./nativeServices/serviceActionPlan.js";
+import { sessiondSocketPath } from "./sessiond/config.js";
 
 const PI_WEB_PACKAGE_NAME = "@jmfederico/pi-web";
 
@@ -419,6 +421,7 @@ async function installLaunchdServices(plan: NativeServicePlan): Promise<void> {
   await mkdir(logDir, { recursive: true });
 
   for (const ref of stopOrder(allServiceRefs())) launchdBootout(ref);
+  await waitForSessiondShutdown({ socketPath: sessiondSocketPath() });
 
   for (const ref of allServiceRefs().filter((candidate) => !selected.has(candidate.id))) {
     await rm(launchdPlistPath(ref), { force: true });
@@ -430,6 +433,11 @@ async function installLaunchdServices(plan: NativeServicePlan): Promise<void> {
   }
 
   for (const service of plan.services) launchdStart(serviceRefFromPlan(service.id, service.manager));
+  const sessiond = plan.services.find((service) => service.id === "sessiond");
+  if (sessiond !== undefined) {
+    const ref = serviceRefFromPlan(sessiond.id, sessiond.manager);
+    await waitForSessiondStartup({ socketPath: sessiondSocketPath(), ensureStarted: () => { launchdStart(ref); } });
+  }
 }
 
 async function installNativeServices(plan: NativeServicePlan): Promise<void> {
@@ -728,7 +736,7 @@ function systemdServiceAction(action: "start" | "stop" | "restart", refs: Servic
   run("systemctl", ["--user", action, ...orderedRefs.map((ref) => ref.systemdName)], { check: true });
 }
 
-function launchdServiceAction(action: "start" | "stop" | "restart", refs: ServiceRef[]): void {
+async function launchdServiceAction(action: "start" | "stop" | "restart", refs: ServiceRef[]): Promise<void> {
   if (action === "stop") {
     for (const ref of stopOrder(refs)) launchdBootout(ref);
     return;
@@ -739,12 +747,20 @@ function launchdServiceAction(action: "start" | "stop" | "restart", refs: Servic
     // so the web/UI services are back up before sessiond is restarted.
     for (const ref of restartOrder(refs)) {
       launchdBootout(ref);
+      if (ref.id === "sessiond") await waitForSessiondShutdown({ socketPath: sessiondSocketPath() });
       launchdStart(ref);
+      if (ref.id === "sessiond") {
+        await waitForSessiondStartup({ socketPath: sessiondSocketPath(), ensureStarted: () => { launchdStart(ref); } });
+      }
     }
     return;
   }
 
   for (const ref of startOrder(refs)) launchdStart(ref);
+  const sessiond = refs.find((ref) => ref.id === "sessiond");
+  if (sessiond !== undefined) {
+    await waitForSessiondStartup({ socketPath: sessiondSocketPath(), ensureStarted: () => { launchdStart(sessiond); } });
+  }
 }
 
 async function serviceAction(action: "start" | "stop" | "restart" | "status", args: string[]): Promise<void> {
@@ -772,7 +788,7 @@ async function serviceAction(action: "start" | "stop" | "restart" | "status", ar
     throw new Error(`\`pi-web ${action}\` does not accept options.`);
   }
   if (backend.kind === "systemd") systemdServiceAction(action, refs);
-  else launchdServiceAction(action, refs);
+  else await launchdServiceAction(action, refs);
 }
 
 function parseRestartComponent(args: readonly string[]): RestartComponent | undefined {
