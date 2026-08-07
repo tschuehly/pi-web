@@ -1,0 +1,22 @@
+{
+  "name": "managed",
+  "serviceFiles": ["sessiond"],
+  "observations": {
+    "manager": [
+      { "component": "sessiond", "label": "com.pi-web.sessiond", "pid": 4101, "state": "running" }
+    ],
+    "processes": [
+      { "component": "sessiond", "pid": 4101, "ppid": 1, "executable": "/opt/homebrew/bin/node", "command": "/opt/pi-web/dist/server/sessiond.js", "version": "1.202607.3" }
+    ],
+    "lock": { "state": "owned", "pid": 4101 },
+    "socket": { "state": "responsive", "pid": 4101 }
+  },
+  "expected": {
+    "component": "sessiond",
+    "ownership": "managed",
+    "health": "healthy",
+    "instances": [
+      { "pid": 4101, "executable": "/opt/homebrew/bin/node", "serviceManagerLabel": "com.pi-web.sessiond", "componentVersion": "1.202607.3" }
+    ]
+  }
+}

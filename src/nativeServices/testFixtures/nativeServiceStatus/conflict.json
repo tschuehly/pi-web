@@ -1,0 +1,25 @@
+{
+  "name": "conflict",
+  "serviceFiles": ["sessiond"],
+  "observations": {
+    "manager": [
+      { "component": "sessiond", "label": "com.pi-web.sessiond", "pid": 4501, "state": "running" }
+    ],
+    "processes": [
+      { "component": "sessiond", "pid": 4501, "ppid": 1, "executable": "/opt/homebrew/bin/node", "command": "/opt/pi-web/dist/server/sessiond.js", "version": "1.202607.3" },
+      { "component": "sessiond", "pid": 4502, "ppid": 4499, "executable": "/opt/homebrew/bin/node", "command": "tsx src/server/sessiond.ts", "version": "dev" }
+    ],
+    "lock": { "state": "owned", "pid": 4501 },
+    "socket": { "state": "responsive", "pid": 4502 }
+  },
+  "expected": {
+    "component": "sessiond",
+    "ownership": "conflict",
+    "health": "unhealthy",
+    "instances": [
+      { "pid": 4501, "executable": "/opt/homebrew/bin/node", "serviceManagerLabel": "com.pi-web.sessiond", "componentVersion": "1.202607.3" },
+      { "pid": 4502, "executable": "/opt/homebrew/bin/node", "serviceManagerLabel": null, "componentVersion": "dev" }
+    ],
+    "diagnostics": ["socket-lock-owner-mismatch"]
+  }
+}

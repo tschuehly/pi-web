@@ -1,0 +1,17 @@
+{
+  "name": "stale-lock",
+  "serviceFiles": [],
+  "observations": {
+    "manager": [],
+    "processes": [],
+    "lock": { "state": "stale", "pid": 4401 },
+    "socket": { "state": "absent", "pid": null }
+  },
+  "expected": {
+    "component": "sessiond",
+    "ownership": "absent",
+    "health": "unhealthy",
+    "instances": [],
+    "diagnostics": ["stale-lock"]
+  }
+}

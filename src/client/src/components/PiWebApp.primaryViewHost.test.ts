@@ -229,6 +229,25 @@ describe("PiWebApp primary-view host", () => {
     expect(appState(app).mainView).toBe("chat");
     expect(focusChatComposer).toHaveBeenCalledOnce();
   });
+
+  it("reports the exact typed missing-anchor symptom when an anchorless session is absent from the current selected workspace", async () => {
+    const app = createDedicatedApp(() => html`<p>Work</p>`);
+    const sessions = primaryViewContext(app).sessions;
+    if (sessions === undefined) throw new Error("Plugin session host was unavailable");
+
+    const failure: unknown = await sessions.open({ sessionId: "session-photoquest-anchorless" })
+      .then(() => undefined, (error: unknown) => error);
+
+    expect({
+      message: failure instanceof Error ? failure.message : String(failure),
+      code: errorCode(failure),
+      selectedWorkspaceId: appState(app).selectedWorkspace?.id,
+    }).toEqual({
+      message: "Session session-photoquest-anchorless is not available in the selected workspace.",
+      code: "SESSION_ANCHOR_MISSING",
+      selectedWorkspaceId: "workspace-1",
+    });
+  });
 });
 
 function createDedicatedApp(render: (context: PrimaryViewContext) => ReturnType<typeof html>): PiWebApp {
@@ -291,6 +310,10 @@ function primaryViewContext(app: PiWebApp): PrimaryViewContext {
 
 function isPrimaryViewContext(value: unknown): value is PrimaryViewContext {
   return typeof value === "object" && value !== null && typeof Reflect.get(value, "host") === "object";
+}
+
+function errorCode(value: unknown): unknown {
+  return typeof value === "object" && value !== null ? Reflect.get(value, "code") : undefined;
 }
 
 function pluginRuntimeContext(app: PiWebApp): PluginRuntimeContext {

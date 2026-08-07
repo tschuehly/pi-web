@@ -1,0 +1,20 @@
+{
+  "name": "unmanaged",
+  "serviceFiles": [],
+  "observations": {
+    "manager": [],
+    "processes": [
+      { "component": "sessiond", "pid": 4201, "ppid": 4199, "executable": "/opt/homebrew/bin/node", "command": "tsx src/server/sessiond.ts", "version": "dev" }
+    ],
+    "lock": { "state": "owned", "pid": 4201 },
+    "socket": { "state": "responsive", "pid": 4201 }
+  },
+  "expected": {
+    "component": "sessiond",
+    "ownership": "unmanaged",
+    "health": "healthy",
+    "instances": [
+      { "pid": 4201, "executable": "/opt/homebrew/bin/node", "serviceManagerLabel": null, "componentVersion": "dev" }
+    ]
+  }
+}
