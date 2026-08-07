@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { packageVersion } from "../piWebVersionReport.js";
 import { sessiondSocketPath } from "../sessiond/config.js";
 import { probeSessiondHealth, sessiondLockPath, type SessiondHealthProbe } from "../sessiond/sessiondOwnership.js";
-import { detectSessiondProcessTrees, type SessiondProcessTree } from "./lifecycleDoctor.js";
+import {
+  detectLegacyProcessTrees,
+  detectSessiondProcessTrees,
+  type LegacyProcessTree,
+  type SessiondProcessTree,
+} from "./lifecycleDoctor.js";
+import { leafProcessOwners } from "./processTopology.js";
 import { nativeServiceManagerRefs, type NativeServiceId } from "./servicePlan.js";
 
 export interface NativeProcessObservation {
@@ -38,6 +44,7 @@ export interface NativeServiceStatusReport {
   backend: "launchd" | "systemd" | "unsupported";
   installMode: string;
   components: NativeComponentStatus[];
+  legacyProcessTrees?: LegacyProcessTree[];
 }
 
 interface ManagerInstance {
@@ -74,6 +81,7 @@ export async function collectNativeServiceStatus(): Promise<NativeServiceStatusR
     components: componentIds.map((serviceId) => serviceId === "sessiond"
       ? sessiondStatus(processes, managers, lock, socket)
       : componentStatus(serviceId, processes, managers)),
+    legacyProcessTrees: detectLegacyProcessTrees(processes),
   };
 }
 
@@ -151,7 +159,7 @@ function componentInstances(
 ): NativeServiceInstance[] {
   const byPid = new Map(processes.map((process) => [process.pid, process]));
   const runtimeProcesses = processes.filter((process) => observedProcessComponent(process) === component);
-  const detectedProcesses = [...runtimeProcesses];
+  const detectedProcesses = [...leafProcessOwners(processes, runtimeProcesses)];
   for (const manager of managers) {
     const managerPid = manager.pid;
     if (managerPid === null || runtimeProcesses.some((process) => processOwnedByManager(process, managerPid, byPid))) continue;

@@ -17,6 +17,7 @@ interface StatusFixture {
   };
   expected: Record<string, unknown>;
   expectedComponents?: Record<string, unknown>[];
+  expectedLegacyProcessTrees?: Record<string, unknown>[];
 }
 
 interface FakeHostState {
@@ -92,7 +93,13 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 const fixtureNames = ["managed", "unmanaged", "duplicate", "stale-lock", "conflict"] as const;
-const generalizedFixtureNames = ["web-duplicate", "ui-dev-duplicate", "partial-health"] as const;
+const generalizedFixtureNames = [
+  "web-duplicate",
+  "ui-dev-duplicate",
+  "partial-health",
+  "managed-descendant-chains",
+  "legacy-workbench-trees",
+] as const;
 const originalArgv = [...process.argv];
 const originalDataDir = process.env["PI_WEB_DATA_DIR"];
 const originalSocketPath = process.env["PI_WEB_SESSIOND_SOCKET"];
@@ -141,6 +148,9 @@ describe("pi-web status --json ownership fixtures", () => {
     expect(components.map((component) => isRecord(component) ? component["component"] : undefined))
       .toEqual(fixture.expectedComponents?.map((component) => component["component"]));
     expect(components).toMatchObject(fixture.expectedComponents ?? []);
+    if (fixture.expectedLegacyProcessTrees !== undefined) {
+      expect(report["legacyProcessTrees"]).toMatchObject(fixture.expectedLegacyProcessTrees);
+    }
   });
 
   it("emits attended doctor JSON for unmanaged duplicates without sending a signal", async () => {
@@ -154,6 +164,24 @@ describe("pi-web status --json ownership fixtures", () => {
       conflicts: [{
         component: "sessiond",
         kind: "unmanaged-process-conflict",
+        cleanup: { attended: true, requiresAcknowledgement: true, performed: false },
+      }],
+    });
+    expect(fakeHost.runnerCalls.some((call) => call.command === "kill" && call.args[0] !== "-0")).toBe(false);
+  });
+
+  it("emits attended doctor JSON for the two legacy Workbench trees without sending a signal", async () => {
+    const fixture = await loadFixture("legacy-workbench-trees");
+    await installFixture(fixture);
+
+    const report = parseCliJson(await runCliJson("doctor"), "legacy Workbench doctor fixture");
+
+    expect(report).toMatchObject({
+      ok: false,
+      conflicts: [{
+        component: "legacy-wrapper",
+        kind: "legacy-wrapper-conflict",
+        processTrees: fixture.expectedLegacyProcessTrees,
         cleanup: { attended: true, requiresAcknowledgement: true, performed: false },
       }],
     });
@@ -226,6 +254,7 @@ function isStatusFixture(value: unknown): value is StatusFixture {
   const manager = value["observations"]["manager"];
   const processes = value["observations"]["processes"];
   const expectedComponents = value["expectedComponents"];
+  const expectedLegacyProcessTrees = value["expectedLegacyProcessTrees"];
   return Array.isArray(serviceFiles)
     && serviceFiles.every(isServiceId)
     && Array.isArray(manager)
@@ -234,7 +263,9 @@ function isStatusFixture(value: unknown): value is StatusFixture {
     && processes.every(isProcessObservation)
     && "lock" in value["observations"]
     && isSocketObservation(value["observations"]["socket"])
-    && (expectedComponents === undefined || (Array.isArray(expectedComponents) && expectedComponents.every(isRecord)));
+    && (expectedComponents === undefined || (Array.isArray(expectedComponents) && expectedComponents.every(isRecord)))
+    && (expectedLegacyProcessTrees === undefined
+      || (Array.isArray(expectedLegacyProcessTrees) && expectedLegacyProcessTrees.every(isRecord)));
 }
 
 function isSocketObservation(value: unknown): value is StatusFixture["observations"]["socket"] {

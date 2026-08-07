@@ -1,0 +1,42 @@
+{
+  "name": "managed-descendant-chains",
+  "serviceFiles": ["sessiond", "uiDev"],
+  "observations": {
+    "manager": [
+      { "component": "sessiond", "label": "com.pi-web.sessiond", "pid": 87377, "state": "running" },
+      { "component": "uiDev", "label": "com.pi-web.ui-dev", "pid": 88992, "state": "running" }
+    ],
+    "processes": [
+      { "component": "sessiond", "pid": 87377, "ppid": 1, "executable": "/bin/zsh", "command": "/bin/zsh -lc npm run start:sessiond", "version": "dev" },
+      { "component": "sessiond", "pid": 87401, "ppid": 87377, "executable": "/opt/homebrew/bin/node", "command": "tsx src/server/sessiond.ts", "version": "dev" },
+      { "component": "sessiond", "pid": 87402, "ppid": 87401, "executable": "/opt/homebrew/bin/node", "command": "node --import tsx src/server/sessiond.ts", "version": "dev" },
+      { "component": "uiDev", "pid": 88992, "ppid": 1, "executable": "/bin/zsh", "command": "/bin/zsh -lc npm run dev:web", "version": "dev" },
+      { "component": "uiDev", "pid": 89082, "ppid": 88992, "executable": "/opt/homebrew/bin/node", "command": "tsx watch src/server/index.ts", "version": "dev" },
+      { "component": "uiDev", "pid": 42464, "ppid": 89082, "executable": "/opt/homebrew/bin/node", "command": "node --import tsx src/server/index.ts", "version": "dev" }
+    ],
+    "lock": { "state": "owned", "pid": 87402 },
+    "socket": { "state": "responsive", "pid": 87402 }
+  },
+  "expected": {},
+  "expectedComponents": [
+    {
+      "component": "sessiond",
+      "ownership": "managed",
+      "health": "healthy",
+      "instances": [
+        { "pid": 87402, "executable": "/opt/homebrew/bin/node", "serviceManagerLabel": "com.pi-web.sessiond", "componentVersion": "dev" }
+      ],
+      "processTrees": [
+        { "kind": "direct", "rootPid": 87377, "instancePid": 87402, "pids": [87377, 87401, 87402] }
+      ]
+    },
+    {
+      "component": "uiDev",
+      "ownership": "managed",
+      "health": "healthy",
+      "instances": [
+        { "pid": 42464, "executable": "/opt/homebrew/bin/node", "serviceManagerLabel": "com.pi-web.ui-dev", "componentVersion": "dev" }
+      ]
+    }
+  ]
+}

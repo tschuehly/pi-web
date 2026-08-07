@@ -1,0 +1,43 @@
+{
+  "name": "legacy-workbench-trees",
+  "serviceFiles": ["sessiond", "uiDev"],
+  "observations": {
+    "manager": [
+      { "component": "sessiond", "label": "com.pi-web.sessiond", "pid": 61001, "state": "running" },
+      { "component": "uiDev", "label": "com.pi-web.ui-dev", "pid": 61002, "state": "running" }
+    ],
+    "processes": [
+      { "component": "sessiond", "pid": 61001, "ppid": 1, "executable": "/opt/homebrew/bin/node", "command": "/workspace/dist/server/sessiond.js", "version": "1.202607.3" },
+      { "component": "uiDev", "pid": 61002, "ppid": 1, "executable": "/opt/homebrew/bin/node", "command": "tsx src/server/index.ts", "version": "dev" },
+      { "pid": 62001, "ppid": 1, "executable": "/bin/bash", "command": "/bin/bash /Users/fixture/Applications/Pi Workbench.app/Contents/MacOS/PiWorkbenchSupervisor" },
+      { "pid": 62002, "ppid": 62001, "executable": "/bin/bash", "command": "bash /Users/fixture/IdeaProjects/pi-workbench/apps/pi-web-macos/Scripts/boot-dev.sh" },
+      { "pid": 62003, "ppid": 62002, "executable": "/Users/fixture/.build/PIWebMac", "command": "/Users/fixture/.build/arm64-apple-macosx/debug/PIWebMac" },
+      { "pid": 63001, "ppid": 1, "executable": "/bin/bash", "command": "/bin/bash /Users/fixture/Applications/Pi Workbench.app/Contents/MacOS/PiWorkbenchSupervisor" },
+      { "pid": 63002, "ppid": 63001, "executable": "/bin/bash", "command": "bash /Users/fixture/IdeaProjects/pi-workbench/apps/pi-web-macos/Scripts/boot-dev.sh" },
+      { "pid": 63003, "ppid": 63002, "executable": "/Users/fixture/.build/PIWebMac", "command": "/Users/fixture/.build/arm64-apple-macosx/debug/PIWebMac" }
+    ],
+    "lock": { "state": "owned", "pid": 61001 },
+    "socket": { "state": "responsive", "pid": 61001 }
+  },
+  "expected": {},
+  "expectedComponents": [
+    { "component": "sessiond", "ownership": "managed", "health": "healthy" },
+    { "component": "uiDev", "ownership": "managed", "health": "healthy" }
+  ],
+  "expectedLegacyProcessTrees": [
+    {
+      "kind": "workbench-supervisor",
+      "rootPid": 62001,
+      "supervisorPid": 62001,
+      "wrapperPids": [62003],
+      "pids": [62001, 62002, 62003]
+    },
+    {
+      "kind": "workbench-supervisor",
+      "rootPid": 63001,
+      "supervisorPid": 63001,
+      "wrapperPids": [63003],
+      "pids": [63001, 63002, 63003]
+    }
+  ]
+}
