@@ -212,6 +212,14 @@ export class AppPanelEdgeControl extends LitElement {
     :host([side="navigation"][collapsed]) .edge-button { transform: translateX(calc(50% - .5px)); }
     :host([side="workspace"][collapsed]) .edge-button { transform: translateX(calc(-50% + .5px)); }
     .edge-icon { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    @media (pointer: coarse) {
+      .resize-handle { inset: 0; }
+      .edge-button { width: max(44px, var(--pi-control-min-size)); min-height: max(44px, var(--pi-control-min-size)); }
+      :host([side="navigation"][collapsed]) .edge-button, :host([side="workspace"][collapsed]) .edge-button { transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .resize-handle::after { transition: none; }
+    }
     @media (max-width: 1180px) {
       :host([side="navigation"]) { grid-row: 1 / 3; }
       :host([side="workspace"]) { display: none; }

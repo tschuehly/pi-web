@@ -5,6 +5,7 @@ const idPattern = /^[a-z][a-z0-9.-]*$/u;
 const localIdPattern = /^[a-z][a-z0-9.-]*$/u;
 const pluginRuntimeScopes = new WeakMap<PluginRuntimeContext, (pluginId: string) => PluginRuntimeContext>();
 const workspacePanelScopes = new WeakMap<WorkspacePanelContext, (pluginId: string) => WorkspacePanelContext>();
+const failedActionReason = "Unavailable because its plugin could not be evaluated.";
 
 type RegisteredPluginAction = Omit<PluginAction, "id"> & {
   id: QualifiedContributionId;
@@ -65,8 +66,23 @@ export class PluginRegistry {
     const selectedMachineId = runtimeContextMachineId(context);
     return this.actions.filter((action) => this.isContributionActive(action.pluginId, action.machineId, selectedMachineId, action.sourcePluginId)).map((action) => {
       const scopedContext = pluginRuntimeContextFor(context, action.pluginId);
-      const enabled = action.enabled?.(scopedContext);
-      const disabledReason = enabled === false ? action.disabledReason?.(scopedContext) : undefined;
+      let enabled: boolean | undefined;
+      let disabledReason: string | undefined;
+      try {
+        enabled = action.enabled?.(scopedContext);
+      } catch (error) {
+        warnContributionFailure("action enablement", action.id, error);
+        enabled = false;
+        disabledReason = failedActionReason;
+      }
+      if (enabled === false && disabledReason === undefined && action.disabledReason !== undefined) {
+        try {
+          disabledReason = action.disabledReason(scopedContext);
+        } catch (error) {
+          warnContributionFailure("action disabled reason", action.id, error);
+          disabledReason = failedActionReason;
+        }
+      }
       const qualified: QualifiedPluginAction = {
         id: action.id,
         pluginId: action.pluginId,
@@ -104,8 +120,12 @@ export class PluginRegistry {
   getSessionStartDisabledReason(context: PrimaryViewContext): string | undefined {
     for (const guard of this.sessionStartGuards) {
       if (!this.isContributionActive(guard.pluginId, guard.machineId, context.machine.id, guard.sourcePluginId)) continue;
-      const reason = guard.disabledReason(context);
-      if (reason !== undefined && reason.trim() !== "") return reason;
+      try {
+        const reason = guard.disabledReason(context);
+        if (reason !== undefined && reason.trim() !== "") return reason;
+      } catch (error) {
+        warnContributionFailure("session start guard", guard.id, error);
+      }
     }
     return undefined;
   }
@@ -126,8 +146,13 @@ export class PluginRegistry {
     return [...this.workspaceLabels]
       .sort((left, right) => (left.order ?? 1000) - (right.order ?? 1000) || left.id.localeCompare(right.id))
       .flatMap((contribution) => {
-        if (contribution.visible?.(context) === false) return [];
-        return contribution.items(context);
+        try {
+          if (contribution.visible?.(context) === false) return [];
+          return contribution.items(context);
+        } catch (error) {
+          warnContributionFailure("workspace label", contribution.id, error);
+          return [];
+        }
       });
   }
 
@@ -161,7 +186,15 @@ export class PluginRegistry {
       primaryView: this.qualifyReference(pluginId, entry.primaryView),
       ...(machineId === undefined ? {} : { machineId }),
       visible: (context) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) && (visible?.(context) ?? true),
-      ...(badge === undefined ? {} : { badge: (context: PrimaryViewContext) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) ? badge(context) : undefined }),
+      ...(badge === undefined ? {} : { badge: (context: PrimaryViewContext) => {
+        if (!this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId)) return undefined;
+        try {
+          return badge(context);
+        } catch (error) {
+          warnContributionFailure("navigation badge", id, error);
+          return undefined;
+        }
+      } }),
     };
   }
 
@@ -179,8 +212,24 @@ export class PluginRegistry {
       pluginId,
       localId: panel.id,
       ...(machineId === undefined ? {} : { machineId }),
-      visible: (context: WorkspacePanelContext) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) && (visible?.(workspacePanelContextFor(context, pluginId)) ?? true),
-      ...(badge === undefined ? {} : { badge: (context: WorkspacePanelContext) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) ? badge(workspacePanelContextFor(context, pluginId)) : undefined }),
+      visible: (context: WorkspacePanelContext) => {
+        if (!this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId)) return false;
+        try {
+          return visible?.(workspacePanelContextFor(context, pluginId)) ?? true;
+        } catch (error) {
+          warnContributionFailure("workspace panel visibility", id, error);
+          return false;
+        }
+      },
+      ...(badge === undefined ? {} : { badge: (context: WorkspacePanelContext) => {
+        if (!this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId)) return undefined;
+        try {
+          return badge(workspacePanelContextFor(context, pluginId));
+        } catch (error) {
+          warnContributionFailure("workspace panel badge", id, error);
+          return undefined;
+        }
+      } }),
       render: (context: WorkspacePanelContext) => panel.render(workspacePanelContextFor(context, pluginId)),
     };
   }
@@ -195,8 +244,34 @@ export class PluginRegistry {
       pluginId,
       localId: contribution.id,
       ...(machineId === undefined ? {} : { machineId }),
-      visible: (context) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) && (visible?.(context) ?? true),
-      items: (context) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) ? items(context) : [],
+      visible: (context) => {
+        if (!this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId)) return false;
+        try {
+          return visible?.(context) ?? true;
+        } catch (error) {
+          warnContributionFailure("workspace label visibility", id, error);
+          return false;
+        }
+      },
+      items: (context) => {
+        if (!this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId)) return [];
+        try {
+          return items(context).map((item) => item.type === "render" ? {
+            ...item,
+            render: () => {
+              try {
+                return item.render();
+              } catch (error) {
+                warnContributionFailure("workspace label render", id, error);
+                return html``;
+              }
+            },
+          } : item);
+        } catch (error) {
+          warnContributionFailure("workspace label items", id, error);
+          return [];
+        }
+      },
     };
   }
 
@@ -308,6 +383,10 @@ function formatUnknownValue(value: unknown): string {
 
 function runtimeContextMachineId(context: PluginRuntimeContext): string {
   return context.state.selectedMachine?.id ?? "local";
+}
+
+function warnContributionFailure(callback: string, id: string, error: unknown): void {
+  console.warn(`Failed to evaluate ${callback} ${id}`, error);
 }
 
 function contributionVisible(contribution: { id: string; visible?: (context: PrimaryViewContext) => boolean }, context: PrimaryViewContext): boolean {

@@ -160,6 +160,9 @@ export class AppContextBar extends LitElement {
     .context-kind { display: none; }
     .context-value { min-width: 0; overflow: visible; text-overflow: clip; white-space: nowrap; }
     button { cursor: pointer; }
+    @media (prefers-reduced-motion: reduce) {
+      .context-bar::before, .context-bar::after { transition: none; }
+    }
   `;
 }
 

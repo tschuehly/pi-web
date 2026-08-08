@@ -169,6 +169,9 @@ export class AppMobileMainTabs extends LitElement {
     .tab-badge.unread { border-color: var(--pi-accent-border); background: var(--pi-selection-bg); color: var(--pi-accent); }
     button { border: 0; border-radius: 6px; background: var(--pi-bg); color: var(--pi-text); padding: 7px 9px; cursor: pointer; }
     button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
+    @media (prefers-reduced-motion: reduce) {
+      .mobile-tabs-frame::before, .mobile-tabs-frame::after { transition: none; }
+    }
     @media (max-width: 760px) {
       .mobile-tabs { gap: 3px; padding: 4px 6px; }
       .mobile-tabs button { min-width: 44px; height: 44px; justify-content: center; gap: 4px; padding: 0 8px; }

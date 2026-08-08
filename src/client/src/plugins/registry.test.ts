@@ -199,6 +199,102 @@ describe("PluginRegistry", () => {
     expect(registry.getSessionStartDisabledReason(createPrimaryViewContext())).toBe("Start from a Workstream.");
   });
 
+  it("logs and skips a throwing third-party session-start guard", () => {
+    const registry = new PluginRegistry();
+    const failure = new Error("guard failed");
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    registry.register({
+      id: "failing",
+      plugin: {
+        apiVersion: 1,
+        name: "Failing",
+        activate: () => ({ contributions: { sessionStartGuards: [{ id: "guard", disabledReason: () => { throw failure; } }] } }),
+      },
+    });
+
+    expect(registry.getSessionStartDisabledReason(createPrimaryViewContext())).toBeUndefined();
+    expect(warning).toHaveBeenCalledWith("Failed to evaluate session start guard failing:guard", failure);
+    warning.mockRestore();
+  });
+
+  it("allows a healthy guard after a throwing guard to contribute its reason", () => {
+    const registry = new PluginRegistry();
+    const failure = new Error("guard failed");
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    registry.register({
+      id: "failing",
+      plugin: {
+        apiVersion: 1,
+        name: "Failing",
+        activate: () => ({ contributions: { sessionStartGuards: [{ id: "guard", disabledReason: () => { throw failure; } }] } }),
+      },
+    });
+    registry.register({
+      id: "healthy",
+      plugin: {
+        apiVersion: 1,
+        name: "Healthy",
+        activate: () => ({ contributions: { sessionStartGuards: [{ id: "guard", disabledReason: () => "Start from a Workstream." }] } }),
+      },
+    });
+
+    expect(registry.getSessionStartDisabledReason(createPrimaryViewContext())).toBe("Start from a Workstream.");
+    expect(warning).toHaveBeenCalledWith("Failed to evaluate session start guard failing:guard", failure);
+    warning.mockRestore();
+  });
+
+  it("isolates failing plugin callbacks while preserving core shell actions", () => {
+    const registry = new PluginRegistry();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    registry.register({ id: "core", plugin: corePlugin });
+    registry.register({
+      id: "failing",
+      plugin: {
+        apiVersion: 1,
+        name: "Failing",
+        activate: () => ({
+          contributions: {
+            actions: [
+              { id: "enablement", title: "Broken enablement", enabled: () => { throw new Error("enablement failed"); }, run: () => undefined },
+              { id: "reason", title: "Broken reason", enabled: () => false, disabledReason: () => { throw new Error("reason failed"); }, run: () => undefined },
+            ],
+            primaryViews: [{ id: "view", title: "Failing view", render: () => html`<p>View</p>` }],
+            navigationEntries: [{ id: "navigation", title: "Failing navigation", primaryView: "view", badge: () => { throw new Error("navigation badge failed"); } }],
+            workspacePanels: [
+              { id: "panel", title: "Failing panel", badge: () => { throw new Error("panel badge failed"); }, render: () => html`<p>Panel</p>` },
+              { id: "hidden-panel", title: "Hidden panel", visible: () => { throw new Error("panel visibility failed"); }, render: () => html`<p>Hidden</p>` },
+            ],
+            workspaceLabels: [
+              { id: "hidden-label", visible: () => { throw new Error("label visibility failed"); }, items: () => [{ type: "text", text: "hidden" }] },
+              { id: "broken-items", items: () => { throw new Error("label items failed"); } },
+              { id: "healthy-label", items: () => [{ type: "text", text: "healthy" }] },
+              { id: "render-label", items: () => [{ type: "render", render: () => { throw new Error("label render failed"); } }] },
+            ],
+          },
+        }),
+      },
+    });
+
+    const { context, calls } = createContext();
+    const actions = registry.getActions(context);
+    const primaryContext = createPrimaryViewContext();
+    const panelContext = createWorkspacePanelContext("local");
+    const panels = registry.getWorkspacePanels();
+
+    expect(actions.find((action) => action.id === "failing:enablement")).toMatchObject({ enabled: false, disabledReason: "Unavailable because its plugin could not be evaluated." });
+    expect(actions.find((action) => action.id === "failing:reason")).toMatchObject({ enabled: false, disabledReason: "Unavailable because its plugin could not be evaluated." });
+    void actions.find((action) => action.id === "core:view.chat")?.run();
+    expect(calls).toEqual(["focusPrompt"]);
+    expect(registry.getNavigationEntries(primaryContext).find((entry) => entry.id === "failing:navigation")?.badge?.(primaryContext)).toBeUndefined();
+    expect(panels.find((panel) => panel.id === "failing:panel")?.badge?.(panelContext)).toBeUndefined();
+    expect(panels.find((panel) => panel.id === "failing:hidden-panel")?.visible?.(panelContext)).toBe(false);
+    const labelItems = registry.getWorkspaceLabelItems(createWorkspaceLabelContext("local", testWorkspace()));
+    expect(labelItems[0]).toEqual({ type: "text", text: "healthy" });
+    const renderLabel = labelItems.find((item) => item.type === "render");
+    expect(() => renderLabel?.render()).not.toThrow();
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining("failing:"), expect.any(Error));
+  });
+
   it("exposes the prompt helper to workspace panel callbacks", () => {
     const registry = new PluginRegistry();
     registry.register({

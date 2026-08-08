@@ -68,7 +68,7 @@ export class WorkspacePanel extends LitElement {
               <div class="tabs">
                 ${visiblePanels.map((panel) => {
                   const selected = selectedPanel?.id === panel.id;
-                  const badge = panel.badge?.(context);
+                  const badge = this.panelBadge(panel, context);
                   const ariaLabel = this.panelTabAriaLabel(panel, badge);
                   return html`
                     <button class=${this.panelTabClass(panel, selected)} title=${ariaLabel} aria-label=${ariaLabel} aria-pressed=${String(selected)} @click=${() => { this.onSelectTool(panel.id); }}>
@@ -84,12 +84,33 @@ export class WorkspacePanel extends LitElement {
       ${selectedPanel === undefined ? this.renderEmptyState({
         title: "No workspace tools available",
         body: "No tools are available for this workspace.",
-      }) : html`
-        <div class="panel-content">
-          ${selectedPanel.render(context)}
-        </div>
-      `}
+      }) : this.renderSelectedPanel(selectedPanel, context)}
     `;
+  }
+
+  private panelBadge(panel: QualifiedWorkspacePanelContribution, context: WorkspacePanelContext): WorkspacePanelBadge {
+    try {
+      return panel.badge?.(context);
+    } catch (error) {
+      console.warn(`Failed to evaluate workspace panel badge ${panel.id}`, error);
+      return undefined;
+    }
+  }
+
+  private renderSelectedPanel(panel: QualifiedWorkspacePanelContribution, context: WorkspacePanelContext): TemplateResult {
+    try {
+      return html`<div class="panel-content">${panel.render(context)}</div>`;
+    } catch (error) {
+      console.warn(`Failed to render workspace panel ${panel.id}`, error);
+      return html`
+        <div class="panel-content">
+          ${this.renderEmptyState({
+            title: "Workspace tool unavailable",
+            body: `${panel.title} could not be displayed because its plugin encountered an error.`,
+          })}
+        </div>
+      `;
+    }
   }
 
   private panelTabClass(panel: QualifiedWorkspacePanelContribution, selected: boolean): string {
