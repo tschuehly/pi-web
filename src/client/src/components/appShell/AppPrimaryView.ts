@@ -7,6 +7,7 @@ export class AppPrimaryView extends LitElement {
   @property({ attribute: false }) contribution?: QualifiedPrimaryViewContribution;
   @property({ attribute: false }) context?: PrimaryViewContext;
   @property({ attribute: false }) onReturnToConversation?: () => void;
+  @property({ attribute: false }) onContributionFailure?: (viewId: QualifiedPrimaryViewContribution["id"], error: unknown) => void;
   @query(".surface") private surface?: HTMLElement;
 
   async focusSurface(): Promise<void> {
@@ -29,6 +30,7 @@ export class AppPrimaryView extends LitElement {
       `;
     } catch (error) {
       console.warn(`Failed to render primary view ${contribution.id}`, error);
+      queueMicrotask(() => { this.onContributionFailure?.(contribution.id, error); });
       return this.renderFailure("This view could not be rendered.", error instanceof Error ? error.message : String(error));
     }
   }

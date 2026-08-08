@@ -4,6 +4,7 @@ import type { AppAction } from "../actions";
 import { builtInPresentationProfile, type PresentationProfileDefinition, type ResolvedPresentationProfile } from "../presentationProfiles";
 import { configApi, piPackagesApi, pluginsApi, type Machine, type MachineRuntime, type PiPackageMutationResponse, type PiPackageScope, type PiPackagesResponse, type PiWebConfigResponse, type PiWebConfigValues, type PiWebPluginsResponse } from "../api";
 import type { SettingsSection } from "../settingsRoute";
+import type { QualifiedContributionId, QualifiedShellProfileContribution } from "../plugins/types";
 import "./settings/SettingsAppearancePanel";
 import "./settings/SettingsGeneralPanel";
 import "./settings/SettingsSessiondPanel";
@@ -21,6 +22,11 @@ import { mergeSelectedMachineSessiondConfig } from "./settings/settingsSessiondC
 export class SettingsDialog extends LitElement {
   @property({ attribute: false }) section: SettingsSection = "general";
   @property({ attribute: false }) actions: AppAction[] = [];
+  @property({ attribute: false }) shellProfiles: readonly QualifiedShellProfileContribution[] = [];
+  @property({ attribute: false }) shellProfileErrors: Readonly<Record<QualifiedContributionId, string>> = {};
+  @property({ attribute: false }) activeShellProfile?: QualifiedShellProfileContribution;
+  @property({ attribute: false }) previewShellProfile?: QualifiedShellProfileContribution;
+  @property() shellProfileError = "";
   @property({ attribute: false }) presentationProfiles: readonly PresentationProfileDefinition[] = [];
   @property({ attribute: false }) presentationProfileErrors: Readonly<Record<string, string>> = {};
   @property({ attribute: false }) activePresentationProfile: ResolvedPresentationProfile = builtInPresentationProfile("comfortable");
@@ -32,6 +38,10 @@ export class SettingsDialog extends LitElement {
   @property({ attribute: false }) onClose?: () => void;
   @property({ attribute: false }) onConfigLoaded?: (config: PiWebConfigValues) => void;
   @property({ attribute: false }) onConfigSaved?: (config: PiWebConfigValues) => void;
+  @property({ attribute: false }) onPreviewShellProfile?: (profileId: QualifiedContributionId) => void;
+  @property({ attribute: false }) onApplyShellProfilePreview?: () => void;
+  @property({ attribute: false }) onCancelShellProfilePreview?: () => void;
+  @property({ attribute: false }) onResetShellProfile?: () => void;
   @property({ attribute: false }) onPreviewPresentationProfile?: (profileId: string) => void;
   @property({ attribute: false }) onApplyPresentationPreview?: () => void;
   @property({ attribute: false }) onCancelPresentationPreview?: () => void;
@@ -135,12 +145,21 @@ export class SettingsDialog extends LitElement {
           .configModifiedAt=${this.configResponse?.modifiedAt ?? ""}
           .loading=${this.loading}
           .error=${this.error}
+          .shellProfiles=${this.shellProfiles}
+          .shellProfileErrors=${this.shellProfileErrors}
+          .activeShellProfile=${this.activeShellProfile}
+          .previewShellProfile=${this.previewShellProfile}
+          .shellProfileError=${this.shellProfileError}
           .profiles=${this.presentationProfiles}
           .profileErrors=${this.presentationProfileErrors}
           .activeProfile=${this.activePresentationProfile}
           .previewProfile=${this.previewPresentationProfile}
           .activeProfileChanged=${this.activePresentationProfileChanged}
           .onReload=${() => this.loadConfig()}
+          .onPreviewShellProfile=${(profileId: QualifiedContributionId) => this.onPreviewShellProfile?.(profileId)}
+          .onApplyShellProfilePreview=${() => this.onApplyShellProfilePreview?.()}
+          .onCancelShellProfilePreview=${() => this.onCancelShellProfilePreview?.()}
+          .onResetShellProfile=${() => this.onResetShellProfile?.()}
           .onPreview=${(profileId: string) => this.onPreviewPresentationProfile?.(profileId)}
           .onApplyPreview=${() => this.onApplyPresentationPreview?.()}
           .onCancelPreview=${() => this.onCancelPresentationPreview?.()}

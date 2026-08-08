@@ -149,6 +149,129 @@ describe("PluginRegistry", () => {
     expect(view?.render(context)).toBeDefined();
   });
 
+  it("qualifies and validates a generic fixture shell profile with ordered fixed regions", () => {
+    const registry = new PluginRegistry();
+    const invoke = vi.fn();
+    registry.register({
+      id: "fixture",
+      plugin: {
+        apiVersion: 1,
+        name: "Fixture Plugin",
+        activate: () => ({
+          contributions: {
+            primaryViews: [{ id: "views.review", title: "Review", render: () => html`<p>Review</p>` }],
+            navigationEntries: [
+              { id: "navigation.first", title: "First", primaryView: "views.review", order: 1 },
+              { id: "navigation.second", title: "Second", primaryView: "views.review", order: 2 },
+            ],
+            workspacePanels: [
+              { id: "surface.first", title: "First surface", order: 1, render: () => html`<p>First</p>` },
+              { id: "surface.second", title: "Second surface", order: 2, render: () => html`<p>Second</p>` },
+            ],
+            shellRegionItems: [
+              { id: "context", location: "context-bar", describe: () => ({ type: "text", label: "Scope", value: "Fixture" }) },
+              { id: "status.first", location: "status", order: 1, describe: () => ({ type: "text", label: "First" }) },
+              { id: "status.second", location: "status", order: 2, describe: () => ({ type: "text", label: "Second" }) },
+              { id: "status.hidden", location: "status", visible: () => false, describe: () => ({ type: "text", label: "Hidden" }) },
+              { id: "surface", location: "surface-strip", describe: () => ({ type: "action", label: "Preview", active: true, invoke }) },
+              { id: "actions", location: "contextual-actions", describe: () => ({ type: "action", label: "Inspect", invoke }) },
+              { id: "throwing", location: "status", describe: () => { throw new Error("descriptor failed"); } },
+            ],
+            shellProfiles: [
+              {
+                id: "shell.review",
+                title: "Review shell",
+                description: "A generic profile fixture.",
+                recommended: true,
+                defaultPrimaryView: "views.review",
+                navigationEntries: ["navigation.second", "navigation.first"],
+                surfaceContributions: ["surface.second", "surface.first"],
+                regions: {
+                  "context-bar": ["context"],
+                  status: ["status.second", "status.hidden", "status.first"],
+                  "surface-strip": ["surface"],
+                  "contextual-actions": ["actions"],
+                },
+                initialPanels: { navigation: { visible: true, size: 300 }, workspace: { visible: false, size: 520 } },
+                presentationProfile: "compact",
+              },
+              {
+                id: "shell.broken",
+                title: "Broken shell",
+                description: "A throwing fixture profile.",
+                defaultPrimaryView: "views.review",
+                regions: { status: ["throwing"] },
+              },
+            ],
+          },
+        }),
+      },
+    });
+    const context = createPrimaryViewContext();
+    const catalog = registry.getShellProfileCatalog(context);
+    const profile = catalog.profiles.find((candidate) => candidate.id === "fixture:shell.review");
+    if (profile === undefined) throw new Error("Expected fixture shell profile");
+
+    expect(profile).toMatchObject({
+      defaultPrimaryView: "fixture:views.review",
+      recommended: true,
+      presentationProfile: "compact",
+      provenance: { source: "plugin", pluginId: "fixture", pluginName: "Fixture Plugin" },
+    });
+    expect(registry.getShellNavigationEntries(profile, context).map((entry) => entry.id)).toEqual(["fixture:navigation.second", "fixture:navigation.first"]);
+    expect(registry.getShellWorkspacePanels(profile).map((panel) => panel.id)).toEqual(["fixture:surface.second", "fixture:surface.first"]);
+    expect(registry.getShellRegionItems(profile, "status", context).map((item) => [item.id, item.label])).toEqual([
+      ["fixture:status.second", "Second"],
+      ["fixture:status.first", "First"],
+    ]);
+    expect(registry.getShellRegionItems(profile, "context-bar", context)[0]).toMatchObject({ id: "fixture:context", type: "text", value: "Fixture" });
+    expect(registry.getShellRegionItems(profile, "surface-strip", context)[0]).toMatchObject({ id: "fixture:surface", type: "action", active: true });
+    expect(catalog.errors["fixture:shell.broken"]).toContain("descriptor failed");
+  });
+
+  it("isolates a fixed-region descriptor failure after profile activation", () => {
+    const registry = new PluginRegistry();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    registry.register({
+      id: "fixture",
+      plugin: {
+        apiVersion: 1,
+        name: "Fixture",
+        activate: () => ({ contributions: {
+          primaryViews: [{ id: "view", title: "Fixture", render: () => html`<p>Fixture</p>` }],
+          shellRegionItems: [{ id: "broken", location: "status", describe: () => { throw new Error("late failure"); } }],
+          shellProfiles: [{ id: "shell", title: "Fixture", description: "Fixture shell.", defaultPrimaryView: "view", regions: { status: ["broken"] } }],
+        } }),
+      },
+    });
+    const profile = registry.getRegisteredShellProfile("fixture:shell");
+    if (profile === undefined) throw new Error("Expected registered shell profile");
+
+    expect(registry.getShellRegionItems(profile, "status", createPrimaryViewContext())).toEqual([]);
+    expect(warning).toHaveBeenCalledWith("Failed to evaluate shell region item fixture:broken", expect.any(Error));
+  });
+
+  it("isolates invalid shell metadata while preserving the plugin's other contributions", () => {
+    const registry = new PluginRegistry();
+
+    registry.register({
+      id: "fixture",
+      plugin: {
+        apiVersion: 1,
+        name: "Fixture",
+        activate: () => ({ contributions: {
+          shellProfiles: [{ id: "shell", title: "Fixture", description: "Fixture shell.", defaultPrimaryView: "view", initialPanels: { navigation: { visible: true, size: 900 } } }],
+          workspacePanels: [{ id: "workspace.info", title: "Info", render: () => html`<p>Still registered</p>` }],
+          themes: [{ id: "fixture-theme", name: "Fixture Theme", colorScheme: "dark", tokens: testThemeTokens() }],
+        } }),
+      },
+    });
+
+    expect(registry.getWorkspacePanels().map((panel) => panel.id)).toContain("fixture:workspace.info");
+    expect(registry.getThemes().map((theme) => theme.id)).toContain("fixture:fixture-theme");
+    expect(registry.getShellProfileCatalog(createPrimaryViewContext()).errors["fixture:shell"]).toContain("navigation panel size must be between 180 and 640 pixels");
+  });
+
   it("preserves the dedicated primary-view surface host public seam", () => {
     const registry = new PluginRegistry();
     const mountSurface = vi.fn<(container: HTMLElement, surface: PrimaryViewSurface) => void>();

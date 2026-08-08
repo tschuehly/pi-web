@@ -35,6 +35,22 @@ export class PanelCollapseController implements ReactiveController {
     this.host.requestUpdate();
   }
 
+  currentVisibility(): { navigation: { visible: boolean }; workspace: { visible: boolean } } {
+    return {
+      navigation: { visible: !this.navigationPanelCollapsed },
+      workspace: { visible: !this.workspacePanelCollapsed },
+    };
+  }
+
+  applyInitialVisibility(panels: { navigation?: { visible: boolean }; workspace?: { visible: boolean } } | undefined): void {
+    const navigationPanelCollapsed = panels?.navigation === undefined ? this.navigationPanelCollapsed : !panels.navigation.visible;
+    const workspacePanelCollapsed = panels?.workspace === undefined ? this.workspacePanelCollapsed : !panels.workspace.visible;
+    if (navigationPanelCollapsed === this.navigationPanelCollapsed && workspacePanelCollapsed === this.workspacePanelCollapsed) return;
+    this.navigationPanelCollapsed = navigationPanelCollapsed;
+    this.workspacePanelCollapsed = workspacePanelCollapsed;
+    this.host.requestUpdate();
+  }
+
   shellClass(mainView: AppState["mainView"], primaryView = false): string {
     return [
       "shell",

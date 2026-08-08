@@ -10,6 +10,8 @@ export class AppPiMenu extends LitElement {
   @property({ attribute: false }) selectedView: "navigation" | "chat" | QualifiedContributionId = "chat";
   @property({ attribute: false }) selectedProject?: Project;
   @property() connectionLabel = "Connected";
+  @property() activeShellProfileTitle = "PI WEB";
+  @property({ type: Boolean }) defaultShellProfile = true;
   @property({ attribute: false }) onSelectView?: (view: "chat" | QualifiedContributionId) => void | Promise<void>;
   @property({ attribute: false }) onSelectProject?: (project: Project) => void | Promise<void>;
   @property({ attribute: false }) onShowProjects?: () => void | Promise<void>;
@@ -17,6 +19,7 @@ export class AppPiMenu extends LitElement {
   @property({ attribute: false }) onConfigureAuth?: () => void | Promise<void>;
   @property({ attribute: false }) onOpenSettings?: () => void;
   @property({ attribute: false }) onRecover?: () => void | Promise<void>;
+  @property({ attribute: false }) onResetShellProfile?: () => void;
   @query("details") private details?: HTMLDetailsElement;
   @query("summary") private summary?: HTMLElement;
   @state() private menuOpen = false;
@@ -31,6 +34,12 @@ export class AppPiMenu extends LitElement {
             ${this.destination(this.selectedView === "chat" || this.selectedView === "navigation" ? "Conversation" : "Open default PI WEB shell", "chat")}
             ${this.entries.filter((entry) => entry.primaryView !== this.selectedView).map((entry) => this.destination(entry.title, entry.primaryView))}
           </nav>
+          ${this.defaultShellProfile ? null : html`
+            <div class="group shell-profile" aria-label="Shell profile recovery">
+              <span>Shell profile · ${this.activeShellProfileTitle}</span>
+              <button type="button" @click=${() => { this.invoke(this.onResetShellProfile); }}>Use default PI WEB profile</button>
+            </div>
+          `}
           <div class="group" aria-label="Projects">
             <div class="group-heading"><span>Projects</span><button type="button" @click=${() => { this.invoke(this.onShowProjects); }}>All projects</button></div>
             ${this.projects.slice(0, 5).map((project) => html`
@@ -95,6 +104,7 @@ export class AppPiMenu extends LitElement {
     header span.reconnecting { color: var(--pi-warning); }
     nav, .group, .utilities { display: grid; gap: 3px; }
     .group, .utilities { padding-top: 8px; border-top: 1px solid var(--pi-border-muted); }
+    .shell-profile > span { padding: 2px 7px; color: var(--pi-muted); font-size: 11px; font-weight: 700; }
     .group-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 7px; color: var(--pi-muted); font-size: 11px; font-weight: 700; }
     .group-heading button { min-height: 28px; width: auto; padding: 3px 6px; color: var(--pi-accent); }
     button { width: 100%; min-height: 36px; border: 0; border-radius: 7px; background: transparent; color: var(--pi-text); padding: 7px 9px; font: inherit; text-align: left; cursor: pointer; }

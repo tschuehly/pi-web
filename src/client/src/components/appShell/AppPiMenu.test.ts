@@ -59,6 +59,21 @@ describe("app-pi-menu", () => {
     expect(onSelectView).toHaveBeenCalledWith("chat");
   });
 
+  it("keeps the protected default-profile reset one action away from a contributed shell", async () => {
+    const menu = new AppPiMenu();
+    const onResetShellProfile = vi.fn();
+    menu.defaultShellProfile = false;
+    menu.activeShellProfileTitle = "Fixture shell";
+    menu.onResetShellProfile = onResetShellProfile;
+    document.body.append(menu);
+    await menu.updateComplete;
+    const root = required(menu.shadowRoot);
+
+    expect(root.textContent).toContain("Shell profile · Fixture shell");
+    button(root, "Use default PI WEB profile").click();
+    expect(onResetShellProfile).toHaveBeenCalledOnce();
+  });
+
   it("announces open state and closes on Escape with focus returned to the trigger", async () => {
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       callback(0);

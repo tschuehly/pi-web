@@ -1,5 +1,6 @@
 import { html, svg } from "lit";
-import type { NavigationEntryContribution, PiWebPluginRegistration, PluginAction, PluginRuntimeContext, PrimaryViewContext, PrimaryViewContribution, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPluginAction, QualifiedPrimaryViewContribution, QualifiedSessionStartGuardContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspaceLabelContribution, QualifiedWorkspacePanelContribution, SessionStartGuardContribution, ThemeContribution, ThemePairContribution, WorkspaceLabelContext, WorkspaceLabelContribution, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelContribution } from "./types";
+import { CORE_CONVERSATION_VIEW_ID, SHELL_PROFILE_PANEL_BOUNDS, SHELL_REGION_LOCATIONS } from "../appShell/shellProfiles";
+import type { NavigationEntryContribution, PiWebPluginRegistration, PluginAction, PluginRuntimeContext, PrimaryViewContext, PrimaryViewContribution, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPluginAction, QualifiedPrimaryViewContribution, QualifiedSessionStartGuardContribution, QualifiedShellContributionSelection, QualifiedShellProfileContribution, QualifiedShellRegionItem, QualifiedShellRegionItemContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspaceLabelContribution, QualifiedWorkspacePanelContribution, SessionStartGuardContribution, ShellContributionSelection, ShellProfileCatalog, ShellProfileContribution, ShellProfilePanelState, ShellProfileProvenance, ShellRegionItemContribution, ShellRegionItemDescriptor, ShellRegionLocation, ThemeContribution, ThemePairContribution, WorkspaceLabelContext, WorkspaceLabelContribution, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelContribution } from "./types";
 
 const idPattern = /^[a-z][a-z0-9.-]*$/u;
 const localIdPattern = /^[a-z][a-z0-9.-]*$/u;
@@ -20,6 +21,9 @@ export class PluginRegistry {
   private readonly navigationEntries: QualifiedNavigationEntryContribution[] = [];
   private readonly primaryViews: QualifiedPrimaryViewContribution[] = [];
   private readonly sessionStartGuards: QualifiedSessionStartGuardContribution[] = [];
+  private readonly shellProfiles: QualifiedShellProfileContribution[] = [];
+  private readonly shellProfileRegistrationErrors = new Map<QualifiedContributionId, string>();
+  private readonly shellRegionItems: QualifiedShellRegionItemContribution[] = [];
   private readonly workspacePanels: QualifiedWorkspacePanelContribution[] = [];
   private readonly workspaceLabels: QualifiedWorkspaceLabelContribution[] = [];
   private readonly themes: QualifiedThemeContribution[] = [];
@@ -46,6 +50,8 @@ export class PluginRegistry {
     for (const view of contributions.primaryViews ?? []) this.primaryViews.push(this.qualifyPrimaryView(id, view, registration.machineId, registration.sourcePluginId));
     for (const entry of contributions.navigationEntries ?? []) this.navigationEntries.push(this.qualifyNavigationEntry(id, entry, registration.machineId, registration.sourcePluginId));
     for (const guard of contributions.sessionStartGuards ?? []) this.sessionStartGuards.push(this.qualifySessionStartGuard(id, guard, registration.machineId, registration.sourcePluginId));
+    for (const item of contributions.shellRegionItems ?? []) this.shellRegionItems.push(this.qualifyShellRegionItem(id, item, registration.machineId, registration.sourcePluginId));
+    for (const [index, profile] of (contributions.shellProfiles ?? []).entries()) this.registerShellProfile(id, plugin.name, profile, index, registration.machineId, registration.sourcePluginId);
     for (const panel of contributions.workspacePanels ?? []) this.workspacePanels.push(this.qualifyWorkspacePanel(id, panel, registration.machineId, registration.sourcePluginId));
     for (const contribution of contributions.workspaceLabels ?? []) this.workspaceLabels.push(this.qualifyWorkspaceLabelContribution(id, contribution, registration.machineId, registration.sourcePluginId));
     if (registration.machineId === undefined) {
@@ -130,6 +136,65 @@ export class PluginRegistry {
     return undefined;
   }
 
+  getShellProfileCatalog(context: PrimaryViewContext): ShellProfileCatalog {
+    const profiles: QualifiedShellProfileContribution[] = [];
+    const errors: Record<QualifiedContributionId, string> = Object.fromEntries(this.shellProfileRegistrationErrors);
+    for (const profile of this.shellProfiles) {
+      try {
+        profiles.push(this.resolveShellProfile(profile.id, context));
+      } catch (error) {
+        errors[profile.id] = errorMessage(error);
+      }
+    }
+    return { profiles, errors };
+  }
+
+  getRegisteredShellProfile(id: QualifiedContributionId): QualifiedShellProfileContribution | undefined {
+    return this.shellProfiles.find((profile) => profile.id === id);
+  }
+
+  resolveShellProfile(id: QualifiedContributionId, context: PrimaryViewContext): QualifiedShellProfileContribution {
+    const registrationError = this.shellProfileRegistrationErrors.get(id);
+    if (registrationError !== undefined) throw new Error(registrationError);
+    const profile = this.getRegisteredShellProfile(id);
+    if (profile === undefined) throw new Error(`Shell profile ${id} is unavailable.`);
+    if (!this.isContributionActive(profile.pluginId, profile.machineId, context.machine.id, profile.sourcePluginId)) {
+      throw new Error(`Shell profile ${id} is unavailable for ${context.machine.name}.`);
+    }
+    this.validateShellProfileReferences(profile, context);
+    return profile;
+  }
+
+  getShellNavigationEntries(profile: QualifiedShellProfileContribution, context: PrimaryViewContext): QualifiedNavigationEntryContribution[] {
+    return selectQualifiedContributions(profile.navigationEntries, this.getNavigationEntries(context));
+  }
+
+  getShellWorkspacePanels(profile: QualifiedShellProfileContribution): QualifiedWorkspacePanelContribution[] {
+    return selectQualifiedContributions(profile.surfaceContributions, this.getWorkspacePanels());
+  }
+
+  getShellRegionItems(profile: QualifiedShellProfileContribution, location: ShellRegionLocation, context: PrimaryViewContext): QualifiedShellRegionItem[] {
+    const contributions = selectQualifiedContributions(
+      profile.regions[location],
+      this.shellRegionItems
+        .filter((item) => item.location === location)
+        .sort((left, right) => contributionOrder(left, right)),
+    );
+    return contributions.flatMap((contribution) => {
+      try {
+        if (!this.isContributionActive(contribution.pluginId, contribution.machineId, context.machine.id, contribution.sourcePluginId)) return [];
+        if (contribution.visible?.(context) === false) return [];
+        const descriptor = contribution.describe(context);
+        validateShellRegionDescriptor(descriptor, contribution.id);
+        const qualifiedItem: QualifiedShellRegionItem = { ...descriptor, id: contribution.id, pluginId: contribution.pluginId, localId: contribution.localId, location };
+        return [qualifiedItem];
+      } catch (error) {
+        warnContributionFailure("shell region item", contribution.id, error);
+        return [];
+      }
+    });
+  }
+
   getWorkspacePanels(): QualifiedWorkspacePanelContribution[] {
     return [...this.workspacePanels].sort((left, right) => (left.order ?? 1000) - (right.order ?? 1000) || left.title.localeCompare(right.title));
   }
@@ -154,6 +219,109 @@ export class PluginRegistry {
           return [];
         }
       });
+  }
+
+  private validateShellProfileReferences(profile: QualifiedShellProfileContribution, context: PrimaryViewContext): void {
+    if (profile.defaultPrimaryView !== CORE_CONVERSATION_VIEW_ID) {
+      const view = this.primaryViews.find((candidate) => candidate.id === profile.defaultPrimaryView);
+      if (view === undefined) throw new Error(`Shell profile ${profile.id} references missing primary view ${profile.defaultPrimaryView}.`);
+      if (!strictContributionVisible(view, context)) throw new Error(`Shell profile ${profile.id} default primary view ${profile.defaultPrimaryView} is unavailable.`);
+    }
+
+    const navigationEntries = this.validateSelectedReferences(profile, "navigation entry", profile.navigationEntries, this.navigationEntries);
+    if (profile.navigationEntries !== "all") {
+      for (const entry of navigationEntries) {
+        if (!strictContributionVisible(entry, context)) throw new Error(`Shell profile ${profile.id} navigation entry ${entry.id} is unavailable.`);
+        if (!this.primaryViews.some((view) => view.id === entry.primaryView)) {
+          throw new Error(`Shell profile ${profile.id} navigation entry ${entry.id} references missing primary view ${entry.primaryView}.`);
+        }
+      }
+    }
+    this.validateSelectedReferences(profile, "surface contribution", profile.surfaceContributions, this.workspacePanels);
+    for (const location of SHELL_REGION_LOCATIONS) {
+      const available = this.shellRegionItems.filter((item) => item.location === location);
+      const selected = this.validateSelectedReferences(profile, `${location} item`, profile.regions[location], available);
+      for (const contribution of selected) {
+        if (!this.isContributionActive(contribution.pluginId, contribution.machineId, context.machine.id, contribution.sourcePluginId)) continue;
+        if (strictContributionVisible(contribution, context)) validateShellRegionDescriptor(contribution.describe(context), contribution.id);
+      }
+    }
+  }
+
+  private validateSelectedReferences<T extends { id: QualifiedContributionId }>(profile: QualifiedShellProfileContribution, label: string, selection: QualifiedShellContributionSelection, available: readonly T[]): T[] {
+    if (selection === "all") return [...available];
+    const byId = new Map(available.map((contribution) => [contribution.id, contribution]));
+    return selection.map((id) => {
+      const contribution = byId.get(id);
+      if (contribution === undefined) throw new Error(`Shell profile ${profile.id} references missing ${label} ${id}.`);
+      return contribution;
+    });
+  }
+
+  private registerShellProfile(pluginId: string, pluginName: string, profile: ShellProfileContribution, index: number, machineId: string | undefined, sourcePluginId: string | undefined): void {
+    try {
+      this.shellProfiles.push(this.qualifyShellProfile(pluginId, pluginName, profile, machineId, sourcePluginId));
+    } catch (error) {
+      const errorId: QualifiedContributionId = localIdPattern.test(profile.id) ? `${pluginId}:${profile.id}` : `${pluginId}:shell-profile.invalid-${String(index)}`;
+      this.shellProfileRegistrationErrors.set(errorId, `Shell profile ${errorId} could not be registered: ${errorMessage(error)}`);
+    }
+  }
+
+  private qualifyShellProfile(pluginId: string, pluginName: string, profile: ShellProfileContribution, machineId: string | undefined, sourcePluginId: string | undefined): QualifiedShellProfileContribution {
+    const id = this.qualify(pluginId, profile.id);
+    validateShellProfileMetadata(profile, id);
+    const provenance: ShellProfileProvenance = {
+      source: pluginId === "core" ? "built-in" : "plugin",
+      pluginId,
+      pluginName,
+      ...(machineId === undefined ? {} : { machineId }),
+    };
+    return {
+      ...profile,
+      id,
+      pluginId,
+      localId: profile.id,
+      ...(machineId === undefined ? {} : { machineId }),
+      ...(sourcePluginId === undefined ? {} : { sourcePluginId }),
+      defaultPrimaryView: this.qualifyShellReference(pluginId, profile.defaultPrimaryView),
+      navigationEntries: this.qualifyShellSelection(pluginId, profile.navigationEntries),
+      surfaceContributions: this.qualifyShellSelection(pluginId, profile.surfaceContributions),
+      regions: {
+        "context-bar": this.qualifyShellSelection(pluginId, profile.regions?.["context-bar"]),
+        status: this.qualifyShellSelection(pluginId, profile.regions?.status),
+        "surface-strip": this.qualifyShellSelection(pluginId, profile.regions?.["surface-strip"]),
+        "contextual-actions": this.qualifyShellSelection(pluginId, profile.regions?.["contextual-actions"]),
+      },
+      provenance,
+    };
+  }
+
+  private qualifyShellRegionItem(pluginId: string, contribution: ShellRegionItemContribution, machineId: string | undefined, sourcePluginId: string | undefined): QualifiedShellRegionItemContribution {
+    if (!SHELL_REGION_LOCATIONS.includes(contribution.location)) throw new Error(`Invalid shell region location for ${pluginId}:${contribution.id}: ${contribution.location}`);
+    return {
+      ...contribution,
+      id: this.qualify(pluginId, contribution.id),
+      pluginId,
+      localId: contribution.id,
+      ...(machineId === undefined ? {} : { machineId }),
+      ...(sourcePluginId === undefined ? {} : { sourcePluginId }),
+    };
+  }
+
+  private qualifyShellSelection(pluginId: string, selection: ShellContributionSelection | undefined): QualifiedShellContributionSelection {
+    if (selection === "all") return "all";
+    return (selection ?? []).map((reference) => this.qualifyShellReference(pluginId, reference));
+  }
+
+  private qualifyShellReference(pluginId: string, reference: string): QualifiedContributionId {
+    const separator = reference.indexOf(":");
+    if (separator < 0) return this.qualifyReference(pluginId, reference);
+    if (separator === 0 || separator === reference.length - 1 || reference.lastIndexOf(":") !== separator) throw new Error(`Invalid qualified contribution reference: ${reference}`);
+    const referencedPluginId = reference.slice(0, separator);
+    const localId = reference.slice(separator + 1);
+    this.validatePluginId(referencedPluginId);
+    this.validateLocalId(localId);
+    return `${referencedPluginId}:${localId}`;
   }
 
   private qualifyAction(pluginId: string, action: PluginAction, machineId: string | undefined, sourcePluginId: string | undefined): RegisteredPluginAction {
@@ -396,4 +564,82 @@ function contributionVisible(contribution: { id: string; visible?: (context: Pri
     console.warn(`Failed to evaluate contribution visibility ${contribution.id}`, error);
     return false;
   }
+}
+
+function strictContributionVisible(contribution: { visible?: (context: PrimaryViewContext) => boolean }, context: PrimaryViewContext): boolean {
+  return contribution.visible?.(context) !== false;
+}
+
+function selectQualifiedContributions<T extends { id: QualifiedContributionId }>(selection: QualifiedShellContributionSelection, available: readonly T[]): T[] {
+  if (selection === "all") return [...available];
+  const byId = new Map(available.map((contribution) => [contribution.id, contribution]));
+  return selection.flatMap((id) => {
+    const contribution = byId.get(id);
+    return contribution === undefined ? [] : [contribution];
+  });
+}
+
+function contributionOrder(left: { id: string; order?: number }, right: { id: string; order?: number }): number {
+  return (left.order ?? 1000) - (right.order ?? 1000) || left.id.localeCompare(right.id);
+}
+
+function validateShellProfileMetadata(profile: ShellProfileContribution, id: QualifiedContributionId): void {
+  validateBoundedLabel(profile.title, `Shell profile ${id} title`, 80);
+  validateBoundedLabel(profile.description, `Shell profile ${id} description`, 240);
+  if (profile.recommended !== undefined && typeof profile.recommended !== "boolean") throw new Error(`Shell profile ${id} recommended must be a boolean.`);
+  if (profile.presentationProfile !== undefined) {
+    validateBoundedLabel(profile.presentationProfile, `Shell profile ${id} presentation profile`, 80);
+    if (!localIdPattern.test(profile.presentationProfile)) throw new Error(`Shell profile ${id} presentation profile id is invalid.`);
+  }
+  validateShellPanelState(profile.initialPanels?.navigation, "navigation", id);
+  validateShellPanelState(profile.initialPanels?.workspace, "workspace", id);
+}
+
+function validateShellPanelState(state: ShellProfilePanelState | undefined, side: keyof typeof SHELL_PROFILE_PANEL_BOUNDS, profileId: QualifiedContributionId): void {
+  if (state === undefined) return;
+  if (typeof state.visible !== "boolean") throw new Error(`Shell profile ${profileId} ${side} panel visibility must be a boolean.`);
+  if (state.size === undefined) return;
+  const bounds = SHELL_PROFILE_PANEL_BOUNDS[side];
+  if (!Number.isFinite(state.size) || state.size < bounds.min || state.size > bounds.max) {
+    throw new Error(`Shell profile ${profileId} ${side} panel size must be between ${String(bounds.min)} and ${String(bounds.max)} pixels.`);
+  }
+}
+
+function validateShellRegionDescriptor(descriptor: unknown, id: QualifiedContributionId): asserts descriptor is ShellRegionItemDescriptor {
+  if (typeof descriptor !== "object" || descriptor === null || Array.isArray(descriptor)) throw new Error(`Shell region item ${id} did not return a descriptor.`);
+  const type: unknown = Reflect.get(descriptor, "type");
+  const label: unknown = Reflect.get(descriptor, "label");
+  const title: unknown = Reflect.get(descriptor, "title");
+  const tone: unknown = Reflect.get(descriptor, "tone");
+  if (type !== "text" && type !== "action") throw new Error(`Shell region item ${id} returned an unsupported descriptor type.`);
+  validateBoundedLabel(label, `Shell region item ${id} label`, 80);
+  if (title !== undefined) validateBoundedLabel(title, `Shell region item ${id} title`, 240);
+  if (tone !== undefined && tone !== "default" && tone !== "muted" && tone !== "accent" && tone !== "success" && tone !== "warning" && tone !== "danger") {
+    throw new Error(`Shell region item ${id} returned an unsupported tone.`);
+  }
+  if (type === "text") {
+    const value: unknown = Reflect.get(descriptor, "value");
+    if (value !== undefined) validateBoundedLabel(value, `Shell region item ${id} value`, 240, true);
+    return;
+  }
+  const invoke: unknown = Reflect.get(descriptor, "invoke");
+  const badge: unknown = Reflect.get(descriptor, "badge");
+  const active: unknown = Reflect.get(descriptor, "active");
+  const disabled: unknown = Reflect.get(descriptor, "disabled");
+  const disabledReason: unknown = Reflect.get(descriptor, "disabledReason");
+  if (typeof invoke !== "function") throw new Error(`Shell region action ${id} must provide invoke().`);
+  if (badge !== undefined && typeof badge !== "string" && typeof badge !== "number") throw new Error(`Shell region action ${id} badge must be text or a number.`);
+  if (active !== undefined && typeof active !== "boolean") throw new Error(`Shell region action ${id} active state must be a boolean.`);
+  if (disabled !== undefined && typeof disabled !== "boolean") throw new Error(`Shell region action ${id} disabled state must be a boolean.`);
+  if (disabledReason !== undefined) validateBoundedLabel(disabledReason, `Shell region action ${id} disabled reason`, 240);
+}
+
+function validateBoundedLabel(value: unknown, label: string, maxLength: number, allowEmpty = false): void {
+  if (typeof value !== "string" || (!allowEmpty && value.trim() === "") || value.length > maxLength) {
+    throw new Error(`${label} must contain ${allowEmpty ? "at most" : "1 to"} ${String(maxLength)} characters.`);
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

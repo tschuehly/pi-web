@@ -50,6 +50,7 @@ interface StoredPanelSizeEnvelope {
 export class PanelResizeController implements ReactiveController {
   private readonly storage: PanelSizeStorage | undefined;
   private panelSizes: PanelSizePreferences;
+  private profilePanelSizes: PanelSizePreferences = {};
 
   constructor(private readonly host: ReactiveControllerHost, options: PanelResizeControllerOptions = {}) {
     host.addController(this);
@@ -66,7 +67,24 @@ export class PanelResizeController implements ReactiveController {
   }
 
   panelWidth(side: ResizablePanelSide, measuredWidth?: number): number {
-    return clampPanelWidth(side, measuredWidth ?? this.storedPanelWidth(side) ?? this.constraints(side).defaultWidth);
+    return clampPanelWidth(side, measuredWidth ?? this.storedPanelWidth(side) ?? this.profilePanelWidth(side) ?? this.constraints(side).defaultWidth);
+  }
+
+  currentProfileDefaults(): { navigation?: { size: number }; workspace?: { size: number } } {
+    return {
+      ...(this.profilePanelSizes.navigationPanelWidth === undefined ? {} : { navigation: { size: this.profilePanelSizes.navigationPanelWidth } }),
+      ...(this.profilePanelSizes.workspacePanelWidth === undefined ? {} : { workspace: { size: this.profilePanelSizes.workspacePanelWidth } }),
+    };
+  }
+
+  applyProfileDefaults(panels: { navigation?: { size?: number }; workspace?: { size?: number } } | undefined): void {
+    const profilePanelSizes: PanelSizePreferences = {};
+    if (panels?.navigation?.size !== undefined) profilePanelSizes.navigationPanelWidth = panels.navigation.size;
+    if (panels?.workspace?.size !== undefined) profilePanelSizes.workspacePanelWidth = panels.workspace.size;
+    if (profilePanelSizes.navigationPanelWidth === this.profilePanelSizes.navigationPanelWidth
+      && profilePanelSizes.workspacePanelWidth === this.profilePanelSizes.workspacePanelWidth) return;
+    this.profilePanelSizes = profilePanelSizes;
+    this.host.requestUpdate();
   }
 
   resizePanel(side: ResizablePanelSide, width: number, options: PanelResizeOptions = {}): void {
@@ -97,17 +115,23 @@ export class PanelResizeController implements ReactiveController {
 
   shellStyle(constraintsBySide: PanelResizeConstraintsBySide = {}): string {
     const declarations: string[] = [];
-    if (this.panelSizes.navigationPanelWidth !== undefined) {
-      declarations.push(`--navigation-panel-size: ${formatPanelWidth(clampPanelWidth("navigation", this.panelSizes.navigationPanelWidth, constraintsBySide.navigation))};`);
+    const navigationPanelWidth = this.panelSizes.navigationPanelWidth ?? this.profilePanelSizes.navigationPanelWidth;
+    const workspacePanelWidth = this.panelSizes.workspacePanelWidth ?? this.profilePanelSizes.workspacePanelWidth;
+    if (navigationPanelWidth !== undefined) {
+      declarations.push(`--navigation-panel-size: ${formatPanelWidth(clampPanelWidth("navigation", navigationPanelWidth, constraintsBySide.navigation))};`);
     }
-    if (this.panelSizes.workspacePanelWidth !== undefined) {
-      declarations.push(`--workspace-panel-size: ${formatPanelWidth(clampPanelWidth("workspace", this.panelSizes.workspacePanelWidth, constraintsBySide.workspace))};`);
+    if (workspacePanelWidth !== undefined) {
+      declarations.push(`--workspace-panel-size: ${formatPanelWidth(clampPanelWidth("workspace", workspacePanelWidth, constraintsBySide.workspace))};`);
     }
     return declarations.join(" ");
   }
 
   private storedPanelWidth(side: ResizablePanelSide): number | undefined {
     return side === "navigation" ? this.panelSizes.navigationPanelWidth : this.panelSizes.workspacePanelWidth;
+  }
+
+  private profilePanelWidth(side: ResizablePanelSide): number | undefined {
+    return side === "navigation" ? this.profilePanelSizes.navigationPanelWidth : this.profilePanelSizes.workspacePanelWidth;
   }
 }
 

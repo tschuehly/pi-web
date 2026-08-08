@@ -63,6 +63,8 @@ export interface PluginContributions {
   navigationEntries?: NavigationEntryContribution[];
   primaryViews?: PrimaryViewContribution[];
   sessionStartGuards?: SessionStartGuardContribution[];
+  shellProfiles?: ShellProfileContribution[];
+  shellRegionItems?: ShellRegionItemContribution[];
   workspacePanels?: WorkspacePanelContribution[];
   workspaceLabels?: WorkspaceLabelContribution[];
   themes?: ThemeContribution[];
@@ -372,6 +374,71 @@ export interface NavigationEntryContribution {
   order?: number;
   visible?: (context: PrimaryViewContext) => boolean;
   badge?: (context: PrimaryViewContext) => string | number | TemplateResult | undefined;
+}
+
+/** A local id is qualified to the declaring plugin; an id containing `:` is already qualified. */
+export type ShellContributionReference = string;
+export type ShellContributionSelection = "all" | readonly ShellContributionReference[];
+export type ShellRegionLocation = "context-bar" | "status" | "surface-strip" | "contextual-actions";
+export type ShellRegionItemTone = "default" | "muted" | "accent" | "success" | "warning" | "danger";
+
+export interface ShellProfilePanelState {
+  visible: boolean;
+  /** Initial CSS-pixel width. PI WEB validates location-specific safety bounds. */
+  size?: number;
+}
+
+export interface ShellProfileContribution {
+  id: LocalContributionId;
+  title: string;
+  description: string;
+  /** Marks a profile as a plugin recommendation. It never activates the profile automatically. */
+  recommended?: boolean;
+  /** Local primary-view id, or a qualified id such as `core:conversation`. */
+  defaultPrimaryView: ShellContributionReference;
+  /** Ordered navigation-entry references, or all registered entries for compatibility compositions. */
+  navigationEntries?: ShellContributionSelection;
+  /** Ordered workspace-panel references exposed as shell surfaces. */
+  surfaceContributions?: ShellContributionSelection;
+  /** Ordered item references for PI WEB-owned fixed shell regions. */
+  regions?: Partial<Record<ShellRegionLocation, ShellContributionSelection>>;
+  /** Initial state only; protected controls and recovery remain PI WEB-owned. */
+  initialPanels?: {
+    navigation?: ShellProfilePanelState;
+    workspace?: ShellProfilePanelState;
+  };
+  /** Presentation profile id to recommend alongside this shell profile. */
+  presentationProfile?: string;
+}
+
+export type ShellRegionItemDescriptor = ShellRegionTextDescriptor | ShellRegionActionDescriptor;
+
+export interface ShellRegionTextDescriptor {
+  type: "text";
+  label: string;
+  value?: string;
+  title?: string;
+  tone?: ShellRegionItemTone;
+}
+
+export interface ShellRegionActionDescriptor {
+  type: "action";
+  label: string;
+  title?: string;
+  tone?: ShellRegionItemTone;
+  active?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+  badge?: string | number;
+  invoke: () => void | Promise<void>;
+}
+
+export interface ShellRegionItemContribution {
+  id: LocalContributionId;
+  location: ShellRegionLocation;
+  order?: number;
+  visible?: (context: PrimaryViewContext) => boolean;
+  describe: (context: PrimaryViewContext) => ShellRegionItemDescriptor;
 }
 
 export type WorkspacePanelHost = WorkspaceHost;

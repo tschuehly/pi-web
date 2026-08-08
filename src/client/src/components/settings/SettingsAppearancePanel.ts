@@ -1,6 +1,8 @@
 import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { builtInPresentationProfile, resolvePresentationProfile, type PresentationProfileDefinition, type ResolvedPresentationProfile } from "../../presentationProfiles";
+import { CORE_SHELL_PROFILE_ID } from "../../appShell/shellProfiles";
+import type { QualifiedContributionId, QualifiedShellProfileContribution } from "../../plugins/types";
 import "./SettingsPanelFrame";
 import type { SettingsNotice } from "./SettingsPanelFrame";
 
@@ -10,27 +12,38 @@ export class SettingsAppearancePanel extends LitElement {
   @property() configModifiedAt = "";
   @property({ type: Boolean }) loading = false;
   @property() error = "";
+  @property({ attribute: false }) shellProfiles: readonly QualifiedShellProfileContribution[] = [];
+  @property({ attribute: false }) shellProfileErrors: Readonly<Record<QualifiedContributionId, string>> = {};
+  @property({ attribute: false }) activeShellProfile?: QualifiedShellProfileContribution;
+  @property({ attribute: false }) previewShellProfile?: QualifiedShellProfileContribution;
+  @property() shellProfileError = "";
   @property({ attribute: false }) profiles: readonly PresentationProfileDefinition[] = [];
   @property({ attribute: false }) profileErrors: Readonly<Record<string, string>> = {};
   @property({ attribute: false }) activeProfile: ResolvedPresentationProfile = builtInPresentationProfile("comfortable");
   @property({ attribute: false }) previewProfile?: ResolvedPresentationProfile;
   @property({ type: Boolean }) activeProfileChanged = false;
   @property({ attribute: false }) onReload?: () => void | Promise<void>;
+  @property({ attribute: false }) onPreviewShellProfile?: (profileId: QualifiedContributionId) => void;
+  @property({ attribute: false }) onApplyShellProfilePreview?: () => void;
+  @property({ attribute: false }) onCancelShellProfilePreview?: () => void;
+  @property({ attribute: false }) onResetShellProfile?: () => void;
   @property({ attribute: false }) onPreview?: (profileId: string) => void;
   @property({ attribute: false }) onApplyPreview?: () => void;
   @property({ attribute: false }) onCancelPreview?: () => void;
 
   override render(): TemplateResult {
+    const selectedShellProfileId = this.previewShellProfile?.id ?? this.activeShellProfile?.id;
     const selectedId = this.previewProfile?.id ?? this.activeProfile.id;
     const availableProfiles = this.availableProfiles();
     const activeAvailable = availableProfiles.some((profile) => profile.id === this.activeProfile.id);
+    const activeShellAvailable = this.activeShellProfile !== undefined && this.shellProfiles.some((profile) => profile.id === this.activeShellProfile?.id);
     return html`
       <settings-panel-frame
         heading="Appearance"
-        description="Presentation profiles apply semantic spacing and sizing without exposing PI WEB internals."
+        description="Shell profiles choose a bounded composition; presentation profiles apply semantic spacing and sizing."
         actionLabel="Reload profiles"
         .actionDisabled=${this.loading}
-        .notices=${this.notices(activeAvailable)}
+        .notices=${this.notices(activeAvailable, activeShellAvailable)}
         .onAction=${() => { void this.onReload?.(); }}
       >
         <details class="config-source">
@@ -39,6 +52,34 @@ export class SettingsAppearancePanel extends LitElement {
           ${this.configModifiedAt === "" ? nothing : html`<small>Config modified ${formatModifiedAt(this.configModifiedAt)}</small>`}
           <small>Agents may edit named profiles in <code>presentationProfiles</code>. Changes never activate without preview and Apply.</small>
         </details>
+
+        <fieldset>
+          <legend>Shell profile</legend>
+          <p>Preview a registered composition, then apply it explicitly. PI WEB keeps settings, authentication, connectivity, actions, and default-profile recovery protected.</p>
+          <div class="profile-options">
+            ${this.shellProfiles.map((profile) => this.renderShellProfileOption(profile, selectedShellProfileId))}
+          </div>
+          ${selectedShellProfileId === CORE_SHELL_PROFILE_ID ? nothing : html`<button class="reset-button" @click=${() => { this.onResetShellProfile?.(); }}>Reset to default PI WEB profile</button>`}
+        </fieldset>
+
+        ${Object.keys(this.shellProfileErrors).length === 0 ? nothing : html`
+          <section class="invalid-profiles" aria-label="Unavailable shell profiles">
+            <h3>Shell profiles unavailable</h3>
+            ${Object.entries(this.shellProfileErrors).sort(([left], [right]) => left.localeCompare(right)).map(([id, message]) => html`
+              <article><strong>${id}</strong><span>${message}</span></article>
+            `)}
+          </section>
+        `}
+
+        ${this.previewShellProfile === undefined ? nothing : html`
+          <footer class="preview-actions" aria-live="polite">
+            <span>Previewing shell <strong>${this.previewShellProfile.title}</strong>. Apply to keep it in this browser.</span>
+            <div>
+              <button @click=${() => { this.onCancelShellProfilePreview?.(); }}>Cancel</button>
+              <button class="primary" @click=${() => { this.onApplyShellProfilePreview?.(); }}>Apply shell</button>
+            </div>
+          </footer>
+        `}
 
         <fieldset>
           <legend>Presentation profile</legend>
@@ -89,9 +130,11 @@ export class SettingsAppearancePanel extends LitElement {
     ];
   }
 
-  private notices(activeAvailable: boolean): readonly SettingsNotice[] {
+  private notices(activeAvailable: boolean, activeShellAvailable: boolean): readonly SettingsNotice[] {
     const notices: SettingsNotice[] = [];
     if (this.error !== "") notices.push({ type: "error", content: this.error });
+    if (this.shellProfileError !== "") notices.push({ type: "error", content: this.shellProfileError });
+    if (!activeShellAvailable) notices.push({ type: "warning", content: "The selected shell profile is unavailable. Use the protected default-profile reset." });
     if (!activeAvailable) {
       notices.push({
         type: "warning",
@@ -99,8 +142,36 @@ export class SettingsAppearancePanel extends LitElement {
         content: `${this.activeProfile.title} remains active from its last valid browser snapshot. Correct or restore the config profile, or apply a built-in profile.`,
       });
     }
-    if (this.previewProfile !== undefined) notices.push({ type: "info", content: "Preview is temporary and will be cancelled when Settings closes." });
+    if (this.previewProfile !== undefined || this.previewShellProfile !== undefined) notices.push({ type: "info", content: "Preview is temporary and will be cancelled when Settings closes." });
     return notices;
+  }
+
+  private renderShellProfileOption(profile: QualifiedShellProfileContribution, selectedId: string | undefined): TemplateResult {
+    const selected = selectedId === profile.id;
+    const active = this.activeShellProfile?.id === profile.id;
+    const recommendation = profile.presentationProfile;
+    const recommendationAvailable = recommendation !== undefined && this.profiles.some((candidate) => candidate.id === recommendation);
+    return html`
+      <div class="shell-profile-option">
+        <label class=${selected ? "profile-option selected" : "profile-option"}>
+          <input
+            type="radio"
+            name="shell-profile"
+            value=${profile.id}
+            .checked=${selected}
+            @change=${() => { this.onPreviewShellProfile?.(profile.id); }}
+          >
+          <span class="option-copy">
+            <span class="option-heading"><strong>${profile.title}</strong>${active ? html`<span class="active-badge">active</span>` : nothing}${profile.recommended === true ? html`<span class="recommended-badge">recommended</span>` : nothing}</span>
+            <small>${profile.description}</small>
+            <small class="provenance">${profile.provenance.source === "built-in" ? "Built in" : `${profile.provenance.pluginName} · ${profile.provenance.pluginId}`}</small>
+          </span>
+        </label>
+        ${recommendation === undefined ? nothing : recommendationAvailable
+          ? html`<button type="button" class="recommendation" @click=${() => { this.onPreview?.(recommendation); }}>Preview recommended ${recommendation} presentation</button>`
+          : html`<small class="recommendation-unavailable" role="status">Recommended presentation ${recommendation} is unavailable.</small>`}
+      </div>
+    `;
   }
 
   private renderProfileOption(profile: ResolvedPresentationProfile, selectedId: string): TemplateResult {
@@ -141,6 +212,9 @@ export class SettingsAppearancePanel extends LitElement {
     .config-source > code { display: block; margin-top: 5px; padding: 5px 7px; }
     .config-source small { color: var(--pi-muted); line-height: 1.35; }
     .profile-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--pi-toolbar-gap); }
+    .shell-profile-option { min-width: 0; display: grid; gap: 4px; align-content: start; }
+    .recommendation { justify-self: start; min-height: 32px; background: transparent; color: var(--pi-accent); }
+    .recommendation-unavailable { padding: 0 var(--pi-panel-padding); color: var(--pi-warning); }
     .reset-button { margin-top: var(--pi-toolbar-gap); }
     .profile-option { box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px; min-width: 0; min-height: var(--pi-control-min-size); padding: var(--pi-panel-padding); border-radius: 6px; background: var(--pi-surface); cursor: pointer; }
     .profile-option:hover { background: var(--pi-surface-hover); }
@@ -149,7 +223,8 @@ export class SettingsAppearancePanel extends LitElement {
     input { margin: 3px 0 0; accent-color: var(--pi-accent); }
     .option-copy { display: grid; gap: 4px; min-width: 0; }
     .option-heading { display: flex; align-items: baseline; gap: 6px; }
-    .active-badge { border-radius: 999px; background: color-mix(in srgb, var(--pi-accent) 14%, transparent); color: var(--pi-accent); padding: 0 5px; font-size: 10px; font-weight: 600; }
+    .active-badge, .recommended-badge { border-radius: 999px; background: color-mix(in srgb, var(--pi-accent) 14%, transparent); color: var(--pi-accent); padding: 0 5px; font-size: 10px; font-weight: 600; }
+    .recommended-badge { background: var(--pi-success-surface); color: var(--pi-success); }
     small { color: var(--pi-muted); line-height: 1.4; }
     .provenance { color: var(--pi-dim); font-size: 11px; }
     .invalid-profiles { display: grid; gap: var(--pi-toolbar-gap); padding: 8px 10px; border-radius: 6px; background: var(--pi-warning-surface); }

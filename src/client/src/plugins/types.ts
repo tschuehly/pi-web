@@ -45,6 +45,8 @@ export interface PluginContributions {
   navigationEntries?: NavigationEntryContribution[];
   primaryViews?: PrimaryViewContribution[];
   sessionStartGuards?: SessionStartGuardContribution[];
+  shellProfiles?: ShellProfileContribution[];
+  shellRegionItems?: ShellRegionItemContribution[];
   workspacePanels?: WorkspacePanelContribution[];
   workspaceLabels?: WorkspaceLabelContribution[];
   themes?: ThemeContribution[];
@@ -276,6 +278,103 @@ export interface QualifiedNavigationEntryContribution extends Omit<NavigationEnt
   localId: LocalContributionId;
   machineId?: string;
   primaryView: QualifiedContributionId;
+}
+
+export type ShellContributionReference = string;
+export type ShellContributionSelection = "all" | readonly ShellContributionReference[];
+export type QualifiedShellContributionSelection = "all" | readonly QualifiedContributionId[];
+export type ShellRegionLocation = "context-bar" | "status" | "surface-strip" | "contextual-actions";
+export type ShellRegionItemTone = "default" | "muted" | "accent" | "success" | "warning" | "danger";
+
+export interface ShellProfilePanelState {
+  visible: boolean;
+  size?: number;
+}
+
+export interface ShellProfileContribution {
+  id: LocalContributionId;
+  title: string;
+  description: string;
+  recommended?: boolean;
+  defaultPrimaryView: ShellContributionReference;
+  navigationEntries?: ShellContributionSelection;
+  surfaceContributions?: ShellContributionSelection;
+  regions?: Partial<Record<ShellRegionLocation, ShellContributionSelection>>;
+  initialPanels?: {
+    navigation?: ShellProfilePanelState;
+    workspace?: ShellProfilePanelState;
+  };
+  presentationProfile?: string;
+}
+
+export interface ShellProfileProvenance {
+  source: "built-in" | "plugin";
+  pluginId: PluginId;
+  pluginName: string;
+  machineId?: string;
+}
+
+export interface QualifiedShellProfileContribution extends Omit<ShellProfileContribution, "defaultPrimaryView" | "navigationEntries" | "surfaceContributions" | "regions"> {
+  id: QualifiedContributionId;
+  pluginId: PluginId;
+  localId: LocalContributionId;
+  machineId?: string;
+  sourcePluginId?: PluginId;
+  defaultPrimaryView: QualifiedContributionId;
+  navigationEntries: QualifiedShellContributionSelection;
+  surfaceContributions: QualifiedShellContributionSelection;
+  regions: Readonly<Record<ShellRegionLocation, QualifiedShellContributionSelection>>;
+  provenance: ShellProfileProvenance;
+}
+
+export type ShellRegionItemDescriptor = ShellRegionTextDescriptor | ShellRegionActionDescriptor;
+
+export interface ShellRegionTextDescriptor {
+  type: "text";
+  label: string;
+  value?: string;
+  title?: string;
+  tone?: ShellRegionItemTone;
+}
+
+export interface ShellRegionActionDescriptor {
+  type: "action";
+  label: string;
+  title?: string;
+  tone?: ShellRegionItemTone;
+  active?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+  badge?: string | number;
+  invoke: () => void | Promise<void>;
+}
+
+export interface ShellRegionItemContribution {
+  id: LocalContributionId;
+  location: ShellRegionLocation;
+  order?: number;
+  visible?: (context: PrimaryViewContext) => boolean;
+  describe: (context: PrimaryViewContext) => ShellRegionItemDescriptor;
+}
+
+export interface QualifiedShellRegionItemContribution extends ShellRegionItemContribution {
+  id: QualifiedContributionId;
+  pluginId: PluginId;
+  localId: LocalContributionId;
+  machineId?: string;
+  sourcePluginId?: PluginId;
+}
+
+export type QualifiedShellRegionItem = ShellRegionItemDescriptor & {
+  id: QualifiedContributionId;
+  pluginId: PluginId;
+  localId: LocalContributionId;
+  location: ShellRegionLocation;
+};
+
+export interface ShellProfileCatalog {
+  profiles: QualifiedShellProfileContribution[];
+  errors: Readonly<Record<QualifiedContributionId, string>>;
 }
 
 export interface WorkspaceContext {

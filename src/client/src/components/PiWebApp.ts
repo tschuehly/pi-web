@@ -32,7 +32,7 @@ import { SessionUnreadController } from "../sessionUnread";
 import { deriveUnreadPresence, EMPTY_UNREAD_PRESENCE, sameUnreadPresence, type UnreadPresence } from "../unreadPresence";
 import { initialSessionWarningVisibilityState, reconcileSessionWarningVisibility, toggleSessionWarnings } from "../sessionWarningVisibility";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
-import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PluginSessionSelectionFailure, PluginSessionSelectionFailureCode, PrimaryViewContext, PrimaryViewSurface, PrimaryViewSurfaceHost, PrimaryViewSurfaceMountOptions, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, SessionAttentionHost, SessionAttentionItem, SessionAttentionSnapshot, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
+import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, PluginRuntimeContext, PluginSessionLocation, PluginSessionSelectionFailure, PluginSessionSelectionFailureCode, PrimaryViewContext, PrimaryViewSurface, PrimaryViewSurfaceHost, PrimaryViewSurfaceMountOptions, QualifiedContributionId, QualifiedNavigationEntryContribution, QualifiedPrimaryViewContribution, QualifiedShellProfileContribution, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, SessionAttentionHost, SessionAttentionItem, SessionAttentionSnapshot, ShellRegionLocation, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
 import { recheckSessionLocationEvidence, resolveSessionLocation, type SessionLocationCatalog } from "../plugins/sessionLocationResolver";
 import { SessionNavigationController, sessionNavigationIdentity, type SessionNavigationScope } from "../plugins/sessionNavigationHost";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
@@ -44,6 +44,7 @@ import { createWorkspaceFiles as createPluginWorkspaceFiles } from "../plugins/w
 import { queryNamespace, readNamespacedString, setNamespacedQueryKey } from "../namespacedQueryArgs";
 import { AppShellController } from "../appShell/appShellController";
 import { BrowserResumeController } from "../appShell/browserResumeController";
+import { CORE_CONVERSATION_VIEW_ID, CORE_SHELL_PROFILE_ID, readStoredShellProfileId, transactShellProfileActivation, writeStoredShellProfileId } from "../appShell/shellProfiles";
 import { NavigationSectionsController, type NavigationSection } from "../appShell/navigationState";
 import { PanelCollapseController, mainViewClass } from "../appShell/panelCollapseController";
 import { PanelResizeController, type PanelResizeConstraints, type ResizablePanelSide } from "../appShell/panelResizeController";
@@ -81,6 +82,7 @@ import type { AppMobileMainTab, AppMobileMainTabIcon } from "./appShell/AppMobil
 import { shouldShowMachinesSection, type AppNavigationPanel, type NavigationFocusTarget } from "./appShell/AppNavigationPanel";
 import "./appShell/AppPanelEdgeControl";
 import "./appShell/AppRefreshControl";
+import "./appShell/AppShellRegion";
 import { appStyles } from "./shared";
 
 
@@ -286,6 +288,19 @@ export class PiWebApp extends LitElement {
   private remoteRouteRestoreAttempt = 0;
   private remoteRouteRestoreInProgress = false;
   private readonly plugins = createPluginRegistry();
+  private readonly initialRouteHasExplicitView = readRoute().view !== undefined;
+  private preferredShellProfileId: QualifiedContributionId = readStoredShellProfileId() ?? CORE_SHELL_PROFILE_ID;
+  private readonly failedShellProfileIds = new Set<QualifiedContributionId>();
+  private lastValidShellProfileId: QualifiedContributionId = CORE_SHELL_PROFILE_ID;
+  private shellProfileRestoreReady = false;
+  private shellPreviewReturnComposition: {
+    mainView: AppState["mainView"];
+    panels: { navigation: { visible: boolean }; workspace: { visible: boolean } };
+    panelSizes: { navigation?: { size: number }; workspace?: { size: number } };
+  } | undefined;
+  @state() private activeShellProfileId: QualifiedContributionId = CORE_SHELL_PROFILE_ID;
+  @state() private previewShellProfileId: QualifiedContributionId | undefined;
+  @state() private shellProfileError = "";
   private readonly loadedMachinePluginIds = new Set<string>();
   private readonly machinePluginLoadPromises = new Map<string, Promise<void>>();
   private gatewayPluginLoadPromise: Promise<void> | undefined;
@@ -435,8 +450,14 @@ export class PiWebApp extends LitElement {
     this.piWebStatusTimer = window.setInterval(() => { this.schedulePiWebStatusRefresh(); }, PI_WEB_STATUS_REFRESH_MS);
     void this.refreshWorkspaceActivity();
     void this.loadClientConfig();
-    void this.ensureGatewayPluginsLoaded();
-    void this.loadProjectsAndRestoreRoute().finally(() => { this.schedulePiWebStatusRefresh(); });
+    const gatewayPluginsReady = this.ensureGatewayPluginsLoaded();
+    void this.loadProjectsAndRestoreRoute()
+      .then(() => gatewayPluginsReady)
+      .then(() => {
+        this.restorePreferredShellProfile(!this.initialRouteHasExplicitView);
+        this.shellProfileRestoreReady = true;
+      })
+      .finally(() => { this.schedulePiWebStatusRefresh(); });
   }
 
   override disconnectedCallback(): void {
@@ -836,7 +857,9 @@ export class PiWebApp extends LitElement {
   }
 
   private defaultRouteView(): AppState["mainView"] {
-    return this.appShell.defaultRouteView();
+    if (this.activeShellProfileId === CORE_SHELL_PROFILE_ID) return this.appShell.defaultRouteView();
+    const profile = this.plugins.getRegisteredShellProfile(this.activeShellProfileId);
+    return profile === undefined ? this.appShell.defaultRouteView() : mainViewForShellProfile(profile);
   }
 
   private updateUrl(options?: { replace?: boolean | undefined }) {
@@ -983,6 +1006,7 @@ export class PiWebApp extends LitElement {
 
   private closeSettings(): void {
     this.cancelPresentationPreview();
+    this.cancelShellProfilePreview();
     this.settingsSection = undefined;
     writeSettingsSection(undefined);
   }
@@ -994,7 +1018,10 @@ export class PiWebApp extends LitElement {
 
   private restoreSettingsRoute(): void {
     const nextSection = readSettingsSection();
-    if (this.settingsSection !== undefined && nextSection === undefined) this.cancelPresentationPreview();
+    if (this.settingsSection !== undefined && nextSection === undefined) {
+      this.cancelPresentationPreview();
+      this.cancelShellProfilePreview();
+    }
     this.settingsSection = nextSection;
   }
 
@@ -1825,7 +1852,22 @@ export class PiWebApp extends LitElement {
   }
 
   private visiblePrimaryNavigationEntries(): QualifiedNavigationEntryContribution[] {
-    return this.plugins.getNavigationEntries(this.createPrimaryViewContext());
+    const context = this.createPrimaryViewContext();
+    return this.plugins.getShellNavigationEntries(this.effectiveShellProfile(), context);
+  }
+
+  private effectiveShellProfile(): QualifiedShellProfileContribution {
+    const id = this.previewShellProfileId ?? this.activeShellProfileId;
+    return this.plugins.getRegisteredShellProfile(id) ?? requiredCoreShellProfile(this.plugins);
+  }
+
+  private shellProfileCatalog() {
+    return this.plugins.getShellProfileCatalog(this.createPrimaryViewContext());
+  }
+
+  private renderShellRegion(location: ShellRegionLocation) {
+    const items = this.plugins.getShellRegionItems(this.effectiveShellProfile(), location, this.createPrimaryViewContext());
+    return items.length === 0 ? null : html`<app-shell-region .location=${location} .items=${items}></app-shell-region>`;
   }
 
   private selectedPrimaryView(): QualifiedPrimaryViewContribution | undefined {
@@ -1869,7 +1911,7 @@ export class PiWebApp extends LitElement {
     const workspace = this.state.selectedWorkspace;
     if (workspace === undefined) return [];
     const context = this.createWorkspacePanelContext(workspace);
-    return this.plugins.getWorkspacePanels().filter((panel) => panel.visible?.(context) ?? true);
+    return this.plugins.getShellWorkspacePanels(this.effectiveShellProfile()).filter((panel) => panel.visible?.(context) ?? true);
   }
 
   private workspacePanelEmptyState(): WorkspacePanelEmptyState {
@@ -2114,8 +2156,8 @@ export class PiWebApp extends LitElement {
 
   private async loadPluginsForSelectedMachine(): Promise<void> {
     const machine = this.state.selectedMachine;
-    if (machine?.kind !== "remote") return;
-    await this.loadPluginsForMachine(machine);
+    if (machine?.kind === "remote") await this.loadPluginsForMachine(machine);
+    this.reconcilePreferredShellProfile();
   }
 
   private async loadPluginsForMachine(machine: Machine): Promise<void> {
@@ -2145,6 +2187,7 @@ export class PiWebApp extends LitElement {
         }
       }
       this.applyPreferredTheme(false);
+      this.reconcilePreferredShellProfile();
       this.requestUpdate();
       return true;
     } catch (error) {
@@ -2445,6 +2488,143 @@ export class PiWebApp extends LitElement {
     this.applyPreferredTheme(true);
   }
 
+  private previewShellProfile(profileId: QualifiedContributionId): void {
+    this.failedShellProfileIds.delete(profileId);
+    const current = this.plugins.getRegisteredShellProfile(this.previewShellProfileId ?? this.activeShellProfileId) ?? requiredCoreShellProfile(this.plugins);
+    const activation = transactShellProfileActivation(current, profileId, (id) => this.plugins.resolveShellProfile(id, this.createPrimaryViewContext()));
+    if (!activation.ok) {
+      this.shellProfileError = `Could not preview ${profileId}: ${activation.error}`;
+      return;
+    }
+    this.shellPreviewReturnComposition ??= {
+      mainView: this.state.mainView,
+      panels: this.panelCollapse.currentVisibility(),
+      panelSizes: this.panelResize.currentProfileDefaults(),
+    };
+    this.previewShellProfileId = activation.profile.id;
+    this.shellProfileError = "";
+    this.applyActivatedShellProfile(activation.profile, { applyInitialPanels: true, navigate: true, persist: false, updateUrl: false });
+  }
+
+  private applyShellProfilePreview(): void {
+    const profileId = this.previewShellProfileId;
+    if (profileId === undefined) return;
+    const current = this.plugins.getRegisteredShellProfile(this.activeShellProfileId) ?? requiredCoreShellProfile(this.plugins);
+    const activation = transactShellProfileActivation(current, profileId, (id) => this.plugins.resolveShellProfile(id, this.createPrimaryViewContext()));
+    if (!activation.ok) {
+      this.cancelShellProfilePreview();
+      this.shellProfileError = `Could not apply ${profileId}: ${activation.error}`;
+      return;
+    }
+    this.lastValidShellProfileId = this.activeShellProfileId;
+    this.activeShellProfileId = activation.profile.id;
+    this.failedShellProfileIds.delete(activation.profile.id);
+    this.previewShellProfileId = undefined;
+    this.shellPreviewReturnComposition = undefined;
+    this.shellProfileError = "";
+    this.applyActivatedShellProfile(activation.profile, { applyInitialPanels: true, navigate: true, persist: true, updateUrl: true });
+  }
+
+  private cancelShellProfilePreview(): void {
+    if (this.previewShellProfileId === undefined) return;
+    const returnComposition = this.shellPreviewReturnComposition;
+    this.previewShellProfileId = undefined;
+    this.shellPreviewReturnComposition = undefined;
+    this.shellProfileError = "";
+    if (returnComposition === undefined) return;
+    this.panelCollapse.applyInitialVisibility(returnComposition.panels);
+    this.panelResize.applyProfileDefaults(returnComposition.panelSizes);
+    this.setState({ mainView: returnComposition.mainView });
+  }
+
+  private resetShellProfile(): void {
+    const current = this.plugins.getRegisteredShellProfile(this.activeShellProfileId) ?? requiredCoreShellProfile(this.plugins);
+    const activation = transactShellProfileActivation(current, CORE_SHELL_PROFILE_ID, (id) => this.plugins.resolveShellProfile(id, this.createPrimaryViewContext()));
+    if (!activation.ok) {
+      this.shellProfileError = `PI WEB could not restore its protected default profile: ${activation.error}`;
+      return;
+    }
+    if (this.activeShellProfileId !== activation.profile.id) this.lastValidShellProfileId = this.activeShellProfileId;
+    this.activeShellProfileId = activation.profile.id;
+    this.failedShellProfileIds.clear();
+    this.previewShellProfileId = undefined;
+    this.shellPreviewReturnComposition = undefined;
+    this.shellProfileError = "";
+    this.applyActivatedShellProfile(activation.profile, { applyInitialPanels: true, navigate: true, persist: true, updateUrl: true });
+  }
+
+  private restorePreferredShellProfile(navigate: boolean): void {
+    const requested = this.preferredShellProfileId;
+    const core = requiredCoreShellProfile(this.plugins);
+    if (this.failedShellProfileIds.has(requested)) return;
+    const activation = transactShellProfileActivation(core, requested, (id) => this.plugins.resolveShellProfile(id, this.createPrimaryViewContext()));
+    if (!activation.ok) {
+      const profileChanged = this.activeShellProfileId !== core.id;
+      this.activeShellProfileId = core.id;
+      this.lastValidShellProfileId = core.id;
+      this.previewShellProfileId = undefined;
+      this.shellProfileError = requested === CORE_SHELL_PROFILE_ID
+        ? `PI WEB's protected default profile is unavailable. ${activation.error}`
+        : `Saved shell profile ${requested} is temporarily unavailable. PI WEB is using its default profile without forgetting your selection. ${activation.error}`;
+      if (profileChanged) this.applyActivatedShellProfile(core, { applyInitialPanels: true, navigate: false, persist: false, updateUrl: false });
+      return;
+    }
+    const profileChanged = this.activeShellProfileId !== activation.profile.id;
+    if (profileChanged) this.lastValidShellProfileId = this.activeShellProfileId;
+    this.activeShellProfileId = activation.profile.id;
+    this.previewShellProfileId = undefined;
+    this.shellProfileError = "";
+    this.applyActivatedShellProfile(activation.profile, { applyInitialPanels: profileChanged, navigate, persist: false, updateUrl: false });
+  }
+
+  private reconcilePreferredShellProfile(): void {
+    if (!this.shellProfileRestoreReady) return;
+    const previewId = this.previewShellProfileId;
+    if (previewId !== undefined) {
+      const current = this.plugins.getRegisteredShellProfile(this.activeShellProfileId) ?? requiredCoreShellProfile(this.plugins);
+      const preview = transactShellProfileActivation(current, previewId, (id) => this.plugins.resolveShellProfile(id, this.createPrimaryViewContext()));
+      if (preview.ok) return;
+      this.cancelShellProfilePreview();
+      this.restorePreferredShellProfile(false);
+      this.shellProfileError = `Shell profile preview ${previewId} was cancelled because it became unavailable. ${preview.error}`;
+      return;
+    }
+    this.restorePreferredShellProfile(false);
+  }
+
+  private applyActivatedShellProfile(profile: QualifiedShellProfileContribution, options: { applyInitialPanels: boolean; navigate: boolean; persist: boolean; updateUrl: boolean }): void {
+    if (options.applyInitialPanels) {
+      this.panelCollapse.applyInitialVisibility(profile.initialPanels);
+      this.panelResize.applyProfileDefaults(profile.initialPanels);
+    }
+    if (options.navigate) this.setState({ mainView: mainViewForShellProfile(profile) });
+    if (options.persist) {
+      this.preferredShellProfileId = profile.id;
+      writeStoredShellProfileId(profile.id);
+    }
+    if (options.updateUrl) this.updateUrl();
+  }
+
+  private handleProfilePrimaryViewFailure(viewId: QualifiedContributionId, error: unknown): void {
+    const profile = this.effectiveShellProfile();
+    if (profile.defaultPrimaryView !== viewId) return;
+    if (this.previewShellProfileId !== undefined) {
+      const failedProfileId = this.previewShellProfileId;
+      this.cancelShellProfilePreview();
+      this.shellProfileError = `Shell profile ${failedProfileId} could not render its default view: ${errorMessage(error)}`;
+      return;
+    }
+    const core = requiredCoreShellProfile(this.plugins);
+    const fallback = transactShellProfileActivation(core, this.lastValidShellProfileId, (id) => this.plugins.resolveShellProfile(id, this.createPrimaryViewContext()));
+    const restored = fallback.ok && fallback.profile.id !== this.activeShellProfileId ? fallback.profile : core;
+    const failedProfileId = this.activeShellProfileId;
+    this.failedShellProfileIds.add(failedProfileId);
+    this.activeShellProfileId = restored.id;
+    this.lastValidShellProfileId = core.id;
+    this.applyActivatedShellProfile(restored, { applyInitialPanels: restored.id !== failedProfileId, navigate: true, persist: false, updateUrl: true });
+    this.shellProfileError = `Shell profile ${failedProfileId} failed. PI WEB restored ${restored.title} for this tab without forgetting your selection. ${errorMessage(error)}`;
+  }
+
   private previewPresentation(profileId: string): void {
     const profile = resolvePresentationProfile(profileId, this.presentationProfiles);
     if (profile === undefined) return;
@@ -2683,6 +2863,7 @@ export class PiWebApp extends LitElement {
   private renderPiMenu() {
     const machine = this.state.selectedMachine;
     const reconnecting = machine !== undefined && this.state.machineStatuses[machine.id]?.ok === false;
+    const shellProfile = this.effectiveShellProfile();
     return html`
       <div class="pi-menu-frame">
         <app-pi-menu
@@ -2691,12 +2872,15 @@ export class PiWebApp extends LitElement {
           .selectedView=${this.state.mainView}
           .selectedProject=${this.state.selectedProject}
           .connectionLabel=${reconnecting ? "Reconnecting" : "Connected"}
+          .activeShellProfileTitle=${shellProfile.title}
+          .defaultShellProfile=${shellProfile.id === CORE_SHELL_PROFILE_ID}
           .onSelectView=${(view: "chat" | QualifiedContributionId) => this.selectPrimaryNavigationView(view)}
           .onSelectProject=${(project: Project) => this.workspaces.selectProject(project)}
           .onShowProjects=${() => this.focusNavigationSection("projects")}
           .onShowActions=${() => { this.setState({ actionPaletteOpen: true }); }}
           .onConfigureAuth=${() => { void this.auth.openLogin(); }}
           .onRecover=${() => this.refreshAppData()}
+          .onResetShellProfile=${() => { this.resetShellProfile(); }}
           .onOpenSettings=${() => { this.openSettings(); }}
         ></app-pi-menu>
       </div>
@@ -2705,18 +2889,31 @@ export class PiWebApp extends LitElement {
 
   override render() {
     const state = this.state;
+    const shellProfileCatalog = this.settingsSection === undefined ? undefined : this.shellProfileCatalog();
     const primaryView = this.selectedPrimaryView();
     const primaryViewSelected = this.isPrimaryViewSelection(primaryView);
     const dedicated = this.primaryViewLayout(primaryView) === "dedicated";
+    const shellProfile = this.effectiveShellProfile();
+    const showProfileRecovery = shellProfile.id !== CORE_SHELL_PROFILE_ID;
+    const contextualActions = this.plugins.getShellRegionItems(shellProfile, "contextual-actions", this.createPrimaryViewContext());
+    const showProfileToolbar = dedicated || showProfileRecovery || contextualActions.length > 0;
     const shellClass = `${this.panelCollapse.shellClass(state.mainView, primaryViewSelected)}${dedicated ? " dedicated-shell" : ""}`;
     return html`
       <div class=${shellClass} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
-        ${dedicated ? this.renderPiMenu() : null}
         ${dedicated ? null : html`<aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>`}
         ${dedicated ? null : this.renderNavigationPanelEdgeControl()}
         <main class=${mainViewClass(state.mainView, primaryViewSelected)}>
+          ${showProfileToolbar ? html`
+            <div class="shell-profile-toolbar">
+              ${dedicated || showProfileRecovery ? this.renderPiMenu() : null}
+              ${contextualActions.length === 0 ? null : html`<app-shell-region location="contextual-actions" .items=${contextualActions}></app-shell-region>`}
+            </div>
+          ` : null}
           ${dedicated ? null : this.renderContextBar()}
+          ${this.renderShellRegion("context-bar")}
           ${dedicated ? null : this.renderMobileMainTabs()}
+          ${this.renderShellRegion("surface-strip")}
+          ${this.shellProfileError === "" ? null : html`<div class="shell-profile-error" role="alert">${this.shellProfileError}</div>`}
           ${state.error ? html`<div class="error">${state.error}</div>` : null}
           <div class="mobile-navigation-panel">${this.appShell.isMobileNavigationLayout ? this.renderNavigationPanel() : null}</div>
           ${primaryViewSelected ? html`
@@ -2724,6 +2921,7 @@ export class PiWebApp extends LitElement {
               .contribution=${primaryView}
               .context=${this.createPrimaryViewContext()}
               .onReturnToConversation=${() => { void this.focusChatComposer(); }}
+              .onContributionFailure=${(viewId: QualifiedContributionId, error: unknown) => { this.handleProfilePrimaryViewFailure(viewId, error); }}
             ></app-primary-view>
           ` : state.selectedSession ? html`
             ${this.renderChatView(state, state.selectedSession)}
@@ -2734,6 +2932,7 @@ export class PiWebApp extends LitElement {
             ${state.thinkingDialog !== undefined ? html`<command-picker title=${state.thinkingDialog.title} .options=${state.thinkingDialog.options} .selectedValue=${state.thinkingDialog.selectedValue} .onPick=${(value: string) => { void this.pickThinking(value); }} .onCancel=${() => { this.setState({ thinkingDialog: undefined }); }}></command-picker>` : null}
 
           ` : html`<div class="empty">${this.sessionEmptyMessage()}</div>`}
+          ${this.renderShellRegion("status")}
         </main>
         ${dedicated ? null : this.renderWorkspacePanelEdgeControl()}
         ${dedicated ? null : this.renderWorkspacePanel()}
@@ -2749,6 +2948,11 @@ export class PiWebApp extends LitElement {
           <settings-dialog
             .section=${this.settingsSection}
             .actions=${this.getDefaultActions()}
+            .shellProfiles=${shellProfileCatalog?.profiles ?? []}
+            .shellProfileErrors=${shellProfileCatalog?.errors ?? {}}
+            .activeShellProfile=${this.plugins.getRegisteredShellProfile(this.activeShellProfileId) ?? requiredCoreShellProfile(this.plugins)}
+            .previewShellProfile=${this.previewShellProfileId === undefined ? undefined : this.plugins.getRegisteredShellProfile(this.previewShellProfileId)}
+            .shellProfileError=${this.shellProfileError}
             .presentationProfiles=${this.presentationProfiles}
             .presentationProfileErrors=${this.presentationProfileErrors}
             .activePresentationProfile=${this.activePresentationProfile}
@@ -2760,6 +2964,10 @@ export class PiWebApp extends LitElement {
             .onClose=${() => { this.closeSettings(); }}
             .onConfigLoaded=${(config: PiWebConfigValues) => { this.applyClientConfig(config); }}
             .onConfigSaved=${(config: PiWebConfigValues) => { this.applyClientConfig(config); }}
+            .onPreviewShellProfile=${(profileId: QualifiedContributionId) => { this.previewShellProfile(profileId); }}
+            .onApplyShellProfilePreview=${() => { this.applyShellProfilePreview(); }}
+            .onCancelShellProfilePreview=${() => { this.cancelShellProfilePreview(); }}
+            .onResetShellProfile=${() => { this.resetShellProfile(); }}
             .onPreviewPresentationProfile=${(profileId: string) => { this.previewPresentation(profileId); }}
             .onApplyPresentationPreview=${() => { this.applyPresentationPreview(); }}
             .onCancelPresentationPreview=${() => { this.cancelPresentationPreview(); }}
@@ -2771,12 +2979,18 @@ export class PiWebApp extends LitElement {
   }
 
   static override styles = [appStyles, css`
-    .shell.dedicated-shell { position: relative; grid-template-columns: minmax(0, 1fr); }
-    .dedicated-shell > .pi-menu-frame { position: fixed; z-index: 90; inset: 8px auto auto 8px; pointer-events: none; }
-    .dedicated-shell > .pi-menu-frame app-pi-menu { pointer-events: auto; }
+    .shell { position: relative; }
+    .shell.dedicated-shell { grid-template-columns: minmax(0, 1fr); }
+    .shell-profile-toolbar { box-sizing: border-box; min-width: 0; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--pi-toolbar-gap); min-height: 52px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-bg); padding: 6px var(--pi-panel-padding); }
+    .shell-profile-toolbar > .pi-menu-frame { position: relative; z-index: 90; flex: 0 0 auto; }
+    .shell-profile-toolbar app-shell-region { min-width: 0; max-width: min(70%, 720px); margin-left: auto; }
     .shell.dedicated-shell > main { grid-column: 1; grid-row: 1; }
     .shell.dedicated-shell > main app-primary-view { padding-top: 0; }
-    @media (max-width: 720px) { .pi-menu-frame { inset: 6px auto auto 6px; } }
+    .shell-profile-error { flex: 0 0 auto; padding: var(--pi-message-padding) var(--pi-panel-padding); border-bottom: 1px solid var(--pi-warning-border); background: var(--pi-warning-surface); color: var(--pi-warning); }
+    @media (max-width: 720px) {
+      .shell-profile-toolbar { min-height: 52px; padding-inline: 6px; }
+      .shell-profile-toolbar app-shell-region { max-width: calc(100% - 54px); }
+    }
   `];
 }
 
@@ -2797,6 +3011,16 @@ function createPluginRegistry(): PluginRegistry {
   registry.register({ id: "core", plugin: corePlugin });
   registry.register({ id: "themes", plugin: themePackPlugin });
   return registry;
+}
+
+function requiredCoreShellProfile(registry: PluginRegistry): QualifiedShellProfileContribution {
+  const profile = registry.getRegisteredShellProfile(CORE_SHELL_PROFILE_ID);
+  if (profile === undefined) throw new Error("PI WEB's protected default shell profile is unavailable.");
+  return profile;
+}
+
+function mainViewForShellProfile(profile: QualifiedShellProfileContribution): AppState["mainView"] {
+  return profile.defaultPrimaryView === CORE_CONVERSATION_VIEW_ID ? "chat" : profile.defaultPrimaryView;
 }
 
 function pluginMachineFromState(state: Pick<AppState, "selectedMachine">): PluginMachine {

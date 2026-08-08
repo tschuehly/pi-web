@@ -498,6 +498,8 @@ interface PluginContributions {
   navigationEntries?: NavigationEntryContribution[];
   primaryViews?: PrimaryViewContribution[];
   sessionStartGuards?: SessionStartGuardContribution[];
+  shellProfiles?: ShellProfileContribution[];
+  shellRegionItems?: ShellRegionItemContribution[];
   workspacePanels?: WorkspacePanelContribution[];
   workspaceLabels?: WorkspaceLabelContribution[];
 }
@@ -806,6 +808,71 @@ under coarse-pointer target floors. Default primary views cannot hide or replace
 authentication, connectivity, settings, recovery, workspace, or Conversation controls. Dedicated
 views may replace the surrounding chrome, but not those capabilities or their authority; they must
 mount PI WEB-owned workspace and conversation surfaces through the typed host.
+
+### Shell profiles and fixed regions
+
+A shell profile is a bounded composition of existing contributions. It may select a default primary
+view, order navigation entries and workspace panels, set bounded initial panel visibility and widths,
+and recommend a presentation profile. PI WEB continues to own settings, authentication,
+connectivity, actions, error handling, and the one-action reset to the default PI WEB profile.
+
+Profiles are selected and previewed under **Settings → Appearance**. A plugin may mark a profile as
+`recommended`, but that marker never activates it automatically. Apply persists the qualified profile
+id in the current browser. Missing or temporarily invalid profiles fail closed to PI WEB's built-in
+profile without erasing the saved selection; an explicit reset clears that intent. When a recommended
+presentation profile is available, Appearance offers a separate preview action rather than changing
+presentation implicitly.
+
+```js
+shellProfiles: [{
+  id: "shell.review",
+  title: "Review shell",
+  description: "Start in the review view with selected tools and status.",
+  recommended: true,
+  defaultPrimaryView: "review.view",
+  navigationEntries: ["review.navigation"],
+  surfaceContributions: ["core:workspace.files", "core:workspace.git"],
+  regions: {
+    "context-bar": ["review.scope"],
+    status: ["review.state"],
+    "surface-strip": [],
+    "contextual-actions": ["review.refresh"],
+  },
+  initialPanels: {
+    navigation: { visible: false, size: 320 },
+    workspace: { visible: true, size: 480 },
+  },
+  presentationProfile: "compact",
+}],
+```
+
+References without `:` are local to the declaring plugin. Qualified references such as
+`core:workspace.files` may select another plugin's registered contribution. Use `"all"` only for a
+compatibility composition that intentionally follows all contributions in a category.
+
+Fixed regions accept data and callback descriptors rather than arbitrary templates. PI WEB owns their
+markup, overflow, keyboard behavior, touch targets, and callback failure isolation:
+
+```js
+shellRegionItems: [
+  {
+    id: "review.state",
+    location: "status",
+    describe: () => ({ type: "text", label: "State", value: "Ready", tone: "success" }),
+  },
+  {
+    id: "review.refresh",
+    location: "contextual-actions",
+    describe: () => ({ type: "action", label: "Refresh", invoke: () => refresh() }),
+  },
+],
+```
+
+Available locations are `context-bar`, `status`, `surface-strip`, and `contextual-actions`. Keep
+`visible()` and `describe()` synchronous and cheap. PI WEB omits a region item whose callback throws;
+an invoked action that rejects remains contained within its region. Profile activation is
+transactional: unresolved references, invalid metadata, hidden defaults, or throwing callbacks leave
+the last valid composition active.
 
 ### Workspace panels
 
