@@ -24,6 +24,7 @@ import "./StatusBar";
 export class WorkbenchApp extends LitElement {
   @state() private app: AppState = initialAppState();
   @state() private loading = true;
+  @state() private showAgentSessions = false;
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -261,7 +262,17 @@ export class WorkbenchApp extends LitElement {
     return this.app.selectedSession === undefined ? this.renderChooser() : this.renderChat();
   }
 
+  protected override updated(): void {
+    if (this.app.selectedSession !== undefined) return;
+    const project = this.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Project"]');
+    const workspace = this.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]');
+    if (project !== undefined && project !== null) project.value = this.app.selectedProject?.id ?? "";
+    if (workspace !== undefined && workspace !== null) workspace.value = this.app.selectedWorkspace?.id ?? "";
+  }
+
   private renderChooser() {
+    const agentSessionCount = this.app.sessions.filter(isWorkbenchAgentSession).length;
+    const visibleSessions = this.showAgentSessions ? this.app.sessions : this.app.sessions.filter((session) => !isWorkbenchAgentSession(session));
     return html`
       <main class="chooser" data-view="chooser">
         <section>
@@ -275,14 +286,14 @@ export class WorkbenchApp extends LitElement {
             </label>
           ` : null}
           <label>Project
-            <select aria-label="Project" .value=${this.app.selectedProject?.id ?? ""} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseProject(event.target.value); }}>
+            <select aria-label="Project" @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseProject(event.target.value); }}>
               <option value="">Choose a project…</option>
               ${this.app.projects.map((project) => html`<option value=${project.id}>${project.name}</option>`)}
             </select>
           </label>
           <button class="secondary" @click=${() => { this.setApp({ projectDialogOpen: true }); }}>Add project…</button>
           <label>Workspace
-            <select aria-label="Workspace" .value=${this.app.selectedWorkspace?.id ?? ""} ?disabled=${this.app.selectedProject === undefined} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value); }}>
+            <select aria-label="Workspace" ?disabled=${this.app.selectedProject === undefined} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value); }}>
               <option value="">Choose a workspace…</option>
               ${this.app.workspaces.map((workspace) => html`<option value=${workspace.id}>${workspace.label}${workspace.isMain ? " · main" : ""}</option>`)}
             </select>
@@ -292,7 +303,10 @@ export class WorkbenchApp extends LitElement {
           ${this.app.selectedWorkspace === undefined ? null : html`
             <div class="sessions">
               <button class="primary" ?disabled=${this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
-              ${this.app.sessions.map((session) => html`
+              ${agentSessionCount === 0 ? null : html`
+                <label class="agent-filter"><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked; }}> Show agent sessions (${agentSessionCount})</label>
+              `}
+              ${visibleSessions.map((session) => html`
                 <button class="session" @click=${() => { void this.openSession(session); }}>
                   <strong>${sessionTitle(session)}</strong>
                   <small>${session.archived === true ? "Archived · " : ""}${String(session.messageCount)} messages</small>
@@ -314,6 +328,7 @@ export class WorkbenchApp extends LitElement {
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${selectedMachineId(state)} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         <header>
+          <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { this.sessions.deselectSession(); }}>←</button>
           <strong>${sessionTitle(session)}</strong>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
         </header>
@@ -400,15 +415,19 @@ export class WorkbenchApp extends LitElement {
     button:disabled, select:disabled { opacity: .55; cursor: not-allowed; }
     .secondary { justify-self: start; }
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
-    .sessions { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--pi-border); }
-    .session { display: grid; gap: 3px; }
+    .sessions { min-width: 0; display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--pi-border); }
+    .agent-filter { display: flex; align-items: center; gap: 6px; text-transform: none; }
+    .session { min-width: 0; max-width: 100%; display: grid; gap: 3px; overflow: hidden; }
+    .session strong, .session small { min-width: 0; overflow-wrap: anywhere; }
     .session:hover { background: var(--pi-surface-hover); }
     .session small { color: var(--pi-muted); }
     .error, .chat-error { color: var(--pi-danger); }
     .chat-shell { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-    header { flex: 0 0 auto; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
+    header { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
+    .back { flex: 0 0 auto; min-height: 32px; padding: 4px 10px; text-align: center; }
     header strong, header span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    header span { color: var(--pi-muted); font-size: 12px; }
+    header strong { flex: 1 1 auto; }
+    header span { flex: 0 1 auto; color: var(--pi-muted); font-size: 12px; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     prompt-editor, status-bar { flex: 0 0 auto; }
@@ -422,6 +441,10 @@ export class WorkbenchApp extends LitElement {
 
 function completeChatRoute(route: ParsedAppRoute): route is ParsedAppRoute & { projectId: string; workspaceId: string; sessionId: string } {
   return route.projectId !== undefined && route.workspaceId !== undefined && route.sessionId !== undefined;
+}
+
+function isWorkbenchAgentSession(session: SessionInfo): boolean {
+  return /^workbench-(?:coordinator|implementer|planner|reviewer|scout)-[0-9a-f]{8}$/u.test(session.name ?? "");
 }
 
 function sessionTitle(session: SessionInfo): string {
