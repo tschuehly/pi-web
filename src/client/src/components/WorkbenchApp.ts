@@ -419,6 +419,7 @@ export class WorkbenchApp extends LitElement {
     .agent-filter { display: flex; align-items: center; gap: 6px; text-transform: none; }
     .session { min-width: 0; max-width: 100%; display: grid; gap: 3px; overflow: hidden; }
     .session strong, .session small { min-width: 0; overflow-wrap: anywhere; }
+    .session strong { display: -webkit-box; overflow: hidden; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .session:hover { background: var(--pi-surface-hover); }
     .session small { color: var(--pi-muted); }
     .error, .chat-error { color: var(--pi-danger); }
