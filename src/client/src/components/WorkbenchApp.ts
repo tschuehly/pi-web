@@ -8,6 +8,7 @@ import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
 import { machineSessionKey } from "../machineKeys";
+import { nativeDirectoryPicker } from "../nativeHost";
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
@@ -277,6 +278,18 @@ export class WorkbenchApp extends LitElement {
     }, options);
   }
 
+  /** macOS: native folder panel; browsers: the path dialog. */
+  private async chooseProjectFolder(): Promise<void> {
+    const picker = nativeDirectoryPicker(selectedMachineId(this.app));
+    if (picker === undefined) { this.setApp({ projectDialogOpen: true }); return; }
+    try {
+      const path = await picker.pickDirectory();
+      if (path !== null) await this.addProject(path, false);
+    } catch (error) {
+      this.setApp({ error: `Failed to choose project folder: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+
   private async addProject(path: string, create: boolean): Promise<void> {
     try {
       const project = await api.addProject(path, undefined, create, selectedMachineId(this.app));
@@ -356,7 +369,7 @@ export class WorkbenchApp extends LitElement {
             ` : null}
             ${rootProjects(this.app.projects).map((candidate) => html`<button role="tab" aria-selected=${!this.otherTab && project !== undefined && rootProjectOf(project, this.app.projects).id === candidate.id} @click=${() => { this.otherTab = false; void this.chooseProject(candidate.id); }}>${candidate.name}</button>`)}
             <button role="tab" aria-selected=${this.otherTab} @click=${() => { this.otherTab = true; }}>Other</button>
-            <button class="link" @click=${() => { this.setApp({ projectDialogOpen: true }); }}>Add project…</button>
+            <button class="link" @click=${() => { void this.chooseProjectFolder(); }}>Add project…</button>
           </div>
           ${this.otherTab ? html`<workstream-chooser .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
             <div class="new-chat">
