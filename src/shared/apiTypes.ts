@@ -1113,6 +1113,10 @@ export interface ThinkingLevelsResponse {
 
 export type SessionWarningSeverity = "info" | "warning" | "error";
 
+export const EXTENSION_STATUS_LIMIT = 64;
+export const EXTENSION_STATUS_KEY_MAX_LENGTH = 128;
+export const EXTENSION_STATUS_TEXT_MAX_LENGTH = 65_536;
+
 /**
  * A live, runtime-scoped warning surfaced to the browser (skill/resource
  * diagnostics, extension load errors, subscription-auth billing notice, etc.).
@@ -1168,6 +1172,8 @@ export interface SessionStatus {
    * restarts. Several may be open at once; the UI presents them as a queue.
    */
   pendingDialogs?: PendingExtensionDialog[];
+  /** Disposable extension UI status entries owned by the current live runtime. */
+  extensionStatuses?: Record<string, string>;
 }
 
 export interface SlashCommand {

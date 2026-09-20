@@ -233,6 +233,33 @@ describe("PiSessionService.submitAsk", () => {
   });
 });
 
+describe("PiSessionService commands with an open ask", () => {
+  it("runs /mode without voiding the ask, which remains answerable", async () => {
+    const { service, store, fake } = askService({ withActiveSession: true });
+    fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "mode" }];
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, questions });
+
+    await expect(service.runCommand(sessionRef(ACTIVE_SESSION_ID), "/mode alignment plan")).resolves.toEqual({ type: "done" });
+    expect(store.pendingAsk(ACTIVE_SESSION_ID)).toMatchObject({ askId: "ask-1" });
+    await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }] }))
+      .resolves.toMatchObject({ result: "closed", outcome: { reason: "submitted" } });
+    expect(fake.calls.prompt.map((call) => call.text)).toEqual(["/mode alignment plan"]);
+    await service.dispose();
+  });
+
+  it("keeps existing ask-voiding semantics for unrelated conversation commands", async () => {
+    const { service, store, fake } = askService({ withActiveSession: true });
+    fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "discuss" }];
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, questions });
+
+    await service.runCommand(sessionRef(ACTIVE_SESSION_ID), "/discuss alternatives");
+
+    expect(store.pendingAsk(ACTIVE_SESSION_ID)).toBeUndefined();
+    expect(fake.calls.prompt.map((call) => call.text)).toEqual(["/discuss alternatives"]);
+    await service.dispose();
+  });
+});
+
 describe("PiSessionService.prompt with an open ask", () => {
   it("voids the open ask and tells the model without waking it, then sends the message", async () => {
     const { service, store, events, fake } = askService({ withActiveSession: true });

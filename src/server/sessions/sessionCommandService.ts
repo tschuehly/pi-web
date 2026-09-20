@@ -78,7 +78,7 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
 
   constructor(
     private readonly getActive: GetCommandActiveSession<TSession>,
-    private readonly prompt: (sessionId: string, text: string) => Promise<void>,
+    private readonly prompt: (sessionId: string, text: string, options?: { preservePendingAsk?: boolean }) => Promise<void>,
     private readonly events: CommandEventPublisher,
     private readonly lifecycle: SessionCommandLifecycle<TSession> = {},
     private readonly naming: SessionCommandNaming = {},
@@ -98,7 +98,8 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
         // into a skill block) and streams the canonical message back. That is the
         // authoritative feedback, so we don't synthesize an extra "Accepted" line
         // that would only vanish on reload.
-        await this.prompt(sessionId, text);
+        if (name === "mode") await this.prompt(sessionId, text, { preservePendingAsk: true });
+        else await this.prompt(sessionId, text);
         return { type: "done" };
       }
       return { type: "unsupported", message: `Unknown command: /${name}` };

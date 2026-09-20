@@ -399,6 +399,21 @@ function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: W
   }));
 }
 
+describe("Workbench Chat controls", () => {
+  it("mounts the delegate roster and Working Mode controls beside the composer", async () => {
+    const current = session("current", "Build the UI");
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+
+    const shell = app.shadowRoot?.querySelector(".chat-shell");
+    if (shell === null || shell === undefined) throw new Error("Chat shell was not rendered");
+    expect(shell.querySelector("delegate-roster")).not.toBeNull();
+    expect(shell.querySelector("working-mode-controls")).not.toBeNull();
+    expect(shell.querySelector("working-mode-controls")?.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
+  });
+});
+
 async function mountChooser(sessions: SessionInfo[]): Promise<WorkbenchApp> {
   const app = new WorkbenchApp();
   document.body.append(app);

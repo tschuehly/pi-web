@@ -19,9 +19,11 @@ import "./AllSessions";
 import "./AuthDialog";
 import "./ChatView";
 import "./CommandPicker";
+import "./DelegateRoster";
 import "./ProjectDialog";
 import "./PromptEditor";
 import "./StatusBar";
+import "./WorkingModeControls";
 import "./WorkstreamChooser";
 import { appendWorkstream, inspectWorkstream, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamSessionAnchor } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
@@ -624,6 +626,8 @@ export class WorkbenchApp extends LitElement {
           .onDismissAllNotifications=${() => { void this.notifications.dismissAll(); }}
           .onLoadMore=${() => { void this.sessions.loadEarlierMessages(); }}
         ></chat-view>
+        <delegate-roster .status=${state.status}></delegate-roster>
+        <working-mode-controls .status=${state.status} .onRunCommand=${(command: string) => this.sessions.runCommand(command)}></working-mode-controls>
         <prompt-editor
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
@@ -707,7 +711,7 @@ export class WorkbenchApp extends LitElement {
     header span { flex: 0 1 auto; color: var(--pi-muted); font-size: 12px; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-    prompt-editor, status-bar { flex: 0 0 auto; }
+    delegate-roster, working-mode-controls, prompt-editor, status-bar { flex: 0 0 auto; }
     @media (max-width: 600px) {
       .chooser { padding: 16px; }
       .chooser > section { padding: 16px; }

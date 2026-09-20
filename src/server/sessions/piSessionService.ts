@@ -48,7 +48,7 @@ import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachm
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
 import type { PiWebConfigService } from "../configRoutes.js";
 import { parsePromptAttachments } from "../../shared/promptAttachments.js";
-import { ASK_USER_ANSWERS_CUSTOM_TYPE, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_LIMIT } from "../../shared/apiTypes.js";
+import { ASK_USER_ANSWERS_CUSTOM_TYPE, EXTENSION_STATUS_KEY_MAX_LENGTH, EXTENSION_STATUS_LIMIT, EXTENSION_STATUS_TEXT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_LIMIT } from "../../shared/apiTypes.js";
 import type {
   AskUserCloseResponse,
   AskUserOutcome,
@@ -1155,6 +1155,7 @@ export class PiSessionService implements SessionRouteService {
    */
   private readonly startupSessions = new Map<string, PiAgentSession>();
   private readonly activities = new Map<string, { phase: "active" | "idle" | "error"; label: string; detail?: string; at: string }>();
+  private readonly extensionStatuses = new WeakMap<PiAgentSession, Map<string, string>>();
   private readonly heartbeat: NodeJS.Timeout;
   private readonly commandService: SessionCommandService<PiAgentSession>;
   /** Runtime-identity gate held while Pi may await abandoned-branch summarization. */
@@ -1281,7 +1282,7 @@ export class PiSessionService implements SessionRouteService {
     this.heartbeat = setInterval(() => { this.publishHeartbeats(); }, deps.heartbeatIntervalMs ?? 2000);
     this.commandService = new SessionCommandService(
       (sessionId) => this.getActive(this.activeSessionRef(sessionId)),
-      (sessionId, text) => this.prompt(this.activeSessionRef(sessionId), text, undefined, undefined, { echoUserMessage: false }),
+      (sessionId, text, options) => this.prompt(this.activeSessionRef(sessionId), text, undefined, undefined, { echoUserMessage: false, ...(options?.preservePendingAsk === undefined ? {} : { preservePendingAsk: options.preservePendingAsk }) }),
       events,
       {
         onCompactionStart: (session) => {
@@ -2598,7 +2599,7 @@ export class PiSessionService implements SessionRouteService {
     return commands.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async prompt(ref: PiSessionRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { echoUserMessage?: boolean }): Promise<void> {
+  async prompt(ref: PiSessionRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { echoUserMessage?: boolean; preservePendingAsk?: boolean }): Promise<void> {
     const promptText = requirePromptText(text);
     // Command-forwarded prompts (e.g. /skill:*) are expanded by the agent, which
     // streams the canonical message back. The client doesn't render the raw
@@ -2623,7 +2624,7 @@ export class PiSessionService implements SessionRouteService {
     // the form is void: keeping it open would invite answers to questions the
     // conversation has already moved past. Ignored duplicates skip this on
     // purpose: they must not void an ask posted after the queued original.
-    await this.voidOpenAskForUserMessage(session);
+    if (options?.preservePendingAsk !== true) await this.voidOpenAskForUserMessage(session);
     if (session.isCompacting) {
       this.enqueuePromptDuringCompaction(session, promptText, behavior ?? "followUp", images, echoUserMessage);
       return;
@@ -3900,14 +3901,26 @@ export class PiSessionService implements SessionRouteService {
       const added = this.notificationStore.addNotification(generation, message, type);
       this.publishNotificationMutations(added.mutations);
     };
-    // PI WEB owns the browser-facing dialog, notification, and text-formatting
-    // boundaries: the three dialog primitives park daemon-held Promises that
-    // the browser answers, while every other UI method delegates to Pi's
-    // headless defaults so unsupported surfaces cancel safely instead of
-    // hanging.
+    const setStatus: ExtensionUIContext["setStatus"] = (key, text) => {
+      if (typeof key !== "string" || key.length === 0 || key.length > EXTENSION_STATUS_KEY_MAX_LENGTH) return;
+      if (text !== undefined && (typeof text !== "string" || text.length > EXTENSION_STATUS_TEXT_MAX_LENGTH)) return;
+      const statuses = this.extensionStatuses.get(session) ?? new Map<string, string>();
+      if (text === undefined) {
+        if (!statuses.delete(key)) return;
+      } else {
+        if ((!statuses.has(key) && statuses.size >= EXTENSION_STATUS_LIMIT) || statuses.get(key) === text) return;
+        statuses.set(key, text);
+      }
+      if (statuses.size === 0) this.extensionStatuses.delete(session);
+      else this.extensionStatuses.set(session, statuses);
+      if (this.isCurrentActiveSession(session) || this.startupSessions.get(session.sessionId) === session) this.publishStatus(session);
+    };
+    // PI WEB owns the browser-facing dialog, notification, status, and text-formatting
+    // boundaries. Every other UI method delegates to Pi's headless defaults.
     return new Proxy(baseUiContext, {
       get: (target, property, receiver): unknown => {
         if (property === "notify") return notify;
+        if (property === "setStatus") return setStatus;
         if (property === "theme") return plainTextTheme;
         if (property === "confirm") {
           return (title: string, message: string, opts?: ExtensionUIDialogOptions) =>
@@ -4551,6 +4564,7 @@ export class PiSessionService implements SessionRouteService {
     const warnings = this.warningsForSession(session);
     const pendingAsk = this.pendingAskStore.pendingAsk(session.sessionId);
     const pendingDialogs = this.pendingExtensionDialogStore.pendingDialogs(session.sessionId);
+    const extensionStatuses = this.extensionStatuses.get(session);
     return {
       sessionId: session.sessionId,
       persisted: sessionFileExists(session.sessionFile),
@@ -4568,6 +4582,7 @@ export class PiSessionService implements SessionRouteService {
       ...(warnings.length === 0 ? {} : { warnings }),
       ...(pendingAsk === undefined ? {} : { pendingAsk }),
       ...(pendingDialogs.length === 0 ? {} : { pendingDialogs }),
+      ...(extensionStatuses === undefined || extensionStatuses.size === 0 ? {} : { extensionStatuses: Object.fromEntries(extensionStatuses) }),
     };
   }
 

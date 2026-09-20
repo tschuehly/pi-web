@@ -594,6 +594,7 @@ describe("API parsers", () => {
       model: { provider: "p", id: "m", contextWindow: 100, reasoning: { effort: "low" } },
       contextUsage: { tokens: null, contextWindow: 100, percent: 0.5 },
       thinkingLevel: "medium",
+      extensionStatuses: { "working-mode": "{\"schemaVersion\":1}" },
     })).toEqual({
       sessionId: "s1",
       persisted: true,
@@ -608,7 +609,19 @@ describe("API parsers", () => {
       model: { provider: "p", id: "m", contextWindow: 100, reasoning: { effort: "low" } },
       contextUsage: { tokens: null, contextWindow: 100, percent: 0.5 },
       thinkingLevel: "medium",
+      extensionStatuses: { "working-mode": "{\"schemaVersion\":1}" },
     });
+  });
+
+  it("rejects malformed or unbounded extension statuses", () => {
+    const base = {
+      sessionId: "s1", isStreaming: false, isCompacting: false, isBashRunning: false,
+      pendingMessageCount: 0, queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+    };
+    expect(() => parseSessionStatus({ ...base, extensionStatuses: [] })).toThrow("Expected extensionStatuses object");
+    expect(() => parseSessionStatus({ ...base, extensionStatuses: { ["x".repeat(129)]: "value" } })).toThrow("Invalid extension status key");
+    expect(() => parseSessionStatus({ ...base, extensionStatuses: { key: "x".repeat(65_537) } })).toThrow("Invalid extension status text");
   });
 
   it("parses live session warnings including optional source and path", () => {
