@@ -157,7 +157,10 @@ export class WorkstreamChooser extends LitElement {
   }
 
   static override styles = css`
-    :host { display: grid; gap: 10px; }
+    :host { display: grid; gap: 10px; min-width: 0; max-width: 100%; }
+    * { box-sizing: border-box; min-width: 0; }
+    .card p, .card li, .goal, .next p, .warn { overflow-wrap: anywhere; }
+    .row { width: 100%; }
     h2 { margin: 0; font-size: 16px; }
     p { margin: 0; line-height: 1.45; }
     .list { display: grid; gap: 6px; }
