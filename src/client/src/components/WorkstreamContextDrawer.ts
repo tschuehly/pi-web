@@ -18,19 +18,21 @@ export class WorkstreamContextDrawer extends LitElement {
       <details>
         <summary><span>Workstream</span><strong>${this.snapshot.title}</strong></summary>
         <div class="sheet">
-          <section>
+          <section class="row goal-row">
             <span class="label">Goal</span>
             <p class="goal">${overview?.goal ?? "No Workstream overview has been written."}</p>
           </section>
-          <section class="about">
-            <div>
-              <span class="label">About</span>
-              <p>${overview?.description ?? "This Workstream has no stored description yet."}</p>
-            </div>
-            <div class="facts">
-              <div><span class="label">Done when</span><p>${overview?.doneWhen ?? "No completion condition recorded."}</p></div>
-              <div class="next"><span class="label">Do next</span><p>${checkpoint?.next ?? "No next action recorded."}</p></div>
-            </div>
+          <section class="row about">
+            <span class="label">About</span>
+            <p>${overview?.description ?? "This Workstream has no stored description yet."}</p>
+          </section>
+          <section class="row">
+            <span class="label">Done when</span>
+            <p>${overview?.doneWhen ?? "No completion condition recorded."}</p>
+          </section>
+          <section class="row next">
+            <span class="label">Do next</span>
+            <p>${checkpoint?.next ?? "No next action recorded."}</p>
           </section>
         </div>
       </details>
@@ -49,19 +51,18 @@ export class WorkstreamContextDrawer extends LitElement {
     summary span { flex: 0 0 auto; color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
     summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tab { color: var(--pi-muted); font-size: 12px; }
-    .sheet { position: absolute; top: 24px; left: 0; right: 0; max-height: min(60vh, 520px); overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 20px; padding: 22px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
-    section, .about, .facts { display: grid; gap: 12px; align-content: start; }
-    .label { display: block; margin-bottom: 4px; color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+    .sheet { position: absolute; top: 24px; left: 0; right: 0; max-height: min(60vh, 520px); overflow: auto; display: grid; padding: 14px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
+    .row { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 16px; align-items: baseline; padding: 11px 0; border-bottom: 1px solid var(--pi-border-muted); }
+    .row:last-child { border-bottom: 0; }
+    .label { color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
     p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
-    .goal { font-size: 20px; font-weight: 750; line-height: 1.35; }
-    .about > div:first-child > p { color: var(--pi-muted); }
-    .facts { grid-template-columns: 1fr 1fr; gap: 14px; }
-    .facts > div { padding: 12px; border: 1px solid var(--pi-border); border-radius: 9px; background: var(--pi-bg); }
-    .facts .next { border-color: var(--pi-success-border); background: var(--pi-success-bg); }
-    @media (max-width: 700px) {
-      .sheet, .facts { grid-template-columns: 1fr; }
-      .sheet { gap: 14px; padding: 18px 16px; }
-      .goal { font-size: 17px; }
+    .goal { width: 100%; font-size: 18px; font-weight: 750; line-height: 1.35; }
+    .about p { color: var(--pi-muted); }
+    .next { margin-top: 4px; padding-inline: 12px; border: 1px solid var(--pi-success-border); border-radius: 9px; background: var(--pi-success-bg); }
+    @media (max-width: 520px) {
+      .sheet { padding: 12px 16px; }
+      .row { grid-template-columns: 1fr; gap: 4px; }
+      .goal { font-size: 16px; }
     }
   `;
 }
