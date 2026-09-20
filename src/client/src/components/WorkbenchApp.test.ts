@@ -95,7 +95,7 @@ function session(id: string, firstMessage: string, name?: string): SessionInfo {
 
 const machine: Machine = { id: "local", name: "Local", kind: "local", createdAt: "2026-08-31T00:00:00.000Z", updatedAt: "2026-08-31T00:00:00.000Z" };
 const project: Project = { id: "project", name: "Project", path: "/repo", createdAt: "2026-08-31T00:00:00.000Z" };
-const workspace: Workspace = { id: "workspace", projectId: project.id, path: "/repo", label: "main", branch: "main", isMain: true, isGitRepo: true, isGitWorktree: false, effectiveConfig: {} };
+const workspace: Workspace = { id: "workspace", projectId: project.id, path: "/repo", label: "main", isMain: true, effectiveConfig: {} };
 
 class SilentWebSocket {
   static readonly CONNECTING = 0;

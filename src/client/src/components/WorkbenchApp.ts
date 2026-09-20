@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
-import { api, type AskUserSubmission, type ExtensionDialogAnswer, type PromptAttachment, type SessionInfo } from "../api";
+import { api, type AskUserSubmission, type ExtensionDialogAnswer, type PromptAttachment, type SessionInfo, type Workspace } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { initialAppState, type AppState } from "../appState";
 import { AuthController } from "../controllers/authController";
@@ -19,6 +19,8 @@ import "./CommandPicker";
 import "./ProjectDialog";
 import "./PromptEditor";
 import "./StatusBar";
+import "./WorkstreamChooser";
+import type { OpenWorkstreamSessionDetail } from "./WorkstreamChooser";
 
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
@@ -185,6 +187,25 @@ export class WorkbenchApp extends LitElement {
     this.promptEditor?.focusInput();
   }
 
+  /** Open the session that wrote a Workstream's newest checkpoint, wherever it lives. */
+  private async openWorkstreamSession(detail: OpenWorkstreamSessionDetail): Promise<void> {
+    const machineId = selectedMachineId(this.app);
+    this.setApp({ error: "" });
+    try {
+      const { cwd } = await api.locate(detail.sessionId, machineId);
+      const sessions = await api.sessions(cwd, machineId);
+      const session = sessions.find((entry) => entry.id === detail.sessionId);
+      if (session === undefined) throw new Error(`Session ${detail.sessionId} is not listed under ${cwd}.`);
+      const project = this.app.projects.find((candidate) => cwd === candidate.path || cwd.startsWith(`${candidate.path}/`));
+      const workspaces = project === undefined ? [] : await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
+      const workspace = workspaces.find((candidate) => candidate.path === cwd);
+      this.setApp({ selectedProject: project, selectedWorkspace: workspace, workspaces, sessions });
+      await this.openSession(session);
+    } catch (error) {
+      this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Choose its workspace below and start a new Chat with the copied prompt.` });
+    }
+  }
+
   private async startSession(): Promise<void> {
     await this.sessions.startSession();
     await this.updateComplete;
@@ -276,8 +297,9 @@ export class WorkbenchApp extends LitElement {
     return html`
       <main class="chooser" data-view="chooser">
         <section>
+          <workstream-chooser @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>
           <h1>Choose a Chat</h1>
-          <p>Select a workspace, then open an existing session or start a new one.</p>
+          <p>Or select a workspace, then open an existing session or start a new one.</p>
           ${this.app.machines.length > 1 ? html`
             <label>Machine
               <select aria-label="Machine" .value=${selectedMachineId(this.app)} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseMachine(event.target.value); }}>

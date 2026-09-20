@@ -65,6 +65,16 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
+  app.get<{ Params: { sessionId: string } }>(`${prefix}/sessions/locate/:sessionId`, async (request, reply) => {
+    try {
+      const located = await sessions.locate(request.params.sessionId);
+      if (located === undefined) return await reply.code(404).send({ error: `Session ${request.params.sessionId} was not found` });
+      return located;
+    } catch (error) {
+      return reply.code(400).send({ error: errorMessage(error) });
+    }
+  });
+
   app.get(`${prefix}/sessions/unread`, async (_request, reply) => {
     try {
       return await sessions.unreadCatalog();

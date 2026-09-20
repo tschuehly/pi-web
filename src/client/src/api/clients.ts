@@ -41,6 +41,7 @@ import {
   parseSessionBulkDeleteArchivedResponse,
   parseSessionCleanupExecuteResponse,
   parseSessionCleanupPreviewResponse,
+  parseLocatedSession,
   parseSessionInfo,
   parseSessionNotificationInboxSnapshot,
   parseServerNoticeSnapshot,
@@ -233,6 +234,7 @@ export const sessionsApi = {
     arrayOf(parseSessionInfo),
     options?.signal === undefined ? undefined : { signal: options.signal },
   ),
+  locate: (sessionId: string, machineId = "local"): Promise<{ cwd: string }> => request(`${machinePrefix(machineId)}/sessions/locate/${encodeURIComponent(sessionId)}`, parseLocatedSession),
   unreadCatalog: (machineId = "local") => request(`${machinePrefix(machineId)}/sessions/unread`, parseSessionUnreadCatalogSnapshot, { cache: "no-store" }),
   acknowledgeUnread: (session: SessionRef, catalogId: string, throughCompletionOrder: number, machineId = "local") => {
     const body: SessionUnreadAcknowledgeRequest = { cwd: session.cwd, catalogId, throughCompletionOrder };

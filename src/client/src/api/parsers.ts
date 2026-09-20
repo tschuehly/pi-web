@@ -264,6 +264,10 @@ function requireWorkspaceEffectiveConfig(value: unknown): WorkspaceEffectiveConf
   });
 }
 
+export function parseLocatedSession(value: unknown): { cwd: string } {
+  return { cwd: requireString(requireRecord(value), "cwd") };
+}
+
 export function parseSessionInfo(value: unknown): SessionInfo {
   const record = requireRecord(value);
   const name = optionalString(record, "name");

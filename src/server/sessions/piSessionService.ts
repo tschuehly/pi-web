@@ -3295,6 +3295,12 @@ export class PiSessionService implements SessionRouteService {
     return [...sessionIds];
   }
 
+  /** Find the working directory of a persisted session by id, across every project. */
+  async locate(sessionId: string): Promise<{ cwd: string } | undefined> {
+    const session = findSessionByIdOrPrefix(await this.sessionManager.listAll(), sessionId);
+    return session === undefined ? undefined : { cwd: session.cwd };
+  }
+
   private async cleanupPlan(request: NormalizedSessionCleanupRequest) {
     const [sessions, archivedRecords] = await Promise.all([this.sessionManager.listAll(), this.archiveStore.list()]);
     return planSessionCleanup({

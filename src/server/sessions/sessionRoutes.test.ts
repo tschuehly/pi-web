@@ -82,6 +82,23 @@ describe("session routes", () => {
     }
   });
 
+  it("locates a persisted session's working directory by id across projects", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    routeService.locatedSessions["session-1"] = resolve("/repo");
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    try {
+      const found = await routeApp.inject({ method: "GET", url: "/sessions/locate/session-1" });
+      const missing = await routeApp.inject({ method: "GET", url: "/sessions/locate/session-2" });
+      expect(found.statusCode).toBe(200);
+      expect(found.json()).toEqual({ cwd: resolve("/repo") });
+      expect(missing.statusCode).toBe(404);
+    } finally {
+      await routeApp.close();
+    }
+  });
+
   it("returns unread snapshots and validates race-safe acknowledgement cutoffs", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1333,6 +1350,13 @@ class CapturingRouteSessionService implements SessionRouteService {
 
   notificationCatalog() {
     return { daemonInstanceId: "daemon-test", catalogRevision: 0, sessions: [] };
+  }
+
+  locatedSessions: Record<string, string> = {};
+
+  locate(sessionId: string): Promise<{ cwd: string } | undefined> {
+    const cwd = this.locatedSessions[sessionId];
+    return Promise.resolve(cwd === undefined ? undefined : { cwd });
   }
 
   unreadCatalog(): Promise<SessionUnreadCatalogSnapshot> {
