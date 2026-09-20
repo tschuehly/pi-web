@@ -49,8 +49,23 @@ describe("Workbench Chat chooser", () => {
     expect(first?.textContent).toBe("New Chat");
     expect(first?.disabled).toBe(false);
     expect(app.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]')?.value).toBe(workspace.id);
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[role="tab"]:nth-child(2)')?.click();
+    await app.updateComplete;
     expect(sessionTitles(app)).toEqual(["Plan the release"]);
     localStorage.removeItem("pi-workbench.last-workspace");
+  });
+
+  it("keeps a fresh unlisted Chat open across a reload by rebuilding it from status", async () => {
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "sessions").mockResolvedValue([]);
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "fresh", persisted: false, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    window.history.replaceState({}, "", `/?project=${project.id}&workspace=${workspace.id}&session=fresh&view=chat`);
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    expect(getState(app).error).not.toContain("no longer available");
+    expect(getState(app).selectedSession?.id).toBe("fresh");
   });
 
   it("returns from a Chat to the current workspace chooser", async () => {
@@ -85,6 +100,8 @@ async function mountChooser(sessions: SessionInfo[]): Promise<WorkbenchApp> {
     selectedWorkspace: workspace,
     sessions,
   });
+  await app.updateComplete;
+  app.shadowRoot?.querySelector<HTMLButtonElement>('button[role="tab"]:nth-child(2)')?.click();
   await app.updateComplete;
   return app;
 }

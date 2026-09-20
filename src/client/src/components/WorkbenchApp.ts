@@ -27,6 +27,7 @@ export class WorkbenchApp extends LitElement {
   @state() private app: AppState = initialAppState();
   @state() private loading = true;
   @state() private showAgentSessions = false;
+  @state() private chooserTab: "workstreams" | "sessions" = "workstreams";
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -108,7 +109,7 @@ export class WorkbenchApp extends LitElement {
       if (workspace === undefined) throw new Error("The selected workspace is no longer available.");
       const sessions = await api.sessions(workspace.path, machine.id);
       if (sequence !== this.loadSequence) return;
-      const session = sessions.find((candidate) => candidate.id === route.sessionId);
+      const session = sessions.find((candidate) => candidate.id === route.sessionId) ?? await this.unlistedSession(route.sessionId, workspace.path, machine.id);
       if (session === undefined) throw new Error("The selected session is no longer available.");
       this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions });
       await this.sessions.selectSession(session, { updateUrl: false });
@@ -148,6 +149,14 @@ export class WorkbenchApp extends LitElement {
     const sessions = await api.sessions(workspace.path, machineId).catch((): SessionInfo[] => []);
     if (sequence !== this.loadSequence) return;
     this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions });
+  }
+
+  /** A Chat with no user message yet is not listed, but the daemon still serves it; rebuild it from status so a reload keeps it open. */
+  private async unlistedSession(id: string, cwd: string, machineId: string): Promise<SessionInfo | undefined> {
+    const status = await api.status({ id, cwd }, machineId).catch(() => undefined);
+    if (status === undefined) return undefined;
+    const now = new Date().toISOString();
+    return { id, cwd, path: "", persisted: status.persisted ?? false, created: now, modified: now, messageCount: 0, firstMessage: "" };
   }
 
   private connectRealtime(): void {
@@ -351,11 +360,14 @@ export class WorkbenchApp extends LitElement {
             <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
             <button class="secondary" @click=${() => { this.setApp({ projectDialogOpen: true }); }}>Add project…</button>
           </div>
-          <workstream-chooser @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>
-          <h2>Sessions in this workspace</h2>
+          <div class="tabs" role="tablist">
+            <button role="tab" aria-selected=${this.chooserTab === "workstreams"} @click=${() => { this.chooserTab = "workstreams"; }}>Workstreams</button>
+            <button role="tab" aria-selected=${this.chooserTab === "sessions"} @click=${() => { this.chooserTab = "sessions"; }}>Sessions${this.app.selectedWorkspace === undefined ? "" : ` · ${this.app.selectedWorkspace.branch ?? this.app.selectedWorkspace.label}`}</button>
+          </div>
+          ${this.chooserTab === "workstreams" ? html`<workstream-chooser @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>` : null}
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
-          ${this.app.selectedWorkspace === undefined ? null : html`
+          ${this.chooserTab !== "sessions" ? null : this.app.selectedWorkspace === undefined ? html`<p>Choose a workspace above to see its sessions.</p>` : html`
             <div class="sessions">
               ${agentSessionCount === 0 ? null : html`
                 <label class="agent-filter"><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked; }}> Show agent sessions (${agentSessionCount})</label>
@@ -471,9 +483,11 @@ export class WorkbenchApp extends LitElement {
     .workspace-row { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
     .workspace-row label { flex: 1 1 160px; }
     .workspace-row .secondary { justify-self: auto; }
-    h2 { margin: 0; font-size: 16px; }
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--pi-border); }
+    .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; font-weight: 700; color: var(--pi-muted); }
+    .tabs button[aria-selected="true"] { color: var(--pi-text); border-bottom-color: var(--pi-accent); }
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
-    .sessions { min-width: 0; display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--pi-border); }
+    .sessions { min-width: 0; display: grid; gap: 8px; }
     .agent-filter { display: flex; align-items: center; gap: 6px; text-transform: none; }
     .session { min-width: 0; max-width: 100%; display: grid; gap: 3px; overflow: hidden; }
     .session strong, .session small { min-width: 0; overflow-wrap: anywhere; }
