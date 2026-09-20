@@ -25,7 +25,8 @@ import "./PromptEditor";
 import "./StatusBar";
 import "./WorkingModeControls";
 import "./WorkstreamChooser";
-import { appendWorkstream, inspectWorkstream, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamSessionAnchor } from "./WorkstreamChooser";
+import "./WorkstreamContextDrawer";
+import { appendWorkstream, inspectWorkstream, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
@@ -46,11 +47,14 @@ export class WorkbenchApp extends LitElement {
   @state() private showAgentSessions = false;
   @state() private showAllSessions = false;
   @state() private chooserView: "project" | "other" | "all" = "project";
+  @state() private currentWorkstream: WorkstreamSnapshot | null | undefined;
+  @state() private currentWorkstreamError = "";
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
   private loadSequence = 0;
   private modelDialogInstanceId = 0;
+  private workstreamLoadSequence = 0;
 
   private readonly desktopNotifications = new DesktopNotificationController(
     browserDesktopNotifications(),
@@ -69,7 +73,10 @@ export class WorkbenchApp extends LitElement {
     undefined,
     {
       notifications: this.notifications,
-      onSelectedSessionReady: () => { this.desktopNotifications.activate(this.app); },
+      onSelectedSessionReady: () => {
+        this.desktopNotifications.activate(this.app);
+        void this.loadCurrentWorkstream();
+      },
       onSessionError: (message, eventId) => { this.desktopNotifications.sessionError(this.app, message, eventId); },
       replacePromptEditorText: async ({ machineId, sessionId, text, mode }) => {
         await this.updateComplete;
@@ -387,8 +394,26 @@ export class WorkbenchApp extends LitElement {
         payload: { sessionId: session.id, associationKey, ...anchor },
       };
       await appendWorkstream({ workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:confirmed`, records: [record] });
+      await this.loadCurrentWorkstream();
     } catch (error) {
       this.setApp({ error: `Chat ${session.id} was created, but PI WEB could not record its Workstream confirmation. ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+
+  private async loadCurrentWorkstream(): Promise<void> {
+    const sessionId = this.app.selectedSession?.id;
+    const sequence = ++this.workstreamLoadSequence;
+    this.currentWorkstream = undefined;
+    this.currentWorkstreamError = "";
+    if (sessionId === undefined) return;
+    try {
+      const snapshot = await workstreamForSession(sessionId);
+      if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) this.currentWorkstream = snapshot;
+    } catch (error) {
+      if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) {
+        this.currentWorkstream = null;
+        this.currentWorkstreamError = error instanceof Error ? error.message : String(error);
+      }
     }
   }
 
@@ -594,6 +619,7 @@ export class WorkbenchApp extends LitElement {
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
           ${this.renderDesktopNotificationButton()}
         </header>
+        <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError}></workstream-context-drawer>
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
         <chat-view
           .sessionId=${session.id}
@@ -711,7 +737,7 @@ export class WorkbenchApp extends LitElement {
     header span { flex: 0 1 auto; color: var(--pi-muted); font-size: 12px; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-    delegate-roster, working-mode-controls, prompt-editor, status-bar { flex: 0 0 auto; }
+    workstream-context-drawer, delegate-roster, working-mode-controls, prompt-editor, status-bar { flex: 0 0 auto; }
     @media (max-width: 600px) {
       .chooser { padding: 16px; }
       .chooser > section { padding: 16px; }

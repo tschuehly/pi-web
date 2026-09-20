@@ -28,7 +28,8 @@ export interface WorkstreamSnapshot {
   links: { id: string; kind: string; reference: string; label?: string }[];
   overview: WorkstreamOverview | null;
 }
-interface WorkstreamSummary { id: string; title: string; group: string | null; createdAt: string; updatedAt: string; lastCheckpointAt: string | null; unresolvedHumanTaskCount: number }
+export interface WorkstreamSummary { id: string; title: string; group: string | null; createdAt: string; updatedAt: string; lastCheckpointAt: string | null; unresolvedHumanTaskCount: number }
+export interface WorkstreamListQuery { includeClosed?: boolean; sessionId?: string }
 
 export interface OpenWorkstreamSessionDetail {
   workstreamId: string;
@@ -64,8 +65,16 @@ function service<T>(operation: string, input: unknown, check: (value: unknown) =
 const isSummaryList = (value: unknown): value is WorkstreamSummary[] => Array.isArray(value);
 const isSnapshot = (value: unknown): value is WorkstreamSnapshot => isRecord(value) && Array.isArray(value["sessions"]) && Array.isArray(value["humanTasks"]);
 const isReceipt = (value: unknown): value is { acceptedRevision: number } => isRecord(value) && Number.isInteger(value["acceptedRevision"]);
+export const listWorkstreams = (query: WorkstreamListQuery = {}): Promise<WorkstreamSummary[]> => service("list", query, isSummaryList);
 export const inspectWorkstream = (workstreamId: string): Promise<WorkstreamSnapshot> => service("inspect", { workstreamId }, isSnapshot);
 export const appendWorkstream = (input: WorkstreamAppendInput): Promise<{ acceptedRevision: number }> => service("append", input, isReceipt);
+export async function workstreamForSession(sessionId: string): Promise<WorkstreamSnapshot | null> {
+  const matches = await listWorkstreams({ sessionId, includeClosed: true });
+  if (matches.length === 0) return null;
+  if (matches.length > 1) throw new Error(`Session ${sessionId} has more than one Workstream association.`);
+  const match = matches[0];
+  return match === undefined ? null : inspectWorkstream(match.id);
+}
 const newId = (prefix: string): string => {
   const crypto: unknown = Reflect.get(globalThis, "crypto");
   const randomUUID: unknown = isRecord(crypto) ? Reflect.get(crypto, "randomUUID") : undefined;
@@ -160,7 +169,7 @@ export class WorkstreamChooser extends LitElement {
 
   private async load(): Promise<void> {
     try {
-      const list = await service("list", {}, isSummaryList);
+      const list = await listWorkstreams();
       this.summaries = this.sortedSummaries(list);
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -210,7 +219,7 @@ export class WorkstreamChooser extends LitElement {
     try {
       const [selected, list] = await Promise.all([
         inspectWorkstream(snapshot.id),
-        service("list", {}, isSummaryList),
+        listWorkstreams(),
       ]);
       if (this.selected?.id === snapshot.id) {
         this.selected = selected;
