@@ -54,6 +54,37 @@ describe("PromptEditor draft replacement", () => {
     expect(transaction["selection"]["head"]).toBe(4);
   });
 
+  it("routes plain Enter to steering and Command/Ctrl+Enter to a follow-up while a response is active", () => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn();
+    editor.canSteer = true;
+    editor.onSend = onSend;
+    const handleEditorKeyDown: unknown = Reflect.get(editor, "handleEditorKeyDown");
+    if (!isEditorKeyDownHandler(handleEditorKeyDown)) throw new Error("Expected PromptEditor keydown handler");
+
+    Reflect.set(editor, "draft", "Adjust the implementation");
+    expect(handleEditorKeyDown.call(editor, enterEvent(), { composing: false })).toBe(true);
+    expect(onSend).toHaveBeenLastCalledWith("Adjust the implementation", "steer", undefined, undefined, undefined);
+
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+      Reflect.set(editor, "draft", "Then summarize");
+      expect(handleEditorKeyDown.call(editor, enterEvent(modifier), { composing: false })).toBe(true);
+      expect(onSend).toHaveBeenLastCalledWith("Then summarize", "followUp", undefined, undefined, undefined);
+    }
+  });
+
+  it("prepends restored text to an existing durable draft with a blank-line separator", () => {
+    const editor = new PromptEditor();
+    editor.machineId = "local";
+    editor.sessionId = "session-2";
+    Reflect.set(editor, "draft", "Unsent draft");
+
+    editor.prependText("First queued\n\nSecond queued");
+
+    expect(Reflect.get(editor, "draft")).toBe("First queued\n\nSecond queued\n\nUnsent draft");
+    expect(loadDraft(machineSessionKey("local", "session-2"))).toBe("First queued\n\nSecond queued\n\nUnsent draft");
+  });
+
   it("clears an existing durable draft and CodeMirror document", () => {
     const editor = new PromptEditor();
     editor.machineId = "local";
@@ -78,6 +109,14 @@ describe("PromptEditor draft replacement", () => {
     expect(Reflect.get(editor, "currentInputMode")).toEqual({ kind: "normal" });
   });
 });
+
+function enterEvent(overrides: Partial<KeyboardEvent> = {}): Partial<KeyboardEvent> {
+  return { key: "Enter", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, defaultPrevented: false, isComposing: false, ...overrides };
+}
+
+function isEditorKeyDownHandler(value: unknown): value is (event: Partial<KeyboardEvent>, view: { composing: boolean }) => boolean {
+  return typeof value === "function";
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

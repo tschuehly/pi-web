@@ -248,6 +248,141 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     await service.dispose();
   });
 
+  it("promotes a browser-queued image without exposing a partial rebuilt queue", async () => {
+    const steeringMessages: string[] = [];
+    const followUpMessages: string[] = [];
+    const operations: string[] = [];
+    const releases: (() => void)[] = [];
+    const requeuedImages: unknown[] = [];
+    const fake = fakeRuntime("promote-one-session", {
+      isStreaming: true,
+      getSteeringMessages: () => steeringMessages,
+      getFollowUpMessages: () => followUpMessages,
+    });
+    fake.session.prompt = (text, options) => {
+      fake.calls.prompt.push({ text, options });
+      (options?.streamingBehavior === "steer" ? steeringMessages : followUpMessages).push(text);
+      return Promise.resolve();
+    };
+    fake.session.clearQueue = () => {
+      operations.push("clear");
+      const cleared = { steering: [...steeringMessages], followUp: [...followUpMessages] };
+      steeringMessages.length = 0;
+      followUpMessages.length = 0;
+      return cleared;
+    };
+    fake.session.steer = (text, images) => {
+      operations.push(`steer:${text}`);
+      steeringMessages.push(text);
+      requeuedImages.push(images);
+      return new Promise<void>((resolve) => { releases.push(resolve); });
+    };
+    fake.session.followUp = (text, images) => {
+      operations.push(`followUp:${text}`);
+      followUpMessages.push(text);
+      requeuedImages.push(images);
+      return new Promise<void>((resolve) => { releases.push(resolve); });
+    };
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("promote-one-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+    const imageAttachment = { kind: "image", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", name: "pixel.png" };
+    await service.prompt(sessionRef("promote-one-session"), "existing steer", "steer");
+    await service.prompt(sessionRef("promote-one-session"), "promote me", "followUp", [imageAttachment]);
+    await service.prompt(sessionRef("promote-one-session"), "keep later", "followUp");
+    const originalOptions = fake.calls.prompt[1]?.options;
+    if (typeof originalOptions !== "object" || originalOptions === null) throw new Error("queued image options missing");
+    const originalImages: unknown = Reflect.get(originalOptions, "images");
+
+    const promotion = service.promoteQueuedMessage(sessionRef("promote-one-session"), { kind: "followUp", text: "promote me" });
+    await vi.waitFor(() => { expect(operations).toHaveLength(4); });
+
+    expect(operations).toEqual(["clear", "steer:promote me", "steer:existing steer", "followUp:keep later"]);
+    expect(steeringMessages).toEqual(["promote me", "existing steer"]);
+    expect(followUpMessages).toEqual(["keep later"]);
+    expect(requeuedImages[0]).toEqual(originalImages);
+    releases.forEach((release) => { release(); });
+    await expect(promotion).resolves.toMatchObject({
+      queuedMessages: [
+        { kind: "steer", text: "promote me" },
+        { kind: "steer", text: "existing steer" },
+        { kind: "followUp", text: "keep later" },
+      ],
+    });
+    await service.dispose();
+  });
+
+  it("promotes ordinary browser-queued text with the public steering API", async () => {
+    const steeringMessages: string[] = [];
+    const followUpMessages: string[] = [];
+    const fake = fakeRuntime("promote-all-session", {
+      isStreaming: true,
+      getSteeringMessages: () => steeringMessages,
+      getFollowUpMessages: () => followUpMessages,
+    });
+    fake.session.prompt = (text, options) => {
+      (options?.streamingBehavior === "steer" ? steeringMessages : followUpMessages).push(text);
+      return Promise.resolve();
+    };
+    fake.session.clearQueue = () => {
+      const cleared = { steering: [...steeringMessages], followUp: [...followUpMessages] };
+      steeringMessages.length = 0;
+      followUpMessages.length = 0;
+      return cleared;
+    };
+    fake.session.steer = (text, images) => {
+      fake.calls.steer.push({ text, images });
+      steeringMessages.push(text);
+      return Promise.resolve();
+    };
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("promote-all-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+    await service.prompt(sessionRef("promote-all-session"), "steer one", "steer");
+    await service.prompt(sessionRef("promote-all-session"), "follow one", "followUp");
+    await service.prompt(sessionRef("promote-all-session"), "follow two", "followUp");
+
+    const status = await service.promoteAllQueuedMessages(sessionRef("promote-all-session"));
+
+    expect(fake.calls.steer.map(({ text }) => text)).toEqual(["steer one", "follow one", "follow two"]);
+    expect(status.queuedMessages).toEqual([
+      { kind: "steer", text: "steer one" },
+      { kind: "steer", text: "follow one" },
+      { kind: "steer", text: "follow two" },
+    ]);
+    await service.dispose();
+  });
+
+  it("rejects unknown runtime queue provenance before clearing anything", async () => {
+    const fake = fakeRuntime("unknown-promotion-session", {
+      isStreaming: true,
+      getSteeringMessages: () => ["outside PI WEB"],
+      getFollowUpMessages: () => ["keep me"],
+    });
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("unknown-promotion-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+
+    await expect(service.promoteAllQueuedMessages(sessionRef("unknown-promotion-session"))).rejects.toThrow("promotion was not applied");
+
+    expect(fake.calls.clearQueue).toBe(0);
+    expect(fake.calls.steer).toEqual([]);
+    expect(fake.calls.followUp).toEqual([]);
+    await service.dispose();
+  });
+
   it("clears runtime and compaction queues without interrupting active work", async () => {
     const steeringMessages = ["adjust this turn"];
     const followUpMessages = ["then do this"];

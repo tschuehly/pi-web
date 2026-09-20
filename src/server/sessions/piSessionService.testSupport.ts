@@ -137,11 +137,13 @@ export function testModel(): NonNullable<PiAgentSession["model"]> {
 
 export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession> = {}) {
   const promptCalls: { text: string; options: unknown }[] = [];
+  const steerCalls: { text: string; images: unknown }[] = [];
+  const followUpCalls: { text: string; images: unknown }[] = [];
   const customMessageCalls: { message: { customType: string; content: string; display: boolean; details?: unknown }; options: unknown }[] = [];
   const bindExtensionCalls: TestExtensionBindings[] = [];
   const listeners: ((event: unknown) => void)[] = [];
   let extensionUiContext = testExtensionUiContext;
-  const calls = { abort: 0, bindExtensions: bindExtensionCalls, clearQueue: 0, dispose: 0, prompt: promptCalls, reload: 0, sendCustomMessage: customMessageCalls };
+  const calls = { abort: 0, bindExtensions: bindExtensionCalls, clearQueue: 0, dispose: 0, followUp: followUpCalls, prompt: promptCalls, reload: 0, sendCustomMessage: customMessageCalls, steer: steerCalls };
   const session: TestSession = {
     sessionId,
     sessionFile: `/tmp/${sessionId}.jsonl`,
@@ -186,6 +188,14 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
     },
     prompt: (text: string, options: unknown) => {
       calls.prompt.push({ text, options });
+      return Promise.resolve();
+    },
+    steer: (text: string, images: unknown) => {
+      calls.steer.push({ text, images });
+      return Promise.resolve();
+    },
+    followUp: (text: string, images: unknown) => {
+      calls.followUp.push({ text, images });
       return Promise.resolve();
     },
     sendCustomMessage: (message: { customType: string; content: string; display: boolean; details?: unknown }, options: unknown) => {

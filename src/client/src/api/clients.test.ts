@@ -306,6 +306,29 @@ describe("session API compatibility", () => {
     expect(JSON.parse(requestBody(init))).toEqual({ cwd: "/repo", text: "hello" });
   });
 
+  it("promotes queued messages through encoded machine routes and parses current status", async () => {
+    const response = {
+      sessionId: "s /?",
+      isStreaming: true,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 1,
+      queuedMessages: [{ kind: "steer", text: "send now" }],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    };
+    const fetchMock = stubSequenceFetch([jsonResponse(response), jsonResponse(response)]);
+    const session = { id: "s /?", cwd: "/repo with spaces" };
+
+    await sessionsApi.promoteQueuedMessage(session, { kind: "followUp", text: "send now" }, "remote /?");
+    await sessionsApi.promoteAllQueuedMessages(session, "remote /?");
+
+    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20%2F%3F/sessions/s%20%2F%3F/queue/promote");
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 0)[1]))).toEqual({ cwd: "/repo with spaces", kind: "followUp", text: "send now" });
+    expect(fetchCall(fetchMock, 1)[0]).toBe("https://pi.example.test/api/machines/remote%20%2F%3F/sessions/s%20%2F%3F/queue/promote-all");
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ cwd: "/repo with spaces" });
+  });
+
   it("clears a session queue through an encoded machine route and parses the returned status", async () => {
     const fetchMock = stubJsonFetch({
       sessionId: "s /?",

@@ -47,6 +47,7 @@ export interface PromptEditorTextReplacement {
   machineId: string;
   sessionId: string;
   text: string;
+  mode?: "replace" | "prepend";
 }
 
 export interface SelectedSessionReady {
@@ -1149,6 +1150,34 @@ export class SessionController {
     }
   }
 
+  async promoteQueuedMessage(target: QueuedSessionMessage) {
+    const state = this.getState();
+    const session = state.selectedSession;
+    if (session === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) return;
+    const machineId = selectedMachineId(state);
+    const selectionSeq = this.selectionSeq;
+    try {
+      const status = await this.api.promoteQueuedMessage(session, target, machineId);
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(status);
+    } catch (error) {
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.setState({ error: String(error) });
+    }
+  }
+
+  async promoteAllQueuedMessages() {
+    const state = this.getState();
+    const session = state.selectedSession;
+    if (session === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) return;
+    const machineId = selectedMachineId(state);
+    const selectionSeq = this.selectionSeq;
+    try {
+      const status = await this.api.promoteAllQueuedMessages(session, machineId);
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(status);
+    } catch (error) {
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.setState({ error: String(error) });
+    }
+  }
+
   async clearServerQueue() {
     const state = this.getState();
     const session = state.selectedSession;
@@ -1282,12 +1311,18 @@ export class SessionController {
   }
 
   async stopActiveWork() {
-    const session = this.getState().selectedSession;
+    const state = this.getState();
+    const session = state.selectedSession;
     if (!session) return;
-    const machineId = selectedMachineId(this.getState());
+    const machineId = selectedMachineId(state);
     const errorOwner = this.captureSessionErrorOwner(session);
+    const selectionSeq = this.selectionSeq;
+    const queuedText = state.status?.sessionId === session.id ? state.status.queuedMessages.map((message) => message.text).join("\n\n") : "";
     try {
       await this.api.abort(session, machineId);
+      if (queuedText !== "" && this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) {
+        await this.replacePromptEditorText?.({ machineId, sessionId: session.id, text: queuedText, mode: "prepend" });
+      }
     } catch (error) {
       this.reportSessionError(session, machineId, error, errorOwner);
     }

@@ -201,6 +201,8 @@ describe("federated route contract", () => {
       ignoreParseFailure(sessionsApi.messages(session, { limit: 20, before: 10 }, machineId)),
       ignoreParseFailure(sessionsApi.status(session, machineId)),
       ignoreParseFailure(sessionsApi.streamSnapshot(session, machineId)),
+      ignoreParseFailure(sessionsApi.promoteQueuedMessage(session, { kind: "followUp", text: "send now" }, machineId)),
+      ignoreParseFailure(sessionsApi.promoteAllQueuedMessages(session, machineId)),
       ignoreParseFailure(sessionsApi.clearQueue(session, machineId)),
       ignoreParseFailure(sessionsApi.dismissWarning(session, "anthropicExtraUsage", machineId)),
       ignoreParseFailure(sessionsApi.submitAsk(session, "ask 1", { answers: [{ id: "q1", values: ["pg"] }] }, machineId)),

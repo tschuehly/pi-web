@@ -402,8 +402,10 @@ export const chatStyles = css`
   .queued-heading { min-width: 0; flex: 1 1 180px; display: grid; gap: 2px; }
   .queued-heading strong { color: var(--pi-warning); }
   .queued-heading small { color: var(--pi-muted); }
-  .queued-clear-button { flex: 0 0 auto; border: 1px solid var(--pi-warning-border); border-radius: 999px; background: var(--pi-surface); color: var(--pi-warning); padding: 5px 10px; font: 12px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
-  .queued-clear-button:hover, .queued-clear-button:focus { border-color: var(--pi-warning); color: var(--pi-text-bright); }
+  .queued-actions, .queued-message-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .queued-clear-button, .queued-send-now-button, .queued-send-all-button { flex: 0 0 auto; border: 1px solid var(--pi-warning-border); border-radius: 999px; background: var(--pi-surface); color: var(--pi-warning); padding: 5px 10px; font: 12px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
+  .queued-clear-button:hover, .queued-clear-button:focus, .queued-send-now-button:hover, .queued-send-now-button:focus, .queued-send-all-button:hover, .queued-send-all-button:focus { border-color: var(--pi-warning); color: var(--pi-text-bright); }
+  .queued-send-now-button:disabled, .queued-send-all-button:disabled { cursor: default; opacity: .55; }
   .queued-message { display: grid; gap: 4px; padding-top: 8px; border-top: 1px solid var(--pi-border); }
   .queued-message:first-of-type { padding-top: 0; border-top: 0; }
   .queued-kind { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; }

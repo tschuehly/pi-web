@@ -229,6 +229,8 @@ export class ChatView extends LitElement {
   @property({ attribute: false }) onDismissClosedDialog?: ExtensionDialogDismissCallback;
   @property({ attribute: false }) notificationInbox?: SelectedSessionNotificationView;
   @property({ attribute: false }) onClearServerQueue?: () => void;
+  @property({ attribute: false }) onPromoteQueuedMessage?: (message: QueuedSessionMessage) => void;
+  @property({ attribute: false }) onPromoteAllQueuedMessages?: () => void;
   @property({ attribute: false }) onDismissWarning?: (dismissId: string) => void;
   @property({ attribute: false }) onDismissNotification?: (notificationId: string) => void;
   @property({ attribute: false }) onDismissAllNotifications?: () => void;
@@ -707,6 +709,10 @@ export class ChatView extends LitElement {
 
   private renderQueuedMessageList(section: QueuedMessageSection) {
     const canClear = chatQueuedSectionShowsClearAction(section, this.onClearServerQueue !== undefined);
+    const canPromote = section.source === "server" && this.onPromoteQueuedMessage !== undefined;
+    const canPromoteAll = section.source === "server" && this.onPromoteAllQueuedMessages !== undefined;
+    const promotionDisabled = this.status?.isCompacting === true;
+    const promotionTitle = promotionDisabled ? "Available after compaction finishes" : "Move to steering";
     return html`
       <aside class="queued-messages" aria-live="polite">
         <div class="queued-header">
@@ -714,13 +720,23 @@ export class ChatView extends LitElement {
             <strong>${section.heading}</strong>
             <small>${section.detail}</small>
           </div>
-          ${canClear ? html`
-            <button type="button" class="queued-clear-button" title="Clear queued messages without stopping active work" @click=${this.handleClearServerQueue}>Clear queue</button>
-          ` : null}
+          <div class="queued-actions">
+            ${canPromoteAll ? html`
+              <button type="button" class="queued-send-all-button" title=${promotionTitle} ?disabled=${promotionDisabled} @click=${() => { this.onPromoteAllQueuedMessages?.(); }}>Send all now</button>
+            ` : null}
+            ${canClear ? html`
+              <button type="button" class="queued-clear-button" title="Clear queued messages without stopping active work" @click=${this.handleClearServerQueue}>Clear queue</button>
+            ` : null}
+          </div>
         </div>
         ${section.messages.map((message, index) => html`
           <div class="queued-message">
-            <span class="queued-kind">${message.kind === "steer" ? "Steer" : "Follow-up"} ${String(index + 1)}</span>
+            <div class="queued-message-header">
+              <span class="queued-kind">${message.kind === "steer" ? "Steer" : "Follow-up"} ${String(index + 1)}</span>
+              ${canPromote ? html`
+                <button type="button" class="queued-send-now-button" aria-label=${`Send ${message.kind === "steer" ? "steer" : "follow-up"} ${String(index + 1)} now`} title=${promotionTitle} ?disabled=${promotionDisabled} @click=${() => { this.onPromoteQueuedMessage?.(message); }}>Send now</button>
+              ` : null}
+            </div>
             <formatted-text .workspaceContext=${this.workspaceContext} .text=${message.text}></formatted-text>
           </div>
         `)}

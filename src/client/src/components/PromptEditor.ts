@@ -15,7 +15,7 @@ import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArg
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
 import { clearStagedAttachments, loadStagedAttachments, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
-import { createMobilePromptEnterMedia, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
+import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
 import { composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
@@ -118,6 +118,7 @@ export class PromptEditor extends LitElement {
   override render() {
     const shellInputMode = this.currentInputMode.kind === "shell" ? this.currentInputMode : undefined;
     const shellMode = shellInputMode !== undefined;
+    const steersInput = this.canSteer && !this.isCompacting;
     const queuesInput = this.canSteer || this.isCompacting;
     const busy = this.disabled || this.sending;
     return html`
@@ -133,9 +134,9 @@ export class PromptEditor extends LitElement {
         </div>
         <div class="actions">
           ${this.renderCompactStatus()}
-          <button class="icon-button send-button" ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send("followUp"); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
-          ${this.canSteer && !this.isCompacting ? html`<button class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}</button>` : null}
-          <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work and clear queued messages" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
+          <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
+          ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
+          <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
         </div>
       </footer>
     `;
@@ -143,6 +144,10 @@ export class PromptEditor extends LitElement {
 
   focusInput() {
     this.editor?.focus();
+  }
+
+  prependText(text: string): void {
+    this.replaceText(this.draft === "" ? text : `${text}\n\n${this.draft}`);
   }
 
   replaceText(text: string): void {
@@ -447,7 +452,7 @@ export class PromptEditor extends LitElement {
       return true;
     }
     if (send) {
-      this.send(this.canSteer || this.isCompacting ? "followUp" : undefined);
+      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, event.metaKey || event.ctrlKey));
       return true;
     }
     if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -465,6 +470,7 @@ export class PromptEditor extends LitElement {
     this.explicitShiftKeyActive = false;
     return false;
   }
+
 
   private handleEditorTab(view: EditorView): boolean {
     if (this.completions.length) {

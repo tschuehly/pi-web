@@ -1072,6 +1072,45 @@ describe("session routes", () => {
     }
   });
 
+  it("promotes one exact queued message and all queued messages through atomic queue routes", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const eventHub = new SessionEventHub();
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, eventHub);
+
+    try {
+      const requestCwd = resolve("/repo");
+      const one = await routeApp.inject({ method: "POST", url: "/sessions/session-1/queue/promote", payload: { cwd: requestCwd, kind: "followUp", text: "send now" } });
+      const all = await routeApp.inject({ method: "POST", url: "/sessions/session-1/queue/promote-all", payload: { cwd: requestCwd } });
+
+      expect(one.statusCode).toBe(200);
+      expect(all.statusCode).toBe(200);
+      expect(routeService.promoteQueuedMessageCalls).toEqual([{ lookup: { id: "session-1", cwd: requestCwd }, target: { kind: "followUp", text: "send now" } }]);
+      expect(routeService.promoteAllQueuedMessagesCalls).toEqual([{ id: "session-1", cwd: requestCwd }]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it("rejects a queued-message promotion with an invalid kind", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+
+    try {
+      const response = await routeApp.inject({ method: "POST", url: "/sessions/session-1/queue/promote", payload: { cwd: "/repo", kind: "later", text: "send now" } });
+
+      expect(response.statusCode).toBe(400);
+      expect(routeService.promoteQueuedMessageCalls).toEqual([]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
   it("clears a session queue with workspace context and returns fresh status", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1286,6 +1325,8 @@ class CapturingRouteSessionService implements SessionRouteService {
   readonly calls: unknown[] = [];
   readonly reloadCalls: SessionRouteRef[] = [];
   readonly clearQueueCalls: SessionRouteRef[] = [];
+  readonly promoteQueuedMessageCalls: { lookup: SessionRouteRef; target: { kind: "steer" | "followUp"; text: string } }[] = [];
+  readonly promoteAllQueuedMessagesCalls: SessionRouteRef[] = [];
   readonly dismissWarningCalls: { lookup: SessionRouteRef; dismissId: string }[] = [];
   readonly notificationInboxCalls: SessionRef[] = [];
   readonly acknowledgeUnreadCalls: { sessionId: string; request: SessionUnreadAcknowledgeRequest }[] = [];
@@ -1434,6 +1475,16 @@ class CapturingRouteSessionService implements SessionRouteService {
       tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       cost: 0,
     });
+  }
+
+  promoteQueuedMessage(lookup: SessionRouteRef, target: { kind: "steer" | "followUp"; text: string }): Promise<SessionStatus> {
+    this.promoteQueuedMessageCalls.push({ lookup, target });
+    return Promise.resolve(idleStatus(lookup));
+  }
+
+  promoteAllQueuedMessages(lookup: SessionRouteRef): Promise<SessionStatus> {
+    this.promoteAllQueuedMessagesCalls.push(lookup);
+    return Promise.resolve(idleStatus(lookup));
   }
 
   clearQueue(lookup: SessionRouteRef): Promise<SessionStatus> {

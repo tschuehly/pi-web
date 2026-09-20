@@ -9,6 +9,12 @@ export interface WorkstreamSession { id: string; status: string; projectId?: str
 export interface WorkstreamOverview { goal: string; doneWhen: string; description: string; history: string[]; recordedAt: string }
 type HumanTaskAnswerKind = "yes-no" | "choice" | "free-text";
 type HumanTaskAnswer = { kind: "yes-no" | "choice"; optionId: string } | { kind: "free-text"; text: string };
+export type WorkstreamSessionAnchor = { machineId: string; projectId: string; workspaceId: string } | { machineId?: never; projectId?: never; workspaceId?: never };
+export type WorkstreamAppendRecord =
+  | { type: "human-task.answered"; producer: "owner"; sourceSessionId?: string; payload: { taskId: string; answerId: string; answer: HumanTaskAnswer } }
+  | { type: "session.pending"; producer: "pi-web"; sourceSessionId: string; payload: { associationKey: string; derivationKind: "checkpoint" } & WorkstreamSessionAnchor }
+  | { type: "session.confirmed"; producer: "pi-web"; sourceSessionId: string; payload: { sessionId: string; associationKey: string } & WorkstreamSessionAnchor };
+export interface WorkstreamAppendInput { workstreamId: string; expectedRevision: number; idempotencyKey: string; records: WorkstreamAppendRecord[] }
 interface WorkstreamHumanTask {
   id: string; title: string; detail?: string; status: "pending" | "answered" | "resolved";
   answerKind: HumanTaskAnswerKind | null;
@@ -58,6 +64,8 @@ function service<T>(operation: string, input: unknown, check: (value: unknown) =
 const isSummaryList = (value: unknown): value is WorkstreamSummary[] => Array.isArray(value);
 const isSnapshot = (value: unknown): value is WorkstreamSnapshot => isRecord(value) && Array.isArray(value["sessions"]) && Array.isArray(value["humanTasks"]);
 const isReceipt = (value: unknown): value is { acceptedRevision: number } => isRecord(value) && Number.isInteger(value["acceptedRevision"]);
+export const inspectWorkstream = (workstreamId: string): Promise<WorkstreamSnapshot> => service("inspect", { workstreamId }, isSnapshot);
+export const appendWorkstream = (input: WorkstreamAppendInput): Promise<{ acceptedRevision: number }> => service("append", input, isReceipt);
 const newId = (prefix: string): string => {
   const crypto: unknown = Reflect.get(globalThis, "crypto");
   const randomUUID: unknown = isRecord(crypto) ? Reflect.get(crypto, "randomUUID") : undefined;
@@ -165,7 +173,7 @@ export class WorkstreamChooser extends LitElement {
     this.notice = "";
     if (this.selected?.id === id) { this.selected = undefined; return; }
     try {
-      this.selected = await service("inspect", { workstreamId: id }, isSnapshot);
+      this.selected = await inspectWorkstream(id);
       this.error = "";
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -183,7 +191,7 @@ export class WorkstreamChooser extends LitElement {
     try {
       const idempotencyKey = newId("task-answer");
       const answerId = newId("answer");
-      await service("append", {
+      await appendWorkstream({
         workstreamId: snapshot.id,
         expectedRevision: snapshot.revision,
         idempotencyKey,
@@ -193,7 +201,7 @@ export class WorkstreamChooser extends LitElement {
           ...(task.sourceSessionId === null ? {} : { sourceSessionId: task.sourceSessionId }),
           payload: { taskId: task.id, answerId, answer },
         }],
-      }, isReceipt);
+      });
     } catch (error) {
       this.error = `The answer may not have been saved. Close and reopen the card before choosing again. ${error instanceof Error ? error.message : String(error)}`;
       this.answering = "";
@@ -201,7 +209,7 @@ export class WorkstreamChooser extends LitElement {
     }
     try {
       const [selected, list] = await Promise.all([
-        service("inspect", { workstreamId: snapshot.id }, isSnapshot),
+        inspectWorkstream(snapshot.id),
         service("list", {}, isSummaryList),
       ]);
       if (this.selected?.id === snapshot.id) {

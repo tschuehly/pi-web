@@ -494,6 +494,8 @@ export interface PiAgentSession {
   reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void>;
   getContextUsage(): ClientSessionStatus["contextUsage"] | undefined;
   prompt(text: string, options?: { streamingBehavior?: "steer" | "followUp"; images?: ImageContent[] }): Promise<void>;
+  steer(text: string, images?: ImageContent[]): Promise<void>;
+  followUp(text: string, images?: ImageContent[]): Promise<void>;
   sendCustomMessage(message: { customType: string; content: string; display: boolean; details?: unknown }, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void>;
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string }>;
   navigateTree?(targetId: string, options?: { summarize?: boolean; customInstructions?: string }): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: unknown }>;
@@ -1181,6 +1183,7 @@ export class PiSessionService implements SessionRouteService {
   private readonly deferredSubsessionNotifications = new WeakMap<PiAgentSession, DeferredSubsessionNotification[]>();
   private readonly deferredGeneratedSessionNames = new WeakMap<PiAgentSession, string>();
   private readonly compactionPromptQueues = new Map<string, QueuedPrompt[]>();
+  private readonly runtimePromptProvenance = new Map<PiAgentSession, QueuedPrompt[]>();
   private readonly compactionDrainTimers = new Map<string, NodeJS.Timeout>();
   private readonly authLossWarnings = new Set<string>();
   /** Tracked subsession id -> the parent session id that spawned it. */
@@ -1431,6 +1434,7 @@ export class PiSessionService implements SessionRouteService {
     this.startupSessions.clear();
     this.activities.clear();
     this.compactionPromptQueues.clear();
+    this.runtimePromptProvenance.clear();
     this.authLossWarnings.clear();
     this.subsessionParents.clear();
     this.subsessionChildren.clear();
@@ -2634,9 +2638,11 @@ export class PiSessionService implements SessionRouteService {
   private beginPromptSubmission(session: PiAgentSession, text: string, behavior: QueuedPromptKind | undefined, images: ImageContent[] = [], echoUserMessage = true): Promise<void> {
     this.publishActivity(session, behavior === "steer" ? "steering queued" : behavior === "followUp" ? "message queued" : "prompt accepted", "active");
     if (behavior === undefined && echoUserMessage) this.events.publish(session.sessionId, { type: "message.append", message: userMessage(text, images) });
+    if (behavior !== undefined) this.trackRuntimePrompt(session, { kind: behavior, text, images: [...images] });
     const promptOptions = buildPromptOptions(behavior, images);
     const promptPromise = this.runSessionEntryMutation(session, "send a prompt", () => session.prompt(text, promptOptions));
     void promptPromise.catch((error: unknown) => {
+      this.pruneRuntimePromptProvenance(session);
       const message = error instanceof Error ? error.message : String(error);
       this.publishActivity(session, "error", "error", message);
       this.events.publish(session.sessionId, { type: "session.error", message });
@@ -3225,10 +3231,37 @@ export class PiSessionService implements SessionRouteService {
     await this.forgetUnreadSessions([{ sessionId: session.sessionId, cwd: session.sessionManager.getCwd() }]);
   }
 
+  async promoteQueuedMessage(ref: PiSessionRef, target: QueuedPrompt): Promise<ClientSessionStatus> {
+    await this.assertWritable(ref);
+    const session = await this.getOrOpen(ref);
+    const queued = this.reconcileRuntimePromptProvenance(session);
+    const targetIndex = queued.findIndex((message) => message.kind === target.kind && message.text === target.text);
+    if (targetIndex === -1) return this.statusFromSession(session);
+    const selected = queued[targetIndex];
+    if (selected === undefined) return this.statusFromSession(session);
+    await this.replaceRuntimeQueue(session, [
+      { ...selected, kind: "steer" },
+      ...queued.filter((_, index) => index !== targetIndex),
+    ]);
+    this.publishStatus(session);
+    return this.statusFromSession(session);
+  }
+
+  async promoteAllQueuedMessages(ref: PiSessionRef): Promise<ClientSessionStatus> {
+    await this.assertWritable(ref);
+    const session = await this.getOrOpen(ref);
+    const queued = this.reconcileRuntimePromptProvenance(session);
+    if (queued.length === 0) return this.statusFromSession(session);
+    await this.replaceRuntimeQueue(session, queued.map((message) => ({ ...message, kind: "steer" })));
+    this.publishStatus(session);
+    return this.statusFromSession(session);
+  }
+
   async clearQueue(ref: PiSessionRef): Promise<ClientSessionStatus> {
     await this.assertWritable(ref);
     const session = await this.getOrOpen(ref);
     this.clearCompactionPromptQueue(session.sessionId);
+    this.runtimePromptProvenance.delete(session);
     clearSessionQueue(session);
     this.publishStatus(session);
     return this.statusFromSession(session);
@@ -3246,6 +3279,7 @@ export class PiSessionService implements SessionRouteService {
     if (active === undefined) return;
     const sessionId = active.runtime.session.sessionId;
     this.clearCompactionPromptQueue(sessionId);
+    this.runtimePromptProvenance.delete(active.runtime.session);
     clearSessionQueue(active.runtime.session);
     // Settle run-scoped dialogs now, at abort-request time: pi's agent loop
     // waits for a parked `tool_call` dialog handler before it can emit
@@ -3437,6 +3471,7 @@ export class PiSessionService implements SessionRouteService {
     this.workspaceActivity?.removeSession(sessionId, active.runtime.session.sessionManager.getCwd());
     this.clearAuthLossWarningsForSession(sessionId);
     this.clearCompactionPromptQueue(sessionId);
+    this.runtimePromptProvenance.delete(active.runtime.session);
     // Disarm subsession notification before teardown so the abort below cannot
     // emit a "stopped working" event that notifies the parent (e.g. on archive).
     // The parent/children link is kept so the parent can still see the child.
@@ -3749,6 +3784,7 @@ export class PiSessionService implements SessionRouteService {
             candidateGeneration = this.notificationStore.beginReplacement(priorGeneration, notificationIdentityForSession(session));
             this.notificationGenerationBySession.set(session, candidateGeneration);
           }
+          this.runtimePromptProvenance.delete(boundSession);
           this.bindRuntime(active, session);
           // The runtime being replaced parked every dialog the store still
           // holds for this session; settle those waits before the new
@@ -4051,6 +4087,7 @@ export class PiSessionService implements SessionRouteService {
       this.events.publish(session.sessionId, toClientEvent(event, session.thinkingLevel));
       this.publishActivityForEvent(session, event);
       const eventType = getString(event, "type");
+      if (eventType === "queue_update") this.pruneRuntimePromptProvenance(session);
       if (eventType === "agent_end") this.abortRunScopedExtensionDialogs(session.sessionId);
       if (eventType === "compaction_end") this.scheduleCompactionQueueDrain(session.sessionId);
       if (eventType === "agent_start" || eventType === "agent_end") this.scheduleCompactionQueueDrain(session.sessionId);
@@ -4062,6 +4099,54 @@ export class PiSessionService implements SessionRouteService {
       unsubscribe();
     };
     this.active.set(session.sessionId, active);
+  }
+
+  private trackRuntimePrompt(session: PiAgentSession, prompt: QueuedPrompt): void {
+    const tracked = this.runtimePromptProvenance.get(session) ?? [];
+    tracked.push(prompt);
+    this.runtimePromptProvenance.set(session, tracked);
+  }
+
+  private matchedRuntimePromptProvenance(session: PiAgentSession): { matched: QueuedPrompt[]; complete: boolean } {
+    const remaining = [...(this.runtimePromptProvenance.get(session) ?? [])];
+    const matched: QueuedPrompt[] = [];
+    let complete = true;
+    for (const current of queuedMessagesFromSession(session)) {
+      const index = remaining.findIndex((prompt) => prompt.kind === current.kind && prompt.text === current.text);
+      if (index === -1) {
+        complete = false;
+        continue;
+      }
+      const [prompt] = remaining.splice(index, 1);
+      if (prompt !== undefined) matched.push(prompt);
+    }
+    return { matched, complete };
+  }
+
+  private pruneRuntimePromptProvenance(session: PiAgentSession): void {
+    const { matched } = this.matchedRuntimePromptProvenance(session);
+    if (matched.length === 0) this.runtimePromptProvenance.delete(session);
+    else this.runtimePromptProvenance.set(session, matched);
+  }
+
+  private reconcileRuntimePromptProvenance(session: PiAgentSession): QueuedPrompt[] {
+    const { matched, complete } = this.matchedRuntimePromptProvenance(session);
+    if (!complete) throw new Error("Queued messages include an item PI WEB did not enqueue; promotion was not applied");
+    if (matched.length === 0) this.runtimePromptProvenance.delete(session);
+    else this.runtimePromptProvenance.set(session, matched);
+    return matched;
+  }
+
+  private async replaceRuntimeQueue(session: PiAgentSession, messages: readonly QueuedPrompt[]): Promise<void> {
+    session.clearQueue();
+    this.runtimePromptProvenance.delete(session);
+    const requeued = messages.map((message) => {
+      this.trackRuntimePrompt(session, message);
+      return message.kind === "steer"
+        ? session.steer(message.text, message.images)
+        : session.followUp(message.text, message.images);
+    });
+    await Promise.all(requeued);
   }
 
   private scheduleCompactionQueueDrain(sessionId: string, delayMs = 0): void {

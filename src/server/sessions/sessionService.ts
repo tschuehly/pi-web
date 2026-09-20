@@ -67,6 +67,8 @@ export interface SessionRouteService {
   notificationInbox(ref: SessionRouteRef): SessionNotificationInboxSnapshot | Promise<SessionNotificationInboxSnapshot>;
   dismissNotification(ref: SessionRouteRef, request: Omit<SessionNotificationDismissRequest, "cwd">): SessionNotificationInboxSnapshot | Promise<SessionNotificationInboxSnapshot>;
   dismissAllNotifications(ref: SessionRouteRef, request: Omit<SessionNotificationDismissAllRequest, "cwd">): SessionNotificationInboxSnapshot | Promise<SessionNotificationInboxSnapshot>;
+  promoteQueuedMessage(ref: SessionRouteRef, target: { kind: "steer" | "followUp"; text: string }): Promise<ClientSessionStatus>;
+  promoteAllQueuedMessages(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   clearQueue(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   submitAsk(ref: SessionRouteRef, askId: string, submission: AskUserSubmission): Promise<AskUserCloseResponse>;
   cancelAsk(ref: SessionRouteRef, askId: string): Promise<AskUserCloseResponse>;

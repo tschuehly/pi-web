@@ -2,7 +2,7 @@ import { LitElement, html, type TemplateResult } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 import { guard } from "lit/directives/guard.js";
 import { markdownWorkspaceContext, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
-import { configApi, effectiveWorkspaceAttachmentsFolder, effectiveWorkspaceUploadFolder, sessionsApi, workspacesApi, workspaceEffectiveAttachmentsFolder, workspaceEffectiveUploadFolder, type AskUserSubmission, type CommandOption, type ExtensionDialogAnswer, type Machine, type MachineHealth, type PiWebConfigValues, type PiWebShortcutConfig, type Project, type SessionCleanupExecuteResponse, type SessionCleanupPreviewResponse, type SessionCleanupRequest, type SessionInfo, type SessionModel, type SessionModelCatalogEntry, type SessionModelScopeMode, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type TerminalCommandRun, type Workspace } from "../api";
+import { configApi, effectiveWorkspaceAttachmentsFolder, effectiveWorkspaceUploadFolder, sessionsApi, workspacesApi, workspaceEffectiveAttachmentsFolder, workspaceEffectiveUploadFolder, type AskUserSubmission, type CommandOption, type ExtensionDialogAnswer, type Machine, type MachineHealth, type PiWebConfigValues, type PiWebShortcutConfig, type Project, type QueuedSessionMessage, type SessionCleanupExecuteResponse, type SessionCleanupPreviewResponse, type SessionCleanupRequest, type SessionInfo, type SessionModel, type SessionModelCatalogEntry, type SessionModelScopeMode, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type TerminalCommandRun, type Workspace } from "../api";
 import type { AppAction } from "../actions";
 import { initialAppState, type AppState, type ModelDialogOrigin } from "../appState";
 import { browserErrorContext, browserErrorScopeKey, BrowserErrorReporter, clearBrowserError, machineBrowserErrorScope, visibleBrowserErrors, workspaceBrowserErrorScope, type BrowserError, type BrowserErrorScope } from "../browserErrors";
@@ -188,10 +188,14 @@ export class PiWebApp extends LitElement {
         this.modelDialogScopeInvalidation += 1;
         void this.refreshOpenModelDialog();
       },
-      replacePromptEditorText: async ({ machineId, sessionId, text }) => {
+      replacePromptEditorText: async ({ machineId, sessionId, text, mode }) => {
         await this.updateComplete;
-        if (selectedMachineId(this.state) !== machineId || this.state.selectedSession?.id !== sessionId) return;
-        this.promptEditor?.replaceText(text);
+        const editor = this.promptEditor;
+        if (editor === undefined) return;
+        await editor.updateComplete;
+        if (selectedMachineId(this.state) !== machineId || this.state.selectedSession?.id !== sessionId || editor.sessionId !== sessionId) return;
+        if (mode === "prepend") editor.prependText(text);
+        else editor.replaceText(text);
       },
     },
   );
@@ -3151,6 +3155,14 @@ export class PiWebApp extends LitElement {
     void this.sessions.stopActiveWork();
   };
 
+  private readonly handlePromoteQueuedMessage = (message: QueuedSessionMessage): void => {
+    void this.sessions.promoteQueuedMessage(message);
+  };
+
+  private readonly handlePromoteAllQueuedMessages = (): void => {
+    void this.sessions.promoteAllQueuedMessages();
+  };
+
   private readonly handleClearServerQueue = (): void => {
     void this.sessions.clearServerQueue();
   };
@@ -3256,7 +3268,7 @@ export class PiWebApp extends LitElement {
       this.notificationView = selectedNotificationView(state.selectedNotificationInbox);
     }
     return html`
-      <chat-view @workspace-file-open=${this.handleWorkspaceFileOpen} .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)} .sessionId=${session.id} .onMessageAction=${this.handleMessageAction} .messageActionsDisabled=${session.archived === true || state.sendingPrompts[session.id] === true || isSessionActive(state.status, state.activity)} .messages=${state.messages} .messageStart=${state.messagePageStart} .messageEnd=${state.messagePageEnd} .messageTotal=${state.messagePageTotal} .hasMore=${state.messagePageStart > 0} .loadingMore=${state.isLoadingEarlierMessages} .isSendingPrompt=${state.sendingPrompts[session.id] === true} .isCompacting=${state.status?.isCompacting === true} .pendingMessageCount=${state.status?.pendingMessageCount ?? 0} .clientQueuedMessages=${state.clientQueuedSessionMessages[session.id] ?? this.emptyClientQueue} .status=${state.status} .activity=${state.activity} .pendingAsk=${state.pendingAsk} .pendingDialogs=${state.pendingDialogs} .closedDialogs=${state.closedDialogs} .onAnswerDialog=${this.handleAnswerDialog} .onCancelDialog=${this.handleCancelDialog} .onDismissClosedDialog=${this.handleDismissClosedDialog} .askDraftSessionId=${machineSessionKey(selectedMachineId(state), session.id)} .onSubmitAsk=${this.handleSubmitAsk} .notificationInbox=${this.notificationView} .onClearServerQueue=${this.handleClearServerQueue} .onDismissWarning=${this.handleDismissWarning} .onDismissNotification=${this.handleDismissNotification} .onDismissAllNotifications=${this.handleDismissAllNotifications} .warningsVisible=${!this.sessionWarningVisibility.collapsed} .onToggleWarnings=${this.handleToggleWarnings} .onLoadMore=${this.handleLoadEarlierMessages}></chat-view>
+      <chat-view @workspace-file-open=${this.handleWorkspaceFileOpen} .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)} .sessionId=${session.id} .onMessageAction=${this.handleMessageAction} .messageActionsDisabled=${session.archived === true || state.sendingPrompts[session.id] === true || isSessionActive(state.status, state.activity)} .messages=${state.messages} .messageStart=${state.messagePageStart} .messageEnd=${state.messagePageEnd} .messageTotal=${state.messagePageTotal} .hasMore=${state.messagePageStart > 0} .loadingMore=${state.isLoadingEarlierMessages} .isSendingPrompt=${state.sendingPrompts[session.id] === true} .isCompacting=${state.status?.isCompacting === true} .pendingMessageCount=${state.status?.pendingMessageCount ?? 0} .clientQueuedMessages=${state.clientQueuedSessionMessages[session.id] ?? this.emptyClientQueue} .status=${state.status} .activity=${state.activity} .pendingAsk=${state.pendingAsk} .pendingDialogs=${state.pendingDialogs} .closedDialogs=${state.closedDialogs} .onAnswerDialog=${this.handleAnswerDialog} .onCancelDialog=${this.handleCancelDialog} .onDismissClosedDialog=${this.handleDismissClosedDialog} .askDraftSessionId=${machineSessionKey(selectedMachineId(state), session.id)} .onSubmitAsk=${this.handleSubmitAsk} .notificationInbox=${this.notificationView} .onPromoteQueuedMessage=${this.handlePromoteQueuedMessage} .onPromoteAllQueuedMessages=${this.handlePromoteAllQueuedMessages} .onClearServerQueue=${this.handleClearServerQueue} .onDismissWarning=${this.handleDismissWarning} .onDismissNotification=${this.handleDismissNotification} .onDismissAllNotifications=${this.handleDismissAllNotifications} .warningsVisible=${!this.sessionWarningVisibility.collapsed} .onToggleWarnings=${this.handleToggleWarnings} .onLoadMore=${this.handleLoadEarlierMessages}></chat-view>
     `;
   }
 

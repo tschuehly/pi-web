@@ -1,13 +1,57 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
+import type { QueuedSessionMessage } from "../api";
 import { defaultApi, deferred, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type SessionStatus } from "./sessionController.testSupport";
 
 function machine(id: string): NonNullable<AppState["selectedMachine"]> {
   return { id, name: id, kind: "remote", createdAt: "now", updatedAt: "now" };
 }
 
-describe("SessionController server queue clearing", () => {
+describe("SessionController server queue mutation", () => {
+  it("promotes one exact server-queued message and applies the returned status", async () => {
+    const target = { kind: "followUp" as const, text: "send now" };
+    const queuedStatus: SessionStatus = { ...status(oldSession.id), isStreaming: true, pendingMessageCount: 1, queuedMessages: [target] };
+    const promotedStatus: SessionStatus = { ...queuedStatus, queuedMessages: [{ kind: "steer", text: "send now" }] };
+    const calls: { target: QueuedSessionMessage; machineId: string }[] = [];
+    let state: AppState = {
+      ...initialAppState(), selectedMachine: machine("remote-a"), selectedWorkspace: workspace,
+      selectedSession: oldSession, sessions: [oldSession], status: queuedStatus, sessionStatuses: { [oldSession.id]: queuedStatus },
+    };
+    const api: typeof defaultApi = {
+      ...defaultApi,
+      promoteQueuedMessage: (_session, message, machineId) => {
+        calls.push({ target: message, machineId: machineId ?? "local" });
+        return Promise.resolve(promotedStatus);
+      },
+    };
+    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { api, socket: new FakeSocket() });
+
+    await controller.promoteQueuedMessage(target);
+
+    expect(calls).toEqual([{ target, machineId: "remote-a" }]);
+    expect(state.status).toEqual(promotedStatus);
+  });
+
+  it("does not apply promote-all status after the selected machine changes", async () => {
+    const request = deferred<SessionStatus>();
+    const oldStatus = { ...status(oldSession.id), queuedMessages: [{ kind: "followUp" as const, text: "old" }] };
+    const replacementStatus = { ...status(oldSession.id), queuedMessages: [{ kind: "steer" as const, text: "other machine" }] };
+    let state: AppState = {
+      ...initialAppState(), selectedMachine: machine("remote-a"), selectedWorkspace: workspace,
+      selectedSession: oldSession, sessions: [oldSession], status: oldStatus, sessionStatuses: { [oldSession.id]: oldStatus },
+    };
+    const api: typeof defaultApi = { ...defaultApi, promoteAllQueuedMessages: () => request.promise };
+    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { api, socket: new FakeSocket() });
+
+    const promoting = controller.promoteAllQueuedMessages();
+    state = { ...state, selectedMachine: machine("remote-b"), status: replacementStatus, sessionStatuses: { [oldSession.id]: replacementStatus } };
+    request.resolve({ ...oldStatus, queuedMessages: [{ kind: "steer", text: "old" }] });
+    await promoting;
+
+    expect(state.status).toBe(replacementStatus);
+  });
+
   it("applies the returned status to the selected session without changing client-side queued sends", async () => {
     const queuedStatus: SessionStatus = {
       ...status(oldSession.id),

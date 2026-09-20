@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
-import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type SessionInfo, type Workspace } from "../api";
+import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type Workspace } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { initialAppState, type AppState } from "../appState";
 import { AuthController } from "../controllers/authController";
@@ -22,7 +22,7 @@ import "./ProjectDialog";
 import "./PromptEditor";
 import "./StatusBar";
 import "./WorkstreamChooser";
-import type { OpenWorkstreamSessionDetail, StartWorkstreamSessionDetail } from "./WorkstreamChooser";
+import { appendWorkstream, inspectWorkstream, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamSessionAnchor } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
@@ -61,9 +61,14 @@ export class WorkbenchApp extends LitElement {
     undefined,
     {
       notifications: this.notifications,
-      replacePromptEditorText: async ({ machineId, sessionId, text }) => {
+      replacePromptEditorText: async ({ machineId, sessionId, text, mode }) => {
         await this.updateComplete;
-        if (selectedMachineId(this.app) === machineId && this.app.selectedSession?.id === sessionId) this.promptEditor?.replaceText(text);
+        const editor = this.promptEditor;
+        if (editor === undefined) return;
+        await editor.updateComplete;
+        if (selectedMachineId(this.app) !== machineId || this.app.selectedSession?.id !== sessionId || editor.sessionId !== sessionId) return;
+        if (mode === "prepend") editor.prependText(text);
+        else editor.replaceText(text);
       },
     },
   );
@@ -315,23 +320,74 @@ export class WorkbenchApp extends LitElement {
   private async startWorkstreamSession(detail: StartWorkstreamSessionDetail): Promise<void> {
     const machineId = selectedMachineId(this.app);
     this.setApp({ error: "" });
+    let cwd: string;
+    let match: { project: Project; workspaces: Workspace[] } | undefined;
     try {
-      const cwd = detail.directories[0] ?? (await api.locate(detail.sessionId, machineId)).cwd;
+      cwd = detail.directories[0] ?? (await api.locate(detail.sessionId, machineId)).cwd;
       const candidates = await Promise.all(this.app.projects.map(async (project) => ({
         project,
         workspaces: await api.workspaces(project.id, machineId).catch((): Workspace[] => []),
       })));
-      const match = candidates.find(({ workspaces }) => workspaces.some((workspace) => workspace.path === cwd));
-      const workspace = match?.workspaces.find((candidate) => candidate.path === cwd) ?? adHocWorkspace(cwd);
-      this.sessions.clearActiveSession();
-      this.setApp({ selectedProject: match?.project, selectedWorkspace: workspace, workspaces: match?.workspaces ?? [workspace], sessions: [], error: "" });
-      await this.sessions.startSession();
-      await this.sessions.send(detail.prompt);
-      await this.updateComplete;
-      this.promptEditor?.focusInput();
+      match = candidates.find(({ workspaces }) => workspaces.some((workspace) => workspace.path === cwd));
     } catch (error) {
       this.setApp({ error: `Could not find a working directory for the previous session: ${error instanceof Error ? error.message : String(error)}` });
+      return;
     }
+
+    const workspace = match?.workspaces.find((candidate) => candidate.path === cwd) ?? adHocWorkspace(cwd);
+    const associationKey = `pi-web:${globalThis.crypto.randomUUID()}`;
+    const anchor: WorkstreamSessionAnchor = match === undefined ? {} : { machineId, projectId: workspace.projectId, workspaceId: workspace.id };
+    try {
+      const snapshot = await inspectWorkstream(detail.workstreamId);
+      const record: WorkstreamAppendRecord = {
+        type: "session.pending",
+        producer: "pi-web",
+        sourceSessionId: detail.sessionId,
+        payload: { associationKey, derivationKind: "checkpoint", ...anchor },
+      };
+      await appendWorkstream({ workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:pending`, records: [record] });
+    } catch (error) {
+      this.setApp({ error: `Could not record the pending Workstream launch, so no Chat was started. ${error instanceof Error ? error.message : String(error)}` });
+      return;
+    }
+
+    this.sessions.clearActiveSession();
+    this.setApp({ selectedProject: match?.project, selectedWorkspace: workspace, workspaces: match?.workspaces ?? [workspace], sessions: [], error: "" });
+    let session: SessionInfo;
+    try {
+      await this.sessions.startSession();
+      const started = this.app.selectedSession;
+      if (started === undefined) throw new Error("PI WEB did not start a Chat.");
+      session = started;
+    } catch (error) {
+      this.setApp({ error: `Chat creation failed after the pending Workstream launch was recorded. ${error instanceof Error ? error.message : String(error)}` });
+      return;
+    }
+
+    this.updateUrl();
+    await this.preloadWorkstreamPrompt(detail.prompt, machineId, session.id);
+    try {
+      const snapshot = await inspectWorkstream(detail.workstreamId);
+      const record: WorkstreamAppendRecord = {
+        type: "session.confirmed",
+        producer: "pi-web",
+        sourceSessionId: session.id,
+        payload: { sessionId: session.id, associationKey, ...anchor },
+      };
+      await appendWorkstream({ workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:confirmed`, records: [record] });
+    } catch (error) {
+      this.setApp({ error: `Chat ${session.id} was created, but PI WEB could not record its Workstream confirmation. ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+
+  private async preloadWorkstreamPrompt(prompt: string, machineId: string, sessionId: string): Promise<void> {
+    await this.updateComplete;
+    const editor = this.promptEditor;
+    if (editor === undefined) return;
+    await editor.updateComplete;
+    if (selectedMachineId(this.app) !== machineId || this.app.selectedSession?.id !== sessionId || editor.sessionId !== sessionId) return;
+    editor.replaceText(prompt);
+    editor.focusInput();
   }
 
   private async startSession(): Promise<void> {
@@ -539,6 +595,8 @@ export class WorkbenchApp extends LitElement {
           .onCancelDialog=${(dialogId: string) => this.sessions.cancelDialog(dialogId)}
           .onDismissClosedDialog=${(dialogId: string) => { this.sessions.dismissClosedDialog(dialogId); }}
           .notificationInbox=${selectedNotificationView(state.selectedNotificationInbox)}
+          .onPromoteQueuedMessage=${(message: QueuedSessionMessage) => { void this.sessions.promoteQueuedMessage(message); }}
+          .onPromoteAllQueuedMessages=${() => { void this.sessions.promoteAllQueuedMessages(); }}
           .onClearServerQueue=${() => { void this.sessions.clearServerQueue(); }}
           .onDismissWarning=${(dismissId: string) => { void this.sessions.dismissWarning(dismissId); }}
           .onDismissNotification=${(notificationId: string) => { void this.notifications.dismissNotification(notificationId); }}

@@ -342,6 +342,26 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; kind?: unknown; text?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/queue/promote`, async (request, reply) => {
+    try {
+      const body = requireRecord(request.body);
+      return await sessions.promoteQueuedMessage(sessionRefFromBody(request.params.sessionId, body), {
+        kind: requireQueuedMessageKind(body["kind"]),
+        text: requireString(body, "text"),
+      });
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/queue/promote-all`, async (request, reply) => {
+    try {
+      return await sessions.promoteAllQueuedMessages(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
   app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/queue/clear`, async (request, reply) => {
     try {
       return await sessions.clearQueue(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));
@@ -738,6 +758,11 @@ function requirePositiveSafeInteger(value: unknown, field: string): number {
   const parsed = requireNonNegativeSafeInteger(value, field);
   if (parsed === 0) throw new Error(`${field} field must be positive`);
   return parsed;
+}
+
+function requireQueuedMessageKind(value: unknown): "steer" | "followUp" {
+  if (value === "steer" || value === "followUp") return value;
+  throw new Error('kind field must be "steer" or "followUp"');
 }
 
 function requireThinkingLevel(value: unknown): string {

@@ -3,6 +3,7 @@ import {
   MOBILE_PROMPT_ENTER_MEDIA_QUERY,
   parsePromptEnterPreference,
   PROMPT_ENTER_PREFERENCE_STORAGE_KEY,
+  promptStreamingBehaviorForEnter,
   readPromptEnterPreference,
   shouldSendPromptOnEnter,
   shouldSendPromptOnEnterShortcut,
@@ -35,6 +36,14 @@ describe("promptEnterBehavior", () => {
     expect(shouldSendPromptOnEnterShortcut(true, { matches: true } satisfies PromptEnterMedia, "auto")).toBe(true);
     expect(shouldSendPromptOnEnterShortcut(true, undefined, "send")).toBe(false);
     expect(shouldSendPromptOnEnterShortcut(true, undefined, "newline")).toBe(true);
+  });
+
+  it("steers active work on plain Enter and queues a follow-up with the primary modifier", () => {
+    expect(promptStreamingBehaviorForEnter(true, false, false)).toBe("steer");
+    expect(promptStreamingBehaviorForEnter(true, false, true)).toBe("followUp");
+    expect(promptStreamingBehaviorForEnter(true, true, false)).toBe("followUp");
+    expect(promptStreamingBehaviorForEnter(true, true, true)).toBe("followUp");
+    expect(promptStreamingBehaviorForEnter(false, false, true)).toBeUndefined();
   });
 
   it("ignores implicit Shift state on mobile-like keyboards", () => {
