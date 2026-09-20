@@ -15,7 +15,7 @@ export interface WorkstreamSnapshot {
   links: { id: string; kind: string; reference: string; label?: string }[];
   overview: WorkstreamOverview | null;
 }
-interface WorkstreamSummary { id: string; title: string; group: string | null; updatedAt: string; unresolvedHumanTaskCount: number }
+interface WorkstreamSummary { id: string; title: string; group: string | null; createdAt: string; updatedAt: string; lastCheckpointAt: string | null; unresolvedHumanTaskCount: number }
 
 export interface OpenWorkstreamSessionDetail {
   workstreamId: string;
@@ -76,7 +76,7 @@ export class WorkstreamChooser extends LitElement {
   private async load(): Promise<void> {
     try {
       const list = await service("list", {}, isSummaryList);
-      this.summaries = [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      this.summaries = [...list].sort((a, b) => (b.lastCheckpointAt ?? b.createdAt).localeCompare(a.lastCheckpointAt ?? a.createdAt));
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
     } finally {
@@ -123,7 +123,7 @@ export class WorkstreamChooser extends LitElement {
             ${items.map((item) => html`
               <button role="listitem" class="row" aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
                 <strong>${item.title}</strong>
-                <small>${ago(item.updatedAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${String(item.unresolvedHumanTaskCount)} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
+                <small>${item.lastCheckpointAt === null ? "no checkpoint yet" : `worked on ${ago(item.lastCheckpointAt)}`} · started ${ago(item.createdAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${String(item.unresolvedHumanTaskCount)} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
               </button>
               ${this.selected?.id === item.id ? this.renderCard(this.selected) : nothing}
             `)}

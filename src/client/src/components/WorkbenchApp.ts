@@ -337,7 +337,18 @@ export class WorkbenchApp extends LitElement {
     return html`
       <main class="chooser" data-view="chooser">
         <section>
-          <div class="workspace-row">
+          <div class="new-chat">
+            <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
+            ${this.app.selectedWorkspace === undefined
+              ? html`<button class="link" @click=${() => { this.chooserTab = "sessions"; }}>Choose a workspace…</button>`
+              : html`<span>in <button class="link" @click=${() => { this.chooserTab = "sessions"; }}>${this.app.selectedProject?.name ?? ""} · ${this.app.selectedWorkspace.branch ?? this.app.selectedWorkspace.label}</button></span>`}
+          </div>
+          <div class="tabs" role="tablist">
+            <button role="tab" aria-selected=${this.chooserTab === "workstreams"} @click=${() => { this.chooserTab = "workstreams"; }}>Workstreams</button>
+            <button role="tab" aria-selected=${this.chooserTab === "sessions"} @click=${() => { this.chooserTab = "sessions"; }}>Sessions</button>
+          </div>
+          ${this.chooserTab === "workstreams" ? html`<workstream-chooser @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>` : null}
+          ${this.chooserTab !== "sessions" ? null : html`<div class="workspace-row">
             ${this.app.machines.length > 1 ? html`
               <label>Machine
                 <select aria-label="Machine" .value=${selectedMachineId(this.app)} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseMachine(event.target.value); }}>
@@ -357,17 +368,11 @@ export class WorkbenchApp extends LitElement {
                 ${this.app.workspaces.map((workspace) => html`<option value=${workspace.id}>${workspace.label}${workspace.isMain ? " · main" : ""}</option>`)}
               </select>
             </label>
-            <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
             <button class="secondary" @click=${() => { this.setApp({ projectDialogOpen: true }); }}>Add project…</button>
-          </div>
-          <div class="tabs" role="tablist">
-            <button role="tab" aria-selected=${this.chooserTab === "workstreams"} @click=${() => { this.chooserTab = "workstreams"; }}>Workstreams</button>
-            <button role="tab" aria-selected=${this.chooserTab === "sessions"} @click=${() => { this.chooserTab = "sessions"; }}>Sessions${this.app.selectedWorkspace === undefined ? "" : ` · ${this.app.selectedWorkspace.branch ?? this.app.selectedWorkspace.label}`}</button>
-          </div>
-          ${this.chooserTab === "workstreams" ? html`<workstream-chooser @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>` : null}
+          </div>`}
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
-          ${this.chooserTab !== "sessions" ? null : this.app.selectedWorkspace === undefined ? html`<p>Choose a workspace above to see its sessions.</p>` : html`
+          ${this.chooserTab !== "sessions" || this.app.selectedWorkspace === undefined ? null : html`
             <div class="sessions">
               ${agentSessionCount === 0 ? null : html`
                 <label class="agent-filter"><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked; }}> Show agent sessions (${agentSessionCount})</label>
@@ -481,6 +486,9 @@ export class WorkbenchApp extends LitElement {
     button:disabled, select:disabled { opacity: .55; cursor: not-allowed; }
     .secondary { justify-self: start; }
     .workspace-row { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+    .new-chat { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .new-chat span { color: var(--pi-muted); }
+    .link { min-height: 0; padding: 0; border: 0; background: none; color: var(--pi-accent); font: inherit; text-decoration: underline; }
     .workspace-row label { flex: 1 1 160px; }
     .workspace-row .secondary { justify-self: auto; }
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--pi-border); }

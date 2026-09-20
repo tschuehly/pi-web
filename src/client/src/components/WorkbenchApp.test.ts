@@ -48,9 +48,10 @@ describe("Workbench Chat chooser", () => {
     const first = app.shadowRoot?.querySelector<HTMLButtonElement>(".chooser > section > :first-child button.primary");
     expect(first?.textContent).toBe("New Chat");
     expect(first?.disabled).toBe(false);
-    expect(app.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]')?.value).toBe(workspace.id);
+    expect(first?.parentElement?.textContent).toContain("Project · main");
     app.shadowRoot?.querySelector<HTMLButtonElement>('button[role="tab"]:nth-child(2)')?.click();
     await app.updateComplete;
+    expect(app.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]')?.value).toBe(workspace.id);
     expect(sessionTitles(app)).toEqual(["Plan the release"]);
     localStorage.removeItem("pi-workbench.last-workspace");
   });
