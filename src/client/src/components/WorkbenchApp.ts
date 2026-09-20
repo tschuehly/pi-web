@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
-import { api, type AskUserSubmission, type ExtensionDialogAnswer, type PromptAttachment, type SessionInfo, type Workspace } from "../api";
+import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type SessionInfo, type Workspace } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { initialAppState, type AppState } from "../appState";
 import { AuthController } from "../controllers/authController";
@@ -98,7 +98,7 @@ export class WorkbenchApp extends LitElement {
       const projects = await api.projects(machine.id);
       if (sequence !== this.loadSequence) return;
       this.setApp({ projects });
-      if (!completeChatRoute(route)) return;
+      if (!completeChatRoute(route)) { await this.restoreLastWorkspace(projects, machine.id, sequence); return; }
 
       const project = projects.find((candidate) => candidate.id === route.projectId);
       if (project === undefined) throw new Error("The selected project is no longer available.");
@@ -117,6 +117,37 @@ export class WorkbenchApp extends LitElement {
     } finally {
       if (sequence === this.loadSequence) this.loading = false;
     }
+  }
+
+  private static readonly LAST_WORKSPACE_KEY = "pi-workbench.last-workspace";
+
+  private rememberWorkspace(): void {
+    const project = this.app.selectedProject;
+    const workspace = this.app.selectedWorkspace;
+    try {
+      if (project === undefined || workspace === undefined) return;
+      localStorage.setItem(WorkbenchApp.LAST_WORKSPACE_KEY, JSON.stringify({ machineId: selectedMachineId(this.app), projectId: project.id, workspaceId: workspace.id }));
+    } catch { /* ignore storage errors */ }
+  }
+
+  /** Reopen the chooser on the workspace used last time so New Chat is one click. */
+  private async restoreLastWorkspace(projects: Project[], machineId: string, sequence: number): Promise<void> {
+    let saved: unknown;
+    try {
+      const raw = localStorage.getItem(WorkbenchApp.LAST_WORKSPACE_KEY);
+      saved = raw === null ? undefined : JSON.parse(raw);
+    } catch { saved = undefined; }
+    if (typeof saved !== "object" || saved === null || !("machineId" in saved) || !("projectId" in saved) || !("workspaceId" in saved)) return;
+    const { machineId: savedMachine, projectId, workspaceId } = saved;
+    if (savedMachine !== machineId || typeof projectId !== "string" || typeof workspaceId !== "string") return;
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (project === undefined) return;
+    const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
+    const workspace = workspaces.find((candidate) => candidate.id === workspaceId);
+    if (sequence !== this.loadSequence || workspace === undefined) return;
+    const sessions = await api.sessions(workspace.path, machineId).catch((): SessionInfo[] => []);
+    if (sequence !== this.loadSequence) return;
+    this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions });
   }
 
   private connectRealtime(): void {
@@ -173,7 +204,7 @@ export class WorkbenchApp extends LitElement {
     this.loading = true;
     try {
       const sessions = await api.sessions(workspace.path, selectedMachineId(this.app));
-      if (sequence === this.loadSequence) this.setApp({ sessions });
+      if (sequence === this.loadSequence) { this.setApp({ sessions }); this.rememberWorkspace(); }
     } catch (error) {
       if (sequence === this.loadSequence) this.setApp({ error: String(error) });
     } finally {
@@ -297,6 +328,10 @@ export class WorkbenchApp extends LitElement {
     return html`
       <main class="chooser" data-view="chooser">
         <section>
+          <div class="new-chat">
+            <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
+            <span>${this.app.selectedWorkspace === undefined ? "Choose a workspace below first." : `in ${this.app.selectedProject?.name ?? ""} · ${this.app.selectedWorkspace.branch ?? this.app.selectedWorkspace.label}`}</span>
+          </div>
           <workstream-chooser @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>
           <h1>Choose a Chat</h1>
           <p>Or select a workspace, then open an existing session or start a new one.</p>
@@ -324,7 +359,6 @@ export class WorkbenchApp extends LitElement {
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
           ${this.app.selectedWorkspace === undefined ? null : html`
             <div class="sessions">
-              <button class="primary" ?disabled=${this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
               ${agentSessionCount === 0 ? null : html`
                 <label class="agent-filter"><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked; }}> Show agent sessions (${agentSessionCount})</label>
               `}
@@ -426,7 +460,7 @@ export class WorkbenchApp extends LitElement {
   static override styles = css`
     :host { position: fixed; inset: 0; display: block; overflow: hidden; background: var(--pi-bg); color: var(--pi-text); font: 14px system-ui, sans-serif; }
     .chooser { box-sizing: border-box; height: 100%; overflow: auto; display: grid; place-items: start center; padding: min(10vh, 72px) 24px 32px; }
-    .chooser > section { box-sizing: border-box; width: min(620px, 100%); display: grid; gap: 16px; padding: 24px; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 18px 50px var(--pi-shadow); }
+    .chooser > section { box-sizing: border-box; width: min(960px, 100%); display: grid; gap: 16px; padding: 24px; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 18px 50px var(--pi-shadow); }
     h1, p { margin: 0; }
     h1 { font-size: 24px; }
     p { color: var(--pi-muted); line-height: 1.45; }
@@ -436,6 +470,8 @@ export class WorkbenchApp extends LitElement {
     button:focus-visible, select:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     button:disabled, select:disabled { opacity: .55; cursor: not-allowed; }
     .secondary { justify-self: start; }
+    .new-chat { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .new-chat span { color: var(--pi-muted); }
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
     .sessions { min-width: 0; display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--pi-border); }
     .agent-filter { display: flex; align-items: center; gap: 6px; text-transform: none; }

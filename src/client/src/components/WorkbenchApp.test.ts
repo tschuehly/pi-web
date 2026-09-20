@@ -35,6 +35,24 @@ describe("Workbench Chat chooser", () => {
     expect(sessionTitles(app)).toEqual(["Plan the release", "workbench-reviewer-deadbeef", "workbench-implementer-12345678"]);
   });
 
+  it("reopens the last used workspace so New Chat is the first control", async () => {
+    localStorage.setItem("pi-workbench.last-workspace", JSON.stringify({ machineId: "local", projectId: project.id, workspaceId: workspace.id }));
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "sessions").mockResolvedValue([session("human", "Plan the release")]);
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedWorkspace?.id).toBe(workspace.id); });
+    await app.updateComplete;
+
+    const first = app.shadowRoot?.querySelector<HTMLButtonElement>(".chooser > section > :first-child button");
+    expect(first?.textContent).toBe("New Chat");
+    expect(first?.disabled).toBe(false);
+    expect(first?.parentElement?.textContent).toContain("in Project · main");
+    expect(sessionTitles(app)).toEqual(["Plan the release"]);
+    localStorage.removeItem("pi-workbench.last-workspace");
+  });
+
   it("returns from a Chat to the current workspace chooser", async () => {
     const current = session("human", "Plan the release");
     const app = await mountChooser([current]);
