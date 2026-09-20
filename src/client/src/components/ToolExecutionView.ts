@@ -49,7 +49,7 @@ export class ToolExecutionView extends LitElement {
     const row = toolRowSummary(execution);
 
     return html`
-      <details class=${`tool-card ${execution.status}`} ?open=${execution.status === "error"}>
+      <details class=${`tool-card ${execution.status}`}>
         <summary class="tool-row">
           <span class="chevron">${renderBuiltinTabIcon("chevron")}</span>
           <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>

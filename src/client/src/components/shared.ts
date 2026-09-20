@@ -72,6 +72,7 @@ export interface ChatLine {
   role: "user" | "assistant" | "tool" | "system" | "bash" | "skill";
   parts: ChatPart[];
   source?: "compaction" | "branch_summary";
+  severity?: "error";
   meta?: {
     timestamp?: string;
     model?: { provider?: string; id?: string; responseId?: string };
@@ -369,16 +370,11 @@ export const chatStyles = css`
   .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
   .activity-dock.active .dot { animation: pulse 1s ease-in-out infinite; opacity: 1; }
   .msg { max-width: var(--pi-content-max-width); min-width: 0; box-sizing: border-box; margin: 0 0 16px; padding: 0 2px; border: 0; background: transparent; overflow: visible; overflow-wrap: anywhere; }
-  .msg.tool { color: var(--pi-warning); }
+  .msg.tool, .msg.system { color: var(--pi-text); }
+  .msg.error { color: var(--pi-danger); }
   .msg.tool-execution-shell, .msg.ask-user-record-shell { padding: 0 2px var(--pi-message-padding); color: var(--pi-text); }
   .msg.ask-user-record-shell ask-user-card { margin: 0 auto; }
-  .msg.system { color: var(--pi-danger); }
-  .msg.event-group { padding: 0 0 var(--pi-message-padding); color: var(--pi-muted); }
-  .msg.event-group > summary { position: sticky; top: -26px; z-index: 5; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 2px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-bg); color: var(--pi-muted); list-style: none; }
-  .msg.event-group > summary::-webkit-details-marker { display: none; }
-  .msg.event-group.live > summary { border-bottom-color: var(--pi-success-border); color: var(--pi-success); }
-  .msg.event-group > summary .label { margin: 0; }
-  .group-body { margin-top: 6px; padding-left: 12px; border-left: 2px solid var(--pi-border-muted); }
+  .event-group { max-width: var(--pi-content-max-width); margin: 0 0 16px; }
   .chat-image { display: block; max-width: 100%; max-height: 320px; margin: 8px 0 0; border: 1px solid var(--pi-border-muted); border-radius: 8px; object-fit: contain; cursor: zoom-in; }
   .chat-image:focus-visible { outline: 2px solid var(--pi-accent, var(--pi-success-border)); outline-offset: 2px; }
   dialog.image-zoom { position: fixed; inset: 0; margin: auto; max-width: calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)); max-height: calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: visible; }
@@ -388,10 +384,9 @@ export const chatStyles = css`
   .image-zoom-close { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; font: 16px/1 system-ui, sans-serif; color: var(--pi-muted); background: color-mix(in srgb, var(--pi-surface) 88%, transparent); border: 1px solid var(--pi-border); border-radius: 6px; cursor: pointer; }
   .image-zoom-close:hover, .image-zoom-close:focus-visible { color: var(--pi-text-bright); border-color: var(--pi-accent); }
   .image-zoom-close:focus-visible { outline: 1px solid var(--pi-border); outline-offset: 2px; }
-  .group-msg { max-width: 100%; min-width: 0; box-sizing: border-box; padding: 4px 0; color: var(--pi-text); overflow: visible; overflow-wrap: anywhere; }
-  .group-msg.tool { color: var(--pi-warning); }
+  .group-msg { max-width: 100%; min-width: 0; box-sizing: border-box; padding: 4px 2px; color: var(--pi-text); overflow: visible; overflow-wrap: anywhere; }
+  .group-msg.error { color: var(--pi-danger); }
   .group-msg.tool-execution-shell { color: var(--pi-text); }
-  .group-msg.system { color: var(--pi-danger); }
   .group-msg.bash { color: var(--pi-success); }
   .history-boundary { position: relative; z-index: 5; display: grid; gap: 3px; justify-items: center; margin: 0 0 14px; color: var(--pi-muted); font-size: 12px; text-align: center; }
   .history-load-button { border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-surface); color: var(--pi-text-secondary); padding: 5px 12px; font: 12px system-ui, sans-serif; cursor: pointer; }
@@ -421,7 +416,6 @@ export const chatStyles = css`
   .msg.user > .msg-header .label { color: var(--pi-accent); }
   .msg.bash > .msg-header .label { color: var(--pi-success); }
   .msg.skill > .msg-header .label { color: var(--pi-purple); }
-  .group-msg > .msg-header { position: sticky; top: -26px; z-index: 4; margin: -4px 0 8px; padding: 5px 0; background: var(--pi-bg); }
   .msg-heading { min-width: 0; flex: 1 1 auto; display: flex; align-items: baseline; gap: 5px; overflow: hidden; white-space: nowrap; }
   .msg-actions { flex: 0 0 auto; display: inline-flex; gap: 6px; opacity: 0; transition: opacity .12s ease; }
   .msg-action { display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 0; font: 14px system-ui, sans-serif; line-height: 1; cursor: pointer; }
@@ -431,23 +425,17 @@ export const chatStyles = css`
   .msg:hover > .msg-header .msg-actions, .msg:focus-within > .msg-header .msg-actions, .group-msg:hover > .msg-header .msg-actions, .group-msg:focus-within > .msg-header .msg-actions { opacity: 1; }
   .label { display: block; color: var(--pi-muted); font-size: 12px; text-transform: uppercase; }
   .msg-header .label { flex: 0 0 auto; margin: 0; }
-  .msg-meta { min-width: 0; overflow: hidden; border: 0; background: transparent; color: var(--pi-dim); padding: 0; font: 12px system-ui, sans-serif; text-align: left; text-overflow: ellipsis; white-space: nowrap; transition: color .12s ease; cursor: pointer; user-select: text; -webkit-user-select: text; }
-  .msg:hover > .msg-header .msg-meta, .msg:focus-within > .msg-header .msg-meta, .group-msg:hover > .msg-header .msg-meta, .group-msg:focus-within > .msg-header .msg-meta, .msg-meta:focus, .msg-meta.expanded { color: var(--pi-muted); }
-  .msg-meta.expanded { white-space: normal; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; }
-  .msg-meta:focus { outline: 1px solid var(--pi-border); outline-offset: 3px; border-radius: 4px; }
-  @media (hover: none) {
-    .msg-actions { opacity: 1; }
-    .msg-meta { opacity: .75; max-width: 26px; }
-    .msg-meta:not(.expanded) { display: inline-grid; width: 26px; height: 22px; place-items: center; font-size: 0; text-overflow: clip; }
-    .msg-meta::before { content: "ⓘ"; font-size: 13px; }
-    .msg-meta.expanded { opacity: 1; max-width: 100%; }
-    .msg-meta.expanded::before { content: ""; }
-  }
+  .msg-meta { min-width: 0; overflow: hidden; color: var(--pi-dim); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  @media (hover: none) { .msg-actions { opacity: 1; } }
   formatted-text.part { display: block; }
   formatted-text.part, .queued-message formatted-text { text-align: start; unicode-bidi: plaintext; }
   .part { max-width: 100%; min-width: 0; box-sizing: border-box; overflow: visible; overflow-wrap: anywhere; }
   .part + .part { margin-top: 8px; }
-  .tool-line { color: var(--pi-warning); }
+  .thinking { display: grid; gap: 4px; }
+  .thinking-label { color: var(--pi-muted); font-size: 11px; }
+  .thinking > formatted-text { min-width: 0; }
+  .tool-line { color: var(--pi-text); }
+  .tool-result.error > summary { color: var(--pi-danger); }
   .summary { color: var(--pi-muted); margin-left: 6px; }
   .part:is(details) { padding: 0; }
   .part > formatted-text { display: block; max-width: 100%; min-width: 0; margin-top: 8px; overflow: visible; }

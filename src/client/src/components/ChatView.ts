@@ -1,8 +1,7 @@
 import { LitElement, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import { ChatDisclosureController } from "../chatDisclosure";
-import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
+import { currentExchangeGroups, groupChatMessages, type ChatGroup } from "../chatGroups";
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
@@ -38,6 +37,7 @@ import "./ToolExecutionView";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
+const messageTimeFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 const notificationTimestampFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 
 function renderNotificationDisclosureIcon(collapsed: boolean) {
@@ -110,7 +110,7 @@ export function chatMessageAnchorKey(index: number): string {
   return `m:${String(index)}`;
 }
 
-/** The stable scroll-anchor/render key for a collapsed event group starting at `startIndex`. */
+/** The stable scroll-anchor/render key for an event group starting at `startIndex`. */
 export function chatGroupAnchorKey(startIndex: number): string {
   return `g:${String(startIndex)}`;
 }
@@ -123,16 +123,6 @@ export function chatEventAnchorKey(index: number): string {
 /** The stable scroll-marker id emitted before an event group ending at `endIndex`. */
 export function chatGroupScrollMarkerId(endIndex: number): string {
   return `g:${String(endIndex)}`;
-}
-
-/** The CSS class list for an event-group `<details>`, distinguishing the live tail. */
-export function chatMessageGroupClassName(defaultOpen: boolean): string {
-  return defaultOpen ? "msg event-group live" : "msg event-group";
-}
-
-/** The disclosure summary label for an event group, distinguishing the live tail. */
-export function chatMessageGroupLabel(defaultOpen: boolean): string {
-  return defaultOpen ? "live events" : "events";
 }
 
 /** Whether a queued-message section shows the server clear-queue action. */
@@ -162,27 +152,9 @@ export function chatSessionWarningRows(status: SessionStatus | undefined): ChatS
   }));
 }
 
-export function thinkingPreview(text: string): string {
-  const heading = text.split("\n").map((line) => line.trim()).find((line) => /^#{1,6}\s+/.test(line));
-  const plain = stripPreviewMarkdown(heading ?? text).replace(/\s+/g, " ").trim();
-  const sentence = /^.*?[.!?](?:\s|$)/.exec(plain)?.[0]?.trim() ?? plain;
-  return sentence.length > 90 ? `${sentence.slice(0, 89)}…` : sentence;
-}
-
-function stripPreviewMarkdown(text: string): string {
-  return text
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/^\s{0,3}(?:#{1,6}|>|[-*+] |\d+\. )\s*/gm, "")
-    .replace(/[*_~`]/g, "");
-}
-
-export function chatMessageMetadataLabel(message: ChatLine): string {
+export function chatMessageMetadataLabel(message: ChatLine): string | undefined {
   const timestamp = message.meta?.timestamp;
-  const time = timestamp === undefined ? undefined : formatMessageTimestamp(timestamp);
-  const model = chatMessageModelLabel(message);
-  const parts = [time, model, message.meta?.thinkingLevel].filter((part): part is string => part !== undefined && part !== "");
-  return parts.length === 0 ? "No Pi message metadata available" : parts.join(" · ");
+  return timestamp === undefined ? undefined : formatMessageTimestamp(timestamp);
 }
 
 function formatMessageTimestamp(timestamp: string): string | undefined {
@@ -191,12 +163,18 @@ function formatMessageTimestamp(timestamp: string): string | undefined {
   return messageTimestampFormatter.format(date);
 }
 
-function chatMessageModelLabel(message: ChatLine): string | undefined {
-  const model = message.meta?.model;
-  if (model === undefined) return undefined;
-  const id = model.responseId ?? model.id;
-  if (id === undefined || id === "") return model.provider;
-  return model.provider !== undefined && model.provider !== "" ? `${model.provider}/${id}` : id;
+function formatMessageTime(timestamp: string): string {
+  return messageTimeFormatter.format(new Date(timestamp));
+}
+
+function formatToolCallArguments(args: unknown): string {
+  if (typeof args === "string") return args;
+  try {
+    const formatted: unknown = JSON.stringify(args, undefined, 2);
+    return typeof formatted === "string" ? formatted : String(args);
+  } catch {
+    return String(args);
+  }
 }
 
 @customElement("chat-view")
@@ -241,14 +219,12 @@ export class ChatView extends LitElement {
   @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement;
   @state() private pinnedToBottom = true;
   @state() private zoomedImage: { src: string; alt: string } | undefined = undefined;
-  @state() private expandedMetaKey: string | undefined;
   @state() private copiedMessageKey: string | undefined;
   @state() private currentConversationIndex: number | undefined;
   @state() private collapsedNotificationTargetKeys: ReadonlySet<string> = new Set();
   @state() private retainedEmptyNotificationTrayTargetKey: string | undefined;
   private pendingNotificationFocus: PendingNotificationFocus | undefined;
   private imageZoomModalRegistration: RenderedModalRegistration | undefined;
-  private readonly disclosures = new ChatDisclosureController();
   private readonly scrollController = new ChatScrollController();
   private suppressScrollSave = false;
   private suppressLoadMoreRequests = false;
@@ -260,7 +236,7 @@ export class ChatView extends LitElement {
   private groupedMessagesInput?: ChatLine[];
   private groupedMessagesStart = 0;
   private groupedMessagesCache: ChatGroup[] = [];
-  private readonly messageMetaCache = new WeakMap<ChatLine, string>();
+  private readonly messageMetaCache = new WeakMap<ChatLine, string | undefined>();
   private readonly messageCopyTextCache = new WeakMap<ChatLine, string>();
   private lastScrollTop = 0;
   private lastClientHeight = 0;
@@ -336,7 +312,6 @@ export class ChatView extends LitElement {
   }
 
   private prepareSessionUiState(): void {
-    this.disclosures.syncSession(this.sessionId);
     this.pendingNotificationFocus = undefined;
     this.retainedEmptyNotificationTrayTargetKey = undefined;
     this.scrollController.clearScheduledSave();
@@ -436,7 +411,7 @@ export class ChatView extends LitElement {
   }
 
   override render() {
-    const groups = this.groupedMessages();
+    const exchange = currentExchangeGroups(this.messages, this.groupedMessages(), this.messageStart, this.hasMore);
     return html`
       ${this.renderTopNotices()}
       ${this.renderNotificationLiveRegions()}
@@ -444,15 +419,14 @@ export class ChatView extends LitElement {
         ${this.renderConversationRail()}
         <div class="chat" @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
           ${this.renderHistoryBoundary()}
-          ${repeat(
-            groups,
-            (group) => group.kind === "group" ? this.groupRenderKey(group.startIndex) : this.messageAnchorKey(group.index),
-            (group, index) => {
-              if (group.kind === "group") return this.renderMessageGroup(group.messages, group.startIndex, group.endIndex, this.isLiveTailGroup(groups, index));
-              if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, group.toolName);
-              return this.renderMessage(group.message, group.index);
-            },
-          )}
+          ${exchange.history.length === 0 ? null : html`
+            <details class="exchange-history">
+              <summary>Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
+              <div class="exchange-history-body">${this.renderGroups(exchange.history)}</div>
+            </details>
+          `}
+          ${exchange.startsOutsideLoadedPage ? html`<div class="exchange-boundary" role="note">Current loaded tail · the latest user message is in earlier history</div>` : null}
+          ${this.renderGroups(exchange.current)}
           ${this.renderQueuedMessages()}
           ${this.renderSessionActivity()}
           ${this.renderOpenAsk()}
@@ -462,6 +436,18 @@ export class ChatView extends LitElement {
       </div>
       ${this.renderImageZoom()}
     `;
+  }
+
+  private renderGroups(groups: ChatGroup[]) {
+    return repeat(
+      groups,
+      (group) => group.kind === "group" ? this.groupRenderKey(group.startIndex) : this.messageAnchorKey(group.index),
+      (group) => {
+        if (group.kind === "group") return this.renderMessageGroup(group.messages, group.startIndex, group.endIndex);
+        if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, group.toolName);
+        return this.renderMessage(group.message, group.index);
+      },
+    );
   }
 
   private renderTopNotices() {
@@ -670,18 +656,6 @@ export class ChatView extends LitElement {
     return this.groupedMessagesCache;
   }
 
-  private isLiveTailGroup(groups: ChatGroup[], index: number): boolean {
-    return index === groups.length - 1 && this.isSessionLive();
-  }
-
-  private isSessionLive(): boolean {
-    return this.isSendingPrompt
-      || this.status?.isStreaming === true
-      || this.status?.isCompacting === true
-      || this.status?.isBashRunning === true
-      || this.activity?.phase === "active";
-  }
-
   private renderActivityDock() {
     if (this.isSendingPrompt) {
       return html`
@@ -868,7 +842,7 @@ export class ChatView extends LitElement {
     const shellClass = toolOnly ? "msg tool-execution-shell" : "msg ask-user-record-shell";
     return html`
       ${this.renderScrollMarker(this.messageScrollMarkerId(index))}
-      <article class=${toolOnly || askUserRecordOnly ? shellClass : `msg ${message.role}`} data-index=${index} data-scroll-anchor-id=${this.messageAnchorKey(index)}>
+      <article class=${`${toolOnly || askUserRecordOnly ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${this.messageAnchorKey(index)}>
         ${toolOnly || askUserRecordOnly ? null : this.renderMessageHeader(message, String(index))}
         ${message.parts.map((part) => this.renderPart(part, message))}
       </article>
@@ -894,32 +868,18 @@ export class ChatView extends LitElement {
     return message.parts.length > 0 && message.parts.every((part) => part.type === "askUserRecord");
   }
 
-  private renderMessageGroup(messages: ChatLine[], startIndex: number, endIndex: number, defaultOpen: boolean) {
-    const disclosureKey = this.groupDisclosureKey(startIndex, endIndex, defaultOpen);
-    const open = this.disclosures.isOpen(disclosureKey, defaultOpen);
+  private renderMessageGroup(messages: ChatLine[], startIndex: number, endIndex: number) {
     return html`
       ${this.renderScrollMarker(this.groupScrollMarkerId(endIndex))}
-      <details class=${chatMessageGroupClassName(defaultOpen)} data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)} ?open=${open} @toggle=${(event: Event) => { this.onGroupToggle(disclosureKey, event, defaultOpen); }}>
-        <summary>
-          <span class="chevron">${renderBuiltinTabIcon("chevron")}</span>
-          <b class="label">${chatMessageGroupLabel(defaultOpen)}</b>
-          <span class="disclosure-preview">${summarizeChatGroup(messages)}</span>
-        </summary>
-        ${this.renderMessageGroupBody(messages, startIndex)}
-      </details>
-    `;
-  }
-
-  private renderMessageGroupBody(messages: ChatLine[], startIndex: number) {
-    return html`
-      <div class="group-body">
+      <div class="event-group" data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)}>
         ${messages.map((message, offset) => {
           const toolOnly = this.isToolExecutionOnlyMessage(message);
+          const classes = `${toolOnly ? "group-msg tool-execution-shell" : `group-msg ${message.role}`}${message.severity === "error" ? " error" : ""}`;
           return html`
-            <section class=${toolOnly ? "group-msg tool-execution-shell" : `group-msg ${message.role}`} data-index=${startIndex + offset} data-scroll-anchor-id=${this.eventAnchorKey(startIndex + offset)}>
+            <article class=${classes} data-index=${startIndex + offset} data-scroll-anchor-id=${this.eventAnchorKey(startIndex + offset)}>
               ${toolOnly ? null : this.renderMessageHeader(message, `${String(startIndex)}:${String(offset)}`)}
               ${message.parts.map((part) => this.renderPart(part, message))}
-            </section>
+            </article>
           `;
         })}
       </div>
@@ -931,14 +891,13 @@ export class ChatView extends LitElement {
   }
 
   private renderMessageHeader(message: ChatLine, key: string, label: string = message.role) {
+    const timestamp = message.meta?.timestamp;
     const meta = this.messageMetaLabel(message);
-    const expanded = this.expandedMetaKey === key;
     return html`
       <div class="msg-header">
         <div class="msg-heading">
           <b class="label">${label}</b>
-          <span aria-hidden="true">·</span>
-          <span class=${expanded ? "msg-meta expanded" : "msg-meta"} role="button" tabindex="0" title=${meta} aria-label=${meta} aria-expanded=${String(expanded)} @click=${() => { this.expandedMetaKey = expanded ? undefined : key; }} @keydown=${(event: KeyboardEvent) => { this.onMetaKeydown(event, key, expanded); }}>${meta}</span>
+          ${meta === undefined || timestamp === undefined ? null : html`<time class="msg-meta" datetime=${timestamp} title=${meta} aria-label=${meta}>${formatMessageTime(timestamp)}</time>`}
         </div>
         ${this.renderMessageActions(message, key)}
       </div>
@@ -981,12 +940,6 @@ export class ChatView extends LitElement {
     }
   }
 
-  private onMetaKeydown(event: KeyboardEvent, key: string, expanded: boolean) {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    this.expandedMetaKey = expanded ? undefined : key;
-  }
-
   private isCopyableMessage(message: ChatLine): boolean {
     return (message.role === "user" || message.role === "assistant") && this.messageCopyText(message) !== "";
   }
@@ -1014,7 +967,7 @@ export class ChatView extends LitElement {
   }
 
 
-  private messageMetaLabel(message: ChatLine): string {
+  private messageMetaLabel(message: ChatLine): string | undefined {
     const cached = this.messageMetaCache.get(message);
     if (cached !== undefined) return cached;
     const label = chatMessageMetadataLabel(message);
@@ -1026,10 +979,10 @@ export class ChatView extends LitElement {
     if (part.type === "text" && message?.role === "bash") return html`<pre class="part shell-output">${part.text}</pre>`;
     if (part.type === "text") return html`<formatted-text class="part" .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>`;
     if (part.type === "thinking") return html`
-      <details class="part thinking">
-        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><span class="disclosure-preview">Thinking · ${thinkingPreview(part.text)}</span></summary>
+      <div class="part thinking">
+        <small class="thinking-label">Thinking</small>
         <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>
-      </details>
+      </div>
     `;
     if (part.type === "skillInvocation") return html`
       <details class="part skill-invocation">
@@ -1055,21 +1008,20 @@ export class ChatView extends LitElement {
       const { src, alt } = chatImagePartSource(part);
       return html`<img class="part chat-image" src=${src} alt=${alt} loading="lazy" role="button" tabindex="0" title="Click to enlarge" @load=${this.onImageLoad} @click=${() => { this.openImageZoom(src, alt); }} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.openImageZoom(src, alt); } }} />`;
     }
-    if (part.type === "toolCall") return html`<div class="part tool-line">▶ ${part.toolName}<span class="summary">${part.summary}</span></div>`;
+    if (part.type === "toolCall") return html`
+      <details class="part tool-line">
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span>▶ ${part.toolName}<span class="summary">${part.summary}</span></summary>
+        ${part.args === undefined ? null : html`<pre>${formatToolCallArguments(part.args)}</pre>`}
+      </details>
+    `;
     if (part.type === "toolExecution") return html`<tool-execution-view class="part" .execution=${part}></tool-execution-view>`;
     if (part.type === "toolResult") return html`
-      <details class="part" ?open=${part.isError}>
+      <details class=${part.isError ? "part tool-result error" : "part tool-result"}>
         <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
         <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>
       </details>
     `;
     return null;
-  }
-
-  private onGroupToggle(key: string, event: Event, defaultOpen: boolean) {
-    const details = event.currentTarget;
-    if (!(details instanceof HTMLDetailsElement)) return;
-    if (this.disclosures.applyToggle(key, details.open, defaultOpen)) this.requestUpdate();
   }
 
   private onScroll() {
@@ -1392,7 +1344,7 @@ export class ChatView extends LitElement {
   }
 
   private articles(): HTMLElement[] {
-    return Array.from(this.renderRoot.querySelectorAll<HTMLElement>("article.msg, details.msg"));
+    return Array.from(this.renderRoot.querySelectorAll<HTMLElement>("article.msg, article.group-msg"));
   }
 
   private scrollAnchorElements(): HTMLElement[] {
@@ -1407,10 +1359,6 @@ export class ChatView extends LitElement {
         this.suppressScrollSave = false;
       });
     });
-  }
-
-  private groupDisclosureKey(startIndex: number, endIndex: number, defaultOpen: boolean): string {
-    return defaultOpen ? `${this.sessionId}:live:${String(startIndex)}` : `${this.sessionId}:${String(endIndex)}`;
   }
 
   private messageAnchorKey(index: number): string {

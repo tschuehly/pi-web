@@ -6,19 +6,15 @@ import {
   notificationTrayIsCollapsed,
   type SelectedSessionNotificationView,
 } from "../sessionNotifications";
-import type { ChatLine } from "./shared";
 import {
   ChatView,
   chatEventAnchorKey,
   chatGroupAnchorKey,
   chatGroupScrollMarkerId,
-  chatMessageGroupClassName,
-  chatMessageGroupLabel,
   chatMessageMetadataLabel,
   chatQueuedMessageSections,
   chatQueuedSectionShowsClearAction,
   chatSessionWarningRows,
-  thinkingPreview,
 } from "./ChatView";
 import { templateEventHandlerAfterMarker, templateEventHandlerNearMarker } from "../templateInspection.testSupport";
 
@@ -244,32 +240,8 @@ describe("ChatView notification tray wiring", () => {
   });
 });
 
-describe("thinkingPreview", () => {
-  it("uses the first markdown heading without markdown decoration", () => {
-    expect(thinkingPreview("Intro without a stop\n\n## **Inspecting the transcript**\nMore detail."))
-      .toBe("Inspecting the transcript");
-  });
-
-  it("uses the first sentence and limits the preview to 90 characters", () => {
-    expect(thinkingPreview(`**${"Long thought ".repeat(10)}** Next sentence.`)).toHaveLength(90);
-    expect(thinkingPreview("Consider the existing grouping. Then inspect the styles."))
-      .toBe("Consider the existing grouping.");
-  });
-});
-
 describe("chatMessageMetadataLabel", () => {
-  it("uses one full date and model label without a model prefix", () => {
-    const timestamp = "2026-07-10T19:15:30.000Z";
-    const formattedTimestamp = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(timestamp));
-
-    expect(chatMessageMetadataLabel({
-      role: "assistant",
-      parts: [],
-      meta: { timestamp, model: { provider: "provider", id: "model" } },
-    })).toBe(`${formattedTimestamp} · provider/model`);
-  });
-
-  it("appends the thinking level after the model when present", () => {
+  it("keeps only the timestamp when model and thinking metadata are present", () => {
     const timestamp = "2026-07-10T19:15:30.000Z";
     const formattedTimestamp = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(timestamp));
 
@@ -277,103 +249,33 @@ describe("chatMessageMetadataLabel", () => {
       role: "assistant",
       parts: [],
       meta: { timestamp, model: { provider: "provider", id: "model" }, thinkingLevel: "high" },
-    })).toBe(`${formattedTimestamp} · provider/model · high`);
+    })).toBe(formattedTimestamp);
+  });
+
+  it("does not synthesize fallback metadata", () => {
+    expect(chatMessageMetadataLabel({ role: "system", parts: [] })).toBeUndefined();
   });
 });
 
 describe("chat event-group content seams", () => {
-  // Group scroll-anchor keys, marker ids, class list, and disclosure label are
-  // content/structure derived from pure exported seams rather than scraped from
-  // rendered markup.
-  it("derives stable group and event scroll-anchor keys and marker ids", () => {
+  it("keeps stable group and per-event scroll anchors without disclosure state", () => {
     expect(chatGroupAnchorKey(40)).toBe("g:40");
     expect(chatEventAnchorKey(40)).toBe("e:40");
     expect(chatEventAnchorKey(41)).toBe("e:41");
     expect(chatGroupScrollMarkerId(41)).toBe("g:41");
   });
-
-  it("distinguishes the live tail group by class and disclosure label", () => {
-    expect(chatMessageGroupClassName(true)).toBe("msg event-group live");
-    expect(chatMessageGroupClassName(false)).toBe("msg event-group");
-    expect(chatMessageGroupLabel(true)).toBe("live events");
-    expect(chatMessageGroupLabel(false)).toBe("events");
-  });
 });
 
-describe("ChatView event-group disclosure wiring", () => {
-  const messages: ChatLine[] = [
-    { role: "assistant", parts: [{ type: "toolCall", toolName: "read", summary: "inspect a file" }] },
-    { role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "inspect a file", status: "success", resultText: "large result" }] },
-  ];
-
-  it("keeps a closed group body mounted so nested row previews remain available", () => {
-    const view = new ChatView();
-    view.sessionId = "session-1";
-    const bodyCalls = observeGroupBodyRenders(view);
-
-    renderMessageGroup(view, messages, 40, 41, false);
-
-    expect(bodyCalls).toEqual([{ messages, startIndex: 40 }]);
-  });
-
-  it("renders a live tail body by default", () => {
-    const view = new ChatView();
-    view.sessionId = "session-1";
-    const bodyCalls = observeGroupBodyRenders(view);
-
-    renderMessageGroup(view, messages, 40, 41, true);
-
-    expect(bodyCalls).toEqual([{ messages, startIndex: 40 }]);
-  });
-
-  // Escape hatch: this case verifies the native `<details>` `@toggle` wiring,
-  // whose observable effect is persisted disclosure state while the nested row
-  // previews remain mounted. No DOM environment is available for a real disclosure interaction, so
-  // handler extraction anchored to the stable `@toggle=` attribute marker plus
-  // an injected details-toggle event is proportionate.
-  it("keeps the body mounted while persisted disclosure state toggles", () => {
-    const view = new ChatView();
-    view.sessionId = "session-1";
-    const bodyCalls = observeGroupBodyRenders(view);
-    const initiallyClosed = renderMessageGroup(view, messages, 40, 41, false);
-    bodyCalls.length = 0;
-
-    dispatchDetailsToggle(templateEventHandlerAfterMarker(initiallyClosed, "@toggle="), true);
-    renderMessageGroup(view, messages, 40, 41, false);
-
-    expect(bodyCalls).toEqual([{ messages, startIndex: 40 }]);
-
-    bodyCalls.length = 0;
-    dispatchDetailsToggle(templateEventHandlerAfterMarker(initiallyClosed, "@toggle="), false);
-    renderMessageGroup(view, messages, 40, 41, false);
-
-    expect(bodyCalls).toEqual([{ messages, startIndex: 40 }]);
-  });
-});
-
-interface GroupBodyRenderCall {
-  messages: ChatLine[];
-  startIndex: number;
-}
 
 type RenderQueuedMessages = (this: ChatView) => TemplateResult;
-type RenderMessageGroup = (this: ChatView, messages: ChatLine[], startIndex: number, endIndex: number, defaultOpen: boolean) => TemplateResult;
-type RenderMessageGroupBody = (this: ChatView, messages: ChatLine[], startIndex: number) => TemplateResult;
 type RenderWarnings = (this: ChatView) => TemplateResult | null;
 type RenderNotificationTray = (this: ChatView) => TemplateResult | null;
 type FocusPendingNotificationTarget = (this: ChatView) => void;
-type TemplateEventHandler = (event: Event) => void;
 
 function renderQueuedMessages(view: ChatView): TemplateResult {
   const method: unknown = Reflect.get(view, "renderQueuedMessages");
   if (!isRenderQueuedMessages(method)) throw new Error("ChatView.renderQueuedMessages is not callable");
   return method.call(view);
-}
-
-function renderMessageGroup(view: ChatView, messages: ChatLine[], startIndex: number, endIndex: number, defaultOpen: boolean): TemplateResult {
-  const method: unknown = Reflect.get(view, "renderMessageGroup");
-  if (!isRenderMessageGroup(method)) throw new Error("ChatView.renderMessageGroup is not callable");
-  return method.call(view, messages, startIndex, endIndex, defaultOpen);
 }
 
 function renderWarnings(view: ChatView): TemplateResult | null {
@@ -394,27 +296,7 @@ function focusPendingNotificationTarget(view: ChatView): void {
   method.call(view);
 }
 
-function observeGroupBodyRenders(view: ChatView): GroupBodyRenderCall[] {
-  const method: unknown = Reflect.get(view, "renderMessageGroupBody");
-  if (!isRenderMessageGroupBody(method)) throw new Error("ChatView.renderMessageGroupBody is not callable");
-  const calls: GroupBodyRenderCall[] = [];
-  const observed: RenderMessageGroupBody = function (messages, startIndex) {
-    calls.push({ messages, startIndex });
-    return method.call(this, messages, startIndex);
-  };
-  if (!Reflect.set(view, "renderMessageGroupBody", observed)) throw new Error("Could not observe ChatView.renderMessageGroupBody");
-  return calls;
-}
-
 function isRenderQueuedMessages(value: unknown): value is RenderQueuedMessages {
-  return typeof value === "function";
-}
-
-function isRenderMessageGroup(value: unknown): value is RenderMessageGroup {
-  return typeof value === "function";
-}
-
-function isRenderMessageGroupBody(value: unknown): value is RenderMessageGroupBody {
   return typeof value === "function";
 }
 
@@ -428,25 +310,6 @@ function isRenderNotificationTray(value: unknown): value is RenderNotificationTr
 
 function isFocusPendingNotificationTarget(value: unknown): value is FocusPendingNotificationTarget {
   return typeof value === "function";
-}
-
-function dispatchDetailsToggle(handler: TemplateEventHandler, open: boolean): void {
-  const hadDetailsElement = Reflect.has(globalThis, "HTMLDetailsElement");
-  const previousDetailsElement = Reflect.get(globalThis, "HTMLDetailsElement");
-  class StubDetailsElement extends EventTarget {
-    constructor(readonly open: boolean) {
-      super();
-    }
-  }
-  Reflect.set(globalThis, "HTMLDetailsElement", StubDetailsElement);
-  try {
-    const details = new StubDetailsElement(open);
-    details.addEventListener("toggle", (event) => { handler(event); });
-    details.dispatchEvent(new Event("toggle"));
-  } finally {
-    if (hadDetailsElement) Reflect.set(globalThis, "HTMLDetailsElement", previousDetailsElement);
-    else Reflect.deleteProperty(globalThis, "HTMLDetailsElement");
-  }
 }
 
 function requireSection(section: ReturnType<typeof chatQueuedMessageSections>[number] | undefined): ReturnType<typeof chatQueuedMessageSections>[number] {

@@ -5,6 +5,29 @@ export type ChatGroup =
   | { kind: "tool-image"; message: ChatLine; index: number; toolName?: string }
   | { kind: "group"; messages: ChatLine[]; startIndex: number; endIndex: number };
 
+export interface CurrentExchangeGroups {
+  history: ChatGroup[];
+  current: ChatGroup[];
+  startsAt: number | undefined;
+  startsOutsideLoadedPage: boolean;
+}
+
+export function currentExchangeGroups(messages: ChatLine[], groups: ChatGroup[], messageStart: number, hasMore: boolean): CurrentExchangeGroups {
+  let localStart = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user" && message.source !== "compaction" && message.source !== "branch_summary") {
+      localStart = index;
+      break;
+    }
+  }
+  if (localStart < 0) return { history: [], current: groups, startsAt: undefined, startsOutsideLoadedPage: hasMore && messageStart > 0 };
+  const startsAt = messageStart + localStart;
+  const split = groups.findIndex((group) => (group.kind === "group" ? group.endIndex : group.index) >= startsAt);
+  if (split <= 0) return { history: [], current: groups, startsAt, startsOutsideLoadedPage: false };
+  return { history: groups.slice(0, split), current: groups.slice(split), startsAt, startsOutsideLoadedPage: false };
+}
+
 export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGroup[] {
   const groups: ChatGroup[] = [];
   let eventMessages: ChatLine[] = [];
@@ -25,7 +48,7 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
     const technicalParts = message.parts.filter((part) => !isReadablePart(message, part));
 
     const absoluteIndex = indexOffset + index;
-    const metadata = { ...(message.entryId === undefined ? {} : { entryId: message.entryId }), ...(message.source === undefined ? {} : { source: message.source }), ...(message.meta === undefined ? {} : { meta: message.meta }) };
+    const metadata = { ...(message.entryId === undefined ? {} : { entryId: message.entryId }), ...(message.source === undefined ? {} : { source: message.source }), ...(message.severity === undefined ? {} : { severity: message.severity }), ...(message.meta === undefined ? {} : { meta: message.meta }) };
     if (technicalParts.length) pushEvent({ role: message.role, parts: technicalParts, ...metadata }, absoluteIndex);
     if (readableParts.length) {
       flushEvents();

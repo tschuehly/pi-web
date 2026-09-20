@@ -48,6 +48,18 @@ const finalAssistant = {
 };
 
 describe("applyTranscriptEvent", () => {
+  it("marks only error-level runtime output as transcript errors", () => {
+    let messages = applyTranscriptEvent([], { type: "command.output", level: "info", message: "watcher ready" }) ?? [];
+    messages = applyTranscriptEvent(messages, { type: "command.output", level: "error", message: "watcher failed" }) ?? messages;
+    messages = applyTranscriptEvent(messages, { type: "session.error", message: "session failed" }) ?? messages;
+
+    expect(messages).toEqual([
+      textMessage("tool", "watcher ready"),
+      { ...textMessage("system", "watcher failed"), severity: "error" },
+      { ...textMessage("system", "session failed"), severity: "error" },
+    ]);
+  });
+
   it("streams thinking and text into one assistant message", () => {
     let messages: ChatLine[] = [];
     messages = applyTranscriptEvent(messages, { type: "assistant.thinking.delta", text: "pla" }) ?? messages;
@@ -167,7 +179,7 @@ describe("applyTranscriptEvent", () => {
       },
     })).toEqual([
       textMessage("user", "question"),
-      { role: "system", parts: [{ type: "text", text: "Model response failed: provider returned 500" }], meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "anthropic", id: "claude-sonnet" } } },
+      { role: "system", parts: [{ type: "text", text: "Model response failed: provider returned 500" }], severity: "error", meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "anthropic", id: "claude-sonnet" } } },
     ]);
   });
 
@@ -189,7 +201,7 @@ describe("applyTranscriptEvent", () => {
     })).toEqual([
       textMessage("user", "question"),
       { ...textMessage("assistant", "partial answer"), meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
-      { role: "system", parts: [{ type: "text", text: "Model response failed: connection lost" }], meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
+      { role: "system", parts: [{ type: "text", text: "Model response failed: connection lost" }], severity: "error", meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
     ]);
   });
 

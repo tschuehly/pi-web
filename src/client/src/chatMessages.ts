@@ -75,7 +75,7 @@ function assistantErrorLine(message: unknown): ChatLine | undefined {
   if (getString(message, "role") !== "assistant" || getString(message, "stopReason") !== "error") return undefined;
   const errorMessage = getString(message, "errorMessage")?.trim();
   const detail = errorMessage === undefined || errorMessage === "" ? "The model returned an error." : errorMessage;
-  return textMessage("system", `Model response failed: ${detail}`);
+  return { ...textMessage("system", `Model response failed: ${detail}`), severity: "error" };
 }
 
 function isChatLine(message: unknown): message is ChatLine {
@@ -253,6 +253,7 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
     const metadata = {
       ...(line.entryId === undefined ? {} : { entryId: line.entryId }),
       ...(line.source === undefined ? {} : { source: line.source }),
+      ...(line.severity === undefined ? {} : { severity: line.severity }),
       ...(line.meta === undefined ? {} : { meta: line.meta }),
     };
     const flushPassthrough = () => {

@@ -60,8 +60,8 @@ export function applyTranscriptEvent(messages: ChatLine[], event: SessionUiEvent
   if (event.type === "shell.start") return [...messages, shellStartMessage(event.command, event.excludeFromContext)];
   if (event.type === "shell.chunk") return appendShellChunk(messages, event.chunk);
   if (event.type === "shell.end") return finalizeShellMessage(messages, event);
-  if (event.type === "command.output") return [...messages, textMessage(event.level === "error" ? "system" : "tool", event.message)];
-  if (event.type === "session.error") return [...messages, textMessage("system", event.message)];
+  if (event.type === "command.output") return [...messages, event.level === "error" ? { ...textMessage("system", event.message), severity: "error" } : textMessage("tool", event.message)];
+  if (event.type === "session.error") return [...messages, { ...textMessage("system", event.message), severity: "error" }];
   if (event.type === "message.end") return event.message === undefined ? undefined : applyFinalMessage(messages, event.message);
   return undefined;
 }
