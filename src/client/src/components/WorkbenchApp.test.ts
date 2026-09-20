@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type Machine, type Project, type SessionInfo, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
-import { WorkbenchApp } from "./WorkbenchApp";
+import { WorkbenchApp, rootProjectOf, rootProjects } from "./WorkbenchApp";
 
 beforeEach(() => {
   vi.spyOn(api, "machines").mockResolvedValue([machine]);
@@ -16,6 +16,19 @@ afterEach(() => {
   document.body.replaceChildren();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("project tabs", () => {
+  it("nests projects that live inside another project's path", () => {
+    const embabel: Project = { ...project, id: "embabel", name: "embabel", path: "/ideas/embabel" };
+    const me: Project = { ...project, id: "me", name: "me", path: "/ideas/embabel/me" };
+    const realm: Project = { ...project, id: "realm", name: "realm", path: "/ideas/embabel/realms/realm-photoquest" };
+    const other: Project = { ...project, id: "other", name: "other", path: "/ideas/other" };
+    const all = [me, other, embabel, realm];
+    expect(rootProjects(all).map((candidate) => candidate.id)).toEqual(["other", "embabel"]);
+    expect(rootProjectOf(realm, all).id).toBe("embabel");
+    expect(rootProjectOf(other, all).id).toBe("other");
+  });
 });
 
 describe("Workbench Chat chooser", () => {
@@ -45,12 +58,11 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(getState(app).selectedWorkspace?.id).toBe(workspace.id); });
     await app.updateComplete;
 
-    const first = app.shadowRoot?.querySelector<HTMLButtonElement>(".chooser > section > :first-child button.primary");
-    expect(first?.textContent).toBe("New Chat");
-    expect(first?.disabled).toBe(false);
-    expect(first?.parentElement?.textContent).toContain("Project · main");
-    app.shadowRoot?.querySelector<HTMLButtonElement>('button[role="tab"]:nth-child(2)')?.click();
-    await app.updateComplete;
+    const tab = app.shadowRoot?.querySelector<HTMLButtonElement>('button[role="tab"][aria-selected="true"]');
+    expect(tab?.textContent).toBe(project.name);
+    const newChat = app.shadowRoot?.querySelector<HTMLButtonElement>(".new-chat button.primary");
+    expect(newChat?.textContent).toBe("New Chat");
+    expect(newChat?.disabled).toBe(false);
     expect(app.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]')?.value).toBe(workspace.id);
     expect(sessionTitles(app)).toEqual(["Plan the release"]);
     localStorage.removeItem("pi-workbench.last-workspace");
@@ -80,7 +92,7 @@ describe("Workbench Chat chooser", () => {
     await app.updateComplete;
 
     expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull();
-    expect(app.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Project"]')?.value).toBe(project.id);
+    expect(app.shadowRoot?.querySelector<HTMLButtonElement>('button[role="tab"][aria-selected="true"]')?.textContent).toBe(project.name);
     expect(app.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]')?.value).toBe(workspace.id);
     expect(sessionTitles(app)).toEqual(["Plan the release"]);
     expect(window.location.search).toBe("?project=project&workspace=workspace");
@@ -101,8 +113,6 @@ async function mountChooser(sessions: SessionInfo[]): Promise<WorkbenchApp> {
     selectedWorkspace: workspace,
     sessions,
   });
-  await app.updateComplete;
-  app.shadowRoot?.querySelector<HTMLButtonElement>('button[role="tab"]:nth-child(2)')?.click();
   await app.updateComplete;
   return app;
 }

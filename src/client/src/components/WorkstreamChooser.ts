@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { request } from "../api/http";
 
 // Read-only view of the user-local Workstream Store through the Workbench plugin service.
@@ -39,6 +39,12 @@ function service<T>(operation: string, input: unknown, check: (value: unknown) =
 const isSummaryList = (value: unknown): value is WorkstreamSummary[] => Array.isArray(value);
 const isSnapshot = (value: unknown): value is WorkstreamSnapshot => isRecord(value) && Array.isArray(value["sessions"]);
 
+const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+export const groupMatchesProject = (group: string, project: string | undefined): boolean => {
+  if (project === undefined) return true;
+  const [a, b] = [normalize(group), normalize(project)];
+  return a !== "" && b !== "" && (a.includes(b) || b.includes(a));
+};
 export const ago = (value: string, now = Date.now()): string => {
   const hours = Math.round((now - new Date(value).getTime()) / 36e5);
   return hours < 1 ? "just now" : hours < 24 ? `${String(hours)} h ago` : `${String(Math.round(hours / 24))} d ago`;
@@ -63,6 +69,8 @@ export const directoriesOf = (checkpoint: WorkstreamCheckpoint | undefined): str
 
 @customElement("workstream-chooser")
 export class WorkstreamChooser extends LitElement {
+  /** PI WEB project name; Workstream groups matching it (case- and punctuation-insensitive containment) are shown first, the rest folded. */
+  @property() project: string | undefined;
   @state() private summaries: WorkstreamSummary[] = [];
   @state() private selected: WorkstreamSnapshot | undefined;
   @state() private error = "";
@@ -114,22 +122,26 @@ export class WorkstreamChooser extends LitElement {
       const key = item.group ?? "Ungrouped";
       groups.set(key, [...(groups.get(key) ?? []), item]);
     }
+    const sorted = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+    const mine = sorted.filter(([group]) => groupMatchesProject(group, this.project));
+    const others = sorted.filter(([group]) => !groupMatchesProject(group, this.project));
+    const renderGroup = ([group, items]: [string, WorkstreamSummary[]]) => html`
+      <section class="group" aria-label=${group}>
+        <h3>${group} <small>${String(items.length)}</small></h3>
+        <div class="list" role="list">
+          ${items.map((item) => html`
+            <button role="listitem" class="row" aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
+              <strong>${item.title}</strong>
+              <small>${item.lastCheckpointAt === null ? "no checkpoint yet" : `worked on ${ago(item.lastCheckpointAt)}`} · started ${ago(item.createdAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${String(item.unresolvedHumanTaskCount)} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
+            </button>
+            ${this.selected?.id === item.id ? this.renderCard(this.selected) : nothing}
+          `)}
+        </div>
+      </section>`;
     return html`
-      <h2>Continue a Workstream</h2>
-      ${[...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, items]) => html`
-        <section class="group" aria-label=${group}>
-          <h3>${group} <small>${String(items.length)}</small></h3>
-          <div class="list" role="list">
-            ${items.map((item) => html`
-              <button role="listitem" class="row" aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
-                <strong>${item.title}</strong>
-                <small>${item.lastCheckpointAt === null ? "no checkpoint yet" : `worked on ${ago(item.lastCheckpointAt)}`} · started ${ago(item.createdAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${String(item.unresolvedHumanTaskCount)} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
-              </button>
-              ${this.selected?.id === item.id ? this.renderCard(this.selected) : nothing}
-            `)}
-          </div>
-        </section>
-      `)}
+      ${mine.length === 0 && this.project !== undefined ? html`<p class="missing">No Workstream group matches “${this.project}”. Ask Pi to set the group, or look under Other.</p>` : nothing}
+      ${mine.map(renderGroup)}
+      ${others.length === 0 ? nothing : html`<details class="others"><summary>Other Workstreams<span class="peek">${others.map(([group, items]) => `${group} ${String(items.length)}`).join(" · ")}</span></summary><div>${others.map(renderGroup)}</div></details>`}
       ${this.error === "" ? nothing : html`<p class="error" role="alert">${this.error}</p>`}
     `;
   }
@@ -200,6 +212,7 @@ export class WorkstreamChooser extends LitElement {
     details[open] summary::before { content: "▾"; }
     .peek { flex: 1; min-width: 0; font-weight: 500; color: var(--pi-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     details > div { display: grid; gap: 6px; padding: 0 12px 10px 28px; font-size: 13px; }
+    .others > div { padding: 0 12px 10px; gap: 10px; }
     details ol { margin: 0; padding-left: 18px; }
     code { font-size: 12px; overflow-wrap: anywhere; }
     .prompt { padding: 8px 10px; border: 1px dashed var(--pi-border); border-radius: 6px; color: var(--pi-muted); font-size: 12px; }

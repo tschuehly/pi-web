@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkstreamChooser, actor, conflicting, directoriesOf, firstClause, latestCheckpoints, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { WorkstreamChooser, actor, conflicting, directoriesOf, firstClause, groupMatchesProject, latestCheckpoints, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 
 const checkpoint = (id: string, recordedAt: string, next: string, references: string[] = []) => ({ id, whatChanged: `${id} changed. More detail.`, remains: "Review", next, nextSessionPrompt: `Continue ${id}`, references, recordedAt });
 
@@ -47,6 +47,12 @@ describe("WorkstreamChooser", () => {
     expect(rows[0]?.textContent).toContain("1 open question");
     expect(rows[0]?.textContent).toMatch(/worked on .* · started /);
     expect([...shadow(element).querySelectorAll("h3")].map((heading) => heading.textContent.trim())).toEqual(["Embabel 1", "Ungrouped 1"]);
+    element.project = "embabel";
+    await element.updateComplete;
+    expect([...shadow(element).querySelectorAll(".group h3")].filter((heading) => heading.closest("details") === null).map((heading) => heading.textContent.trim())).toEqual(["Embabel 1"]);
+    expect(shadow(element).querySelector("details.others summary")?.textContent).toContain("Ungrouped 1");
+    element.project = undefined;
+    await element.updateComplete;
 
     rows[0]?.click();
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".card")).not.toBeNull(); });
@@ -83,6 +89,13 @@ describe("re-entry helpers", () => {
     expect(conflicting(checkpoint("a", "2026-09-10T07:00:00Z", ""), checkpoint("b", "2026-09-18T10:00:00Z", ""))).toBe(false);
     expect(directoriesOf(checkpoint("a", "", "", ["/repo/me", "/repo/me/plan.md", "docs/x", "/repo/me"]))).toEqual(["/repo/me"]);
     expect(directoriesOf(undefined)).toEqual([]);
+  });
+
+  it("matches Workstream groups to project names loosely", () => {
+    expect(groupMatchesProject("Pi Workbench", "pi-workbench")).toBe(true);
+    expect(groupMatchesProject("Personal", "OneDrive-Personal")).toBe(true);
+    expect(groupMatchesProject("Embabel", "Me")).toBe(false);
+    expect(groupMatchesProject("Anything", undefined)).toBe(true);
   });
 
   it("names the actor and cuts to the first clause", () => {

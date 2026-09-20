@@ -22,12 +22,20 @@ import "./StatusBar";
 import "./WorkstreamChooser";
 import type { OpenWorkstreamSessionDetail } from "./WorkstreamChooser";
 
+/** A project whose path lies inside another registered project belongs to that project's tab. */
+export function rootProjectOf(project: Project, projects: readonly Project[]): Project {
+  const parent = projects.find((candidate) => candidate.id !== project.id && project.path.startsWith(`${candidate.path}/`));
+  return parent === undefined ? project : rootProjectOf(parent, projects);
+}
+export const rootProjects = (projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === project.id);
+const subprojectsOf = (root: Project, projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === root.id);
+
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
   @state() private app: AppState = initialAppState();
   @state() private loading = true;
   @state() private showAgentSessions = false;
-  @state() private chooserTab: "workstreams" | "sessions" = "workstreams";
+  @state() private showAllSessions = false;
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -133,22 +141,19 @@ export class WorkbenchApp extends LitElement {
 
   /** Reopen the chooser on the workspace used last time so New Chat is one click. */
   private async restoreLastWorkspace(projects: Project[], machineId: string, sequence: number): Promise<void> {
+    void machineId;
     let saved: unknown;
     try {
       const raw = localStorage.getItem(WorkbenchApp.LAST_WORKSPACE_KEY);
       saved = raw === null ? undefined : JSON.parse(raw);
     } catch { saved = undefined; }
-    if (typeof saved !== "object" || saved === null || !("machineId" in saved) || !("projectId" in saved) || !("workspaceId" in saved)) return;
-    const { machineId: savedMachine, projectId, workspaceId } = saved;
-    if (savedMachine !== machineId || typeof projectId !== "string" || typeof workspaceId !== "string") return;
-    const project = projects.find((candidate) => candidate.id === projectId);
-    if (project === undefined) return;
-    const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
-    const workspace = workspaces.find((candidate) => candidate.id === workspaceId);
-    if (sequence !== this.loadSequence || workspace === undefined) return;
-    const sessions = await api.sessions(workspace.path, machineId).catch((): SessionInfo[] => []);
-    if (sequence !== this.loadSequence) return;
-    this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions });
+    const record = typeof saved === "object" && saved !== null && "machineId" in saved && "projectId" in saved && "workspaceId" in saved && saved.machineId === machineId ? saved : undefined;
+    const projectId = record !== undefined && typeof record.projectId === "string" ? record.projectId : undefined;
+    const workspaceId = record !== undefined && typeof record.workspaceId === "string" ? record.workspaceId : undefined;
+    const project = projects.find((candidate) => candidate.id === projectId) ?? rootProjects(projects)[0];
+    if (project === undefined || sequence !== this.loadSequence) return;
+    await this.chooseProject(rootProjectOf(project, projects).id);
+    if (workspaceId !== undefined && this.app.workspaces.some((candidate) => candidate.id === workspaceId) && this.app.selectedWorkspace?.id !== workspaceId) await this.chooseWorkspace(workspaceId);
   }
 
   /** A Chat with no user message yet is not listed, but the daemon still serves it; rebuild it from status so a reload keeps it open. */
@@ -195,8 +200,12 @@ export class WorkbenchApp extends LitElement {
     if (project === undefined) return;
     this.loading = true;
     try {
-      const workspaces = await api.workspaces(project.id, selectedMachineId(this.app));
-      if (sequence === this.loadSequence) this.setApp({ workspaces });
+      const machineId = selectedMachineId(this.app);
+      const workspaces = (await Promise.all(subprojectsOf(project, this.app.projects).map((member) => api.workspaces(member.id, machineId)))).flat();
+      if (sequence !== this.loadSequence) return;
+      this.setApp({ workspaces });
+      const preferred = workspaces.find((candidate) => candidate.projectId === project.id && candidate.isMain) ?? workspaces[0];
+      if (preferred !== undefined) await this.chooseWorkspace(preferred.id);
     } catch (error) {
       if (sequence === this.loadSequence) this.setApp({ error: String(error) });
     } finally {
@@ -208,7 +217,8 @@ export class WorkbenchApp extends LitElement {
     const workspace = this.app.workspaces.find((candidate) => candidate.id === workspaceId);
     const sequence = ++this.loadSequence;
     this.sessions.clearActiveSession();
-    this.setApp({ selectedWorkspace: workspace, sessions: [], error: "" });
+    const owner = this.app.projects.find((candidate) => candidate.id === workspace?.projectId) ?? this.app.selectedProject;
+    this.setApp({ selectedProject: owner, selectedWorkspace: workspace, sessions: [], error: "" });
     if (workspace === undefined) return;
     this.loading = true;
     try {
@@ -325,64 +335,55 @@ export class WorkbenchApp extends LitElement {
 
   protected override updated(): void {
     if (this.app.selectedSession !== undefined) return;
-    const project = this.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Project"]');
     const workspace = this.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]');
-    if (project !== undefined && project !== null) project.value = this.app.selectedProject?.id ?? "";
     if (workspace !== undefined && workspace !== null) workspace.value = this.app.selectedWorkspace?.id ?? "";
   }
 
   private renderChooser() {
     const agentSessionCount = this.app.sessions.filter(isWorkbenchAgentSession).length;
     const visibleSessions = this.showAgentSessions ? this.app.sessions : this.app.sessions.filter((session) => !isWorkbenchAgentSession(session));
+    const recentSessions = this.showAllSessions ? visibleSessions : visibleSessions.slice(0, 5);
+    const project = this.app.selectedProject;
     return html`
       <main class="chooser" data-view="chooser">
         <section>
-          <div class="new-chat">
-            <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
-            ${this.app.selectedWorkspace === undefined
-              ? html`<button class="link" @click=${() => { this.chooserTab = "sessions"; }}>Choose a workspace…</button>`
-              : html`<span>in <button class="link" @click=${() => { this.chooserTab = "sessions"; }}>${this.app.selectedProject?.name ?? ""} · ${this.app.selectedWorkspace.branch ?? this.app.selectedWorkspace.label}</button></span>`}
-          </div>
           <div class="tabs" role="tablist">
-            <button role="tab" aria-selected=${this.chooserTab === "workstreams"} @click=${() => { this.chooserTab = "workstreams"; }}>Workstreams</button>
-            <button role="tab" aria-selected=${this.chooserTab === "sessions"} @click=${() => { this.chooserTab = "sessions"; }}>Sessions</button>
-          </div>
-          ${this.chooserTab === "workstreams" ? html`<workstream-chooser @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>` : null}
-          ${this.chooserTab !== "sessions" ? null : html`<div class="workspace-row">
             ${this.app.machines.length > 1 ? html`
-              <label>Machine
-                <select aria-label="Machine" .value=${selectedMachineId(this.app)} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseMachine(event.target.value); }}>
-                  ${this.app.machines.map((machine) => html`<option value=${machine.id}>${machine.name}</option>`)}
+              <select aria-label="Machine" .value=${selectedMachineId(this.app)} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseMachine(event.target.value); }}>
+                ${this.app.machines.map((machine) => html`<option value=${machine.id}>${machine.name}</option>`)}
+              </select>
+            ` : null}
+            ${rootProjects(this.app.projects).map((candidate) => html`<button role="tab" aria-selected=${project !== undefined && rootProjectOf(project, this.app.projects).id === candidate.id} @click=${() => { void this.chooseProject(candidate.id); }}>${candidate.name}</button>`)}
+            <button class="link" @click=${() => { this.setApp({ projectDialogOpen: true }); }}>Add project…</button>
+          </div>
+          ${project === undefined ? html`<p>Choose a project.</p>` : html`
+            <div class="new-chat">
+              <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
+              <label>in
+                <select aria-label="Workspace" @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value); }}>
+                  ${this.app.workspaces.map((workspace) => html`<option value=${workspace.id}>${this.app.projects.find((candidate) => candidate.id === workspace.projectId)?.name ?? ""} · ${workspace.label}${workspace.isMain ? " (main)" : ""}</option>`)}
                 </select>
               </label>
-            ` : null}
-            <label>Project
-              <select aria-label="Project" @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseProject(event.target.value); }}>
-                <option value="">Choose a project…</option>
-                ${this.app.projects.map((project) => html`<option value=${project.id}>${project.name}</option>`)}
-              </select>
-            </label>
-            <label>Workspace
-              <select aria-label="Workspace" ?disabled=${this.app.selectedProject === undefined} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value); }}>
-                <option value="">Choose a workspace…</option>
-                ${this.app.workspaces.map((workspace) => html`<option value=${workspace.id}>${workspace.label}${workspace.isMain ? " · main" : ""}</option>`)}
-              </select>
-            </label>
-            <button class="secondary" @click=${() => { this.setApp({ projectDialogOpen: true }); }}>Add project…</button>
-          </div>`}
+            </div>
+            <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>
+          `}
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
-          ${this.chooserTab !== "sessions" || this.app.selectedWorkspace === undefined ? null : html`
+          ${this.app.selectedWorkspace === undefined ? null : html`
             <div class="sessions">
-              ${agentSessionCount === 0 ? null : html`
-                <label class="agent-filter"><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked; }}> Show agent sessions (${agentSessionCount})</label>
-              `}
-              ${visibleSessions.map((session) => html`
+              <h2>Sessions <small>${String(visibleSessions.length)}</small></h2>
+              ${recentSessions.map((session) => html`
                 <button class="session" @click=${() => { void this.openSession(session); }}>
                   <strong>${sessionTitle(session)}</strong>
                   <small>${session.archived === true ? "Archived · " : ""}${String(session.messageCount)} messages</small>
                 </button>
               `)}
+              <div class="session-tools">
+                ${visibleSessions.length > 5 ? html`<button class="link" @click=${() => { this.showAllSessions = !this.showAllSessions; }}>${this.showAllSessions ? "Show recent only" : `Show all ${String(visibleSessions.length)}`}</button>` : null}
+                ${agentSessionCount === 0 ? null : html`
+                  <label class="agent-filter"><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked; }}> Show agent sessions (${agentSessionCount})</label>
+                `}
+              </div>
             </div>
           `}
         </section>
@@ -485,13 +486,14 @@ export class WorkbenchApp extends LitElement {
     button:focus-visible, select:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     button:disabled, select:disabled { opacity: .55; cursor: not-allowed; }
     .secondary { justify-self: start; }
-    .workspace-row { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
     .new-chat { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .new-chat label { display: flex; align-items: center; gap: 8px; text-transform: none; font-size: 14px; }
     .new-chat span { color: var(--pi-muted); }
     .link { min-height: 0; padding: 0; border: 0; background: none; color: var(--pi-accent); font: inherit; text-decoration: underline; }
-    .workspace-row label { flex: 1 1 160px; }
-    .workspace-row .secondary { justify-self: auto; }
-    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--pi-border); }
+    .tabs { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--pi-border); }
+    .tabs .link { margin-left: auto; }
+    .session-tools { display: flex; gap: 14px; align-items: center; }
+    .sessions h2 small { color: var(--pi-muted); font-weight: 500; }
     .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; font-weight: 700; color: var(--pi-muted); }
     .tabs button[aria-selected="true"] { color: var(--pi-text); border-bottom-color: var(--pi-accent); }
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
