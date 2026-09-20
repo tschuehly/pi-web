@@ -23,6 +23,9 @@ import "./StatusBar";
 import "./WorkstreamChooser";
 import type { OpenWorkstreamSessionDetail } from "./WorkstreamChooser";
 
+/** A folder used for one Chat without registering a project. */
+export const adHocWorkspace = (path: string): Workspace => ({ id: `folder:${path}`, projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, isGitRepo: false, isGitWorktree: false, effectiveConfig: {} });
+
 /** A project whose path lies inside another registered project belongs to that project's tab. */
 export function rootProjectOf(project: Project, projects: readonly Project[]): Project {
   const parent = projects.find((candidate) => candidate.id !== project.id && project.path.startsWith(`${candidate.path}/`));
@@ -109,7 +112,11 @@ export class WorkbenchApp extends LitElement {
       const projects = await api.projects(machine.id);
       if (sequence !== this.loadSequence) return;
       this.setApp({ projects });
-      if (!completeChatRoute(route)) { await this.restoreLastWorkspace(projects, machine.id, sequence); return; }
+      if (!completeChatRoute(route)) {
+        if (route.sessionId !== undefined && route.projectId === undefined) { await this.openSessionAnywhere(route.sessionId, machine.id, sequence); return; }
+        await this.restoreLastWorkspace(projects, machine.id, sequence);
+        return;
+      }
 
       const project = projects.find((candidate) => candidate.id === route.projectId);
       if (project === undefined) throw new Error("The selected project is no longer available.");
@@ -156,6 +163,19 @@ export class WorkbenchApp extends LitElement {
     if (project === undefined || sequence !== this.loadSequence) return;
     await this.chooseProject(rootProjectOf(project, projects).id);
     if (workspaceId !== undefined && this.app.workspaces.some((candidate) => candidate.id === workspaceId) && this.app.selectedWorkspace?.id !== workspaceId) await this.chooseWorkspace(workspaceId);
+  }
+
+  /** Reopen a Chat that belongs to no project: find its folder by id, then treat that folder as an ad-hoc workspace. */
+  private async openSessionAnywhere(sessionId: string, machineId: string, sequence: number): Promise<void> {
+    const { cwd } = await api.locate(sessionId, machineId).catch(() => ({ cwd: undefined }));
+    if (sequence !== this.loadSequence) return;
+    const workspace = cwd === undefined ? undefined : adHocWorkspace(cwd);
+    const sessions = workspace === undefined ? [] : await api.sessions(workspace.path, machineId).catch((): SessionInfo[] => []);
+    const session = sessions.find((candidate) => candidate.id === sessionId) ?? (workspace === undefined ? undefined : await this.unlistedSession(sessionId, workspace.path, machineId));
+    if (sequence !== this.loadSequence) return;
+    if (workspace === undefined || session === undefined) throw new Error("The selected session is no longer available.");
+    this.setApp({ selectedProject: undefined, workspaces: [workspace], selectedWorkspace: workspace, sessions });
+    await this.sessions.selectSession(session, { updateUrl: false });
   }
 
   /** A Chat with no user message yet is not listed, but the daemon still serves it; rebuild it from status so a reload keeps it open. */
@@ -270,12 +290,24 @@ export class WorkbenchApp extends LitElement {
     const workspace = this.app.selectedWorkspace;
     writeRoute({
       machineId: selectedMachineId(this.app),
-      projectId: project?.id,
-      workspaceId: workspace?.id,
+      projectId: workspace?.projectId === "" ? undefined : project?.id,
+      workspaceId: workspace?.projectId === "" ? undefined : workspace?.id,
       sessionId: session?.id,
       tool: undefined,
       view: session === undefined ? undefined : "chat",
     }, options);
+  }
+
+  /** Start one Chat in any folder without registering a project. */
+  private async startChatInFolder(): Promise<void> {
+    const picker = nativeDirectoryPicker(selectedMachineId(this.app));
+    if (picker === undefined) { this.setApp({ error: "Choosing a folder needs the macOS app; add the folder as a project instead." }); return; }
+    const path = await picker.pickDirectory().catch(() => null);
+    if (path === null) return;
+    const workspace = adHocWorkspace(path);
+    this.sessions.clearActiveSession();
+    this.setApp({ selectedProject: undefined, workspaces: [workspace], selectedWorkspace: workspace, sessions: [], error: "" });
+    await this.startSession();
   }
 
   /** macOS: native folder panel; browsers: the path dialog. */
@@ -369,7 +401,14 @@ export class WorkbenchApp extends LitElement {
             ` : null}
             ${rootProjects(this.app.projects).map((candidate) => html`<button role="tab" aria-selected=${!this.otherTab && project !== undefined && rootProjectOf(project, this.app.projects).id === candidate.id} @click=${() => { this.otherTab = false; void this.chooseProject(candidate.id); }}>${candidate.name}</button>`)}
             <button role="tab" aria-selected=${this.otherTab} @click=${() => { this.otherTab = true; }}>Other</button>
-            <button class="link" @click=${() => { void this.chooseProjectFolder(); }}>Add project…</button>
+            <span class="tab-actions">
+              <button class="icon-button" title="Chat in a folder…" aria-label="Chat in a folder…" @click=${() => { void this.startChatInFolder(); }}>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16v11H9l-5 4z"/></svg>
+              </button>
+              <button class="icon-button" title="Add project…" aria-label="Add project…" @click=${() => { void this.chooseProjectFolder(); }}>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h6l2 2h10v11H3z"/><path d="M12 11v6M9 14h6"/></svg>
+              </button>
+            </span>
           </div>
           ${this.otherTab ? html`<workstream-chooser .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
             <div class="new-chat">
@@ -506,7 +545,10 @@ export class WorkbenchApp extends LitElement {
     .new-chat span { color: var(--pi-muted); }
     .link { min-height: 0; padding: 0; border: 0; background: none; color: var(--pi-accent); font: inherit; text-decoration: underline; }
     .tabs { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--pi-border); }
-    .tabs .link { margin-left: auto; }
+    .tab-actions { margin-left: auto; display: flex; gap: 4px; }
+    .icon-button { min-height: 0; width: 32px; height: 32px; padding: 6px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--pi-muted); }
+    .icon-button:hover { border-color: var(--pi-border); color: var(--pi-text); background: var(--pi-surface-hover); }
+    .icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .session-tools { display: flex; gap: 14px; align-items: center; }
     .sessions h2 small { color: var(--pi-muted); font-weight: 500; }
     .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; font-weight: 700; color: var(--pi-muted); }

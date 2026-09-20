@@ -31,6 +31,35 @@ describe("project tabs", () => {
   });
 });
 
+describe("Chat in a folder", () => {
+  it("starts a Chat in a picked folder without a project and reopens it from the session id alone", async () => {
+    vi.spyOn(api, "projects").mockResolvedValue([]);
+    const started = session("adhoc", "");
+    started.cwd = "/anywhere/notes";
+    vi.spyOn(api, "startSession").mockResolvedValue(started);
+    vi.spyOn(api, "sessions").mockResolvedValue([]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/anywhere/notes" });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "adhoc", persisted: false, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    window.piWebNative = { pickDirectory: () => Promise.resolve("/anywhere/notes") };
+
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Chat in a folder…"]')?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("adhoc"); });
+    expect(getState(app).selectedWorkspace?.path).toBe("/anywhere/notes");
+    expect(window.location.search).toBe("?session=adhoc&view=chat");
+
+    document.body.replaceChildren();
+    const reopened = new WorkbenchApp();
+    document.body.append(reopened);
+    await vi.waitFor(() => { expect(getState(reopened).selectedSession?.id).toBe("adhoc"); });
+    expect(getState(reopened).selectedWorkspace?.path).toBe("/anywhere/notes");
+    delete window.piWebNative;
+  });
+});
+
 describe("Workbench Chat chooser", () => {
   it("hides Workbench agent sessions until the user asks to see them", async () => {
     const human = session("human", "Plan the release");
