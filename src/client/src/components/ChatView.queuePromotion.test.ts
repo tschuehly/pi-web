@@ -22,14 +22,24 @@ describe("ChatView queued-message promotion", () => {
     await view.updateComplete;
 
     const sendNowButtons = Array.from(view.shadowRoot?.querySelectorAll<HTMLButtonElement>(".queued-send-now-button") ?? []);
-    expect(sendNowButtons).toHaveLength(2);
-    expect(sendNowButtons[1]?.getAttribute("aria-label")).toBe("Send follow-up 2 now");
-    sendNowButtons[1]?.click();
+    expect(sendNowButtons).toHaveLength(1);
+    expect(sendNowButtons[0]?.getAttribute("aria-label")).toBe("Send follow-up 2 now");
+    sendNowButtons[0]?.click();
     view.shadowRoot?.querySelector<HTMLButtonElement>(".queued-send-all-button")?.click();
 
-    expect(sendNowButtons.every((button) => button.title === "Move to steering")).toBe(true);
+    expect(sendNowButtons[0]?.title).toBe("Move to steering");
     expect(promoteOne).toHaveBeenCalledExactlyOnceWith(messages[1]);
     expect(promoteAll).toHaveBeenCalledOnce();
+  });
+
+  it("removes promotion controls once every queued message is already steering", async () => {
+    const view = await renderView(status([{ kind: "steer", text: "already steering" }]));
+    view.onPromoteQueuedMessage = vi.fn();
+    view.onPromoteAllQueuedMessages = vi.fn();
+    await view.updateComplete;
+
+    expect(view.shadowRoot?.querySelector(".queued-send-now-button")).toBeNull();
+    expect(view.shadowRoot?.querySelector(".queued-send-all-button")).toBeNull();
   });
 
   it("shows promotion controls disabled during compaction without claiming immediate delivery", async () => {

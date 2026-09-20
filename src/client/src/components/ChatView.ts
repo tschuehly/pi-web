@@ -432,6 +432,11 @@ export class ChatView extends LitElement {
           ${this.renderOpenAsk()}
           ${this.renderExtensionDialogs()}
         </div>
+        ${this.pinnedToBottom ? null : html`
+          <button type="button" class="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" @click=${() => { this.jumpToBottom(); }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+        `}
         ${this.renderActivityDock()}
       </div>
       ${this.renderImageZoom()}
@@ -684,7 +689,7 @@ export class ChatView extends LitElement {
   private renderQueuedMessageList(section: QueuedMessageSection) {
     const canClear = chatQueuedSectionShowsClearAction(section, this.onClearServerQueue !== undefined);
     const canPromote = section.source === "server" && this.onPromoteQueuedMessage !== undefined;
-    const canPromoteAll = section.source === "server" && this.onPromoteAllQueuedMessages !== undefined;
+    const canPromoteAll = section.source === "server" && section.messages.some((message) => message.kind === "followUp") && this.onPromoteAllQueuedMessages !== undefined;
     const promotionDisabled = this.status?.isCompacting === true;
     const promotionTitle = promotionDisabled ? "Available after compaction finishes" : "Move to steering";
     return html`
@@ -707,8 +712,8 @@ export class ChatView extends LitElement {
           <div class="queued-message">
             <div class="queued-message-header">
               <span class="queued-kind">${message.kind === "steer" ? "Steer" : "Follow-up"} ${String(index + 1)}</span>
-              ${canPromote ? html`
-                <button type="button" class="queued-send-now-button" aria-label=${`Send ${message.kind === "steer" ? "steer" : "follow-up"} ${String(index + 1)} now`} title=${promotionTitle} ?disabled=${promotionDisabled} @click=${() => { this.onPromoteQueuedMessage?.(message); }}>Send now</button>
+              ${canPromote && message.kind === "followUp" ? html`
+                <button type="button" class="queued-send-now-button" aria-label=${`Send follow-up ${String(index + 1)} now`} title=${promotionTitle} ?disabled=${promotionDisabled} @click=${() => { this.onPromoteQueuedMessage?.(message); }}>Send now</button>
               ` : null}
             </div>
             <formatted-text .workspaceContext=${this.workspaceContext} .text=${message.text}></formatted-text>
@@ -1126,6 +1131,11 @@ export class ChatView extends LitElement {
         this.lastClientHeight = chat.clientHeight;
       });
     });
+  }
+
+  private jumpToBottom(): void {
+    this.pinnedToBottom = true;
+    this.scrollToBottom();
   }
 
   private isNewPendingAsk(previous: unknown): boolean {

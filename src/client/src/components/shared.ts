@@ -364,6 +364,10 @@ export const chatStyles = css`
   }
   .chat { --pi-chat-sticky-top: calc(-1 * var(--pi-panel-padding)); height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overflow-anchor: none; padding: var(--pi-panel-padding) var(--pi-panel-padding) 56px; box-sizing: border-box; }
   .scroll-marker { display: block; height: 0; overflow: hidden; pointer-events: none; }
+  .scroll-to-bottom { position: absolute; left: 50%; bottom: 12px; z-index: 21; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--pi-border); border-radius: 50%; background: var(--pi-bg-overlay); color: var(--pi-text); box-shadow: 0 4px 12px var(--pi-shadow); transform: translateX(-50%); cursor: pointer; }
+  .scroll-to-bottom:hover, .scroll-to-bottom:focus-visible { border-color: var(--pi-accent); color: var(--pi-text-bright); }
+  .scroll-to-bottom:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+  .scroll-to-bottom svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .activity-dock { position: absolute; left: 16px; right: 16px; bottom: 12px; z-index: 20; display: flex; align-items: center; gap: 8px; min-width: 0; box-sizing: border-box; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-bg-overlay); color: var(--pi-muted); padding: 8px 12px; font-size: 13px; pointer-events: none; box-shadow: 0 8px 28px var(--pi-shadow); backdrop-filter: blur(6px); }
   .activity-dock.active { border-color: var(--pi-success-border); color: var(--pi-success); background: var(--pi-success-bg-overlay); }
   .activity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

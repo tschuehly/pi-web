@@ -301,18 +301,68 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const promotion = service.promoteQueuedMessage(sessionRef("promote-one-session"), { kind: "followUp", text: "promote me" });
     await vi.waitFor(() => { expect(operations).toHaveLength(4); });
 
-    expect(operations).toEqual(["clear", "steer:promote me", "steer:existing steer", "followUp:keep later"]);
-    expect(steeringMessages).toEqual(["promote me", "existing steer"]);
+    expect(operations).toEqual(["clear", "steer:existing steer", "steer:promote me", "followUp:keep later"]);
+    expect(steeringMessages).toEqual(["existing steer", "promote me"]);
     expect(followUpMessages).toEqual(["keep later"]);
-    expect(requeuedImages[0]).toEqual(originalImages);
+    expect(requeuedImages[1]).toEqual(originalImages);
     releases.forEach((release) => { release(); });
     await expect(promotion).resolves.toMatchObject({
       queuedMessages: [
-        { kind: "steer", text: "promote me" },
         { kind: "steer", text: "existing steer" },
+        { kind: "steer", text: "promote me" },
         { kind: "followUp", text: "keep later" },
       ],
     });
+    await service.dispose();
+  });
+
+  it("keeps repeated one-at-a-time promotions in click order", async () => {
+    const steeringMessages: string[] = [];
+    const followUpMessages: string[] = [];
+    const fake = fakeRuntime("promote-in-order-session", {
+      isStreaming: true,
+      getSteeringMessages: () => steeringMessages,
+      getFollowUpMessages: () => followUpMessages,
+    });
+    fake.session.prompt = (text, options) => {
+      (options?.streamingBehavior === "steer" ? steeringMessages : followUpMessages).push(text);
+      return Promise.resolve();
+    };
+    fake.session.clearQueue = () => {
+      const cleared = { steering: [...steeringMessages], followUp: [...followUpMessages] };
+      steeringMessages.length = 0;
+      followUpMessages.length = 0;
+      return cleared;
+    };
+    fake.session.steer = (text, images) => {
+      fake.calls.steer.push({ text, images });
+      steeringMessages.push(text);
+      return Promise.resolve();
+    };
+    fake.session.followUp = (text, images) => {
+      fake.calls.followUp.push({ text, images });
+      followUpMessages.push(text);
+      return Promise.resolve();
+    };
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("promote-in-order-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+    await service.prompt(sessionRef("promote-in-order-session"), "first", "followUp");
+    await service.prompt(sessionRef("promote-in-order-session"), "second", "followUp");
+    await service.prompt(sessionRef("promote-in-order-session"), "later", "followUp");
+
+    await service.promoteQueuedMessage(sessionRef("promote-in-order-session"), { kind: "followUp", text: "first" });
+    const status = await service.promoteQueuedMessage(sessionRef("promote-in-order-session"), { kind: "followUp", text: "second" });
+
+    expect(status.queuedMessages).toEqual([
+      { kind: "steer", text: "first" },
+      { kind: "steer", text: "second" },
+      { kind: "followUp", text: "later" },
+    ]);
     await service.dispose();
   });
 

@@ -3241,8 +3241,9 @@ export class PiSessionService implements SessionRouteService {
     const selected = queued[targetIndex];
     if (selected === undefined) return this.statusFromSession(session);
     await this.replaceRuntimeQueue(session, [
+      ...queued.slice(0, targetIndex),
       { ...selected, kind: "steer" },
-      ...queued.filter((_, index) => index !== targetIndex),
+      ...queued.slice(targetIndex + 1),
     ]);
     this.publishStatus(session);
     return this.statusFromSession(session);
