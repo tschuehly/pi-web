@@ -75,6 +75,19 @@ describe("Chat in a folder", () => {
 });
 
 describe("Workbench Chat chooser", () => {
+  it("offers notification permission through an explicit accessible gesture and hides the control after denial", async () => {
+    FakeBrowserNotification.permission = "default";
+    vi.stubGlobal("Notification", FakeBrowserNotification);
+    const app = await mountChooser([]);
+    const button = app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Enable desktop notifications"]');
+
+    expect(button?.title).toBe("Enable desktop notifications");
+    button?.click();
+    await vi.waitFor(() => { expect(FakeBrowserNotification.requestPermission).toHaveBeenCalledOnce(); });
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector('button[aria-label="Enable desktop notifications"]')).toBeNull();
+  });
+
   it("hides Workbench agent sessions until the user asks to see them", async () => {
     const human = session("human", "Plan the release");
     const reviewer = session("reviewer", "ignored", "workbench-reviewer-deadbeef");
@@ -435,6 +448,17 @@ function session(id: string, firstMessage: string, name?: string): SessionInfo {
 const machine: Machine = { id: "local", name: "Local", kind: "local", createdAt: "2026-08-31T00:00:00.000Z", updatedAt: "2026-08-31T00:00:00.000Z" };
 const project: Project = { id: "project", name: "Project", path: "/repo", createdAt: "2026-08-31T00:00:00.000Z" };
 const workspace: Workspace = { id: "workspace", projectId: project.id, path: "/repo", label: "main", isMain: true, effectiveConfig: {} };
+
+class FakeBrowserNotification {
+  static permission: NotificationPermission = "default";
+  static requestPermission = vi.fn((): Promise<NotificationPermission> => {
+    FakeBrowserNotification.permission = "denied";
+    return Promise.resolve("denied");
+  });
+
+  onclick: ((event: Event) => void) | null = null;
+  close = vi.fn();
+}
 
 class SilentWebSocket {
   static readonly CONNECTING = 0;

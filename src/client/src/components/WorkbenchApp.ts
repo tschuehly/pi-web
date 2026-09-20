@@ -4,6 +4,7 @@ import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, 
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { initialAppState, type AppState } from "../appState";
 import { AuthController } from "../controllers/authController";
+import { browserDesktopNotifications, DesktopNotificationController } from "../controllers/desktopNotificationController";
 import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
@@ -49,6 +50,11 @@ export class WorkbenchApp extends LitElement {
   private loadSequence = 0;
   private modelDialogInstanceId = 0;
 
+  private readonly desktopNotifications = new DesktopNotificationController(
+    browserDesktopNotifications(),
+    () => { this.requestUpdate(); },
+  );
+
   private readonly notifications = new SessionNotificationController(
     () => this.app,
     (patch) => { this.setApp(patch); },
@@ -61,6 +67,8 @@ export class WorkbenchApp extends LitElement {
     undefined,
     {
       notifications: this.notifications,
+      onSelectedSessionReady: () => { this.desktopNotifications.activate(this.app); },
+      onSessionError: (message, eventId) => { this.desktopNotifications.sessionError(this.app, message, eventId); },
       replacePromptEditorText: async ({ machineId, sessionId, text, mode }) => {
         await this.updateComplete;
         const editor = this.promptEditor;
@@ -102,6 +110,7 @@ export class WorkbenchApp extends LitElement {
     const previous = this.app;
     this.app = { ...this.app, ...patch };
     this.notifications.syncEnvironment(previous, this.app);
+    this.desktopNotifications.sync(previous, this.app);
   }
 
   private async load(route: ParsedAppRoute): Promise<void> {
@@ -112,6 +121,7 @@ export class WorkbenchApp extends LitElement {
       && route.projectId === this.app.selectedProject?.id
       && route.workspaceId === selectedWorkspace?.id
       && (route.machineId ?? "local") === selectedMachineId(this.app);
+    if (retainSelection) this.desktopNotifications.suspend();
     this.loading = true;
     if (!retainSelection) this.sessions.clearActiveSession();
     try {
@@ -491,6 +501,15 @@ export class WorkbenchApp extends LitElement {
     return this.app.selectedSession === undefined ? this.renderChooser() : this.renderChat();
   }
 
+  private renderDesktopNotificationButton() {
+    if (!this.desktopNotifications.canRequestPermission()) return null;
+    return html`
+      <button class="icon-button notification-button" title="Enable desktop notifications" aria-label="Enable desktop notifications" @click=${() => { void this.desktopNotifications.requestPermission(); }}>
+        ${renderBuiltinTabIcon("bell")}
+      </button>
+    `;
+  }
+
   protected override updated(): void {
     if (this.app.selectedSession !== undefined) return;
     const workspace = this.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]');
@@ -515,6 +534,7 @@ export class WorkbenchApp extends LitElement {
             <button role="tab" aria-selected=${this.chooserView === "other"} @click=${() => { this.chooserView = "other"; }}>Other</button>
             <button role="tab" aria-selected=${this.chooserView === "all"} @click=${() => { this.chooserView = "all"; }}>All sessions</button>
             <span class="tab-actions">
+              ${this.renderDesktopNotificationButton()}
               <button class="icon-button" title="Chat in a folder…" aria-label="Chat in a folder…" @click=${() => { void this.startChatInFolder(); }}>
                 ${renderBuiltinTabIcon("chat-plus")}
               </button>
@@ -570,6 +590,7 @@ export class WorkbenchApp extends LitElement {
           <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { this.sessions.deselectSession(); }}>←</button>
           <strong>${sessionTitle(session)}</strong>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
+          ${this.renderDesktopNotificationButton()}
         </header>
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
         <chat-view
@@ -664,6 +685,7 @@ export class WorkbenchApp extends LitElement {
     .icon-button { min-height: 0; width: 32px; height: 32px; padding: 6px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--pi-muted); }
     .icon-button:hover { border-color: var(--pi-border); color: var(--pi-text); background: var(--pi-surface-hover); }
     .icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    header .notification-button { flex: 0 0 auto; }
     .session-tools { display: flex; gap: 14px; align-items: center; }
     .sessions h2 small { color: var(--pi-muted); font-weight: 500; }
     .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; font-weight: 700; color: var(--pi-muted); }

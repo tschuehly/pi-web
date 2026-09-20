@@ -68,6 +68,34 @@ describe("SessionController notification event boundary", () => {
     expect(refreshSelectedSession).toHaveBeenLastCalledWith(oldSession, "local");
   });
 
+  it("reports session errors through the explicit callback while retaining transcript output", async () => {
+    const socket = new EmitSocket();
+    const onSessionError = vi.fn();
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      {
+        socket,
+        onSessionError,
+        api: {
+          ...defaultApi,
+          messages: vi.fn(() => Promise.resolve(emptyPage)),
+          status: vi.fn(() => Promise.resolve(status(oldSession.id))),
+          streamSnapshot: vi.fn(() => Promise.resolve({ seq: 0, partial: null })),
+        },
+      },
+    );
+    await controller.selectSession(oldSession, { updateUrl: false });
+
+    socket.emit({ type: "session.error", message: "terminal failed", seq: 9 });
+
+    expect(onSessionError).toHaveBeenCalledExactlyOnceWith("terminal failed", 9);
+    expect(state.messages[0]?.parts).toEqual([{ type: "text", text: "terminal failed" }]);
+  });
+
   it("handles inbox events before transcript watermarking while ordinary extension output still flows", async () => {
     const socket = new EmitSocket();
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
