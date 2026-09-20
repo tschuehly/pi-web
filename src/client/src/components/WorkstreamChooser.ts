@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { request } from "../api/http";
 
@@ -67,8 +67,51 @@ export function latestCheckpoints(snapshot: WorkstreamSnapshot): (WorkstreamSess
     .sort((a, b) => b.latestCheckpoint.recordedAt.localeCompare(a.latestCheckpoint.recordedAt));
 }
 export const conflicting = (a: WorkstreamCheckpoint, b: WorkstreamCheckpoint): boolean => Math.abs(new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()) < 36 * 36e5;
-export const directoriesOf = (checkpoint: WorkstreamCheckpoint | undefined): string[] =>
-  [...new Set((checkpoint?.references ?? []).filter((ref) => ref.startsWith("/") && !/\.[a-z0-9]{1,5}$/i.test(ref)))];
+
+const abbreviation = /(?:\b(?:e\.g|i\.e|mr|mrs|ms|dr|prof|vs|etc)|\b[A-Z])\.$/i;
+export function sentences(text: string): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean === "") return [];
+  const result: string[] = [];
+  const append = (sentence: string): void => {
+    if (sentence.length >= 3) { result.push(sentence); return; }
+    const previous = result.pop();
+    result.push(previous === undefined ? sentence : `${previous} ${sentence}`);
+  };
+  let start = 0;
+  for (const match of clean.matchAll(/[.;!?](?:\s+|$)/g)) {
+    const end = match.index + 1;
+    const sentence = clean.slice(start, end).trim();
+    if (match[0].startsWith(".") && abbreviation.test(sentence)) continue;
+    append(sentence);
+    start = match.index + match[0].length;
+  }
+  const tail = clean.slice(start).trim();
+  if (tail !== "") append(tail);
+  return result;
+}
+
+const anchor = /https?:\/\/[^\s,;!?()[\]{}]*[^\s,.;!?()[\]{}]|[\w.-]+\/[\w.-]+#\d+|~?\/[^\s,;!?()[\]{}]*[^\s,.;!?()[\]{}]|\b[a-f\d]{7,40}\b|#\d+/gi;
+export function withAnchors(text: string): TemplateResult {
+  const parts: (string | TemplateResult)[] = [];
+  let start = 0;
+  for (const match of text.matchAll(anchor)) {
+    const index = match.index;
+    parts.push(text.slice(start, index), html`<code>${match[0]}</code>`);
+    start = index + match[0].length;
+  }
+  parts.push(text.slice(start));
+  return html`${parts}`;
+}
+
+export function directoriesOf(checkpoint: WorkstreamCheckpoint | undefined): string[] {
+  // ponytail: path kind is heuristic because the browser cannot stat local references.
+  const absolute = (checkpoint?.references ?? []).filter((ref) => ref.startsWith("/"));
+  const files = absolute.filter((ref) => /\.[a-z0-9]{1,5}$/i.test(ref));
+  const directories = absolute.filter((ref) => !files.includes(ref));
+  if (directories.length > 0) return [...new Set(directories)];
+  return [...new Set(files.map((ref) => ref.slice(0, ref.lastIndexOf("/")) || "/"))];
+}
 
 @customElement("workstream-chooser")
 export class WorkstreamChooser extends LitElement {
@@ -166,6 +209,7 @@ export class WorkstreamChooser extends LitElement {
     const pending = snapshot.humanTasks.filter((task) => task.status !== "resolved");
     const nextText = latest?.latestCheckpoint.next ?? pending[0]?.title ?? "No next move recorded.";
     const section = (label: string, peek: string, body: unknown) => html`<details><summary>${label}<span class="peek">${peek}</span></summary><div>${body}</div></details>`;
+    const bulletList = (text: string) => html`<ul>${sentences(text).map((sentence) => html`<li>${withAnchors(sentence)}</li>`)}</ul>`;
     const cp = latest?.latestCheckpoint;
     const prompt = cp?.nextSessionPrompt;
     const directories = directoriesOf(cp);
@@ -177,7 +221,11 @@ export class WorkstreamChooser extends LitElement {
         <div class="next"><span class="kicker">Do next</span><p><span class="who">${actor(nextText)}</span>${nextText}</p>${cp === undefined ? nothing : html`<small>Last touched ${ago(cp.recordedAt)}</small>`}</div>
         ${conflict ? html`<p class="warn"><b>Two sessions disagree.</b> ${firstClause(latest.latestCheckpoint.whatChanged)} <i>vs.</i> ${firstClause(rival.latestCheckpoint.whatChanged)}</p>` : nothing}
         ${pending.length > 0 ? html`<p class="warn"><b>${pending.length} open question${pending.length > 1 ? "s" : ""} for Thomas:</b> ${pending.map((task) => task.title).join(" · ")}</p>` : nothing}
-        ${cp === undefined ? nothing : section("Now", firstClause(cp.whatChanged), html`<p>${cp.whatChanged}</p><p><b>Still open:</b> ${cp.remains}</p>${conflict ? html`<p><b>Other session:</b> ${rival.latestCheckpoint.whatChanged}</p>` : nothing}`)}
+        ${cp === undefined ? nothing : section("Now", firstClause(cp.whatChanged), html`
+          ${bulletList(cp.whatChanged)}
+          <div class="now-block"><b>Still open:</b>${bulletList(cp.remains)}</div>
+          ${conflict ? html`<div class="now-block"><b>Other session:</b>${bulletList(rival.latestCheckpoint.whatChanged)}</div>` : nothing}
+        `)}
         ${overview === null ? nothing : section("So far", `${String(overview.history.length)} steps · ${firstClause(overview.history.at(-1) ?? "", 70)}`, html`<ol>${overview.history.map((event) => html`<li>${event}</li>`)}</ol>`)}
         ${overview === null ? nothing : section("About", firstClause(overview.description, 90), html`<p>${overview.description}</p>`)}
         ${cp === undefined ? nothing : section("Continue", directories[0]?.replace(/^\/Users\/[^/]+/, "~") ?? "no directory recorded", html`
@@ -196,6 +244,7 @@ export class WorkstreamChooser extends LitElement {
     :host { display: grid; gap: 10px; min-width: 0; max-width: 100%; }
     * { box-sizing: border-box; min-width: 0; }
     .card p, .card li, .goal, .next p, .warn { overflow-wrap: anywhere; }
+    .card p, .card ul, .card ol { max-width: 65ch; }
     .row { width: 100%; }
     h2 { margin: 0; font-size: 16px; }
     .group { display: grid; gap: 6px; }
@@ -225,8 +274,10 @@ export class WorkstreamChooser extends LitElement {
     summary::before { content: "▸"; color: var(--pi-muted); }
     details[open] summary::before { content: "▾"; }
     .peek { flex: 1; min-width: 0; font-weight: 500; color: var(--pi-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    details > div { display: grid; gap: 6px; padding: 0 12px 10px 28px; font-size: 13px; }
-    details ol { margin: 0; padding-left: 18px; }
+    details > div { display: grid; gap: 10px; padding: 0 12px 10px 28px; font-size: 14px; line-height: 1.55; }
+    details ol, details ul { margin: 0; padding-left: 18px; }
+    details li + li { margin-top: 6px; }
+    .now-block { display: grid; gap: 6px; }
     code { font-size: 12px; overflow-wrap: anywhere; }
     .prompt { padding: 8px 10px; border: 1px dashed var(--pi-border); border-radius: 6px; color: var(--pi-muted); font-size: 12px; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }

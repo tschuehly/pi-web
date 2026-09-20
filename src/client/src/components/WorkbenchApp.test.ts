@@ -46,6 +46,8 @@ describe("Chat in a folder", () => {
     document.body.append(app);
     await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
     await app.updateComplete;
+    expect(app.shadowRoot?.querySelector('button[aria-label="Chat in a folder…"] svg')).not.toBeNull();
+    expect(app.shadowRoot?.querySelector('button[aria-label="Add project…"] svg')).not.toBeNull();
     app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Chat in a folder…"]')?.click();
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("adhoc"); });
     expect(getState(app).selectedWorkspace?.path).toBe("/anywhere/notes");

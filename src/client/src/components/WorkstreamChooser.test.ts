@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
+import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkstreamChooser, actor, conflicting, directoriesOf, firstClause, groupMatchesProject, latestCheckpoints, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { WorkstreamChooser, actor, conflicting, directoriesOf, firstClause, groupMatchesProject, latestCheckpoints, sentences, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 
 const checkpoint = (id: string, recordedAt: string, next: string, references: string[] = []) => ({ id, whatChanged: `${id} changed. More detail.`, remains: "Review", next, nextSessionPrompt: `Continue ${id}`, references, recordedAt });
 
@@ -98,7 +99,23 @@ describe("re-entry helpers", () => {
     expect(conflicting(checkpoint("a", "2026-09-18T07:00:00Z", ""), checkpoint("b", "2026-09-18T10:00:00Z", ""))).toBe(true);
     expect(conflicting(checkpoint("a", "2026-09-10T07:00:00Z", ""), checkpoint("b", "2026-09-18T10:00:00Z", ""))).toBe(false);
     expect(directoriesOf(checkpoint("a", "", "", ["/repo/me", "/repo/me/plan.md", "docs/x", "/repo/me"]))).toEqual(["/repo/me"]);
+    expect(directoriesOf(checkpoint("a", "", "", ["branch:main", "/repo/me/plan.md", "/repo/me/notes.txt", "docs/x", "/other/todo.md"]))).toEqual(["/repo/me", "/other"]);
     expect(directoriesOf(undefined)).toEqual([]);
+  });
+
+  it("splits prose into readable sentences without breaking common abbreviations", () => {
+    expect(sentences("Done. Use e.g. the sample; A; Then test! OK?"))
+      .toEqual(["Done.", "Use e.g. the sample; A;", "Then test!", "OK?"]);
+    expect(sentences("  One sentence without punctuation  ")).toEqual(["One sentence without punctuation"]);
+  });
+
+  it("wraps durable references as code", () => {
+    const host = document.createElement("div");
+    render(withAnchors("See https://example.com/x, owner/repo#123, #42, abcdef1, /repo/docs/plan.md and ~/notes."), host);
+    expect([...host.querySelectorAll("code")].map((code) => code.textContent)).toEqual([
+      "https://example.com/x", "owner/repo#123", "#42", "abcdef1", "/repo/docs/plan.md", "~/notes",
+    ]);
+    expect(host.textContent).toContain("and ~/notes.");
   });
 
   it("matches Workstream groups to project names loosely", () => {

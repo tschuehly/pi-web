@@ -22,6 +22,7 @@ import "./PromptEditor";
 import "./StatusBar";
 import "./WorkstreamChooser";
 import type { OpenWorkstreamSessionDetail, StartWorkstreamSessionDetail } from "./WorkstreamChooser";
+import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
 export const adHocWorkspace = (path: string): Workspace => ({ id: `folder:${path}`, projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
@@ -426,10 +427,10 @@ export class WorkbenchApp extends LitElement {
             <button role="tab" aria-selected=${this.otherTab} @click=${() => { this.otherTab = true; }}>Other</button>
             <span class="tab-actions">
               <button class="icon-button" title="Chat in a folder…" aria-label="Chat in a folder…" @click=${() => { void this.startChatInFolder(); }}>
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16v11H9l-5 4z"/></svg>
+                ${renderBuiltinTabIcon("chat-plus")}
               </button>
               <button class="icon-button" title="Add project…" aria-label="Add project…" @click=${() => { void this.chooseProjectFolder(); }}>
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h6l2 2h10v11H3z"/><path d="M12 11v6M9 14h6"/></svg>
+                ${renderBuiltinTabIcon("folder-plus")}
               </button>
             </span>
           </div>
