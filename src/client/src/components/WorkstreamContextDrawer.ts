@@ -53,12 +53,12 @@ export class WorkstreamContextDrawer extends LitElement {
     .tab { color: var(--pi-muted); font-size: 12px; }
     .sheet { position: absolute; top: 100%; left: 0; right: 0; max-height: calc(100vh - 56px); overflow: auto; display: grid; padding: 20px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
     .row { position: relative; padding: 18px 0 12px; border-top: 1px solid var(--pi-border-muted); }
-    .label { position: absolute; top: 0; left: 16px; padding: 0 10px; color: var(--pi-accent); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; transform: translateY(-50%); }
+    .label { position: absolute; top: 0; left: 0; padding-right: 10px; color: var(--pi-accent); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; transform: translateY(-50%); }
     p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
     .goal { width: 100%; font-size: 18px; font-weight: 750; line-height: 1.35; }
     .about p { color: var(--pi-muted); }
     .next { margin: 8px 0 4px; padding: 18px 12px 12px; border: 1px solid var(--pi-success-border); border-radius: 9px; background: var(--pi-success-bg); }
-    .next .label { background: var(--pi-success-bg); }
+    .next .label { left: 12px; background: var(--pi-success-bg); }
     @media (max-width: 520px) {
       .sheet { padding: 12px 16px; }
       .goal { font-size: 16px; }
