@@ -150,14 +150,14 @@ export class WorkstreamChooser extends LitElement {
     }
   }
 
-  private open(snapshot: WorkstreamSnapshot, session: WorkstreamSession & { latestCheckpoint: WorkstreamCheckpoint }): void {
+  private open(snapshot: WorkstreamSnapshot, session: WorkstreamSession): void {
     const detail: OpenWorkstreamSessionDetail = {
       workstreamId: snapshot.id,
       sessionId: session.id,
       projectId: session.projectId,
       workspaceId: session.workspaceId,
-      directories: directoriesOf(session.latestCheckpoint),
-      prompt: session.latestCheckpoint.nextSessionPrompt,
+      directories: session.latestCheckpoint === null ? [] : directoriesOf(session.latestCheckpoint),
+      prompt: session.latestCheckpoint?.nextSessionPrompt ?? null,
     };
     this.dispatchEvent(new CustomEvent<OpenWorkstreamSessionDetail>("open-workstream-session", { detail, bubbles: true, composed: true }));
   }
@@ -213,6 +213,7 @@ export class WorkstreamChooser extends LitElement {
     const cp = latest?.latestCheckpoint;
     const prompt = cp?.nextSessionPrompt;
     const directories = directoriesOf(cp);
+    const sessions = [...latestCheckpoints(snapshot), ...snapshot.sessions.filter((session) => session.latestCheckpoint === null)];
     return html`
       <article class="card" aria-label=${`Re-entry card for ${snapshot.title}`}>
         ${overview === null
@@ -231,6 +232,19 @@ export class WorkstreamChooser extends LitElement {
         ${cp === undefined ? nothing : section("Continue", directories[0]?.replace(/^\/Users\/[^/]+/, "~") ?? "no directory recorded", html`
           ${directories.map((directory) => html`<code>${directory}</code>`)}
           ${cp.nextSessionPrompt === null ? nothing : html`<p class="prompt">${cp.nextSessionPrompt}</p>`}
+        `)}
+        ${section("Sessions", `${String(sessions.length)} sessions · newest ${cp === undefined ? "no checkpoint" : ago(cp.recordedAt)}`, html`
+          <div class="session-list">
+            ${sessions.map((session) => html`
+              <button class="session-row" data-session-id=${session.id} @click=${() => { this.open(snapshot, session); }}>
+                <span class="session-meta">
+                  <span>${session.latestCheckpoint === null ? "no checkpoint" : ago(session.latestCheckpoint.recordedAt)}</span>
+                  ${session.status === "active" ? nothing : html`<span class="status">${session.status}</span>`}
+                </span>
+                <span class="session-summary">${session.latestCheckpoint === null ? session.id.slice(-8) : firstClause(session.latestCheckpoint.whatChanged, 90)}</span>
+              </button>
+            `)}
+          </div>
         `)}
         <div class="actions">
           ${latest === undefined ? html`<p class="missing">No session has checkpointed yet.</p>` : html`<button class="primary" @click=${() => { this.open(snapshot, latest); }}>Open session</button>`}
@@ -280,6 +294,11 @@ export class WorkstreamChooser extends LitElement {
     .now-block { display: grid; gap: 6px; }
     code { font-size: 12px; overflow-wrap: anywhere; }
     .prompt { padding: 8px 10px; border: 1px dashed var(--pi-border); border-radius: 6px; color: var(--pi-muted); font-size: 12px; }
+    .session-list { display: grid; gap: 4px; }
+    .session-row { width: 100%; min-width: 0; display: grid; gap: 4px; padding: 6px 8px; font-size: 13px; }
+    .session-meta { display: flex; align-items: center; gap: 4px; color: var(--pi-muted); font-size: 11px; }
+    .status { padding: 0 5px; border: 1px solid var(--pi-border); border-radius: 999px; }
+    .session-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
     .missing, .error { color: var(--pi-muted); font-size: 13px; }

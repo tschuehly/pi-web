@@ -2,7 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkstreamChooser, actor, conflicting, directoriesOf, firstClause, groupMatchesProject, latestCheckpoints, sentences, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { WorkstreamChooser, actor, ago, conflicting, directoriesOf, firstClause, groupMatchesProject, latestCheckpoints, sentences, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 
 const checkpoint = (id: string, recordedAt: string, next: string, references: string[] = []) => ({ id, whatChanged: `${id} changed. More detail.`, remains: "Review", next, nextSessionPrompt: `Continue ${id}`, references, recordedAt });
 
@@ -67,9 +67,17 @@ describe("WorkstreamChooser", () => {
     expect(card.querySelector(".next .who")?.textContent).toBe("Thomas");
     expect(card.textContent).toContain("Two sessions disagree.");
     expect(card.textContent).toContain("1 open question for Thomas: Merge order?");
-    expect([...card.querySelectorAll("summary")].map((summary) => summary.textContent.replace(summary.querySelector(".peek")?.textContent ?? "", "").trim())).toEqual(["Now", "So far", "About", "Continue"]);
+    expect([...card.querySelectorAll("summary")].map((summary) => summary.textContent.replace(summary.querySelector(".peek")?.textContent ?? "", "").trim())).toEqual(["Now", "So far", "About", "Continue", "Sessions"]);
+    const sessionDetails = [...card.querySelectorAll("details")].find((details) => details.querySelector("summary")?.textContent.startsWith("Sessions") === true);
+    if (sessionDetails === undefined) throw new Error("sessions missing");
+    expect(sessionDetails.querySelector(".peek")?.textContent).toBe(`4 sessions · newest ${ago("2026-09-18T10:31:02.522Z")}`);
+    expect([...sessionDetails.querySelectorAll(".session-row")].map((row) => row.getAttribute("data-session-id"))).toEqual(["s-b", "s-a", "s-old", "s-none"]);
 
-    const opened = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }); });
+    const selected = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }, { once: true }); });
+    sessionDetails.querySelector<HTMLButtonElement>('[data-session-id="s-a"]')?.click();
+    expect(await selected).toMatchObject({ sessionId: "s-a", directories: ["/repo/me"] });
+
+    const opened = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }, { once: true }); });
     card.querySelector<HTMLButtonElement>("button.primary")?.click();
     expect(await opened).toEqual({ workstreamId: "ws-1", sessionId: "s-b", projectId: "p1", workspaceId: "w1", directories: ["/repo/me-trial"], prompt: "Continue cp-b" });
 
