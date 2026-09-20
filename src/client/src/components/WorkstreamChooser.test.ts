@@ -18,7 +18,7 @@ const snapshot: WorkstreamSnapshot = {
   overview: { goal: "Teach Me the PhotoQuest API.", doneWhen: "Five questions answered.", description: "Why and scope.", history: ["2026-09-08: slice 1 merged.", "PR #1283 ready."], recordedAt: "2026-09-20T09:00:00.000Z" },
 };
 
-const summaries = [{ id: "ws-1", title: snapshot.title, updatedAt: snapshot.updatedAt, unresolvedHumanTaskCount: 1 }, { id: "ws-2", title: "Older", updatedAt: "2026-09-01T00:00:00.000Z", unresolvedHumanTaskCount: 0 }];
+const summaries = [{ id: "ws-1", title: snapshot.title, group: "Embabel", updatedAt: snapshot.updatedAt, unresolvedHumanTaskCount: 1 }, { id: "ws-2", title: "Older", group: null, updatedAt: "2026-09-01T00:00:00.000Z", unresolvedHumanTaskCount: 0 }];
 
 function stubService(list: unknown = summaries, inspect: unknown = snapshot): void {
   vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
@@ -45,6 +45,7 @@ describe("WorkstreamChooser", () => {
     const rows = [...shadow(element).querySelectorAll<HTMLButtonElement>(".row")];
     expect(rows.map((row) => row.querySelector("strong")?.textContent)).toEqual([snapshot.title, "Older"]);
     expect(rows[0]?.textContent).toContain("1 open question");
+    expect([...shadow(element).querySelectorAll("h3")].map((heading) => heading.textContent.trim())).toEqual(["Embabel 1", "Ungrouped 1"]);
 
     rows[0]?.click();
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".card")).not.toBeNull(); });
@@ -63,7 +64,7 @@ describe("WorkstreamChooser", () => {
   });
 
   it("shows the missing-overview hint instead of inventing a goal", async () => {
-    stubService([{ id: "ws-1", title: "T", updatedAt: snapshot.updatedAt, unresolvedHumanTaskCount: 0 }], { ...snapshot, overview: null, humanTasks: [] });
+    stubService([{ id: "ws-1", title: "T", group: null, updatedAt: snapshot.updatedAt, unresolvedHumanTaskCount: 0 }], { ...snapshot, overview: null, humanTasks: [] });
     const element = new WorkstreamChooser();
     document.body.append(element);
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".row")).not.toBeNull(); });

@@ -45,10 +45,10 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(getState(app).selectedWorkspace?.id).toBe(workspace.id); });
     await app.updateComplete;
 
-    const first = app.shadowRoot?.querySelector<HTMLButtonElement>(".chooser > section > :first-child button");
+    const first = app.shadowRoot?.querySelector<HTMLButtonElement>(".chooser > section > :first-child button.primary");
     expect(first?.textContent).toBe("New Chat");
     expect(first?.disabled).toBe(false);
-    expect(first?.parentElement?.textContent).toContain("in Project · main");
+    expect(app.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]')?.value).toBe(workspace.id);
     expect(sessionTitles(app)).toEqual(["Plan the release"]);
     localStorage.removeItem("pi-workbench.last-workspace");
   });

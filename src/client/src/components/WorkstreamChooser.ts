@@ -15,7 +15,7 @@ export interface WorkstreamSnapshot {
   links: { id: string; kind: string; reference: string; label?: string }[];
   overview: WorkstreamOverview | null;
 }
-interface WorkstreamSummary { id: string; title: string; updatedAt: string; unresolvedHumanTaskCount: number }
+interface WorkstreamSummary { id: string; title: string; group: string | null; updatedAt: string; unresolvedHumanTaskCount: number }
 
 export interface OpenWorkstreamSessionDetail {
   workstreamId: string;
@@ -109,17 +109,27 @@ export class WorkstreamChooser extends LitElement {
   override render() {
     if (this.loading) return html`<p role="status">Loading Workstreams…</p>`;
     if (this.error !== "" && this.summaries.length === 0) return html`<p class="error" role="alert">${this.error}</p>`;
+    const groups = new Map<string, WorkstreamSummary[]>();
+    for (const item of this.summaries) {
+      const key = item.group ?? "Ungrouped";
+      groups.set(key, [...(groups.get(key) ?? []), item]);
+    }
     return html`
       <h2>Continue a Workstream</h2>
-      <div class="list" role="list">
-        ${this.summaries.map((item) => html`
-          <button role="listitem" class="row" aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
-            <strong>${item.title}</strong>
-            <small>${ago(item.updatedAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${item.unresolvedHumanTaskCount} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
-          </button>
-          ${this.selected?.id === item.id ? this.renderCard(this.selected) : nothing}
-        `)}
-      </div>
+      ${[...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, items]) => html`
+        <section class="group" aria-label=${group}>
+          <h3>${group} <small>${String(items.length)}</small></h3>
+          <div class="list" role="list">
+            ${items.map((item) => html`
+              <button role="listitem" class="row" aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
+                <strong>${item.title}</strong>
+                <small>${ago(item.updatedAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${String(item.unresolvedHumanTaskCount)} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
+              </button>
+              ${this.selected?.id === item.id ? this.renderCard(this.selected) : nothing}
+            `)}
+          </div>
+        </section>
+      `)}
       ${this.error === "" ? nothing : html`<p class="error" role="alert">${this.error}</p>`}
     `;
   }
@@ -162,6 +172,9 @@ export class WorkstreamChooser extends LitElement {
     .card p, .card li, .goal, .next p, .warn { overflow-wrap: anywhere; }
     .row { width: 100%; }
     h2 { margin: 0; font-size: 16px; }
+    .group { display: grid; gap: 6px; }
+    h3 { margin: 6px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--pi-muted); }
+    h3 small { font-weight: 500; }
     p { margin: 0; line-height: 1.45; }
     .list { display: grid; gap: 6px; }
     button { box-sizing: border-box; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 12px; font: inherit; text-align: left; cursor: pointer; }

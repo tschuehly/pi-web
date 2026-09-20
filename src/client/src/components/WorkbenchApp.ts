@@ -328,33 +328,31 @@ export class WorkbenchApp extends LitElement {
     return html`
       <main class="chooser" data-view="chooser">
         <section>
-          <div class="new-chat">
-            <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
-            <span>${this.app.selectedWorkspace === undefined ? "Choose a workspace below first." : `in ${this.app.selectedProject?.name ?? ""} · ${this.app.selectedWorkspace.branch ?? this.app.selectedWorkspace.label}`}</span>
-          </div>
-          <workstream-chooser @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>
-          <h1>Choose a Chat</h1>
-          <p>Or select a workspace, then open an existing session or start a new one.</p>
-          ${this.app.machines.length > 1 ? html`
-            <label>Machine
-              <select aria-label="Machine" .value=${selectedMachineId(this.app)} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseMachine(event.target.value); }}>
-                ${this.app.machines.map((machine) => html`<option value=${machine.id}>${machine.name}</option>`)}
+          <div class="workspace-row">
+            ${this.app.machines.length > 1 ? html`
+              <label>Machine
+                <select aria-label="Machine" .value=${selectedMachineId(this.app)} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseMachine(event.target.value); }}>
+                  ${this.app.machines.map((machine) => html`<option value=${machine.id}>${machine.name}</option>`)}
+                </select>
+              </label>
+            ` : null}
+            <label>Project
+              <select aria-label="Project" @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseProject(event.target.value); }}>
+                <option value="">Choose a project…</option>
+                ${this.app.projects.map((project) => html`<option value=${project.id}>${project.name}</option>`)}
               </select>
             </label>
-          ` : null}
-          <label>Project
-            <select aria-label="Project" @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseProject(event.target.value); }}>
-              <option value="">Choose a project…</option>
-              ${this.app.projects.map((project) => html`<option value=${project.id}>${project.name}</option>`)}
-            </select>
-          </label>
-          <button class="secondary" @click=${() => { this.setApp({ projectDialogOpen: true }); }}>Add project…</button>
-          <label>Workspace
-            <select aria-label="Workspace" ?disabled=${this.app.selectedProject === undefined} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value); }}>
-              <option value="">Choose a workspace…</option>
-              ${this.app.workspaces.map((workspace) => html`<option value=${workspace.id}>${workspace.label}${workspace.isMain ? " · main" : ""}</option>`)}
-            </select>
-          </label>
+            <label>Workspace
+              <select aria-label="Workspace" ?disabled=${this.app.selectedProject === undefined} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value); }}>
+                <option value="">Choose a workspace…</option>
+                ${this.app.workspaces.map((workspace) => html`<option value=${workspace.id}>${workspace.label}${workspace.isMain ? " · main" : ""}</option>`)}
+              </select>
+            </label>
+            <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
+            <button class="secondary" @click=${() => { this.setApp({ projectDialogOpen: true }); }}>Add project…</button>
+          </div>
+          <workstream-chooser @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>
+          <h2>Sessions in this workspace</h2>
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
           ${this.app.selectedWorkspace === undefined ? null : html`
@@ -470,8 +468,10 @@ export class WorkbenchApp extends LitElement {
     button:focus-visible, select:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     button:disabled, select:disabled { opacity: .55; cursor: not-allowed; }
     .secondary { justify-self: start; }
-    .new-chat { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .new-chat span { color: var(--pi-muted); }
+    .workspace-row { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+    .workspace-row label { flex: 1 1 160px; }
+    .workspace-row .secondary { justify-self: auto; }
+    h2 { margin: 0; font-size: 16px; }
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
     .sessions { min-width: 0; display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--pi-border); }
     .agent-filter { display: flex; align-items: center; gap: 6px; text-transform: none; }
