@@ -111,6 +111,27 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
     return resolveSessionFileInDir(resolution.sessionDir, cwd, sessionId, readSessionHeaderSummary);
   }
 
+  async locate(sessionId: string): Promise<{ cwd: string } | undefined> {
+    const sessionDirs = await listGlobalSessionDirs(this.resolver.defaultSessionsRoot(), this.resolver.globalEnvSessionDir());
+    const sessionFiles = (await Promise.all(sessionDirs.map(listSessionFiles))).flat();
+    const fileNameMatches: string[] = [];
+    const remainingFiles: string[] = [];
+    for (const sessionFile of sessionFiles) {
+      (fileNameMatchesSessionId(basename(sessionFile), sessionId) ? fileNameMatches : remainingFiles).push(sessionFile);
+    }
+    fileNameMatches.sort(byNewestEmbeddedTimestamp);
+    remainingFiles.sort(byNewestEmbeddedTimestamp);
+
+    let prefixCwd: string | undefined;
+    for (const sessionFile of [...fileNameMatches, ...remainingFiles]) {
+      const header = await readSessionHeaderSummary(sessionFile);
+      if (header?.cwd === undefined || header.cwd === "") continue;
+      if (header.id === sessionId) return { cwd: canonicalizeStoredCwd(header.cwd) };
+      if (prefixCwd === undefined && header.id.startsWith(sessionId)) prefixCwd = canonicalizeStoredCwd(header.cwd);
+    }
+    return prefixCwd === undefined ? undefined : { cwd: prefixCwd };
+  }
+
   invalidateSessionFile(sessionFile: string): void {
     // Detach is the only flow that rewrites a session file in place (keeping
     // the inode), and the summary memo cannot detect such rewrites from
@@ -421,6 +442,18 @@ async function listSessionFiles(sessionDir: string): Promise<string[]> {
     // Matches the SDK listing behavior: an unreadable directory lists nothing.
     return [];
   }
+}
+
+async function listGlobalSessionDirs(defaultRoot: string, envSessionDir: string | undefined): Promise<string[]> {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(defaultRoot, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+  const dirs = entries.filter((entry) => entry.isDirectory()).map((entry) => join(defaultRoot, entry.name));
+  if (envSessionDir !== undefined && !dirs.includes(envSessionDir)) dirs.push(envSessionDir);
+  return dirs;
 }
 
 function uniqueSessionsByPath(sessions: readonly PiSessionListEntry[]): PiSessionListEntry[] {

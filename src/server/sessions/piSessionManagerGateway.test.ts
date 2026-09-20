@@ -108,6 +108,16 @@ describe("Pi session manager gateway", () => {
     await expect(gateway.listAll()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: "session-a", cwd }), expect.objectContaining({ id: "session-b", cwd: otherCwd })]));
   });
 
+  it("locates a session across projects from its file header without scanning transcripts", async () => {
+    const otherCwd = join(tempDir, "other-workspace");
+    await writeSessionFile(defaultPiSessionDir(cwd, agentDir), "other-session", cwd);
+    await writeSessionFile(defaultPiSessionDir(otherCwd, agentDir), "target-session", otherCwd);
+    const gateway = createPiSessionManagerGateway(piProfileOptions());
+    if (gateway.locate === undefined) throw new Error("Gateway locate is unavailable");
+
+    await expect(gateway.locate("target-session")).resolves.toEqual({ cwd: otherCwd });
+  });
+
   it("includes an absolute env-configured session directory in global listing", async () => {
     const envSessionDir = join(tempDir, "env-sessions");
     await writeSessionFile(defaultPiSessionDir(cwd, agentDir), "default-session", cwd);

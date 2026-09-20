@@ -126,6 +126,41 @@ describe("Workbench Chat chooser", () => {
     expect(sessionTitles(app)).toEqual(["Plan the release"]);
     expect(window.location.search).toBe("?project=project&workspace=workspace");
   });
+
+  it("opens a Workstream session from status without loading the workspace session list", async () => {
+    const sessions = vi.spyOn(api, "sessions").mockResolvedValue([]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "continued", persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    const app = await mountChooser([]);
+    sessions.mockClear();
+
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("open-workstream-session", {
+      detail: { workstreamId: "workstream", sessionId: "continued", directories: [], prompt: "Continue" },
+    }));
+
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("continued"); });
+    expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
+    expect(sessions).not.toHaveBeenCalled();
+  });
+
+  it("starts a new Workstream session with its prompt and falls back to the previous session cwd", async () => {
+    const started = session("new-session", "");
+    const startSession = vi.spyOn(api, "startSession").mockResolvedValue(started);
+    const locate = vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const prompt = vi.spyOn(api, "prompt").mockResolvedValue({ accepted: true });
+    const app = await mountChooser([]);
+
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
+      detail: { workstreamId: "workstream", sessionId: "previous", directories: [], prompt: "Carry on" },
+    }));
+
+    await vi.waitFor(() => { expect(startSession).toHaveBeenCalledWith(workspace.path, "local", expect.any(String)); });
+    await vi.waitFor(() => { expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ id: "new-session" }), "Carry on", undefined, "local", undefined); });
+    expect(locate).toHaveBeenCalledWith("previous", "local");
+    expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
+  });
 });
 
 async function mountChooser(sessions: SessionInfo[]): Promise<WorkbenchApp> {

@@ -21,10 +21,10 @@ import "./ProjectDialog";
 import "./PromptEditor";
 import "./StatusBar";
 import "./WorkstreamChooser";
-import type { OpenWorkstreamSessionDetail } from "./WorkstreamChooser";
+import type { OpenWorkstreamSessionDetail, StartWorkstreamSessionDetail } from "./WorkstreamChooser";
 
 /** A folder used for one Chat without registering a project. */
-export const adHocWorkspace = (path: string): Workspace => ({ id: `folder:${path}`, projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, isGitRepo: false, isGitWorktree: false, effectiveConfig: {} });
+export const adHocWorkspace = (path: string): Workspace => ({ id: `folder:${path}`, projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
 
 /** A project whose path lies inside another registered project belongs to that project's tab. */
 export function rootProjectOf(project: Project, projects: readonly Project[]): Project {
@@ -265,16 +265,39 @@ export class WorkbenchApp extends LitElement {
     this.setApp({ error: "" });
     try {
       const { cwd } = await api.locate(detail.sessionId, machineId);
-      const sessions = await api.sessions(cwd, machineId);
-      const session = sessions.find((entry) => entry.id === detail.sessionId);
-      if (session === undefined) throw new Error(`Session ${detail.sessionId} is not listed under ${cwd}.`);
       const project = this.app.projects.find((candidate) => cwd === candidate.path || cwd.startsWith(`${candidate.path}/`));
-      const workspaces = project === undefined ? [] : await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
+      const [session, workspaces] = await Promise.all([
+        this.unlistedSession(detail.sessionId, cwd, machineId),
+        project === undefined ? Promise.resolve([]) : api.workspaces(project.id, machineId).catch((): Workspace[] => []),
+      ]);
+      if (session === undefined) throw new Error(`Session ${detail.sessionId} is unavailable under ${cwd}.`);
       const workspace = workspaces.find((candidate) => candidate.path === cwd);
-      this.setApp({ selectedProject: project, selectedWorkspace: workspace, workspaces, sessions });
+      this.setApp({ selectedProject: project, selectedWorkspace: workspace, workspaces, sessions: [session] });
       await this.openSession(session);
     } catch (error) {
-      this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Choose its workspace below and start a new Chat with the copied prompt.` });
+      this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Start a new session with the checkpoint prompt instead.` });
+    }
+  }
+
+  private async startWorkstreamSession(detail: StartWorkstreamSessionDetail): Promise<void> {
+    const machineId = selectedMachineId(this.app);
+    this.setApp({ error: "" });
+    try {
+      const cwd = detail.directories[0] ?? (await api.locate(detail.sessionId, machineId)).cwd;
+      const candidates = await Promise.all(this.app.projects.map(async (project) => ({
+        project,
+        workspaces: await api.workspaces(project.id, machineId).catch((): Workspace[] => []),
+      })));
+      const match = candidates.find(({ workspaces }) => workspaces.some((workspace) => workspace.path === cwd));
+      const workspace = match?.workspaces.find((candidate) => candidate.path === cwd) ?? adHocWorkspace(cwd);
+      this.sessions.clearActiveSession();
+      this.setApp({ selectedProject: match?.project, selectedWorkspace: workspace, workspaces: match?.workspaces ?? [workspace], sessions: [], error: "" });
+      await this.sessions.startSession();
+      await this.sessions.send(detail.prompt);
+      await this.updateComplete;
+      this.promptEditor?.focusInput();
+    } catch (error) {
+      this.setApp({ error: `Could not find a working directory for the previous session: ${error instanceof Error ? error.message : String(error)}` });
     }
   }
 
@@ -410,7 +433,7 @@ export class WorkbenchApp extends LitElement {
               </button>
             </span>
           </div>
-          ${this.otherTab ? html`<workstream-chooser .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
+          ${this.otherTab ? html`<workstream-chooser .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
             <div class="new-chat">
               <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
               <label>in
@@ -419,7 +442,7 @@ export class WorkbenchApp extends LitElement {
                 </select>
               </label>
             </div>
-            <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>
+            <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>
           `}
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}

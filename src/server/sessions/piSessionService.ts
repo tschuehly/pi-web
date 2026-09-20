@@ -397,6 +397,8 @@ export interface PiSessionManagerGateway {
    * transcript listing.
    */
   resolveSessionFile(cwd: string, sessionId: string): Promise<ResolvedSessionFile | undefined>;
+  /** Locate a session across all stores by reading file names and headers only. */
+  locate?(sessionId: string): Promise<{ cwd: string } | undefined>;
   /**
    * Drop any cached listing summary for a session file that was rewritten in
    * place (detach clears the header while keeping the inode): file identity
@@ -3297,6 +3299,7 @@ export class PiSessionService implements SessionRouteService {
 
   /** Find the working directory of a persisted session by id, across every project. */
   async locate(sessionId: string): Promise<{ cwd: string } | undefined> {
+    if (this.sessionManager.locate !== undefined) return this.sessionManager.locate(sessionId);
     const session = findSessionByIdOrPrefix(await this.sessionManager.listAll(), sessionId);
     return session === undefined ? undefined : { cwd: session.cwd };
   }

@@ -27,6 +27,13 @@ export interface OpenWorkstreamSessionDetail {
   prompt: string | null;
 }
 
+export interface StartWorkstreamSessionDetail {
+  workstreamId: string;
+  prompt: string;
+  directories: string[];
+  sessionId: string;
+}
+
 const SERVICE = "api/pi-web-plugins/pi-workbench/service";
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 function service<T>(operation: string, input: unknown, check: (value: unknown) => value is T): Promise<T> {
@@ -112,6 +119,16 @@ export class WorkstreamChooser extends LitElement {
     this.dispatchEvent(new CustomEvent<OpenWorkstreamSessionDetail>("open-workstream-session", { detail, bubbles: true, composed: true }));
   }
 
+  private start(snapshot: WorkstreamSnapshot, session: WorkstreamSession & { latestCheckpoint: WorkstreamCheckpoint }, prompt: string): void {
+    const detail: StartWorkstreamSessionDetail = {
+      workstreamId: snapshot.id,
+      prompt,
+      directories: directoriesOf(session.latestCheckpoint),
+      sessionId: session.id,
+    };
+    this.dispatchEvent(new CustomEvent<StartWorkstreamSessionDetail>("start-workstream-session", { detail, bubbles: true, composed: true }));
+  }
+
   override render() {
     if (this.loading) return html`<p role="status">Loading Workstreams…</p>`;
     if (this.error !== "" && this.summaries.length === 0) return html`<p class="error" role="alert">${this.error}</p>`;
@@ -150,6 +167,7 @@ export class WorkstreamChooser extends LitElement {
     const nextText = latest?.latestCheckpoint.next ?? pending[0]?.title ?? "No next move recorded.";
     const section = (label: string, peek: string, body: unknown) => html`<details><summary>${label}<span class="peek">${peek}</span></summary><div>${body}</div></details>`;
     const cp = latest?.latestCheckpoint;
+    const prompt = cp?.nextSessionPrompt;
     const directories = directoriesOf(cp);
     return html`
       <article class="card" aria-label=${`Re-entry card for ${snapshot.title}`}>
@@ -168,7 +186,7 @@ export class WorkstreamChooser extends LitElement {
         `)}
         <div class="actions">
           ${latest === undefined ? html`<p class="missing">No session has checkpointed yet.</p>` : html`<button class="primary" @click=${() => { this.open(snapshot, latest); }}>Open session</button>`}
-          ${cp?.nextSessionPrompt === undefined || cp.nextSessionPrompt === null ? nothing : html`<button @click=${() => { void navigator.clipboard.writeText(cp.nextSessionPrompt ?? ""); }}>Copy prompt</button>`}
+          ${latest === undefined || prompt === undefined || prompt === null ? nothing : html`<button @click=${() => { this.start(snapshot, latest, prompt); }}>New session with prompt</button>`}
         </div>
       </article>
     `;

@@ -71,6 +71,13 @@ describe("WorkstreamChooser", () => {
     const opened = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }); });
     card.querySelector<HTMLButtonElement>("button.primary")?.click();
     expect(await opened).toEqual({ workstreamId: "ws-1", sessionId: "s-b", projectId: "p1", workspaceId: "w1", directories: ["/repo/me-trial"], prompt: "Continue cp-b" });
+
+    let started: unknown;
+    element.addEventListener("start-workstream-session", (event) => { if (event instanceof CustomEvent) started = event.detail; });
+    const start = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "New session with prompt");
+    start?.click();
+    expect(started).toEqual({ workstreamId: "ws-1", prompt: "Continue cp-b", directories: ["/repo/me-trial"], sessionId: "s-b" });
+    expect(card.textContent).not.toContain("Copy prompt");
   });
 
   it("shows the missing-overview hint instead of inventing a goal", async () => {
