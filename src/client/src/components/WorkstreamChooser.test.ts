@@ -51,6 +51,10 @@ describe("WorkstreamChooser", () => {
     await element.updateComplete;
     expect([...shadow(element).querySelectorAll(".group h3")].map((heading) => heading.textContent.trim())).toEqual(["Embabel 1"]);
     element.project = undefined;
+    element.excludeProjects = ["embabel"];
+    await element.updateComplete;
+    expect([...shadow(element).querySelectorAll(".group h3")].map((heading) => heading.textContent.trim())).toEqual(["Ungrouped 1"]);
+    element.excludeProjects = [];
     await element.updateComplete;
 
     rows[0]?.click();
@@ -92,7 +96,7 @@ describe("re-entry helpers", () => {
 
   it("matches Workstream groups to project names loosely", () => {
     expect(groupMatchesProject("Pi Workbench", "pi-workbench")).toBe(true);
-    expect(groupMatchesProject("Personal", "OneDrive-Personal")).toBe(true);
+    expect(groupMatchesProject("Personal", "OneDrive-Personal")).toBe(false);
     expect(groupMatchesProject("Embabel", "Me")).toBe(false);
     expect(groupMatchesProject("Anything", undefined)).toBe(true);
   });

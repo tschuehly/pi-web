@@ -36,6 +36,7 @@ export class WorkbenchApp extends LitElement {
   @state() private loading = true;
   @state() private showAgentSessions = false;
   @state() private showAllSessions = false;
+  @state() private otherTab = false;
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -353,10 +354,11 @@ export class WorkbenchApp extends LitElement {
                 ${this.app.machines.map((machine) => html`<option value=${machine.id}>${machine.name}</option>`)}
               </select>
             ` : null}
-            ${rootProjects(this.app.projects).map((candidate) => html`<button role="tab" aria-selected=${project !== undefined && rootProjectOf(project, this.app.projects).id === candidate.id} @click=${() => { void this.chooseProject(candidate.id); }}>${candidate.name}</button>`)}
+            ${rootProjects(this.app.projects).map((candidate) => html`<button role="tab" aria-selected=${!this.otherTab && project !== undefined && rootProjectOf(project, this.app.projects).id === candidate.id} @click=${() => { this.otherTab = false; void this.chooseProject(candidate.id); }}>${candidate.name}</button>`)}
+            <button role="tab" aria-selected=${this.otherTab} @click=${() => { this.otherTab = true; }}>Other</button>
             <button class="link" @click=${() => { this.setApp({ projectDialogOpen: true }); }}>Add project…</button>
           </div>
-          ${project === undefined ? html`<p>Choose a project.</p>` : html`
+          ${this.otherTab ? html`<workstream-chooser .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
             <div class="new-chat">
               <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
               <label>in
@@ -369,7 +371,7 @@ export class WorkbenchApp extends LitElement {
           `}
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
-          ${this.app.selectedWorkspace === undefined ? null : html`
+          ${this.otherTab || this.app.selectedWorkspace === undefined ? null : html`
             <div class="sessions">
               <h2>Sessions <small>${String(visibleSessions.length)}</small></h2>
               ${recentSessions.map((session) => html`

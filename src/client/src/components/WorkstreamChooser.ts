@@ -40,11 +40,7 @@ const isSummaryList = (value: unknown): value is WorkstreamSummary[] => Array.is
 const isSnapshot = (value: unknown): value is WorkstreamSnapshot => isRecord(value) && Array.isArray(value["sessions"]);
 
 const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
-export const groupMatchesProject = (group: string, project: string | undefined): boolean => {
-  if (project === undefined) return true;
-  const [a, b] = [normalize(group), normalize(project)];
-  return a !== "" && b !== "" && (a.includes(b) || b.includes(a));
-};
+export const groupMatchesProject = (group: string, project: string | undefined): boolean => project === undefined || normalize(group) === normalize(project);
 export const ago = (value: string, now = Date.now()): string => {
   const hours = Math.round((now - new Date(value).getTime()) / 36e5);
   return hours < 1 ? "just now" : hours < 24 ? `${String(hours)} h ago` : `${String(Math.round(hours / 24))} d ago`;
@@ -69,8 +65,10 @@ export const directoriesOf = (checkpoint: WorkstreamCheckpoint | undefined): str
 
 @customElement("workstream-chooser")
 export class WorkstreamChooser extends LitElement {
-  /** PI WEB project name; only Workstream groups matching it (case- and punctuation-insensitive containment) are shown. */
+  /** PI WEB project name; only Workstream groups equal to it (case- and punctuation-insensitive) are shown. */
   @property() project: string | undefined;
+  /** Project names whose Workstreams are hidden here; used by the Other tab to show the rest. */
+  @property({ attribute: false }) excludeProjects: string[] = [];
   @state() private summaries: WorkstreamSummary[] = [];
   @state() private selected: WorkstreamSnapshot | undefined;
   @state() private error = "";
@@ -123,7 +121,7 @@ export class WorkstreamChooser extends LitElement {
       groups.set(key, [...(groups.get(key) ?? []), item]);
     }
     const sorted = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
-    const mine = sorted.filter(([group]) => groupMatchesProject(group, this.project));
+    const mine = sorted.filter(([group]) => groupMatchesProject(group, this.project) && !this.excludeProjects.some((project) => groupMatchesProject(group, project)));
     const renderGroup = ([group, items]: [string, WorkstreamSummary[]]) => html`
       <section class="group" aria-label=${group}>
         <h3>${group} <small>${String(items.length)}</small></h3>
@@ -138,7 +136,7 @@ export class WorkstreamChooser extends LitElement {
         </div>
       </section>`;
     return html`
-      ${mine.length === 0 && this.project !== undefined ? html`<p class="missing">No Workstream group matches “${this.project}”. Ask Pi to set the group.</p>` : nothing}
+      ${mine.length === 0 && this.project !== undefined ? html`<p class="missing">No Workstream group is named “${this.project}”. Ask Pi to set the group.</p>` : nothing}
       ${mine.map(renderGroup)}
       ${this.error === "" ? nothing : html`<p class="error" role="alert">${this.error}</p>`}
     `;
