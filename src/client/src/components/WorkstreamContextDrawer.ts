@@ -40,18 +40,18 @@ export class WorkstreamContextDrawer extends LitElement {
   }
 
   static override styles = css`
-    :host { position: relative; z-index: 5; display: block; flex: 0 0 auto; height: 24px; min-width: 0; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); color: var(--pi-text); }
+    :host { position: static; display: block; min-width: 0; color: var(--pi-text); }
     * { box-sizing: border-box; min-width: 0; }
-    details { position: relative; height: 24px; }
-    summary, .tab { position: absolute; left: 50%; top: -1px; width: min(520px, calc(100% - 28px)); min-height: 31px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 14px; border: 1px solid var(--pi-border); border-top: 0; border-radius: 0 0 10px 10px; background: var(--pi-surface); box-shadow: 0 6px 16px var(--pi-shadow); transform: translateX(-50%); }
+    details { position: static; }
+    summary, .tab { min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; }
     summary { list-style: none; cursor: pointer; }
     summary::-webkit-details-marker { display: none; }
     summary::after { content: "↓"; flex: 0 0 auto; color: var(--pi-muted); }
     details[open] summary::after { content: "↑"; }
     summary span { flex: 0 0 auto; color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-    summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    summary strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
     .tab { color: var(--pi-muted); font-size: 12px; }
-    .sheet { position: absolute; top: 24px; left: 0; right: 0; max-height: min(60vh, 520px); overflow: auto; display: grid; padding: 14px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
+    .sheet { position: absolute; top: 100%; left: 0; right: 0; max-height: min(60vh, 520px); overflow: auto; display: grid; padding: 14px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
     .row { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 16px; align-items: baseline; padding: 11px 0; border-bottom: 1px solid var(--pi-border-muted); }
     .row:last-child { border-bottom: 0; }
     .label { color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }

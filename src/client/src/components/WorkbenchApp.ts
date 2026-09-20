@@ -615,11 +615,10 @@ export class WorkbenchApp extends LitElement {
       <main class="chat-shell" data-view="chat" data-machine=${selectedMachineId(state)} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         <header>
           <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { this.sessions.deselectSession(); }}>←</button>
-          <strong>${sessionTitle(session)}</strong>
+          <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
           ${this.renderDesktopNotificationButton()}
         </header>
-        <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError}></workstream-context-drawer>
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
         <chat-view
           .sessionId=${session.id}
@@ -730,14 +729,13 @@ export class WorkbenchApp extends LitElement {
     .session small { color: var(--pi-muted); }
     .error, .chat-error { color: var(--pi-danger); }
     .chat-shell { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-    header { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
+    header { position: relative; z-index: 6; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
     .back { flex: 0 0 auto; min-height: 32px; padding: 4px 10px; text-align: center; }
-    header strong, header span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    header strong { flex: 1 1 auto; }
-    header span { flex: 0 1 auto; color: var(--pi-muted); font-size: 12px; }
+    header workstream-context-drawer { flex: 1 1 auto; }
+    header span { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-    workstream-context-drawer, delegate-roster, working-mode-controls, prompt-editor, status-bar { flex: 0 0 auto; }
+    delegate-roster, working-mode-controls, prompt-editor, status-bar { flex: 0 0 auto; }
     @media (max-width: 600px) {
       .chooser { padding: 16px; }
       .chooser > section { padding: 16px; }

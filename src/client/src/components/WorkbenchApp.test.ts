@@ -408,8 +408,8 @@ describe("Workbench Chat controls", () => {
 
     const shell = app.shadowRoot?.querySelector(".chat-shell");
     if (shell === null || shell === undefined) throw new Error("Chat shell was not rendered");
-    expect(shell.querySelector("workstream-context-drawer")).not.toBeNull();
-    expect(shell.querySelector("workstream-context-drawer")?.nextElementSibling?.tagName).toBe("CHAT-VIEW");
+    expect(shell.querySelector("header > workstream-context-drawer")).not.toBeNull();
+    expect(shell.querySelector("header > strong")).toBeNull();
     expect(shell.querySelector("delegate-roster")).not.toBeNull();
     expect(shell.querySelector("working-mode-controls")).not.toBeNull();
     expect(shell.querySelector("working-mode-controls")?.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
