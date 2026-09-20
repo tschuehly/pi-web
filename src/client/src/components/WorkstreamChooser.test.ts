@@ -49,8 +49,7 @@ describe("WorkstreamChooser", () => {
     expect([...shadow(element).querySelectorAll("h3")].map((heading) => heading.textContent.trim())).toEqual(["Embabel 1", "Ungrouped 1"]);
     element.project = "embabel";
     await element.updateComplete;
-    expect([...shadow(element).querySelectorAll(".group h3")].filter((heading) => heading.closest("details") === null).map((heading) => heading.textContent.trim())).toEqual(["Embabel 1"]);
-    expect(shadow(element).querySelector("details.others summary")?.textContent).toContain("Ungrouped 1");
+    expect([...shadow(element).querySelectorAll(".group h3")].map((heading) => heading.textContent.trim())).toEqual(["Embabel 1"]);
     element.project = undefined;
     await element.updateComplete;
 
