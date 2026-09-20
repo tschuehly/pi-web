@@ -18,6 +18,7 @@ import {
   chatQueuedMessageSections,
   chatQueuedSectionShowsClearAction,
   chatSessionWarningRows,
+  thinkingPreview,
 } from "./ChatView";
 import { templateEventHandlerAfterMarker, templateEventHandlerNearMarker } from "../templateInspection.testSupport";
 
@@ -243,6 +244,19 @@ describe("ChatView notification tray wiring", () => {
   });
 });
 
+describe("thinkingPreview", () => {
+  it("uses the first markdown heading without markdown decoration", () => {
+    expect(thinkingPreview("Intro without a stop\n\n## **Inspecting the transcript**\nMore detail."))
+      .toBe("Inspecting the transcript");
+  });
+
+  it("uses the first sentence and limits the preview to 90 characters", () => {
+    expect(thinkingPreview(`**${"Long thought ".repeat(10)}** Next sentence.`)).toHaveLength(90);
+    expect(thinkingPreview("Consider the existing grouping. Then inspect the styles."))
+      .toBe("Consider the existing grouping.");
+  });
+});
+
 describe("chatMessageMetadataLabel", () => {
   it("uses one full date and model label without a model prefix", () => {
     const timestamp = "2026-07-10T19:15:30.000Z";
@@ -292,14 +306,14 @@ describe("ChatView event-group disclosure wiring", () => {
     { role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "inspect a file", status: "success", resultText: "large result" }] },
   ];
 
-  it("defers a closed group body until it is opened", () => {
+  it("keeps a closed group body mounted so nested row previews remain available", () => {
     const view = new ChatView();
     view.sessionId = "session-1";
     const bodyCalls = observeGroupBodyRenders(view);
 
     renderMessageGroup(view, messages, 40, 41, false);
 
-    expect(bodyCalls).toEqual([]);
+    expect(bodyCalls).toEqual([{ messages, startIndex: 40 }]);
   });
 
   it("renders a live tail body by default", () => {
@@ -313,15 +327,16 @@ describe("ChatView event-group disclosure wiring", () => {
   });
 
   // Escape hatch: this case verifies the native `<details>` `@toggle` wiring,
-  // whose observable effect is that a re-render renders (or defers) the group
-  // body. No DOM environment is available for a real disclosure interaction, so
+  // whose observable effect is persisted disclosure state while the nested row
+  // previews remain mounted. No DOM environment is available for a real disclosure interaction, so
   // handler extraction anchored to the stable `@toggle=` attribute marker plus
   // an injected details-toggle event is proportionate.
-  it("renders the body after a toggle-open and removes it when closed again", () => {
+  it("keeps the body mounted while persisted disclosure state toggles", () => {
     const view = new ChatView();
     view.sessionId = "session-1";
     const bodyCalls = observeGroupBodyRenders(view);
     const initiallyClosed = renderMessageGroup(view, messages, 40, 41, false);
+    bodyCalls.length = 0;
 
     dispatchDetailsToggle(templateEventHandlerAfterMarker(initiallyClosed, "@toggle="), true);
     renderMessageGroup(view, messages, 40, 41, false);
@@ -332,7 +347,7 @@ describe("ChatView event-group disclosure wiring", () => {
     dispatchDetailsToggle(templateEventHandlerAfterMarker(initiallyClosed, "@toggle="), false);
     renderMessageGroup(view, messages, 40, 41, false);
 
-    expect(bodyCalls).toEqual([]);
+    expect(bodyCalls).toEqual([{ messages, startIndex: 40 }]);
   });
 });
 

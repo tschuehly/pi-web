@@ -35,6 +35,7 @@ import "./ConversationMeter";
 import "./FormattedText";
 import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import "./ToolExecutionView";
+import { renderBuiltinTabIcon } from "./tabIcons";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
 const notificationTimestampFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
@@ -159,6 +160,21 @@ export function chatSessionWarningRows(status: SessionStatus | undefined): ChatS
     ...(warning.path === undefined ? {} : { path: warning.path }),
     ...(warning.dismiss === undefined ? {} : { dismissId: warning.dismiss.id }),
   }));
+}
+
+export function thinkingPreview(text: string): string {
+  const heading = text.split("\n").map((line) => line.trim()).find((line) => /^#{1,6}\s+/.test(line));
+  const plain = stripPreviewMarkdown(heading ?? text).replace(/\s+/g, " ").trim();
+  const sentence = /^.*?[.!?](?:\s|$)/.exec(plain)?.[0]?.trim() ?? plain;
+  return sentence.length > 90 ? `${sentence.slice(0, 89)}…` : sentence;
+}
+
+function stripPreviewMarkdown(text: string): string {
+  return text
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}|>|[-*+] |\d+\. )\s*/gm, "")
+    .replace(/[*_~`]/g, "");
 }
 
 export function chatMessageMetadataLabel(message: ChatLine): string {
@@ -869,10 +885,11 @@ export class ChatView extends LitElement {
       ${this.renderScrollMarker(this.groupScrollMarkerId(endIndex))}
       <details class=${chatMessageGroupClassName(defaultOpen)} data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)} ?open=${open} @toggle=${(event: Event) => { this.onGroupToggle(disclosureKey, event, defaultOpen); }}>
         <summary>
+          <span class="chevron">${renderBuiltinTabIcon("chevron")}</span>
           <b class="label">${chatMessageGroupLabel(defaultOpen)}</b>
-          <span>${summarizeChatGroup(messages)}</span>
+          <span class="disclosure-preview">${summarizeChatGroup(messages)}</span>
         </summary>
-        ${open ? this.renderMessageGroupBody(messages, startIndex) : null}
+        ${this.renderMessageGroupBody(messages, startIndex)}
       </details>
     `;
   }
@@ -902,11 +919,12 @@ export class ChatView extends LitElement {
     const expanded = this.expandedMetaKey === key;
     return html`
       <div class="msg-header">
-        <b class="label">${label}</b>
-        <div class="msg-header-trailing">
-          ${this.renderMessageActions(message, key)}
+        <div class="msg-heading">
+          <b class="label">${label}</b>
+          <span aria-hidden="true">·</span>
           <span class=${expanded ? "msg-meta expanded" : "msg-meta"} role="button" tabindex="0" title=${meta} aria-label=${meta} aria-expanded=${String(expanded)} @click=${() => { this.expandedMetaKey = expanded ? undefined : key; }} @keydown=${(event: KeyboardEvent) => { this.onMetaKeydown(event, key, expanded); }}>${meta}</span>
         </div>
+        ${this.renderMessageActions(message, key)}
       </div>
     `;
   }
@@ -991,10 +1009,15 @@ export class ChatView extends LitElement {
   private renderPart(part: ChatPart, message?: ChatLine) {
     if (part.type === "text" && message?.role === "bash") return html`<pre class="part shell-output">${part.text}</pre>`;
     if (part.type === "text") return html`<formatted-text class="part" .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>`;
-    if (part.type === "thinking") return html`<details class="part"><summary>thinking</summary><formatted-text .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text></details>`;
+    if (part.type === "thinking") return html`
+      <details class="part thinking">
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><span class="disclosure-preview">Thinking · ${thinkingPreview(part.text)}</span></summary>
+        <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>
+      </details>
+    `;
     if (part.type === "skillInvocation") return html`
       <details class="part skill-invocation">
-        <summary><b>[skill]</b> ${part.name}</summary>
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><span class="disclosure-preview"><b>[skill]</b> ${part.name}</span></summary>
         <small>${part.location}</small>
         <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.content}></formatted-text>
       </details>
