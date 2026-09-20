@@ -14,12 +14,20 @@ const snapshot: WorkstreamSnapshot = {
     { id: "s-b", status: "active", projectId: "p1", workspaceId: "w1", latestCheckpoint: checkpoint("cp-b", "2026-09-18T10:31:02.522Z", "Thomas logs in and asks the five questions.", ["/repo/me-trial"]) },
     { id: "s-none", status: "active", latestCheckpoint: null },
   ],
-  humanTasks: [{ id: "t1", title: "Merge order?", status: "pending" }, { id: "t2", title: "Done", status: "resolved" }],
+  humanTasks: [
+    { id: "t1", title: "Merge order?", status: "pending", answerKind: null, options: [], sourceSessionId: null },
+    { id: "t2", title: "Done", status: "resolved", answerKind: null, options: [], sourceSessionId: null },
+  ],
   links: [],
   overview: { goal: "Teach Me the PhotoQuest API.", doneWhen: "Five questions answered.", description: "Why and scope.", history: ["2026-09-08: slice 1 merged.", "PR #1283 ready."], recordedAt: "2026-09-20T09:00:00.000Z" },
 };
 
 const summaries = [{ id: "ws-2", title: "Older", group: null, createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-09-20T00:00:00.000Z", lastCheckpointAt: "2026-09-01T00:00:00.000Z", unresolvedHumanTaskCount: 0 }, { id: "ws-1", title: snapshot.title, group: "Embabel", createdAt: "2026-08-28T00:00:00.000Z", updatedAt: snapshot.updatedAt, lastCheckpointAt: "2026-09-18T10:31:02.522Z", unresolvedHumanTaskCount: 1 }];
+
+function requestBody(init?: RequestInit): { operation: string; input: unknown } {
+  if (typeof init?.body !== "string") throw new Error("JSON request body missing");
+  return JSON.parse(init.body) as { operation: string; input: unknown }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
+}
 
 function stubService(list: unknown = summaries, inspect: unknown = snapshot): void {
   vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
@@ -67,7 +75,9 @@ describe("WorkstreamChooser", () => {
     expect(card.querySelector(".next .who")?.textContent).toBe("Thomas");
     expect(card.textContent).toContain("Two sessions disagree.");
     expect(card.textContent).toContain("1 open question for Thomas: Merge order?");
-    expect([...card.querySelectorAll("summary")].map((summary) => summary.textContent.replace(summary.querySelector(".peek")?.textContent ?? "", "").trim())).toEqual(["Now", "So far", "About", "Continue", "Sessions"]);
+    expect([...card.querySelectorAll("summary")].map((summary) => summary.textContent.replace(summary.querySelector(".peek")?.textContent ?? "", "").trim())).toEqual(["Questions", "Now", "So far", "About", "Continue", "Sessions"]);
+    expect(card.querySelector('[data-task-id="t1"]')?.textContent).toContain("cannot be answered here");
+    expect(card.querySelector('[data-task-id="t1"] button')).toBeNull();
     const sessionDetails = [...card.querySelectorAll("details")].find((details) => details.querySelector("summary")?.textContent.startsWith("Sessions") === true);
     if (sessionDetails === undefined) throw new Error("sessions missing");
     expect(sessionDetails.querySelector(".peek")?.textContent).toBe(`4 sessions · newest ${ago("2026-09-18T10:31:02.522Z")}`);
@@ -87,6 +97,135 @@ describe("WorkstreamChooser", () => {
     start?.click();
     expect(started).toEqual({ workstreamId: "ws-1", prompt: "Continue cp-b", directories: ["/repo/me-trial"], sessionId: "s-b" });
     expect(card.textContent).not.toContain("Copy prompt");
+  });
+
+  it("answers a typed choice with the inspected revision, then refreshes the card and summary", async () => {
+    const typed = {
+      ...snapshot,
+      humanTasks: [
+        { id: "yes-no", title: "Proceed?", detail: "Review the consequence.", status: "pending" as const, answerKind: "yes-no" as const, options: [{ id: "yes", label: "Yes" }, { id: "no", label: "No" }], sourceSessionId: "session-owner" },
+        { id: "choice", title: "Choose", status: "pending" as const, answerKind: "choice" as const, options: [{ id: "a", label: "Option A" }], sourceSessionId: null },
+        { id: "legacy", title: "Old task", status: "pending" as const, answerKind: null, options: [], sourceSessionId: null },
+      ],
+    };
+    const refreshed = { ...typed, revision: 71, humanTasks: typed.humanTasks.map((task) => task.id === "choice" ? { ...task, status: "answered" as const } : task) };
+    const refreshedSummaries = summaries.map((item) => item.id === typed.id ? { ...item, unresolvedHumanTaskCount: 2 } : item);
+    const calls: { operation: string; input: unknown }[] = [];
+    let listCalls = 0;
+    let inspectCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const body = requestBody(init);
+      calls.push(body);
+      if (body.operation === "append") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: { acceptedRevision: 71 } }), { status: 200 }));
+      if (body.operation === "list") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: listCalls++ === 0 ? summaries : refreshedSummaries }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, value: inspectCalls++ === 0 ? typed : refreshed }), { status: 200 }));
+    }));
+    vi.spyOn(globalThis.crypto, "randomUUID")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+
+    const element = new WorkstreamChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(shadow(element).querySelector('[data-task-id="choice"]')).not.toBeNull(); });
+    const card = shadow(element).querySelector(".card");
+    expect(card?.textContent).toContain("Review the consequence.");
+    expect([...card?.querySelectorAll<HTMLButtonElement>('[data-task-id="yes-no"] button') ?? []].map((button) => button.textContent)).toEqual(["Yes", "No"]);
+    expect(card?.querySelector('[data-task-id="yes-no"] [role="group"]')?.getAttribute("aria-label")).toBe("Proceed?");
+    expect(card?.querySelector('[data-task-id="legacy"] button')).toBeNull();
+    card?.querySelector<HTMLButtonElement>('[data-task-id="choice"] button')?.click();
+
+    await vi.waitFor(() => { expect(shadow(element).querySelector('[data-task-id="choice"]')).toBeNull(); });
+    expect(shadow(element).querySelector('[role="status"]')?.textContent).toBe("Answer recorded.");
+    expect(shadow(element).activeElement).toBe(shadow(element).querySelector(".card"));
+    expect(calls.find((call) => call.operation === "append")).toEqual({
+      operation: "append",
+      input: {
+        workstreamId: "ws-1",
+        expectedRevision: 70,
+        idempotencyKey: "task-answer-00000000-0000-4000-8000-000000000001",
+        records: [{
+          type: "human-task.answered",
+          producer: "owner",
+          payload: { taskId: "choice", answerId: "answer-00000000-0000-4000-8000-000000000002", answer: { kind: "choice", optionId: "a" } },
+        }],
+      },
+    });
+    expect(inspectCalls).toBe(2);
+    expect(listCalls).toBe(2);
+    expect(shadow(element).querySelector(".row")?.textContent).toContain("2 open questions");
+  });
+
+  it("surfaces a stale revision without retrying the answer", async () => {
+    const typed = {
+      ...snapshot,
+      humanTasks: [{ id: "choice", title: "Choose", status: "pending" as const, answerKind: "choice" as const, options: [{ id: "a", label: "Option A" }], sourceSessionId: null }],
+    };
+    const calls: { operation: string; input: unknown }[] = [];
+    vi.stubGlobal("crypto", {});
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const body = requestBody(init);
+      calls.push(body);
+      const response = body.operation === "list"
+        ? { ok: true, value: summaries }
+        : body.operation === "inspect"
+          ? { ok: true, value: typed }
+          : { ok: false, error: { code: "STALE_REVISION", message: "expected revision 70 but current revision is 71" } };
+      return Promise.resolve(new Response(JSON.stringify(response), { status: 200 }));
+    }));
+
+    const element = new WorkstreamChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(shadow(element).querySelector('[data-task-id="choice"]')).not.toBeNull(); });
+    shadow(element).querySelector<HTMLButtonElement>('[data-task-id="choice"] button')?.click();
+
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".error")?.textContent).toContain("current revision is 71"); });
+    expect(calls.filter((call) => call.operation === "append")).toHaveLength(1);
+    expect(shadow(element).querySelector<HTMLButtonElement>('[data-task-id="choice"] button')?.disabled).toBe(false);
+  });
+
+  it("rejects blank free text and preserves the exact typed answer", async () => {
+    const textSnapshot = {
+      ...snapshot,
+      humanTasks: [{ id: "text", title: "Explain", status: "pending" as const, answerKind: "free-text" as const, options: [], sourceSessionId: "session-text" }],
+    };
+    const calls: { operation: string; input: unknown }[] = [];
+    let inspectCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const body = requestBody(init);
+      calls.push(body);
+      if (body.operation === "append") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: { acceptedRevision: 71 } }), { status: 200 }));
+      if (body.operation === "list") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: summaries }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, value: inspectCalls++ === 0 ? textSnapshot : { ...textSnapshot, revision: 71, humanTasks: [] } }), { status: 200 }));
+    }));
+
+    const element = new WorkstreamChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(shadow(element).querySelector<HTMLInputElement>('input[aria-label="Answer Explain"]')).not.toBeNull(); });
+    const input = shadow(element).querySelector<HTMLInputElement>('input[aria-label="Answer Explain"]');
+    if (input === null) throw new Error("free-text input missing");
+    const form = input.closest("form");
+    if (form === null) throw new Error("free-text form missing");
+    input.value = "   ";
+    form.requestSubmit();
+    expect(input.validationMessage).toBe("Enter an answer before submitting.");
+    expect(calls.some((call) => call.operation === "append")).toBe(false);
+
+    input.value = "  exact typed answer  ";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    form.requestSubmit();
+    await vi.waitFor(() => { expect(calls.some((call) => call.operation === "append")).toBe(true); });
+    expect(calls.find((call) => call.operation === "append")).toMatchObject({
+      input: {
+        expectedRevision: 70,
+        records: [{ producer: "owner", sourceSessionId: "session-text", payload: { taskId: "text", answer: { kind: "free-text", text: "  exact typed answer  " } } }],
+      },
+    });
   });
 
   it("shows the missing-overview hint instead of inventing a goal", async () => {
