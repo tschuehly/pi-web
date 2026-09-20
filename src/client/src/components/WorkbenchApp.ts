@@ -14,6 +14,7 @@ import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import type { ChatView } from "./ChatView";
 import type { PromptEditor } from "./PromptEditor";
+import "./AllSessions";
 import "./AuthDialog";
 import "./ChatView";
 import "./CommandPicker";
@@ -41,7 +42,7 @@ export class WorkbenchApp extends LitElement {
   @state() private loading = true;
   @state() private showAgentSessions = false;
   @state() private showAllSessions = false;
-  @state() private otherTab = false;
+  @state() private chooserView: "project" | "other" | "all" = "project";
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -260,6 +261,22 @@ export class WorkbenchApp extends LitElement {
     this.promptEditor?.focusInput();
   }
 
+  private async openAllSession(session: SessionInfo): Promise<void> {
+    this.setApp({ error: "" });
+    try {
+      const project = this.app.projects
+        .filter((candidate) => session.cwd === candidate.path || session.cwd.startsWith(`${candidate.path}/`))
+        .sort((a, b) => b.path.length - a.path.length)[0];
+      const workspaces = project === undefined ? [] : await api.workspaces(project.id, selectedMachineId(this.app)).catch((): Workspace[] => []);
+      const registeredWorkspace = workspaces.find((candidate) => candidate.path === session.cwd);
+      const workspace = registeredWorkspace ?? adHocWorkspace(session.cwd);
+      this.setApp({ selectedProject: registeredWorkspace === undefined ? undefined : project, selectedWorkspace: workspace, workspaces: registeredWorkspace === undefined ? [workspace] : workspaces, sessions: [session] });
+      await this.openSession(session);
+    } catch (error) {
+      this.setApp({ error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   /** Open the session that wrote a Workstream's newest checkpoint, wherever it lives. */
   private async openWorkstreamSession(detail: OpenWorkstreamSessionDetail): Promise<void> {
     const machineId = selectedMachineId(this.app);
@@ -423,8 +440,9 @@ export class WorkbenchApp extends LitElement {
                 ${this.app.machines.map((machine) => html`<option value=${machine.id}>${machine.name}</option>`)}
               </select>
             ` : null}
-            ${rootProjects(this.app.projects).map((candidate) => html`<button role="tab" aria-selected=${!this.otherTab && project !== undefined && rootProjectOf(project, this.app.projects).id === candidate.id} @click=${() => { this.otherTab = false; void this.chooseProject(candidate.id); }}>${candidate.name}</button>`)}
-            <button role="tab" aria-selected=${this.otherTab} @click=${() => { this.otherTab = true; }}>Other</button>
+            ${rootProjects(this.app.projects).map((candidate) => html`<button role="tab" aria-selected=${this.chooserView === "project" && project !== undefined && rootProjectOf(project, this.app.projects).id === candidate.id} @click=${() => { this.chooserView = "project"; void this.chooseProject(candidate.id); }}>${candidate.name}</button>`)}
+            <button role="tab" aria-selected=${this.chooserView === "other"} @click=${() => { this.chooserView = "other"; }}>Other</button>
+            <button role="tab" aria-selected=${this.chooserView === "all"} @click=${() => { this.chooserView = "all"; }}>All sessions</button>
             <span class="tab-actions">
               <button class="icon-button" title="Chat in a folder…" aria-label="Chat in a folder…" @click=${() => { void this.startChatInFolder(); }}>
                 ${renderBuiltinTabIcon("chat-plus")}
@@ -434,7 +452,7 @@ export class WorkbenchApp extends LitElement {
               </button>
             </span>
           </div>
-          ${this.otherTab ? html`<workstream-chooser .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
+          ${this.chooserView === "all" ? html`<all-sessions @open-session=${(event: CustomEvent<SessionInfo>) => { void this.openAllSession(event.detail); }}></all-sessions>` : this.chooserView === "other" ? html`<workstream-chooser .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
             <div class="new-chat">
               <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
               <label>in
@@ -447,7 +465,7 @@ export class WorkbenchApp extends LitElement {
           `}
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
-          ${this.otherTab || this.app.selectedWorkspace === undefined ? null : html`
+          ${this.chooserView !== "project" || this.app.selectedWorkspace === undefined ? null : html`
             <div class="sessions">
               <h2>Sessions <small>${String(visibleSessions.length)}</small></h2>
               ${recentSessions.map((session) => html`

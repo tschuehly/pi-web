@@ -82,6 +82,26 @@ describe("session routes", () => {
     }
   });
 
+  it("lists recent sessions with a bounded limit and a default of 200", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    try {
+      const explicit = await routeApp.inject({ method: "GET", url: "/sessions/recent?limit=37" });
+      const defaulted = await routeApp.inject({ method: "GET", url: "/sessions/recent" });
+      const invalid = await routeApp.inject({ method: "GET", url: "/sessions/recent?limit=501" });
+
+      expect(explicit.statusCode).toBe(200);
+      expect(explicit.json()).toEqual(routeService.recentSessionsResponse);
+      expect(defaulted.statusCode).toBe(200);
+      expect(invalid.statusCode).toBe(400);
+      expect(routeService.listRecentCalls).toEqual([37, 200]);
+    } finally {
+      await routeApp.close();
+    }
+  });
+
   it("locates a persisted session's working directory by id across projects", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1289,6 +1309,8 @@ class CapturingRouteSessionService implements SessionRouteService {
   readonly answerDialogCalls: { lookup: SessionRouteRef; dialogId: string; value: ExtensionDialogAnswer }[] = [];
   readonly cancelDialogCalls: { lookup: SessionRouteRef; dialogId: string }[] = [];
   readonly startCalls: { cwd: string; startupToken: string | undefined }[] = [];
+  readonly listRecentCalls: number[] = [];
+  readonly recentSessionsResponse: ClientSession[] = [{ id: "recent", cwd: "/repo", path: "/sessions/recent.jsonl", persisted: true, created: "2026-01-01T00:00:00.000Z", modified: "2026-01-02T00:00:00.000Z", messageCount: 1, firstMessage: "Recent" }];
   askError: Error | undefined;
   dialogError: Error | undefined;
   reloadError: Error | undefined;
@@ -1388,6 +1410,11 @@ class CapturingRouteSessionService implements SessionRouteService {
   }
 
   list(): never { throw unusedRouteMethod("list"); }
+
+  listRecent(limit: number): Promise<ClientSession[]> {
+    this.listRecentCalls.push(limit);
+    return Promise.resolve(this.recentSessionsResponse);
+  }
 
   start(cwd: string, options?: { startupToken?: string }): Promise<ClientSession> {
     this.startCalls.push({ cwd, startupToken: options?.startupToken });

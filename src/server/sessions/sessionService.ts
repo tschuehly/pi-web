@@ -49,6 +49,7 @@ export type SessionRouteRef = ClientSessionRef;
  */
 export interface SessionRouteService {
   list(cwd: string): Promise<ClientSession[]>;
+  listRecent(limit: number): Promise<ClientSession[]>;
   /**
    * Create a session. `startupToken` is an opaque label the caller supplies so
    * it can recognise this construction's startup progress reports; the service

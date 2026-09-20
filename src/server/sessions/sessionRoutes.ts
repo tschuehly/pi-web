@@ -11,6 +11,10 @@ interface SessionQuery {
   cwd?: string;
 }
 
+interface RecentSessionsQuery {
+  limit?: string;
+}
+
 interface MessageQuery extends SessionQuery {
   before?: string;
   limit?: string;
@@ -39,6 +43,14 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     if (request.query.cwd === undefined || request.query.cwd === "") return reply.code(400).send({ error: "cwd query parameter is required" });
     try {
       return await sessions.list(normalizeRequestCwd(request.query.cwd));
+    } catch (error) {
+      return reply.code(400).send({ error: errorMessage(error) });
+    }
+  });
+
+  app.get<{ Querystring: RecentSessionsQuery }>(`${prefix}/sessions/recent`, async (request, reply) => {
+    try {
+      return await sessions.listRecent(recentSessionsLimit(request.query.limit));
     } catch (error) {
       return reply.code(400).send({ error: errorMessage(error) });
     }
@@ -735,6 +747,13 @@ function requireThinkingLevel(value: unknown): string {
 
 function optionalField<T>(key: string, value: T | undefined): Record<string, T> | object {
   return value === undefined ? {} : { [key]: value };
+}
+
+function recentSessionsLimit(value: string | undefined): number {
+  if (value === undefined) return 200;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) throw new Error("limit query parameter must be an integer from 1 to 500");
+  return parsed;
 }
 
 function optionalNumber(value: string | undefined): number | undefined {

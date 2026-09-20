@@ -1181,6 +1181,35 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     await service.dispose();
   });
 
+  it("falls back to the global listing for recent sessions and excludes archived records", async () => {
+    const older = { ...sessionRecord("older"), cwd: "/older", modified: new Date("2026-01-01T00:00:00.000Z") };
+    const archived = { ...sessionRecord("archived"), cwd: "/archived", modified: new Date("2026-01-03T00:00:00.000Z") };
+    const newest = { ...sessionRecord("newest"), cwd: "/newest", modified: new Date("2026-01-02T00:00:00.000Z") };
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      archiveStore: {
+        list: () => Promise.resolve([{ sessionId: archived.id, cwd: archived.cwd, archivedAt: "2026-01-04T00:00:00.000Z" }]),
+        get: () => Promise.resolve(undefined),
+        archive: () => { throw new Error("archive should not be called when listing"); },
+        restore: () => Promise.resolve(),
+        isArchived: () => Promise.resolve(false),
+      },
+      sessionManager: {
+        create: () => fakeSessionManager(),
+        list: () => Promise.resolve([]),
+        listAll: () => Promise.resolve([older, archived, newest]),
+        invalidateSessionFile: () => undefined,
+        resolveSessionFile: () => Promise.resolve(undefined),
+        open: () => fakeSessionManager(),
+      },
+      heartbeatIntervalMs: 60_000,
+    });
+
+    await expect(service.listRecent(1)).resolves.toMatchObject([{ id: "newest", cwd: "/newest" }]);
+    await service.dispose();
+  });
+
   it("lists archived records that have been moved out of the active session directory", async () => {
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,

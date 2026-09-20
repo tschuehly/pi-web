@@ -129,6 +129,26 @@ describe("Workbench Chat chooser", () => {
     expect(window.location.search).toBe("?project=project&workspace=workspace");
   });
 
+  it("opens a session from the All sessions tab in its registered workspace", async () => {
+    const recent = session("recent", "Across projects");
+    vi.spyOn(api, "recent").mockResolvedValue([recent]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: recent.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    const app = await mountChooser([]);
+    const allTab = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>('button[role="tab"]') ?? [])].find((button) => button.textContent === "All sessions");
+    if (allTab === undefined) throw new Error("All sessions tab was not rendered");
+
+    allTab.click();
+    await app.updateComplete;
+    const chooser = app.shadowRoot?.querySelector("all-sessions");
+    if (chooser === undefined || chooser === null) throw new Error("All sessions chooser was not rendered");
+    chooser.dispatchEvent(new CustomEvent("open-session", { detail: recent, bubbles: true, composed: true }));
+
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(recent.id); });
+    expect(getState(app).selectedWorkspace?.path).toBe(recent.cwd);
+  });
+
   it("opens a Workstream session from status without loading the workspace session list", async () => {
     const sessions = vi.spyOn(api, "sessions").mockResolvedValue([]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });

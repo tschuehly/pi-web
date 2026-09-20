@@ -234,6 +234,7 @@ export const sessionsApi = {
     arrayOf(parseSessionInfo),
     options?.signal === undefined ? undefined : { signal: options.signal },
   ),
+  recent: (limit = 200, machineId = "local") => request(`${machinePrefix(machineId)}/sessions/recent?${new URLSearchParams({ limit: String(limit) }).toString()}`, arrayOf(parseSessionInfo)),
   locate: (sessionId: string, machineId = "local"): Promise<{ cwd: string }> => request(`${machinePrefix(machineId)}/sessions/locate/${encodeURIComponent(sessionId)}`, parseLocatedSession),
   unreadCatalog: (machineId = "local") => request(`${machinePrefix(machineId)}/sessions/unread`, parseSessionUnreadCatalogSnapshot, { cache: "no-store" }),
   acknowledgeUnread: (session: SessionRef, catalogId: string, throughCompletionOrder: number, machineId = "local") => {

@@ -106,6 +106,15 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
     return filterSessionsForCwd(sessions, cwd);
   }
 
+  async listRecent(limit: number): Promise<PiSessionListEntry[]> {
+    const sessionDirs = await listGlobalSessionDirs(this.resolver.defaultSessionsRoot(), this.resolver.globalEnvSessionDir());
+    const sessions = (await Promise.all(sessionDirs.map((dir) => this.summaryScanner.scanSessionSummariesInDir(dir)))).flat().map((session) => ({
+      ...session,
+      cwd: canonicalizeStoredCwd(session.cwd),
+    }));
+    return uniqueSessionsByPath(sessions).slice(0, limit);
+  }
+
   resolveSessionFile(cwd: string, sessionId: string): Promise<ResolvedSessionFile | undefined> {
     const resolution = this.resolver.resolve(cwd);
     return resolveSessionFileInDir(resolution.sessionDir, cwd, sessionId, readSessionHeaderSummary);

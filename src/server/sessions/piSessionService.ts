@@ -391,6 +391,8 @@ export interface PiSessionManager {
 
 export interface PiSessionManagerGateway {
   list(cwd: string): Promise<PiSessionListEntry[]>;
+  /** Fast cross-project listing, newest first. Falls back to listAll when unavailable. */
+  listRecent?(limit: number): Promise<PiSessionListEntry[]>;
   /**
    * Locate a session file by id, with an exact header id taking priority over
    * a prefix, without parsing message bodies or building a full workspace
@@ -1447,6 +1449,19 @@ export class PiSessionService implements SessionRouteService {
       }
     })).finally(() => this.activityMarker.dispose());
     await this.publishUnreadMutations([]);
+  }
+
+  async listRecent(limit: number): Promise<ClientSession[]> {
+    const [sessions, archivedRecords] = await Promise.all([
+      this.sessionManager.listRecent?.(limit) ?? this.sessionManager.listAll(),
+      this.archiveStore.list(),
+    ]);
+    const archived = new Set(archivedRecords.map((record) => `${record.cwd}\0${record.sessionId}`));
+    return sessions
+      .filter((session) => !archived.has(`${session.cwd}\0${session.id}`))
+      .sort((a, b) => b.modified.getTime() - a.modified.getTime())
+      .slice(0, limit)
+      .map(clientSessionFromListEntry);
   }
 
   async list(cwd: string): Promise<ClientSession[]> {

@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -106,6 +106,25 @@ describe("Pi session manager gateway", () => {
     const gateway = createPiSessionManagerGateway(piProfileOptions());
 
     await expect(gateway.listAll()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: "session-a", cwd }), expect.objectContaining({ id: "session-b", cwd: otherCwd })]));
+  });
+
+  it("lists the newest sessions across every project with a global limit", async () => {
+    const otherCwd = join(tempDir, "other-workspace");
+    const oldestDir = defaultPiSessionDir(cwd, agentDir);
+    const newestDir = defaultPiSessionDir(otherCwd, agentDir);
+    await writeSessionFile(oldestDir, "oldest", cwd);
+    await writeSessionFile(oldestDir, "middle", cwd);
+    await writeSessionFile(newestDir, "newest", otherCwd);
+    await utimes(join(oldestDir, "oldest.jsonl"), new Date("2026-01-01T00:00:00.000Z"), new Date("2026-01-01T00:00:00.000Z"));
+    await utimes(join(oldestDir, "middle.jsonl"), new Date("2026-01-02T00:00:00.000Z"), new Date("2026-01-02T00:00:00.000Z"));
+    await utimes(join(newestDir, "newest.jsonl"), new Date("2026-01-03T00:00:00.000Z"), new Date("2026-01-03T00:00:00.000Z"));
+    const gateway = createPiSessionManagerGateway(piProfileOptions());
+    if (gateway.listRecent === undefined) throw new Error("Gateway recent listing is unavailable");
+
+    await expect(gateway.listRecent(2)).resolves.toMatchObject([
+      { id: "newest", cwd: otherCwd },
+      { id: "middle", cwd },
+    ]);
   });
 
   it("locates a session across projects from its file header without scanning transcripts", async () => {
