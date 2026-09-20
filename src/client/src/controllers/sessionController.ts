@@ -195,6 +195,10 @@ export class SessionController {
     this.clearPendingUpdates();
   }
 
+  resume(): void {
+    this.disposed = false;
+  }
+
   clearActiveSession() {
     this.selectionSeq += 1;
     this.socket.close();

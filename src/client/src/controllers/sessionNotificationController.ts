@@ -73,6 +73,10 @@ export class SessionNotificationController {
     this.dismissAllPending = false;
   }
 
+  resume(): void {
+    this.disposed = false;
+  }
+
   prepareSelectedSession(session: SessionInfo, machineId: string): void {
     this.selectedGeneration += 1;
     this.selectedTarget = session.archived === true ? undefined : { machineId, sessionId: session.id, cwd: session.cwd };

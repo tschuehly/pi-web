@@ -78,6 +78,8 @@ export class WorkbenchApp extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    this.sessions.resume();
+    this.notifications.resume();
     window.addEventListener("popstate", this.onPopState);
     void this.load(readRoute());
   }
@@ -99,15 +101,25 @@ export class WorkbenchApp extends LitElement {
 
   private async load(route: ParsedAppRoute): Promise<void> {
     const sequence = ++this.loadSequence;
+    const selectedWorkspace = this.app.selectedWorkspace;
+    const retainSelection = completeChatRoute(route)
+      && route.sessionId === this.app.selectedSession?.id
+      && route.projectId === this.app.selectedProject?.id
+      && route.workspaceId === selectedWorkspace?.id
+      && (route.machineId ?? "local") === selectedMachineId(this.app);
     this.loading = true;
-    this.sessions.clearActiveSession();
+    if (!retainSelection) this.sessions.clearActiveSession();
     try {
       const machines = await api.machines();
       if (sequence !== this.loadSequence) return;
       const machine = machines.find((candidate) => candidate.id === (route.machineId ?? "local"))
         ?? machines.find((candidate) => candidate.id === "local")
         ?? machines[0];
-      this.setApp({ ...initialAppState(), machines, selectedMachine: machine });
+      const keepSelection = retainSelection && machine?.id === selectedMachineId(this.app);
+      if (retainSelection && !keepSelection) this.sessions.clearActiveSession();
+      this.setApp(keepSelection
+        ? { machines, selectedMachine: machine, error: "" }
+        : { ...initialAppState(), machines, selectedMachine: machine });
       this.connectRealtime();
       if (machine === undefined) throw new Error("No PI WEB machine is available.");
 
@@ -133,7 +145,10 @@ export class WorkbenchApp extends LitElement {
       this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions });
       await this.sessions.selectSession(session, { updateUrl: false });
     } catch (error) {
-      if (sequence === this.loadSequence) this.setApp({ error: error instanceof Error ? error.message : String(error) });
+      if (sequence === this.loadSequence) {
+        if (retainSelection) this.sessions.clearActiveSession();
+        this.setApp({ error: error instanceof Error ? error.message : String(error) });
+      }
     } finally {
       if (sequence === this.loadSequence) this.loading = false;
     }

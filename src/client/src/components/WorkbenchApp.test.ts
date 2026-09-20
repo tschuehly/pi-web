@@ -99,6 +99,59 @@ describe("Workbench Chat chooser", () => {
     localStorage.removeItem("pi-workbench.last-workspace");
   });
 
+  it("reselects the routed Chat when the app reconnects after a Vite reload", async () => {
+    const current = session("current", "Keep this Chat open");
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "sessions").mockResolvedValue([current]);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    const status = vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
+    const notifications = vi.spyOn(api, "notificationInbox").mockResolvedValue({ daemonInstanceId: "daemon", catalogRevision: 0, summary: { sessionId: current.id, cwd: current.cwd, inboxRevision: 0, retainedCount: 0, discardedCount: 0 }, notifications: [], dismissThrough: { order: 0, overflowWatermark: 0 } });
+    vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
+    window.history.replaceState({}, "", `/?project=${project.id}&workspace=${workspace.id}&session=${current.id}&view=chat`);
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(current.id); });
+    const statusCalls = status.mock.calls.length;
+    const notificationCalls = notifications.mock.calls.length;
+
+    app.remove();
+    document.body.append(app);
+
+    expect(getState(app).selectedSession?.id).toBe(current.id);
+    expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).toBeNull();
+    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    expect(getState(app).selectedSession?.id).toBe(current.id);
+    expect(app.shadowRoot?.querySelector('[data-view="chat"]')).not.toBeNull();
+    expect(status.mock.calls.length).toBeGreaterThan(statusCalls);
+    expect(notifications.mock.calls.length).toBeGreaterThan(notificationCalls);
+  });
+
+  it("returns to the chooser if the routed Chat cannot be reselected after reconnect", async () => {
+    const current = session("current", "Missing after reload");
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    const workspaces = vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "sessions").mockResolvedValue([current]);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
+    vi.spyOn(api, "notificationInbox").mockResolvedValue({ daemonInstanceId: "daemon", catalogRevision: 0, summary: { sessionId: current.id, cwd: current.cwd, inboxRevision: 0, retainedCount: 0, discardedCount: 0 }, notifications: [], dismissThrough: { order: 0, overflowWatermark: 0 } });
+    vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
+    window.history.replaceState({}, "", `/?project=${project.id}&workspace=${workspace.id}&session=${current.id}&view=chat`);
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(current.id); });
+
+    workspaces.mockResolvedValue([]);
+    app.remove();
+    document.body.append(app);
+
+    await vi.waitFor(() => { expect(getState(app).error).toContain("workspace is no longer available"); });
+    expect(getState(app).selectedSession).toBeUndefined();
+    expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull();
+  });
+
   it("keeps a fresh unlisted Chat open across a reload by rebuilding it from status", async () => {
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
