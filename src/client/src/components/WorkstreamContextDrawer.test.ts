@@ -73,7 +73,7 @@ describe("WorkstreamContextDrawer", () => {
     expect(root?.textContent).toContain("Done when");
     expect(root?.textContent).toContain("The Workstream joins project navigation");
     expect(root?.textContent).toContain("Thomas chooses the preferred drawer.");
-    expect(root?.querySelectorAll(".row > p > .label")).toHaveLength(4);
+    expect(root?.querySelectorAll(".row > .label")).toHaveLength(4);
   });
 
   it("states when the Chat has no Workstream association", async () => {

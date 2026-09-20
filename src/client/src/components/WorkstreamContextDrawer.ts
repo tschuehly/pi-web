@@ -19,16 +19,20 @@ export class WorkstreamContextDrawer extends LitElement {
         <summary><span>Workstream</span><strong>${this.snapshot.title}</strong></summary>
         <div class="sheet">
           <section class="row goal-row">
-            <p class="goal"><span class="label">Goal</span>${overview?.goal ?? "No Workstream overview has been written."}</p>
+            <span class="label">Goal</span>
+            <p class="goal">${overview?.goal ?? "No Workstream overview has been written."}</p>
           </section>
           <section class="row about">
-            <p><span class="label">About</span>${overview?.description ?? "This Workstream has no stored description yet."}</p>
+            <span class="label">About</span>
+            <p>${overview?.description ?? "This Workstream has no stored description yet."}</p>
           </section>
           <section class="row">
-            <p><span class="label">Done when</span>${overview?.doneWhen ?? "No completion condition recorded."}</p>
+            <span class="label">Done when</span>
+            <p>${overview?.doneWhen ?? "No completion condition recorded."}</p>
           </section>
           <section class="row next">
-            <p><span class="label">Do next</span>${checkpoint?.next ?? "No next action recorded."}</p>
+            <span class="label">Do next</span>
+            <p>${checkpoint?.next ?? "No next action recorded."}</p>
           </section>
         </div>
       </details>
@@ -47,14 +51,14 @@ export class WorkstreamContextDrawer extends LitElement {
     summary span { flex: 0 0 auto; color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
     summary strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
     .tab { color: var(--pi-muted); font-size: 12px; }
-    .sheet { position: absolute; top: 100%; left: 0; right: 0; max-height: calc(100vh - 56px); overflow: auto; display: grid; padding: 14px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
-    .row { padding: 11px 0; border-bottom: 1px solid var(--pi-border-muted); }
-    .row:last-child { border-bottom: 0; }
-    .label { display: inline-block; margin-right: 12px; color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; vertical-align: .12em; }
+    .sheet { position: absolute; top: 100%; left: 0; right: 0; max-height: calc(100vh - 56px); overflow: auto; display: grid; padding: 20px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
+    .row { position: relative; padding: 18px 0 12px; border-top: 1px solid var(--pi-border-muted); }
+    .label { position: absolute; top: 0; left: 50%; padding: 0 10px; color: var(--pi-accent); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; transform: translate(-50%, -50%); }
     p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
     .goal { width: 100%; font-size: 18px; font-weight: 750; line-height: 1.35; }
     .about p { color: var(--pi-muted); }
-    .next { margin-top: 4px; padding-inline: 12px; border: 1px solid var(--pi-success-border); border-radius: 9px; background: var(--pi-success-bg); }
+    .next { margin: 8px 0 4px; padding: 18px 12px 12px; border: 1px solid var(--pi-success-border); border-radius: 9px; background: var(--pi-success-bg); }
+    .next .label { background: var(--pi-success-bg); }
     @media (max-width: 520px) {
       .sheet { padding: 12px 16px; }
       .goal { font-size: 16px; }
