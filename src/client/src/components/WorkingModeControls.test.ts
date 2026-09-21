@@ -47,22 +47,30 @@ describe("WorkingModeControls", () => {
 });
 
 describe("DelegateRoster", () => {
-  it("appears only for roster items and distinguishes terminal uncollected rows", async () => {
+  it("renders a running subagent and a terminal uncollected row compactly", async () => {
     const element = new DelegateRoster();
     document.body.append(element);
     await element.updateComplete;
     expect(root(element).querySelector("section")).toBeNull();
 
+    const longObjective = "Review the complete delegate roster implementation and every narrow-width layout edge case before reporting findings";
     element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
-      { id: "one", kind: "worker", name: "UI", role: "implementation", objective: "Build roster", activity: "running tests", reportedStatus: "Wiring the roster CSS" },
+      { id: "one", kind: "subagent", name: "Roster implementation", role: "implementation", model: "openai-codex/gpt-5.6-sol-20260921", effort: "medium", objective: longObjective, activity: "running tests", reportedStatus: "Wiring the roster CSS" },
       { id: "two", kind: "subagent", name: "Review", role: "challenge", objective: "Check result", activity: "success" },
     ] }) });
     await element.updateComplete;
-    const rows = [...root(element).querySelectorAll(".row")];
+    const rows = [...root(element).querySelectorAll<HTMLElement>(".row")];
     expect(rows).toHaveLength(2);
-    expect(required(required(rows[0]).textContent).replace(/\s+/g, "")).toContain("WorkerUIBuildrosterWiringtherosterCSSRunning");
-    expect(required(rows[1]).classList.contains("terminal")).toBe(true);
-    expect(required(rows[1]).textContent).toContain("Uncollected");
+    const running = required(rows[0]);
+    expect(running.querySelector(".kind")?.getAttribute("aria-label")).toBe("Subagent");
+    expect(running.querySelector(".state")?.getAttribute("aria-label")).toBe("Running");
+    expect(running.querySelector(".meta")?.textContent).toBe("implementation · gpt-5.6-sol · medium");
+    expect(running.querySelector(".meta")?.getAttribute("title")).toContain("openai-codex/gpt-5.6-sol-20260921");
+    expect(running.querySelector(".task")?.getAttribute("title")).toBe(longObjective);
+    expect(running.querySelector(".activity")?.textContent).toBe("Wiring the roster CSS");
+    const terminal = required(rows[1]);
+    expect(terminal.classList.contains("terminal")).toBe(true);
+    expect(terminal.querySelector(".state")?.getAttribute("aria-label")).toBe("Uncollected");
   });
 
   it("falls back to inferred activity when reportedStatus is absent", async () => {
@@ -73,7 +81,8 @@ describe("DelegateRoster", () => {
     ] }) });
     await element.updateComplete;
     const row = required(root(element).querySelector(".row"));
-    expect(row.textContent).toContain("running bash");
+    expect(row.querySelector(".kind")?.getAttribute("aria-label")).toBe("Worker");
+    expect(row.querySelector(".activity")?.textContent).toBe("running bash");
   });
 
   it("tolerates a snapshot without the reportedStatus field at all", async () => {

@@ -18,6 +18,8 @@ export interface DelegateActivityItem {
   kind: "subagent" | "worker";
   name?: string;
   role?: string;
+  model?: string;
+  effort?: string;
   objective?: string;
   activity?: string;
   reportedStatus?: string;
@@ -67,6 +69,8 @@ export function parseDelegateActivitySnapshot(text: string | undefined): Delegat
     const item: DelegateActivityItem = { id: candidate["id"], kind: candidate["kind"] };
     const name = optionalText(candidate["name"]); if (name !== undefined) item.name = name;
     const role = optionalText(candidate["role"]); if (role !== undefined) item.role = role;
+    const model = optionalText(candidate["model"]); if (model !== undefined) item.model = model;
+    const effort = optionalText(candidate["effort"]); if (effort !== undefined) item.effort = effort;
     const objective = optionalText(candidate["objective"]); if (objective !== undefined) item.objective = objective;
     const activity = optionalText(candidate["activity"]); if (activity !== undefined) item.activity = activity;
     const reportedStatus = optionalText(candidate["reportedStatus"]); if (reportedStatus !== undefined) item.reportedStatus = reportedStatus;
