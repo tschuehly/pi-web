@@ -293,7 +293,7 @@ describe("Workbench Chat chooser", () => {
     });
     expect(startSession).toHaveBeenCalledWith(workspace.path, "local", "pi-web:00000000-0000-4000-8000-000000000001");
     expect(prompt).not.toHaveBeenCalled();
-    expect(loadDraft(machineSessionKey("local", "new-session"))).toBe("Carry on");
+    await vi.waitFor(() => { expect(loadDraft(machineSessionKey("local", "new-session"))).toBe("Carry on"); });
     expect(app.shadowRoot?.activeElement?.tagName).toBe("PROMPT-EDITOR");
     expect(locate).toHaveBeenCalledWith("previous", "local");
     expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
@@ -326,7 +326,7 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
 
     expect(getState(app).selectedSession?.id).toBe(other.id);
-    expect(promptEditor(app).view?.state.doc.toString()).toBe("Keep this draft");
+    await vi.waitFor(() => { expect(promptEditor(app).view?.state.doc.toString()).toBe("Keep this draft"); });
   });
 
   it("does not preload an ambiguous failed launch into a different selected Chat", async () => {
@@ -354,7 +354,7 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(getState(app).error).toContain("Chat creation failed"); });
 
     expect(getState(app).error).not.toContain("reconciliation");
-    expect(promptEditor(app).view?.state.doc.toString()).toBe("Keep this draft");
+    await vi.waitFor(() => { expect(promptEditor(app).view?.state.doc.toString()).toBe("Keep this draft"); });
   });
 
   it("does not create a Chat when the anchorless pending append fails", async () => {
