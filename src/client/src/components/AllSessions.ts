@@ -89,7 +89,7 @@ function isAgentSession(session: SessionInfo): boolean {
 }
 
 function isChildSession(session: SessionInfo): boolean {
-  return session.parentSessionPath !== undefined || session.parentSessionId !== undefined;
+  return session.parentSessionPath !== undefined;
 }
 
 function matchesSearch(session: SessionInfo, needle: string): boolean {
