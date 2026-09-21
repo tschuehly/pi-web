@@ -445,6 +445,7 @@ export class PromptEditor extends LitElement {
       return false;
     }
     if (event.defaultPrevented || event.isComposing || view.composing) return false;
+    const primaryModifierEnter = event.key === "Enter" && !event.altKey && (event.ctrlKey || event.metaKey);
     const send = this.matchesSendShortcut(event);
     const plainEnter = event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey
       && !shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia);
@@ -454,8 +455,12 @@ export class PromptEditor extends LitElement {
       if (completion !== undefined) this.pick(completion);
       return true;
     }
+    if (primaryModifierEnter && (this.canSteer || this.isCompacting)) {
+      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, true));
+      return true;
+    }
     if (send) {
-      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, event.metaKey || event.ctrlKey));
+      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, false));
       return true;
     }
     if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) {

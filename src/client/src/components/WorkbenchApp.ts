@@ -17,7 +17,7 @@ import { applyPresentationProfile, builtInPresentationProfile, readStoredPresent
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
-import { applyPiWebTheme, DEFAULT_THEME_PREFERENCE, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
+import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
 import type { ChatView } from "./ChatView";
 import type { PromptEditor } from "./PromptEditor";
 import "./AllSessions";
@@ -37,12 +37,6 @@ import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
 export const adHocWorkspace = (path: string): Workspace => ({ id: `folder:${path}`, projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
-
-function createThemeRegistry(): PluginRegistry {
-  const registry = new PluginRegistry();
-  registry.register({ id: "themes", plugin: themePackPlugin });
-  return registry;
-}
 
 /** A project whose path lies inside another registered project belongs to that project's tab. */
 export function rootProjectOf(project: Project, projects: readonly Project[]): Project {
@@ -67,8 +61,9 @@ export class WorkbenchApp extends LitElement {
   private loadSequence = 0;
   private modelDialogInstanceId = 0;
   private workstreamLoadSequence = 0;
-  private readonly themes = createThemeRegistry();
-  @state() private themePreference: ThemePreference = readStoredThemePreference() ?? DEFAULT_THEME_PREFERENCE;
+  private readonly themes = new PluginRegistry();
+  private themesInitialized = false;
+  @state() private themePreference: ThemePreference = readStoredThemePreference() ?? { themeId: "themes:github-dark", auto: true };
   private readonly systemLightThemeMedia = typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia("(prefers-color-scheme: light)") : undefined;
   private readonly onSystemLightThemeChange = (): void => { this.applyPreferredTheme(); };
 
@@ -154,8 +149,18 @@ export class WorkbenchApp extends LitElement {
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
     applyPresentationProfile(readStoredPresentationProfile() ?? builtInPresentationProfile("comfortable"));
     this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
-    this.applyPreferredTheme();
+    void this.initializeThemes();
     void this.load(readRoute());
+  }
+
+  private async initializeThemes(): Promise<void> {
+    if (!this.themesInitialized) {
+      this.themesInitialized = true;
+      await this.themes.register({ id: "themes", plugin: themePackPlugin });
+    }
+    if (!this.isConnected) return;
+    this.applyPreferredTheme();
+    this.requestUpdate();
   }
 
   override disconnectedCallback(): void {
@@ -436,8 +441,7 @@ export class WorkbenchApp extends LitElement {
     this.setApp({ selectedProject: match?.project, selectedWorkspace: workspace, workspaces: match?.workspaces ?? [workspace], sessions: [], error: "" });
     let session: SessionInfo;
     try {
-      await this.sessions.startSession();
-      const started = this.app.selectedSession;
+      const started = await this.sessions.startSessionWithOptions({ startupToken: associationKey, propagateError: true });
       if (started === undefined) throw new Error("PI WEB did not start a Chat.");
       session = started;
     } catch (error) {

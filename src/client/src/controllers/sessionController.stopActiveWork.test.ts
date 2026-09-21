@@ -76,6 +76,6 @@ describe("SessionController stopActiveWork", () => {
     );
     await failedController.stopActiveWork();
     expect(replacePromptEditorText).not.toHaveBeenCalled();
-    expect(Object.values(state.browserErrors).at(-1)?.message).toBe("abort failed");
+    expect(Object.values(state.browserErrors).at(-1)?.message).toBe("Error: abort failed");
   });
 });

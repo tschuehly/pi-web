@@ -95,6 +95,7 @@ interface PendingSessionStart {
   pendingUrlPublished: boolean;
   session: ClientPendingStartSessionInfo;
   queuedSends: QueuedPendingSessionSend[];
+  startupToken: string;
   discarded: boolean;
   /**
    * The real session id, learned from the daemon's `session.startup` events
@@ -252,12 +253,16 @@ export class SessionController {
     await this.clearSessionAfterNavigation(this.navigationSelection());
   }
 
-  async startSession(options?: { updateUrl?: boolean | undefined }) {
+  async startSession(options?: { updateUrl?: boolean | undefined }): Promise<void> {
+    await this.startSessionWithOptions(options);
+  }
+
+  async startSessionWithOptions(options?: { updateUrl?: boolean | undefined; startupToken?: string | undefined; propagateError?: boolean | undefined }): Promise<SessionInfo | undefined> {
     const workspace = this.getState().selectedWorkspace;
     if (!workspace) return;
     const machineId = selectedMachineId(this.getState());
     const pendingUrlPublished = options?.updateUrl !== false;
-    const pending = this.createPendingSessionStart(workspace, machineId, this.navigationSelection(), pendingUrlPublished);
+    const pending = this.createPendingSessionStart(workspace, machineId, this.navigationSelection(), pendingUrlPublished, options?.startupToken);
     this.pendingSessionStarts.set(pending.tempId, pending);
     this.insertAndSelectPendingSession(pending.session, { updateUrl: options?.updateUrl });
     // The creation route is the handoff identity, not the previously selected session.
@@ -267,10 +272,13 @@ export class SessionController {
     // published-token handoffs; freshness also protects unpublished starts.
     pending.navigation = this.beginNavigationOperation?.(PENDING_SESSION_START_SCOPE);
     try {
-      const session = await this.api.startSession(workspace.path, machineId, pending.tempId);
+      const session = await this.api.startSession(workspace.path, machineId, pending.startupToken);
       await this.resolvePendingSessionStart(pending.tempId, session);
+      return session;
     } catch (error) {
       this.failPendingSessionStart(pending.tempId, error);
+      if (options?.propagateError === true) throw error;
+      return undefined;
     }
   }
 
@@ -1528,7 +1536,7 @@ export class SessionController {
       && current.view === expected.view;
   }
 
-  private createPendingSessionStart(workspace: Workspace, machineId: string, expectedNavigation: NavigationSelection, pendingUrlPublished: boolean): PendingSessionStart {
+  private createPendingSessionStart(workspace: Workspace, machineId: string, expectedNavigation: NavigationSelection, pendingUrlPublished: boolean, startupToken?: string): PendingSessionStart {
     // getRandomValues also works for LAN HTTP deployments (randomUUID requires HTTPS).
     const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const tempId = `creating:${token}`;
@@ -1546,7 +1554,7 @@ export class SessionController {
       clientPendingStart: true,
       machineId,
     };
-    return { tempId, originWorkspace: workspace, workspaceId: workspace.id, cwd: workspace.path, machineId, expectedNavigation, pendingUrlPublished, session, queuedSends: [], discarded: false };
+    return { tempId, originWorkspace: workspace, workspaceId: workspace.id, cwd: workspace.path, machineId, expectedNavigation, pendingUrlPublished, session, queuedSends: [], startupToken: startupToken ?? tempId, discarded: false };
   }
 
   private insertAndSelectPendingSession(session: ClientPendingStartSessionInfo, options?: { updateUrl?: boolean | undefined }): void {

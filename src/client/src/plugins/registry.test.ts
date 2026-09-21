@@ -1319,10 +1319,13 @@ describe("PluginRegistry", () => {
     expect(registry.getThemes().map((theme) => ({ id: theme.id, colorScheme: theme.colorScheme }))).toEqual([
       { id: "themes:pi-web-dark", colorScheme: "dark" },
       { id: "themes:pi-web-light", colorScheme: "light" },
+      { id: "themes:github-light", colorScheme: "light" },
+      { id: "themes:github-dark", colorScheme: "dark" },
       { id: "themes:classic", colorScheme: "dark" },
     ]);
     expect(registry.getThemePairs().map((pair) => ({ id: pair.id, light: pair.light, dark: pair.dark }))).toEqual([
       { id: "themes:pi-web", light: "themes:pi-web-light", dark: "themes:pi-web-dark" },
+      { id: "themes:github", light: "themes:github-light", dark: "themes:github-dark" },
     ]);
   });
 

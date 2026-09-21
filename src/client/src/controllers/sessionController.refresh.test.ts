@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
 import { browserErrorScopeKey, sessionBrowserErrorScope, visibleBrowserErrors } from "../browserErrors";
 import { ChatTranscriptStore } from "../chatTranscriptStore";
@@ -9,6 +9,8 @@ import { defaultApi, deferred, emptyPage, FakeSocket, oldSession, replacementSes
 function page(text: string, total: number): MessagePage {
   return { messages: [{ role: "assistant", content: text }], start: 0, total };
 }
+
+beforeEach(() => { sessionStorage.clear(); });
 
 describe("SessionController selected-session refresh", () => {
   it("signals selection readiness only after the initial transcript join succeeds", async () => {

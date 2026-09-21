@@ -1,3 +1,5 @@
+import { beforeEach } from "vitest";
+
 // Node's `--localstorage-file` backs one storage file for the whole Vitest run, so
 // parallel workers otherwise share localStorage and a `clear()` in one test file
 // wipes state a concurrently running file just wrote. Give each worker process its
@@ -13,4 +15,14 @@ class MemoryStorage implements Storage {
   clear(): void { this.entries.clear(); }
 }
 
-Object.defineProperty(globalThis, "localStorage", { value: new MemoryStorage(), configurable: true, writable: true });
+function installStorage(name: "localStorage" | "sessionStorage"): void {
+  Object.defineProperty(globalThis, name, { value: new MemoryStorage(), configurable: true, writable: true });
+}
+
+installStorage("localStorage");
+installStorage("sessionStorage");
+
+beforeEach(() => {
+  installStorage("localStorage");
+  installStorage("sessionStorage");
+});

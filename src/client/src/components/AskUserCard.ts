@@ -481,7 +481,7 @@ export class AskUserCard extends LitElement {
       padding: 7px 8px;
       cursor: pointer;
     }
-    .option:hover { border-color: var(--pi-border-muted); background: var(--pi-surface-hover); }
+    .option:hover { border-color: var(--pi-border); background: var(--pi-surface-hover); }
     .option:has(input:checked) { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     input { margin: 2px 0 0; accent-color: var(--pi-accent); }
     input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
