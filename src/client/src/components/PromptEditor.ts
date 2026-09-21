@@ -20,6 +20,7 @@ import { composerSendShortcut, matchesComposerSend } from "../composerShortcuts"
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge } from "./promptEditorIcons";
+import "./WorkingModeControls";
 import { thinkingGauge, thinkingLevelLabel } from "../../../shared/thinkingLevels";
 import "./AutocompleteMenu";
 
@@ -47,6 +48,7 @@ export class PromptEditor extends LitElement {
   @property({ attribute: false }) onStop?: () => void;
   @property({ attribute: false }) onSelectModel?: () => void;
   @property({ attribute: false }) onSelectThinking?: () => void;
+  @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
   @property({ attribute: false }) availableThinkingLevels: readonly string[] = [];
   @query(".markdown-editor") private editorHost?: HTMLDivElement;
   @query(".attachment-input") private attachmentInput?: HTMLInputElement;
@@ -134,6 +136,7 @@ export class PromptEditor extends LitElement {
         </div>
         <div class="actions">
           ${this.renderCompactStatus()}
+          <working-mode-controls compact .status=${this.status} .onRunCommand=${this.onRunCommand}></working-mode-controls>
           <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
           ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
           <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>

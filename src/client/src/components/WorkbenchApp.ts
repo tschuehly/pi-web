@@ -23,7 +23,6 @@ import "./DelegateRoster";
 import "./ProjectDialog";
 import "./PromptEditor";
 import "./StatusBar";
-import "./WorkingModeControls";
 import "./WorkstreamChooser";
 import "./WorkstreamContextDrawer";
 import { appendWorkstream, inspectWorkstream, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
@@ -652,7 +651,6 @@ export class WorkbenchApp extends LitElement {
           .onLoadMore=${() => { void this.sessions.loadEarlierMessages(); }}
         ></chat-view>
         <delegate-roster .status=${state.status}></delegate-roster>
-        <working-mode-controls .status=${state.status} .onRunCommand=${(command: string) => this.sessions.runCommand(command)}></working-mode-controls>
         <prompt-editor
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
@@ -671,6 +669,7 @@ export class WorkbenchApp extends LitElement {
           .onStop=${() => { void this.sessions.stopActiveWork(); }}
           .onSelectModel=${() => { void this.openModelDialog(); }}
           .onSelectThinking=${() => { void this.openThinkingDialog(); }}
+          .onRunCommand=${(command: string) => this.sessions.runCommand(command)}
         ></prompt-editor>
         <status-bar .status=${state.status}></status-bar>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
@@ -735,7 +734,7 @@ export class WorkbenchApp extends LitElement {
     header span { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-    delegate-roster, working-mode-controls, prompt-editor, status-bar { flex: 0 0 auto; }
+    delegate-roster, prompt-editor, status-bar { flex: 0 0 auto; }
     @media (max-width: 600px) {
       .chooser { padding: 16px; }
       .chooser > section { padding: 16px; }

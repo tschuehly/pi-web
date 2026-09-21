@@ -6,6 +6,7 @@ import { ALIGNMENT_VALUES, CHECKING_VALUES, parseWorkingModeSnapshot, WORKING_MO
 @customElement("working-mode-controls")
 export class WorkingModeControls extends LitElement {
   @property({ attribute: false }) status?: SessionStatus;
+  @property({ type: Boolean, reflect: true }) compact = false;
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
 
   override render() {
@@ -30,6 +31,9 @@ export class WorkingModeControls extends LitElement {
 
   static override styles = css`
     :host { display: block; flex: 0 0 auto; padding: 5px 12px; border-top: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
+    :host([compact]) { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; padding: 0; border-top: 0; background: transparent; }
+    :host([compact]) section { gap: 8px; }
+    :host([compact]) .axis > span { display: none; }
     section { display: flex; align-items: center; gap: 12px; overflow-x: auto; }
     .axis { display: inline-flex; align-items: center; white-space: nowrap; }
     .axis > span { margin-right: 6px; color: var(--pi-muted); font-size: 11px; font-weight: 650; }
