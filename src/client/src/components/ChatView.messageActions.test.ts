@@ -31,12 +31,12 @@ function buttons(view: ChatView) {
 
 describe("chat message history shortcuts", () => {
   it.each([
-    [0, "fork", "Are you sure you want to fork this session?"],
     [1, "back", "Are you sure you want to go back to this message?"],
+    [2, "back", "Are you sure you want to go back to this message?"],
   ] as const)("confirms shortcut %s before changing history", async (index, action, copy) => {
     const view = await mount();
     expect(buttons(view).map((button) => button.getAttribute("aria-label"))).toEqual([
-      "Clone session from this message", "Go back to this message", "Copy user message",
+      "Copy user message", "Revert to here", "Edit and resend",
     ]);
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
@@ -62,13 +62,13 @@ describe("chat message history shortcuts", () => {
     vi.stubGlobal("confirm", confirm);
     view.messageActionsDisabled = true;
     await view.updateComplete;
-    button(view, 0).click();
+    button(view, 1).click();
     expect(confirm).not.toHaveBeenCalled();
-    expect(button(view, 2).disabled).toBe(false);
+    expect(button(view, 0).disabled).toBe(false);
     view.messageActionsDisabled = false;
     view.onMessageAction = vi.fn(() => Promise.reject(new Error("History changed")));
     await view.updateComplete;
-    button(view, 1).click();
+    button(view, 2).click();
     await view.updateComplete;
     await view.updateComplete;
     expect(view.renderRoot.querySelector('[role="alert"]')?.textContent).toBe("History changed");

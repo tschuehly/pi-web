@@ -915,15 +915,20 @@ export class ChatView extends LitElement {
     const canCopy = this.isCopyableMessage(message);
     if (!canNavigate && !canCopy) return null;
     const copied = this.copiedMessageKey === key;
+    const disabled = this.messageActionsDisabled || this.messageActionPending || this.status?.isStreaming === true;
     return html`
       <div class="msg-actions" aria-label="Message actions">
-        ${canNavigate ? html`
-          <button type="button" class="msg-action" title="Clone session from this message" aria-label="Clone session from this message" ?disabled=${this.messageActionsDisabled || this.messageActionPending} @click=${(event: MouseEvent) => { void this.actOnMessage(message, "fork", event); }}><span class="msg-fork-icon" aria-hidden="true">⑂</span></button>
-          <button type="button" class="msg-action" title="Go back to this message" aria-label="Go back to this message" ?disabled=${this.messageActionsDisabled || this.messageActionPending} @click=${(event: MouseEvent) => { void this.actOnMessage(message, "back", event); }}><svg aria-hidden="true" width="16" height="16" viewBox="-3 -3 30 30" fill="none" stroke="currentColor" stroke-width="0.85" stroke-linecap="round" stroke-linejoin="round"><path vector-effect="non-scaling-stroke" d="M4 5h11a6 6 0 0 1 0 12H4m5-5-5 5 5 5" /></svg></button>
+        ${canCopy ? html`
+          <button type="button" class="msg-action" title=${copied ? "Copied" : "Copy message"} aria-label=${`${copied ? "Copied" : "Copy"} ${message.role} message`} @click=${(event: MouseEvent) => { void this.copyMessage(message, key, event); }}>
+            <span aria-hidden="true">${copied ? "✓" : "⧉"}</span>
+          </button>
         ` : null}
-        ${canCopy ? html`<button type="button" class="msg-action" title=${copied ? "Copied" : "Copy message"} aria-label=${`${copied ? "Copied" : "Copy"} ${message.role} message`} @click=${(event: MouseEvent) => { void this.copyMessage(message, key, event); }}>
-          <span aria-hidden="true">${copied ? "✓" : "⧉"}</span>
-        </button>` : null}
+        ${canNavigate ? html`
+          <button type="button" class="msg-action" title="Revert to here" aria-label="Revert to here" ?disabled=${disabled} @click=${(event: MouseEvent) => { void this.actOnMessage(message, "back", event); }}><span aria-hidden="true">⏪</span></button>
+        ` : null}
+        ${canNavigate && message.role === "user" ? html`
+          <button type="button" class="msg-action" title="Edit & resend" aria-label="Edit and resend" ?disabled=${disabled} @click=${(event: MouseEvent) => { void this.actOnMessage(message, "back", event); }}><span aria-hidden="true">✎</span></button>
+        ` : null}
         ${this.messageActionError?.sessionId === this.sessionId && this.messageActionError.entryId === message.entryId ? html`<span role="alert">${this.messageActionError.message}</span>` : null}
       </div>
     `;

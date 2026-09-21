@@ -119,6 +119,12 @@ describe("chat message normalization", () => {
     ]);
   });
 
+  it("carries the server-stamped entry id through normalization", () => {
+    expect(normalizeMessage({ role: "user", content: [{ type: "text", text: "hi" }], entryId: "entry-1" })).toEqual([
+      { role: "user", parts: [{ type: "text", text: "hi" }], entryId: "entry-1" },
+    ]);
+  });
+
   it("shows assistant model errors as system chat messages", () => {
     expect(normalizeMessage({ role: "assistant", content: [], stopReason: "error", errorMessage: "429 rate limit", timestamp: "2026-05-09T12:00:00.000Z", provider: "openai", model: "gpt-4.1" })).toEqual([
       { role: "system", parts: [{ type: "text", text: "Model response failed: 429 rate limit" }], severity: "error", meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "openai", id: "gpt-4.1" } } },
@@ -142,6 +148,15 @@ describe("chat message normalization", () => {
   it("normalizes skill reads into skill chat lines", () => {
     expect(normalizeMessage({ role: "assistant", content: [{ type: "toolCall", name: "read", arguments: { path: "/home/user/.agents/skills/playwright/SKILL.md" } }] })).toEqual([
       { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/home/user/.agents/skills/playwright/SKILL.md" }] },
+    ]);
+  });
+
+  it("keeps the call's entry id on a merged tool execution line", () => {
+    expect(normalizeMessages([
+      { role: "assistant", content: [{ type: "toolCall", id: "edit-1", name: "edit", arguments: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] } }], entryId: "call-entry" },
+      { role: "toolResult", toolCallId: "edit-1", toolName: "edit", content: [{ type: "text", text: "ok" }], details: {}, isError: false, entryId: "result-entry" },
+    ])).toEqual([
+      expect.objectContaining({ entryId: "call-entry" }),
     ]);
   });
 

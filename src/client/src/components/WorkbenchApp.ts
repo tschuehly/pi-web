@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
-import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type Workspace } from "../api";
+import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { initialAppState, type AppState } from "../appState";
 import { AuthController } from "../controllers/authController";
@@ -27,6 +27,7 @@ import "./CommandPicker";
 import "./DelegateRoster";
 import "./ProjectDialog";
 import "./PromptEditor";
+import "./SessionTreeNavigator";
 import "./StatusBar";
 import "./WorkstreamChooser";
 import "./WorkstreamContextDrawer";
@@ -570,6 +571,39 @@ export class WorkbenchApp extends LitElement {
     if (value !== "") await this.sessions.setThinkingLevel(value);
   }
 
+  private async focusChatComposer(): Promise<void> {
+    await this.updateComplete;
+    this.promptEditor?.focusInput();
+  }
+
+  private async navigateSessionTree(targetId: string, summaryChoice: SessionTreeSummaryChoice): Promise<SessionTreeNavigateResult> {
+    const result = await this.sessions.navigateTree(targetId, summaryChoice);
+    if (!result.cancelled) await this.focusChatComposer();
+    return result;
+  }
+
+  private async forkSessionTree(entryId: string): Promise<SessionTreeForkResult> {
+    // The controller selects the forked session and closes the dialog on success.
+    return this.sessions.forkFromTree(entryId);
+  }
+
+  private closeSessionTreeNavigator(): void {
+    this.sessions.closeTreeDialog();
+    void this.focusChatComposer();
+  }
+
+  private renderSessionTreeNavigator(state: AppState) {
+    return state.treeDialog === undefined ? null : html`
+      <session-tree-navigator
+        .tree=${state.treeDialog}
+        .onNavigate=${(targetId: string, summaryChoice: SessionTreeSummaryChoice) => this.navigateSessionTree(targetId, summaryChoice)}
+        .onFork=${(entryId: string) => this.forkSessionTree(entryId)}
+        .onAbort=${() => this.sessions.abortTreeNavigation()}
+        .onCancel=${() => { this.closeSessionTreeNavigator(); }}
+      ></session-tree-navigator>
+    `;
+  }
+
   override render() {
     return this.app.selectedSession === undefined ? this.renderChooser() : this.renderChat();
   }
@@ -663,6 +697,7 @@ export class WorkbenchApp extends LitElement {
           <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { this.sessions.deselectSession(); }}>←</button>
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
+          <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           ${this.renderDesktopNotificationButton()}
         </header>
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
@@ -696,6 +731,7 @@ export class WorkbenchApp extends LitElement {
           .onDismissNotification=${(notificationId: string) => { void this.notifications.dismissNotification(notificationId); }}
           .onDismissAllNotifications=${() => { void this.notifications.dismissAll(); }}
           .onLoadMore=${() => { void this.sessions.loadEarlierMessages(); }}
+          .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
         ></chat-view>
         <delegate-roster .status=${state.status}></delegate-roster>
         <prompt-editor
@@ -722,6 +758,7 @@ export class WorkbenchApp extends LitElement {
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
         ${state.modelDialog === undefined ? null : html`<command-picker .title=${state.modelDialog.title} .searchable=${true} .options=${state.modelDialog.options} .selectedValue=${state.modelDialog.selectedValue} .onPick=${(value: string) => { void this.pickModel(value); }} .onCancel=${() => { this.setApp({ modelDialog: undefined }); }}></command-picker>`}
         ${state.thinkingDialog === undefined ? null : html`<command-picker .title=${state.thinkingDialog.title} .options=${state.thinkingDialog.options} .selectedValue=${state.thinkingDialog.selectedValue} .onPick=${(value: string) => { void this.pickThinking(value); }} .onCancel=${() => { this.setApp({ thinkingDialog: undefined }); }}></command-picker>`}
+        ${this.renderSessionTreeNavigator(state)}
         ${state.authDialog === undefined ? null : html`
           <auth-dialog
             .state=${state.authDialog}

@@ -24,14 +24,11 @@ describe("ChatView revert-to-here and edit-and-resend actions", () => {
     expect(resendButtons).toHaveLength(1);
   });
 
-  it("disables both actions while the session is streaming and fires callbacks with the entry id otherwise", async () => {
-    const onRevert = vi.fn();
-    const onResend = vi.fn();
+  it("disables both actions while the session is streaming and acts on the entry otherwise", async () => {
+    const onMessageAction = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("confirm", vi.fn(() => true));
     const messages: ChatLine[] = [{ role: "user", parts: [{ type: "text", text: "hi" }], entryId: "entry-1" }];
-    const view = await renderView(messages, { ...status(), isStreaming: true });
-    view.onRevertToMessage = onRevert;
-    view.onEditAndResendMessage = onResend;
-    await view.updateComplete;
+    const view = await renderView(messages, { ...status(), isStreaming: true }, onMessageAction);
 
     const revertWhileStreaming = view.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Revert to here"]');
     const resendWhileStreaming = view.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Edit and resend"]');
@@ -41,18 +38,21 @@ describe("ChatView revert-to-here and edit-and-resend actions", () => {
     view.status = { ...status(), isStreaming: false };
     await view.updateComplete;
     view.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Revert to here"]')?.click();
+    await vi.waitFor(() => { expect(onMessageAction).toHaveBeenCalledTimes(1); });
+    await view.updateComplete;
     view.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Edit and resend"]')?.click();
-
-    expect(onRevert).toHaveBeenCalledExactlyOnceWith("entry-1");
-    expect(onResend).toHaveBeenCalledExactlyOnceWith("entry-1");
+    await vi.waitFor(() => { expect(onMessageAction).toHaveBeenCalledTimes(2); });
+    expect(onMessageAction).toHaveBeenNthCalledWith(1, "entry-1", "back");
+    expect(onMessageAction).toHaveBeenNthCalledWith(2, "entry-1", "back");
   });
 });
 
-async function renderView(messages: ChatLine[], sessionStatus: SessionStatus = status()): Promise<ChatView> {
+async function renderView(messages: ChatLine[], sessionStatus: SessionStatus = status(), onMessageAction = vi.fn(() => Promise.resolve())): Promise<ChatView> {
   const view = new ChatView();
   view.sessionId = sessionStatus.sessionId;
   view.messages = messages;
   view.status = sessionStatus;
+  view.onMessageAction = onMessageAction;
   document.body.append(view);
   await view.updateComplete;
   return view;
