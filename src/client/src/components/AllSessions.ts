@@ -32,9 +32,9 @@ export class AllSessions extends LitElement {
   override render() {
     if (this.loading) return html`<p role="status">Loading sessions…</p>`;
     if (this.error !== "") return html`<p class="error" role="alert">${this.error}</p>`;
-    const agentSessionCount = this.sessions.filter(isAgentSession).length;
+    const agentSessionCount = this.sessions.filter((session) => isAgentSession(session) || isChildSession(session)).length;
     const needle = this.query.trim().toLowerCase();
-    const visible = this.sessions.filter((session) => (this.showAgentSessions || !isAgentSession(session)) && matchesSearch(session, needle));
+    const visible = this.sessions.filter((session) => (this.showAgentSessions || (!isAgentSession(session) && !isChildSession(session))) && matchesSearch(session, needle));
     const groups = new Map<string, SessionInfo[]>();
     for (const session of visible) {
       const label = dayLabel(session.modified);
@@ -86,6 +86,10 @@ export class AllSessions extends LitElement {
 
 function isAgentSession(session: SessionInfo): boolean {
   return session.name?.startsWith("workbench-") === true;
+}
+
+function isChildSession(session: SessionInfo): boolean {
+  return session.parentSessionPath !== undefined || session.parentSessionId !== undefined;
 }
 
 function matchesSearch(session: SessionInfo, needle: string): boolean {

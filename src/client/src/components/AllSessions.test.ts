@@ -71,6 +71,22 @@ describe("AllSessions", () => {
 
     expect(detail).toEqual(selected);
   });
+
+  it("hides child sessions by default and shows them when agent sessions toggle is on", async () => {
+    const parentSession = session("parent", "Parent session", new Date(2026, 8, 2, 10));
+    const childSession = session("child", "Child session", new Date(2026, 8, 2, 9), undefined, "/Users/thomas/projects/repo", "/sessions/parent.jsonl");
+    vi.spyOn(api, "recent").mockResolvedValue([parentSession, childSession]);
+
+    const element = await mount();
+
+    expect(rowTitles(element)).toEqual(["Parent session"]);
+    const toggle = element.shadowRoot?.querySelector<HTMLInputElement>('input[aria-label="Show agent sessions"]');
+    expect(toggle?.parentElement?.textContent).toContain("Show agent sessions (1)");
+
+    toggle?.click();
+    await element.updateComplete;
+    expect(rowTitles(element)).toContain("Child session");
+  });
 });
 
 async function mount(): Promise<AllSessions> {
@@ -93,6 +109,6 @@ function isSessionInfo(value: unknown): value is SessionInfo {
   return typeof value === "object" && value !== null && typeof Reflect.get(value, "id") === "string" && typeof Reflect.get(value, "cwd") === "string";
 }
 
-function session(id: string, firstMessage: string, modified: Date, name?: string, cwd = "/Users/thomas/projects/repo"): SessionInfo {
-  return { id, cwd, path: `/sessions/${id}.jsonl`, ...(name === undefined ? {} : { name }), created: modified.toISOString(), modified: modified.toISOString(), messageCount: 3, firstMessage };
+function session(id: string, firstMessage: string, modified: Date, name?: string, cwd = "/Users/thomas/projects/repo", parentSessionPath?: string): SessionInfo {
+  return { id, cwd, path: `/sessions/${id}.jsonl`, ...(name === undefined ? {} : { name }), created: modified.toISOString(), modified: modified.toISOString(), messageCount: 3, firstMessage, ...(parentSessionPath === undefined ? {} : { parentSessionPath }) };
 }
