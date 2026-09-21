@@ -30,12 +30,20 @@ function requestBody(init?: RequestInit): { operation: string; input: unknown } 
   return JSON.parse(init.body) as { operation: string; input: unknown }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
 }
 
-function stubService(list: unknown = summaries, inspect: unknown = snapshot): void {
+function sessionIdOf(input: unknown): string | undefined {
+  return typeof input === "object" && input !== null && "sessionId" in input && typeof input.sessionId === "string" ? input.sessionId : undefined;
+}
+
+function stubService(list: unknown = summaries, inspect: unknown = snapshot, associations: Record<string, unknown> = {}): void {
   vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-    const operation = typeof init?.body === "string" && init.body.includes('"operation":"list"') ? "list" : "inspect";
-    return Promise.resolve(new Response(JSON.stringify({ ok: true, value: operation === "list" ? list : inspect }), { status: 200 }));
+    const body = requestBody(init);
+    const sessionId = sessionIdOf(body.input);
+    const value = body.operation === "list" ? sessionId === undefined ? list : associations[sessionId] ?? [] : inspect;
+    return Promise.resolve(new Response(JSON.stringify({ ok: true, value }), { status: 200 }));
   }));
 }
+
+const active = (sessionId: string) => ({ sessionId, phase: "active" as const, label: "Running bash", at: "2026-09-18T07:30:00.000Z" });
 
 const shadow = (element: WorkstreamChooser): ShadowRoot => { const root = element.shadowRoot; if (root === null) throw new Error("no shadow root"); return root; };
 const detailOf = (event: Event): OpenWorkstreamSessionDetail => {
@@ -100,9 +108,76 @@ describe("WorkstreamChooser", () => {
     expect(card.textContent).not.toContain("Copy prompt");
   });
 
-  it("shows a live indicator only for a session with ongoing activity, and carries the Workstream's colour", async () => {
+  it("does not look up Workstreams or show an indicator when no session is live", async () => {
+    const calls: { operation: string; input: unknown }[] = [];
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const body = requestBody(init);
+      calls.push(body);
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, value: summaries }), { status: 200 }));
+    }));
     const element = new WorkstreamChooser();
-    element.sessionActivities = { "s-a": { sessionId: "s-a", phase: "active", label: "Running bash", at: "2026-09-18T07:30:00.000Z" } };
+    document.body.append(element);
+
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+    expect(shadow(element).querySelector(".row .activity-indicator.session")).toBeNull();
+    expect(calls.filter((call) => sessionIdOf(call.input) !== undefined)).toHaveLength(0);
+  });
+
+  it("marks one collapsed Workstream once for all of its live sessions and caches each lookup", async () => {
+    const calls: { operation: string; input: unknown }[] = [];
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const body = requestBody(init);
+      calls.push(body);
+      const sessionId = sessionIdOf(body.input);
+      const value = sessionId === undefined ? summaries : [summaries[1]];
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, value }), { status: 200 }));
+    }));
+    const element = new WorkstreamChooser();
+    element.sessionActivities = { "live-a": active("live-a") };
+    document.body.append(element);
+
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row .activity-indicator.session")).toHaveLength(1); });
+    expect(shadow(element).querySelector(".row .activity-indicator.session")?.getAttribute("aria-label")).toBe("Session active");
+    expect(calls.filter((call) => sessionIdOf(call.input) !== undefined)).toHaveLength(1);
+
+    element.sessionActivities = { "live-a": active("live-a"), "live-b": active("live-b") };
+    await vi.waitFor(() => { expect(calls.filter((call) => sessionIdOf(call.input) !== undefined)).toHaveLength(2); });
+    expect(shadow(element).querySelectorAll(".row .activity-indicator.session")).toHaveLength(1);
+
+    element.requestUpdate();
+    await element.updateComplete;
+    expect(calls.filter((call) => sessionIdOf(call.input) !== undefined)).toHaveLength(2);
+  });
+
+  it("leaves a live session with no Workstream unmarked", async () => {
+    const element = new WorkstreamChooser();
+    element.sessionActivities = { orphan: active("orphan") };
+    document.body.append(element);
+
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+    await vi.waitFor(() => { expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2); });
+    expect(shadow(element).querySelector(".row .activity-indicator.session")).toBeNull();
+  });
+
+  it("keeps the Workstream list rendered when a live-session lookup fails", async () => {
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const body = requestBody(init);
+      if (sessionIdOf(body.input) !== undefined) return Promise.reject(new Error("lookup unavailable"));
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, value: summaries }), { status: 200 }));
+    }));
+    const element = new WorkstreamChooser();
+    element.sessionActivities = { "live-a": active("live-a") };
+    document.body.append(element);
+
+    await vi.waitFor(() => { expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2); });
+    expect(shadow(element).querySelectorAll(".row")).toHaveLength(2);
+    expect(shadow(element).querySelector(".row .activity-indicator.session")).toBeNull();
+  });
+
+  it("shows a live indicator only for a session with ongoing activity, and carries the Workstream's colour", async () => {
+    stubService(summaries, snapshot, { "s-a": [summaries[1]] });
+    const element = new WorkstreamChooser();
+    element.sessionActivities = { "s-a": active("s-a") };
     document.body.append(element);
     await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
     const row = shadow(element).querySelector<HTMLElement>(".row");

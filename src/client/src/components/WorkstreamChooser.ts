@@ -169,6 +169,9 @@ export class WorkstreamChooser extends LitElement {
   @state() private notice = "";
   @state() private answering = "";
   @state() private loading = true;
+  @state() private liveWorkstreamIds = new Set<string>();
+  private liveSessionKey = "";
+  private readonly workstreamBySession = new Map<string, Promise<string | undefined>>();
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -184,6 +187,31 @@ export class WorkstreamChooser extends LitElement {
     } finally {
       this.loading = false;
     }
+  }
+
+  protected override updated(changed: Map<string, unknown>): void {
+    if (changed.has("sessionStatuses") || changed.has("sessionActivities")) void this.resolveLiveWorkstreams();
+  }
+
+  private async resolveLiveWorkstreams(): Promise<void> {
+    const sessionIds = [...new Set([...Object.keys(this.sessionStatuses), ...Object.keys(this.sessionActivities)])]
+      .filter((id) => isSessionActive(this.sessionStatuses[id], this.sessionActivities[id]))
+      .sort();
+    const key = sessionIds.join("\0");
+    if (key === this.liveSessionKey) return;
+    this.liveSessionKey = key;
+    const workstreamIds = await Promise.all(sessionIds.map((sessionId) => {
+      const cached = this.workstreamBySession.get(sessionId);
+      if (cached !== undefined) return cached;
+      // A failed or unmatched lookup is forgotten so a later render can retry it; a match is kept.
+      const lookup = listWorkstreams({ sessionId, includeClosed: true })
+        .then((matches) => matches.length === 1 ? matches[0]?.id : undefined)
+        .catch(() => undefined)
+        .then((id) => { if (id === undefined) this.workstreamBySession.delete(sessionId); return id; });
+      this.workstreamBySession.set(sessionId, lookup);
+      return lookup;
+    }));
+    if (key === this.liveSessionKey) this.liveWorkstreamIds = new Set(workstreamIds.filter((id): id is string => id !== undefined));
   }
 
   private async select(id: string): Promise<void> {
@@ -315,7 +343,7 @@ export class WorkstreamChooser extends LitElement {
         <div class="list" role="list">
           ${items.map((item) => html`
             <button role="listitem" class="row" style=${`--workstream-color:${workstreamAccentColor(item.id)}`} aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
-              <strong>${item.title}</strong>
+              <span class="row-title">${this.liveWorkstreamIds.has(item.id) ? renderActivityIndicator("session", "Session active") : nothing}<strong>${item.title}</strong></span>
               <small>${item.lastCheckpointAt === null ? "no checkpoint yet" : `worked on ${ago(item.lastCheckpointAt)}`} · started ${ago(item.createdAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${String(item.unresolvedHumanTaskCount)} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
             </button>
             ${this.selected?.id === item.id ? this.renderCard(this.selected) : nothing}
@@ -410,6 +438,7 @@ export class WorkstreamChooser extends LitElement {
     button:hover { background: var(--pi-surface-hover); }
     button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .row { display: grid; gap: 2px; border-left: 3px solid var(--workstream-color, transparent); }
+    .row-title { display: flex; align-items: center; overflow-wrap: anywhere; }
     .row[aria-pressed="true"] { border-color: var(--pi-accent); border-left-color: var(--workstream-color, var(--pi-accent)); }
     .row small { color: var(--pi-muted); }
     .row small b { color: var(--pi-danger); }
