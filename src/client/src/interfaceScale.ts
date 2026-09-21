@@ -46,3 +46,13 @@ export function writeStoredInterfaceScale(scale: number, storage: DensityStorage
 export function applyInterfaceScale(scale: number, root: InterfaceScaleRoot = document.documentElement): void {
   root.style.setProperty("zoom", String(clampInterfaceScale(scale)));
 }
+
+/** Move to the next or previous step in INTERFACE_SCALE_STEPS, clamped at the ends. */
+export function stepInterfaceScale(current: number, direction: 1 | -1): number {
+  const steps = INTERFACE_SCALE_STEPS;
+  let index = steps.findIndex((step) => step === current);
+  if (index === -1) {
+    index = steps.reduce((closest, step, candidate) => (Math.abs(step - current) < Math.abs((steps[closest] ?? DEFAULT_INTERFACE_SCALE) - current) ? candidate : closest), 0);
+  }
+  return steps[Math.min(steps.length - 1, Math.max(0, index + direction))] ?? DEFAULT_INTERFACE_SCALE;
+}

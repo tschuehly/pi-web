@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type Machine, type Project, type SessionInfo, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
+import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { PromptEditor } from "./PromptEditor";
@@ -398,6 +399,34 @@ function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: W
     return Promise.resolve(new Response(JSON.stringify(respond(body)), { status: 200 }));
   }));
 }
+
+describe("Workbench interface scale shortcuts", () => {
+  it("steps the stored scale up, down, and back to the default on Cmd/Ctrl +/-/0", async () => {
+    const app = await mountChooser([]);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "+", metaKey: true, cancelable: true }));
+    expect(readStoredInterfaceScale()).toBe(1.1);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "-", ctrlKey: true, cancelable: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "-", ctrlKey: true, cancelable: true }));
+    expect(readStoredInterfaceScale()).toBe(0.9);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "0", metaKey: true, cancelable: true }));
+    expect(readStoredInterfaceScale()).toBe(DEFAULT_INTERFACE_SCALE);
+    app.remove();
+  });
+
+  it("leaves the stored scale untouched when + or - is typed without a modifier", async () => {
+    const app = await mountChooser([]);
+    localStorage.removeItem(INTERFACE_SCALE_STORAGE_KEY);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "+", cancelable: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "-", cancelable: true }));
+
+    expect(localStorage.getItem(INTERFACE_SCALE_STORAGE_KEY)).toBeNull();
+    app.remove();
+  });
+});
 
 describe("Workbench Chat controls", () => {
   it("mounts the delegate roster and Working Mode controls beside the composer", async () => {

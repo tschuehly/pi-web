@@ -8,8 +8,10 @@ import { browserDesktopNotifications, DesktopNotificationController } from "../c
 import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
+import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale, stepInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { nativeDirectoryPicker } from "../nativeHost";
+import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile } from "../presentationProfiles";
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
@@ -97,16 +99,35 @@ export class WorkbenchApp extends LitElement {
 
   private readonly onPopState = (): void => { void this.load(readRoute()); };
 
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (!(event.metaKey || event.ctrlKey)) return;
+    if (event.key === "+" || event.key === "=") { event.preventDefault(); this.stepScale(1); }
+    else if (event.key === "-") { event.preventDefault(); this.stepScale(-1); }
+    else if (event.key === "0") { event.preventDefault(); this.setScale(DEFAULT_INTERFACE_SCALE); }
+  };
+
+  private stepScale(direction: 1 | -1): void {
+    this.setScale(stepInterfaceScale(readStoredInterfaceScale(), direction));
+  }
+
+  private setScale(scale: number): void {
+    writeStoredInterfaceScale(scale);
+    applyInterfaceScale(scale);
+  }
+
   override connectedCallback(): void {
     super.connectedCallback();
     this.sessions.resume();
     this.notifications.resume();
     window.addEventListener("popstate", this.onPopState);
+    window.addEventListener("keydown", this.onKeyDown, { capture: true });
+    applyPresentationProfile(readStoredPresentationProfile() ?? builtInPresentationProfile("comfortable"));
     void this.load(readRoute());
   }
 
   override disconnectedCallback(): void {
     window.removeEventListener("popstate", this.onPopState);
+    window.removeEventListener("keydown", this.onKeyDown, { capture: true });
     this.realtime.close();
     this.auth.dispose();
     this.sessions.dispose();

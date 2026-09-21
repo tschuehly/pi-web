@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_INTERFACE_SCALE,
+  INTERFACE_SCALE_STEPS,
   INTERFACE_SCALE_STORAGE_KEY,
   MAX_INTERFACE_SCALE,
   MIN_INTERFACE_SCALE,
@@ -8,6 +9,7 @@ import {
   clampInterfaceScale,
   parseInterfaceScale,
   readStoredInterfaceScale,
+  stepInterfaceScale,
   writeStoredInterfaceScale,
 } from "./interfaceScale";
 import type { DensityStorage } from "./density";
@@ -50,6 +52,23 @@ describe("PI WEB interface scale preference", () => {
     const setProperty = vi.fn();
     applyInterfaceScale(1.25, { style: { setProperty } });
     expect(setProperty).toHaveBeenCalledWith("zoom", "1.25");
+  });
+
+  it("steps up through the supported sizes and clamps at the maximum", () => {
+    expect(stepInterfaceScale(1, 1)).toBe(1.1);
+    const max = INTERFACE_SCALE_STEPS.at(-1) ?? DEFAULT_INTERFACE_SCALE;
+    expect(stepInterfaceScale(max, 1)).toBe(max);
+  });
+
+  it("steps down through the supported sizes and clamps at the minimum", () => {
+    expect(stepInterfaceScale(1, -1)).toBe(0.9);
+    const min = INTERFACE_SCALE_STEPS.at(0) ?? DEFAULT_INTERFACE_SCALE;
+    expect(stepInterfaceScale(min, -1)).toBe(min);
+  });
+
+  it("resets by stepping toward the default from either side", () => {
+    expect(DEFAULT_INTERFACE_SCALE).toBe(1);
+    expect(INTERFACE_SCALE_STEPS.includes(DEFAULT_INTERFACE_SCALE)).toBe(true);
   });
 });
 
