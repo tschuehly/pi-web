@@ -1,6 +1,8 @@
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { request } from "../api/http";
+import { pluginsApi } from "../api/clients";
+import { requestPairedPluginBackend } from "../api/pluginBackends";
+import { parseBoundedPluginBackendJson } from "../../../shared/pluginBackendProtocol";
 import type { SessionActivity, SessionStatus } from "../api";
 import { isSessionActive, sessionActivityText } from "../../../shared/activity";
 import { renderActivityIndicator } from "./activityBadge";
@@ -53,32 +55,38 @@ export interface StartWorkstreamSessionDetail {
   sessionId?: string;
 }
 
-const SERVICE = "api/pi-web-plugins/pi-workbench/service";
+export interface WorkstreamServiceContext { machineId: string; projectId: string; workspaceId: string }
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-function service<T>(operation: string, input: unknown, check: (value: unknown) => value is T): Promise<T> {
-  return request<T>(SERVICE, (body) => {
-    if (!isRecord(body) || typeof body["ok"] !== "boolean") throw new Error(`Workstream service returned an invalid ${operation} response.`);
-    if (!body["ok"]) {
-      const failure = body["error"];
-      throw new Error(isRecord(failure) && typeof failure["message"] === "string" ? failure["message"] : `Workstream ${operation} failed.`);
-    }
-    const value: unknown = body["value"];
-    if (!check(value)) throw new Error(`Workstream service returned an invalid ${operation} response.`);
-    return value;
-  }, { method: "POST", body: JSON.stringify({ operation, input }) });
+async function service<T>(context: WorkstreamServiceContext, operation: string, input: unknown, check: (value: unknown) => value is T): Promise<T> {
+  const lifecycle = await pluginsApi.plugins(context.machineId);
+  const plugin = lifecycle.plugins.find((candidate) => candidate.id === "pi-workbench");
+  const revision = plugin?.server?.activeRevision;
+  if (plugin?.server?.state !== "active" || revision === undefined) {
+    throw new Error(plugin?.server?.message ?? "The Workstream service is not active. Restart the session runtime after installing the Workbench plugin.");
+  }
+  const encodedInput = JSON.stringify(input);
+  const body = await requestPairedPluginBackend({ pluginId: "pi-workbench", backendRevision: revision, ...context }, operation, parseBoundedPluginBackendJson(encodedInput, `Workstream ${operation} input`));
+  if (!isRecord(body) || typeof body["ok"] !== "boolean") throw new Error(`Workstream service returned an invalid ${operation} response.`);
+  if (!body["ok"]) {
+    const failure = body["error"];
+    throw new Error(isRecord(failure) && typeof failure["message"] === "string" ? failure["message"] : `Workstream ${operation} failed.`);
+  }
+  const value: unknown = body["value"];
+  if (!check(value)) throw new Error(`Workstream service returned an invalid ${operation} response.`);
+  return value;
 }
 const isSummaryList = (value: unknown): value is WorkstreamSummary[] => Array.isArray(value);
 const isSnapshot = (value: unknown): value is WorkstreamSnapshot => isRecord(value) && Array.isArray(value["sessions"]) && Array.isArray(value["humanTasks"]);
 const isReceipt = (value: unknown): value is { acceptedRevision: number } => isRecord(value) && Number.isInteger(value["acceptedRevision"]);
-export const listWorkstreams = (query: WorkstreamListQuery = {}): Promise<WorkstreamSummary[]> => service("list", query, isSummaryList);
-export const inspectWorkstream = (workstreamId: string): Promise<WorkstreamSnapshot> => service("inspect", { workstreamId }, isSnapshot);
-export const appendWorkstream = (input: WorkstreamAppendInput): Promise<{ acceptedRevision: number }> => service("append", input, isReceipt);
-export async function workstreamForSession(sessionId: string): Promise<WorkstreamSnapshot | null> {
-  const matches = await listWorkstreams({ sessionId, includeClosed: true });
+export const listWorkstreams = (context: WorkstreamServiceContext, query: WorkstreamListQuery = {}): Promise<WorkstreamSummary[]> => service(context, "list", query, isSummaryList);
+export const inspectWorkstream = (context: WorkstreamServiceContext, workstreamId: string): Promise<WorkstreamSnapshot> => service(context, "inspect", { workstreamId }, isSnapshot);
+export const appendWorkstream = (context: WorkstreamServiceContext, input: WorkstreamAppendInput): Promise<{ acceptedRevision: number }> => service(context, "append", input, isReceipt);
+export async function workstreamForSession(context: WorkstreamServiceContext, sessionId: string): Promise<WorkstreamSnapshot | null> {
+  const matches = await listWorkstreams(context, { sessionId, includeClosed: true });
   if (matches.length === 0) return null;
   if (matches.length > 1) throw new Error(`Session ${sessionId} has more than one Workstream association.`);
   const match = matches[0];
-  return match === undefined ? null : inspectWorkstream(match.id);
+  return match === undefined ? null : inspectWorkstream(context, match.id);
 }
 const newId = (prefix: string): string => {
   const crypto: unknown = Reflect.get(globalThis, "crypto");
@@ -158,6 +166,9 @@ export function directoriesOf(checkpoint: WorkstreamCheckpoint | undefined): str
 export class WorkstreamChooser extends LitElement {
   /** PI WEB project name; only Workstream groups equal to it (case- and punctuation-insensitive) are shown. */
   @property() project: string | undefined;
+  @property() serviceMachineId = "";
+  @property() serviceProjectId = "";
+  @property() serviceWorkspaceId = "";
   /** Project names whose Workstreams are hidden here; used by the Other tab to show the rest. */
   @property({ attribute: false }) excludeProjects: string[] = [];
   /** Whether the project tab currently has a selected workspace for a Workstream's first Chat. */
@@ -175,14 +186,18 @@ export class WorkstreamChooser extends LitElement {
   private liveSessionKey = "";
   private readonly workstreamBySession = new Map<string, Promise<string | undefined>>();
 
-  override connectedCallback(): void {
-    super.connectedCallback();
-    void this.load();
+  private get serviceContext(): WorkstreamServiceContext | undefined {
+    return this.serviceMachineId === "" || this.serviceProjectId === "" || this.serviceWorkspaceId === ""
+      ? undefined
+      : { machineId: this.serviceMachineId, projectId: this.serviceProjectId, workspaceId: this.serviceWorkspaceId };
   }
 
   private async load(): Promise<void> {
+    const context = this.serviceContext;
+    if (context === undefined) return;
+    this.loading = true;
     try {
-      const list = await listWorkstreams();
+      const list = await listWorkstreams(context);
       this.summaries = this.sortedSummaries(list);
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -192,6 +207,7 @@ export class WorkstreamChooser extends LitElement {
   }
 
   protected override updated(changed: Map<string, unknown>): void {
+    if (changed.has("serviceMachineId") || changed.has("serviceProjectId") || changed.has("serviceWorkspaceId")) void this.load();
     if (changed.has("sessionStatuses") || changed.has("sessionActivities")) void this.resolveLiveWorkstreams();
   }
 
@@ -206,7 +222,9 @@ export class WorkstreamChooser extends LitElement {
       const cached = this.workstreamBySession.get(sessionId);
       if (cached !== undefined) return cached;
       // A failed or unmatched lookup is forgotten so a later render can retry it; a match is kept.
-      const lookup = listWorkstreams({ sessionId, includeClosed: true })
+      const context = this.serviceContext;
+      if (context === undefined) return Promise.resolve(undefined);
+      const lookup = listWorkstreams(context, { sessionId, includeClosed: true })
         .then((matches) => matches.length === 1 ? matches[0]?.id : undefined)
         .catch(() => undefined)
         .then((id) => { if (id === undefined) this.workstreamBySession.delete(sessionId); return id; });
@@ -220,7 +238,9 @@ export class WorkstreamChooser extends LitElement {
     this.notice = "";
     if (this.selected?.id === id) { this.selected = undefined; return; }
     try {
-      this.selected = await inspectWorkstream(id);
+      const context = this.serviceContext;
+      if (context === undefined) throw new Error("Choose a workspace before opening a Workstream.");
+      this.selected = await inspectWorkstream(context, id);
       this.error = "";
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -235,10 +255,16 @@ export class WorkstreamChooser extends LitElement {
     if (this.answering !== "") return;
     this.answering = task.id;
     this.notice = "";
+    const context = this.serviceContext;
+    if (context === undefined) {
+      this.error = "Choose a workspace before answering a Workstream task.";
+      this.answering = "";
+      return;
+    }
     try {
       const idempotencyKey = newId("task-answer");
       const answerId = newId("answer");
-      await appendWorkstream({
+      await appendWorkstream(context, {
         workstreamId: snapshot.id,
         expectedRevision: snapshot.revision,
         idempotencyKey,
@@ -256,8 +282,8 @@ export class WorkstreamChooser extends LitElement {
     }
     try {
       const [selected, list] = await Promise.all([
-        inspectWorkstream(snapshot.id),
-        listWorkstreams(),
+        inspectWorkstream(context, snapshot.id),
+        listWorkstreams(context),
       ]);
       if (this.selected?.id === snapshot.id) {
         this.selected = selected;

@@ -41,15 +41,23 @@ afterEach(() => {
 describe("workstreamForSession", () => {
   it("locates through the session-filtered list before inspecting the one matching Workstream", async () => {
     const calls: { operation: string; input: unknown }[] = [];
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith("/plugins")) return Promise.resolve(new Response(JSON.stringify({
+        lifecycleVersion: 2,
+        plugins: [{ id: "pi-workbench", source: "test", scope: "user", machineSpecific: true, enabled: true, discovered: true, conflict: false, server: { state: "active", activeRevision: "revision-1", staleRevision: false, restartRequired: false, disableCommand: "pi-web plugins disable pi-workbench --restart" } }],
+        diagnostics: [],
+        serverRuntime: { status: "available", terminalMode: "required", restartRequired: false, recovery: { showSafeStart: "pi-web plugins safe-start show", bundledOnly: "pi-web plugins safe-start set bundled-only --restart", noServerPlugins: "pi-web plugins safe-start set none --restart", clearSafeStart: "pi-web plugins safe-start clear --restart" } },
+      }), { status: 200 }));
       if (typeof init?.body !== "string") throw new Error("missing request body");
-      const body = JSON.parse(init.body) as { operation: string; input: unknown }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
-      calls.push(body);
-      const value = body.operation === "list" ? [{ id: snapshot.id }] : snapshot;
+      const body: unknown = JSON.parse(init.body);
+      if (typeof body !== "object" || body === null || !("input" in body)) throw new Error("invalid request body");
+      const operation = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
+      calls.push({ operation, input: body.input });
+      const value = operation === "list" ? [{ id: snapshot.id }] : snapshot;
       return Promise.resolve(new Response(JSON.stringify({ ok: true, value }), { status: 200 }));
     }));
 
-    await expect(workstreamForSession("session-current")).resolves.toEqual(snapshot);
+    await expect(workstreamForSession({ machineId: "local", projectId: "project-1", workspaceId: "workspace-1" }, "session-current")).resolves.toEqual(snapshot);
     expect(calls).toEqual([
       { operation: "list", input: { sessionId: "session-current", includeClosed: true } },
       { operation: "inspect", input: { workstreamId: "ws-current" } },

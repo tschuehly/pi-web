@@ -4,6 +4,7 @@ import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkstreamChooser, actor, ago, conflicting, directoriesOf, firstClause, groupMatchesProject, latestCheckpoints, sentences, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { workstreamAccentColor } from "../workstreamColor";
+import { pluginsApi } from "../api/clients";
 
 const checkpoint = (id: string, recordedAt: string, next: string, references: string[] = []) => ({ id, whatChanged: `${id} changed. More detail.`, remains: "Review", next, nextSessionPrompt: `Continue ${id}`, references, recordedAt });
 
@@ -25,9 +26,10 @@ const snapshot: WorkstreamSnapshot = {
 
 const summaries = [{ id: "ws-2", title: "Older", group: null, createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-09-20T00:00:00.000Z", lastCheckpointAt: "2026-09-01T00:00:00.000Z", unresolvedHumanTaskCount: 0 }, { id: "ws-1", title: snapshot.title, group: "Embabel", createdAt: "2026-08-28T00:00:00.000Z", updatedAt: snapshot.updatedAt, lastCheckpointAt: "2026-09-18T10:31:02.522Z", unresolvedHumanTaskCount: 1 }];
 
-function requestBody(init?: RequestInit): { operation: string; input: unknown } {
+function requestBody(url: string, init?: RequestInit): { operation: string; input: unknown } {
   if (typeof init?.body !== "string") throw new Error("JSON request body missing");
-  return JSON.parse(init.body) as { operation: string; input: unknown }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
+  const envelope = JSON.parse(init.body) as { input: unknown }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
+  return { operation: decodeURIComponent(url.slice(url.lastIndexOf("/") + 1)), input: envelope.input };
 }
 
 function sessionIdOf(input: unknown): string | undefined {
@@ -35,12 +37,20 @@ function sessionIdOf(input: unknown): string | undefined {
 }
 
 function stubService(list: unknown = summaries, inspect: unknown = snapshot, associations: Record<string, unknown> = {}): void {
-  vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-    const body = requestBody(init);
+  vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+    const body = requestBody(url, init);
     const sessionId = sessionIdOf(body.input);
     const value = body.operation === "list" ? sessionId === undefined ? list : associations[sessionId] ?? [] : inspect;
     return Promise.resolve(new Response(JSON.stringify({ ok: true, value }), { status: 200 }));
   }));
+}
+
+function newChooser(): WorkstreamChooser {
+  const element = new WorkstreamChooser();
+  element.serviceMachineId = "local";
+  element.serviceProjectId = "project";
+  element.serviceWorkspaceId = "workspace";
+  return element;
 }
 
 const active = (sessionId: string) => ({ sessionId, phase: "active" as const, label: "Running bash", at: "2026-09-18T07:30:00.000Z" });
@@ -52,12 +62,20 @@ const detailOf = (event: Event): OpenWorkstreamSessionDetail => {
   return detail as OpenWorkstreamSessionDetail; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- structural check above
 };
 
-beforeEach(() => { stubService(); });
-afterEach(() => { document.body.replaceChildren(); vi.unstubAllGlobals(); });
+beforeEach(() => {
+  vi.spyOn(pluginsApi, "plugins").mockResolvedValue({
+    lifecycleVersion: 2,
+    plugins: [{ id: "pi-workbench", source: "test", scope: "user", machineSpecific: true, enabled: true, discovered: true, conflict: false, server: { state: "active", activeRevision: "revision-1", staleRevision: false, restartRequired: false, disableCommand: "pi-web plugins disable pi-workbench --restart" } }],
+    diagnostics: [],
+    serverRuntime: { status: "available", terminalMode: "required", restartRequired: false, recovery: { showSafeStart: "pi-web plugins safe-start show", bundledOnly: "pi-web plugins safe-start set bundled-only --restart", noServerPlugins: "pi-web plugins safe-start set none --restart", clearSafeStart: "pi-web plugins safe-start clear --restart" } },
+  });
+  stubService();
+});
+afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("WorkstreamChooser", () => {
   it("lists Workstreams newest first and opens the newest session from the re-entry card", async () => {
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     document.body.append(element);
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelectorAll(".row").length).toBe(2); });
     const rows = [...shadow(element).querySelectorAll<HTMLButtonElement>(".row")];
@@ -118,7 +136,7 @@ describe("WorkstreamChooser", () => {
       overview: { goal: "Port the shipped Workbench shell.", doneWhen: "Current upstream passes acceptance.", description: "Port the shell.", history: [], recordedAt: "2026-09-21T00:00:00.000Z" },
     };
     stubService([{ id: empty.id, title: empty.title, group: "Pi Workbench", createdAt: empty.updatedAt, updatedAt: empty.updatedAt, lastCheckpointAt: null, unresolvedHumanTaskCount: 0 }], empty);
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     element.project = "Pi Workbench";
     element.canStartEmpty = true;
     document.body.append(element);
@@ -142,7 +160,7 @@ describe("WorkstreamChooser", () => {
   it("does not offer a second Chat when sessions exist but none has checkpointed", async () => {
     const uncheckpointed: WorkstreamSnapshot = { ...snapshot, sessions: [{ id: "running", status: "active", latestCheckpoint: null }], humanTasks: [] };
     stubService([{ id: uncheckpointed.id, title: uncheckpointed.title, group: "Embabel", createdAt: uncheckpointed.updatedAt, updatedAt: uncheckpointed.updatedAt, lastCheckpointAt: null, unresolvedHumanTaskCount: 0 }], uncheckpointed);
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     element.project = "Embabel";
     element.canStartEmpty = true;
     document.body.append(element);
@@ -159,7 +177,7 @@ describe("WorkstreamChooser", () => {
     const pending: WorkstreamSnapshot = { ...snapshot, sessions: [{ id: "pending:launch", status: "pending", latestCheckpoint: null }], humanTasks: [] };
     const summary = [{ id: pending.id, title: pending.title, group: "Embabel", createdAt: pending.updatedAt, updatedAt: pending.updatedAt, lastCheckpointAt: null, unresolvedHumanTaskCount: 0 }];
     stubService(summary, pending);
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     element.project = "Embabel";
     element.canStartEmpty = true;
     document.body.append(element);
@@ -171,7 +189,7 @@ describe("WorkstreamChooser", () => {
     document.body.replaceChildren();
     const failed: WorkstreamSnapshot = { ...pending, sessions: [{ id: "failed:launch", status: "failed", latestCheckpoint: null }] };
     stubService(summary, failed);
-    const retry = new WorkstreamChooser();
+    const retry = newChooser();
     retry.project = "Embabel";
     retry.canStartEmpty = true;
     document.body.append(retry);
@@ -182,12 +200,12 @@ describe("WorkstreamChooser", () => {
 
   it("does not look up Workstreams or show an indicator when no session is live", async () => {
     const calls: { operation: string; input: unknown }[] = [];
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-      const body = requestBody(init);
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
       calls.push(body);
       return Promise.resolve(new Response(JSON.stringify({ ok: true, value: summaries }), { status: 200 }));
     }));
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     document.body.append(element);
 
     await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
@@ -197,14 +215,14 @@ describe("WorkstreamChooser", () => {
 
   it("marks one collapsed Workstream once for all of its live sessions and caches each lookup", async () => {
     const calls: { operation: string; input: unknown }[] = [];
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-      const body = requestBody(init);
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
       calls.push(body);
       const sessionId = sessionIdOf(body.input);
       const value = sessionId === undefined ? summaries : [summaries[1]];
       return Promise.resolve(new Response(JSON.stringify({ ok: true, value }), { status: 200 }));
     }));
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     element.sessionActivities = { "live-a": active("live-a") };
     document.body.append(element);
 
@@ -222,7 +240,7 @@ describe("WorkstreamChooser", () => {
   });
 
   it("leaves a live session with no Workstream unmarked", async () => {
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     element.sessionActivities = { orphan: active("orphan") };
     document.body.append(element);
 
@@ -232,12 +250,12 @@ describe("WorkstreamChooser", () => {
   });
 
   it("keeps the Workstream list rendered when a live-session lookup fails", async () => {
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-      const body = requestBody(init);
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
       if (sessionIdOf(body.input) !== undefined) return Promise.reject(new Error("lookup unavailable"));
       return Promise.resolve(new Response(JSON.stringify({ ok: true, value: summaries }), { status: 200 }));
     }));
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     element.sessionActivities = { "live-a": active("live-a") };
     document.body.append(element);
 
@@ -248,7 +266,7 @@ describe("WorkstreamChooser", () => {
 
   it("shows a live indicator only for a session with ongoing activity, and carries the Workstream's colour", async () => {
     stubService(summaries, snapshot, { "s-a": [summaries[1]] });
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     element.sessionActivities = { "s-a": active("s-a") };
     document.body.append(element);
     await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
@@ -280,8 +298,8 @@ describe("WorkstreamChooser", () => {
     const calls: { operation: string; input: unknown }[] = [];
     let listCalls = 0;
     let inspectCalls = 0;
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-      const body = requestBody(init);
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
       calls.push(body);
       if (body.operation === "append") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: { acceptedRevision: 71 } }), { status: 200 }));
       if (body.operation === "list") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: listCalls++ === 0 ? summaries : refreshedSummaries }), { status: 200 }));
@@ -291,7 +309,7 @@ describe("WorkstreamChooser", () => {
       .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
       .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
 
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     document.body.append(element);
     await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
     shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
@@ -331,8 +349,8 @@ describe("WorkstreamChooser", () => {
     };
     const calls: { operation: string; input: unknown }[] = [];
     vi.stubGlobal("crypto", {});
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-      const body = requestBody(init);
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
       calls.push(body);
       const response = body.operation === "list"
         ? { ok: true, value: summaries }
@@ -342,7 +360,7 @@ describe("WorkstreamChooser", () => {
       return Promise.resolve(new Response(JSON.stringify(response), { status: 200 }));
     }));
 
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     document.body.append(element);
     await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
     shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
@@ -361,15 +379,15 @@ describe("WorkstreamChooser", () => {
     };
     const calls: { operation: string; input: unknown }[] = [];
     let inspectCalls = 0;
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-      const body = requestBody(init);
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
       calls.push(body);
       if (body.operation === "append") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: { acceptedRevision: 71 } }), { status: 200 }));
       if (body.operation === "list") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: summaries }), { status: 200 }));
       return Promise.resolve(new Response(JSON.stringify({ ok: true, value: inspectCalls++ === 0 ? textSnapshot : { ...textSnapshot, revision: 71, humanTasks: [] } }), { status: 200 }));
     }));
 
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     document.body.append(element);
     await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
     shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
@@ -397,7 +415,7 @@ describe("WorkstreamChooser", () => {
 
   it("shows the missing-overview hint instead of inventing a goal", async () => {
     stubService([{ id: "ws-1", title: "T", group: null, createdAt: snapshot.updatedAt, updatedAt: snapshot.updatedAt, lastCheckpointAt: null, unresolvedHumanTaskCount: 0 }], { ...snapshot, overview: null, humanTasks: [] });
-    const element = new WorkstreamChooser();
+    const element = newChooser();
     document.body.append(element);
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".row")).not.toBeNull(); });
     element.shadowRoot?.querySelector<HTMLButtonElement>(".row")?.click();

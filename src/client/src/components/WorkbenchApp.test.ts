@@ -22,7 +22,9 @@ beforeEach(() => {
     notifications: [],
     dismissThrough: { order: 0, overflowWatermark: 0 },
   }));
-  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }))));
+  vi.stubGlobal("fetch", vi.fn((url: string) => Promise.resolve(url.endsWith("/plugins")
+    ? pluginLifecycleResponse()
+    : new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }))));
   vi.stubGlobal("WebSocket", SilentWebSocket);
   window.history.replaceState({}, "", "/");
 });
@@ -444,10 +446,21 @@ describe("Workbench Chat chooser", () => {
 
 interface WorkstreamServiceCall { operation: string; input: Record<string, unknown> }
 
+function pluginLifecycleResponse(): Response {
+  return new Response(JSON.stringify({
+    lifecycleVersion: 2,
+    plugins: [{ id: "pi-workbench", source: "test", scope: "user", machineSpecific: true, enabled: true, discovered: true, conflict: false, server: { state: "active", activeRevision: "revision-1", staleRevision: false, restartRequired: false, disableCommand: "pi-web plugins disable pi-workbench --restart" } }],
+    diagnostics: [],
+    serverRuntime: { status: "available", terminalMode: "required", restartRequired: false, recovery: { showSafeStart: "pi-web plugins safe-start show", bundledOnly: "pi-web plugins safe-start set bundled-only --restart", noServerPlugins: "pi-web plugins safe-start set none --restart", clearSafeStart: "pi-web plugins safe-start clear --restart" } },
+  }), { status: 200 });
+}
+
 function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: WorkstreamServiceCall) => unknown, protocol?: string[]): void {
-  vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-    if (typeof init?.body !== "string") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }));
-    const body = JSON.parse(init.body) as WorkstreamServiceCall; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
+  vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+    if (url.endsWith("/plugins")) return Promise.resolve(pluginLifecycleResponse());
+    if (typeof init?.body !== "string") throw new Error("missing Workstream request body");
+    const envelope = JSON.parse(init.body) as { input: Record<string, unknown> }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
+    const body = { operation: decodeURIComponent(url.slice(url.lastIndexOf("/") + 1)), input: envelope.input };
     if (body.operation === "list") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }));
     calls.push(body);
     if (body.operation === "inspect") protocol?.push("inspect");

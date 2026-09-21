@@ -32,7 +32,7 @@ import "./StatusBar";
 import "./WorkstreamChooser";
 import "./WorkstreamContextDrawer";
 import "./WorkbenchSettingsPanel";
-import { appendWorkstream, inspectWorkstream, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { appendWorkstream, inspectWorkstream, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamServiceContext, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
@@ -420,10 +420,15 @@ export class WorkbenchApp extends LitElement {
     }
 
     const workspace = match?.workspaces.find((candidate) => candidate.path === cwd) ?? adHocWorkspace(cwd);
+    const workstreamContext = this.workstreamServiceContext;
+    if (workstreamContext === undefined) {
+      this.setApp({ error: "Choose a registered workspace before starting this Workstream." });
+      return;
+    }
     const associationKey = `pi-web:${globalThis.crypto.randomUUID()}`;
     const anchor: WorkstreamSessionAnchor = match === undefined ? {} : { machineId, projectId: workspace.projectId, workspaceId: workspace.id };
     try {
-      const snapshot = await inspectWorkstream(detail.workstreamId);
+      const snapshot = await inspectWorkstream(workstreamContext, detail.workstreamId);
       if (detail.sessionId === undefined && snapshot.sessions.some((session) => session.status !== "failed")) throw new Error("This Workstream already has a session. Refresh its card before starting another Chat.");
       const record: WorkstreamAppendRecord = {
         type: "session.pending",
@@ -431,7 +436,7 @@ export class WorkbenchApp extends LitElement {
         ...(detail.sessionId === undefined ? {} : { sourceSessionId: detail.sessionId }),
         payload: { associationKey, ...(detail.sessionId === undefined ? {} : { derivationKind: "checkpoint" }), ...anchor },
       };
-      await appendWorkstream({ workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:pending`, records: [record] });
+      await appendWorkstream(workstreamContext, { workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:pending`, records: [record] });
     } catch (error) {
       this.setApp({ error: `Could not record the pending Workstream launch, so no Chat was started. ${error instanceof Error ? error.message : String(error)}` });
       return;
@@ -455,18 +460,27 @@ export class WorkbenchApp extends LitElement {
     this.updateUrl();
     await this.preloadWorkstreamPrompt(detail.prompt, machineId, session.id);
     try {
-      const snapshot = await inspectWorkstream(detail.workstreamId);
+      const confirmationContext = this.workstreamServiceContext ?? workstreamContext;
+      const snapshot = await inspectWorkstream(confirmationContext, detail.workstreamId);
       const record: WorkstreamAppendRecord = {
         type: "session.confirmed",
         producer: "pi-web",
         sourceSessionId: session.id,
         payload: { sessionId: session.id, associationKey, ...anchor },
       };
-      await appendWorkstream({ workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:confirmed`, records: [record] });
+      await appendWorkstream(confirmationContext, { workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:confirmed`, records: [record] });
       await this.loadCurrentWorkstream();
     } catch (error) {
       this.setApp({ error: `Chat ${session.id} was created, but PI WEB could not record its Workstream confirmation. ${error instanceof Error ? error.message : String(error)}` });
     }
+  }
+
+  private get workstreamServiceContext(): WorkstreamServiceContext | undefined {
+    const projectId = this.app.selectedProject?.id;
+    const workspaceId = this.app.selectedWorkspace?.id;
+    return projectId === undefined || workspaceId === undefined
+      ? undefined
+      : { machineId: selectedMachineId(this.app), projectId, workspaceId };
   }
 
   private async loadCurrentWorkstream(): Promise<void> {
@@ -474,9 +488,10 @@ export class WorkbenchApp extends LitElement {
     const sequence = ++this.workstreamLoadSequence;
     this.currentWorkstream = undefined;
     this.currentWorkstreamError = "";
-    if (sessionId === undefined) return;
+    const context = this.workstreamServiceContext;
+    if (sessionId === undefined || context === undefined) return;
     try {
-      const snapshot = await workstreamForSession(sessionId);
+      const snapshot = await workstreamForSession(context, sessionId);
       if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) this.currentWorkstream = snapshot;
     } catch (error) {
       if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) {
@@ -661,6 +676,9 @@ export class WorkbenchApp extends LitElement {
     const visibleSessions = this.showAgentSessions ? this.app.sessions : this.app.sessions.filter((session) => !isWorkbenchAgentSession(session));
     const recentSessions = this.showAllSessions ? visibleSessions : visibleSessions.slice(0, 5);
     const project = this.app.selectedProject;
+    const serviceMachineId = selectedMachineId(this.app);
+    const serviceProjectId = project?.id ?? "";
+    const serviceWorkspaceId = this.app.selectedWorkspace?.id ?? "";
     return html`
       <main class="chooser" data-view="chooser">
         <section>
@@ -684,7 +702,7 @@ export class WorkbenchApp extends LitElement {
               </button>
             </span>
           </div>
-          ${this.chooserView === "all" ? html`<all-sessions .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-session=${(event: CustomEvent<SessionInfo>) => { void this.openAllSession(event.detail); }}></all-sessions>` : this.chooserView === "other" ? html`<workstream-chooser .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
+          ${this.chooserView === "all" ? html`<all-sessions .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-session=${(event: CustomEvent<SessionInfo>) => { void this.openAllSession(event.detail); }}></all-sessions>` : this.chooserView === "other" ? html`<workstream-chooser .serviceMachineId=${serviceMachineId} .serviceProjectId=${serviceProjectId} .serviceWorkspaceId=${serviceWorkspaceId} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
             <div class="new-chat">
               <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
               <label>in
@@ -693,7 +711,7 @@ export class WorkbenchApp extends LitElement {
                 </select>
               </label>
             </div>
-            <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} .canStartEmpty=${this.app.selectedWorkspace !== undefined} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>
+            <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} .serviceMachineId=${serviceMachineId} .serviceProjectId=${serviceProjectId} .serviceWorkspaceId=${serviceWorkspaceId} .canStartEmpty=${this.app.selectedWorkspace !== undefined} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>
           `}
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}

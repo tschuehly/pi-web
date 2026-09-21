@@ -25,8 +25,6 @@ describe("controlled fixture server", () => {
       expect(new Set(fixture.anchors.map((anchor) => anchor.sessionId)).size).toBe(5);
       expect(JSON.parse(await readFile(join(root, "fixture/manifest.json"), "utf8"))).toEqual(fixture);
       expect(fixture.anchors.every((anchor) => !anchor.sessionId.includes("session-") && anchor.displayName.length > 0)).toBe(true);
-      const workstreams = await app.inject({ method: "POST", url: "/api/pi-web-plugins/pi-workbench/service", payload: { operation: "list", input: {} } });
-      expect(workstreams.json()).toEqual({ ok: true, value: [] });
       const projects = await app.inject({ method: "GET", url: "/api/projects" });
       expect(projects.statusCode).toBe(200);
       expect(projects.json()).toHaveLength(5);
