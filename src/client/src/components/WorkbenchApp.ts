@@ -11,10 +11,13 @@ import { selectedMachineId } from "../controllers/types";
 import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale, stepInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { nativeDirectoryPicker } from "../nativeHost";
+import { PluginRegistry } from "../plugins/registry";
+import { themePackPlugin } from "../plugins/themes";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile } from "../presentationProfiles";
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
+import { applyPiWebTheme, DEFAULT_THEME_PREFERENCE, readStoredThemePreference, resolveThemePreference, type ThemePreference } from "../theme";
 import type { ChatView } from "./ChatView";
 import type { PromptEditor } from "./PromptEditor";
 import "./AllSessions";
@@ -32,6 +35,12 @@ import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
 export const adHocWorkspace = (path: string): Workspace => ({ id: `folder:${path}`, projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
+
+function createThemeRegistry(): PluginRegistry {
+  const registry = new PluginRegistry();
+  registry.register({ id: "themes", plugin: themePackPlugin });
+  return registry;
+}
 
 /** A project whose path lies inside another registered project belongs to that project's tab. */
 export function rootProjectOf(project: Project, projects: readonly Project[]): Project {
@@ -56,6 +65,20 @@ export class WorkbenchApp extends LitElement {
   private loadSequence = 0;
   private modelDialogInstanceId = 0;
   private workstreamLoadSequence = 0;
+  private readonly themes = createThemeRegistry();
+  private readonly themePreference: ThemePreference = readStoredThemePreference() ?? DEFAULT_THEME_PREFERENCE;
+  private readonly systemLightThemeMedia = typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia("(prefers-color-scheme: light)") : undefined;
+  private readonly onSystemLightThemeChange = (): void => { this.applyPreferredTheme(); };
+
+  private applyPreferredTheme(): void {
+    const theme = resolveThemePreference({
+      themes: this.themes.getThemes(),
+      themePairs: this.themes.getThemePairs(),
+      preference: this.themePreference,
+      prefersLight: this.systemLightThemeMedia?.matches ?? false,
+    }).activeTheme;
+    if (theme !== undefined) applyPiWebTheme(theme);
+  }
 
   private readonly desktopNotifications = new DesktopNotificationController(
     browserDesktopNotifications(),
@@ -122,12 +145,15 @@ export class WorkbenchApp extends LitElement {
     window.addEventListener("popstate", this.onPopState);
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
     applyPresentationProfile(readStoredPresentationProfile() ?? builtInPresentationProfile("comfortable"));
+    this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
+    this.applyPreferredTheme();
     void this.load(readRoute());
   }
 
   override disconnectedCallback(): void {
     window.removeEventListener("popstate", this.onPopState);
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
+    this.systemLightThemeMedia?.removeEventListener("change", this.onSystemLightThemeChange);
     this.realtime.close();
     this.auth.dispose();
     this.sessions.dispose();
