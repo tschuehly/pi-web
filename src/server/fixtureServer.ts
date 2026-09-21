@@ -34,6 +34,13 @@ export async function buildControlledFixtureServer(options: ControlledFixtureSer
     ...options.appDependencies,
     clientDist: options.clientDist,
   });
+  app.post("/api/pi-web-plugins/pi-workbench/service", (request) => {
+    const body: unknown = request.body;
+    const operation = isRecord(body) ? body["operation"] : undefined;
+    return operation === "list"
+      ? { ok: true, value: [] }
+      : { ok: false, error: { code: "FIXTURE_UNSUPPORTED", message: "The controlled fixture only supports listing Workstreams." } };
+  });
   return { app, fixture };
 }
 
@@ -76,6 +83,10 @@ function assertOwnedManifest(root: string, manifestFile: string): void {
   if (!isAbsolute(manifestFile)) throw new Error("manifestFile must be an absolute path");
   const rel = relative(resolve(root), resolve(manifestFile));
   if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("manifestFile must stay under the controlled fixture root");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function requiredEnv(env: NodeJS.ProcessEnv, key: string): string {
