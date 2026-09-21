@@ -14,41 +14,79 @@
         --pi-control-font-size: 16px;
         --pi-control-font-family: system-ui, sans-serif;
         --pi-control-monospace-font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        --pi-control-min-size: 32px;
+        --pi-control-padding-block: 6px;
+        --pi-control-padding-inline: 8px;
+        --pi-list-row-padding-block: 6px;
+        --pi-list-row-padding-inline: 8px;
+        --pi-list-primary-display: flex;
+        --pi-list-secondary-display: block;
+        --pi-list-secondary-margin-inline: 0px;
+        --pi-list-row-white-space: normal;
+        --pi-panel-padding: 10px;
+        --pi-toolbar-gap: 6px;
+        --pi-message-padding: 10px;
+        --pi-message-gap: 10px;
+        --pi-content-max-width: none;
         --pi-bg: #0d1117;
-        --pi-surface: #161b22;
-        --pi-surface-hover: #21262d;
-        --pi-terminal-bg: #05070a;
-        --pi-terminal-text: #e6edf3;
-        --pi-border: #30363d;
-        --pi-border-muted: #21262d;
-        --pi-text: #e6edf3;
-        --pi-text-secondary: #c9d1d9;
-        --pi-text-bright: #f0f6fc;
-        --pi-muted: #8b949e;
-        --pi-dim: #6e7681;
-        --pi-accent: #58a6ff;
-        --pi-accent-border: #2f81f7;
-        --pi-selection-bg: #0d2847;
+        --pi-surface: #151b23;
+        --pi-surface-hover: #212830;
+        --pi-terminal-bg: #010409;
+        --pi-terminal-text: #f0f6fc;
+        --pi-border: #5e6876;
+        --pi-border-muted: #3d444db3;
+        --pi-text: #f0f6fc;
+        --pi-text-secondary: #b7bdc8;
+        --pi-text-bright: #ffffff;
+        --pi-muted: #9198a1;
+        --pi-dim: #9198a1;
+        --pi-accent: #4493f8;
+        --pi-accent-border: #1f6feb;
+        --pi-selection-bg: #388bfd26;
         --pi-success: #3fb950;
         --pi-success-border: #238636;
-        --pi-success-bg: #0f1b12;
-        --pi-success-surface: #0f2a16;
+        --pi-success-bg: #2ea04326;
+        --pi-success-surface: #2ea04326;
         --pi-success-ring: #3fb95055;
         --pi-warning: #d29922;
-        --pi-warning-border: #6e5200;
-        --pi-warning-surface: #1f1a10;
-        --pi-danger: #ff7b72;
-        --pi-purple: #d2a8ff;
-        --pi-purple-border: #a371f7;
-        --pi-purple-surface: #21132f;
-        --pi-overlay: #0008;
-        --pi-shadow-soft: #0006;
-        --pi-shadow: #0008;
-        --pi-shadow-strong: #000b;
+        --pi-warning-border: #9e6a03;
+        --pi-warning-surface: #bb800926;
+        --pi-danger: #f85149;
+        --pi-purple: #ab7df8;
+        --pi-purple-border: #8957e5;
+        --pi-purple-surface: #ab7df826;
+        --pi-overlay: #010409cc;
+        --pi-shadow-soft: #01040966;
+        --pi-shadow: #01040999;
+        --pi-shadow-strong: #010409cc;
         --pi-bg-overlay-soft: #0d1117dd;
         --pi-bg-overlay: #0d1117e6;
-        --pi-success-bg-overlay: #0f1b12ee;
+        --pi-success-bg-overlay: #2ea04326;
         --pi-terminal-selection: #264f78;
+      }
+      :root[data-pi-web-density="compact"] {
+        --pi-control-min-size: 26px;
+        --pi-control-padding-block: 3px;
+        --pi-control-padding-inline: 6px;
+        --pi-list-row-padding-block: 2px;
+        --pi-list-row-padding-inline: 5px;
+        --pi-list-primary-display: inline-flex;
+        --pi-list-secondary-display: inline;
+        --pi-list-secondary-margin-inline: 5px;
+        --pi-list-row-white-space: nowrap;
+        --pi-panel-padding: 6px;
+        --pi-toolbar-gap: 3px;
+        --pi-message-padding: 6px;
+        --pi-message-gap: 6px;
+      }
+      @media (pointer: coarse) {
+        :root {
+          --pi-control-min-size: 44px !important;
+          --pi-control-padding-block: 9px !important;
+          --pi-control-padding-inline: 10px !important;
+          --pi-list-row-padding-block: 9px !important;
+          --pi-list-row-padding-inline: 10px !important;
+        }
       }
       html, body { margin: 0; height: 100%; overflow: hidden; background: var(--pi-bg); color: var(--pi-text); }
       body { min-height: 100dvh; }
