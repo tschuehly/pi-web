@@ -17,7 +17,7 @@ import { applyPresentationProfile, builtInPresentationProfile, readStoredPresent
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
-import { applyPiWebTheme, DEFAULT_THEME_PREFERENCE, readStoredThemePreference, resolveThemePreference, type ThemePreference } from "../theme";
+import { applyPiWebTheme, DEFAULT_THEME_PREFERENCE, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
 import type { ChatView } from "./ChatView";
 import type { PromptEditor } from "./PromptEditor";
 import "./AllSessions";
@@ -31,6 +31,7 @@ import "./SessionTreeNavigator";
 import "./StatusBar";
 import "./WorkstreamChooser";
 import "./WorkstreamContextDrawer";
+import "./WorkbenchSettingsPanel";
 import { appendWorkstream, inspectWorkstream, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
@@ -67,7 +68,7 @@ export class WorkbenchApp extends LitElement {
   private modelDialogInstanceId = 0;
   private workstreamLoadSequence = 0;
   private readonly themes = createThemeRegistry();
-  private readonly themePreference: ThemePreference = readStoredThemePreference() ?? DEFAULT_THEME_PREFERENCE;
+  @state() private themePreference: ThemePreference = readStoredThemePreference() ?? DEFAULT_THEME_PREFERENCE;
   private readonly systemLightThemeMedia = typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia("(prefers-color-scheme: light)") : undefined;
   private readonly onSystemLightThemeChange = (): void => { this.applyPreferredTheme(); };
 
@@ -79,6 +80,12 @@ export class WorkbenchApp extends LitElement {
       prefersLight: this.systemLightThemeMedia?.matches ?? false,
     }).activeTheme;
     if (theme !== undefined) applyPiWebTheme(theme);
+  }
+
+  private setThemePreference(preference: ThemePreference): void {
+    this.themePreference = preference;
+    writeStoredThemePreference(preference);
+    this.applyPreferredTheme();
   }
 
   private readonly desktopNotifications = new DesktopNotificationController(
@@ -608,6 +615,17 @@ export class WorkbenchApp extends LitElement {
     return this.app.selectedSession === undefined ? this.renderChooser() : this.renderChat();
   }
 
+  private renderSettingsPanel() {
+    return html`
+      <workbench-settings-panel
+        .themePreference=${this.themePreference}
+        .themes=${this.themes.getThemes()}
+        .themePairs=${this.themes.getThemePairs()}
+        .onThemePreferenceChange=${(preference: ThemePreference) => { this.setThemePreference(preference); }}
+      ></workbench-settings-panel>
+    `;
+  }
+
   private renderDesktopNotificationButton() {
     if (!this.desktopNotifications.canRequestPermission()) return null;
     return html`
@@ -641,6 +659,7 @@ export class WorkbenchApp extends LitElement {
             <button role="tab" aria-selected=${this.chooserView === "other"} @click=${() => { this.chooserView = "other"; }}>Other</button>
             <button role="tab" aria-selected=${this.chooserView === "all"} @click=${() => { this.chooserView = "all"; }}>All sessions</button>
             <span class="tab-actions">
+              ${this.renderSettingsPanel()}
               ${this.renderDesktopNotificationButton()}
               <button class="icon-button" title="Chat in a folder…" aria-label="Chat in a folder…" @click=${() => { void this.startChatInFolder(); }}>
                 ${renderBuiltinTabIcon("chat-plus")}
@@ -698,6 +717,7 @@ export class WorkbenchApp extends LitElement {
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
+          ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}
         </header>
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}

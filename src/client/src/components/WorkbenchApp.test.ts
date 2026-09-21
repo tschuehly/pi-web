@@ -5,9 +5,12 @@ import { api, type Machine, type Project, type SessionInfo, type Workspace } fro
 import { initialAppState, type AppState } from "../appState";
 import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
+import { readStoredPresentationProfile } from "../presentationProfiles";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
+import { readStoredThemePreference } from "../theme";
 import { PromptEditor } from "./PromptEditor";
 import { WorkbenchApp, rootProjectOf, rootProjects } from "./WorkbenchApp";
+import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 
 beforeEach(() => {
   vi.spyOn(api, "machines").mockResolvedValue([machine]);
@@ -428,6 +431,74 @@ describe("Workbench interface scale shortcuts", () => {
   });
 });
 
+describe("Workbench settings panel", () => {
+  it("opens on click, closes on Escape, and returns focus to the opener", async () => {
+    const app = await mountChooser([]);
+    const panel = settingsPanel(app);
+
+    expect(panel.shadowRoot?.querySelector(".popover")).toBeNull();
+    trigger(panel).click();
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector(".popover")).not.toBeNull();
+
+    panel.shadowRoot?.querySelector<HTMLElement>(".popover")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector(".popover")).toBeNull();
+    expect(panel.shadowRoot?.activeElement).toBe(trigger(panel));
+    app.remove();
+  });
+
+  it("changes and persists the interface scale immediately", async () => {
+    const app = await mountChooser([]);
+    const panel = settingsPanel(app);
+    trigger(panel).click();
+    await panel.updateComplete;
+
+    const select = scaleSelect(panel);
+    select.value = "1.25";
+    select.dispatchEvent(new Event("change"));
+    await panel.updateComplete;
+
+    expect(readStoredInterfaceScale()).toBe(1.25);
+    expect(document.documentElement.style.getPropertyValue("zoom")).toBe("1.25");
+    app.remove();
+  });
+
+  it("changes and persists the theme preference immediately", async () => {
+    const app = await mountChooser([]);
+    const panel = settingsPanel(app);
+    trigger(panel).click();
+    await panel.updateComplete;
+
+    const light = panel.shadowRoot?.querySelector<HTMLInputElement>('input[type="radio"][name="theme-scheme"]');
+    if (light === null || light === undefined) throw new Error("Light theme radio was not rendered");
+    light.click();
+    await panel.updateComplete;
+
+    const stored = readStoredThemePreference();
+    expect(stored?.auto).toBe(false);
+    expect(document.documentElement.dataset["piWebTheme"]).toBe(stored?.themeId);
+    app.remove();
+  });
+
+  it("changes and persists the presentation profile immediately", async () => {
+    const app = await mountChooser([]);
+    const panel = settingsPanel(app);
+    trigger(panel).click();
+    await panel.updateComplete;
+
+    const select = panel.shadowRoot?.querySelector<HTMLSelectElement>("#workbench-settings-profile");
+    if (select === null || select === undefined) throw new Error("Presentation profile select was not rendered");
+    select.value = "compact";
+    select.dispatchEvent(new Event("change"));
+    await panel.updateComplete;
+
+    expect(readStoredPresentationProfile()?.base).toBe("compact");
+    expect(document.documentElement.style.getPropertyValue("--pi-control-min-size")).toBe("26px");
+    app.remove();
+  });
+});
+
 describe("Workbench Chat controls", () => {
   it("mounts the delegate roster and Working Mode controls beside the composer", async () => {
     const current = session("current", "Build the UI");
@@ -490,6 +561,24 @@ function isAppState(value: unknown): value is AppState {
 
 function sessionTitles(app: WorkbenchApp): string[] {
   return [...(app.shadowRoot?.querySelectorAll(".session strong") ?? [])].map((title) => title.textContent);
+}
+
+function settingsPanel(app: WorkbenchApp): WorkbenchSettingsPanel {
+  const panel = app.shadowRoot?.querySelector("workbench-settings-panel");
+  if (!(panel instanceof WorkbenchSettingsPanel)) throw new Error("Workbench settings panel was not rendered");
+  return panel;
+}
+
+function trigger(panel: WorkbenchSettingsPanel): HTMLButtonElement {
+  const button = panel.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Workbench settings"]');
+  if (button === null || button === undefined) throw new Error("Settings trigger button was not rendered");
+  return button;
+}
+
+function scaleSelect(panel: WorkbenchSettingsPanel): HTMLSelectElement {
+  const select = panel.shadowRoot?.querySelector<HTMLSelectElement>("#workbench-settings-scale");
+  if (select === null || select === undefined) throw new Error("Interface scale select was not rendered");
+  return select;
 }
 
 function session(id: string, firstMessage: string, name?: string): SessionInfo {
