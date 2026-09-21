@@ -302,6 +302,58 @@ describe("Workbench Chat chooser", () => {
     expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
   });
 
+  it("starts an empty Workstream in the selected workspace without a previous session", async () => {
+    const started = session("first-session", "");
+    const calls: WorkstreamServiceCall[] = [];
+    let inspectCount = 0;
+    stubWorkstreamService(calls, (body) => body.operation === "inspect"
+      ? { ok: true, value: { id: "empty-workstream", revision: inspectCount++ === 0 ? 1 : 2, sessions: [], humanTasks: [] } }
+      : { ok: true, value: { acceptedRevision: typeof body.input["expectedRevision"] === "number" ? body.input["expectedRevision"] + 1 : 0 } });
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000003");
+    const locate = vi.spyOn(api, "locate");
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const startSession = vi.spyOn(api, "startSession").mockResolvedValue(started);
+    const app = await mountChooser([]);
+
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
+      detail: { workstreamId: "empty-workstream", directories: [], prompt: "Goal: Port Workbench Chat." },
+    }));
+
+    await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
+    expect(locate).not.toHaveBeenCalled();
+    expect(startSession).toHaveBeenCalledWith(workspace.path, "local", "pi-web:00000000-0000-4000-8000-000000000003");
+    expect(calls.find((call) => call.operation === "append")?.input).toMatchObject({
+      records: [{ payload: {
+        associationKey: "pi-web:00000000-0000-4000-8000-000000000003",
+        machineId: "local",
+        projectId: project.id,
+        workspaceId: workspace.id,
+      } }],
+    });
+    const records: unknown = calls.find((call) => call.operation === "append")?.input["records"];
+    if (!Array.isArray(records)) throw new Error("pending records missing");
+    expect(records[0]).not.toHaveProperty("sourceSessionId");
+    expect(records[0]).not.toHaveProperty("payload.derivationKind");
+  });
+
+  it("does not start an empty Workstream when a session appeared after the card loaded", async () => {
+    const calls: WorkstreamServiceCall[] = [];
+    stubWorkstreamService(calls, (body) => body.operation === "inspect"
+      ? { ok: true, value: { id: "empty-workstream", revision: 2, sessions: [{ id: "existing", status: "active", latestCheckpoint: null }], humanTasks: [] } }
+      : { ok: true, value: { acceptedRevision: 3 } });
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const startSession = vi.spyOn(api, "startSession");
+    const app = await mountChooser([]);
+
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
+      detail: { workstreamId: "empty-workstream", directories: [], prompt: "Goal: Port Workbench Chat." },
+    }));
+
+    await vi.waitFor(() => { expect(getState(app).error).toContain("already has a session"); });
+    expect(startSession).not.toHaveBeenCalled();
+    expect(calls.filter((call) => call.operation === "append")).toHaveLength(0);
+  });
+
   it("does not preload a successful Workstream launch into a different selected Chat", async () => {
     const started = session("new-session", "");
     const other = session("other-session", "Other");

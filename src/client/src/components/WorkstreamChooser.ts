@@ -17,7 +17,7 @@ type HumanTaskAnswer = { kind: "yes-no" | "choice"; optionId: string } | { kind:
 export type WorkstreamSessionAnchor = { machineId: string; projectId: string; workspaceId: string } | { machineId?: never; projectId?: never; workspaceId?: never };
 export type WorkstreamAppendRecord =
   | { type: "human-task.answered"; producer: "owner"; sourceSessionId?: string; payload: { taskId: string; answerId: string; answer: HumanTaskAnswer } }
-  | { type: "session.pending"; producer: "pi-web"; sourceSessionId: string; payload: { associationKey: string; derivationKind: "checkpoint" } & WorkstreamSessionAnchor }
+  | { type: "session.pending"; producer: "pi-web"; sourceSessionId?: string; payload: { associationKey: string; derivationKind?: "checkpoint" } & WorkstreamSessionAnchor }
   | { type: "session.confirmed"; producer: "pi-web"; sourceSessionId: string; payload: { sessionId: string; associationKey: string } & WorkstreamSessionAnchor };
 export interface WorkstreamAppendInput { workstreamId: string; expectedRevision: number; idempotencyKey: string; records: WorkstreamAppendRecord[] }
 interface WorkstreamHumanTask {
@@ -50,7 +50,7 @@ export interface StartWorkstreamSessionDetail {
   workstreamId: string;
   prompt: string;
   directories: string[];
-  sessionId: string;
+  sessionId?: string;
 }
 
 const SERVICE = "api/pi-web-plugins/pi-workbench/service";
@@ -160,6 +160,8 @@ export class WorkstreamChooser extends LitElement {
   @property() project: string | undefined;
   /** Project names whose Workstreams are hidden here; used by the Other tab to show the rest. */
   @property({ attribute: false }) excludeProjects: string[] = [];
+  /** Whether the project tab currently has a selected workspace for a Workstream's first Chat. */
+  @property({ type: Boolean }) canStartEmpty = false;
   /** Live per-session state, keyed by session id, buffered by the daemon events socket. */
   @property({ attribute: false }) sessionStatuses: Record<string, SessionStatus> = {};
   @property({ attribute: false }) sessionActivities: Record<string, SessionActivity> = {};
@@ -318,12 +320,25 @@ export class WorkstreamChooser extends LitElement {
   }
 
   private start(snapshot: WorkstreamSnapshot, session: WorkstreamSession & { latestCheckpoint: WorkstreamCheckpoint }, prompt: string): void {
-    const detail: StartWorkstreamSessionDetail = {
+    this.dispatchStart({
       workstreamId: snapshot.id,
       prompt,
       directories: directoriesOf(session.latestCheckpoint),
       sessionId: session.id,
-    };
+    });
+  }
+
+  private startEmpty(snapshot: WorkstreamSnapshot): void {
+    const goal = snapshot.overview?.goal ?? snapshot.title;
+    const doneWhen = snapshot.overview?.doneWhen;
+    this.dispatchStart({
+      workstreamId: snapshot.id,
+      prompt: `Goal: ${goal}\n\nStart Workstream ${snapshot.id} (“${snapshot.title}”).${doneWhen === undefined ? "" : ` Done when: ${doneWhen}`}`,
+      directories: [],
+    });
+  }
+
+  private dispatchStart(detail: StartWorkstreamSessionDetail): void {
     this.dispatchEvent(new CustomEvent<StartWorkstreamSessionDetail>("start-workstream-session", { detail, bubbles: true, composed: true }));
   }
 
@@ -370,6 +385,7 @@ export class WorkstreamChooser extends LitElement {
     const prompt = cp?.nextSessionPrompt;
     const directories = directoriesOf(cp);
     const sessions = [...latestCheckpoints(snapshot), ...snapshot.sessions.filter((session) => session.latestCheckpoint === null)];
+    const blocksFirstChat = snapshot.sessions.some((session) => session.status !== "failed");
     return html`
       <article class="card" tabindex="-1" style=${`--workstream-color:${workstreamAccentColor(snapshot.id)}`} aria-label=${`Re-entry card for ${snapshot.title}`}>
         ${overview === null
@@ -415,7 +431,15 @@ export class WorkstreamChooser extends LitElement {
           </div>
         `)}
         <div class="actions">
-          ${latest === undefined ? html`<p class="missing">No session has checkpointed yet.</p>` : html`<button class="primary" @click=${() => { this.open(snapshot, latest); }}>Open session</button>`}
+          ${latest !== undefined
+            ? html`<button class="primary" @click=${() => { this.open(snapshot, latest); }}>Open session</button>`
+            : blocksFirstChat
+              ? snapshot.sessions.some((session) => session.status === "pending")
+                ? html`<p class="missing">Session launch pending reconciliation. Ask Pia to reconcile it before starting another Chat.</p>`
+                : html`<p class="missing">No session has checkpointed yet.</p>`
+              : this.project === undefined
+                ? html`<p class="missing">This Workstream has no matching PI WEB project tab. Set its group to a registered project before starting it.</p>`
+                : html`<button class="primary" title=${this.canStartEmpty ? "Start Workstream Chat" : "Choose a workspace first"} ?disabled=${!this.canStartEmpty} @click=${() => { this.startEmpty(snapshot); }}>Start Workstream Chat</button>`}
           ${latest === undefined || prompt === undefined || prompt === null ? nothing : html`<button @click=${() => { this.start(snapshot, latest, prompt); }}>New session with prompt</button>`}
         </div>
       </article>

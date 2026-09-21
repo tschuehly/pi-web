@@ -108,6 +108,78 @@ describe("WorkstreamChooser", () => {
     expect(card.textContent).not.toContain("Copy prompt");
   });
 
+  it("starts an empty Workstream from its project workspace", async () => {
+    const empty: WorkstreamSnapshot = {
+      ...snapshot,
+      id: "ws-empty",
+      title: "Port Workbench Chat",
+      sessions: [],
+      humanTasks: [],
+      overview: { goal: "Port the shipped Workbench shell.", doneWhen: "Current upstream passes acceptance.", description: "Port the shell.", history: [], recordedAt: "2026-09-21T00:00:00.000Z" },
+    };
+    stubService([{ id: empty.id, title: empty.title, group: "Pi Workbench", createdAt: empty.updatedAt, updatedAt: empty.updatedAt, lastCheckpointAt: null, unresolvedHumanTaskCount: 0 }], empty);
+    const element = new WorkstreamChooser();
+    element.project = "Pi Workbench";
+    element.canStartEmpty = true;
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(1); });
+
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
+    const start = [...shadow(element).querySelectorAll<HTMLButtonElement>(".card button")].find((button) => button.textContent === "Start Workstream Chat");
+    expect(start).toBeDefined();
+
+    let started: unknown;
+    element.addEventListener("start-workstream-session", (event) => { if (event instanceof CustomEvent) started = event.detail; });
+    start?.click();
+    expect(started).toEqual({
+      workstreamId: empty.id,
+      directories: [],
+      prompt: "Goal: Port the shipped Workbench shell.\n\nStart Workstream ws-empty (“Port Workbench Chat”). Done when: Current upstream passes acceptance.",
+    });
+  });
+
+  it("does not offer a second Chat when sessions exist but none has checkpointed", async () => {
+    const uncheckpointed: WorkstreamSnapshot = { ...snapshot, sessions: [{ id: "running", status: "active", latestCheckpoint: null }], humanTasks: [] };
+    stubService([{ id: uncheckpointed.id, title: uncheckpointed.title, group: "Embabel", createdAt: uncheckpointed.updatedAt, updatedAt: uncheckpointed.updatedAt, lastCheckpointAt: null, unresolvedHumanTaskCount: 0 }], uncheckpointed);
+    const element = new WorkstreamChooser();
+    element.project = "Embabel";
+    element.canStartEmpty = true;
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(1); });
+
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
+    expect(shadow(element).querySelector(".card")?.textContent).toContain("No session has checkpointed yet.");
+    expect([...shadow(element).querySelectorAll<HTMLButtonElement>(".card button")].some((button) => button.textContent === "Start Workstream Chat")).toBe(false);
+
+  });
+
+  it("explains a pending launch and permits retry after a reconciled failure", async () => {
+    const pending: WorkstreamSnapshot = { ...snapshot, sessions: [{ id: "pending:launch", status: "pending", latestCheckpoint: null }], humanTasks: [] };
+    const summary = [{ id: pending.id, title: pending.title, group: "Embabel", createdAt: pending.updatedAt, updatedAt: pending.updatedAt, lastCheckpointAt: null, unresolvedHumanTaskCount: 0 }];
+    stubService(summary, pending);
+    const element = new WorkstreamChooser();
+    element.project = "Embabel";
+    element.canStartEmpty = true;
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(1); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".card")?.textContent).toContain("Session launch pending reconciliation"); });
+    expect([...shadow(element).querySelectorAll<HTMLButtonElement>(".card button")].some((button) => button.textContent === "Start Workstream Chat")).toBe(false);
+
+    document.body.replaceChildren();
+    const failed: WorkstreamSnapshot = { ...pending, sessions: [{ id: "failed:launch", status: "failed", latestCheckpoint: null }] };
+    stubService(summary, failed);
+    const retry = new WorkstreamChooser();
+    retry.project = "Embabel";
+    retry.canStartEmpty = true;
+    document.body.append(retry);
+    await vi.waitFor(() => { expect(shadow(retry).querySelectorAll(".row")).toHaveLength(1); });
+    shadow(retry).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect([...shadow(retry).querySelectorAll<HTMLButtonElement>(".card button")].some((button) => button.textContent === "Start Workstream Chat")).toBe(true); });
+  });
+
   it("does not look up Workstreams or show an indicator when no session is live", async () => {
     const calls: { operation: string; input: unknown }[] = [];
     vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {

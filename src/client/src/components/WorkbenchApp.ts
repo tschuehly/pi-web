@@ -396,14 +396,21 @@ export class WorkbenchApp extends LitElement {
     let cwd: string;
     let match: { project: Project; workspaces: Workspace[] } | undefined;
     try {
-      cwd = detail.directories[0] ?? (await api.locate(detail.sessionId, machineId)).cwd;
+      const referencedDirectory = detail.directories[0];
+      if (referencedDirectory !== undefined) cwd = referencedDirectory;
+      else if (detail.sessionId !== undefined) cwd = (await api.locate(detail.sessionId, machineId)).cwd;
+      else {
+        const workspace = this.app.selectedWorkspace;
+        if (workspace === undefined) throw new Error("Choose a workspace before starting this Workstream.");
+        cwd = workspace.path;
+      }
       const candidates = await Promise.all(this.app.projects.map(async (project) => ({
         project,
         workspaces: await api.workspaces(project.id, machineId).catch((): Workspace[] => []),
       })));
       match = candidates.find(({ workspaces }) => workspaces.some((workspace) => workspace.path === cwd));
     } catch (error) {
-      this.setApp({ error: `Could not find a working directory for the previous session: ${error instanceof Error ? error.message : String(error)}` });
+      this.setApp({ error: `Could not find a working directory for this Workstream: ${error instanceof Error ? error.message : String(error)}` });
       return;
     }
 
@@ -412,11 +419,12 @@ export class WorkbenchApp extends LitElement {
     const anchor: WorkstreamSessionAnchor = match === undefined ? {} : { machineId, projectId: workspace.projectId, workspaceId: workspace.id };
     try {
       const snapshot = await inspectWorkstream(detail.workstreamId);
+      if (detail.sessionId === undefined && snapshot.sessions.some((session) => session.status !== "failed")) throw new Error("This Workstream already has a session. Refresh its card before starting another Chat.");
       const record: WorkstreamAppendRecord = {
         type: "session.pending",
         producer: "pi-web",
-        sourceSessionId: detail.sessionId,
-        payload: { associationKey, derivationKind: "checkpoint", ...anchor },
+        ...(detail.sessionId === undefined ? {} : { sourceSessionId: detail.sessionId }),
+        payload: { associationKey, ...(detail.sessionId === undefined ? {} : { derivationKind: "checkpoint" }), ...anchor },
       };
       await appendWorkstream({ workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:pending`, records: [record] });
     } catch (error) {
@@ -433,7 +441,10 @@ export class WorkbenchApp extends LitElement {
       if (started === undefined) throw new Error("PI WEB did not start a Chat.");
       session = started;
     } catch (error) {
-      this.setApp({ error: `Chat creation failed after the pending Workstream launch was recorded. ${error instanceof Error ? error.message : String(error)}` });
+      const prefix = detail.sessionId === undefined
+        ? "Chat creation outcome is unknown after the pending Workstream launch was recorded. Do not start another Chat until Pia reconciles it."
+        : "Chat creation failed after the pending Workstream launch was recorded.";
+      this.setApp({ error: `${prefix} ${error instanceof Error ? error.message : String(error)}` });
       return;
     }
 
@@ -678,7 +689,7 @@ export class WorkbenchApp extends LitElement {
                 </select>
               </label>
             </div>
-            <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>
+            <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} .canStartEmpty=${this.app.selectedWorkspace !== undefined} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>
           `}
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
