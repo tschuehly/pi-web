@@ -1,9 +1,15 @@
 import { LitElement, css, html, nothing } from "lit";
-import { customElement, state } from "lit/decorators.js";
-import { api, type SessionInfo } from "../api";
+import { customElement, property, state } from "lit/decorators.js";
+import { api, type SessionActivity, type SessionInfo, type SessionStatus } from "../api";
+import { isSessionActive, sessionActivityText } from "../../../shared/activity";
+import { renderActivityIndicator } from "./activityBadge";
+import { listStyles } from "./shared";
 
 @customElement("all-sessions")
 export class AllSessions extends LitElement {
+  /** Live per-session state, keyed by session id, buffered by the daemon events socket. */
+  @property({ attribute: false }) sessionStatuses: Record<string, SessionStatus> = {};
+  @property({ attribute: false }) sessionActivities: Record<string, SessionActivity> = {};
   @state() private sessions: SessionInfo[] = [];
   @state() private query = "";
   @state() private showAgentSessions = false;
@@ -23,6 +29,18 @@ export class AllSessions extends LitElement {
     } finally {
       this.loading = false;
     }
+  }
+
+  private renderRow(session: SessionInfo) {
+    const live = isSessionActive(this.sessionStatuses[session.id], this.sessionActivities[session.id]);
+    const doing = live ? sessionActivityText(this.sessionActivities[session.id]) : undefined;
+    return html`
+      <button class="row ${live ? "live" : ""}" @click=${() => { this.open(session); }}>
+        <span class="row-title">${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}<strong>${sessionTitle(session)}</strong></span>
+        <span>${doing ?? shortenHome(session.cwd)}</span>
+        <small>${modifiedTime(session.modified)} · ${String(session.messageCount)} messages</small>
+      </button>
+    `;
   }
 
   private open(session: SessionInfo): void {
@@ -51,20 +69,14 @@ export class AllSessions extends LitElement {
         <section aria-label=${label}>
           <h2>${label}</h2>
           <div class="list">
-            ${sessions.map((session) => html`
-              <button class="row" @click=${() => { this.open(session); }}>
-                <strong>${sessionTitle(session)}</strong>
-                <span>${shortenHome(session.cwd)}</span>
-                <small>${modifiedTime(session.modified)} · ${String(session.messageCount)} messages</small>
-              </button>
-            `)}
+            ${sessions.map((session) => this.renderRow(session))}
           </div>
         </section>
       `)}
     `;
   }
 
-  static override styles = css`
+  static override styles = [listStyles, css`
     :host { display: grid; gap: 12px; min-width: 0; max-width: 100%; }
     * { box-sizing: border-box; min-width: 0; }
     .tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -76,12 +88,14 @@ export class AllSessions extends LitElement {
     button { width: 100%; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 12px; font: inherit; text-align: left; cursor: pointer; }
     button:hover { background: var(--pi-surface-hover); }
     .row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 8px 12px; align-items: baseline; }
+    .row.live { border-color: var(--pi-success-border); background: var(--pi-success-bg); }
     .row strong, .row span, .row small { overflow-wrap: anywhere; }
     .row span, .row small, p { color: var(--pi-muted); }
+    .row-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
     p { margin: 0; }
     .error { color: var(--pi-danger); }
     @media (max-width: 600px) { .row { grid-template-columns: 1fr; gap: 3px; } }
-  `;
+  `];
 }
 
 function isAgentSession(session: SessionInfo): boolean {

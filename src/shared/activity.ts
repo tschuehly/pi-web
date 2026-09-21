@@ -15,3 +15,9 @@ export function isSessionActive(status?: SessionStatus, activity?: SessionActivi
     || status?.isCompacting === true
     || (status?.pendingMessageCount ?? 0) > 0;
 }
+
+/** What a live session is doing, for compact re-entry rows outside the Chat itself. */
+export function sessionActivityText(activity?: SessionActivity): string | undefined {
+  if (activity === undefined) return undefined;
+  return activity.detail !== undefined && activity.detail !== "" ? `${activity.label}: ${activity.detail}` : activity.label;
+}

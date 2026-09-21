@@ -1,6 +1,10 @@
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { request } from "../api/http";
+import type { SessionActivity, SessionStatus } from "../api";
+import { isSessionActive, sessionActivityText } from "../../../shared/activity";
+import { renderActivityIndicator } from "./activityBadge";
+import { listStyles } from "./shared";
 
 // Workstream re-entry view backed by the user-local Workbench plugin service.
 
@@ -155,6 +159,9 @@ export class WorkstreamChooser extends LitElement {
   @property() project: string | undefined;
   /** Project names whose Workstreams are hidden here; used by the Other tab to show the rest. */
   @property({ attribute: false }) excludeProjects: string[] = [];
+  /** Live per-session state, keyed by session id, buffered by the daemon events socket. */
+  @property({ attribute: false }) sessionStatuses: Record<string, SessionStatus> = {};
+  @property({ attribute: false }) sessionActivities: Record<string, SessionActivity> = {};
   @state() private summaries: WorkstreamSummary[] = [];
   @state() private selected: WorkstreamSnapshot | undefined;
   @state() private error = "";
@@ -252,6 +259,21 @@ export class WorkstreamChooser extends LitElement {
   private answerOption(snapshot: WorkstreamSnapshot, task: WorkstreamHumanTask, optionId: string): void {
     if (task.answerKind !== "yes-no" && task.answerKind !== "choice") return;
     void this.answer(snapshot, task, { kind: task.answerKind, optionId });
+  }
+
+  private renderSessionRow(snapshot: WorkstreamSnapshot, session: WorkstreamSession) {
+    const live = isSessionActive(this.sessionStatuses[session.id], this.sessionActivities[session.id]);
+    const doing = live ? sessionActivityText(this.sessionActivities[session.id]) : undefined;
+    return html`
+      <button class="session-row ${live ? "live" : ""}" data-session-id=${session.id} @click=${() => { this.open(snapshot, session); }}>
+        <span class="session-meta">
+          ${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}
+          <span>${session.latestCheckpoint === null ? "no checkpoint" : ago(session.latestCheckpoint.recordedAt)}</span>
+          ${session.status === "active" ? nothing : html`<span class="status">${session.status}</span>`}
+        </span>
+        <span class="session-summary">${doing ?? (session.latestCheckpoint === null ? session.id.slice(-8) : firstClause(session.latestCheckpoint.whatChanged, 90))}</span>
+      </button>
+    `;
   }
 
   private open(snapshot: WorkstreamSnapshot, session: WorkstreamSession): void {
@@ -360,15 +382,7 @@ export class WorkstreamChooser extends LitElement {
         `)}
         ${section("Sessions", `${String(sessions.length)} sessions · newest ${cp === undefined ? "no checkpoint" : ago(cp.recordedAt)}`, html`
           <div class="session-list">
-            ${sessions.map((session) => html`
-              <button class="session-row" data-session-id=${session.id} @click=${() => { this.open(snapshot, session); }}>
-                <span class="session-meta">
-                  <span>${session.latestCheckpoint === null ? "no checkpoint" : ago(session.latestCheckpoint.recordedAt)}</span>
-                  ${session.status === "active" ? nothing : html`<span class="status">${session.status}</span>`}
-                </span>
-                <span class="session-summary">${session.latestCheckpoint === null ? session.id.slice(-8) : firstClause(session.latestCheckpoint.whatChanged, 90)}</span>
-              </button>
-            `)}
+            ${sessions.map((session) => this.renderSessionRow(snapshot, session))}
           </div>
         `)}
         <div class="actions">
@@ -379,7 +393,7 @@ export class WorkstreamChooser extends LitElement {
     `;
   }
 
-  static override styles = css`
+  static override styles = [listStyles, css`
     :host { display: grid; gap: 10px; min-width: 0; max-width: 100%; }
     * { box-sizing: border-box; min-width: 0; }
     .card p, .card li, .goal, .next p, .warn { overflow-wrap: anywhere; }
@@ -425,6 +439,7 @@ export class WorkstreamChooser extends LitElement {
     .prompt { padding: 8px 10px; border: 1px dashed var(--pi-border); border-radius: 6px; color: var(--pi-muted); font-size: 12px; }
     .session-list { display: grid; gap: 4px; }
     .session-row { width: 100%; min-width: 0; display: grid; gap: 4px; padding: 6px 8px; font-size: 13px; }
+    .session-row.live { border-color: var(--pi-success-border); background: var(--pi-success-bg); }
     .session-meta { display: flex; align-items: center; gap: 4px; color: var(--pi-muted); font-size: 11px; }
     .status { padding: 0 5px; border: 1px solid var(--pi-border); border-radius: 999px; }
     .session-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -432,5 +447,5 @@ export class WorkstreamChooser extends LitElement {
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
     .missing, .error { color: var(--pi-muted); font-size: 13px; }
     .error { color: var(--pi-danger); }
-  `;
+  `];
 }

@@ -99,6 +99,22 @@ describe("WorkstreamChooser", () => {
     expect(card.textContent).not.toContain("Copy prompt");
   });
 
+  it("shows a live indicator only for a session with ongoing activity", async () => {
+    const element = new WorkstreamChooser();
+    element.sessionActivities = { "s-a": { sessionId: "s-a", phase: "active", label: "Running bash", at: "2026-09-18T07:30:00.000Z" } };
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
+    const row = shadow(element).querySelector<HTMLElement>(".row");
+
+    row?.click();
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
+    const liveRow = shadow(element).querySelector('[data-session-id="s-a"]');
+    const idleRow = shadow(element).querySelector('[data-session-id="s-old"]');
+    expect(liveRow?.querySelector(".activity-indicator.session")).not.toBeNull();
+    expect(liveRow?.textContent).toContain("Running bash");
+    expect(idleRow?.querySelector(".activity-indicator.session")).toBeNull();
+  });
+
   it("answers a typed choice with the inspected revision, then refreshes the card and summary", async () => {
     const typed = {
       ...snapshot,

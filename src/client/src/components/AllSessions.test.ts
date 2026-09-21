@@ -72,6 +72,25 @@ describe("AllSessions", () => {
     expect(detail).toEqual(selected);
   });
 
+  it("shows a live indicator only for a session with ongoing activity", async () => {
+    vi.spyOn(api, "recent").mockResolvedValue([
+      session("live", "Live session", new Date(2026, 8, 2, 10)),
+      session("idle", "Idle session", new Date(2026, 8, 2, 9)),
+    ]);
+    const element = new AllSessions();
+    element.sessionActivities = { live: { sessionId: "live", phase: "active", label: "Streaming", at: "2026-09-02T10:00:00.000Z" } };
+    document.body.append(element);
+    await vi.waitFor(() => { expect(element.shadowRoot?.querySelector('[role="status"]')).toBeNull(); });
+    await element.updateComplete;
+
+    const rows = [...(element.shadowRoot?.querySelectorAll("button.row") ?? [])];
+    const liveRow = rows.find((row) => row.textContent.includes("Live session"));
+    const idleRow = rows.find((row) => row.textContent.includes("Idle session"));
+    expect(liveRow?.querySelector(".activity-indicator.session")).not.toBeNull();
+    expect(liveRow?.textContent).toContain("Streaming");
+    expect(idleRow?.querySelector(".activity-indicator.session")).toBeNull();
+  });
+
   it("hides child sessions by default and shows them when agent sessions toggle is on", async () => {
     const parentSession = session("parent", "Parent session", new Date(2026, 8, 2, 10));
     const childSession = session("child", "Child session", new Date(2026, 8, 2, 9), undefined, "/Users/thomas/projects/repo", "/sessions/parent.jsonl");
