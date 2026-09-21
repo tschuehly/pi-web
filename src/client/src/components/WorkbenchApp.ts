@@ -796,7 +796,10 @@ export class WorkbenchApp extends LitElement {
   }
 
   static override styles = css`
-    :host { position: fixed; inset: 0; display: block; overflow: hidden; background: var(--pi-bg); color: var(--pi-text); font: 14px system-ui, sans-serif; }
+    :host { --pi-app-safe-area-bottom: 0px; position: fixed; top: 0; right: 0; left: 0; display: block; height: 100dvh; box-sizing: border-box; overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) var(--pi-app-safe-area-bottom) env(safe-area-inset-left); background: var(--pi-bg); color: var(--pi-text); font: 14px system-ui, sans-serif; }
+    @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+      :host { --pi-app-safe-area-bottom: env(safe-area-inset-bottom); }
+    }
     .chooser { box-sizing: border-box; height: 100%; overflow: auto; display: grid; place-items: start center; padding: min(10vh, 72px) 24px 32px; }
     .chooser > section { box-sizing: border-box; width: min(960px, 100%); display: grid; gap: 16px; padding: 24px; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 18px 50px var(--pi-shadow); }
     h1, p { margin: 0; }
@@ -840,9 +843,15 @@ export class WorkbenchApp extends LitElement {
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     delegate-roster, prompt-editor, status-bar { flex: 0 0 auto; }
     @media (max-width: 600px) {
+      .chooser, .chooser > section { grid-template-columns: minmax(0, 1fr); }
       .chooser { padding: 16px; }
       .chooser > section { padding: 16px; }
+      .new-chat label { min-width: 0; }
+      .new-chat select { min-width: 0; max-width: 100%; }
       header span { display: none; }
+    }
+    @media (max-width: 600px), (pointer: coarse) {
+      .link { min-height: max(44px, var(--pi-control-min-size)); }
     }
   `;
 }

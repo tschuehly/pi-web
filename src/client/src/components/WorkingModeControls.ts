@@ -42,5 +42,8 @@ export class WorkingModeControls extends LitElement {
     button:last-of-type { border-right-width: 1px; border-radius: 0 6px 6px 0; }
     button[aria-pressed="true"] { background: var(--pi-surface-hover); color: var(--pi-text); font-weight: 700; }
     button:focus-visible { position: relative; outline: 2px solid var(--pi-accent); outline-offset: -2px; }
+    @media (max-width: 430px) {
+      :host([compact]) section { flex-wrap: wrap; }
+    }
   `;
 }

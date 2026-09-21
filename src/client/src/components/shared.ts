@@ -571,6 +571,8 @@ export const promptEditorStyles = css`
     button { padding: 6px 8px; }
   }
   @media (max-width: 430px) {
+    .actions { flex-wrap: wrap; }
+    working-mode-controls[compact] { flex: 1 1 100%; }
     .compact-status { flex-basis: 170px; font-size: 11px; }
     .select-model { max-width: 48vw; }
     button { padding: 5px 7px; }
