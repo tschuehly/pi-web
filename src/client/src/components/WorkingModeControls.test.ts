@@ -54,14 +54,36 @@ describe("DelegateRoster", () => {
     expect(root(element).querySelector("section")).toBeNull();
 
     element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
-      { id: "one", kind: "worker", name: "UI", role: "implementation", objective: "Build roster", activity: "running tests" },
+      { id: "one", kind: "worker", name: "UI", role: "implementation", objective: "Build roster", activity: "running tests", reportedStatus: "Wiring the roster CSS" },
       { id: "two", kind: "subagent", name: "Review", role: "challenge", objective: "Check result", activity: "success" },
     ] }) });
     await element.updateComplete;
     const rows = [...root(element).querySelectorAll(".row")];
     expect(rows).toHaveLength(2);
-    expect(required(required(rows[0]).textContent).replace(/\s+/g, "")).toContain("WorkerUIimplementationBuildrosterrunningtestsRunning");
+    expect(required(required(rows[0]).textContent).replace(/\s+/g, "")).toContain("WorkerUIBuildrosterWiringtherosterCSSRunning");
     expect(required(rows[1]).classList.contains("terminal")).toBe(true);
     expect(required(rows[1]).textContent).toContain("Uncollected");
+  });
+
+  it("falls back to inferred activity when reportedStatus is absent", async () => {
+    const element = new DelegateRoster();
+    document.body.append(element);
+    element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
+      { id: "one", kind: "worker", name: "UI", objective: "Build roster", activity: "running bash" },
+    ] }) });
+    await element.updateComplete;
+    const row = required(root(element).querySelector(".row"));
+    expect(row.textContent).toContain("running bash");
+  });
+
+  it("tolerates a snapshot without the reportedStatus field at all", async () => {
+    const element = new DelegateRoster();
+    document.body.append(element);
+    element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
+      { id: "one", kind: "worker", name: "UI", objective: "Build roster" },
+    ] }) });
+    await element.updateComplete;
+    const row = required(root(element).querySelector(".row"));
+    expect(row.textContent).toContain("starting");
   });
 });

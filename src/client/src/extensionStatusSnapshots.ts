@@ -20,6 +20,7 @@ export interface DelegateActivityItem {
   role?: string;
   objective?: string;
   activity?: string;
+  reportedStatus?: string;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -68,6 +69,7 @@ export function parseDelegateActivitySnapshot(text: string | undefined): Delegat
     const role = optionalText(candidate["role"]); if (role !== undefined) item.role = role;
     const objective = optionalText(candidate["objective"]); if (objective !== undefined) item.objective = objective;
     const activity = optionalText(candidate["activity"]); if (activity !== undefined) item.activity = activity;
+    const reportedStatus = optionalText(candidate["reportedStatus"]); if (reportedStatus !== undefined) item.reportedStatus = reportedStatus;
     items.push(item);
   }
   return items;
