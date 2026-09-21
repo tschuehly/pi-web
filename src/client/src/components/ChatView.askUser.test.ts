@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome } from "../../../shared/apiTypes";
+import type { ChatLine } from "./shared";
 import { AskUserCard } from "./AskUserCard";
 import { ChatView } from "./ChatView";
 
@@ -30,6 +31,38 @@ describe("ChatView open ask_user form", () => {
     expect(askStartScrolls).toBe(1);
     expect(bottomScrolls).toBe(0);
     expect(view.shadowRoot?.querySelector("ask-user-card")?.getAttribute("data-scroll-anchor-id")).toBe("ask:ask-open");
+  });
+});
+
+describe("ChatView current-exchange history", () => {
+  it("keeps history expanded when capturing a prepend scroll anchor", async () => {
+    const view = historyView();
+    document.body.append(view);
+    await view.updateComplete;
+    const history = requiredDetails(view.shadowRoot?.querySelector("details.exchange-history"));
+    expect(history.open).toBe(true);
+    const capture = vi.fn(() => {
+      expect(history.open).toBe(true);
+      return undefined;
+    });
+    if (!Reflect.set(view, "capturePrependScrollAnchor", capture)) throw new Error("Could not observe prepend capture");
+
+    view.messages = [chatLine("user", "earliest"), chatLine("assistant", "earliest answer"), ...view.messages];
+    view.messageStart = 8;
+    await view.updateComplete;
+
+    expect(capture).toHaveBeenCalledOnce();
+  });
+
+  it("expands history before restoring a prepend marker anchored inside it", async () => {
+    const view = historyView();
+    document.body.append(view);
+    await view.updateComplete;
+    const history = requiredDetails(view.shadowRoot?.querySelector("details.exchange-history"));
+
+    view.restorePrependScrollAnchor({ distanceFromBottom: 0, markerId: "m:10", markerOffset: 0 });
+
+    expect(history.open).toBe(true);
   });
 });
 
@@ -79,6 +112,29 @@ describe("ChatView ask_user transcript records", () => {
     expect(view.shadowRoot?.querySelector("article.ask-user-record-shell .msg-header")).toBeNull();
   });
 });
+
+function historyView(): ChatView {
+  const view = new ChatView();
+  view.sessionId = "session-1";
+  view.messageStart = 10;
+  view.messageTotal = 14;
+  view.messages = [
+    chatLine("user", "old"),
+    chatLine("assistant", "old answer"),
+    chatLine("user", "current"),
+    chatLine("assistant", "current answer"),
+  ];
+  return view;
+}
+
+function chatLine(role: ChatLine["role"], text: string): ChatLine {
+  return { role, parts: [{ type: "text", text }] };
+}
+
+function requiredDetails(value: Element | null | undefined): HTMLDetailsElement {
+  if (!(value instanceof HTMLDetailsElement)) throw new Error("Expected expanded exchange history");
+  return value;
+}
 
 function requiredElement<T>(value: T | null | undefined, label: string): T {
   if (value === null || value === undefined) throw new Error(`Expected ${label}`);

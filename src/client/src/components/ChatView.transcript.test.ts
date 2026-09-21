@@ -126,6 +126,25 @@ describe("ChatView flat transcript", () => {
     expect(root.querySelector('[data-scroll-anchor-id="e:8"]')).not.toBeNull();
     expect(root.querySelector('[data-scroll-anchor-id="e:9"]')).not.toBeNull();
   });
+
+  it("keeps earlier conversation expanded by default", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messageStart = 40;
+    view.messages = [
+      { role: "user", parts: [{ type: "text", text: "earlier message" }] },
+      { role: "assistant", parts: [{ type: "text", text: "earlier response" }] },
+      { role: "user", parts: [{ type: "text", text: "current message" }] },
+    ];
+
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const exchangeHistory = root.querySelector<HTMLDetailsElement>("details.exchange-history");
+    expect(exchangeHistory).not.toBeNull();
+    expect(exchangeHistory?.open).toBe(true);
+  });
 });
 
 function requireShadowRoot(view: ChatView): ShadowRoot {

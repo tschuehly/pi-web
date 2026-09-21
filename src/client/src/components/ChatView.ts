@@ -420,7 +420,7 @@ export class ChatView extends LitElement {
         <div class="chat" @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
           ${this.renderHistoryBoundary()}
           ${exchange.history.length === 0 ? null : html`
-            <details class="exchange-history">
+            <details class="exchange-history" open>
               <summary>Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
               <div class="exchange-history-body">${this.renderGroups(exchange.history)}</div>
             </details>
