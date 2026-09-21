@@ -374,6 +374,9 @@ export const chatStyles = css`
   .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
   .activity-dock.active .dot { animation: pulse 1s ease-in-out infinite; opacity: 1; }
   .msg { max-width: var(--pi-content-max-width); min-width: 0; box-sizing: border-box; margin: 0 0 16px; padding: 0 2px; border: 0; background: transparent; overflow: visible; overflow-wrap: anywhere; }
+  .msg.user, .msg.assistant { padding: var(--pi-message-padding); border: 1px solid var(--pi-border-muted); border-radius: 14px; }
+  .msg.assistant { background: var(--pi-surface); }
+  .msg.user { background: color-mix(in srgb, var(--pi-accent) 10%, var(--pi-surface)); border-color: color-mix(in srgb, var(--pi-accent) 30%, var(--pi-border-muted)); }
   .msg.tool, .msg.system { color: var(--pi-text); }
   .msg.error { color: var(--pi-danger); }
   .msg.tool-execution-shell, .msg.ask-user-record-shell { padding: 0 2px var(--pi-message-padding); color: var(--pi-text); }
@@ -435,8 +438,8 @@ export const chatStyles = css`
   formatted-text.part, .queued-message formatted-text { text-align: start; unicode-bidi: plaintext; }
   .part { max-width: 100%; min-width: 0; box-sizing: border-box; overflow: visible; overflow-wrap: anywhere; }
   .part + .part { margin-top: 8px; }
-  .thinking { display: grid; gap: 4px; }
-  .thinking-label { color: var(--pi-muted); font-size: 11px; }
+  .thinking { display: grid; gap: 4px; padding: 6px 10px; border-left: 2px solid var(--pi-border); border-radius: 4px; background: var(--pi-surface-hover); color: var(--pi-muted); font-size: 13px; font-style: italic; }
+  .thinking-label { color: var(--pi-muted); font-size: 11px; font-style: normal; }
   .thinking > formatted-text { min-width: 0; }
   .tool-line { color: var(--pi-text); }
   .tool-result.error > summary { color: var(--pi-danger); }

@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatView } from "./ChatView";
 import type { FormattedText } from "./FormattedText";
+import { chatStyles } from "./shared";
 import type { ToolExecutionView } from "./ToolExecutionView";
 
 afterEach(() => {
@@ -125,6 +126,43 @@ describe("ChatView flat transcript", () => {
     expect(root.querySelector('[data-scroll-anchor-id="g:8"]')).toBe(group);
     expect(root.querySelector('[data-scroll-anchor-id="e:8"]')).not.toBeNull();
     expect(root.querySelector('[data-scroll-anchor-id="e:9"]')).not.toBeNull();
+  });
+
+  it("renders user and assistant messages as distinct chat bubbles with muted thinking parts", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [
+      { role: "user", parts: [{ type: "text", text: "question" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "thinking", text: "pondering" },
+          { type: "text", text: "answer" },
+        ],
+      },
+    ];
+
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const userBubble = root.querySelector<HTMLElement>("article.msg.user");
+    const assistantBubble = root.querySelector<HTMLElement>("article.msg.assistant");
+    if (userBubble === null || assistantBubble === null) throw new Error("Expected user and assistant bubbles");
+
+    expect(getComputedStyle(userBubble).borderRadius).toBe("14px");
+    expect(getComputedStyle(assistantBubble).borderRadius).toBe("14px");
+    // happy-dom cannot resolve color-mix(), so the distinct bubble backgrounds
+    // are asserted against the stylesheet source rather than computed color.
+    expect(chatStyles.cssText).toMatch(/\.msg\.assistant\s*\{[^}]*background:\s*var\(--pi-surface\)/);
+    expect(chatStyles.cssText).toMatch(/\.msg\.user\s*\{[^}]*background:\s*color-mix/);
+
+    // Thinking parts are technical events, so they render outside the assistant
+    // bubble as a distinct, muted row rather than as assistant speech.
+    const thinking = root.querySelector<HTMLElement>(".thinking");
+    if (thinking === null) throw new Error("Expected thinking part");
+    expect(thinking.closest("article.msg.assistant")).toBeNull();
+    expect(getComputedStyle(thinking).fontStyle).toBe("italic");
   });
 
   it("keeps earlier conversation expanded by default", async () => {
