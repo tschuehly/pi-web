@@ -1,6 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { latestCheckpoints, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { workstreamAccentColor } from "../workstreamColor";
 
 @customElement("workstream-context-drawer")
 export class WorkstreamContextDrawer extends LitElement {
@@ -15,7 +16,7 @@ export class WorkstreamContextDrawer extends LitElement {
     const overview = this.snapshot.overview;
     const checkpoint = latestCheckpoints(this.snapshot)[0]?.latestCheckpoint;
     return html`
-      <details>
+      <details style=${`--workstream-color:${workstreamAccentColor(this.snapshot.id)}`}>
         <summary><span>Workstream</span><strong>${this.snapshot.title}</strong></summary>
         <div class="sheet">
           <section class="row goal-row">
@@ -42,7 +43,7 @@ export class WorkstreamContextDrawer extends LitElement {
   static override styles = css`
     :host { position: static; display: block; min-width: 0; color: var(--pi-text); }
     * { box-sizing: border-box; min-width: 0; }
-    details { position: static; }
+    details { position: static; border-left: 3px solid var(--workstream-color, transparent); }
     summary, .tab { min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; }
     summary { list-style: none; cursor: pointer; }
     summary::-webkit-details-marker { display: none; }

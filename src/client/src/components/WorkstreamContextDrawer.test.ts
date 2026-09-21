@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { workstreamForSession, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
+import { workstreamAccentColor } from "../workstreamColor";
 
 const snapshot: WorkstreamSnapshot = {
   id: "ws-current",
@@ -74,6 +75,7 @@ describe("WorkstreamContextDrawer", () => {
     expect(root?.textContent).toContain("The Workstream joins project navigation");
     expect(root?.textContent).toContain("Thomas chooses the preferred drawer.");
     expect(root?.querySelectorAll(".row > .label")).toHaveLength(4);
+    expect(details?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor(snapshot.id));
   });
 
   it("states when the Chat has no Workstream association", async () => {

@@ -3,6 +3,7 @@
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkstreamChooser, actor, ago, conflicting, directoriesOf, firstClause, groupMatchesProject, latestCheckpoints, sentences, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { workstreamAccentColor } from "../workstreamColor";
 
 const checkpoint = (id: string, recordedAt: string, next: string, references: string[] = []) => ({ id, whatChanged: `${id} changed. More detail.`, remains: "Review", next, nextSessionPrompt: `Continue ${id}`, references, recordedAt });
 
@@ -99,15 +100,18 @@ describe("WorkstreamChooser", () => {
     expect(card.textContent).not.toContain("Copy prompt");
   });
 
-  it("shows a live indicator only for a session with ongoing activity", async () => {
+  it("shows a live indicator only for a session with ongoing activity, and carries the Workstream's colour", async () => {
     const element = new WorkstreamChooser();
     element.sessionActivities = { "s-a": { sessionId: "s-a", phase: "active", label: "Running bash", at: "2026-09-18T07:30:00.000Z" } };
     document.body.append(element);
     await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
     const row = shadow(element).querySelector<HTMLElement>(".row");
+    expect(row?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor("ws-1"));
 
     row?.click();
     await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
+    const card = shadow(element).querySelector<HTMLElement>(".card");
+    expect(card?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor("ws-1"));
     const liveRow = shadow(element).querySelector('[data-session-id="s-a"]');
     const idleRow = shadow(element).querySelector('[data-session-id="s-old"]');
     expect(liveRow?.querySelector(".activity-indicator.session")).not.toBeNull();

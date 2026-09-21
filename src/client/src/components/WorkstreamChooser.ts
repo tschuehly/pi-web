@@ -5,6 +5,7 @@ import type { SessionActivity, SessionStatus } from "../api";
 import { isSessionActive, sessionActivityText } from "../../../shared/activity";
 import { renderActivityIndicator } from "./activityBadge";
 import { listStyles } from "./shared";
+import { workstreamAccentColor } from "../workstreamColor";
 
 // Workstream re-entry view backed by the user-local Workbench plugin service.
 
@@ -313,7 +314,7 @@ export class WorkstreamChooser extends LitElement {
         <h3>${group} <small>${String(items.length)}</small></h3>
         <div class="list" role="list">
           ${items.map((item) => html`
-            <button role="listitem" class="row" aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
+            <button role="listitem" class="row" style=${`--workstream-color:${workstreamAccentColor(item.id)}`} aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
               <strong>${item.title}</strong>
               <small>${item.lastCheckpointAt === null ? "no checkpoint yet" : `worked on ${ago(item.lastCheckpointAt)}`} · started ${ago(item.createdAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${String(item.unresolvedHumanTaskCount)} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
             </button>
@@ -342,7 +343,7 @@ export class WorkstreamChooser extends LitElement {
     const directories = directoriesOf(cp);
     const sessions = [...latestCheckpoints(snapshot), ...snapshot.sessions.filter((session) => session.latestCheckpoint === null)];
     return html`
-      <article class="card" tabindex="-1" aria-label=${`Re-entry card for ${snapshot.title}`}>
+      <article class="card" tabindex="-1" style=${`--workstream-color:${workstreamAccentColor(snapshot.id)}`} aria-label=${`Re-entry card for ${snapshot.title}`}>
         ${overview === null
           ? html`<p class="missing">No overview stored yet. Ask Pi: “write the overview for ${snapshot.id}”.</p>`
           : html`<p class="goal">${overview.goal}<small>Done when: ${overview.doneWhen}</small></p>`}
@@ -408,11 +409,11 @@ export class WorkstreamChooser extends LitElement {
     button { box-sizing: border-box; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 12px; font: inherit; text-align: left; cursor: pointer; }
     button:hover { background: var(--pi-surface-hover); }
     button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .row { display: grid; gap: 2px; }
-    .row[aria-pressed="true"] { border-color: var(--pi-accent); }
+    .row { display: grid; gap: 2px; border-left: 3px solid var(--workstream-color, transparent); }
+    .row[aria-pressed="true"] { border-color: var(--pi-accent); border-left-color: var(--workstream-color, var(--pi-accent)); }
     .row small { color: var(--pi-muted); }
     .row small b { color: var(--pi-danger); }
-    .card { display: grid; gap: 8px; margin: 2px 0 8px; padding: 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); }
+    .card { display: grid; gap: 8px; margin: 2px 0 8px; padding: 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color, var(--pi-border)); border-radius: 10px; background: var(--pi-surface); }
     .goal { font-weight: 700; font-size: 15px; }
     .goal small { display: block; margin-top: 2px; font-weight: 500; color: var(--pi-muted); font-size: 12px; }
     .next { display: grid; gap: 4px; padding: 12px 14px; border-radius: 10px; background: var(--pi-accent); color: white; }
