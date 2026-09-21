@@ -8,7 +8,8 @@ import { MachineService } from "./machines/machineService.js";
 import { MachineStore } from "./machines/machineStore.js";
 import { ProjectService } from "./projects/projectService.js";
 import { ProjectStore } from "./storage/projectStore.js";
-import { WorkspaceService } from "./workspaces/workspaceService.js";
+import type { WorkspaceListing } from "../shared/apiTypes.js";
+import type { WorkspaceCatalog } from "./workspaces/workspaceCatalog.js";
 import { buildControlledSessionFixture, type ControlledSessionFixture } from "./controlledSessionFixture.js";
 
 export interface ControlledFixtureServerOptions {
@@ -28,12 +29,28 @@ export async function buildControlledFixtureServer(options: ControlledFixtureSer
   await writeFile(options.manifestFile, `${JSON.stringify(fixture, null, 2)}\n`, "utf8");
   const app = await buildApp({
     projects: new ProjectService(new ProjectStore(options.projectsFile)),
-    workspaces: new WorkspaceService(),
+    workspaceCatalog: controlledWorkspaceCatalog(fixture),
     machines: new MachineService(new MachineStore(options.machinesFile)),
     ...options.appDependencies,
     clientDist: options.clientDist,
   });
   return { app, fixture };
+}
+
+function controlledWorkspaceCatalog(fixture: ControlledSessionFixture): WorkspaceCatalog {
+  const byProject = new Map(fixture.anchors.map((anchor) => [anchor.projectId, { id: anchor.workspaceId, projectId: anchor.projectId, path: anchor.cwd, label: "main", isMain: true } satisfies WorkspaceListing]));
+  const list = (projectId: string): WorkspaceListing[] => {
+    const workspace = byProject.get(projectId);
+    return workspace === undefined ? [] : [workspace];
+  };
+  return {
+    resolveProject: (projectId) => Promise.resolve({ status: "folder", projectId, workspaces: list(projectId), diagnostics: [] }),
+    list: (projectId) => Promise.resolve(list(projectId)),
+    resolve: (projectId, workspaceId) => {
+      const workspace = byProject.get(projectId);
+      return workspace?.id === workspaceId ? Promise.resolve(workspace) : Promise.reject(new Error(`Unknown controlled workspace: ${projectId}/${workspaceId}`));
+    },
+  };
 }
 
 export function controlledFixtureServerOptionsFromEnvironment(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): ControlledFixtureServerOptions {

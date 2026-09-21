@@ -31,7 +31,7 @@ describe("controlled fixture server", () => {
       for (const anchor of fixture.anchors) {
         const workspaces = await app.inject({ method: "GET", url: `/api/projects/${encodeURIComponent(anchor.projectId)}/workspaces` });
         expect(workspaces.statusCode).toBe(200);
-        expect(workspaces.json()).toEqual([expect.objectContaining({ id: anchor.workspaceId, path: anchor.cwd, isGitRepo: true })]);
+        expect(workspaces.json()).toEqual(expect.objectContaining({ workspaces: [expect.objectContaining({ id: anchor.workspaceId, path: anchor.cwd, isMain: true })] }));
       }
     } finally {
       await app.close();
