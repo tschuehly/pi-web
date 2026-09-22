@@ -243,6 +243,7 @@ export class ChatView extends LitElement {
   private pendingNotificationFocus: PendingNotificationFocus | undefined;
   private imageZoomModalRegistration: RenderedModalRegistration | undefined;
   private readonly scrollController = new ChatScrollController();
+  private chatResizeObserver: ResizeObserver | undefined;
   private suppressScrollSave = false;
   private suppressLoadMoreRequests = false;
   private loadMoreCheckFrame: number | undefined;
@@ -266,6 +267,16 @@ export class ChatView extends LitElement {
   private readonly onViewportResize = () => {
     if (this.pinnedToBottom) this.scrollToBottom();
     else this.lastClientHeight = this.chat?.clientHeight ?? 0;
+  };
+  private readonly onChatResize = (): void => {
+    const chat = this.chat;
+    if (chat === undefined) return;
+    if (this.pinnedToBottom) {
+      this.scrollToBottom();
+      return;
+    }
+    chat.scrollTop = this.lastScrollTop;
+    this.lastClientHeight = chat.clientHeight;
   };
   private readonly onImageLoad = (): void => {
     if (this.pinnedToBottom) this.scrollToBottom();
@@ -294,15 +305,25 @@ export class ChatView extends LitElement {
     window.addEventListener("resize", this.onViewportResize);
     window.addEventListener("pagehide", this.onPageHide);
     window.visualViewport?.addEventListener("resize", this.onViewportResize);
+    this.observeChatResize();
   }
 
   protected override firstUpdated(): void {
     this.lastClientHeight = this.chat?.clientHeight ?? 0;
+    this.observeChatResize();
+  }
+
+  private observeChatResize(): void {
+    if (this.chatResizeObserver !== undefined || this.chat === undefined || typeof ResizeObserver === "undefined") return;
+    this.chatResizeObserver = new ResizeObserver(this.onChatResize);
+    this.chatResizeObserver.observe(this.chat);
   }
 
   override disconnectedCallback(): void {
     this.saveScrollPosition();
     this.scrollController.dispose();
+    this.chatResizeObserver?.disconnect();
+    this.chatResizeObserver = undefined;
     this.releaseImageZoomModal();
     this.prependRestoreToken += 1;
     if (this.restoreScrollFrame !== undefined) cancelAnimationFrame(this.restoreScrollFrame);

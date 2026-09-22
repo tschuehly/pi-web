@@ -8,6 +8,7 @@ import { MachineDialog } from "./MachineDialog";
 import { ModalSurface } from "./ModalSurface";
 import { ModelPicker } from "./ModelPicker";
 import { ProjectDialog } from "./ProjectDialog";
+import { PromptEditor } from "./PromptEditor";
 import { SessionTreeNavigator } from "./SessionTreeNavigator";
 import { WorkbenchApp } from "./WorkbenchApp";
 import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
@@ -68,6 +69,12 @@ describe("Workbench zoom-compensated viewport contracts", () => {
 
   it("compensates the WorkstreamContextDrawer sheet height", () => {
     expect(rule(WorkstreamContextDrawer.styles, ".sheet")).toContain(`max-height: calc(${viewportHeight} - 56px)`);
+  });
+
+  it("bounds manual PromptEditor height against half the compensated viewport", () => {
+    const editorRule = rule(PromptEditor.styles, ".markdown-editor-manual-height .cm-editor");
+    expect(editorRule).toContain("height: var(--prompt-editor-manual-height)");
+    expect(editorRule).toContain(`max-height: min(640px, calc(${viewportHeight} / 2))`);
   });
 });
 

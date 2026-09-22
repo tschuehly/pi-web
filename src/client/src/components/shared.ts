@@ -525,8 +525,12 @@ export const autocompleteStyles = css`
 
 export const promptEditorStyles = css`
   :host { position: relative; z-index: 5; display: block; color: var(--pi-text); font: 14px system-ui, sans-serif; }
-  footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px; border-top: 1px solid var(--pi-border); }
+  footer { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px; border-top: 1px solid var(--pi-border); }
   footer.shell-mode { border-top-color: var(--pi-success); background: var(--pi-success-bg); }
+  .editor-resize-handle { position: absolute; z-index: 4; top: -10px; right: 0; left: 0; height: 20px; cursor: ns-resize; touch-action: none; }
+  .editor-resize-handle::after { position: absolute; top: 9px; left: 50%; width: 42px; height: 2px; border-radius: 999px; background: var(--pi-border); content: ""; transform: translateX(-50%); }
+  .editor-resize-handle:hover::after, .editor-resize-handle:focus-visible::after { background: var(--pi-accent); }
+  .editor-resize-handle:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -4px; }
   .editor-wrap { position: relative; min-width: 0; }
   .actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: nowrap; white-space: nowrap; }
   :host([show-usage]) .actions { flex-wrap: wrap; }
@@ -548,9 +552,11 @@ export const promptEditorStyles = css`
   .select-thinking .prompt-thinking-gauge .gauge-bar-active { opacity: 1; }
   .editor-attach { position: absolute; right: 8px; bottom: 8px; z-index: 2; width: 30px; height: 30px; }
   .editor-attach .prompt-action-icon { width: 16px; height: 16px; }
-  textarea, .markdown-editor .cm-editor { box-sizing: border-box; width: 100%; min-height: 54px; max-height: 220px; resize: none; overflow: hidden; border-radius: 8px; border: 1px solid var(--pi-border); background: var(--pi-bg); color: var(--pi-text); font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); }
+  textarea, .markdown-editor .cm-editor { box-sizing: border-box; width: 100%; min-height: 54px; max-height: 220px; overflow: hidden; border-radius: 8px; border: 1px solid var(--pi-border); background: var(--pi-bg); color: var(--pi-text); font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); }
   textarea { overflow-y: auto; padding: 8px; }
   .markdown-editor .cm-scroller { max-height: 220px; overflow-y: auto; font-family: var(--pi-control-font-family, system-ui, sans-serif); line-height: 1.4; }
+  .markdown-editor-manual-height .cm-editor { height: var(--prompt-editor-manual-height); max-height: min(640px, calc(var(--pi-workbench-viewport-height, 100vh) / 2)); }
+  .markdown-editor-manual-height .cm-scroller { height: 100%; max-height: none; }
   .markdown-editor .cm-content { min-height: 38px; padding: 8px 44px 8px 8px; caret-color: var(--pi-text); text-align: start; unicode-bidi: plaintext; }
   .markdown-editor .cm-line { padding: 0; unicode-bidi: plaintext; }
   .markdown-editor .cm-placeholder { color: var(--pi-dim); }
@@ -593,5 +599,10 @@ export const promptEditorStyles = css`
     .select-model { max-width: 48vw; }
     button { padding: 5px 7px; }
     .icon-button { width: 34px; height: 34px; }
+  }
+  @media (pointer: coarse) {
+    footer { padding-top: 24px; }
+    .editor-resize-handle { top: -22px; height: 44px; }
+    .editor-resize-handle::after { top: 21px; }
   }
 `;

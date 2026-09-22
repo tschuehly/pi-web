@@ -25,7 +25,21 @@ import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, ren
 import "./WorkingModeControls";
 import { thinkingGauge, thinkingLevelLabel } from "../../../shared/thinkingLevels";
 import { formatCost, formatTokenCount } from "../utils/format";
+import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import "./AutocompleteMenu";
+
+export const PROMPT_EDITOR_MIN_HEIGHT = 54;
+export const PROMPT_EDITOR_MAX_HEIGHT = 640;
+
+export function promptEditorMaximumHeight(viewportHeight: number, interfaceScale: number): number {
+  const scale = Number.isFinite(interfaceScale) && interfaceScale > 0 ? interfaceScale : 1;
+  return Math.max(PROMPT_EDITOR_MIN_HEIGHT, Math.min(PROMPT_EDITOR_MAX_HEIGHT, viewportHeight / scale / 2));
+}
+
+export function promptEditorDragHeight(startHeight: number, startY: number, currentY: number, interfaceScale: number, maximumHeight: number): number {
+  const scale = Number.isFinite(interfaceScale) && interfaceScale > 0 ? interfaceScale : 1;
+  return clampNumber(startHeight + ((startY - currentY) / scale), PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
+}
 
 @customElement("prompt-editor")
 export class PromptEditor extends LitElement {
@@ -84,6 +98,14 @@ export class PromptEditor extends LitElement {
   private readonly readOnlyCompartment = new Compartment();
   private readonly mobilePromptEnterMedia = createMobilePromptEnterMedia();
   private explicitShiftKeyActive = false;
+  private manualEditorHeight: number | undefined;
+  private editorHeightObserver: ResizeObserver | undefined;
+  private resizePointer: { id: number; startY: number; startHeight: number; scale: number } | undefined;
+  private lastTouchTapAt: number | undefined;
+  private readonly onResizeViewport = (): void => {
+    if (this.manualEditorHeight !== undefined) this.setManualEditorHeight(this.manualEditorHeight);
+    else this.requestUpdate();
+  };
 
   protected override willUpdate(changed: PropertyValues<this>) {
     if (!changed.has("sessionId") && !changed.has("machineId")) return;
@@ -122,6 +144,13 @@ export class PromptEditor extends LitElement {
     return true;
   }
 
+  override connectedCallback(): void {
+    super.connectedCallback();
+    window.addEventListener("resize", this.onResizeViewport);
+    window.visualViewport?.addEventListener("resize", this.onResizeViewport);
+    void this.updateComplete.then(() => { if (this.isConnected) this.createEditor(); });
+  }
+
   override firstUpdated(): void {
     this.createEditor();
   }
@@ -132,8 +161,15 @@ export class PromptEditor extends LitElement {
   }
 
   override disconnectedCallback(): void {
+    window.removeEventListener("resize", this.onResizeViewport);
+    window.visualViewport?.removeEventListener("resize", this.onResizeViewport);
+    this.editorHeightObserver?.disconnect();
+    this.editorHeightObserver = undefined;
     this.editor?.destroy();
     this.editor = undefined;
+    this.manualEditorHeight = undefined;
+    this.resizePointer = undefined;
+    this.lastTouchTapAt = undefined;
     super.disconnectedCallback();
   }
 
@@ -143,10 +179,28 @@ export class PromptEditor extends LitElement {
     const steersInput = this.canSteer && !this.isCompacting;
     const queuesInput = this.canSteer || this.isCompacting;
     const busy = this.disabled || this.sending;
+    const maximumHeight = this.maximumEditorHeight();
+    const currentHeight = this.currentEditorHeight(maximumHeight);
     return html`
       <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => { void this.handlePaste(event); }} @dragover=${(event: DragEvent) => { this.handleDragOver(event); }} @drop=${(event: DragEvent) => { void this.handleDrop(event); }}>
+        <div
+          class="editor-resize-handle"
+          role="separator"
+          aria-label="Resize message editor"
+          aria-orientation="horizontal"
+          aria-valuemin=${String(PROMPT_EDITOR_MIN_HEIGHT)}
+          aria-valuemax=${String(Math.round(maximumHeight))}
+          aria-valuenow=${String(Math.round(currentHeight))}
+          tabindex="0"
+          @pointerdown=${(event: PointerEvent) => { this.startEditorResize(event); }}
+          @pointermove=${(event: PointerEvent) => { this.moveEditorResize(event); }}
+          @pointerup=${(event: PointerEvent) => { this.finishEditorResize(event); }}
+          @pointercancel=${(event: PointerEvent) => { this.cancelEditorResize(event); }}
+          @dblclick=${() => { this.resetEditorHeight(); }}
+          @keydown=${(event: KeyboardEvent) => { this.handleEditorResizeKey(event); }}
+        ></div>
         <div class="editor-wrap">
-          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}`} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
+          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${this.manualEditorHeight === undefined ? "" : `--prompt-editor-manual-height: ${String(this.manualEditorHeight)}px`} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
           <button class="editor-attach icon-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
@@ -470,6 +524,89 @@ export class PromptEditor extends LitElement {
         ],
       }),
     });
+    if (typeof ResizeObserver !== "undefined") {
+      this.editorHeightObserver = new ResizeObserver(() => {
+        if (this.manualEditorHeight === undefined) this.requestUpdate();
+      });
+      this.editorHeightObserver.observe(this.editor.dom);
+    }
+  }
+
+  private interfaceScale(): number {
+    if (typeof document === "undefined") return 1;
+    const scale = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(INTERFACE_SCALE_CSS_PROPERTY));
+    return Number.isFinite(scale) && scale > 0 ? scale : 1;
+  }
+
+  private maximumEditorHeight(): number {
+    return promptEditorMaximumHeight(typeof window === "undefined" ? PROMPT_EDITOR_MAX_HEIGHT * 2 : window.innerHeight, this.interfaceScale());
+  }
+
+  private currentEditorHeight(maximumHeight = this.maximumEditorHeight()): number {
+    return clampNumber(this.manualEditorHeight ?? this.editor?.dom.offsetHeight ?? PROMPT_EDITOR_MIN_HEIGHT, PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
+  }
+
+  private setManualEditorHeight(height: number): void {
+    const previous = this.manualEditorHeight;
+    this.manualEditorHeight = clampNumber(height, PROMPT_EDITOR_MIN_HEIGHT, this.maximumEditorHeight());
+    this.requestUpdate("manualEditorHeight", previous);
+  }
+
+  private resetEditorHeight(): void {
+    if (this.manualEditorHeight === undefined) return;
+    const previous = this.manualEditorHeight;
+    this.manualEditorHeight = undefined;
+    this.requestUpdate("manualEditorHeight", previous);
+  }
+
+  private startEditorResize(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    const handle = event.currentTarget;
+    if (!(handle instanceof HTMLElement)) return;
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    this.resizePointer = { id: event.pointerId, startY: event.clientY, startHeight: this.currentEditorHeight(), scale: this.interfaceScale() };
+  }
+
+  private moveEditorResize(event: PointerEvent): void {
+    const resize = this.resizePointer;
+    if (resize?.id !== event.pointerId) return;
+    event.preventDefault();
+    this.setManualEditorHeight(promptEditorDragHeight(resize.startHeight, resize.startY, event.clientY, resize.scale, this.maximumEditorHeight()));
+  }
+
+  private finishEditorResize(event: PointerEvent): void {
+    const resize = this.resizePointer;
+    if (resize?.id !== event.pointerId) return;
+    releasePointerCapture(event.currentTarget, event.pointerId);
+    this.resizePointer = undefined;
+    if (event.pointerType !== "touch" || Math.abs(event.clientY - resize.startY) > 8) return;
+    const now = event.timeStamp;
+    if (this.lastTouchTapAt !== undefined && now - this.lastTouchTapAt <= 300) {
+      this.lastTouchTapAt = undefined;
+      this.resetEditorHeight();
+      return;
+    }
+    this.lastTouchTapAt = now;
+  }
+
+  private cancelEditorResize(event: PointerEvent): void {
+    if (this.resizePointer?.id !== event.pointerId) return;
+    releasePointerCapture(event.currentTarget, event.pointerId);
+    this.resizePointer = undefined;
+  }
+
+  private handleEditorResizeKey(event: KeyboardEvent): void {
+    const maximumHeight = this.maximumEditorHeight();
+    let height: number | undefined;
+    if (event.key === "ArrowUp") height = this.currentEditorHeight(maximumHeight) + (event.shiftKey ? 72 : 24);
+    else if (event.key === "ArrowDown") height = this.currentEditorHeight(maximumHeight) - (event.shiftKey ? 72 : 24);
+    else if (event.key === "Home") height = PROMPT_EDITOR_MIN_HEIGHT;
+    else if (event.key === "End") height = maximumHeight;
+    else if (event.key === "Enter") { event.preventDefault(); this.resetEditorHeight(); return; }
+    else return;
+    event.preventDefault();
+    this.setManualEditorHeight(height);
   }
 
   private syncEditorDoc() {
@@ -875,6 +1012,16 @@ export function imageReferenceInsertion(text: string, position: number, referenc
 
 function isSupportedImageFile(file: File): boolean {
   return isSupportedImageMimeType(file.type);
+}
+
+function releasePointerCapture(target: EventTarget | null, pointerId: number): void {
+  if (!(target instanceof HTMLElement)) return;
+  if (!target.hasPointerCapture(pointerId)) return;
+  target.releasePointerCapture(pointerId);
+}
+
+function clampNumber(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
 function attachmentIdSequence(id: string): number {
