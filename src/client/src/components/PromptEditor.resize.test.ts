@@ -84,6 +84,25 @@ describe("PromptEditor resize handle", () => {
     expect(editor.shadowRoot?.querySelector(".markdown-editor-manual-height")).toBeNull();
   });
 
+  it("does not focus the separator on touch and restores editor focus after a mouse resize", async () => {
+    const editor = await mountEditor();
+    const handle = resizeHandle(editor);
+    stubPointerCapture(handle);
+    editor.focusInput();
+    const editorView: unknown = Reflect.get(editor, "editor");
+    if (typeof editorView !== "object" || editorView === null || !("hasFocus" in editorView)) throw new Error("CodeMirror editor was not created");
+
+    pointer(handle, "pointerdown", 200, 20, "touch");
+    expect(editor.shadowRoot?.activeElement).not.toBe(handle);
+    pointer(handle, "pointerup", 200, 20, "touch");
+
+    editor.focusInput();
+    pointer(handle, "pointerdown", 200, 21, "mouse");
+    expect(editor.shadowRoot?.activeElement).toBe(handle);
+    pointer(handle, "pointerup", 200, 21, "mouse");
+    expect(Reflect.get(editorView, "hasFocus")).toBe(true);
+  });
+
   it("keeps manual height across sends and session changes but not a remount", async () => {
     const editor = await mountEditor();
     const handle = resizeHandle(editor);
@@ -119,9 +138,18 @@ describe("PromptEditor resize handle", () => {
       vi.spyOn(footer, "offsetHeight", "get").mockReturnValue(220);
       vi.spyOn(codeMirror, "offsetHeight", "get").mockReturnValue(54);
 
-      key(resizeHandle(editor), "End");
+      observer.notify(editor);
       await editor.updateComplete;
       const expectedInitialMax = Math.round(promptEditorMaximumHeight(window.innerHeight, 1, 166));
+      const automaticHandle = resizeHandle(editor);
+      const markdownEditor = editor.shadowRoot?.querySelector<HTMLElement>(".markdown-editor");
+      expect(markdownEditor?.style.getPropertyValue("--prompt-editor-maximum-height")).toBe(`${String(expectedInitialMax)}px`);
+      expect(promptEditorStyles.cssText).toMatch(/max-height:\s*min\(220px, var\(--prompt-editor-maximum-height, 220px\)\)/);
+      expect(automaticHandle.getAttribute("aria-valuenow")).toBe("54");
+      expect(automaticHandle.getAttribute("aria-valuemax")).toBe(String(expectedInitialMax));
+
+      key(automaticHandle, "End");
+      await editor.updateComplete;
       expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe(String(expectedInitialMax));
 
       document.documentElement.style.setProperty(INTERFACE_SCALE_CSS_PROPERTY, "2");
@@ -136,14 +164,16 @@ describe("PromptEditor resize handle", () => {
     }
   });
 
-  it("keeps the coarse target inside composer padding and clear of ChatView and Goal controls", () => {
+  it("keeps fine and coarse targets fully inside composer padding and clear of adjacent controls", () => {
     const promptCss = promptEditorStyles.cssText;
-    expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*footer\s*\{[^}]*padding-top:\s*36px/);
-    expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*\.editor-resize-handle\s*\{[^}]*top:\s*-10px;[^}]*height:\s*44px/);
-    expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*\.editor-resize-handle::after\s*\{[^}]*top:\s*9px/);
-    expect(44 - 10).toBeLessThanOrEqual(36);
+    expect(promptCss).toMatch(/footer\s*\{[^}]*padding:\s*24px 12px 12px/);
+    expect(promptCss).toMatch(/\.editor-resize-handle\s*\{[^}]*top:\s*0;[^}]*height:\s*20px/);
+    expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*footer\s*\{[^}]*padding-top:\s*48px/);
+    expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*\.editor-resize-handle\s*\{[^}]*top:\s*0;[^}]*height:\s*44px/);
+    expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*\.editor-resize-handle::after\s*\{[^}]*top:\s*21px/);
+    expect(20).toBeLessThanOrEqual(24);
+    expect(44).toBeLessThanOrEqual(48);
     expect(chatStyles.cssText).toMatch(/\.scroll-to-bottom\s*\{[^}]*bottom:\s*12px/);
-    expect(10).toBeLessThan(12);
   });
 
   it("clamps pure drag geometry to the zoom-compensated viewport bounds", () => {
@@ -189,7 +219,7 @@ function installResizeObserverStub(): { notify: (editor: PromptEditor) => void; 
   let callback: ResizeObserverCallback | undefined;
   class ResizeObserverStub implements ResizeObserver {
     constructor(next: ResizeObserverCallback) { callback = next; }
-    observe = vi.fn();
+    observe = vi.fn((target: Element) => { if (!(target instanceof Element)) throw new TypeError("ResizeObserver target must be an Element"); });
     unobserve = vi.fn();
     disconnect = vi.fn();
     takeRecords = (): ResizeObserverEntry[] => [];

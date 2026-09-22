@@ -72,9 +72,11 @@ describe("Workbench zoom-compensated viewport contracts", () => {
   });
 
   it("bounds the whole PromptEditor against half the compensated viewport", () => {
-    const editorRule = rule(PromptEditor.styles, ".markdown-editor-manual-height .cm-editor");
-    expect(editorRule).toContain("height: var(--prompt-editor-manual-height)");
-    expect(editorRule).toContain("max-height: var(--prompt-editor-manual-max-height)");
+    const automaticRule = rule(PromptEditor.styles, "textarea, .markdown-editor .cm-editor");
+    const manualRule = rule(PromptEditor.styles, ".markdown-editor-manual-height .cm-editor");
+    expect(automaticRule).toContain("max-height: min(220px, var(--prompt-editor-maximum-height, 220px))");
+    expect(manualRule).toContain("height: var(--prompt-editor-manual-height)");
+    expect(manualRule).toContain("max-height: var(--prompt-editor-maximum-height)");
     expect(promptEditorMaximumHeight(1_000, 1.25, 100)).toBe(300);
   });
 });

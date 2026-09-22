@@ -232,7 +232,7 @@ export class ChatView extends LitElement {
   @property({ type: Boolean }) warningsVisible = true;
   @property({ attribute: false }) onToggleWarnings?: () => void;
   @property({ attribute: false }) onLoadMore?: () => void;
-  @query(".chat") private chat?: HTMLDivElement;
+  @query(".chat") private chat?: HTMLDivElement | null;
   @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement;
   @state() private pinnedToBottom = true;
   @state() private zoomedImage: { src: string; alt: string } | undefined = undefined;
@@ -270,7 +270,7 @@ export class ChatView extends LitElement {
   };
   private readonly onChatResize = (): void => {
     const chat = this.chat;
-    if (chat === undefined) return;
+    if (!(chat instanceof HTMLElement)) return;
     if (this.pinnedToBottom) {
       this.scrollToBottom();
       return;
@@ -314,9 +314,11 @@ export class ChatView extends LitElement {
   }
 
   private observeChatResize(): void {
-    if (this.chatResizeObserver !== undefined || this.chat === undefined || typeof ResizeObserver === "undefined") return;
-    this.chatResizeObserver = new ResizeObserver(this.onChatResize);
-    this.chatResizeObserver.observe(this.chat);
+    const chat = this.chat;
+    if (this.chatResizeObserver !== undefined || !(chat instanceof Element) || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(this.onChatResize);
+    observer.observe(chat);
+    this.chatResizeObserver = observer;
   }
 
   override disconnectedCallback(): void {

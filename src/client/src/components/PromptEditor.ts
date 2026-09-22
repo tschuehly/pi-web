@@ -102,7 +102,7 @@ export class PromptEditor extends LitElement {
   private explicitShiftKeyActive = false;
   private manualEditorHeight: number | undefined;
   private editorHeightObserver: ResizeObserver | undefined;
-  private resizePointer: { id: number; startY: number; startHeight: number; scale: number } | undefined;
+  private resizePointer: { id: number; startY: number; startHeight: number; scale: number; restoreEditorFocus: boolean } | undefined;
   private lastTouchTapAt: number | undefined;
   private readonly onResizeViewport = (): void => {
     if (this.manualEditorHeight !== undefined) this.setManualEditorHeight(this.manualEditorHeight);
@@ -183,6 +183,7 @@ export class PromptEditor extends LitElement {
     const busy = this.disabled || this.sending;
     const maximumHeight = this.maximumEditorHeight();
     const currentHeight = this.currentEditorHeight(maximumHeight);
+    const editorHeightStyle = `--prompt-editor-maximum-height: ${String(maximumHeight)}px${this.manualEditorHeight === undefined ? "" : `; --prompt-editor-manual-height: ${String(this.manualEditorHeight)}px`}`;
     return html`
       <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => { void this.handlePaste(event); }} @dragover=${(event: DragEvent) => { this.handleDragOver(event); }} @drop=${(event: DragEvent) => { void this.handleDrop(event); }}>
         <div
@@ -204,7 +205,7 @@ export class PromptEditor extends LitElement {
           @keydown=${(event: KeyboardEvent) => { this.handleEditorResizeKey(event); }}
         ></div>
         <div class="editor-wrap">
-          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${this.manualEditorHeight === undefined ? "" : `--prompt-editor-manual-height: ${String(this.manualEditorHeight)}px; --prompt-editor-manual-max-height: ${String(maximumHeight)}px`} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
+          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${editorHeightStyle} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
           <button class="editor-attach icon-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
@@ -529,9 +530,10 @@ export class PromptEditor extends LitElement {
       }),
     });
     if (typeof ResizeObserver !== "undefined") {
-      this.editorHeightObserver = new ResizeObserver(() => { this.reconcileEditorHeight(); });
-      this.editorHeightObserver.observe(this.editor.dom);
-      if (this.footer !== undefined) this.editorHeightObserver.observe(this.footer);
+      const observer = new ResizeObserver(() => { this.reconcileEditorHeight(); });
+      observer.observe(this.editor.dom);
+      if (this.footer instanceof Element) observer.observe(this.footer);
+      this.editorHeightObserver = observer;
     }
   }
 
@@ -577,8 +579,9 @@ export class PromptEditor extends LitElement {
     if (!(handle instanceof HTMLElement)) return;
     event.preventDefault();
     handle.setPointerCapture(event.pointerId);
-    handle.focus();
-    this.resizePointer = { id: event.pointerId, startY: event.clientY, startHeight: this.currentEditorHeight(), scale: this.interfaceScale() };
+    const restoreEditorFocus = event.pointerType !== "touch" && (this.editor?.hasFocus ?? false);
+    if (event.pointerType !== "touch") handle.focus({ preventScroll: true });
+    this.resizePointer = { id: event.pointerId, startY: event.clientY, startHeight: this.currentEditorHeight(), scale: this.interfaceScale(), restoreEditorFocus };
   }
 
   private moveEditorResize(event: PointerEvent): void {
@@ -594,6 +597,7 @@ export class PromptEditor extends LitElement {
     if (resize?.id !== event.pointerId) return;
     releasePointerCapture(event.currentTarget, event.pointerId);
     this.resizePointer = undefined;
+    if (resize.restoreEditorFocus) this.editor?.focus();
     if (event.pointerType !== "touch") return;
     if (Math.abs(event.clientY - resize.startY) > 8) { this.lastTouchTapAt = undefined; return; }
     const now = event.timeStamp;
@@ -606,9 +610,11 @@ export class PromptEditor extends LitElement {
   }
 
   private cancelEditorResize(event: PointerEvent): void {
-    if (this.resizePointer?.id !== event.pointerId) return;
+    const resize = this.resizePointer;
+    if (resize?.id !== event.pointerId) return;
     releasePointerCapture(event.currentTarget, event.pointerId);
     this.resizePointer = undefined;
+    if (resize.restoreEditorFocus) this.editor?.focus();
     if (event.pointerType === "touch") this.lastTouchTapAt = undefined;
   }
 

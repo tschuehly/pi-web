@@ -12,9 +12,10 @@ describe("ChatView scroll-to-bottom control", () => {
     const hadResizeObserver = Reflect.has(globalThis, "ResizeObserver");
     const previousResizeObserver: unknown = Reflect.get(globalThis, "ResizeObserver");
     let resizeCallback: ResizeObserverCallback | undefined;
+    const constructed = vi.fn();
     class ResizeObserverStub implements ResizeObserver {
-      constructor(callback: ResizeObserverCallback) { resizeCallback = callback; }
-      observe = vi.fn();
+      constructor(callback: ResizeObserverCallback) { resizeCallback = callback; constructed(); }
+      observe = vi.fn((target: Element) => { if (!(target instanceof Element)) throw new TypeError("ResizeObserver target must be an Element"); });
       unobserve = vi.fn();
       disconnect = vi.fn();
       takeRecords = (): ResizeObserverEntry[] => [];
@@ -27,6 +28,9 @@ describe("ChatView scroll-to-bottom control", () => {
       const chat = view.shadowRoot?.querySelector<HTMLElement>(".chat");
       const resizeObserver: unknown = Reflect.get(view, "chatResizeObserver");
       if (chat === null || chat === undefined || resizeCallback === undefined || !(resizeObserver instanceof ResizeObserverStub)) throw new Error("Chat resize observer was not installed");
+      expect(constructed).toHaveBeenCalledOnce();
+      expect(resizeObserver.observe).toHaveBeenCalledOnce();
+      expect(resizeObserver.observe).toHaveBeenCalledWith(chat);
       const scrollToBottom = vi.fn();
       Reflect.set(view, "scrollToBottom", scrollToBottom);
 
