@@ -26,9 +26,8 @@ export function composerSendShortcut(shortcuts: ShortcutPreferenceConfig, media?
   return shortcuts[id] === undefined ? defaultSendShortcut(media, preference) : shortcuts[id];
 }
 
-export function usesAutomaticComposerEnter(shortcuts: ShortcutPreferenceConfig, media?: PromptEnterMedia, preference = readPromptEnterPreference()): boolean {
-  const id = media?.matches === true ? COMPOSER_SEND_MOBILE : COMPOSER_SEND_DESKTOP;
-  return shortcuts[id] === undefined && preference === "auto";
+export function composerKeyboardSubmissionEnabled(shortcuts: ShortcutPreferenceConfig, media?: PromptEnterMedia, preference = readPromptEnterPreference()): boolean {
+  return composerSendShortcut(shortcuts, media, preference) !== null;
 }
 
 export function matchesComposerSend(event: ShortcutKeyEvent, shortcut: string | null): boolean {

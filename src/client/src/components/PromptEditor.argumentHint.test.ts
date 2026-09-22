@@ -47,7 +47,7 @@ describe("PromptEditor argument hint ghost", () => {
 function createEditorView(doc: string): EditorView {
   const host = document.createElement("div");
   document.body.append(host);
-  return new EditorView({ parent: host, state: EditorState.create({ doc, extensions: [promptArgumentHintExtension] }) });
+  return new EditorView({ parent: host, state: EditorState.create({ doc, selection: { anchor: doc.length }, extensions: [promptArgumentHintExtension] }) });
 }
 
 // pick() is private and normally reached through the autocomplete menu; calling
@@ -61,9 +61,16 @@ function promptEditorWith(view: EditorView, draft: string): PromptEditor {
 }
 
 function pick(editor: PromptEditor, item: CompletionItem): void {
+  const currentTrigger: unknown = Reflect.get(editor, "currentTrigger");
   const pickMethod: unknown = Reflect.get(editor, "pick");
-  if (!isPickMethod(pickMethod)) throw new Error("PromptEditor.pick is not callable");
+  if (!isCurrentTriggerMethod(currentTrigger) || !isPickMethod(pickMethod)) throw new Error("PromptEditor completion methods are not callable");
+  Reflect.set(editor, "completions", [item]);
+  Reflect.set(editor, "completionResultTrigger", JSON.stringify(currentTrigger.call(editor)));
   pickMethod.call(editor, item);
+}
+
+function isCurrentTriggerMethod(value: unknown): value is (this: PromptEditor) => unknown {
+  return typeof value === "function";
 }
 
 function isPickMethod(value: unknown): value is (this: PromptEditor, item: CompletionItem) => void {

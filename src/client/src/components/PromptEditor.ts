@@ -18,7 +18,7 @@ import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
 import { clearStagedAttachments, emptyStagedAttachmentDraft, loadStagedAttachmentDraft, resolveStagedAttachmentKey, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
-import { composerSendShortcut, matchesComposerSend, usesAutomaticComposerEnter } from "../composerShortcuts";
+import { composerKeyboardSubmissionEnabled, composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge } from "./promptEditorIcons";
@@ -77,6 +77,8 @@ export class PromptEditor extends LitElement {
   private knownCommandNames = new Set<string>();
   private commandCatalogRequest: Promise<SlashCommand[]> | undefined;
   private requestVersion = 0;
+  private completionResultVersion = 0;
+  private completionResultTrigger: string | undefined;
   private editor: EditorView | undefined;
   private readonly editableCompartment = new Compartment();
   private readonly readOnlyCompartment = new Compartment();
@@ -103,6 +105,7 @@ export class PromptEditor extends LitElement {
     this.attachmentError = undefined;
     this.knownCommandNames.clear();
     this.commandCatalogRequest = undefined;
+    this.requestVersion += 1;
     this.currentInputMode = inputModeForDraft(this.draft);
     this.completions = [];
     this.selectedIndex = 0;
@@ -149,7 +152,7 @@ export class PromptEditor extends LitElement {
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
           ${this.renderAttachments()}
-          <autocomplete-menu .items=${this.completions} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
+          <autocomplete-menu .items=${this.currentCompletions()} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
         </div>
         <div class="actions">
           ${this.renderCompactStatus()}
@@ -452,6 +455,7 @@ export class PromptEditor extends LitElement {
           this.readOnlyCompartment.of(EditorState.readOnly.of(this.disabled)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) this.updateDraft(update.state.doc.toString());
+            else if (update.selectionSet) void this.refreshCompletions();
           }),
           keymap.of([
             { any: (view, event) => this.handleEditorKeyDown(event, view) },
@@ -500,15 +504,19 @@ export class PromptEditor extends LitElement {
 
   private async refreshCompletions() {
     const trigger = this.currentTrigger();
+    const triggerKey = completionTriggerKey(trigger);
     const version = ++this.requestVersion;
     this.completions = [];
     this.selectedIndex = 0;
-    if (trigger === undefined) return;
+    if (trigger === undefined) {
+      this.setCompletions(version, triggerKey, []);
+      return;
+    }
     if (trigger.kind === "command" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
       const commands = await this.commandCatalog();
       if (version !== this.requestVersion) return;
       this.knownCommandNames = new Set(commands.map((command) => command.name));
-      this.completions = commands
+      this.setCompletions(version, triggerKey, commands
         .filter((command) => command.name.toLowerCase().includes(trigger.query.toLowerCase()))
         .map((command) => ({
           kind: "command",
@@ -518,11 +526,12 @@ export class PromptEditor extends LitElement {
           detail: command.source,
           ...(command.description === undefined ? {} : { description: command.description }),
           ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
-        }));
-    } else if (trigger.kind === "file" && this.projectId !== undefined && this.workspaceId !== undefined) {
+        })));
+      return;
+    }
+    if (trigger.kind === "file" && this.projectId !== undefined && this.workspaceId !== undefined) {
       const files = await api.files(trigger.query, { scope: trigger.fileScope, machineId: this.machineId, projectId: this.projectId, workspaceId: this.workspaceId }).catch(emptyFileSuggestions);
-      if (version !== this.requestVersion) return;
-      this.completions = files
+      this.setCompletions(version, triggerKey, files
         .slice(0, 12)
         .map((file) => {
           const insertText = fileCompletionInsertText(file.path, trigger.quoted === true, file.path.endsWith("/") ? trigger.allPrefix : undefined);
@@ -534,17 +543,27 @@ export class PromptEditor extends LitElement {
             detail: file.kind,
             ...(file.path.endsWith("/") && insertText.endsWith("\"") ? { cursorOffset: insertText.length - 1 } : {}),
           };
-        });
-    } else if (trigger.kind === "model" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
+        }));
+      return;
+    }
+    if (trigger.kind === "model" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
       const models = await api.models({ id: this.sessionId, cwd: this.cwd }, this.machineId).then((response) => response.models).catch(emptySessionModels);
-      if (version !== this.requestVersion) return;
-      this.completions = modelCompletionChoices(models, trigger.query).map((choice) => ({
+      this.setCompletions(version, triggerKey, modelCompletionChoices(models, trigger.query).map((choice) => ({
         kind: "model",
         replaceFrom: trigger.from,
         replaceTo: trigger.to,
         ...choice,
-      }));
+      })));
+      return;
     }
+    this.setCompletions(version, triggerKey, []);
+  }
+
+  private setCompletions(version: number, trigger: string | undefined, completions: CompletionItem[]): void {
+    if (version !== this.requestVersion) return;
+    this.completionResultVersion = version;
+    this.completionResultTrigger = trigger;
+    this.completions = completions;
   }
 
   private commandCatalog(): Promise<SlashCommand[]> {
@@ -567,15 +586,17 @@ export class PromptEditor extends LitElement {
   }
 
   private moveCompletion(delta: number): boolean {
-    if (!this.completions.length) return false;
-    this.selectedIndex = (this.selectedIndex + delta + this.completions.length) % this.completions.length;
+    const completions = this.currentCompletions();
+    if (!completions.length) return false;
+    this.selectedIndex = (this.selectedIndex + delta + completions.length) % completions.length;
     return true;
   }
 
   private closeCompletions(): boolean {
-    if (!this.completions.length) return false;
+    const wasOpen = this.currentCompletions().length > 0;
+    this.requestVersion += 1;
     this.completions = [];
-    return true;
+    return wasOpen;
   }
 
   /** The capture-phase app dispatcher must leave composer-owned keys to CodeMirror. */
@@ -584,7 +605,7 @@ export class PromptEditor extends LitElement {
     // Keep Enter/newline handling and IME composition inside the editor, too.
     return event.isComposing || this.editor.composing
       || (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey)
-      || (isPrimaryModifierEnter(event) && usesAutomaticComposerEnter(this.shortcuts, this.mobilePromptEnterMedia))
+      || (isPrimaryModifierEnter(event) && composerKeyboardSubmissionEnabled(this.shortcuts, this.mobilePromptEnterMedia))
       || this.matchesSendShortcut(event);
   }
 
@@ -600,17 +621,18 @@ export class PromptEditor extends LitElement {
       this.explicitShiftKeyActive = true;
       return false;
     }
+    if (!event.shiftKey) this.explicitShiftKeyActive = false;
     if (event.defaultPrevented || event.isComposing || view.composing) return false;
     const primaryModifierEnter = isPrimaryModifierEnter(event);
     const send = this.matchesSendShortcut(event);
     const plainEnter = event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey
       && !shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia);
-    if (plainEnter && this.completions.length) {
-      const completion = this.completions[this.selectedIndex];
-      if (completion !== undefined) this.pick(completion);
+    const completion = this.selectedCompletion();
+    if (plainEnter && completion !== undefined) {
+      this.pick(completion);
       return true;
     }
-    if (primaryModifierEnter && (send || usesAutomaticComposerEnter(this.shortcuts, this.mobilePromptEnterMedia))) {
+    if (primaryModifierEnter && composerKeyboardSubmissionEnabled(this.shortcuts, this.mobilePromptEnterMedia)) {
       void this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, true));
       return true;
     }
@@ -636,9 +658,9 @@ export class PromptEditor extends LitElement {
 
 
   private handleEditorTab(view: EditorView): boolean {
-    if (this.completions.length) {
-      const completion = this.completions[this.selectedIndex];
-      if (completion !== undefined) this.pick(completion);
+    const completion = this.selectedCompletion();
+    if (completion !== undefined) {
+      this.pick(completion);
       return true;
     }
     const trigger = this.currentTrigger();
@@ -649,9 +671,22 @@ export class PromptEditor extends LitElement {
     return indentWithTab.run?.(view) ?? false;
   }
 
+  private selectedCompletion(): CompletionItem | undefined {
+    return this.currentCompletions()[this.selectedIndex];
+  }
+
+  private currentCompletions(): CompletionItem[] {
+    return this.completionsAreCurrent() ? this.completions : [];
+  }
+
+  private completionsAreCurrent(): boolean {
+    return this.completionResultVersion === this.requestVersion
+      && this.completionResultTrigger === completionTriggerKey(this.currentTrigger());
+  }
+
   private pick(item: CompletionItem) {
     const editor = this.editor;
-    if (!editor) return;
+    if (!editor || !this.completionsAreCurrent() || !this.completions.includes(item)) return;
     const suffix = item.kind === "file" && (item.insertText.endsWith("/") || item.cursorOffset !== undefined) ? "" : " ";
     const cursor = item.replaceFrom + (item.cursorOffset ?? item.insertText.length) + suffix.length;
     const replaceTo = item.insertText.endsWith("\"") && this.draft.slice(item.replaceTo).startsWith("\"") ? item.replaceTo + 1 : item.replaceTo;
@@ -756,6 +791,7 @@ export class PromptEditor extends LitElement {
   private resetComposer() {
     this.draft = "";
     this.currentInputMode = { kind: "normal" };
+    this.requestVersion += 1;
     const key = draftStorageKey(this.machineId, this.sessionId);
     this.draftGeneration += 1;
     if (key !== undefined) {
@@ -792,6 +828,10 @@ function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus
     && a.contextUsage?.percent === b.contextUsage?.percent
     && a.cost === b.cost
     && a.pendingMessageCount === b.pendingMessageCount);
+}
+
+function completionTriggerKey(trigger: PromptCompletionTrigger | undefined): string | undefined {
+  return trigger === undefined ? undefined : JSON.stringify(trigger);
 }
 
 function isPrimaryModifierEnter(event: KeyboardEvent): boolean {

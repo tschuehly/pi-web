@@ -234,21 +234,21 @@
 <td>Settings save / config refresh</td>
 </tr>
 <tr>
-<th scope="row">Desktop send key<br><code>shortcuts.composer.send.desktop</code></th>
+<th scope="row">Fine-pointer send key<br><code>shortcuts.composer.send.desktop</code></th>
 <td>Gateway</td>
 <td><code>Enter</code></td>
-<td>One key combination for sending from the composer.</td>
+<td>One key combination for sending when the primary pointer is fine.</td>
 <td>Settings save / config refresh</td>
 </tr>
 <tr>
-<th scope="row">Touch / narrow-screen send key<br><code>shortcuts.composer.send.mobile</code></th>
+<th scope="row">Coarse-pointer send key<br><code>shortcuts.composer.send.mobile</code></th>
 <td>Gateway</td>
 <td><code>Shift+Enter</code></td>
-<td>Send key with a coarse primary pointer or viewport ≤760px.</td>
+<td>One key combination for sending when the primary pointer is coarse (typically touch).</td>
 <td>Settings save / config refresh</td>
 </tr>
 </tbody></table></div>
-<details class="config-details"><summary>Default selection and shortcut rules</summary><ul><li>Model/thinking stars change new-session defaults, not the current session. Resumed sessions keep saved choices.</li><li>Project Pi settings, explicit startup choices, and per-model thinking settings can override defaults. If the default model is disabled, startup falls back to the first enabled model.</li><li><code>mod</code> means Ctrl or ⌘. App shortcuts support sequences; composer send bindings support one combination only.</li><li>Unassigned Enter/Shift+Enter insert newlines; Enter accepts a selected completion first. <code>null</code> disables keyboard submission, not the send button.</li><li>Existing browser-local Enter preferences remain the fallback until a composer binding is configured. Reset restores that fallback.</li></ul><p><a href="config.md#shortcut-config">Full shortcut matching rules →</a></p></details>
+<details class="config-details"><summary>Default selection and shortcut rules</summary><ul><li>Model/thinking stars change new-session defaults, not the current session. Resumed sessions keep saved choices.</li><li>Project Pi settings, explicit startup choices, and per-model thinking settings can override defaults. If the default model is disabled, startup falls back to the first enabled model.</li><li><code>mod</code> means Ctrl or ⌘. App shortcuts support sequences; composer send bindings support one combination only.</li><li>Unassigned Enter/Shift+Enter insert newlines; Enter accepts a selected completion first. Cmd/Ctrl+Enter queues a follow-up before the global Start Session shortcut unless the active pointer binding is None (<code>null</code>), which releases it to the global shortcut. None disables keyboard submission, not the send button.</li><li>Existing browser-local Enter preferences remain the fallback until a composer binding is configured. Reset restores that fallback.</li></ul><p><a href="config.md#shortcut-config">Full shortcut matching rules →</a></p></details>
 <h3 id="prompt-completions">Composer shortcuts (not config keys)</h3>
 <div class="table-scroll" role="region" aria-label="Completion triggers" tabindex="0">
 <table class="reference-table ">

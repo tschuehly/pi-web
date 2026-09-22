@@ -24,7 +24,9 @@ describe("settings-shortcuts-panel layout", () => {
 
     const frame = frameRoot(panel);
     expect(frame.querySelector("h2")?.textContent).toBe("Keyboard shortcuts");
-    expect(frame.querySelector(".description")?.textContent).toContain("Edit app shortcuts by action.");
+    expect(frame.querySelector(".description")?.textContent).toContain("coarse primary pointer");
+    expect(frame.querySelector(".description")?.textContent).toContain("global Start Session shortcut");
+    expect(frame.querySelector(".description")?.textContent).not.toContain("760px");
     expect(frame.querySelector("code")?.textContent).toBe("mod+k");
     expect([...frame.querySelectorAll(".notice")].map((notice) => ({
       role: notice.getAttribute("role"),
