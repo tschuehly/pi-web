@@ -78,7 +78,8 @@ describe("WorkstreamContextDrawer", () => {
       if (typeof init?.body !== "string") throw new Error("Missing request body");
       const body: unknown = JSON.parse(init.body);
       if (typeof body !== "object" || body === null || !("input" in body)) throw new Error("Invalid request body");
-      return Promise.resolve(new Response(JSON.stringify({ ok: true, value: fetcher(operation, body.input) }), { status: 200 }));
+      const result = fetcher(operation, body.input);
+      return Promise.resolve(result instanceof Response ? result : new Response(JSON.stringify({ ok: true, value: result }), { status: 200 }));
     }));
     const element = new WorkstreamContextDrawer();
     element.snapshot = structuredClone(initial);
@@ -122,6 +123,7 @@ describe("WorkstreamContextDrawer", () => {
       { type: "checkpoint.replaced", producer: "owner", payload: { sessionId: "session-current", checkpoint: { next: "Owner's next step" } } },
     ] });
     expect(request).toHaveProperty("idempotencyKey", expect.any(String));
+    expect(request).toHaveProperty("records.1.sourceSessionId", "session-current");
   });
 
   it("retries an uncertain save with the same operation and checkpoint id", async () => {
@@ -141,6 +143,56 @@ describe("WorkstreamContextDrawer", () => {
     root.querySelector<HTMLFormElement>("form")?.requestSubmit();
     await vi.waitFor(() => { expect(calls).toHaveLength(2); });
     expect(calls[1]).toEqual(calls[0]);
+  });
+
+  it("unlocks the draft after a coded store failure without reusing the failed operation", async () => {
+    const calls: unknown[] = [];
+    const element = await editor((operation, input) => {
+      if (operation === "inspect") return snapshot;
+      calls.push(input);
+      return new Response(JSON.stringify({ ok: false, error: { code: "INVALID_REQUEST", message: "invalid fields", details: { field: "title" } } }), { status: 200 });
+    });
+    const root = required(element.shadowRoot);
+    const title = required(root.querySelector<HTMLInputElement>("#workstream-title"));
+    title.value = "Local"; title.dispatchEvent(new Event("input", { bubbles: true }));
+    root.querySelector<HTMLFormElement>("form")?.requestSubmit();
+    await vi.waitFor(() => { expect(root.textContent).toContain("Could not save Workstream. Error: invalid fields"); });
+    expect(root.querySelector<HTMLInputElement>("#workstream-title")?.disabled).toBe(false);
+    expect(root.querySelector<HTMLInputElement>("#workstream-title")?.value).toBe("Local");
+    root.querySelector<HTMLFormElement>("form")?.requestSubmit();
+    await vi.waitFor(() => { expect(calls).toHaveLength(2); });
+    expect(calls[1]).not.toEqual(calls[0]);
+  });
+
+  it("treats a coded append conflict as a conflict even without revision text", async () => {
+    const element = await editor((operation) => operation === "inspect" ? snapshot
+      : new Response(JSON.stringify({ ok: false, error: { code: "STALE_REVISION", message: "concurrent edit", details: { currentRevision: 5 } } }), { status: 200 }));
+    const root = required(element.shadowRoot);
+    const title = required(root.querySelector<HTMLInputElement>("#workstream-title"));
+    title.value = "Local"; title.dispatchEvent(new Event("input", { bubbles: true }));
+    root.querySelector<HTMLFormElement>("form")?.requestSubmit();
+    await vi.waitFor(() => { expect(root.textContent).toContain("changed elsewhere"); });
+    expect(title.disabled).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+  });
+
+  it("edits and replaces only the selected session's checkpoint", async () => {
+    const currentCheckpoint = snapshot.sessions[0]?.latestCheckpoint;
+    if (currentCheckpoint === undefined || currentCheckpoint === null) throw new Error("Missing fixture checkpoint");
+    const older = { ...snapshot, sessions: [
+      { id: "other", status: "active", latestCheckpoint: { ...currentCheckpoint, id: "other-cp", next: "Other session", recordedAt: "2026-09-21T18:00:00.000Z" } },
+      ...snapshot.sessions,
+    ] };
+    const calls: unknown[] = [];
+    const element = await editor((operation, input) => { if (operation === "inspect") return older; calls.push(input); return { acceptedRevision: 5 }; }, older);
+    const root = required(element.shadowRoot);
+    expect(root.querySelector<HTMLTextAreaElement>("#next")?.value).toBe("Thomas chooses the preferred drawer.");
+    expect(root.textContent).toContain("Checkpoint for Chat session-current");
+    const next = required(root.querySelector<HTMLTextAreaElement>("#next"));
+    next.value = "Selected next"; next.dispatchEvent(new Event("input", { bubbles: true }));
+    root.querySelector<HTMLFormElement>("form")?.requestSubmit();
+    await vi.waitFor(() => { expect(calls).toHaveLength(1); });
+    expect(calls[0]).toMatchObject({ records: [{ type: "checkpoint.replaced", sourceSessionId: "session-current", payload: { sessionId: "session-current", checkpoint: { next: "Selected next" } } }] });
   });
 
   it("saves title alone when there is no checkpoint, and refreshes the visible title", async () => {
@@ -171,12 +223,15 @@ describe("WorkstreamContextDrawer", () => {
     expect(title.value).toBe("Local");
     expect(calls).toEqual(["inspect"]);
     root.querySelector<HTMLButtonElement>("form button:not([type=submit]):not(:last-child)")?.click();
-    await vi.waitFor(() => { expect(root.querySelector<HTMLInputElement>("#workstream-title")?.value).toBe("Elsewhere"); });
+    await vi.waitFor(() => { expect(root.textContent).toContain("local draft is kept"); });
+    expect(root.querySelector<HTMLInputElement>("#workstream-title")?.value).toBe("Local");
+    expect(root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
   });
 
   it("uses the selected pull-down design and reveals the actual overview language", async () => {
     const element = new WorkstreamContextDrawer();
     element.fallbackTitle = "Unassociated Chat";
+    element.sessionId = "session-current";
     element.snapshot = snapshot;
     document.body.append(element);
     await element.updateComplete;
@@ -231,13 +286,13 @@ describe("WorkstreamContextDrawer", () => {
     await element.updateComplete;
 
     let tab = element.shadowRoot?.querySelector<HTMLElement>(".tab");
-    expect(tab?.textContent).toBe("Finding Workstream…");
+    expect(tab?.textContent).toBe("Named Chat");
     expect(tab?.getAttribute("role")).toBe("status");
 
     element.error = "Workbench bridge unavailable";
     await element.updateComplete;
     tab = element.shadowRoot?.querySelector<HTMLElement>(".tab");
-    expect(tab?.textContent).toBe("Workstream unavailable");
+    expect(tab?.textContent).toBe("Named Chat");
     expect(tab?.title).toBe("Workbench bridge unavailable");
     expect(tab?.getAttribute("role")).toBe("status");
   });

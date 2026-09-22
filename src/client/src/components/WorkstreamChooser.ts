@@ -59,19 +59,36 @@ export interface StartWorkstreamSessionDetail {
 
 export interface WorkstreamServiceContext { machineId: string; projectId: string; workspaceId: string }
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+export class WorkstreamServiceError extends Error {
+  constructor(message: string, readonly code: string, readonly details?: unknown) { super(message); }
+}
+const lifecycleByMachine = new Map<string, { expires: number; promise: ReturnType<typeof pluginsApi.plugins> }>();
 async function service<T>(context: WorkstreamServiceContext, operation: string, input: unknown, check: (value: unknown) => value is T): Promise<T> {
-  const lifecycle = await pluginsApi.plugins(context.machineId);
+  let cached = lifecycleByMachine.get(context.machineId);
+  if (cached === undefined || cached.expires < Date.now()) {
+    const promise = pluginsApi.plugins(context.machineId);
+    cached = { expires: Date.now() + 60_000, promise };
+    lifecycleByMachine.set(context.machineId, cached);
+    void promise.catch(() => { if (lifecycleByMachine.get(context.machineId)?.promise === promise) lifecycleByMachine.delete(context.machineId); });
+  }
+  const lifecycle = await cached.promise;
   const plugin = lifecycle.plugins.find((candidate) => candidate.id === "pi-workbench");
   const revision = plugin?.server?.activeRevision;
   if (plugin?.server?.state !== "active" || revision === undefined) {
     throw new Error(plugin?.server?.message ?? "The Workstream service is not active. Restart the session runtime after installing the Workbench plugin.");
   }
   const encodedInput = JSON.stringify(input);
-  const body = await requestPairedPluginBackend({ pluginId: "pi-workbench", backendRevision: revision, ...context }, operation, parseBoundedPluginBackendJson(encodedInput, `Workstream ${operation} input`));
+  let body: unknown;
+  try {
+    body = await requestPairedPluginBackend({ pluginId: "pi-workbench", backendRevision: revision, ...context }, operation, parseBoundedPluginBackendJson(encodedInput, `Workstream ${operation} input`));
+  } catch (error) {
+    lifecycleByMachine.delete(context.machineId);
+    throw error;
+  }
   if (!isRecord(body) || typeof body["ok"] !== "boolean") throw new Error(`Workstream service returned an invalid ${operation} response.`);
   if (!body["ok"]) {
     const failure = body["error"];
-    throw new Error(isRecord(failure) && typeof failure["message"] === "string" ? failure["message"] : `Workstream ${operation} failed.`);
+    throw new WorkstreamServiceError(isRecord(failure) && typeof failure["message"] === "string" ? failure["message"] : `Workstream ${operation} failed.`, isRecord(failure) && typeof failure["code"] === "string" ? failure["code"] : "UNKNOWN", isRecord(failure) ? failure["details"] : undefined);
   }
   const value: unknown = body["value"];
   if (!check(value)) throw new Error(`Workstream service returned an invalid ${operation} response.`);

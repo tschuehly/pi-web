@@ -63,7 +63,8 @@ export class WorkbenchApp extends LitElement {
   private loadSequence = 0;
   private modelDialogInstanceId = 0;
   private workstreamLoadSequence = 0;
-  private workstreamWatchSequence = 0;
+  private workstreamWatchSequence: number | undefined;
+  private workstreamWatchDelay = 2_000;
   private workstreamWatchTimer: number | undefined;
   private readonly themes = new PluginRegistry();
   private themesInitialized = false;
@@ -184,7 +185,8 @@ export class WorkbenchApp extends LitElement {
     this.app = { ...this.app, ...patch };
     if (previous.selectedSession?.id !== this.app.selectedSession?.id || selectedMachineId(previous) !== selectedMachineId(this.app)) {
       window.clearTimeout(this.workstreamWatchTimer);
-      this.workstreamWatchSequence = 0;
+      this.workstreamWatchSequence = undefined;
+      this.workstreamWatchDelay = 2_000;
       ++this.workstreamLoadSequence;
     }
     this.notifications.syncEnvironment(previous, this.app);
@@ -503,8 +505,14 @@ export class WorkbenchApp extends LitElement {
       this.currentWorkstreamError = "";
     }
     const context = this.workstreamServiceContext;
-    if (sessionId === undefined || context === undefined) return;
+    if (sessionId === undefined || context === undefined) { this.currentWorkstream = null; return; }
     try {
+      // Seed before inspecting: a mutation between these calls will still be observed.
+      if (this.workstreamWatchSequence === undefined) {
+        const head = await watchWorkstreams(context, Number.MAX_SAFE_INTEGER);
+        if (sequence !== this.workstreamLoadSequence) return;
+        this.workstreamWatchSequence = head.nextSequence;
+      }
       const snapshot = await workstreamForSession(context, sessionId);
       if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) {
         this.currentWorkstream = snapshot;
@@ -525,17 +533,28 @@ export class WorkbenchApp extends LitElement {
       void (async () => {
         const sequence = this.workstreamLoadSequence;
         try {
+          if (this.workstreamWatchSequence === undefined) {
+            this.workstreamWatchDelay = Math.min(this.workstreamWatchDelay * 2, 30_000);
+            await this.loadCurrentWorkstream(false);
+            return;
+          }
           const batch = await watchWorkstreams(context, this.workstreamWatchSequence);
           if (sequence !== this.workstreamLoadSequence || this.app.selectedSession?.id !== sessionId) return;
-          if (batch.nextSequence !== this.workstreamWatchSequence || this.currentWorkstreamError !== "") {
+          if (batch.nextSequence !== this.workstreamWatchSequence) {
             this.workstreamWatchSequence = batch.nextSequence;
+            this.workstreamWatchDelay = 2_000;
+            await this.loadCurrentWorkstream(false);
+            return;
+          }
+          if (this.currentWorkstreamError !== "" && this.workstreamWatchDelay >= 30_000) {
             await this.loadCurrentWorkstream(false);
             return;
           }
         } catch { /* Keep the last known title; retry on the next watch. */ }
+        this.workstreamWatchDelay = Math.min(this.workstreamWatchDelay * 2, 30_000);
         if (sequence === this.workstreamLoadSequence && this.isConnected) this.scheduleWorkstreamWatch(context, sessionId);
       })();
-    }, 2_000);
+    }, this.workstreamWatchDelay);
   }
 
   private async preloadWorkstreamPrompt(prompt: string, machineId: string, sessionId: string): Promise<void> {

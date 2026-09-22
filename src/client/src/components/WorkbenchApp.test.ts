@@ -261,6 +261,7 @@ describe("Workbench Chat chooser", () => {
     let inspectCount = 0;
     stubWorkstreamService(calls, (body) => {
       if (body.operation === "inspect") return { ok: true, value: { id: "workstream", revision: inspectCount++ === 0 ? 70 : 71, sessions: [], humanTasks: [] } };
+      if (body.operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: 71 } };
       protocol.push("append");
       return { ok: true, value: { acceptedRevision: typeof body.input["expectedRevision"] === "number" ? body.input["expectedRevision"] + 1 : 0 } };
     }, protocol);
@@ -590,6 +591,41 @@ describe("Workbench settings panel", () => {
 });
 
 describe("Workbench Chat controls", () => {
+  it("backs off unchanged Workstream watches without repeated lifecycle lookups", async () => {
+    const current = session("backoff", "Chat", "Chat title");
+    const calls: WorkstreamServiceCall[] = [];
+    stubWorkstreamService(calls, ({ operation }) => operation === "watch"
+      ? { ok: true, value: { mode: "replay", events: [], nextSequence: 20 } }
+      : { ok: true, value: [] }, undefined, true);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
+    vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
+    const app = await mountChooser([current]);
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".session")?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("backoff"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
+    await vi.waitFor(() => { expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined(); });
+    const fetcher = vi.mocked(fetch);
+    const lifecycleCalls = () => fetcher.mock.calls.filter(([url]) => typeof url === "string" && url.endsWith("/plugins")).length;
+    const before = lifecycleCalls();
+    const timer: unknown = Reflect.get(app, "workstreamWatchTimer");
+    if (typeof timer === "number") window.clearTimeout(timer);
+    vi.useFakeTimers();
+    try {
+      const schedule: unknown = Reflect.get(app, "scheduleWorkstreamWatch");
+      if (typeof schedule !== "function") throw new Error("Watch scheduler missing");
+      Reflect.apply(schedule, app, [{ machineId: "local", projectId: "project", workspaceId: "workspace" }, current.id]);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(calls.filter((call) => call.operation === "watch")).toHaveLength(2);
+      expect(Reflect.get(app, "workstreamWatchDelay")).toBe(4_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(calls.filter((call) => call.operation === "watch")).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(calls.filter((call) => call.operation === "watch")).toHaveLength(3);
+      expect(lifecycleCalls()).toBe(before);
+    } finally { app.remove(); vi.useRealTimers(); }
+  });
+
   it("refreshes the open header when an external Workstream association appears, changes title, or disappears", async () => {
     const current = session("current", "Initial prompt", "Named chat");
     let revision = 0;
@@ -623,7 +659,8 @@ describe("Workbench Chat controls", () => {
     associated = false;
     revision = 3;
     await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Named chat"); }, { timeout: 3_000 });
-    expect(calls.filter((call) => call.operation === "watch")).toHaveLength(3);
+    expect(calls.filter((call) => call.operation === "watch")).toHaveLength(4);
+    expect(calls.find((call) => call.operation === "watch")?.input).toEqual({ afterSequence: Number.MAX_SAFE_INTEGER });
     expect(getState(app).selectedSession?.id).toBe("current");
   }, 10_000);
 

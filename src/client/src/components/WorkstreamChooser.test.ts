@@ -2,7 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkstreamChooser, actor, ago, conflicting, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, sentences, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { WorkstreamChooser, WorkstreamServiceError, actor, ago, appendWorkstream, conflicting, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, sentences, watchWorkstreams, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { workstreamAccentColor } from "../workstreamColor";
 import { pluginsApi } from "../api/clients";
 
@@ -72,6 +72,25 @@ beforeEach(() => {
   stubService();
 });
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+describe("Workstream service", () => {
+  it("caches the machine lifecycle across watches and exposes coded store details", async () => {
+    const lifecycle = vi.mocked(pluginsApi.plugins);
+    const context = { machineId: "cache-test-machine", projectId: "project", workspaceId: "workspace" };
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const body = requestBody(_url, init);
+      return Promise.resolve(new Response(JSON.stringify(body.operation === "watch"
+        ? { ok: true, value: { mode: "replay", events: [], nextSequence: 42 } }
+        : { ok: false, error: { code: "STALE_REVISION", message: "changed", details: { currentRevision: 42 } } }), { status: 200 }));
+    }));
+    await watchWorkstreams(context, Number.MAX_SAFE_INTEGER);
+    await watchWorkstreams(context, 42);
+    expect(lifecycle).toHaveBeenCalledTimes(1);
+    await expect(appendWorkstream(context, { workstreamId: "ws", expectedRevision: 1, idempotencyKey: "retry", records: [] }))
+      .rejects.toMatchObject({ code: "STALE_REVISION", details: { currentRevision: 42 } });
+    expect(WorkstreamServiceError.name).toBe("WorkstreamServiceError");
+  });
+});
 
 describe("WorkstreamChooser", () => {
   it("lists Workstreams newest first and opens the newest session from the re-entry card", async () => {

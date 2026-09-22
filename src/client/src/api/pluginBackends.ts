@@ -27,6 +27,8 @@ export interface PluginBackendRequestTarget {
   workspaceId: string;
 }
 
+export class PluginBackendRequestUnavailableError extends Error {}
+
 export interface PluginBackendRequestOptions {
   readonly signal?: AbortSignal;
 }
@@ -257,7 +259,7 @@ async function requestPluginBackendAt(
     });
   } catch (error) {
     if (options.signal?.aborted === true) throw abortError(options.signal);
-    throw new Error(`Plugin backend request unavailable: ${errorMessage(error)}`, { cause: error });
+    throw new PluginBackendRequestUnavailableError(`Plugin backend request unavailable: ${errorMessage(error)}`, { cause: error });
   }
 
   const text = await readBoundedResponseText(response);
