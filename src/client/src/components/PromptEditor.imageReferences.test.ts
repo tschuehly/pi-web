@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from "vitest";
+import { isolateHistory, undo } from "@codemirror/commands";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PromptEditor } from "./PromptEditor";
 
 afterEach(() => {
@@ -8,6 +9,37 @@ afterEach(() => {
 });
 
 describe("PromptEditor image attachment accessibility", () => {
+  it.each([
+    ["send", false, false, ".send-button", undefined],
+    ["steer", true, false, ".send-button", "steer"],
+    ["queue", true, false, ".queue-button", "followUp"],
+    ["compacting queue", true, true, ".send-button", "followUp"],
+  ] as const)("strips an undone removal's orphan token on %s without shifting surviving images", async (_name, canSteer, isCompacting, selector, behavior) => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn();
+    editor.canSteer = canSteer;
+    editor.isCompacting = isCompacting;
+    editor.onSend = onSend;
+    document.body.append(editor);
+    await editor.updateComplete;
+    const removed = { id: "attachment-1", kind: "image" as const, reference: "[PIC_1]", name: "removed.png", mimeType: "image/png", data: "UE5H", size: 3 };
+    const surviving = { ...removed, id: "attachment-2", reference: "[PIC_2]", name: "surviving.png" };
+    Reflect.set(editor, "attachments", [removed, surviving]);
+    if (editor.view === undefined) throw new Error("CodeMirror editor missing");
+    editor.view.dispatch({ changes: { from: 0, insert: "compare [PIC_1] with [PIC_2]" }, annotations: isolateHistory.of("after") });
+    await editor.updateComplete;
+
+    editor.shadowRoot?.querySelector<HTMLButtonElement>('.attachment-remove[aria-label="Remove [PIC_1] image removed.png"]')?.click();
+    await editor.updateComplete;
+    expect(editor.view.state.doc.toString()).not.toContain("[PIC_1]");
+    expect(undo(editor.view)).toBe(true);
+    expect(editor.view.state.doc.toString()).toContain("[PIC_1]");
+
+    editor.shadowRoot?.querySelector<HTMLButtonElement>(selector)?.click();
+    expect(onSend).toHaveBeenCalledOnce();
+    expect(onSend).toHaveBeenCalledWith("compare with [PIC_2]", behavior, [expect.objectContaining({ reference: "[PIC_2]", data: "UE5H" })], "inline", undefined);
+  });
+
   it("shows the stable reference in the preview and accessible remove label", async () => {
     const editor = new PromptEditor();
     document.body.append(editor);

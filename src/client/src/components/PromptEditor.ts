@@ -870,7 +870,7 @@ export class PromptEditor extends LitElement {
       this.attachmentError = "Wait for image attachments to finish loading.";
       return;
     }
-    const text = this.draft.trim();
+    const text = sanitizeDraftImageReferences(this.draft, this.attachments).trim();
     const pending = this.attachments;
     if (text === "" && pending.length === 0) return;
     const behavior = this.canSteer || this.isCompacting ? streamingBehavior : undefined;
