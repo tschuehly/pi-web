@@ -28,6 +28,7 @@ export class WorkbenchSettingsPanel extends LitElement {
   @state() private sleepDisabled: boolean | undefined;
   @state() private sleepPending = false;
   @state() private sleepError = "";
+  @state() private sleepChangeError = "";
   private sleepPoll: ReturnType<typeof setInterval> | undefined;
   private sleepReadVersion = 0;
 
@@ -105,7 +106,8 @@ export class WorkbenchSettingsPanel extends LitElement {
             <p class="sleep-status" role="status" aria-live="polite">${this.sleepPending ? "Changing system sleep setting…" : this.sleepDisabled === undefined ? "Checking system sleep setting…" : this.sleepDisabled ? "System sleep disabled" : "System sleep enabled"}</p>
             <button type="button" ?disabled=${this.sleepPending || this.sleepDisabled === undefined} @click=${() => { void this.changeSleep(); }}>${this.sleepDisabled === true ? "Enable system sleep" : "Disable system sleep"}</button>
             <small>This setting persists after quitting or restarting the Mac. To restore sleep outside Workbench: sudo /usr/bin/pmset -a disablesleep 0</small>
-            ${this.sleepError === "" ? nothing : html`<p role="alert" class="sleep-error">${this.sleepError}</p>`}
+            ${this.sleepChangeError !== "" ? html`<p role="alert" class="sleep-error">${this.sleepChangeError} ${this.sleepDisabled === undefined ? "Current state could not be verified; Settings will retry." : "Current state was reread."}</p>`
+              : this.sleepError === "" ? nothing : html`<p role="alert" class="sleep-error">${this.sleepError}</p>`}
           </fieldset>
         `}
       </div>
@@ -122,6 +124,7 @@ export class WorkbenchSettingsPanel extends LitElement {
     if (this.sleepHost() !== undefined) {
       this.sleepDisabled = undefined;
       this.sleepError = "";
+      this.sleepChangeError = "";
       void this.readSleep();
       this.sleepPoll = setInterval(() => { if (!this.sleepPending) void this.readSleep(); }, 5000);
     }
@@ -187,6 +190,7 @@ export class WorkbenchSettingsPanel extends LitElement {
     if (!window.confirm(`${target ? "Disable" : "Enable"} system sleep on battery and AC? This setting persists after Workbench quits and after a reboot.`)) return;
     this.sleepPending = true;
     this.sleepError = "";
+    this.sleepChangeError = "";
     this.sleepReadVersion++;
     try {
       const actual = await host.setSleepDisabled(target);
@@ -195,17 +199,13 @@ export class WorkbenchSettingsPanel extends LitElement {
     } catch (error) {
       const detail = String(error);
       this.sleepDisabled = undefined;
-      this.sleepError = detail.includes("SLEEP_CONTROL_USER_CANCELLED:") ? "System sleep change cancelled."
+      this.sleepChangeError = detail.includes("SLEEP_CONTROL_USER_CANCELLED:") ? "System sleep change cancelled."
         : detail.includes("SLEEP_CONTROL_STATE_UNVERIFIED:") ? "System sleep may have changed."
         : detail.includes("SLEEP_CONTROL_TIMEOUT:") ? "System sleep change timed out; the setting may have changed."
         : `System sleep change failed: ${detail}.`;
     } finally {
       this.sleepPending = false;
-      if (this.open && this.sleepError !== "") {
-        const error = this.sleepError;
-        await this.readSleep();
-        this.sleepError = `${error} ${this.sleepDisabled === undefined ? "Current state could not be verified; Settings will retry." : "Current state was reread."}`;
-      }
+      if (this.open && this.sleepChangeError !== "") await this.readSleep();
     }
   }
 

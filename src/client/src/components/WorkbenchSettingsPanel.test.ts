@@ -64,6 +64,21 @@ describe("WorkbenchSettingsPanel sleep control", () => {
     expect(panel.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("SLEEP_CONTROL_READ_FAILED:");
   });
 
+  it("clears a read error when polling recovers", async () => {
+    vi.useFakeTimers();
+    const getter = vi.fn().mockRejectedValueOnce(new Error("read failed")).mockResolvedValueOnce(false);
+    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: vi.fn() };
+    const panel = await mountPanel();
+    trigger(panel).click();
+    await vi.advanceTimersByTimeAsync(0);
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("read failed");
+    await vi.advanceTimersByTimeAsync(5000);
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector('[role="alert"]')).toBeNull();
+    expect(panel.shadowRoot?.textContent).toContain("System sleep enabled");
+  });
+
   it("polls external state while open without invoking the setter", async () => {
     vi.useFakeTimers();
     const setter = vi.fn();
@@ -80,6 +95,30 @@ describe("WorkbenchSettingsPanel sleep control", () => {
     trigger(panel).click();
     await vi.advanceTimersByTimeAsync(5000);
     expect(getter).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a failed change actionable through successful 5s state polls", async () => {
+    vi.useFakeTimers();
+    let actual = false;
+    const getter = vi.fn(() => Promise.resolve(actual));
+    const setter = vi.fn(() => Promise.reject(new Error("SLEEP_CONTROL_CHANGE_FAILED: fixture")));
+    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: setter };
+    window.confirm = vi.fn().mockReturnValue(true);
+    const panel = await mountPanel();
+    trigger(panel).click();
+    await Promise.resolve();
+    await panel.updateComplete;
+    sleepButton(panel).click();
+    await vi.advanceTimersByTimeAsync(0);
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("SLEEP_CONTROL_CHANGE_FAILED: fixture");
+    actual = true;
+    await vi.advanceTimersByTimeAsync(5000);
+    await panel.updateComplete;
+    expect(getter).toHaveBeenCalledTimes(3);
+    expect(setter).toHaveBeenCalledTimes(1);
+    expect(panel.shadowRoot?.textContent).toContain("System sleep disabled");
+    expect(panel.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("SLEEP_CONTROL_CHANGE_FAILED: fixture");
   });
 
   it("serializes pending changes and displays the native result", async () => {
