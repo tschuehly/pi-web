@@ -8,6 +8,23 @@ afterEach(() => {
 });
 
 describe("ChatView scroll-to-bottom control", () => {
+  it("safely no-ops dialog, scroll, prepend, and metric paths before Lit renders queries", () => {
+    const view = new ChatView();
+    view.sessionId = "pre-render";
+
+    expect(() => {
+      invoke(view, "syncImageZoomDialog");
+      invoke(view, "syncScrollMetrics");
+      invoke(view, "alignOpenAskToTop");
+      invoke(view, "alignOpenDialogToTop");
+      invoke(view, "scrollToBottom");
+      view.restoreScrollPosition();
+      view.saveScrollPosition();
+      expect(view.capturePrependScrollAnchor()).toBeUndefined();
+      view.restorePrependScrollAnchor({ distanceFromBottom: 0 });
+    }).not.toThrow();
+  });
+
   it("keeps the live tail pinned on composer-driven resize without moving an unpinned transcript", async () => {
     const hadResizeObserver = Reflect.has(globalThis, "ResizeObserver");
     const previousResizeObserver: unknown = Reflect.get(globalThis, "ResizeObserver");
@@ -70,3 +87,9 @@ describe("ChatView scroll-to-bottom control", () => {
     expect(view.shadowRoot?.querySelector(".scroll-to-bottom")).toBeNull();
   });
 });
+
+function invoke(view: ChatView, name: string): unknown {
+  const method: unknown = Reflect.get(view, name);
+  if (typeof method !== "function") throw new Error(`ChatView.${name} is not callable`);
+  return Reflect.apply(method, view, []);
+}

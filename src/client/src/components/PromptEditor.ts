@@ -71,6 +71,7 @@ export class PromptEditor extends LitElement {
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
   @property({ attribute: false }) availableThinkingLevels: readonly string[] = [];
   @query("footer") private footer?: HTMLElement;
+  @query(".editor-resize-handle") private editorResizeHandle?: HTMLElement;
   @query(".markdown-editor") private editorHost?: HTMLDivElement;
   @query(".attachment-input") private attachmentInput?: HTMLInputElement;
   // `draft` is the live document text but is intentionally NOT reactive: it
@@ -100,14 +101,13 @@ export class PromptEditor extends LitElement {
   private readonly readOnlyCompartment = new Compartment();
   private readonly mobilePromptEnterMedia = createMobilePromptEnterMedia();
   private explicitShiftKeyActive = false;
+  // Manual size belongs only to this mounted Chat composer: sends and in-place
+  // session changes preserve it; disconnect/remount and page reload reset it.
   private manualEditorHeight: number | undefined;
   private editorHeightObserver: ResizeObserver | undefined;
   private resizePointer: { id: number; startY: number; startHeight: number; scale: number; restoreEditorFocus: boolean } | undefined;
   private lastTouchTapAt: number | undefined;
-  private readonly onResizeViewport = (): void => {
-    if (this.manualEditorHeight !== undefined) this.setManualEditorHeight(this.manualEditorHeight);
-    else this.requestUpdate();
-  };
+  private readonly onResizeViewport = (): void => { this.reconcileEditorHeight(); };
 
   protected override willUpdate(changed: PropertyValues<this>) {
     if (!changed.has("sessionId") && !changed.has("machineId")) return;
@@ -189,13 +189,13 @@ export class PromptEditor extends LitElement {
         <div
           class="editor-resize-handle"
           role="separator"
-          aria-label="Resize message editor; press Enter to reset automatic height"
+          aria-label="Resize message editor temporarily; Enter resets automatic height"
           aria-orientation="horizontal"
           aria-valuemin=${String(PROMPT_EDITOR_MIN_HEIGHT)}
           aria-valuemax=${String(Math.round(maximumHeight))}
           aria-valuenow=${String(Math.round(currentHeight))}
           aria-valuetext=${`${String(Math.round(currentHeight))} pixels, ${this.manualEditorHeight === undefined ? "automatic" : "manual"} height`}
-          title="Drag or use arrow keys to resize. Press Enter to reset automatic height."
+          title="Temporary size lasts until Chat closes or reloads. Drag or use arrows; Enter resets."
           tabindex="0"
           @pointerdown=${(event: PointerEvent) => { this.startEditorResize(event); }}
           @pointermove=${(event: PointerEvent) => { this.moveEditorResize(event); }}
@@ -535,6 +535,7 @@ export class PromptEditor extends LitElement {
       if (this.footer instanceof Element) observer.observe(this.footer);
       this.editorHeightObserver = observer;
     }
+    this.reconcileEditorHeight();
   }
 
   private interfaceScale(): number {
@@ -550,27 +551,41 @@ export class PromptEditor extends LitElement {
   }
 
   private maximumEditorHeight(): number {
-    return promptEditorMaximumHeight(typeof window === "undefined" ? PROMPT_EDITOR_MAX_HEIGHT * 2 : window.innerHeight, this.interfaceScale(), this.nonEditorChromeHeight());
+    const viewportHeight = typeof window === "undefined" ? PROMPT_EDITOR_MAX_HEIGHT * 2 : window.visualViewport?.height ?? window.innerHeight;
+    return promptEditorMaximumHeight(viewportHeight, this.interfaceScale(), this.nonEditorChromeHeight());
   }
 
   private reconcileEditorHeight(): void {
-    if (this.manualEditorHeight !== undefined) this.setManualEditorHeight(this.manualEditorHeight);
-    else this.requestUpdate();
+    if (this.manualEditorHeight !== undefined) this.manualEditorHeight = clampNumber(this.manualEditorHeight, PROMPT_EDITOR_MIN_HEIGHT, this.maximumEditorHeight());
+    this.applyEditorHeight();
   }
 
   private currentEditorHeight(maximumHeight = this.maximumEditorHeight()): number {
     return clampNumber(this.manualEditorHeight ?? this.editor?.dom.offsetHeight ?? PROMPT_EDITOR_MIN_HEIGHT, PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
   }
 
+  private applyEditorHeight(): void {
+    const maximumHeight = this.maximumEditorHeight();
+    const currentHeight = this.currentEditorHeight(maximumHeight);
+    const manual = this.manualEditorHeight;
+    this.editorHost?.style.setProperty("--prompt-editor-maximum-height", `${String(maximumHeight)}px`);
+    this.editorHost?.classList.toggle("markdown-editor-manual-height", manual !== undefined);
+    if (manual === undefined) this.editorHost?.style.removeProperty("--prompt-editor-manual-height");
+    else this.editorHost?.style.setProperty("--prompt-editor-manual-height", `${String(manual)}px`);
+    this.editorResizeHandle?.setAttribute("aria-valuemax", String(Math.round(maximumHeight)));
+    this.editorResizeHandle?.setAttribute("aria-valuenow", String(Math.round(currentHeight)));
+    this.editorResizeHandle?.setAttribute("aria-valuetext", `${String(Math.round(currentHeight))} pixels, ${manual === undefined ? "automatic" : "manual"} height`);
+  }
+
   private setManualEditorHeight(height: number): void {
     this.manualEditorHeight = clampNumber(height, PROMPT_EDITOR_MIN_HEIGHT, this.maximumEditorHeight());
-    this.requestUpdate();
+    this.applyEditorHeight();
   }
 
   private resetEditorHeight(): void {
     if (this.manualEditorHeight === undefined) return;
     this.manualEditorHeight = undefined;
-    this.requestUpdate();
+    this.applyEditorHeight();
   }
 
   private startEditorResize(event: PointerEvent): void {

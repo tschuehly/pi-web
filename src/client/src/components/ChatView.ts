@@ -233,7 +233,7 @@ export class ChatView extends LitElement {
   @property({ attribute: false }) onToggleWarnings?: () => void;
   @property({ attribute: false }) onLoadMore?: () => void;
   @query(".chat") private chat?: HTMLDivElement | null;
-  @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement;
+  @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement | null;
   @state() private pinnedToBottom = true;
   @state() private zoomedImage: { src: string; alt: string } | undefined = undefined;
   @state() private copiedMessageKey: string | undefined;
@@ -411,7 +411,7 @@ export class ChatView extends LitElement {
 
   private syncImageZoomDialog(): void {
     const dialog = this.imageZoomDialog;
-    if (dialog === undefined) return;
+    if (!(dialog instanceof HTMLDialogElement)) return;
     if (this.zoomedImage !== undefined) {
       if (this.imageZoomModalRegistration === undefined) {
         const registration = registerRenderedModal({
@@ -1162,7 +1162,7 @@ export class ChatView extends LitElement {
 
   private didChatHeightChange(): boolean {
     const chat = this.chat;
-    return chat !== undefined && this.lastClientHeight !== 0 && chat.clientHeight !== this.lastClientHeight;
+    return chat != null && this.lastClientHeight !== 0 && chat.clientHeight !== this.lastClientHeight;
   }
 
   private isPrependingMessages(changed: Map<string, unknown>): boolean {
@@ -1209,7 +1209,7 @@ export class ChatView extends LitElement {
 
   private canScrollUp(): boolean {
     const chat = this.chat;
-    return chat !== undefined && chat.scrollTop > 0;
+    return chat != null && chat.scrollTop > 0;
   }
 
   private scrollToBottom() {
@@ -1258,8 +1258,9 @@ export class ChatView extends LitElement {
 
   private alignOpenAskToTop(): boolean {
     const chat = this.chat;
+    if (chat == null) return false;
     const card = this.renderRoot.querySelector<HTMLElement>(".chat > ask-user-card");
-    if (chat === undefined || card === null) return false;
+    if (card === null) return false;
     chat.scrollTop += card.getBoundingClientRect().top - chat.getBoundingClientRect().top;
     this.syncScrollMetrics();
     this.pinnedToBottom = this.isNearBottom();
@@ -1280,8 +1281,9 @@ export class ChatView extends LitElement {
 
   private alignOpenDialogToTop(): boolean {
     const chat = this.chat;
+    if (chat == null) return false;
     const card = this.renderRoot.querySelector<HTMLElement>(".chat > extension-dialog-card.open-dialog-card");
-    if (chat === undefined || card === null) return false;
+    if (card === null) return false;
     chat.scrollTop += card.getBoundingClientRect().top - chat.getBoundingClientRect().top;
     this.syncScrollMetrics();
     this.pinnedToBottom = this.isNearBottom();
@@ -1297,7 +1299,8 @@ export class ChatView extends LitElement {
       this.withSuppressedScrollSave(() => {
         if (this.pendingAsk !== undefined && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenAskToTop()) return;
         if (this.pendingDialogs.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenDialogToTop()) return;
-        const result = this.scrollController.restorePosition(sessionId, this.chat, this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
+        const chat = this.chat;
+        const result = this.scrollController.restorePosition(sessionId, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
         this.handleScrollRestoreResult(sessionId, result);
       });
     });
@@ -1311,7 +1314,8 @@ export class ChatView extends LitElement {
       this.restoreScrollFrame = undefined;
       if (this.sessionId !== sessionId) return;
       this.withSuppressedScrollSave(() => {
-        const result = this.scrollController.restoreExplicitPosition(position, this.chat, this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
+        const chat = this.chat;
+        const result = this.scrollController.restoreExplicitPosition(position, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
         this.handleScrollRestoreResult(sessionId, result);
       });
     });
@@ -1331,7 +1335,7 @@ export class ChatView extends LitElement {
     this.pendingScrollRestoreSessionId = sessionId;
     this.pendingScrollRestorePosition = result.position;
     const chat = this.chat;
-    if (chat === undefined || !this.hasMore || this.loadingMore) return;
+    if (chat == null || !this.hasMore || this.loadingMore) return;
     chat.scrollTop = 0;
     this.syncScrollMetrics();
     this.requestLoadMore();
@@ -1351,7 +1355,7 @@ export class ChatView extends LitElement {
 
   private syncScrollMetrics(): void {
     const chat = this.chat;
-    if (chat === undefined) return;
+    if (chat == null) return;
     this.lastScrollTop = chat.scrollTop;
     this.lastClientHeight = chat.clientHeight;
   }
@@ -1368,7 +1372,7 @@ export class ChatView extends LitElement {
   }
 
   restorePrependScrollAnchor(anchor: PrependScrollAnchor | undefined): void {
-    if (!this.chat || !anchor) return;
+    if (this.chat == null || !anchor) return;
     this.suppressLoadMoreRequests = true;
     this.suppressScrollSave = true;
     const token = this.prependRestoreToken + 1;
@@ -1397,8 +1401,9 @@ export class ChatView extends LitElement {
   }
 
   saveScrollPosition(sessionId = this.sessionId) {
-    if (!sessionId) return;
-    this.scrollController.savePosition(sessionId, this.chat, this.scrollAnchorElements());
+    const chat = this.chat;
+    if (!sessionId || chat == null) return;
+    this.scrollController.savePosition(sessionId, chat, this.scrollAnchorElements());
   }
 
   private scheduleScrollPositionSave() {
@@ -1441,7 +1446,7 @@ export class ChatView extends LitElement {
 
   private firstVisibleArticle(): HTMLElement | undefined {
     const chat = this.chat;
-    if (chat === undefined) return undefined;
+    if (chat == null) return undefined;
     const primaryArticles = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("article.msg"));
     return findFirstVisibleArticle(chat, primaryArticles) ?? findFirstVisibleArticle(chat, this.articles());
   }

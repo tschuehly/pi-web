@@ -21,8 +21,9 @@ describe("PromptEditor resize handle", () => {
     expect(handle.getAttribute("aria-valuemin")).toBe("54");
     expect(handle.getAttribute("aria-valuenow")).toBe("54");
     expect(handle.getAttribute("aria-valuetext")).toBe("54 pixels, automatic height");
-    expect(handle.getAttribute("aria-label")).toContain("Enter to reset");
-    expect(handle.getAttribute("title")).toContain("Press Enter to reset");
+    expect(handle.getAttribute("aria-label")).toContain("temporarily");
+    expect(handle.getAttribute("aria-label")).toContain("Enter resets");
+    expect(handle.getAttribute("title")).toContain("until Chat closes or reloads");
 
     key(handle, "ArrowUp");
     await editor.updateComplete;
@@ -103,7 +104,7 @@ describe("PromptEditor resize handle", () => {
     expect(Reflect.get(editorView, "hasFocus")).toBe(true);
   });
 
-  it("keeps manual height across sends and session changes but not a remount", async () => {
+  it("keeps manual height across sends and in-place session changes but resets after a chooser roundtrip or reload", async () => {
     const editor = await mountEditor();
     const handle = resizeHandle(editor);
     key(handle, "ArrowUp");
@@ -120,8 +121,35 @@ describe("PromptEditor resize handle", () => {
     expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe("78");
 
     editor.remove();
-    const remounted = await mountEditor();
-    expect(resizeHandle(remounted).getAttribute("aria-valuenow")).toBe("54");
+    document.body.append(editor);
+    await vi.waitFor(() => { expect(Reflect.get(editor, "editor")).toBeDefined(); });
+    expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe("54");
+
+    editor.remove();
+    const reloaded = await mountEditor();
+    expect(resizeHandle(reloaded).getAttribute("aria-valuenow")).toBe("54");
+  });
+
+  it("updates resize geometry without requesting Lit renders", async () => {
+    const observer = installResizeObserverStub();
+    try {
+      const editor = await mountEditor();
+      const handle = resizeHandle(editor);
+      const requestUpdate = vi.spyOn(editor, "requestUpdate");
+      stubPointerCapture(handle);
+
+      key(handle, "ArrowUp");
+      pointer(handle, "pointerdown", 200, 30, "mouse");
+      pointer(handle, "pointermove", 160, 30, "mouse");
+      pointer(handle, "pointerup", 160, 30, "mouse");
+      observer.notify(editor);
+      window.dispatchEvent(new Event("resize"));
+
+      expect(handle.getAttribute("aria-valuenow")).toBe("118");
+      expect(requestUpdate).not.toHaveBeenCalled();
+    } finally {
+      observer.restore();
+    }
   });
 
   it("re-clamps manual height when measured composer chrome or interface scale changes", async () => {
@@ -176,13 +204,34 @@ describe("PromptEditor resize handle", () => {
     expect(chatStyles.cssText).toMatch(/\.scroll-to-bottom\s*\{[^}]*bottom:\s*12px/);
   });
 
-  it("clamps pure drag geometry to the zoom-compensated viewport bounds", () => {
+  it("uses compensated viewport bounds across interface scales", () => {
     expect(promptEditorMaximumHeight(1600, 1)).toBe(PROMPT_EDITOR_MAX_HEIGHT);
+    expect(promptEditorMaximumHeight(1_000, 0.8, 100)).toBe(525);
+    expect(promptEditorMaximumHeight(1_000, 1, 100)).toBe(400);
+    expect(promptEditorMaximumHeight(1_000, 1.5, 100)).toBeCloseTo(233.33, 2);
     expect(promptEditorMaximumHeight(600, 1.5)).toBe(200);
     expect(promptEditorMaximumHeight(600, 1.5, 80)).toBe(120);
     expect(promptEditorDragHeight(100, 300, 240, 1.5, 200)).toBe(140);
     expect(promptEditorDragHeight(100, 300, -1000, 1, 200)).toBe(200);
     expect(promptEditorDragHeight(100, 300, 1000, 1, 200)).toBe(PROMPT_EDITOR_MIN_HEIGHT);
+  });
+
+  it("uses visual viewport height when the soft keyboard shrinks it", async () => {
+    const previousViewport: unknown = Reflect.get(window, "visualViewport");
+    const viewport = new EventTarget();
+    Reflect.set(viewport, "height", 600);
+    Reflect.set(window, "visualViewport", viewport);
+    try {
+      const editor = await mountEditor();
+      const handle = resizeHandle(editor);
+      expect(handle.getAttribute("aria-valuemax")).toBe("300");
+
+      Reflect.set(viewport, "height", 400);
+      viewport.dispatchEvent(new Event("resize"));
+      expect(handle.getAttribute("aria-valuemax")).toBe("200");
+    } finally {
+      Reflect.set(window, "visualViewport", previousViewport);
+    }
   });
 });
 
