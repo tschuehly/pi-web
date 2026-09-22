@@ -114,7 +114,7 @@ describe("ChatView transcript density", () => {
     view.sessionId = "session-1";
     view.messages = [
       { role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "file", status: "success", resultText: "contents" }] },
-      { role: "tool", parts: [{ type: "toolExecution", toolName: "edit", summary: "file", status: "success", resultText: "unchanged", preview: { error: "Preview failed" } }] },
+      { role: "tool", parts: [{ type: "toolExecution", toolName: "edit", summary: "file", status: "success", resultText: "Applied edit", details: { diff: "-before\n+after" }, preview: { error: "Preview failed" } }] },
     ];
     document.body.append(view);
     await view.updateComplete;
@@ -125,8 +125,32 @@ describe("ChatView transcript density", () => {
     expect(tool).not.toBeNull();
     expect(root.querySelectorAll(".activity-group tool-execution-view")).toHaveLength(1);
     await tool?.updateComplete;
-    expect(tool?.shadowRoot?.querySelector(".tool-row")?.textContent).toContain("edit");
-    expect(tool?.shadowRoot?.querySelector(".error-text")?.textContent).toBe("Preview failed");
+    const details = tool?.shadowRoot?.querySelector<HTMLDetailsElement>(".tool-card.success");
+    expect(details?.open).toBe(true);
+    expect(details?.querySelector(".status-icon")?.textContent).toBe("✓");
+    expect(details?.querySelector(".tool-row strong")?.textContent).toBe("edit");
+    expect(details?.querySelector(".tool-row")?.textContent).toContain("2 lines");
+    expect(details?.querySelector(".status-label")?.textContent).toBe("done");
+    expect(details?.querySelector(".tool-body > .detail-label")?.textContent).toBe("Preview error");
+    expect(details?.querySelector(".error-text")?.textContent).toBe("Preview failed");
+    expect(details?.querySelector(".detail-result pre")?.textContent).toBe("Applied edit");
+    expect(details?.querySelector(".diff-heading")?.textContent).toContain("Applied diff");
+  });
+
+  it("keeps execution failure separate from a preview error", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [{ role: "tool", parts: [{ type: "toolExecution", toolName: "edit", summary: "file", status: "error", resultText: "Edit failed", preview: { error: "Preview failed" } }] }];
+    document.body.append(view);
+    await view.updateComplete;
+
+    const tool = requireShadowRoot(view).querySelector<ToolExecutionView>("tool-execution-view");
+    await tool?.updateComplete;
+    const details = tool?.shadowRoot?.querySelector<HTMLDetailsElement>(".tool-card.error");
+    expect(details?.open).toBe(true);
+    expect(details?.querySelector(".status-label")?.textContent).toBe("failed");
+    expect(Array.from(details?.querySelectorAll(".error-text") ?? [], (error) => error.textContent)).toEqual(["Edit failed", "Preview failed"]);
+    expect(details?.querySelector(".tool-body > .detail-label")?.textContent).toBe("Preview error");
   });
 
   it("keeps a pending routine tool in the same collapsed Activity on success", async () => {

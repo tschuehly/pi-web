@@ -40,16 +40,17 @@ export class ToolExecutionView extends LitElement {
     const path = pathFromArgs(execution.args);
     const actualDiff = diffFromDetails(execution.details);
     const preview = execution.preview;
+    const hasPreviewError = preview?.error !== undefined && preview.error !== "";
     const visibleDiff = actualDiff ?? preview?.diff;
     const diffStats = visibleDiff === undefined ? undefined : countDiffLines(visibleDiff);
     const previewMismatch = actualDiff !== undefined && preview?.diff !== undefined && actualDiff !== preview.diff;
-    const errorText = execution.status === "error" ? execution.resultText : preview?.error;
-    const bodyText = visibleDiff === undefined ? execution.resultText : undefined;
+    const errorText = execution.status === "error" ? execution.resultText : undefined;
+    const bodyText = visibleDiff === undefined || (execution.status === "success" && hasPreviewError) ? execution.resultText : undefined;
     const target = toolTarget(execution, path);
     const row = toolRowSummary(execution);
 
     return html`
-      <details class=${`tool-card ${execution.status}`}>
+      <details class=${`tool-card ${execution.status}`} ?open=${hasPreviewError}>
         <summary class="tool-row">
           <span class="chevron">${renderBuiltinTabIcon("chevron")}</span>
           <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
@@ -66,7 +67,9 @@ export class ToolExecutionView extends LitElement {
           ${this.renderExpandedArguments(execution.args, target)}
           ${previewMismatch ? html`<p class="notice">Applied diff differs from the preview.</p>` : null}
           ${errorText === undefined || errorText === "" ? null : html`<pre class="error-text">${errorText}</pre>`}
-          ${visibleDiff === undefined ? this.renderTextBody(bodyText) : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff")}
+          ${hasPreviewError ? html`<span class="detail-label">Preview error</span><pre class="error-text">${preview.error}</pre>` : null}
+          ${this.renderTextBody(bodyText)}
+          ${visibleDiff === undefined ? null : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff")}
         </div>
       </details>
     `;
