@@ -52,6 +52,15 @@ export interface ToolExecutionPart {
   preview?: ToolPreview;
 }
 
+export interface GoalLifecycleDetails {
+  schemaVersion: 1;
+  goalId: string;
+  transition: "start" | "resume" | "pause" | "wait" | "block" | "usage_limit" | "budget_limit" | "complete" | "clear";
+  state: "active" | "waiting" | "paused" | "blocked" | "usage_limited" | "budget_limited" | "complete" | "cleared";
+  reason?: string;
+  summary?: string;
+}
+
 export type ChatPart =
   | { type: "text"; text: string }
   | { type: "image"; mimeType: string; data: string }
@@ -59,6 +68,7 @@ export type ChatPart =
   | { type: "skillInvocation"; name: string; location: string; content: string }
   | { type: "skillRead"; name: string; path: string; toolCallId?: string }
   | { type: "askUserRecord"; outcome: AskUserOutcome }
+  | { type: "goalLifecycle"; details: GoalLifecycleDetails }
   | { type: "toolCall"; toolCallId?: string; toolName: string; summary: string; args?: unknown }
   | ToolExecutionPart
   | { type: "toolResult"; toolCallId?: string; toolName: string; text: string; isError: boolean; content?: unknown; details?: unknown }

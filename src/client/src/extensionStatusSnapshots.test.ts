@@ -10,9 +10,9 @@ describe("extension status snapshots", () => {
     }
   });
 
-  it("trims bounded fields and ignores additive schema-version-1 fields", () => {
+  it("normalizes display text and ignores additive schema-version-1 fields without rewriting IDs", () => {
     expect(parseGoalStatusSnapshot(JSON.stringify({
-      schemaVersion: 1, goalId: "  goal-1  ", state: "active", objective: "  Ship the Goal chip  ", future: { value: true },
+      schemaVersion: 1, goalId: "goal-1", state: "active", objective: "  Ship the Goal chip  ", future: { value: true },
     }))).toEqual({ schemaVersion: 1, goalId: "goal-1", state: "active", objective: "Ship the Goal chip" });
   });
 
@@ -23,6 +23,9 @@ describe("extension status snapshots", () => {
       { ...valid, schemaVersion: "1" },
       { ...valid, state: "complete" },
       { ...valid, goalId: "" },
+      { ...valid, goalId: " goal-1" },
+      { ...valid, goalId: "goal-1 " },
+      { ...valid, goalId: "goal\u200d-1" },
       { ...valid, goalId: 1 },
       { ...valid, goalId: " 🚀".repeat(129) },
       { ...valid, objective: "  " },

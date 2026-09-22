@@ -40,14 +40,16 @@ describe("durable transcript identity", () => {
     const entries = [
       { type: "custom_message", id: "goal-contract", customType: "goal-contract", content: "hidden goal context", display: false, details: { version: 2, goalId: "goal-1" } },
       { type: "custom_message", id: "other-hidden", customType: "other.hidden", content: "hidden extension context", display: false, details: { source: "other" } },
-      { type: "custom_message", id: "goal-lifecycle", customType: "pi-goal.lifecycle", content: "Goal resumed", display: true, details: { schemaVersion: 1, eventId: "event-1", kind: "resumed", goalId: "goal-1", objective: "Ship it" } },
+      { type: "custom_message", id: "goal-lifecycle", customType: "pi-goal.lifecycle", content: "Goal resumed", display: true, details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" } },
       { type: "custom_message", id: "other-visible", customType: "other.visible", content: "visible extension message", display: true, details: { source: "other" } },
     ];
 
-    expect(historyMessagesFromEntries(entries)).toEqual([
-      { role: "custom", content: "Goal resumed", customType: "pi-goal.lifecycle", details: { schemaVersion: 1, eventId: "event-1", kind: "resumed", goalId: "goal-1", objective: "Ship it" }, entryId: "goal-lifecycle" },
+    const visible = historyMessagesFromEntries(entries);
+    expect(visible).toEqual([
+      { role: "custom", content: "Goal resumed", customType: "pi-goal.lifecycle", details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" }, entryId: "goal-lifecycle" },
       { role: "custom", content: "visible extension message", customType: "other.visible", details: { source: "other" }, entryId: "other-visible" },
     ]);
+    expect(normalizeMessages(visible)[0]).toMatchObject({ entryId: "goal-lifecycle", parts: [{ type: "goalLifecycle", details: { transition: "resume", state: "active", reason: "Owner approved" } }] });
   });
 
   it("filters out aborted and model_change entries but preserves the compaction boundary with user entries", () => {

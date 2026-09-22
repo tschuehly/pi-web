@@ -66,6 +66,30 @@ describe("chat message normalization", () => {
     expect(groupChatMessages(normalized)).toEqual([{ kind: "message", index: 0, message: recordLine }]);
   });
 
+  it("projects the upstream Goal lifecycle schema instead of its model-facing fallback text", () => {
+    const details = { schemaVersion: 1, goalId: "goal-1", transition: "block", state: "blocked", reason: "Owner approval required", summary: "Checked twice" };
+    const message = { role: "custom", customType: "pi-goal.lifecycle", content: "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.", details, entryId: "entry-1" };
+    expect(normalizeMessage(message)).toEqual([{ role: "system", entryId: "entry-1", parts: [{ type: "goalLifecycle", details }] }]);
+
+    for (const [transition, state] of Object.entries({ start: "active", resume: "active", pause: "paused", wait: "waiting", block: "blocked", usage_limit: "usage_limited", budget_limit: "budget_limited", complete: "complete", clear: "cleared" })) {
+      expect(normalizeMessage({ ...message, details: { schemaVersion: 1, goalId: "goal-1", transition, state } })[0]?.parts[0]).toMatchObject({ type: "goalLifecycle", details: { transition, state } });
+    }
+  });
+
+  it("rejects malformed Goal lifecycle details without trusting partial fields", () => {
+    const content = "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.";
+    const valid = { schemaVersion: 1, goalId: "goal-1", transition: "block", state: "blocked" };
+    for (const details of [
+      { ...valid, schemaVersion: 2 }, { ...valid, state: "active" }, { ...valid, transition: "resumed" },
+      { ...valid, kind: "blocked" }, { ...valid, eventId: "event-1" }, { ...valid, objective: "private" },
+      { ...valid, goalId: " goal-1" }, { ...valid, goalId: "goal\u200d-1" },
+      { ...valid, reason: " " }, { ...valid, summary: "x".repeat(401) },
+      { ...valid, reason: "bad\u001b[31m" }, { ...valid, summary: "two  spaces" },
+      { ...valid, goalId: "🚀".repeat(128), reason: "🚀".repeat(400), summary: "🚀".repeat(400) },
+    ]) expect(normalizeMessage({ role: "custom", customType: "pi-goal.lifecycle", content, details })).toEqual([textMessage("system", content)]);
+    expect(normalizeMessage({ role: "custom", customType: "other.lifecycle", content, details: valid })).toEqual([textMessage("system", content)]);
+  });
+
   it("falls back to model-facing text when an ask_user answer record is malformed", () => {
     expect(normalizeMessage({
       role: "custom",

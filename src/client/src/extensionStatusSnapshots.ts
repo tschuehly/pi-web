@@ -7,8 +7,8 @@ export const GOAL_STATUS_KEY = "goal";
 const GOAL_STATUS_RAW_MAX_BYTES = 8_192;
 const GOAL_TEXT_MAX_CHARACTERS = 240;
 const CONTROL = /\p{Cc}/gu;
-const INVISIBLE_SPOOF = /(?:(?!\u200d)\p{Cf})|[\u115f\u2800\u3164\uffa0]/u;
 const INVISIBLE_SPOOF_GLOBAL = /(?:(?!\u200d)\p{Cf})|[\u115f\u2800\u3164\uffa0]/gu;
+const GOAL_ID_DISALLOWED = /[\p{Cc}\p{Cf}\u115f\u2800\u3164\uffa0]/u;
 
 export const GOAL_STATUS_STATE_VALUES = ["active", "waiting", "paused", "blocked", "usage_limited", "budget_limited"] as const;
 export type GoalStatusState = typeof GOAL_STATUS_STATE_VALUES[number];
@@ -127,11 +127,15 @@ export function parseGoalStatusSnapshot(text: string | undefined): GoalStatusSna
   const rawGoalId = value["goalId"];
   const rawObjective = value["objective"];
   if (value["schemaVersion"] !== 1 || typeof rawGoalId !== "string" || !isGoalStatusState(value["state"]) || typeof rawObjective !== "string") return undefined;
-  if (INVISIBLE_SPOOF.test(rawGoalId)) return undefined;
-  const goalId = rawGoalId.trim();
+  if (!validGoalId(rawGoalId)) return undefined;
   const objective = normalizeGoalText(rawObjective);
-  if (goalId === "" || goalId.search(CONTROL) >= 0 || Array.from(goalId).length > 128 || objective === "" || Array.from(objective).length > GOAL_TEXT_MAX_CHARACTERS) return undefined;
-  return { schemaVersion: 1, goalId, state: value["state"], objective };
+  if (objective === "" || Array.from(objective).length > GOAL_TEXT_MAX_CHARACTERS) return undefined;
+  return { schemaVersion: 1, goalId: rawGoalId, state: value["state"], objective };
+}
+
+export function validGoalId(value: unknown): value is string {
+  return typeof value === "string" && value !== "" && value === value.trim()
+    && !GOAL_ID_DISALLOWED.test(value) && Array.from(value).length <= 128;
 }
 
 export function parseLegacyGoalStatus(text: string | undefined): string | undefined {

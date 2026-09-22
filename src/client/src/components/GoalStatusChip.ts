@@ -185,8 +185,5 @@ export class GoalStatusChip extends LitElement {
     @media (max-width: 700px) {
       .short-id { display: none; }
     }
-    @media (max-width: 430px) {
-      .identity { display: none; }
-    }
   `;
 }

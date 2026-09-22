@@ -187,5 +187,6 @@ describe("GoalStatusChip", () => {
     expect(GoalStatusChip.styles.cssText).toMatch(/:host\s*\{[^}]*width:\s*min\(560px, calc\(100% - 24px\)\)[^}]*margin:\s*0 12px 10px/);
     expect(GoalStatusChip.styles.cssText).toMatch(/\.objective\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/);
     expect(GoalStatusChip.styles.cssText).toMatch(/@media \(max-width: 700px\)\s*\{[^}]*\.short-id\s*\{\s*display:\s*none/);
+    expect(GoalStatusChip.styles.cssText).not.toMatch(/@media \(max-width: 430px\)\s*\{[^}]*\.identity\s*\{\s*display:\s*none/);
   });
 });

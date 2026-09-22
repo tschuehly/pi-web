@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it } from "vitest";
+import { normalizeMessages } from "../chatMessages";
 import { ChatView } from "./ChatView";
 import type { FormattedText } from "./FormattedText";
 import { chatStyles } from "./shared";
@@ -158,9 +159,9 @@ describe("ChatView transcript density", () => {
   it("renders a validated Goal lifecycle as one collapsed accessible card without model-only text", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
-    view.messages = [{ role: "custom", customType: "pi-goal.lifecycle", content: "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.", details: {
+    view.messages = normalizeMessages([{ role: "custom", customType: "pi-goal.lifecycle", content: "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.", details: {
       schemaVersion: 1, goalId: "goal-1", transition: "block", state: "blocked", reason: "Owner approval required", summary: "Checked twice",
-    } }];
+    } }]);
     document.body.append(view);
     await view.updateComplete;
 

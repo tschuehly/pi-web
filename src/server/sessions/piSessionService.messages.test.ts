@@ -77,7 +77,7 @@ describe("PiSessionService", () => {
         { role: "custom", customType: "goal-contract", content: "hidden goal context", display: false, details: { version: 2, goalId: "goal-1" } },
         { role: "custom", customType: "other.hidden", content: "hidden extension context", display: false, details: { source: "other" } },
         { role: "custom", customType: "other.default", content: "implicit extension context", details: { source: "other" } },
-        { role: "custom", customType: "pi-goal.lifecycle", content: "Goal resumed", display: true, details: { schemaVersion: 1, eventId: "event-1", kind: "resumed", goalId: "goal-1", objective: "Ship it" } },
+        { role: "custom", customType: "pi-goal.lifecycle", content: "Goal resumed", display: true, details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" } },
         { role: "custom", customType: "other.visible", content: "visible extension message", display: true, details: { source: "other" } },
       ];
       const original = structuredClone(messages);

@@ -24,7 +24,7 @@ import {
   type SelectedSessionNotificationView,
   type SessionNotificationTarget,
 } from "../sessionNotifications";
-import type { ChatLine, ChatPart } from "./shared";
+import type { ChatLine, ChatPart, GoalLifecycleDetails } from "./shared";
 import { chatStyles, renderSessionWarningIcon } from "./shared";
 import "./AskUserCard";
 import "./ExtensionDialogCard";
@@ -38,6 +38,11 @@ import { renderBuiltinTabIcon } from "./tabIcons";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
 const messageTimeFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+const goalTransitionLabels: Record<GoalLifecycleDetails["transition"], string> = {
+  start: "Goal started", resume: "Goal resumed", pause: "Goal paused", wait: "Goal waiting",
+  block: "Goal blocked", usage_limit: "Goal usage limited", budget_limit: "Goal budget limited",
+  complete: "Goal completed", clear: "Goal cleared",
+};
 const notificationTimestampFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 
 function renderNotificationDisclosureIcon(collapsed: boolean) {
@@ -894,9 +899,10 @@ export class ChatView extends LitElement {
   private renderMessage(message: ChatLine, index: number, anchorId: string) {
     const toolOnly = this.isToolExecutionOnlyMessage(message);
     const askUserRecordOnly = this.isAskUserRecordOnlyMessage(message);
+    const goalLifecycleOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "goalLifecycle");
     const skillReadOnly = this.isSkillReadOnlyMessage(message);
-    const headerless = toolOnly || askUserRecordOnly || skillReadOnly;
-    const shellClass = toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : "msg skill-read-shell";
+    const headerless = toolOnly || askUserRecordOnly || skillReadOnly || goalLifecycleOnly;
+    const shellClass = toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : "msg skill-read-shell";
     return html`
       ${this.renderScrollMarker(anchorId)}
       <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${anchorId}>
@@ -1116,6 +1122,15 @@ export class ChatView extends LitElement {
       </details>
     `;
     if (part.type === "skillRead") return html`<div class="part skill-read">Skill: ${part.name}</div>`;
+    if (part.type === "goalLifecycle") return html`
+      <details class="part goal-lifecycle">
+        <summary>${goalTransitionLabels[part.details.transition]}</summary>
+        <div><strong>State:</strong> ${part.details.state}</div>
+        <div><strong>Goal ID:</strong> <code>${part.details.goalId}</code></div>
+        ${part.details.reason === undefined ? null : html`<div><strong>Reason:</strong> ${part.details.reason}</div>`}
+        ${part.details.summary === undefined ? null : html`<div><strong>Summary:</strong> ${part.details.summary}</div>`}
+      </details>
+    `;
     if (part.type === "askUserRecord") return html`
       <ask-user-card
         class="part"
@@ -1513,5 +1528,10 @@ export class ChatView extends LitElement {
     .history-summary-group > summary span:last-child { margin-left: auto; font-size: 11px; text-transform: uppercase; }
     .history-summary-group > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .history-summary-group > .group-body { padding: 6px 10px 10px 31px; border-top: 1px solid var(--pi-border-muted); }
+    .msg.goal-lifecycle-shell { padding: 0 2px var(--pi-message-padding); }
+    .goal-lifecycle { border-left: 3px solid var(--pi-accent); padding: 6px 12px; color: var(--pi-text); background: var(--pi-surface); border-radius: 6px; }
+    .goal-lifecycle > summary { cursor: pointer; font-weight: 600; }
+    .goal-lifecycle > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .goal-lifecycle > div { margin-top: 6px; overflow-wrap: anywhere; }
   `];
 }
