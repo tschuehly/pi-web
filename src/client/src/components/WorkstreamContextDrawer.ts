@@ -7,11 +7,12 @@ import { workstreamAccentColor } from "../workstreamColor";
 export class WorkstreamContextDrawer extends LitElement {
   @property({ attribute: false }) snapshot: WorkstreamSnapshot | null | undefined;
   @property() error = "";
+  @property() fallbackTitle = "";
 
   override render() {
     if (this.error !== "") return html`<div class="tab unavailable" role="status" title=${this.error}>Workstream unavailable</div>`;
     if (this.snapshot === undefined) return html`<div class="tab unavailable" role="status">Finding Workstream…</div>`;
-    if (this.snapshot === null) return html`<div class="tab unavailable">No Workstream associated</div>`;
+    if (this.snapshot === null) return html`<div class="tab unavailable" role="status" title=${this.fallbackTitle}>${this.fallbackTitle}</div>`;
 
     const overview = this.snapshot.overview;
     const checkpoint = latestCheckpoints(this.snapshot)[0]?.latestCheckpoint;
@@ -51,7 +52,7 @@ export class WorkstreamContextDrawer extends LitElement {
     details[open] summary::after { content: "↑"; }
     summary span { flex: 0 0 auto; color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
     summary strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-    .tab { color: var(--pi-muted); font-size: 12px; }
+    .tab { overflow: hidden; color: var(--pi-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .sheet { position: absolute; top: 100%; left: 0; right: 0; max-height: calc(100vh - 56px); overflow: auto; display: grid; padding: 20px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
     .row { position: relative; padding: 18px 0 12px; border-top: 1px solid var(--pi-border-muted); }
     .label { position: absolute; top: 0; left: 0; padding-right: 10px; color: var(--pi-accent); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; transform: translateY(-50%); }

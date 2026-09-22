@@ -11,6 +11,7 @@ import { readStoredThemePreference } from "../theme";
 import { PromptEditor } from "./PromptEditor";
 import { WorkbenchApp, rootProjectOf, rootProjects } from "./WorkbenchApp";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
+import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
 
 beforeEach(() => {
   vi.spyOn(api, "machines").mockResolvedValue([machine]);
@@ -586,7 +587,9 @@ describe("Workbench Chat controls", () => {
 
     const shell = app.shadowRoot?.querySelector(".chat-shell");
     if (shell === null || shell === undefined) throw new Error("Chat shell was not rendered");
-    expect(shell.querySelector("header > workstream-context-drawer")).not.toBeNull();
+    const drawer = shell.querySelector("header > workstream-context-drawer");
+    if (!(drawer instanceof WorkstreamContextDrawer)) throw new Error("Workstream context drawer was not rendered");
+    expect(drawer.fallbackTitle).toBe("Build the UI");
     expect(shell.querySelector("header > strong")).toBeNull();
     expect(shell.querySelector("delegate-roster")).not.toBeNull();
     expect(shell.querySelector("status-bar")).toBeNull();

@@ -15,6 +15,7 @@ import { PluginRegistry } from "../plugins/registry";
 import { themePackPlugin } from "../plugins/themes";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile } from "../presentationProfiles";
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
+import { sessionTitle } from "../sessionLabels";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
@@ -747,7 +748,7 @@ export class WorkbenchApp extends LitElement {
       <main class="chat-shell" data-view="chat" data-machine=${selectedMachineId(state)} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         <header>
           <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { this.sessions.deselectSession(); }}>←</button>
-          <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError}></workstream-context-drawer>
+          <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           ${this.renderSettingsPanel()}
@@ -894,9 +895,4 @@ function completeChatRoute(route: ParsedAppRoute): route is ParsedAppRoute & { p
 
 function isWorkbenchAgentSession(session: SessionInfo): boolean {
   return /^workbench-(?:coordinator|implementer|planner|reviewer|scout)-[0-9a-f]{8}$/u.test(session.name ?? "");
-}
-
-function sessionTitle(session: SessionInfo): string {
-  if (session.name !== undefined && session.name !== "") return session.name;
-  return session.firstMessage === "" ? session.id : session.firstMessage;
 }

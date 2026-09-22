@@ -68,6 +68,7 @@ describe("workstreamForSession", () => {
 describe("WorkstreamContextDrawer", () => {
   it("uses the selected pull-down design and reveals the actual overview language", async () => {
     const element = new WorkstreamContextDrawer();
+    element.fallbackTitle = "Unassociated Chat";
     element.snapshot = snapshot;
     document.body.append(element);
     await element.updateComplete;
@@ -75,6 +76,7 @@ describe("WorkstreamContextDrawer", () => {
     const root = element.shadowRoot;
     const details = root?.querySelector("details");
     expect(details?.querySelector("summary")?.textContent).toContain("Build the Workbench launcher");
+    expect(root?.textContent).not.toContain("Unassociated Chat");
     expect(details?.open).toBe(false);
     details?.querySelector("summary")?.click();
     expect(details?.open).toBe(true);
@@ -86,13 +88,35 @@ describe("WorkstreamContextDrawer", () => {
     expect(details?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor(snapshot.id));
   });
 
-  it("states when the Chat has no Workstream association", async () => {
+  it("shows the Chat title in the existing status tab when no Workstream is associated", async () => {
     const element = new WorkstreamContextDrawer();
+    element.fallbackTitle = "Named Chat";
     element.snapshot = null;
     document.body.append(element);
     await element.updateComplete;
 
-    expect(element.shadowRoot?.textContent).toContain("No Workstream associated");
+    const tab = element.shadowRoot?.querySelector<HTMLElement>(".tab");
+    expect(tab?.textContent).toBe("Named Chat");
+    expect(tab?.title).toBe("Named Chat");
+    expect(tab?.getAttribute("role")).toBe("status");
     expect(element.shadowRoot?.querySelector("details")).toBeNull();
+  });
+
+  it("keeps loading and error states ahead of the fallback title", async () => {
+    const element = new WorkstreamContextDrawer();
+    element.fallbackTitle = "Named Chat";
+    document.body.append(element);
+    await element.updateComplete;
+
+    let tab = element.shadowRoot?.querySelector<HTMLElement>(".tab");
+    expect(tab?.textContent).toBe("Finding Workstream…");
+    expect(tab?.getAttribute("role")).toBe("status");
+
+    element.error = "Workbench bridge unavailable";
+    await element.updateComplete;
+    tab = element.shadowRoot?.querySelector<HTMLElement>(".tab");
+    expect(tab?.textContent).toBe("Workstream unavailable");
+    expect(tab?.title).toBe("Workbench bridge unavailable");
+    expect(tab?.getAttribute("role")).toBe("status");
   });
 });
