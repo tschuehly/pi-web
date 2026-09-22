@@ -304,6 +304,19 @@ describe("Workbench Chat chooser", () => {
     expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
   });
 
+  it("does not start a Workstream from a temporary directory", async () => {
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const startSession = vi.spyOn(api, "startSession");
+    const app = await mountChooser([]);
+
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
+      detail: { workstreamId: "workstream", directories: ["/private/tmp/deleted-worktree"], prompt: "Continue" },
+    }));
+
+    await vi.waitFor(() => { expect(getState(app).error).toContain("temporary directory"); });
+    expect(startSession).not.toHaveBeenCalled();
+  });
+
   it("starts an empty Workstream in the selected workspace without a previous session", async () => {
     const started = session("first-session", "");
     const calls: WorkstreamServiceCall[] = [];

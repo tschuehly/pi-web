@@ -153,9 +153,14 @@ export function withAnchors(text: string): TemplateResult {
   return html`${parts}`;
 }
 
+export function isTemporaryDirectory(value: string): boolean {
+  return /^(?:\/private)?\/(?:tmp|var\/tmp|var\/folders)(?:\/|$)/.test(value)
+    || /^(?:[A-Za-z]:[\\/])(?:Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Temp|Temp)(?:[\\/]|$)/i.test(value);
+}
+
 export function directoriesOf(checkpoint: WorkstreamCheckpoint | undefined): string[] {
   // ponytail: path kind is heuristic because the browser cannot stat local references.
-  const absolute = (checkpoint?.references ?? []).filter((ref) => ref.startsWith("/"));
+  const absolute = (checkpoint?.references ?? []).filter((ref) => ref.startsWith("/") && !isTemporaryDirectory(ref));
   const files = absolute.filter((ref) => /\.[a-z0-9]{1,5}$/i.test(ref));
   const directories = absolute.filter((ref) => !files.includes(ref));
   if (directories.length > 0) return [...new Set(directories)];
