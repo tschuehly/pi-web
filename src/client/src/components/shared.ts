@@ -390,10 +390,10 @@ export const chatStyles = css`
   .thinking-group > formatted-text { display: block; min-width: 0; }
   .chat-image { display: block; max-width: 100%; max-height: 320px; margin: 8px 0 0; border: 1px solid var(--pi-border); border-radius: 8px; object-fit: contain; cursor: zoom-in; }
   .chat-image:focus-visible { outline: 2px solid var(--pi-accent, var(--pi-success-border)); outline-offset: 2px; }
-  dialog.image-zoom { position: fixed; inset: 0; margin: auto; max-width: calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)); max-height: calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: visible; }
+  dialog.image-zoom { --image-zoom-max-width: min(calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)), calc(var(--pi-workbench-viewport-width, 100vw) - env(safe-area-inset-left) - env(safe-area-inset-right))); --image-zoom-max-height: min(calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)), calc(var(--pi-workbench-viewport-height, 100vh) - env(safe-area-inset-top) - env(safe-area-inset-bottom))); position: fixed; inset: 0; margin: auto; max-width: var(--image-zoom-max-width); max-height: var(--image-zoom-max-height); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: hidden; }
   dialog.image-zoom[open] { display: flex; }
   dialog.image-zoom::backdrop { background: rgba(0, 0, 0, 0.8); }
-  .image-zoom-full { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 8px; object-fit: contain; cursor: zoom-out; }
+  .image-zoom-full { display: block; max-width: var(--image-zoom-max-width); max-height: var(--image-zoom-max-height); width: auto; height: auto; border-radius: 8px; object-fit: contain; cursor: zoom-out; }
   .image-zoom-close { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; font: 16px/1 system-ui, sans-serif; color: var(--pi-muted); background: color-mix(in srgb, var(--pi-surface) 88%, transparent); border: 1px solid var(--pi-border); border-radius: 6px; cursor: pointer; }
   .image-zoom-close:hover, .image-zoom-close:focus-visible { color: var(--pi-text-bright); border-color: var(--pi-accent); }
   .image-zoom-close:focus-visible { outline: 1px solid var(--pi-border); outline-offset: 2px; }

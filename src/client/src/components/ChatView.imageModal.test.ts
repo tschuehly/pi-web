@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatView } from "./ChatView";
 import { ModalSurface } from "./ModalSurface";
 import { hasRenderedModal } from "./modalLayerRegistry";
+import { chatStyles } from "./shared";
 
 const IMAGE_DATA = "iVBORw0KGgo=";
 
@@ -14,6 +15,18 @@ afterEach(() => {
 });
 
 describe("ChatView native image modal", () => {
+  it("uses the inherited Workbench viewport compensation contract", () => {
+    const dialog = rule("dialog.image-zoom");
+    const image = rule(".image-zoom-full");
+    expect(dialog).toContain("min(calc(96vw-");
+    expect(dialog).toContain("min(calc(96vh-");
+    expect(dialog).toContain("var(--pi-workbench-viewport-width,100vw)");
+    expect(dialog).toContain("var(--pi-workbench-viewport-height,100vh)");
+    expect(dialog).toContain("overflow:hidden");
+    expect(image).toContain("var(--image-zoom-max-width)");
+    expect(image).toContain("var(--image-zoom-max-height)");
+  });
+
   it("preserves cancel and backdrop close behavior while restoring the image trigger", async () => {
     const view = await mountImageView();
     const image = chatImage(view);
@@ -116,4 +129,9 @@ function appendButton(text: string): HTMLButtonElement {
 function requiredElement<T>(value: T | null | undefined, label: string): T {
   if (value === null || value === undefined) throw new Error(`Expected ${label}`);
   return value;
+}
+
+function rule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, "u").exec(chatStyles.cssText)?.[1]?.replace(/\s+/gu, "") ?? "";
 }

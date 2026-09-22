@@ -1,6 +1,6 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { applyInterfaceScale, INTERFACE_SCALE_STEPS, readStoredInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
+import { applyInterfaceScale, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STEPS, parseInterfaceScale, readStoredInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile, writeStoredPresentationProfile, type BuiltInPresentationProfileId } from "../presentationProfiles";
 import type { QualifiedThemeContribution, QualifiedThemePairContribution } from "../plugins/types";
 import { findThemePairForTheme, type ThemePreference } from "../theme";
@@ -98,15 +98,20 @@ export class WorkbenchSettingsPanel extends LitElement {
 
   private toggle(): void {
     if (this.open) { this.close(); return; }
-    const rect = this.renderRoot.querySelector(".trigger")?.getBoundingClientRect();
-    this.anchorTop = (rect?.bottom ?? 0) + 6;
-    this.anchorRight = Math.max(8, window.innerWidth - (rect?.right ?? window.innerWidth));
+    const appliedScale = parseInterfaceScale(document.documentElement.style.getPropertyValue(INTERFACE_SCALE_CSS_PROPERTY)) ?? this.scale;
+    this.positionPopover(appliedScale);
     this.open = true;
     document.addEventListener("click", this.onDocumentClick);
     window.addEventListener("resize", this.onWindowResize);
     void this.updateComplete.then(() => {
       this.renderRoot.querySelector<HTMLElement>(".popover input, .popover select")?.focus();
     });
+  }
+
+  private positionPopover(scale: number): void {
+    const rect = this.renderRoot.querySelector(".trigger")?.getBoundingClientRect();
+    this.anchorTop = ((rect?.bottom ?? 0) + 6) / scale;
+    this.anchorRight = Math.max(8, window.innerWidth - (rect?.right ?? window.innerWidth)) / scale;
   }
 
   private close(): void {
@@ -137,6 +142,7 @@ export class WorkbenchSettingsPanel extends LitElement {
     writeStoredInterfaceScale(scale);
     applyInterfaceScale(scale);
     this.scale = scale;
+    this.positionPopover(scale);
   }
 
   private setProfile(id: BuiltInPresentationProfileId): void {
@@ -151,7 +157,7 @@ export class WorkbenchSettingsPanel extends LitElement {
     .trigger { box-sizing: border-box; width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--pi-muted); font-size: 16px; cursor: pointer; }
     .trigger:hover { border-color: var(--pi-border); color: var(--pi-text); background: var(--pi-surface-hover); }
     .trigger:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .popover { position: fixed; z-index: 20; box-sizing: border-box; width: min(260px, calc(100vw - 24px)); display: grid; gap: 12px; padding: 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 12px 30px var(--pi-shadow); }
+    .popover { position: fixed; z-index: 20; box-sizing: border-box; width: min(260px, calc(var(--pi-workbench-viewport-width, 100vw) - 24px)); display: grid; gap: 12px; padding: 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 12px 30px var(--pi-shadow); }
     fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 6px; }
     legend { padding: 0; margin-bottom: 4px; color: var(--pi-text); font-size: 12px; font-weight: 700; text-transform: uppercase; }
     label { color: var(--pi-text); font-size: 13px; }
