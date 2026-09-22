@@ -37,8 +37,8 @@ describe("settings-shortcuts-panel layout", () => {
     expect(panel.onReload).toHaveBeenCalledOnce();
     expect(panel.renderRoot.querySelector(".config-path-card")?.textContent).toContain("/tmp/pi-web/config.json");
     expect(panel.renderRoot.querySelector("h3")?.textContent).toBe("Chat composer");
-    expect(row(panel, COMPOSER_SEND_DESKTOP).textContent).toContain("Send message — desktop");
-    expect(row(panel, COMPOSER_SEND_MOBILE).textContent).toContain("Send message — touch or narrow screen");
+    expect(row(panel, COMPOSER_SEND_DESKTOP).textContent).toContain("Send message — fine pointer");
+    expect(row(panel, COMPOSER_SEND_MOBILE).textContent).toContain("Send message — coarse pointer");
     expect(panel.renderRoot.querySelectorAll("article")).toHaveLength(2);
     expect(panel.renderRoot.querySelector('input[type="radio"]')).toBeNull();
     expect(panel.renderRoot.textContent).not.toContain("No actions registered.");

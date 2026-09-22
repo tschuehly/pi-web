@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { COMPOSER_SEND_DESKTOP, COMPOSER_SEND_MOBILE } from "../composerShortcuts";
+import { PROMPT_ENTER_PREFERENCE_STORAGE_KEY } from "../promptEnterBehavior";
 import { PromptEditor } from "./PromptEditor";
-import { api } from "../api";
+import { api, type SlashCommand } from "../api";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -10,12 +11,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function mount(shortcut: string | null, mobile = false) {
-  const media = window.matchMedia("(pointer: coarse)");
-  Object.defineProperty(media, "matches", { value: mobile });
-  vi.spyOn(window, "matchMedia").mockReturnValue(media);
+async function mount(shortcut: string | null | undefined, coarsePointer = false, width = 1200) {
+  const matchMedia = window.matchMedia.bind(window);
+  vi.spyOn(window, "matchMedia").mockImplementation((query) => {
+    const media = matchMedia(query);
+    Object.defineProperty(media, "matches", { value: coarsePointer || (query.includes("max-width") && width <= 760) });
+    return media;
+  });
   const editor = new PromptEditor();
-  editor.shortcuts = { [COMPOSER_SEND_DESKTOP]: shortcut, [COMPOSER_SEND_MOBILE]: shortcut };
+  editor.shortcuts = shortcut === undefined ? {} : { [COMPOSER_SEND_DESKTOP]: shortcut, [COMPOSER_SEND_MOBILE]: shortcut };
   editor.onSend = vi.fn();
   document.body.append(editor);
   await editor.updateComplete;
@@ -30,6 +34,75 @@ function press(editor: PromptEditor, key: string, modifiers: KeyboardEventInit =
 }
 
 describe("composer keyboard handling", () => {
+  it.each([500, 1200])("keeps fine-pointer auto Enter behavior at %ipx", async (width) => {
+    const editor = await mount(undefined, false, width);
+    press(editor, "Enter", { shiftKey: true });
+    expect(editor.view?.state.doc.toString()).toBe("Hello\n");
+    expect(editor.onSend).not.toHaveBeenCalled();
+
+    press(editor, "Enter");
+    expect(editor.onSend).toHaveBeenCalledWith("Hello", undefined, undefined, undefined, undefined);
+  });
+
+  it.each([
+    { canSteer: false, isCompacting: false, expected: undefined },
+    { canSteer: true, isCompacting: false, expected: "steer" },
+    { canSteer: false, isCompacting: true, expected: "followUp" },
+  ] as const)("uses the primary $expected action on fine-pointer plain Enter", async ({ canSteer, isCompacting, expected }) => {
+    const editor = await mount(undefined);
+    editor.canSteer = canSteer;
+    editor.isCompacting = isCompacting;
+    press(editor, "Enter");
+    expect(editor.onSend).toHaveBeenCalledWith("Hello", expected, undefined, undefined, undefined);
+  });
+
+  it("queues follow-ups with Cmd/Ctrl+Enter in auto", async () => {
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+      const editor = await mount(undefined);
+      editor.canSteer = true;
+      press(editor, "Enter", modifier);
+      expect(editor.onSend).toHaveBeenCalledWith("Hello", "followUp", undefined, undefined, undefined);
+      editor.remove();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("keeps the coarse-pointer auto fallback and held Shift through unrelated keydowns", async () => {
+    const editor = await mount(undefined, true, 1200);
+    press(editor, "Enter");
+    expect(editor.view?.state.doc.toString()).toBe("Hello\n");
+    expect(editor.onSend).not.toHaveBeenCalled();
+
+    press(editor, "Shift", { shiftKey: true });
+    press(editor, "a", { shiftKey: true });
+    press(editor, "Enter", { shiftKey: true });
+    expect(editor.onSend).toHaveBeenCalledWith("Hello", undefined, undefined, undefined, undefined);
+  });
+
+  it("preserves explicit send, newline, and None preferences", async () => {
+    localStorage.setItem(PROMPT_ENTER_PREFERENCE_STORAGE_KEY, "send");
+    const sendEditor = await mount(undefined, true);
+    press(sendEditor, "Enter");
+    expect(sendEditor.onSend).toHaveBeenCalledOnce();
+    sendEditor.remove();
+    vi.restoreAllMocks();
+
+    localStorage.setItem(PROMPT_ENTER_PREFERENCE_STORAGE_KEY, "newline");
+    const newlineEditor = await mount(undefined, false);
+    press(newlineEditor, "Enter");
+    expect(newlineEditor.view?.state.doc.toString()).toBe("Hello\n");
+    expect(newlineEditor.onSend).not.toHaveBeenCalled();
+    press(newlineEditor, "Enter", { shiftKey: true });
+    expect(newlineEditor.onSend).toHaveBeenCalledOnce();
+    newlineEditor.remove();
+    vi.restoreAllMocks();
+
+    const noneEditor = await mount(null);
+    noneEditor.canSteer = true;
+    press(noneEditor, "Enter", { ctrlKey: true });
+    expect(noneEditor.onSend).not.toHaveBeenCalled();
+  });
+
   it("inserts newlines with Enter/Shift+Enter and sends with the configured combination", async () => {
     const editor = await mount("mod+enter");
     press(editor, "Enter");
@@ -84,8 +157,31 @@ describe("composer keyboard handling", () => {
     expect(editor.onSend).not.toHaveBeenCalled();
   });
 
+  it("clears stale suggestions before Enter handles a new query", async () => {
+    let resolveLookup: ((commands: SlashCommand[]) => void) | undefined;
+    const pendingLookup = new Promise<SlashCommand[]>((resolve) => { resolveLookup = resolve; });
+    vi.spyOn(api, "commands")
+      .mockResolvedValueOnce([{ name: "tree", source: "builtin" }])
+      .mockReturnValueOnce(pendingLookup);
+    const editor = await mount(undefined);
+    editor.sessionId = "test-session";
+    editor.cwd = "/repo";
+    await editor.updateComplete;
+    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: "/tr" }, selection: { anchor: 3 } });
+    await vi.waitFor(() => {
+      expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/tree");
+    });
+
+    editor.view?.dispatch({ changes: { from: 3, insert: "e" }, selection: { anchor: 4 } });
+    press(editor, "Enter");
+    expect(editor.onSend).toHaveBeenCalledWith("/tre", undefined, undefined, undefined, undefined);
+
+    resolveLookup?.([{ name: "tree", source: "builtin" }]);
+    await pendingLookup;
+  });
+
   it("does not submit while composing", async () => {
-    const editor = await mount("enter");
+    const editor = await mount(undefined);
     press(editor, "Enter", { isComposing: true });
     expect(editor.onSend).not.toHaveBeenCalled();
   });

@@ -17,7 +17,7 @@ import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
 import { clearStagedAttachments, loadStagedAttachments, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
-import { composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
+import { composerSendShortcut, matchesComposerSend, usesAutomaticComposerEnter } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge } from "./promptEditorIcons";
@@ -396,11 +396,9 @@ export class PromptEditor extends LitElement {
   private async refreshCompletions() {
     const trigger = this.currentTrigger();
     const version = ++this.requestVersion;
+    this.completions = [];
     this.selectedIndex = 0;
-    if (trigger === undefined) {
-      this.completions = [];
-      return;
-    }
+    if (trigger === undefined) return;
     if (trigger.kind === "command" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
       const commands = await api.commands({ id: this.sessionId, cwd: this.cwd }, this.machineId).catch(emptySlashCommands);
       if (version !== this.requestVersion) return;
@@ -465,6 +463,7 @@ export class PromptEditor extends LitElement {
     // Keep Enter/newline handling and IME composition inside the editor, too.
     return event.isComposing || this.editor.composing
       || (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey)
+      || (isPrimaryModifierEnter(event) && usesAutomaticComposerEnter(this.shortcuts, this.mobilePromptEnterMedia))
       || this.matchesSendShortcut(event);
   }
 
@@ -481,17 +480,16 @@ export class PromptEditor extends LitElement {
       return false;
     }
     if (event.defaultPrevented || event.isComposing || view.composing) return false;
-    const primaryModifierEnter = event.key === "Enter" && !event.altKey && (event.ctrlKey || event.metaKey);
+    const primaryModifierEnter = isPrimaryModifierEnter(event);
     const send = this.matchesSendShortcut(event);
     const plainEnter = event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey
       && !shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia);
-    this.explicitShiftKeyActive = false;
     if (plainEnter && this.completions.length) {
       const completion = this.completions[this.selectedIndex];
       if (completion !== undefined) this.pick(completion);
       return true;
     }
-    if (primaryModifierEnter && (this.canSteer || this.isCompacting)) {
+    if (primaryModifierEnter && (send || usesAutomaticComposerEnter(this.shortcuts, this.mobilePromptEnterMedia))) {
       this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, true));
       return true;
     }
@@ -599,6 +597,10 @@ function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus
     && a.contextUsage?.percent === b.contextUsage?.percent
     && a.cost === b.cost
     && a.pendingMessageCount === b.pendingMessageCount);
+}
+
+function isPrimaryModifierEnter(event: KeyboardEvent): boolean {
+  return event.key === "Enter" && !event.altKey && !event.shiftKey && (event.ctrlKey || event.metaKey);
 }
 
 function draftStorageKey(machineId: unknown, sessionId: unknown): string | undefined {
