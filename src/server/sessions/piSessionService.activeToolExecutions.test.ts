@@ -69,7 +69,7 @@ describe("PiSessionService active tool executions", () => {
     }
   });
 
-  it("keeps the bounded snapshot deterministic and labels generic", async () => {
+  it("retains the oldest bounded executions and admits a later start after one ends", async () => {
     const hub = new CapturingSessionEventHub();
     const fake = fakeRuntime();
     const service = createService(hub, () => Promise.resolve(fake.runtime));
@@ -89,15 +89,25 @@ describe("PiSessionService active tool executions", () => {
       expect(executions).toHaveLength(ACTIVE_TOOL_EXECUTION_LIMIT);
       expect(executions.map(({ id }) => id)).toEqual(Array.from(
         { length: ACTIVE_TOOL_EXECUTION_LIMIT },
-        (_, index) => `tool:call-${String(index + 4).padStart(2, "0")}`,
+        (_, index) => `tool:call-${String(index).padStart(2, "0")}`,
       ));
       expect(executions.every(({ label }) => label === "Shell command" && label.length <= ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH)).toBe(true);
       expect(JSON.stringify(executions)).not.toContain("secret-");
       expect((await service.status(sessionRef("session-1"))).activeToolExecutions).toEqual(executions);
 
-      for (let index = 4; index < ACTIVE_TOOL_EXECUTION_LIMIT + 4; index += 1) {
+      fake.emit({ type: "tool_execution_end", toolCallId: "call-00", toolName: "bash", isError: false, result: {} });
+      fake.emit({ type: "tool_execution_start", toolCallId: "call-admitted", toolName: "bash", args: { command: "echo still-secret" } });
+      const admitted = (await service.status(sessionRef("session-1"))).activeToolExecutions ?? [];
+      expect(admitted.map(({ id }) => id)).toEqual([
+        ...Array.from({ length: ACTIVE_TOOL_EXECUTION_LIMIT - 1 }, (_, index) => `tool:call-${String(index + 1).padStart(2, "0")}`),
+        "tool:call-admitted",
+      ]);
+      expect((await service.status(sessionRef("session-1"))).activeToolExecutions).toEqual(admitted);
+
+      for (let index = 1; index < ACTIVE_TOOL_EXECUTION_LIMIT + 4; index += 1) {
         fake.emit({ type: "tool_execution_end", toolCallId: `call-${String(index).padStart(2, "0")}`, toolName: "bash", isError: false, result: {} });
       }
+      fake.emit({ type: "tool_execution_end", toolCallId: "call-admitted", toolName: "bash", isError: false, result: {} });
       expect((await service.status(sessionRef("session-1"))).activeToolExecutions).toBeUndefined();
     } finally {
       await service.dispose();
@@ -136,17 +146,13 @@ describe("PiSessionService active tool executions", () => {
     }
   });
 
-  it("tracks interactive shell completion, error, and abort with daemon-owned ids", async () => {
+  it("tracks interactive shell completion and error with daemon-owned ids", async () => {
     const runs: ReturnType<typeof deferred<BashResult>>[] = [];
     const fake = fakeRuntime("session-1", {
       executeBash: () => {
         const run = deferred<BashResult>();
         runs.push(run);
         return run.promise;
-      },
-      abort: () => {
-        runs.at(-1)?.reject(new DOMException("aborted", "AbortError"));
-        return Promise.resolve();
       },
     });
     const service = createService(new CapturingSessionEventHub(), () => Promise.resolve(fake.runtime));
@@ -167,11 +173,36 @@ describe("PiSessionService active tool executions", () => {
       runs[1]?.reject(new Error("failed"));
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect((await service.status(sessionRef("session-1"))).activeToolExecutions).toBeUndefined();
+    } finally {
+      await service.dispose();
+    }
+  });
 
+  it("aborts agent tool rows without aborting an independently running interactive shell", async () => {
+    const run = deferred<BashResult>();
+    const fake = fakeRuntime("session-1", { executeBash: () => run.promise });
+    const service = createService(new CapturingSessionEventHub(), () => Promise.resolve(fake.runtime));
+    try {
+      await service.start("/workspace");
       await service.shell(sessionRef("session-1"), "!sleep 60");
-      expect((await service.status(sessionRef("session-1"))).activeToolExecutions).toHaveLength(1);
+      fake.emit({ type: "tool_execution_start", toolCallId: "call-agent", toolName: "bash", args: { command: "printf super-secret" } });
+
+      const before = await service.status(sessionRef("session-1"));
+      const shellExecution = before.activeToolExecutions?.find(({ id }) => id.startsWith("shell:"));
+      expect(before.isBashRunning).toBe(true);
+      expect(before.activeToolExecutions?.map(({ id }) => id)).toEqual([shellExecution?.id, "tool:call-agent"]);
+
       await service.abort(sessionRef("session-1"));
-      expect((await service.status(sessionRef("session-1"))).activeToolExecutions).toBeUndefined();
+      const afterAbort = await service.status(sessionRef("session-1"));
+      expect(fake.calls.abort).toBe(1);
+      expect(afterAbort.isBashRunning).toBe(true);
+      expect(afterAbort.activeToolExecutions).toEqual([shellExecution]);
+
+      run.reject(new Error("interactive shell failed"));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const settled = await service.status(sessionRef("session-1"));
+      expect(settled.isBashRunning).toBe(false);
+      expect(settled.activeToolExecutions).toBeUndefined();
     } finally {
       await service.dispose();
     }

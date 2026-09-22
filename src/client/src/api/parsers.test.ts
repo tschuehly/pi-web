@@ -619,11 +619,11 @@ describe("API parsers", () => {
       ...statusWire(),
       activeToolExecutions: [
         { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" },
-        { id: "tool:call-2", kind: "process", toolName: "process", label: "Process" },
+        { id: "shell:1", kind: "shell", toolName: "shell", label: "Interactive shell" },
       ],
     }).activeToolExecutions).toEqual([
       { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" },
-      { id: "tool:call-2", kind: "process", toolName: "process", label: "Process" },
+      { id: "shell:1", kind: "shell", toolName: "shell", label: "Interactive shell" },
     ]);
   });
 

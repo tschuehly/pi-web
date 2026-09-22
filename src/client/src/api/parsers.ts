@@ -581,7 +581,7 @@ function optionalActiveToolExecutions(value: unknown): Pick<SessionStatus, "acti
 function parseActiveToolExecution(value: unknown): NonNullable<SessionStatus["activeToolExecutions"]>[number] {
   const record = requireRecord(value);
   const kind = requireString(record, "kind");
-  if (kind !== "shell" && kind !== "process") throw new Error("Invalid active tool execution kind");
+  if (kind !== "shell") throw new Error("Invalid active tool execution kind");
   const id = requireBoundedNonEmptyString(record, "id", ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH);
   const toolName = requireBoundedNonEmptyString(record, "toolName", ACTIVE_TOOL_EXECUTION_TOOL_NAME_MAX_LENGTH);
   const label = requireBoundedNonEmptyString(record, "label", ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH);

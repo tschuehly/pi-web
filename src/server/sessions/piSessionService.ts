@@ -3320,7 +3320,7 @@ export class PiSessionService implements SessionRouteService {
     const sessionId = active.runtime.session.sessionId;
     this.clearCompactionPromptQueue(sessionId);
     this.runtimePromptProvenance.delete(active.runtime.session);
-    this.activeToolExecutions.delete(active.runtime.session);
+    this.clearAgentToolExecutions(active.runtime.session);
     clearSessionQueue(active.runtime.session);
     // Settle run-scoped dialogs now, at abort-request time: pi's agent loop
     // waits for a parked `tool_call` dialog handler before it can emit
@@ -4522,12 +4522,8 @@ export class PiSessionService implements SessionRouteService {
 
   private addActiveToolExecution(session: PiAgentSession, execution: ActiveToolExecution): void {
     const executions = this.activeToolExecutions.get(session) ?? new Map<string, ActiveToolExecution>();
-    if (executions.has(execution.id)) return;
+    if (executions.has(execution.id) || executions.size >= ACTIVE_TOOL_EXECUTION_LIMIT) return;
     executions.set(execution.id, { ...execution, label: execution.label.slice(0, ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH) });
-    while (executions.size > ACTIVE_TOOL_EXECUTION_LIMIT) {
-      const oldest = executions.keys().next();
-      if (oldest.done === false) executions.delete(oldest.value);
-    }
     this.activeToolExecutions.set(session, executions);
   }
 
@@ -4535,6 +4531,15 @@ export class PiSessionService implements SessionRouteService {
     const executions = this.activeToolExecutions.get(session);
     if (executions === undefined) return;
     executions.delete(id);
+    if (executions.size === 0) this.activeToolExecutions.delete(session);
+  }
+
+  private clearAgentToolExecutions(session: PiAgentSession): void {
+    const executions = this.activeToolExecutions.get(session);
+    if (executions === undefined) return;
+    for (const id of executions.keys()) {
+      if (id.startsWith("tool:")) executions.delete(id);
+    }
     if (executions.size === 0) this.activeToolExecutions.delete(session);
   }
 
@@ -4554,14 +4559,7 @@ export class PiSessionService implements SessionRouteService {
       this.endActiveToolExecution(session, `tool:${toolCallId}`);
       return;
     }
-    if (eventType === "agent_end") {
-      const executions = this.activeToolExecutions.get(session);
-      if (executions === undefined) return;
-      for (const id of executions.keys()) {
-        if (id.startsWith("tool:")) executions.delete(id);
-      }
-      if (executions.size === 0) this.activeToolExecutions.delete(session);
-    }
+    if (eventType === "agent_end") this.clearAgentToolExecutions(session);
   }
 
   private activeToolExecutionSnapshot(session: PiAgentSession): ActiveToolExecution[] {
@@ -4590,8 +4588,6 @@ export class PiSessionService implements SessionRouteService {
       this.publishActivity(session, isError ? "tool failed" : "tool complete", isError ? "error" : "idle", getString(event, "toolName"));
       return;
     }
-    if (eventType === "bash_execution_start") { this.publishActivity(session, "running bash", "active"); return; }
-    if (eventType === "bash_execution_end") { this.publishActivity(session, "bash complete", "idle"); return; }
     if (this.hasActiveWork(session)) this.publishActivity(session, eventType.replaceAll("_", " "), "active");
   }
 

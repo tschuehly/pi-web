@@ -77,12 +77,13 @@ describe("PiSessionService daemon-owned unread state", () => {
     }
   });
 
-  it("tracks service-owned activity even while runtime status flags look idle", async () => {
+  it("tracks shell activity until the fake executeBash promise settles", async () => {
     const unreadStore = new SessionUnreadStore({ createCatalogId: () => "catalog-test" });
-    const fake = fakeRuntime("session-1");
     let finishBash: (() => void) | undefined;
-    fake.session.executeBash = () => new Promise((resolve) => {
-      finishBash = () => { resolve({ output: "done", exitCode: 0, cancelled: false, truncated: false }); };
+    const fake = fakeRuntime("session-1", {
+      executeBash: () => new Promise((resolve) => {
+        finishBash = () => { resolve({ output: "done", exitCode: 0, cancelled: false, truncated: false }); };
+      }),
     });
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
@@ -98,7 +99,7 @@ describe("PiSessionService daemon-owned unread state", () => {
       await service.status(sessionRef("session-1"));
       await service.shell(sessionRef("session-1"), "!echo done");
       expect(fake.session.isStreaming).toBe(false);
-      expect(fake.session.isBashRunning).toBe(false);
+      expect(fake.session.isBashRunning).toBe(true);
       expect((await service.unreadCatalog()).sessions).toEqual([]);
 
       finishBash?.();

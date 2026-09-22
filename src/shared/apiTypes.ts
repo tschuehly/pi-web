@@ -1126,10 +1126,15 @@ export const ACTIVE_TOOL_EXECUTION_TOOL_NAME_MAX_LENGTH = 64;
 export const ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH = 80;
 export const ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH = 64;
 
-/** A safe, bounded description of one daemon-observed shell or process execution. */
+/**
+ * A safe, bounded description of a daemon-observed built-in `bash` tool call
+ * or interactive `!` shell. Process-monitor watchers are reported separately
+ * through extension status key `pi-process-monitor:watchers`; child Pi work is
+ * reported through delegate activity.
+ */
 export interface ActiveToolExecution {
   id: string;
-  kind: "shell" | "process";
+  kind: "shell";
   toolName: string;
   label: string;
   startedAt?: string;
@@ -1191,8 +1196,10 @@ export interface SessionStatus {
    */
   pendingDialogs?: PendingExtensionDialog[];
   /**
-   * Currently running shell/process executions observed by the session daemon.
-   * Labels are generic and never contain commands, arguments, cwd, or environment.
+   * Up to the 32 oldest currently running executions observed by the session
+   * daemon. Newer starts are omitted while the bound is full; a later start can
+   * be admitted after an older row ends. Labels are generic and never contain
+   * commands, arguments, cwd, or environment.
    */
   activeToolExecutions?: ActiveToolExecution[];
   /** Disposable extension UI status entries owned by the current live runtime. */
