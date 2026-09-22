@@ -1,8 +1,11 @@
+// @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
 import { PromptEditor } from "./PromptEditor";
 
 afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -67,6 +70,35 @@ describe("PromptEditor command completions", () => {
     expect(currentCompletions(editor)).toEqual([
       { kind: "command", replaceFrom: 9, replaceTo: 18, insertText: "/skill:review", detail: "skill" },
     ]);
+  });
+
+  it.each(["Tab", "Enter"])("keeps punctuation attached to the active skill with %s, including a mid-token cursor", async (key) => {
+    vi.spyOn(api, "commands").mockResolvedValue([{ name: "skill:Re_View", source: "skill" }]);
+    const editor = new PromptEditor();
+    editor.sessionId = "session-1";
+    editor.cwd = "/repo";
+    document.body.append(editor);
+    await editor.updateComplete;
+    const draft = "ask /skill:old /skill:Re_V, now";
+    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.indexOf(",") + 1 } });
+    await vi.waitFor(() => { expect(currentCompletions(editor)).toHaveLength(1); });
+    editor.view?.dispatch({ selection: { anchor: draft.indexOf("Re_V") + 2 } });
+    await vi.waitFor(() => { expect(currentCompletions(editor)).toHaveLength(1); });
+    editor.view?.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    expect(editor.view?.state.doc.toString()).toBe("ask /skill:old /skill:Re_View, now");
+  });
+
+  it("retains legacy loaded mixed-case and underscore skill names, not other inline commands", async () => {
+    vi.spyOn(api, "commands").mockResolvedValue([
+      { name: "skill:Mixed_Case", source: "skill" }, { name: "template", source: "prompt" }, { name: "extension", source: "extension" },
+    ]);
+    const editor = new PromptEditor();
+    editor.sessionId = "session-1";
+    editor.cwd = "/repo";
+    await refreshCompletions(editor, "ask /skill:mixed_");
+    expect(currentCompletions(editor)).toEqual([{ kind: "command", replaceFrom: 4, replaceTo: 17, insertText: "/skill:Mixed_Case", detail: "skill" }]);
+    await refreshCompletions(editor, "/ex");
+    expect(currentCompletions(editor)).toEqual([{ kind: "command", replaceFrom: 0, replaceTo: 3, insertText: "/extension", detail: "extension" }]);
   });
 
   it("filters commands by the typed query", async () => {

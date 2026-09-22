@@ -748,7 +748,7 @@ export class PromptEditor extends LitElement {
   }
 
   private currentTrigger(): PromptCompletionTrigger | undefined {
-    return detectPromptCompletionTrigger(this.draft, this.editor?.state.selection.main.head ?? this.draft.length);
+    return detectPromptCompletionTrigger(this.draft, this.editor?.state.selection.main.head ?? this.draft.length, this.knownCommandNames);
   }
 
   private moveCompletion(delta: number): boolean {
@@ -853,7 +853,7 @@ export class PromptEditor extends LitElement {
   private pick(item: CompletionItem) {
     const editor = this.editor;
     if (!editor || !this.completionsAreCurrent() || !this.completions.includes(item)) return;
-    const suffix = item.kind === "file" && (item.insertText.endsWith("/") || item.cursorOffset !== undefined) || item.kind === "command" && /\s/.test(this.draft[item.replaceTo] ?? "") ? "" : " ";
+    const suffix = item.kind === "file" && (item.insertText.endsWith("/") || item.cursorOffset !== undefined) || item.kind === "command" && (/\s/.test(this.draft[item.replaceTo] ?? "") || item.insertText.startsWith("/skill:") && /[,.!?;:]/.test(this.draft[item.replaceTo] ?? "")) ? "" : " ";
     const cursor = item.replaceFrom + (item.cursorOffset ?? item.insertText.length) + suffix.length;
     const replaceTo = item.insertText.endsWith("\"") && this.draft.slice(item.replaceTo).startsWith("\"") ? item.replaceTo + 1 : item.replaceTo;
     editor.dispatch({

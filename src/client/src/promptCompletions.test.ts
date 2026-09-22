@@ -69,6 +69,40 @@ describe("detectPromptCompletionTrigger", () => {
     expect(detectPromptCompletionTrigger("review /skill:rev/path")).toBeUndefined();
   });
 
+  it("excludes one trailing prose mark from skill replacement, even when the cursor is on it", () => {
+    for (const mark of [",", ".", "!", "?", ";", ":"]) {
+      const draft = `/skill:other ask /skill:Re_V${mark} later`;
+      const from = draft.indexOf("/skill:Re_V");
+      const expected = { kind: "command", query: "skill:Re_V", from, to: from + 11 };
+      expect(detectPromptCompletionTrigger(draft, from + 11)).toEqual(expected);
+      expect(detectPromptCompletionTrigger(draft, from + 12)).toEqual(expected);
+      expect(detectPromptCompletionTrigger(draft, from + 9)).toEqual({ ...expected, query: "skill:Re" });
+    }
+  });
+
+  it("leaves literal examples alone across lines but accepts later real directives", () => {
+    for (const example of [
+      'say "/skill:rev"', "say '/skill:rev'", "say `/skill:rev`",
+      "> /skill:rev", "```ts\n/skill:rev\n```", "~~~\n/skill:rev\n~~~",
+    ]) {
+      const inside = example.indexOf("/skill:rev");
+      expect(detectPromptCompletionTrigger(example, inside + 10)).toBeUndefined();
+      const draft = `${example}\nplease /skill:rev`;
+      expect(detectPromptCompletionTrigger(draft)).toEqual({ kind: "command", query: "skill:rev", from: draft.lastIndexOf("/skill:rev"), to: draft.length });
+    }
+    expect(detectPromptCompletionTrigger("unmatched ' prose /skill:rev")).toEqual({ kind: "command", query: "skill:rev", from: 18, to: 28 });
+    expect(detectPromptCompletionTrigger('unmatched " prose /skill:rev')).toEqual({ kind: "command", query: "skill:rev", from: 18, to: 28 });
+  });
+
+  it("does not suggest malformed, ambiguous, URL or code-like tokens", () => {
+    for (const draft of ["/skill:rev!!", "/skill:rev,more", "/skill:rev/path", "/skill:rev.ts", "/skill:rev=foo", "/skill:rev()",  "read https://host/skill:rev", "read src/skill:rev", "run `/skill:rev` now", "foo/skill:rev"]) {
+      expect(detectPromptCompletionTrigger(draft)).toBeUndefined();
+    }
+    expect(detectPromptCompletionTrigger("/skill:rev!!", 10)).toBeUndefined();
+    expect(detectPromptCompletionTrigger("/skill:Rev_Name", 15, new Set(["skill:Rev_Name"]))).toEqual({ kind: "command", query: "skill:Rev_Name", from: 0, to: 15 });
+    expect(detectPromptCompletionTrigger("/skill:legacy.name", 18, new Set(["skill:legacy.name"]))).toEqual({ kind: "command", query: "skill:legacy.name", from: 0, to: 18 });
+  });
+
   it("replaces the entire active skill token even with the cursor in its middle", () => {
     expect(detectPromptCompletionTrigger("/skill:a /skill:rev later", 17)).toEqual({ kind: "command", query: "skill:r", from: 9, to: 19 });
     expect(detectPromptCompletionTrigger("/template later", 4)).toEqual({ kind: "command", query: "tem", from: 0, to: 9 });
