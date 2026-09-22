@@ -9,6 +9,7 @@ import { corePlugin } from "../plugins/core";
 import type { WorkspacePanelContext } from "../plugins/types";
 import { PiWebApp } from "./PiWebApp";
 import { ChatView } from "./ChatView";
+import { DelegateRoster } from "./DelegateRoster";
 import { FormattedText } from "./FormattedText";
 import { WorkspacePanel } from "./WorkspacePanel";
 import { WorkspaceList } from "./WorkspaceList";
@@ -48,6 +49,20 @@ afterEach(() => {
 });
 
 describe("application rendering boundaries", () => {
+  it("keeps PiWebApp-owned delegate roster disclosure state for the mounted window", async () => {
+    const app = await mountApp({ selectedSession: session, sessions: [session] });
+    await settle(app);
+    const roster = app.shadowRoot?.querySelector("delegate-roster");
+    if (!(roster instanceof DelegateRoster)) throw new Error("Expected delegate roster");
+    expect(roster.collapsed).toBe(false);
+
+    roster.onToggleCollapsed?.();
+    await settle(app);
+    const collapsedRoster = app.shadowRoot?.querySelector("delegate-roster");
+    if (!(collapsedRoster instanceof DelegateRoster)) throw new Error("Expected collapsed delegate roster");
+    expect(collapsedRoster.collapsed).toBe(true);
+  });
+
   it("does not update the selected chat for unrelated shell state, but does update its transcript", async () => {
     const app = await mountApp({ selectedSession: session, sessions: [session], messages: [{ role: "user", parts: [{ type: "text", text: "hello" }] }] });
     await settle(app);

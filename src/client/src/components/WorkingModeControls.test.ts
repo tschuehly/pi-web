@@ -47,12 +47,17 @@ describe("WorkingModeControls", () => {
 });
 
 describe("DelegateRoster", () => {
-  it("renders a running subagent and a terminal uncollected row compactly", async () => {
+  it("returns no roster for an empty activity snapshot", async () => {
     const element = new DelegateRoster();
     document.body.append(element);
     await element.updateComplete;
-    expect(root(element).querySelector("section")).toBeNull();
 
+    expect(root(element).querySelector("section")).toBeNull();
+  });
+
+  it("renders a running subagent and a terminal uncollected row compactly", async () => {
+    const element = new DelegateRoster();
+    document.body.append(element);
     const longObjective = "Review the complete delegate roster implementation and every narrow-width layout edge case before reporting findings";
     element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
       { id: "one", kind: "subagent", name: "Roster implementation", role: "implementation", model: "openai-codex/gpt-5.6-sol-20260921", effort: "medium", objective: longObjective, activity: "running tests", reportedStatus: "Wiring the roster CSS" },
@@ -61,6 +66,10 @@ describe("DelegateRoster", () => {
     await element.updateComplete;
     const rows = [...root(element).querySelectorAll<HTMLElement>(".row")];
     expect(rows).toHaveLength(2);
+    expect(root(element).querySelector(".section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+    expect(root(element).querySelector(".section-name")?.textContent).toContain("Workers & Subagents");
+    expect(root(element).querySelector(".section-count")?.textContent).toBe("2");
+    expect(root(element).querySelector(".aggregate")?.textContent).toBe("1 running · 1 uncollected");
     const running = required(rows[0]);
     expect(running.querySelector(".kind")?.getAttribute("aria-label")).toBe("Subagent");
     expect(running.querySelector(".state")?.getAttribute("aria-label")).toBe("Running");
@@ -76,6 +85,45 @@ describe("DelegateRoster", () => {
     const terminal = required(rows[1]);
     expect(terminal.classList.contains("terminal")).toBe(true);
     expect(terminal.querySelector(".state")?.getAttribute("aria-label")).toBe("Uncollected");
+  });
+
+  it("stays collapsed across live updates until its keyboard-focusable button is clicked again", async () => {
+    const element = new DelegateRoster();
+    element.onToggleCollapsed = () => { element.collapsed = !element.collapsed; };
+    element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
+      { id: "one", kind: "worker", activity: "running" },
+      { id: "two", kind: "subagent", activity: "success" },
+    ] }) });
+    document.body.append(element);
+    await element.updateComplete;
+
+    let toggle = required(root(element).querySelector<HTMLButtonElement>(".section-toggle"));
+    toggle.focus();
+    expect(root(element).activeElement).toBe(toggle);
+    toggle.click();
+    await element.updateComplete;
+    expect(element.collapsed).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(root(element).querySelectorAll(".row")).toHaveLength(0);
+    expect(root(element).querySelector(".aggregate")?.textContent).toBe("1 running · 1 uncollected");
+
+    element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
+      { id: "one", kind: "worker", activity: "running" },
+      { id: "two", kind: "subagent", activity: "success" },
+      { id: "three", kind: "subagent", activity: "running tests" },
+    ] }) });
+    await element.updateComplete;
+    toggle = required(root(element).querySelector<HTMLButtonElement>(".section-toggle"));
+    expect(element.collapsed).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(root(element).querySelector(".section-count")?.textContent).toBe("3");
+    expect(root(element).querySelector(".aggregate")?.textContent).toBe("2 running · 1 uncollected");
+    expect(root(element).querySelectorAll(".row")).toHaveLength(0);
+
+    toggle.click();
+    await element.updateComplete;
+    expect(element.collapsed).toBe(false);
+    expect(root(element).querySelectorAll(".row")).toHaveLength(3);
   });
 
   it("falls back to inferred activity when reportedStatus is absent", async () => {

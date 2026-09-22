@@ -55,6 +55,7 @@ export class WorkbenchApp extends LitElement {
   @state() private chooserView: "project" | "other" | "all" = "project";
   @state() private currentWorkstream: WorkstreamSnapshot | null | undefined;
   @state() private currentWorkstreamError = "";
+  @state() private delegateRosterCollapsed = false;
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -787,7 +788,7 @@ export class WorkbenchApp extends LitElement {
           .onLoadMore=${() => { void this.sessions.loadEarlierMessages(); }}
           .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
         ></chat-view>
-        <delegate-roster .status=${state.status}></delegate-roster>
+        <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${() => { this.delegateRosterCollapsed = !this.delegateRosterCollapsed; }}></delegate-roster>
         <prompt-editor
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
