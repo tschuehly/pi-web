@@ -60,12 +60,35 @@ describe("PiSessionService", () => {
 
       fake.emit({ type: "message_end", message: { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }] } });
       fake.emit({ type: "message_end", message: { role: "user", content: [{ type: "text", text: "next" }] } });
+      await Promise.resolve();
 
       const messageEnds = events.sessionEvents.map(({ event }) => event).filter((event) => event.type === "message.end");
       expect(messageEnds).toEqual([
         { type: "message.end", message: { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }], thinkingLevel: "high" } },
         { type: "message.end", message: { role: "user", content: [{ type: "text", text: "next" }] } },
       ]);
+      await service.dispose();
+    });
+
+    it("publishes the durable transcript entry id with a finalized live message", async () => {
+      const entryId = "assistant-entry";
+      const message = { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }] };
+      const branch: unknown[] = [];
+      const { fake, service, events } = messagesService(branch, {
+        sessionManager: fakeSessionManager("/workspace", { getBranch: () => branch }),
+      });
+      await service.status(sessionRef("session-1"));
+      const eventStart = events.sessionEvents.length;
+
+      fake.emit({ type: "message_end", message });
+      branch.push({ type: "message", id: entryId, message });
+      fake.emit({ type: "turn_end" });
+      await Promise.resolve();
+
+      const liveEvents = events.sessionEvents.slice(eventStart);
+      expect(liveEvents[0]).toEqual({ sessionId: "session-1", event: { type: "message.end", message: { ...message, entryId } } });
+      expect(liveEvents.findIndex(({ event }) => event.type === "pi.event" && event.eventType === "turn_end")).toBeGreaterThan(0);
+      expect((await service.messages(sessionRef("session-1"))).messages).toEqual([{ ...message, entryId }]);
       await service.dispose();
     });
 

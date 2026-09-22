@@ -4097,16 +4097,29 @@ export class PiSessionService implements SessionRouteService {
         if (sessionId !== session.sessionId) this.clearCompactionPromptQueue(sessionId);
       }
     }
+    let queuedPublications = 0;
     const unsubscribe = session.subscribe((event) => {
-      this.events.publish(session.sessionId, toClientEvent(event, session.thinkingLevel));
-      this.publishActivityForEvent(session, event);
-      const eventType = getString(event, "type");
-      if (eventType === "queue_update") this.pruneRuntimePromptProvenance(session);
-      if (eventType === "agent_end") this.abortRunScopedExtensionDialogs(session.sessionId);
-      if (eventType === "compaction_end") this.scheduleCompactionQueueDrain(session.sessionId);
-      if (eventType === "agent_start" || eventType === "agent_end") this.scheduleCompactionQueueDrain(session.sessionId);
-      this.publishStatus(session);
-      this.updateSubsessionTracking(session);
+      const publish = () => {
+        this.events.publish(session.sessionId, toClientEvent(event, session.thinkingLevel, finalizedMessageEntryId(session, event)));
+        this.publishActivityForEvent(session, event);
+        const eventType = getString(event, "type");
+        if (eventType === "queue_update") this.pruneRuntimePromptProvenance(session);
+        if (eventType === "agent_end") this.abortRunScopedExtensionDialogs(session.sessionId);
+        if (eventType === "compaction_end") this.scheduleCompactionQueueDrain(session.sessionId);
+        if (eventType === "agent_start" || eventType === "agent_end") this.scheduleCompactionQueueDrain(session.sessionId);
+        this.publishStatus(session);
+        this.updateSubsessionTracking(session);
+      };
+      // Pi persists a finalized message immediately after notifying listeners.
+      // Wait one microtask for its authoritative entry id, and queue any event
+      // arriving in the same stack behind it so browser event order stays intact.
+      if (getString(event, "type") === "message_end" || queuedPublications > 0) {
+        queuedPublications += 1;
+        queueMicrotask(() => {
+          queuedPublications -= 1;
+          publish();
+        });
+      } else publish();
     });
     active.unsubscribe = () => {
       this.sessionEvents.close(session);
@@ -5147,7 +5160,16 @@ function finalAssistantText(messages: readonly unknown[]): string {
   return "";
 }
 
-function toClientEvent(event: unknown, thinkingLevel?: string): SessionUiEvent {
+function finalizedMessageEntryId(session: PiAgentSession, event: unknown): string | undefined {
+  if (getString(event, "type") !== "message_end") return undefined;
+  const message = getProperty(event, "message");
+  const entry = session.sessionManager.getBranch().at(-1);
+  if (!isRecord(entry) || entry["type"] !== "message" || entry["message"] !== message) return undefined;
+  const entryId = entry["id"];
+  return typeof entryId === "string" && entryId !== "" ? entryId : undefined;
+}
+
+function toClientEvent(event: unknown, thinkingLevel?: string, entryId?: string): SessionUiEvent {
   const eventType = getString(event, "type");
   const assistantMessageEvent = getProperty(event, "assistantMessageEvent");
   if (eventType === "message_update" && getString(assistantMessageEvent, "type") === "text_delta") {
@@ -5173,7 +5195,8 @@ function toClientEvent(event: unknown, thinkingLevel?: string): SessionUiEvent {
   if (eventType === "message_end") {
     const message = getProperty(event, "message");
     if (message === undefined) return { type: "message.end" };
-    return { type: "message.end", message: annotateAssistantThinkingLevel(message, thinkingLevel) };
+    const annotated = annotateAssistantThinkingLevel(message, thinkingLevel);
+    return { type: "message.end", message: entryId === undefined || !isRecord(annotated) ? annotated : { ...annotated, entryId } };
   }
   return { type: "pi.event", eventType: eventType ?? "unknown" };
 }
