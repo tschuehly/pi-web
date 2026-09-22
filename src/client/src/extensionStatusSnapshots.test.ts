@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GOAL_STATUS_STATE_VALUES, isTerminalDelegate, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWorkingModeSnapshot } from "./extensionStatusSnapshots";
+import { GOAL_STATUS_STATE_VALUES, isTerminalDelegate, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWatcherStatusSnapshot, parseWorkingModeSnapshot, visibleShellExecutions } from "./extensionStatusSnapshots";
 
 describe("extension status snapshots", () => {
   it("accepts the exact bounded Goal schema and every state", () => {
@@ -104,6 +104,56 @@ describe("extension status snapshots", () => {
     expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 2 }))).toBeUndefined();
   });
 
+  it("accepts bounded source-owned watcher rows and rejects malformed snapshots atomically", () => {
+    const watcher = { logicalId: "logical-1", handleId: "abc123", label: "Build", mode: "poll", scope: "gh run view 123", state: "retrying", consecutiveFailures: 2, startedAt: "2026-08-02T10:00:00.000Z" };
+    const parse = (watchers: unknown[], schemaVersion = 1) => parseWatcherStatusSnapshot(JSON.stringify({ schemaVersion, watchers }));
+    expect(parse([watcher])).toEqual([{ logicalId: "logical-1", handleId: "abc123", label: "Build", mode: "poll", scope: "gh run view 123", state: "retrying", consecutiveFailures: 2 }]);
+    expect(parse([{ ...watcher, scope: "界\u200b\u202e\u0000 👩‍💻  ready\n" }, { ...watcher, logicalId: "other" }])).toEqual([
+      { logicalId: "logical-1", handleId: "abc123", label: "Build", mode: "poll", scope: "界 👩💻 ready", state: "retrying", consecutiveFailures: 2 },
+      { logicalId: "other", handleId: "abc123", label: "Build", mode: "poll", scope: "gh run view 123", state: "retrying", consecutiveFailures: 2 },
+    ]);
+    expect(parse([{ ...watcher, scope: "\u200b\u0000" }, { ...watcher, logicalId: "other" }])).toMatchObject([
+      { logicalId: "logical-1", scope: "" }, { logicalId: "other", scope: "gh run view 123" },
+    ]);
+    expect(parse([{ ...watcher, label: "界\u200b\u00ad\u0000 ready\n<script>text</script>" }, { ...watcher, logicalId: "other" }])).toMatchObject([
+      { logicalId: "logical-1", label: "界 ready <script>text</script>" }, { logicalId: "other", label: "Build" },
+    ]);
+    expect(parse([{ ...watcher, label: "\u200b\u00ad\u0000" }, { ...watcher, logicalId: "other" }])).toMatchObject([
+      { logicalId: "logical-1" }, { logicalId: "other", label: "Build" },
+    ]);
+    expect(parse([{ ...watcher, label: "\u200b\u00ad\u0000" }])[0]).not.toHaveProperty("label");
+    expect(parse([{ ...watcher, label: undefined, mode: "file", scope: "", state: "quarantined" }])[0]).not.toHaveProperty("label");
+    expect(parse([{ ...watcher, mode: "spawn", state: "watching" }])).toHaveLength(1);
+    for (const invalid of [
+      { ...watcher, logicalId: "" }, { ...watcher, logicalId: "bad\u202eid" },
+      { ...watcher, handleId: "bad\nhandle" }, { ...watcher, handleId: "x".repeat(65) },
+      { ...watcher, label: "x".repeat(49) }, { ...watcher, scope: "x".repeat(241) },
+      { ...watcher, scope: undefined }, { ...watcher, scope: 123 },
+      { ...watcher, mode: "process" }, { ...watcher, state: "stopped" },
+      { ...watcher, consecutiveFailures: -1 }, { ...watcher, consecutiveFailures: 1.5 },
+      { ...watcher, startedAt: "eventually" }, { ...watcher, startedAt: undefined },
+    ]) expect(parse([watcher, invalid])).toEqual([]);
+    expect(parse([watcher, watcher])).toEqual([]);
+    expect(parse(Array.from({ length: 65 }, (_, index) => ({ ...watcher, logicalId: String(index) })))).toEqual([]);
+    expect(parse([watcher], 2)).toEqual([]);
+    expect(parseWatcherStatusSnapshot(" ".repeat(65_537))).toEqual([]);
+    expect(parseWatcherStatusSnapshot(undefined)).toEqual([]);
+    expect(parseWatcherStatusSnapshot("not json")).toEqual([]);
+  });
+
+  it("accepts only bounded generic built-in shell rows, including older optional timestamps", () => {
+    const shell = { id: "tool:one", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-08-02T10:00:00Z" };
+    expect(visibleShellExecutions([shell, { id: "shell:two", kind: "shell", toolName: "shell", label: "Interactive shell" }])).toHaveLength(2);
+    expect(visibleShellExecutions([shell, { id: "future", kind: "future", toolName: "custom", label: "Future tool" }, { ...shell, id: "unknown", label: "Future shell" }])).toEqual([shell]);
+    for (const invalid of [
+      { ...shell, id: "bad\u0000id" },
+      { ...shell, startedAt: "eventually" }, { ...shell, startedAt: "x".repeat(65) },
+    ]) expect(visibleShellExecutions([shell, invalid])).toEqual([]);
+    expect(visibleShellExecutions([shell, shell])).toEqual([]);
+    expect(visibleShellExecutions(Array.from({ length: 33 }, (_, index) => ({ ...shell, id: String(index) })))).toEqual([]);
+    expect(visibleShellExecutions(undefined)).toEqual([]);
+  });
+
   it("accepts only bounded worker and subagent roster snapshots", () => {
     const items = parseDelegateActivitySnapshot(JSON.stringify({ schemaVersion: 1, items: [
       { id: "delegate:1", kind: "worker", name: "UI", role: "implementation", model: "openai-codex/gpt-5.6-sol", effort: "medium", objective: "Build controls", activity: "running tests" },
@@ -117,5 +167,6 @@ describe("extension status snapshots", () => {
     expect(isTerminalDelegate(running)).toBe(false);
     expect(isTerminalDelegate(terminal)).toBe(true);
     expect(parseDelegateActivitySnapshot(JSON.stringify({ schemaVersion: 1, items: [{ id: "shell", kind: "shell" }] }))).toEqual([]);
+    expect(parseDelegateActivitySnapshot(JSON.stringify({ schemaVersion: 1, items: [{ id: "one", kind: "worker" }, { id: "one", kind: "worker" }] }))).toEqual([]);
   });
 });

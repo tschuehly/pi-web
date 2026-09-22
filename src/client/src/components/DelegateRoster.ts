@@ -1,7 +1,8 @@
 import { LitElement, css, html } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { customElement, property } from "lit/decorators.js";
 import type { SessionStatus } from "../api";
-import { ACTIVITY_STATUS_KEY, isTerminalDelegate, parseDelegateActivitySnapshot } from "../extensionStatusSnapshots";
+import { ACTIVITY_STATUS_KEY, WATCHER_STATUS_KEY, isTerminalDelegate, parseDelegateActivitySnapshot, parseWatcherStatusSnapshot, visibleShellExecutions } from "../extensionStatusSnapshots";
 
 function shortModel(model: string | undefined): string | undefined {
   return model?.split("/").at(-1)?.replace(/-\d{8}$/, "");
@@ -14,22 +15,54 @@ export class DelegateRoster extends LitElement {
   @property({ attribute: false }) onToggleCollapsed?: () => void;
 
   override render() {
-    const items = parseDelegateActivitySnapshot(this.status?.extensionStatuses?.[ACTIVITY_STATUS_KEY]);
-    if (items.length === 0) return null;
-    const uncollected = items.filter(isTerminalDelegate).length;
-    const running = items.length - uncollected;
+    const delegates = parseDelegateActivitySnapshot(this.status?.extensionStatuses?.[ACTIVITY_STATUS_KEY]);
+    const watchers = parseWatcherStatusSnapshot(this.status?.extensionStatuses?.[WATCHER_STATUS_KEY]);
+    const shells = visibleShellExecutions(this.status?.activeToolExecutions);
+    const uncollected = delegates.filter(isTerminalDelegate).length;
+    const rows = [
+      ...delegates.map((item) => ({ key: `delegate:${item.id}`, source: "delegate" as const, item })),
+      ...watchers.map((item) => ({ key: `watcher:${item.logicalId}`, source: "watcher" as const, item })),
+      ...shells.map((item) => ({ key: `shell:${item.id}`, source: "shell" as const, item })),
+    ];
+    if (rows.length === 0) return null;
     return html`
-      <section aria-label="Workers and Subagents">
+      <section aria-label="Activity">
         <header>
           <button type="button" class="section-toggle" aria-expanded=${String(!this.collapsed)} aria-controls="delegate-roster-rows" @click=${() => { this.onToggleCollapsed?.(); }}>
             <span class="section-title">
-              <span class="section-name"><span class="chevron" aria-hidden="true">${this.collapsed ? "▸" : "▾"}</span> Workers & Subagents</span>
-              <small class="aggregate">${String(running)} running · ${String(uncollected)} uncollected</small>
+              <span class="section-name"><span class="chevron" aria-hidden="true">${this.collapsed ? "▸" : "▾"}</span> Activity</span>
+              <small class="aggregate">${String(delegates.length - uncollected)} running ${delegates.length - uncollected === 1 ? "delegate" : "delegates"} · ${String(uncollected)} uncollected · ${String(watchers.length)} ${watchers.length === 1 ? "watcher" : "watchers"} · ${String(shells.length)} ${shells.length === 1 ? "shell" : "shells"}</small>
             </span>
-            <small class="section-count" aria-label=${`${String(items.length)} total`}>${String(items.length)}</small>
+            <small class="section-count" aria-label=${`${String(rows.length)} total`}>${String(rows.length)}</small>
           </button>
         </header>
-        <div class="rows" id="delegate-roster-rows" ?hidden=${this.collapsed}>${items.map((item) => {
+        <div class="rows" id="delegate-roster-rows" ?hidden=${this.collapsed}>${repeat(rows, (row) => row.key, (row) => {
+          if (row.source === "watcher") {
+            const item = row.item;
+            const kind = `${item.mode === "poll" ? "Poll" : item.mode === "file" ? "File" : "Spawn"} watcher`;
+            const state = `Monitor: ${item.state}`;
+            const activity = `Monitor: ${item.state}${item.consecutiveFailures > 0 ? ` · ${String(item.consecutiveFailures)} consecutive failures` : ""}`;
+            const scope = `Scope: ${item.scope || "Not specified"}`;
+            return html`<div class="row" data-row-key=${row.key}>
+              <span class="kind watcher" role="img" aria-label=${kind} title=${kind}></span>
+              <span class="identity"><strong>${item.handleId}</strong>${item.label !== undefined ? html`<span class="meta" title=${item.label}>${item.label}</span>` : null}</span>
+              <span class="task" title=${scope}>${scope}</span>
+              <span class="activity" title=${activity}>${activity}</span>
+              <span class="state watcher-state ${item.state === "suspended" || item.state === "quarantined" ? "warning" : ""}" role="img" aria-label=${state} title=${state}></span>
+            </div>`;
+          }
+          if (row.source === "shell") {
+            const item = row.item;
+            const kind = item.toolName === "bash" ? "Built-in bash tool" : "Interactive ! shell";
+            return html`<div class="row" data-row-key=${row.key}>
+              <span class="kind shell" role="img" aria-label="Shell" title="Shell"></span>
+              <span class="identity"><strong>${item.label}</strong></span>
+              <span class="task">${kind}</span>
+              <span class="activity">Running</span>
+              <span class="state running" role="img" aria-label="Running" title="Running"></span>
+            </div>`;
+          }
+          const item = row.item;
           const terminal = isTerminalDelegate(item);
           const inferredActivity = item.activity ?? "starting";
           const activity = item.reportedStatus ?? `No status report · ${inferredActivity}`;
@@ -38,7 +71,7 @@ export class DelegateRoster extends LitElement {
           const stateLabel = terminal ? "Uncollected" : "Running";
           const metadata = [item.role, shortModel(item.model), item.effort].filter(Boolean).join(" · ");
           const metadataTitle = [item.role, item.model, item.effort].filter(Boolean).join(" · ");
-          return html`<div class="row ${terminal ? "terminal" : ""}">
+          return html`<div class="row ${terminal ? "terminal" : ""}" data-row-key=${row.key}>
             <span class="kind ${item.kind}" role="img" aria-label=${kind} title=${kind}></span>
             <span class="identity">
               <strong title=${item.name ?? ""}>${item.name ?? "Unnamed"}</strong>
@@ -70,6 +103,10 @@ export class DelegateRoster extends LitElement {
     .terminal { opacity: .72; }
     .kind, .state { width: 7px; height: 7px; justify-self: center; border-radius: 50%; background: var(--pi-muted); }
     .kind.worker { border-radius: 1px; }
+    .kind.watcher { background: var(--pi-accent); }
+    .kind.shell { border-radius: 1px; background: var(--pi-warning); }
+    .state.watcher-state { background: var(--pi-accent); }
+    .state.watcher-state.warning { background: var(--pi-warning); }
     .state.running { background: var(--pi-success); }
     .state.uncollected { background: var(--pi-warning); }
     .identity { min-width: 0; display: flex; gap: 6px; align-items: baseline; overflow: hidden; white-space: nowrap; }
