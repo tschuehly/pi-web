@@ -7,6 +7,8 @@ import type { SessionInfo, Workspace } from "../api";
 import { PluginRegistry } from "../plugins/registry";
 import { corePlugin } from "../plugins/core";
 import type { WorkspacePanelContext } from "../plugins/types";
+import type { SessionStatus } from "../api";
+import { ACTIVITY_STATUS_KEY } from "../extensionStatusSnapshots";
 import { PiWebApp } from "./PiWebApp";
 import { ChatView } from "./ChatView";
 import { DelegateRoster } from "./DelegateRoster";
@@ -66,6 +68,60 @@ describe("application rendering boundaries", () => {
     const collapsedRoster = app.shadowRoot?.querySelector("delegate-roster");
     if (!(collapsedRoster instanceof DelegateRoster)) throw new Error("Expected collapsed delegate roster");
     expect(collapsedRoster.collapsed).toBe(true);
+  });
+
+  it("wires parent roster collapse through rendered section-toggle button", async () => {
+    const delegateActivityJson = JSON.stringify({
+      schemaVersion: 1,
+      items: [
+        { id: "worker-1", kind: "worker" as const, name: "Worker A", objective: "Build module", activity: "running" },
+        { id: "subagent-1", kind: "subagent" as const, name: "Explorer", objective: "Analyze code", activity: "success" },
+      ],
+    });
+    const app = await mountApp({
+      selectedSession: session,
+      sessions: [session],
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      status: {
+        sessionId: session.id,
+        isStreaming: false,
+        isCompacting: false,
+        isBashRunning: false,
+        pendingMessageCount: 0,
+        queuedMessages: [],
+        messageCount: 1,
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        extensionStatuses: { [ACTIVITY_STATUS_KEY]: delegateActivityJson },
+      } as unknown as SessionStatus,
+    });
+    await settle(app);
+
+    const roster = app.shadowRoot?.querySelector("delegate-roster");
+    if (!(roster instanceof DelegateRoster)) throw new Error("Expected delegate roster");
+    expect(roster.collapsed).toBe(false);
+    expect(roster.status?.extensionStatuses?.[ACTIVITY_STATUS_KEY]).toBe(delegateActivityJson);
+
+    const toggle = roster.shadowRoot?.querySelector<HTMLButtonElement>(".section-toggle");
+    if (!(toggle instanceof HTMLButtonElement)) throw new Error("Expected section-toggle button");
+    toggle.click();
+    await settle(app);
+
+    const collapsedRoster = app.shadowRoot?.querySelector("delegate-roster");
+    if (!(collapsedRoster instanceof DelegateRoster)) throw new Error("Expected collapsed delegate roster after toggle");
+    expect(collapsedRoster.collapsed).toBe(true);
+  });
+
+  it("prevents roster grid layout bypass when rows are hidden", () => {
+    // Verify DelegateRoster includes CSS rule to hide collapsed rows
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const stylesProp = Object.getOwnPropertyDescriptor(DelegateRoster, "styles")?.value;
+    if (typeof stylesProp !== "object" || stylesProp === null || !("cssText" in stylesProp)) {
+      throw new Error("DelegateRoster.styles does not have cssText property");
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const cssText = String(stylesProp.cssText);
+    expect(cssText).toContain(".rows[hidden]");
+    expect(/display\s*:\s*none/i.test(cssText)).toBe(true);
   });
 
   it("does not update the selected chat for unrelated shell state, but does update its transcript", async () => {
