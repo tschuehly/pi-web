@@ -18,6 +18,8 @@ type HumanTaskAnswerKind = "yes-no" | "choice" | "free-text";
 type HumanTaskAnswer = { kind: "yes-no" | "choice"; optionId: string } | { kind: "free-text"; text: string };
 export type WorkstreamSessionAnchor = { machineId: string; projectId: string; workspaceId: string } | { machineId?: never; projectId?: never; workspaceId?: never };
 export type WorkstreamAppendRecord =
+  | { type: "title.set"; producer: "owner"; sourceSessionId?: string; payload: { title: string } }
+  | { type: "checkpoint.replaced"; producer: "owner"; sourceSessionId: string; payload: { sessionId: string; checkpoint: { id: string; whatChanged: string; remains: string; next: string; nextSessionPrompt: string; references?: string[] } } }
   | { type: "human-task.answered"; producer: "owner"; sourceSessionId?: string; payload: { taskId: string; answerId: string; answer: HumanTaskAnswer } }
   | { type: "session.pending"; producer: "pi-web"; sourceSessionId?: string; payload: { associationKey: string; derivationKind?: "checkpoint" } & WorkstreamSessionAnchor }
   | { type: "session.confirmed"; producer: "pi-web"; sourceSessionId: string; payload: { sessionId: string; associationKey: string } & WorkstreamSessionAnchor };
