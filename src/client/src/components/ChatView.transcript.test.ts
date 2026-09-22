@@ -159,6 +159,36 @@ describe("ChatView transcript density", () => {
     expect(result?.querySelector(".orphan-preview-error")?.textContent).toContain("Preview failed");
   });
 
+  it.each([
+    { label: "applied", details: { diff: "-before\n+after" }, isError: true, result: "Patch failed", heading: "Applied diff", status: "failed", icon: "✖" },
+    { label: "preview-only", details: { preview: { diff: "-before\n+after", error: "Preview failed" } }, isError: false, result: "Applied edit", heading: "Preview diff", status: "done", icon: "✓" },
+  ])("shows an orphan $label diff and result outside Activity at a page boundary", async ({ details, isError, result, heading, status, icon }) => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messageStart = 40;
+    view.hasMore = true;
+    view.messages = normalizeMessages([
+      { role: "toolResult", toolCallId: "read-before-page", toolName: "read", content: [{ type: "text", text: "contents" }], isError: false },
+      { role: "toolResult", toolCallId: "edit-before-page", toolName: "edit", content: [{ type: "text", text: result }], isError, details },
+    ]);
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    expect(root.querySelectorAll(".activity-group .tool-result")).toHaveLength(1);
+    const tool = root.querySelector<ToolExecutionView>(".event-group:not(.activity-group) tool-execution-view");
+    expect(tool).not.toBeNull();
+    await tool?.updateComplete;
+    const card = tool?.shadowRoot?.querySelector<HTMLDetailsElement>(`.tool-card.${isError ? "error" : "success"}`);
+    expect(card?.open).toBe(true);
+    expect(card?.querySelector(".status-icon")?.textContent).toBe(icon);
+    expect(card?.querySelector(".status-label")?.textContent).toBe(status);
+    expect(card?.querySelector(".diff-heading")?.textContent).toContain(heading);
+    expect(card?.querySelector("pre.diff")?.textContent).toContain("+after");
+    expect(card?.querySelector(isError ? ".error-text" : ".detail-result pre")?.textContent).toBe(result);
+    if ("preview" in details) expect(card?.querySelector(".error-text")?.textContent).toBe("Preview failed");
+  });
+
   it("keeps execution failure separate from a preview error", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";

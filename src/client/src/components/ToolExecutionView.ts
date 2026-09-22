@@ -30,6 +30,7 @@ export function toolRowSummary(execution: ToolExecutionPart): ToolRowSummary {
 @customElement("tool-execution-view")
 export class ToolExecutionView extends LitElement {
   @property({ attribute: false }) execution: ToolExecutionPart | undefined;
+  @property({ type: Boolean }) orphan = false;
   @state() private showFullDiff = false;
   @state() private copied = false;
 
@@ -45,12 +46,13 @@ export class ToolExecutionView extends LitElement {
     const diffStats = visibleDiff === undefined ? undefined : countDiffLines(visibleDiff);
     const previewMismatch = actualDiff !== undefined && preview?.diff !== undefined && actualDiff !== preview.diff;
     const errorText = execution.status === "error" ? execution.resultText : undefined;
-    const bodyText = visibleDiff === undefined || (execution.status === "success" && hasPreviewError) ? execution.resultText : undefined;
+    const bodyText = this.orphan && execution.status === "error" ? undefined
+      : this.orphan || visibleDiff === undefined || (execution.status === "success" && hasPreviewError) ? execution.resultText : undefined;
     const target = toolTarget(execution, path);
     const row = toolRowSummary(execution);
 
     return html`
-      <details class=${`tool-card ${execution.status}`} ?open=${hasPreviewError}>
+      <details class=${`tool-card ${execution.status}`} ?open=${hasPreviewError || (this.orphan && visibleDiff !== undefined)}>
         <summary class="tool-row">
           <span class="chevron">${renderBuiltinTabIcon("chevron")}</span>
           <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>

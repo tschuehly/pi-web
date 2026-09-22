@@ -1151,7 +1151,14 @@ export class ChatView extends LitElement {
     `;
     if (part.type === "toolExecution") return html`<tool-execution-view class="part" .execution=${part}></tool-execution-view>`;
     if (part.type === "toolResult") {
-      const previewError = previewFromDetails(part.details)?.error;
+      const preview = previewFromDetails(part.details);
+      if ((typeof part.details === "object" && part.details !== null && typeof Reflect.get(part.details, "diff") === "string") || preview?.diff !== undefined) return html`
+        <tool-execution-view class="part" .orphan=${true} .execution=${{
+          type: "toolExecution", toolName: part.toolName, summary: "", status: part.isError ? "error" : "success",
+          resultText: part.text, details: part.details, preview,
+        }}></tool-execution-view>
+      `;
+      const previewError = preview?.error;
       return html`
         <details class=${part.isError ? "part tool-result error" : "part tool-result"} ?open=${previewError !== undefined && previewError !== ""}>
           <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>

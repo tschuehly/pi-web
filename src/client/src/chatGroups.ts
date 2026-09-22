@@ -125,7 +125,7 @@ function chatPartKind(message: ChatLine, part: ChatPart): ChatGroupPresentation 
   if (part.type === "thinking") return "thinking";
   if (part.type === "toolCall" && message.severity !== "error") return "activity";
   if (part.type === "toolExecution" && part.status !== "error" && part.preview?.error === undefined && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details, part.preview?.diff)) return "activity";
-  if (part.type === "toolResult" && !part.isError && previewFromDetails(part.details)?.error === undefined && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details)) return "activity";
+  if (part.type === "toolResult" && !part.isError && previewFromDetails(part.details)?.error === undefined && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details, previewFromDetails(part.details)?.diff)) return "activity";
   if (part.type === "skillInvocation" || part.type === "skillRead" || part.type === "image" || part.type === "askUserRecord" || part.type === "goalLifecycle") return "readable";
   if (part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash")) return "readable";
   return "event";

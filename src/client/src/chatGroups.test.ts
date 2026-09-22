@@ -81,6 +81,18 @@ describe("groupChatMessages", () => {
     ]);
   });
 
+  it("keeps orphan applied and preview-only diffs outside Activity at a page boundary", () => {
+    const routine: ChatLine = { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "contents", isError: false }] };
+    const applied: ChatLine = { role: "tool", parts: [{ type: "toolResult", toolCallId: "patch-before-page", toolName: "patch", text: "Applied", isError: false, details: { diff: "+applied" } }] };
+    const preview: ChatLine = { role: "tool", parts: [{ type: "toolResult", toolCallId: "edit-before-page", toolName: "edit", text: "Previewed", isError: false, details: { preview: { diff: "+preview" } } }] };
+
+    expect(groupChatMessages([routine, applied, preview, routine], 40)).toEqual([
+      { kind: "group", presentation: "activity", startIndex: 40, endIndex: 40, messages: [routine] },
+      { kind: "group", startIndex: 41, endIndex: 42, messages: [applied, preview] },
+      { kind: "group", presentation: "activity", startIndex: 43, endIndex: 43, messages: [routine] },
+    ]);
+  });
+
   it("keeps successful diffs visible regardless of the tool name", () => {
     const actualDiff: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "patch", summary: "file", status: "success", details: { diff: "+changed" } }] };
     const previewDiff: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "replace", summary: "file", status: "success", preview: { diff: "+preview" } }] };
