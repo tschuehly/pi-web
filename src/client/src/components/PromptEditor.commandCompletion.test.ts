@@ -51,6 +51,24 @@ describe("PromptEditor command completions", () => {
     ]);
   });
 
+  it("offers only skills after an earlier directive, and ignores late responses for a changed token", async () => {
+    let resolve!: (commands: Awaited<ReturnType<typeof api.commands>>) => void;
+    vi.spyOn(api, "commands").mockReturnValue(new Promise((settle) => { resolve = settle; }));
+    const editor = new PromptEditor();
+    editor.sessionId = "session-1";
+    editor.cwd = "/repo";
+    const pending = refreshCompletions(editor, "/template task /skill:re");
+    await refreshCompletions(editor, "/template task done");
+    resolve([{ name: "review", source: "prompt" }, { name: "skill:review", source: "skill" }]);
+    await pending;
+    expect(currentCompletions(editor)).toEqual([]);
+
+    await refreshCompletions(editor, "/skill:a /skill:re");
+    expect(currentCompletions(editor)).toEqual([
+      { kind: "command", replaceFrom: 9, replaceTo: 18, insertText: "/skill:review", detail: "skill" },
+    ]);
+  });
+
   it("filters commands by the typed query", async () => {
     vi.spyOn(api, "commands").mockResolvedValue([
       { name: "pr", source: "prompt", argumentHint: "<PR-URL>" },

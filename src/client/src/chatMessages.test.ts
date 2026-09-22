@@ -145,6 +145,26 @@ describe("chat message normalization", () => {
     ]);
   });
 
+  it("preserves ordered inline skills and surrounding text in one user message", () => {
+    const block = (name: string) => `<skill name="${name}" location="/skills/${name}">\nUse <${name}>\n</skill>`;
+    const content = `Before <unsafe>\n${block("a")} middle\n${block("b")} after`;
+    expect(normalizeMessage({ role: "user", content, entryId: "entry-1" })).toEqual([{
+      role: "user", entryId: "entry-1", parts: [
+        { type: "text", text: "Before <unsafe>\n" },
+        { type: "skillInvocation", name: "a", location: "/skills/a", content: "Use <a>" },
+        { type: "text", text: " middle\n" },
+        { type: "skillInvocation", name: "b", location: "/skills/b", content: "Use <b>" },
+        { type: "text", text: " after" },
+      ],
+    }]);
+    expect(normalizeMessage({ role: "user", content: `${block("a")}\n<skill broken>` })).toEqual([{
+      role: "user", parts: [
+        { type: "skillInvocation", name: "a", location: "/skills/a", content: "Use <a>" },
+        { type: "text", text: "\n<skill broken>" },
+      ],
+    }]);
+  });
+
   it("normalizes skill reads into skill chat lines", () => {
     expect(normalizeMessage({ role: "assistant", content: [{ type: "toolCall", name: "read", arguments: { path: "/home/user/.agents/skills/playwright/SKILL.md" } }] })).toEqual([
       { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/home/user/.agents/skills/playwright/SKILL.md" }] },

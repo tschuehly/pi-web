@@ -690,7 +690,7 @@ export class PromptEditor extends LitElement {
       if (version !== this.requestVersion) return;
       this.knownCommandNames = new Set(commands.map((command) => command.name));
       this.setCompletions(version, triggerKey, commands
-        .filter((command) => command.name.toLowerCase().includes(trigger.query.toLowerCase()))
+        .filter((command) => (trigger.from === 0 || command.source === "skill") && command.name.toLowerCase().includes(trigger.query.toLowerCase()))
         .map((command) => ({
           kind: "command",
           replaceFrom: trigger.from,
@@ -852,7 +852,7 @@ export class PromptEditor extends LitElement {
   private pick(item: CompletionItem) {
     const editor = this.editor;
     if (!editor || !this.completionsAreCurrent() || !this.completions.includes(item)) return;
-    const suffix = item.kind === "file" && (item.insertText.endsWith("/") || item.cursorOffset !== undefined) ? "" : " ";
+    const suffix = item.kind === "file" && (item.insertText.endsWith("/") || item.cursorOffset !== undefined) || item.kind === "command" && /\s/.test(this.draft[item.replaceTo] ?? "") ? "" : " ";
     const cursor = item.replaceFrom + (item.cursorOffset ?? item.insertText.length) + suffix.length;
     const replaceTo = item.insertText.endsWith("\"") && this.draft.slice(item.replaceTo).startsWith("\"") ? item.replaceTo + 1 : item.replaceTo;
     editor.dispatch({

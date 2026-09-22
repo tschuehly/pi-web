@@ -56,6 +56,24 @@ describe("detectPromptCompletionTrigger", () => {
     expect(detectPromptCompletionTrigger("/model")).toEqual({ kind: "command", query: "model", from: 0, to: 6 });
   });
 
+  it("completes only skill directives at whitespace boundaries throughout a prompt", () => {
+    for (const draft of ["/skill:a /skill:rev", "/template task /skill:rev", "Please\t/skill:rev", "Please\n/skill:rev"]) {
+      const from = draft.lastIndexOf("/skill:rev");
+      expect(detectPromptCompletionTrigger(draft)).toEqual({ kind: "command", query: "skill:rev", from, to: draft.length });
+    }
+    expect(detectPromptCompletionTrigger("review /template")).toBeUndefined();
+    expect(detectPromptCompletionTrigger("review /model")).toBeUndefined();
+    expect(detectPromptCompletionTrigger("https://host/skill:rev")).toBeUndefined();
+    expect(detectPromptCompletionTrigger("review src/skill:rev")).toBeUndefined();
+    expect(detectPromptCompletionTrigger("review `/skill:rev")).toBeUndefined();
+    expect(detectPromptCompletionTrigger("review /skill:rev/path")).toBeUndefined();
+  });
+
+  it("replaces the entire active skill token even with the cursor in its middle", () => {
+    expect(detectPromptCompletionTrigger("/skill:a /skill:rev later", 17)).toEqual({ kind: "command", query: "skill:r", from: 9, to: 19 });
+    expect(detectPromptCompletionTrigger("/template later", 4)).toEqual({ kind: "command", query: "tem", from: 0, to: 9 });
+  });
+
   it("detects model queries for tokens starting with #", () => {
     expect(detectPromptCompletionTrigger("#")).toEqual({ kind: "model", query: "", from: 0, to: 1 });
     expect(detectPromptCompletionTrigger("use #anthropic/claude-opus")).toEqual({ kind: "model", query: "anthropic/claude-opus", from: 4, to: 26 });

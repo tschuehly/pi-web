@@ -86,12 +86,23 @@ function isChatLine(message: unknown): message is ChatLine {
 
 function normalizeSkillInvocation(parts: ChatPart[]): ChatLine[] | undefined {
   if (parts.length !== 1 || parts[0]?.type !== "text") return undefined;
-  const skill = parseSkillBlock(parts[0].text);
-  if (skill === undefined) return undefined;
-  return [
+  const text = parts[0].text;
+  const skill = parseSkillBlock(text);
+  if (skill !== undefined) return [
     { role: "user", parts: [{ type: "skillInvocation", name: skill.name, location: skill.location, content: skill.content }] },
     ...(skill.userMessage === undefined ? [] : [{ role: "user" as const, parts: [{ type: "text" as const, text: skill.userMessage }] }]),
   ];
+  const segments: ChatPart[] = [];
+  const pattern = /<skill name="([^"\r\n]+)" location="([^"\r\n]+)">\n([\s\S]*?)\n<\/skill>/g;
+  let cursor = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > cursor) segments.push({ type: "text", text: text.slice(cursor, match.index) });
+    segments.push({ type: "skillInvocation", name: match[1] ?? "skill", location: match[2] ?? "", content: match[3] ?? "" });
+    cursor = match.index + match[0].length;
+  }
+  if (segments.length === 0) return undefined;
+  if (cursor < text.length) segments.push({ type: "text", text: text.slice(cursor) });
+  return [{ role: "user", parts: segments }];
 }
 
 function parseSkillBlock(text: string): { name: string; location: string; content: string; userMessage?: string } | undefined {

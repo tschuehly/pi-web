@@ -278,6 +278,36 @@ describe("composer keyboard handling", () => {
     expect(editor.onSend).not.toHaveBeenCalled();
   });
 
+  it.each(["Tab", "Enter"])("replaces an inline skill token in the middle with %s without sending", async (key) => {
+    vi.spyOn(api, "commands").mockResolvedValue([{ name: "skill:review", source: "skill" }, { name: "tree", source: "builtin" }]);
+    const editor = await mount("enter");
+    editor.sessionId = "test-session";
+    editor.cwd = "/repo";
+    await editor.updateComplete;
+    const draft = "/skill:a /skill:rev later";
+    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: 19 } });
+    await vi.waitFor(() => { expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/skill:review"); });
+    editor.view?.dispatch({ selection: { anchor: 16 } });
+    await vi.waitFor(() => { expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/skill:review"); });
+    press(editor, key);
+    expect(editor.view?.state.doc.toString()).toBe("/skill:a /skill:review later");
+    expect(editor.onSend).not.toHaveBeenCalled();
+  });
+
+  it("clears inline skill suggestions after deleting the slash", async () => {
+    vi.spyOn(api, "commands").mockResolvedValue([{ name: "skill:review", source: "skill" }]);
+    const editor = await mount(undefined);
+    editor.sessionId = "test-session";
+    editor.cwd = "/repo";
+    await editor.updateComplete;
+    const draft = "hi /skill:re";
+    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.length } });
+    await vi.waitFor(() => { expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/skill:review"); });
+    editor.view?.dispatch({ changes: { from: 3, to: 4 }, selection: { anchor: 3 } });
+    await editor.updateComplete;
+    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("/skill:review");
+  });
+
   it("awaits delivery when Enter sends a known slash command", async () => {
     vi.spyOn(api, "commands").mockResolvedValue([{ name: "tree", source: "builtin" }]);
     const editor = await mount("enter");

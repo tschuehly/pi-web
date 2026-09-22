@@ -10,14 +10,26 @@ export function detectPromptCompletionTrigger(draft: string, cursor = draft.leng
   const quotedTrigger = currentQuotedTrigger(beforeCursor, cursor);
   if (quotedTrigger !== undefined) return quotedTrigger;
 
+  const tokenStart = beforeCursor.length - (/\S*$/.exec(beforeCursor)?.[0].length ?? 0);
+  const token = beforeCursor.slice(tokenStart);
+  // Pi only expands skill directives after the leading command. Never offer a
+  // slash completion inside inline/fenced code or a larger path/URL token.
+  const inCode = (beforeCursor.match(/(?<!\\)`/g)?.length ?? 0) % 2 !== 0;
+  if (!inCode && token.startsWith("/skill:") && (tokenStart === 0 || /\s/.test(draft[tokenStart - 1] ?? ""))) {
+    const end = draft.slice(cursor).search(/\s/);
+    const to = end < 0 ? draft.length : cursor + end;
+    if (!draft.slice(tokenStart + 1, to).includes("/")) return { kind: "command", query: token.slice(1), from: tokenStart, to };
+  }
+
   const allFileTrigger = currentUnquotedAllFileTrigger(beforeCursor, cursor);
   if (allFileTrigger !== undefined) return allFileTrigger;
 
-  const tokenStart = Math.max(beforeCursor.lastIndexOf(" "), beforeCursor.lastIndexOf("\n")) + 1;
-  const token = beforeCursor.slice(tokenStart);
   const beforeToken = beforeCursor.slice(0, tokenStart);
   if (beforeToken.endsWith("@ ")) return { kind: "file", query: token, from: tokenStart - 2, to: cursor, fileScope: "all", allPrefix: "@ " };
-  if (token.startsWith("/") && tokenStart === 0) return { kind: "command", query: token.slice(1), from: tokenStart, to: cursor };
+  if (token.startsWith("/") && tokenStart === 0 && !token.slice(1).includes("/")) {
+    const end = draft.slice(cursor).search(/\s/);
+    return { kind: "command", query: token.slice(1), from: tokenStart, to: end < 0 ? draft.length : cursor + end };
+  }
   if (token.startsWith("!@")) return { kind: "file", query: token.slice(2), from: tokenStart, to: cursor, fileScope: "all", allPrefix: "!@" };
   if (token.startsWith("@")) return { kind: "file", query: token.slice(1), from: tokenStart, to: cursor, fileScope: "tracked" };
   if (token.startsWith("#")) return { kind: "model", query: token.slice(1), from: tokenStart, to: cursor };
