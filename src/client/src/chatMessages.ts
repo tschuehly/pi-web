@@ -25,13 +25,13 @@ export function appendText(messages: ChatLine[], role: ChatLine["role"], text: s
   if (text === "") return messages;
   const last = messages.at(-1);
   const lastPart = last?.parts.at(-1);
-  if (last?.role === role && lastPart?.type === "text") {
+  if (last?.role === role && !last.parts.some((part) => part.type === "skillRead") && lastPart?.type === "text") {
     return [
       ...messages.slice(0, -1),
       { ...last, parts: [...last.parts.slice(0, -1), { ...lastPart, text: lastPart.text + text }] },
     ];
   }
-  if (last?.role === role) return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "text", text }] }];
+  if (last?.role === role && !last.parts.some((part) => part.type === "skillRead")) return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "text", text }] }];
   return [...messages, textMessage(role, text)];
 }
 
@@ -39,13 +39,13 @@ export function appendThinking(messages: ChatLine[], text: string): ChatLine[] {
   if (text === "") return messages;
   const last = messages.at(-1);
   const lastPart = last?.parts.at(-1);
-  if (last?.role === "assistant" && lastPart?.type === "thinking") {
+  if (last?.role === "assistant" && !last.parts.some((part) => part.type === "skillRead") && lastPart?.type === "thinking") {
     return [
       ...messages.slice(0, -1),
       { ...last, parts: [...last.parts.slice(0, -1), { ...lastPart, text: lastPart.text + text }] },
     ];
   }
-  if (last?.role === "assistant") return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "thinking", text }] }];
+  if (last?.role === "assistant" && !last.parts.some((part) => part.type === "skillRead")) return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "thinking", text }] }];
   return [...messages, { role: "assistant", parts: [{ type: "thinking", text }] }];
 }
 
@@ -258,6 +258,7 @@ function parseSkillReadPath(path: string | undefined): { name: string; path: str
 function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
   const result: ChatLine[] = [];
   const pendingTools = new Map<string, { lineIndex: number; partIndex: number }>();
+  const skillReadIds = new Set<string>();
 
   for (const line of lines) {
     let passthroughParts: ChatPart[] = [];
@@ -274,6 +275,7 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
     };
 
     for (const part of line.parts) {
+      if (part.type === "skillRead" && part.toolCallId !== undefined) skillReadIds.add(part.toolCallId);
       if (part.type === "toolCall") {
         flushPassthrough();
         const execution = toolExecutionFromCall(part);
@@ -284,6 +286,9 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
       }
 
       if (part.type === "toolResult") {
+        if (part.toolCallId !== undefined && part.toolName === "read" && skillReadIds.has(part.toolCallId) && !part.isError
+          && getString(part.details, "diff") === undefined && previewFromDetails(part.details)?.diff === undefined
+          && !line.parts.some((item) => item.type === "image" || item.type === "askUserRecord")) continue;
         const target = part.toolCallId === undefined ? undefined : pendingTools.get(part.toolCallId);
         if (target !== undefined && mergeToolResultInto(result, target, part)) {
           pendingTools.delete(part.toolCallId ?? "");

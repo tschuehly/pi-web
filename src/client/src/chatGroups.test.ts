@@ -37,8 +37,10 @@ describe("groupChatMessages", () => {
     ];
 
     expect(groupChatMessages(messages)).toEqual([
-      { kind: "group", presentation: "thinking", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "plan" }] }] },
-      { kind: "message", index: 0, message: { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }] } },
+      { kind: "group", presentation: "thinking", startIndex: 0, endIndex: 0, messages: [
+        { role: "assistant", parts: [{ type: "thinking", text: "plan" }] },
+        { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }] },
+      ], messageIndices: [0, 0] },
     ]);
   });
 
@@ -95,6 +97,37 @@ describe("groupChatMessages", () => {
     expect(afterError[0]).toMatchObject({ presentation: "thinking", messages: [first, tool, second] });
     expect(afterError[1]).toMatchObject({ messages: [error] });
     expect(afterError[2]).toMatchObject({ presentation: "thinking", messages: [third] });
+  });
+
+  it("keeps pending and running routine tools compact through completion, without hiding exceptional tools", () => {
+    const routine = (status: "pending" | "running" | "success"): ChatLine => ({ role: "tool", parts: [{ type: "toolExecution", toolCallId: "read-1", toolName: "read", summary: "file", status }] });
+    const before = text("assistant", "speech");
+    const thinking: ChatLine = { role: "assistant", parts: [{ type: "thinking", text: "before" }] };
+    const after: ChatLine = { role: "assistant", parts: [{ type: "thinking", text: "after" }] };
+    for (const status of ["pending", "running", "success"] as const) {
+      const groups = groupChatMessages([before, thinking, routine(status), after, text("assistant", "answer")]);
+      expect(groups.map((group) => group.kind === "group" ? group.presentation : group.message.parts[0]?.type)).toEqual(["text", "thinking", "text"]);
+      expect(groups[1]).toMatchObject({ messages: [thinking, routine(status), after], messageIndices: [1, 2, 3] });
+    }
+    for (const toolName of ["write", "create", "overwrite"]) {
+      expect(groupChatMessages([routine("pending"), { role: "tool", parts: [{ type: "toolExecution", toolName, summary: "file", status: "running" }] }])[1]).toMatchObject({ kind: "group", messages: [{ role: "tool" }] });
+    }
+    expect(groupChatMessages([{ role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "file", status: "running", preview: { diff: "+change" } }] }])[0]).not.toHaveProperty("presentation");
+  });
+
+  it("keeps skill lines inside thinking without collapsing or reordering speech", () => {
+    const thinking = { role: "assistant" as const, parts: [{ type: "thinking" as const, text: "before" }] };
+    const skill = { role: "skill" as const, parts: [{ type: "skillRead" as const, name: "guide", path: "/skills/guide/SKILL.md" }] };
+    const after = { role: "assistant" as const, parts: [{ type: "thinking" as const, text: "after" }] };
+    expect(groupChatMessages([thinking, skill, after, text("assistant", "answer")])).toEqual([
+      { kind: "group", presentation: "thinking", startIndex: 0, endIndex: 2, messages: [thinking, skill, after], messageIndices: [0, 1, 2] },
+      { kind: "message", index: 3, message: text("assistant", "answer") },
+    ]);
+    const tool: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "bash", summary: "ls", status: "running" }] };
+    expect(groupChatMessages([thinking, tool, skill, after])[0]).toEqual({
+      kind: "group", presentation: "thinking", startIndex: 0, endIndex: 3,
+      messages: [thinking, tool, skill, after], messageIndices: [0, 1, 2, 3],
+    });
   });
 
   it("merges adjacent thinking but lets assistant speech separate thinking blocks", () => {

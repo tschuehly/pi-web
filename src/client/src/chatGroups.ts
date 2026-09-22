@@ -45,6 +45,23 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
       groups.pop();
       return;
     }
+    // Skill reads stay visible as compact lines but may bridge thinking without splitting it.
+    if (message.parts.every((part) => part.type === "skillRead") && previous?.kind === "group") {
+      const thinking = previous.presentation === "thinking" ? previous : previous.presentation === "activity" && before?.kind === "group" && before.presentation === "thinking" ? before : undefined;
+      if (thinking !== undefined) {
+        if (thinking !== previous) {
+          thinking.messages.push(...previous.messages);
+          thinking.messageIndices = [...(groupIndices.get(thinking) ?? []), ...(groupIndices.get(previous) ?? [])];
+          groupIndices.set(thinking, thinking.messageIndices);
+          groups.pop();
+        }
+        thinking.messages.push(message);
+        thinking.messageIndices = [...(thinking.messageIndices ?? groupIndices.get(thinking) ?? []), index];
+        groupIndices.set(thinking, thinking.messageIndices);
+        thinking.endIndex = index;
+        return;
+      }
+    }
     if (previous?.kind === "group" && previous.presentation === presentation) {
       previous.messages.push(message);
       if (previous.messageIndices !== undefined) previous.messageIndices.push(index);
@@ -75,6 +92,7 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
       else if (kind === "activity") pushGroup(splitMessage, index, "activity");
       else if (kind === "history") pushGroup(splitMessage, index, "history");
       else if (kind === "event") pushGroup(splitMessage, index);
+      else if (splitMessage.role === "skill" && skillContinuesThinking(groups)) pushGroup(splitMessage, index);
       else if (isToolImageMessage(splitMessage)) {
         const toolName = toolNameFromParts(message.parts);
         groups.push({ kind: "tool-image", message: splitMessage, index, ...(toolName === undefined ? {} : { toolName }) });
@@ -90,6 +108,12 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
     flush();
   });
   return groups;
+}
+
+function skillContinuesThinking(groups: ChatGroup[]): boolean {
+  const previous = groups.at(-1);
+  const before = groups.at(-2);
+  return previous?.kind === "group" && (previous.presentation === "thinking" || previous.presentation === "activity" && before?.kind === "group" && before.presentation === "thinking");
 }
 
 export function summarizeChatGroup(messages: ChatLine[]): string {
@@ -119,7 +143,7 @@ function chatPartKind(message: ChatLine, part: ChatPart): ChatGroupPresentation 
   if (message.source === "compaction" || message.source === "branch_summary") return "history";
   if (part.type === "thinking") return "thinking";
   if (part.type === "toolCall" && message.severity !== "error") return "activity";
-  if (part.type === "toolExecution" && part.status === "success" && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details, part.preview?.diff)) return "activity";
+  if (part.type === "toolExecution" && part.status !== "error" && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details, part.preview?.diff)) return "activity";
   if (part.type === "toolResult" && !part.isError && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details)) return "activity";
   if (part.type === "skillInvocation" || part.type === "skillRead" || part.type === "image" || part.type === "askUserRecord") return "readable";
   if (part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash")) return "readable";

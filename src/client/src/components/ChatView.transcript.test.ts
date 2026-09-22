@@ -108,6 +108,75 @@ describe("ChatView transcript density", () => {
     expect(root.querySelector<FormattedText>("article.msg.assistant formatted-text")?.text).toBe("Done");
   });
 
+  it("keeps a pending routine tool in the same collapsed Activity on success", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    const execution = { type: "toolExecution" as const, toolCallId: "read-1", toolName: "read", summary: "file", status: "pending" as const };
+    view.messages = [
+      { role: "assistant", parts: [{ type: "thinking", text: "before" }] },
+      { role: "tool", parts: [execution] },
+      { role: "assistant", parts: [{ type: "thinking", text: "after" }] },
+    ];
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const thinking = root.querySelector<HTMLDetailsElement>(".thinking-group");
+    const activity = thinking?.querySelector<HTMLDetailsElement>(".activity-group");
+    expect(activity?.open).toBe(false);
+    expect(activity?.querySelector("summary")?.textContent).toContain("1 step");
+    view.messages = [
+      { role: "assistant", parts: [{ type: "thinking", text: "before" }] },
+      { role: "tool", parts: [{ ...execution, status: "success", resultText: "contents" }] },
+      { role: "assistant", parts: [{ type: "thinking", text: "after" }] },
+    ];
+    await view.updateComplete;
+    expect(root.querySelector(".thinking-group")).toBe(thinking);
+    expect(thinking?.querySelector(".activity-group")).toBe(activity);
+    expect(root.querySelectorAll(".activity-group")).toHaveLength(1);
+  });
+
+  it("renders skill lines between thinking segments once and without a separate header", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [
+      { role: "assistant", parts: [{ type: "thinking", text: "before" }] },
+      { role: "skill", parts: [{ type: "skillRead", toolCallId: "skill-1", name: "guide", path: "/skills/guide/SKILL.md" }] },
+      { role: "assistant", parts: [{ type: "thinking", text: "after" }, { type: "text", text: "answer" }] },
+    ];
+    document.body.append(view);
+    await view.updateComplete;
+    const root = requireShadowRoot(view);
+    const thinking = root.querySelector<HTMLDetailsElement>(".thinking-group");
+    expect(root.querySelectorAll(".thinking-group")).toHaveLength(1);
+    expect(thinking?.querySelectorAll(".skill-read")).toHaveLength(1);
+    expect(thinking?.querySelector(".skill-read-shell")?.textContent.trim()).toBe("Skill: guide");
+    expect(thinking?.querySelector(".skill-read-shell .msg-header")).toBeNull();
+    expect(root.querySelector<FormattedText>("article.msg.assistant formatted-text")?.text).toBe("answer");
+  });
+
+  it("renders a validated Goal lifecycle as one collapsed accessible card without model-only text", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [{ role: "custom", customType: "pi-goal.lifecycle", content: "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.", details: {
+      schemaVersion: 1, goalId: "goal-1", transition: "block", state: "blocked", reason: "Owner approval required", summary: "Checked twice",
+    } }];
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const card = root.querySelector<HTMLDetailsElement>("details.goal-lifecycle");
+    expect(card).not.toBeNull();
+    expect(card?.open).toBe(false);
+    expect(card?.querySelector("summary")?.textContent).toContain("Goal blocked");
+    expect(card?.textContent).toContain("Owner approval required");
+    expect(card?.textContent).toContain("Checked twice");
+    expect(card?.textContent).not.toContain("[pi-goal]");
+    expect(root.querySelector("article.msg.system")).toBeNull();
+    card?.querySelector("summary")?.click();
+    expect(card?.open).toBe(true);
+  });
+
   it("renders a long compaction summary once behind an accessible history boundary", async () => {
     const summary = `## Goal\n${"x".repeat(19_732 - "## Goal\n".length)}`;
     const sourceText = `Compacted history:\n\n${summary}`;

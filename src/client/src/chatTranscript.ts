@@ -86,7 +86,7 @@ function applyFinalLine(messages: ChatLine[], displayEnded: ChatLine): ChatLine[
   if (askUserRecord !== undefined) return reconcileFinalAskUserRecord(messages, displayEnded, askUserRecord);
   const last = messages.at(-1);
   if (last?.role !== displayEnded.role) return [...messages, displayEnded];
-  if (displayEnded.role === "assistant" || sameMessageText(last, displayEnded)) return [...messages.slice(0, -1), displayEnded];
+  if ((displayEnded.role === "assistant" && skillReads(last).length === 0) || (messageText(displayEnded) !== "" && sameMessageText(last, displayEnded))) return [...messages.slice(0, -1), displayEnded];
   return [...messages, displayEnded];
 }
 
@@ -147,6 +147,9 @@ function mergeToolExecutionUpdate(part: ToolExecutionPart, event: Extract<Sessio
 
 function finalizeToolExecution(messages: ChatLine[], result: ToolResultUpdate): ChatLine[] {
   const { toolCallId, toolName, text, isError, content, details, presentation } = result;
+  if (toolCallId !== undefined && toolCallId !== "" && toolName === "read" && !isError && presentation.images.length === 0
+    && getString(details, "diff") === undefined && previewFromDetails(details)?.diff === undefined
+    && messages.some((line) => skillReads(line).some((read) => read.toolCallId === toolCallId))) return messages;
   const updated = updateToolExecution(messages, toolCallId, (part) => {
     const preview = previewFromDetails(details) ?? part.preview;
     return {
