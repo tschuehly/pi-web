@@ -555,7 +555,7 @@ export const promptEditorStyles = css`
   textarea, .markdown-editor .cm-editor { box-sizing: border-box; width: 100%; min-height: 54px; max-height: 220px; overflow: hidden; border-radius: 8px; border: 1px solid var(--pi-border); background: var(--pi-bg); color: var(--pi-text); font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); }
   textarea { overflow-y: auto; padding: 8px; }
   .markdown-editor .cm-scroller { max-height: 220px; overflow-y: auto; font-family: var(--pi-control-font-family, system-ui, sans-serif); line-height: 1.4; }
-  .markdown-editor-manual-height .cm-editor { height: var(--prompt-editor-manual-height); max-height: min(640px, calc(var(--pi-workbench-viewport-height, 100vh) / 2)); }
+  .markdown-editor-manual-height .cm-editor { height: var(--prompt-editor-manual-height); max-height: var(--prompt-editor-manual-max-height); }
   .markdown-editor-manual-height .cm-scroller { height: 100%; max-height: none; }
   .markdown-editor .cm-content { min-height: 38px; padding: 8px 44px 8px 8px; caret-color: var(--pi-text); text-align: start; unicode-bidi: plaintext; }
   .markdown-editor .cm-line { padding: 0; unicode-bidi: plaintext; }
@@ -601,8 +601,8 @@ export const promptEditorStyles = css`
     .icon-button { width: 34px; height: 34px; }
   }
   @media (pointer: coarse) {
-    footer { padding-top: 24px; }
-    .editor-resize-handle { top: -22px; height: 44px; }
-    .editor-resize-handle::after { top: 21px; }
+    footer { padding-top: 36px; }
+    .editor-resize-handle { top: -10px; height: 44px; }
+    .editor-resize-handle::after { top: 9px; }
   }
 `;

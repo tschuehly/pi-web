@@ -31,9 +31,10 @@ import "./AutocompleteMenu";
 export const PROMPT_EDITOR_MIN_HEIGHT = 54;
 export const PROMPT_EDITOR_MAX_HEIGHT = 640;
 
-export function promptEditorMaximumHeight(viewportHeight: number, interfaceScale: number): number {
+export function promptEditorMaximumHeight(viewportHeight: number, interfaceScale: number, nonEditorChromeHeight = 0): number {
   const scale = Number.isFinite(interfaceScale) && interfaceScale > 0 ? interfaceScale : 1;
-  return Math.max(PROMPT_EDITOR_MIN_HEIGHT, Math.min(PROMPT_EDITOR_MAX_HEIGHT, viewportHeight / scale / 2));
+  const composerHeight = viewportHeight / scale / 2;
+  return Math.max(PROMPT_EDITOR_MIN_HEIGHT, Math.min(PROMPT_EDITOR_MAX_HEIGHT, composerHeight - Math.max(0, nonEditorChromeHeight)));
 }
 
 export function promptEditorDragHeight(startHeight: number, startY: number, currentY: number, interfaceScale: number, maximumHeight: number): number {
@@ -69,6 +70,7 @@ export class PromptEditor extends LitElement {
   @property({ attribute: false }) onSelectThinking?: () => void;
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
   @property({ attribute: false }) availableThinkingLevels: readonly string[] = [];
+  @query("footer") private footer?: HTMLElement;
   @query(".markdown-editor") private editorHost?: HTMLDivElement;
   @query(".attachment-input") private attachmentInput?: HTMLInputElement;
   // `draft` is the live document text but is intentionally NOT reactive: it
@@ -186,11 +188,13 @@ export class PromptEditor extends LitElement {
         <div
           class="editor-resize-handle"
           role="separator"
-          aria-label="Resize message editor"
+          aria-label="Resize message editor; press Enter to reset automatic height"
           aria-orientation="horizontal"
           aria-valuemin=${String(PROMPT_EDITOR_MIN_HEIGHT)}
           aria-valuemax=${String(Math.round(maximumHeight))}
           aria-valuenow=${String(Math.round(currentHeight))}
+          aria-valuetext=${`${String(Math.round(currentHeight))} pixels, ${this.manualEditorHeight === undefined ? "automatic" : "manual"} height`}
+          title="Drag or use arrow keys to resize. Press Enter to reset automatic height."
           tabindex="0"
           @pointerdown=${(event: PointerEvent) => { this.startEditorResize(event); }}
           @pointermove=${(event: PointerEvent) => { this.moveEditorResize(event); }}
@@ -200,7 +204,7 @@ export class PromptEditor extends LitElement {
           @keydown=${(event: KeyboardEvent) => { this.handleEditorResizeKey(event); }}
         ></div>
         <div class="editor-wrap">
-          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${this.manualEditorHeight === undefined ? "" : `--prompt-editor-manual-height: ${String(this.manualEditorHeight)}px`} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
+          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${this.manualEditorHeight === undefined ? "" : `--prompt-editor-manual-height: ${String(this.manualEditorHeight)}px; --prompt-editor-manual-max-height: ${String(maximumHeight)}px`} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
           <button class="editor-attach icon-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
@@ -525,10 +529,9 @@ export class PromptEditor extends LitElement {
       }),
     });
     if (typeof ResizeObserver !== "undefined") {
-      this.editorHeightObserver = new ResizeObserver(() => {
-        if (this.manualEditorHeight === undefined) this.requestUpdate();
-      });
+      this.editorHeightObserver = new ResizeObserver(() => { this.reconcileEditorHeight(); });
       this.editorHeightObserver.observe(this.editor.dom);
+      if (this.footer !== undefined) this.editorHeightObserver.observe(this.footer);
     }
   }
 
@@ -538,8 +541,19 @@ export class PromptEditor extends LitElement {
     return Number.isFinite(scale) && scale > 0 ? scale : 1;
   }
 
+  private nonEditorChromeHeight(): number {
+    const footerHeight = this.footer?.offsetHeight ?? 0;
+    const editorHeight = this.editor?.dom.offsetHeight ?? 0;
+    return Math.max(0, footerHeight - editorHeight);
+  }
+
   private maximumEditorHeight(): number {
-    return promptEditorMaximumHeight(typeof window === "undefined" ? PROMPT_EDITOR_MAX_HEIGHT * 2 : window.innerHeight, this.interfaceScale());
+    return promptEditorMaximumHeight(typeof window === "undefined" ? PROMPT_EDITOR_MAX_HEIGHT * 2 : window.innerHeight, this.interfaceScale(), this.nonEditorChromeHeight());
+  }
+
+  private reconcileEditorHeight(): void {
+    if (this.manualEditorHeight !== undefined) this.setManualEditorHeight(this.manualEditorHeight);
+    else this.requestUpdate();
   }
 
   private currentEditorHeight(maximumHeight = this.maximumEditorHeight()): number {
@@ -547,16 +561,14 @@ export class PromptEditor extends LitElement {
   }
 
   private setManualEditorHeight(height: number): void {
-    const previous = this.manualEditorHeight;
     this.manualEditorHeight = clampNumber(height, PROMPT_EDITOR_MIN_HEIGHT, this.maximumEditorHeight());
-    this.requestUpdate("manualEditorHeight", previous);
+    this.requestUpdate();
   }
 
   private resetEditorHeight(): void {
     if (this.manualEditorHeight === undefined) return;
-    const previous = this.manualEditorHeight;
     this.manualEditorHeight = undefined;
-    this.requestUpdate("manualEditorHeight", previous);
+    this.requestUpdate();
   }
 
   private startEditorResize(event: PointerEvent): void {
@@ -565,6 +577,7 @@ export class PromptEditor extends LitElement {
     if (!(handle instanceof HTMLElement)) return;
     event.preventDefault();
     handle.setPointerCapture(event.pointerId);
+    handle.focus();
     this.resizePointer = { id: event.pointerId, startY: event.clientY, startHeight: this.currentEditorHeight(), scale: this.interfaceScale() };
   }
 
@@ -572,6 +585,7 @@ export class PromptEditor extends LitElement {
     const resize = this.resizePointer;
     if (resize?.id !== event.pointerId) return;
     event.preventDefault();
+    if (Math.abs(event.clientY - resize.startY) > 8) this.lastTouchTapAt = undefined;
     this.setManualEditorHeight(promptEditorDragHeight(resize.startHeight, resize.startY, event.clientY, resize.scale, this.maximumEditorHeight()));
   }
 
@@ -580,7 +594,8 @@ export class PromptEditor extends LitElement {
     if (resize?.id !== event.pointerId) return;
     releasePointerCapture(event.currentTarget, event.pointerId);
     this.resizePointer = undefined;
-    if (event.pointerType !== "touch" || Math.abs(event.clientY - resize.startY) > 8) return;
+    if (event.pointerType !== "touch") return;
+    if (Math.abs(event.clientY - resize.startY) > 8) { this.lastTouchTapAt = undefined; return; }
     const now = event.timeStamp;
     if (this.lastTouchTapAt !== undefined && now - this.lastTouchTapAt <= 300) {
       this.lastTouchTapAt = undefined;
@@ -594,6 +609,7 @@ export class PromptEditor extends LitElement {
     if (this.resizePointer?.id !== event.pointerId) return;
     releasePointerCapture(event.currentTarget, event.pointerId);
     this.resizePointer = undefined;
+    if (event.pointerType === "touch") this.lastTouchTapAt = undefined;
   }
 
   private handleEditorResizeKey(event: KeyboardEvent): void {
