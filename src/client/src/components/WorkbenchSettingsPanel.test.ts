@@ -7,11 +7,120 @@ import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 const scales = [0.8, 1, 1.25, 1.5, 2] as const;
 
 afterEach(() => {
+  delete window.piWebNative;
   document.body.replaceChildren();
   document.documentElement.style.removeProperty("zoom");
   document.documentElement.style.removeProperty(INTERFACE_SCALE_CSS_PROPERTY);
   localStorage.clear();
   vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+describe("WorkbenchSettingsPanel sleep control", () => {
+  it("hides the control without both native bridge methods", async () => {
+    const panel = await mountPanel();
+    trigger(panel).click();
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.textContent).not.toContain("System sleep (battery and AC)");
+    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: () => Promise.resolve(false) };
+    trigger(panel).click();
+    trigger(panel).click();
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.textContent).not.toContain("System sleep (battery and AC)");
+  });
+
+  it("reads real state on open, confirms explicit actions, and shows the actual result", async () => {
+    let actual = false;
+    const setter = vi.fn((disabled: boolean) => Promise.resolve(actual && disabled));
+    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: () => Promise.resolve(actual), setSleepDisabled: setter };
+    const confirm = vi.fn().mockReturnValue(false);
+    window.confirm = confirm;
+    const panel = await mountPanel();
+    trigger(panel).click();
+    await settle(panel);
+    expect(panel.shadowRoot?.textContent).toContain("System sleep enabled");
+    sleepButton(panel).click();
+    await settle(panel);
+    expect(setter).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    sleepButton(panel).click();
+    await settle(panel);
+    expect(setter).toHaveBeenCalledExactlyOnceWith(true);
+    expect(panel.shadowRoot?.textContent).toContain("System sleep enabled");
+    actual = true;
+    trigger(panel).click();
+    trigger(panel).click();
+    await settle(panel);
+    expect(panel.shadowRoot?.textContent).toContain("System sleep disabled");
+    expect(sleepButton(panel).textContent).toContain("Enable system sleep");
+  });
+
+  it("disables the action when the actual state cannot be read", async () => {
+    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: () => Promise.reject(new Error("SLEEP_CONTROL_READ_FAILED: fixture")), setSleepDisabled: vi.fn() };
+    const panel = await mountPanel();
+    trigger(panel).click();
+    await settle(panel);
+    expect(sleepButton(panel).disabled).toBe(true);
+    expect(panel.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("SLEEP_CONTROL_READ_FAILED:");
+  });
+
+  it("polls external state while open without invoking the setter", async () => {
+    vi.useFakeTimers();
+    const setter = vi.fn();
+    const getter = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: setter };
+    const panel = await mountPanel();
+    trigger(panel).click();
+    await Promise.resolve();
+    await panel.updateComplete;
+    await vi.advanceTimersByTimeAsync(5000);
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.textContent).toContain("System sleep disabled");
+    expect(setter).not.toHaveBeenCalled();
+    trigger(panel).click();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(getter).toHaveBeenCalledTimes(2);
+  });
+
+  it("serializes pending changes and displays the native result", async () => {
+    let finish!: (value: boolean) => void;
+    const pending = new Promise<boolean>((resolve) => { finish = resolve; });
+    const setter = vi.fn(() => pending);
+    const getter = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: setter };
+    window.confirm = vi.fn().mockReturnValue(true);
+    const panel = await mountPanel();
+    trigger(panel).click();
+    await settle(panel);
+    sleepButton(panel).click();
+    await panel.updateComplete;
+    expect(sleepButton(panel).disabled).toBe(true);
+    expect(panel.shadowRoot?.textContent).toContain("Changing system sleep setting");
+    sleepButton(panel).click();
+    expect(setter).toHaveBeenCalledTimes(1);
+    finish(true);
+    await settle(panel);
+    expect(panel.shadowRoot?.textContent).toContain("System sleep disabled");
+  });
+
+  it.each([
+    ["SLEEP_CONTROL_USER_CANCELLED:", "cancelled"],
+    ["SLEEP_CONTROL_TIMEOUT:", "timed out"],
+    ["SLEEP_CONTROL_STATE_UNVERIFIED:", "may have changed"],
+    ["SLEEP_CONTROL_CHANGE_FAILED:", "failed"],
+  ])("reports %s and rereads actual state", async (prefix, expected) => {
+    const getter = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: () => Promise.reject(new Error(`${prefix} fixture`)) };
+    window.confirm = vi.fn().mockReturnValue(true);
+    const panel = await mountPanel();
+    trigger(panel).click();
+    await settle(panel);
+    sleepButton(panel).click();
+    await settle(panel);
+    expect(getter).toHaveBeenCalledTimes(2);
+    expect(panel.shadowRoot?.textContent).toContain("System sleep disabled");
+    expect(panel.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain(expected);
+  });
 });
 
 describe("WorkbenchSettingsPanel zoom geometry", () => {
@@ -66,6 +175,15 @@ async function mountPanel(): Promise<WorkbenchSettingsPanel> {
   document.body.append(panel);
   await panel.updateComplete;
   return panel;
+}
+
+async function settle(panel: WorkbenchSettingsPanel): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await panel.updateComplete;
+}
+
+function sleepButton(panel: WorkbenchSettingsPanel): HTMLButtonElement {
+  return requiredElement(panel.shadowRoot?.querySelector<HTMLButtonElement>("fieldset button"), "sleep action");
 }
 
 function trigger(panel: WorkbenchSettingsPanel): HTMLButtonElement {

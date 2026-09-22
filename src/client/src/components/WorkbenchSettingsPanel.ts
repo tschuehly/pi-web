@@ -1,4 +1,5 @@
 import { LitElement, css, html, nothing } from "lit";
+import { nativeDirectoryPicker } from "../nativeHost";
 import { customElement, property, state } from "lit/decorators.js";
 import { applyInterfaceScale, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STEPS, parseInterfaceScale, readStoredInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile, writeStoredPresentationProfile, type BuiltInPresentationProfileId } from "../presentationProfiles";
@@ -24,6 +25,11 @@ export class WorkbenchSettingsPanel extends LitElement {
   @state() private anchorRight = 0;
   @state() private scale = readStoredInterfaceScale();
   @state() private profileId: BuiltInPresentationProfileId = readStoredPresentationProfile()?.base ?? "comfortable";
+  @state() private sleepDisabled: boolean | undefined;
+  @state() private sleepPending = false;
+  @state() private sleepError = "";
+  private sleepPoll: ReturnType<typeof setInterval> | undefined;
+  private sleepReadVersion = 0;
 
   private readonly onDocumentClick = (event: MouseEvent): void => {
     if (event.composedPath().includes(this)) return;
@@ -37,6 +43,7 @@ export class WorkbenchSettingsPanel extends LitElement {
   override disconnectedCallback(): void {
     document.removeEventListener("click", this.onDocumentClick);
     window.removeEventListener("resize", this.onWindowResize);
+    this.stopSleepPolling();
     super.disconnectedCallback();
   }
 
@@ -92,6 +99,15 @@ export class WorkbenchSettingsPanel extends LitElement {
             <option value="compact" .selected=${this.profileId === "compact"}>Compact</option>
           </select>
         </fieldset>
+        ${this.sleepHost() === undefined ? nothing : html`
+          <fieldset>
+            <legend>System sleep (battery and AC)</legend>
+            <p class="sleep-status" role="status" aria-live="polite">${this.sleepPending ? "Changing system sleep setting…" : this.sleepDisabled === undefined ? "Checking system sleep setting…" : this.sleepDisabled ? "System sleep disabled" : "System sleep enabled"}</p>
+            <button type="button" ?disabled=${this.sleepPending || this.sleepDisabled === undefined} @click=${() => { void this.changeSleep(); }}>${this.sleepDisabled === true ? "Enable system sleep" : "Disable system sleep"}</button>
+            <small>This setting persists after quitting or restarting the Mac. To restore sleep outside Workbench: sudo /usr/bin/pmset -a disablesleep 0</small>
+            ${this.sleepError === "" ? nothing : html`<p role="alert" class="sleep-error">${this.sleepError}</p>`}
+          </fieldset>
+        `}
       </div>
     `;
   }
@@ -103,6 +119,12 @@ export class WorkbenchSettingsPanel extends LitElement {
     this.open = true;
     document.addEventListener("click", this.onDocumentClick);
     window.addEventListener("resize", this.onWindowResize);
+    if (this.sleepHost() !== undefined) {
+      this.sleepDisabled = undefined;
+      this.sleepError = "";
+      void this.readSleep();
+      this.sleepPoll = setInterval(() => { if (!this.sleepPending) void this.readSleep(); }, 5000);
+    }
     void this.updateComplete.then(() => {
       this.renderRoot.querySelector<HTMLElement>(".popover input, .popover select")?.focus();
     });
@@ -117,6 +139,7 @@ export class WorkbenchSettingsPanel extends LitElement {
   private close(): void {
     if (!this.open) return;
     this.open = false;
+    this.stopSleepPolling();
     document.removeEventListener("click", this.onDocumentClick);
     window.removeEventListener("resize", this.onWindowResize);
     this.renderRoot.querySelector<HTMLButtonElement>(".trigger")?.focus();
@@ -127,6 +150,63 @@ export class WorkbenchSettingsPanel extends LitElement {
     event.preventDefault();
     event.stopPropagation();
     this.close();
+  }
+
+  private sleepHost() {
+    const host = nativeDirectoryPicker("local");
+    return typeof host?.getSleepDisabled === "function" && typeof host.setSleepDisabled === "function" ? host : undefined;
+  }
+
+  private stopSleepPolling(): void {
+    if (this.sleepPoll !== undefined) clearInterval(this.sleepPoll);
+    this.sleepPoll = undefined;
+    this.sleepReadVersion++;
+  }
+
+  private async readSleep(): Promise<void> {
+    const host = this.sleepHost();
+    if (host?.getSleepDisabled === undefined) return;
+    const version = ++this.sleepReadVersion;
+    try {
+      const disabled = await host.getSleepDisabled();
+      if (version !== this.sleepReadVersion) return;
+      if (typeof disabled !== "boolean") throw new Error("Invalid system sleep state from native host");
+      this.sleepDisabled = disabled;
+      this.sleepError = "";
+    } catch (error) {
+      if (version !== this.sleepReadVersion) return;
+      this.sleepDisabled = undefined;
+      this.sleepError = `Could not read system sleep state: ${String(error)}. Retry by reopening Settings.`;
+    }
+  }
+
+  private async changeSleep(): Promise<void> {
+    const host = this.sleepHost();
+    if (host?.setSleepDisabled === undefined || this.sleepPending || this.sleepDisabled === undefined) return;
+    const target = !this.sleepDisabled;
+    if (!window.confirm(`${target ? "Disable" : "Enable"} system sleep on battery and AC? This setting persists after Workbench quits and after a reboot.`)) return;
+    this.sleepPending = true;
+    this.sleepError = "";
+    this.sleepReadVersion++;
+    try {
+      const actual = await host.setSleepDisabled(target);
+      if (typeof actual !== "boolean") throw new Error("Native host did not confirm system sleep state");
+      this.sleepDisabled = actual;
+    } catch (error) {
+      const detail = String(error);
+      this.sleepDisabled = undefined;
+      this.sleepError = detail.includes("SLEEP_CONTROL_USER_CANCELLED:") ? "System sleep change cancelled."
+        : detail.includes("SLEEP_CONTROL_STATE_UNVERIFIED:") ? "System sleep may have changed."
+        : detail.includes("SLEEP_CONTROL_TIMEOUT:") ? "System sleep change timed out; the setting may have changed."
+        : `System sleep change failed: ${detail}.`;
+    } finally {
+      this.sleepPending = false;
+      if (this.open) {
+        const error = this.sleepError;
+        await this.readSleep();
+        if (error !== "") this.sleepError = `${error} ${this.sleepDisabled === undefined ? "Current state could not be verified; reopen Settings to retry." : "Current state was reread."}`;
+      }
+    }
   }
 
   private setAuto(auto: boolean): void {
@@ -164,7 +244,12 @@ export class WorkbenchSettingsPanel extends LitElement {
     .checkbox, .radio { display: flex; align-items: center; gap: 6px; }
     [role="radiogroup"] { display: flex; gap: 14px; }
     select { box-sizing: border-box; width: 100%; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: var(--pi-control-padding-block) var(--pi-control-padding-inline); font: 13px system-ui, sans-serif; }
-    select:focus-visible, input:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    select:focus-visible, input:focus-visible, fieldset button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .sleep-status, .sleep-error { margin: 0; font-size: 13px; color: var(--pi-text); }
+    .sleep-error { color: var(--pi-error, var(--pi-text)); }
+    fieldset button { min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); cursor: pointer; }
+    fieldset button:disabled { opacity: .55; cursor: default; }
+    small { color: var(--pi-muted); line-height: 1.4; }
   `;
 }
 
