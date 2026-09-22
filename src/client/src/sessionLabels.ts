@@ -5,6 +5,8 @@ export function shortSessionId(id: string): string {
 }
 
 export function sessionTitle(session: Pick<SessionInfo, "id" | "name" | "firstMessage">): string {
-  if (session.name !== undefined && session.name !== "") return session.name;
-  return session.firstMessage !== "" ? session.firstMessage : shortSessionId(session.id);
+  const name = session.name?.trim();
+  if (name !== undefined && name !== "") return name;
+  const firstMessage = session.firstMessage.trim();
+  return firstMessage !== "" ? firstMessage : shortSessionId(session.id);
 }

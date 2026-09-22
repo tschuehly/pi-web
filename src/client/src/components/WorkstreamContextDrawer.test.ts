@@ -96,9 +96,14 @@ describe("WorkstreamContextDrawer", () => {
     await element.updateComplete;
 
     const tab = element.shadowRoot?.querySelector<HTMLElement>(".tab");
-    expect(tab?.textContent).toBe("Named Chat");
+    const title = tab?.querySelector<HTMLElement>(".fallback-title");
+    expect(title?.textContent).toBe("Named Chat");
     expect(tab?.title).toBe("Named Chat");
-    expect(tab?.getAttribute("role")).toBe("status");
+    expect(tab?.getAttribute("role")).toBeNull();
+    expect(getComputedStyle(title ?? document.body).flexGrow).toBe("1");
+    expect(getComputedStyle(title ?? document.body).minWidth).toBe("0");
+    expect(getComputedStyle(title ?? document.body).overflow).toBe("hidden");
+    expect(getComputedStyle(title ?? document.body).textOverflow).toBe("ellipsis");
     expect(element.shadowRoot?.querySelector("details")).toBeNull();
   });
 

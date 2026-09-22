@@ -2,7 +2,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import type { Machine, Project, SessionInfo, Workspace } from "../../api";
 import { browserGatewayDisplayUrl, machineIconUrl } from "../../instanceIdentity";
-import { shortSessionId } from "../../sessionLabels";
+import { sessionTitle } from "../../sessionLabels";
 import type { NavigationSection } from "../../appShell/navigationState";
 
 @customElement("app-context-bar")
@@ -49,7 +49,7 @@ export class AppContextBar extends LitElement {
     const machineChipClass = machine === undefined ? "context-chip machine-chip empty" : "context-chip machine-chip";
     const projectLabel = projectContextLabel(this.project);
     const workspaceLabel = workspaceContextLabel(this.workspace);
-    const sessionLabel = sessionContextLabel(this.session);
+    const sessionLabel = this.session === undefined ? "No session" : sessionTitle(this.session);
     return html`
       <nav class=${this.contextBarClass()} aria-label="Current location">
         <span class="context-bar-label">Location</span>
@@ -243,12 +243,6 @@ function workspaceContextLabel(workspace: Workspace | undefined): string {
 
 function workspaceContextTitle(workspace: Workspace | undefined): string {
   return workspace === undefined ? "No workspace selected" : `${workspace.label}${workspace.isMain ? " · main" : ""} — ${workspace.path}`;
-}
-
-function sessionContextLabel(session: SessionInfo | undefined): string {
-  const name = session?.name?.trim();
-  const firstMessage = session?.firstMessage.trim();
-  return name !== undefined && name !== "" ? name : firstMessage !== undefined && firstMessage !== "" ? firstMessage : session === undefined ? "No session" : shortSessionId(session.id);
 }
 
 function sessionContextTitle(session: SessionInfo | undefined): string {
