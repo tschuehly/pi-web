@@ -613,11 +613,7 @@ describe("Workbench Chat controls", () => {
     const drawer = shell.querySelector("header > workstream-context-drawer");
     if (!(drawer instanceof WorkstreamContextDrawer)) throw new Error("Workstream context drawer was not rendered");
     expect(drawer.fallbackTitle).toBe("Build the UI");
-    const goal = shell.querySelector("header > goal-status-chip");
-    if (!(goal instanceof GoalStatusChip)) throw new Error("Goal status chip was not rendered");
-    expect(goal.status).toBe(getState(app).status);
-    await goal.updateComplete;
-    expect(goal.shadowRoot?.querySelector("summary")?.textContent).toContain("Build the UI");
+    expect(shell.querySelector("header > goal-status-chip")).toBeNull();
     expect(shell.querySelector("header > strong")).toBeNull();
     const roster = shell.querySelector("delegate-roster");
     if (!(roster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered");
@@ -629,6 +625,12 @@ describe("Workbench Chat controls", () => {
     await app.updateComplete;
     const collapsedRoster = app.shadowRoot?.querySelector("delegate-roster");
     if (!(collapsedRoster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered after collapse");
+    const goal = shell.querySelector("delegate-roster + goal-status-chip");
+    if (!(goal instanceof GoalStatusChip)) throw new Error("Goal status chip was not rendered beside the composer");
+    expect(goal.status).toBe(getState(app).status);
+    await goal.updateComplete;
+    expect(goal.shadowRoot?.querySelector("summary")?.textContent).toContain("Build the UI");
+    expect(goal.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
     expect(collapsedRoster.collapsed).toBe(true);
     expect(shell.querySelector("status-bar")).toBeNull();
     expect(shell.querySelector("working-mode-controls")).toBeNull();

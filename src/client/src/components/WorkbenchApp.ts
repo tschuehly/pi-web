@@ -751,7 +751,6 @@ export class WorkbenchApp extends LitElement {
         <header>
           <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { this.sessions.deselectSession(); }}>←</button>
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)}></workstream-context-drawer>
-          <goal-status-chip .status=${state.status}></goal-status-chip>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           ${this.renderSettingsPanel()}
@@ -791,6 +790,7 @@ export class WorkbenchApp extends LitElement {
           .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
         ></chat-view>
         <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${() => { this.delegateRosterCollapsed = !this.delegateRosterCollapsed; }}></delegate-roster>
+        <goal-status-chip .status=${state.status}></goal-status-chip>
         <prompt-editor
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
