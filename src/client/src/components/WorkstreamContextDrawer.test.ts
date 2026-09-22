@@ -76,7 +76,9 @@ describe("WorkstreamContextDrawer", () => {
     const root = element.shadowRoot;
     const details = root?.querySelector("details");
     const summary = details?.querySelector("summary");
-    expect(summary?.querySelector("span")?.textContent).toBe("Workstream");
+    expect(summary?.querySelector(".context-label")?.textContent).toBe("Workstream");
+    expect(summary?.querySelector(".identity-mark")?.textContent).toBe("BL");
+    expect(summary?.querySelector(".identity-mark")?.getAttribute("aria-hidden")).toBe("true");
     expect(summary?.querySelector("strong")?.textContent).toBe("Build the Workbench launcher");
     expect(root?.textContent).not.toContain("Unassociated Chat");
     expect(details?.open).toBe(false);

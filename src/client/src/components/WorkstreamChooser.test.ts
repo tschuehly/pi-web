@@ -274,6 +274,8 @@ describe("WorkstreamChooser", () => {
     expect(row?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor("ws-1"));
     expect(row?.getAttribute("aria-pressed")).toBe("false");
     expect(row?.querySelector("strong")?.textContent).toBe(snapshot.title);
+    expect(row?.querySelector(".identity-mark")?.textContent).toBe("IL");
+    expect(row?.querySelector(".identity-mark")?.getAttribute("aria-hidden")).toBe("true");
 
     row?.click();
     await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
@@ -281,6 +283,8 @@ describe("WorkstreamChooser", () => {
     const card = shadow(element).querySelector<HTMLElement>(".card");
     expect(card?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor("ws-1"));
     expect(card?.getAttribute("aria-label")).toBe(`Re-entry card for ${snapshot.title}`);
+    expect(card?.querySelector(".identity-mark")?.textContent).toBe("IL");
+    expect(card?.querySelector(".card-title")?.textContent).toBe(snapshot.title);
     const liveRow = shadow(element).querySelector('[data-session-id="s-a"]');
     const idleRow = shadow(element).querySelector('[data-session-id="s-old"]');
     expect(liveRow?.querySelector(".activity-indicator.session")).not.toBeNull();

@@ -1,3 +1,24 @@
+export const WORKSTREAM_TINT_PERCENTAGES = {
+  row: 12,
+  rowHover: 18,
+  rowSelected: 22,
+  rowSelectedHover: 28,
+  card: 9,
+  mark: 30,
+  drawer: 12,
+  drawerActive: 18,
+} as const;
+
+/** A compact title-derived identity cue that remains distinct without colour. */
+export function workstreamMonogram(title: string): string {
+  const words = title.trim().split(/\s+/u).filter((word) => word !== "");
+  if (words.length === 0) return "WS";
+  const letters = words.length === 1
+    ? Array.from(words[0] ?? "").slice(0, 2)
+    : [Array.from(words[0] ?? "")[0], Array.from(words.at(-1) ?? "")[0]];
+  return letters.filter((letter): letter is string => letter !== undefined).join("").toUpperCase();
+}
+
 /**
  * Deterministic accent colour per Workstream id, so the same Workstream reads
  * as the same colour everywhere it appears (chooser card, Chat drawer) without

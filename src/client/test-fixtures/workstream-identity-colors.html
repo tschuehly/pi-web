@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Workstream identity color fixture</title>
+  <title>Workstream identity fixture</title>
   <style>
     * { box-sizing: border-box; min-width: 0; }
     html, body { margin: 0; background: var(--pi-bg); color: var(--pi-text); font: 14px system-ui, sans-serif; }
@@ -13,15 +13,21 @@
     .row { width: 100%; display: grid; gap: 2px; padding: 8px 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color); border-radius: 7px; background: color-mix(in srgb, var(--workstream-color) 12%, var(--pi-bg)); }
     .row:hover, .row.hover { background: color-mix(in srgb, var(--workstream-color) 18%, var(--pi-surface-hover)); }
     .row[aria-pressed="true"] { border-color: var(--pi-accent); border-left-color: var(--workstream-color); background: color-mix(in srgb, var(--workstream-color) 22%, var(--pi-surface)); }
-    .row small { color: var(--pi-muted); }
+    .row[aria-pressed="true"]:hover, .row[aria-pressed="true"].hover { background: color-mix(in srgb, var(--workstream-color) 28%, var(--pi-surface-hover)); }
+    .row-title, .card-heading { display: flex; align-items: center; gap: 8px; }
+    .row-title strong, .card-title { flex: 1 1 auto; }
+    .row small { color: var(--pi-text); }
+    .row small b { color: inherit; text-decoration: underline; text-decoration-style: dotted; }
+    .identity-mark { flex: 0 0 auto; display: inline-grid; place-items: center; width: 28px; height: 24px; border: 2px solid var(--pi-text); border-radius: 7px 7px 3px 7px; background: color-mix(in srgb, var(--workstream-color) 30%, var(--pi-surface)); color: var(--pi-text); font-size: 10px; font-weight: 850; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pi-success); box-shadow: 0 0 0 1px var(--pi-text); }
     .card { padding: 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color); border-radius: 10px; background: color-mix(in srgb, var(--workstream-color) 9%, var(--pi-surface)); }
     details { border-left: 3px solid var(--workstream-color); }
     summary { min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--pi-border); border-radius: 8px; background: color-mix(in srgb, var(--workstream-color) 12%, var(--pi-surface)); list-style: none; cursor: pointer; }
     summary:hover, summary.hover, details[open] summary { background: color-mix(in srgb, var(--workstream-color) 18%, var(--pi-surface-hover)); }
     summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    summary::after { content: "↓"; flex: 0 0 auto; color: var(--pi-muted); }
+    summary::after { content: "↓"; flex: 0 0 auto; color: var(--pi-text); }
     details[open] summary::after { content: "↑"; }
-    summary span { flex: 0 0 auto; color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+    .context-label { flex: 0 0 auto; color: var(--pi-text); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
     summary strong { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sheet { padding: 12px; border-bottom: 1px solid var(--pi-border); background: var(--pi-surface); }
     .grayscale { filter: grayscale(1); }
@@ -31,58 +37,63 @@
       .card, details { border-left-color: LinkText; }
       summary { background: Canvas; }
       details[open] summary { border-color: Highlight; }
+      .identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }
+      .status-dot { border: 1px solid CanvasText; background: Highlight; box-shadow: none; }
     }
+    @media (max-width: 520px) { .context-label { display: none; } }
   </style>
 </head>
 <body>
   <main style="--workstream-color:light-dark(hsl(210deg 70% 40%), hsl(210deg 65% 65%))">
-    <button class="row" data-state="default" aria-pressed="false"><strong>Default Workstream</strong><small>started today</small></button>
-    <button class="row hover" data-state="hover" aria-pressed="false"><strong>Hover Workstream</strong><small>started today</small></button>
-    <button class="row" data-state="selected" aria-pressed="true"><strong>Selected Workstream</strong><small>started today</small></button>
-    <article class="card" data-state="card">Detail card keeps its identity rail and title</article>
+    <button class="row" data-state="default" aria-pressed="false"><span class="row-title"><span class="identity-mark" aria-hidden="true">DW</span><strong>Default Workstream</strong><span class="status-dot" title="Session active"></span></span><small>started today · <b>1 open question</b></small></button>
+    <button class="row hover" data-state="hover" aria-pressed="false"><span class="row-title"><span class="identity-mark" aria-hidden="true">HW</span><strong>Hover Workstream</strong></span><small>started today</small></button>
+    <button class="row" data-state="selected" aria-pressed="true"><span class="row-title"><span class="identity-mark" aria-hidden="true">SW</span><strong>Selected Workstream</strong></span><small>started today</small></button>
+    <button class="row hover" data-state="selected-hover" aria-pressed="true"><span class="row-title"><span class="identity-mark" aria-hidden="true">SH</span><strong>Selected Hover Workstream</strong></span><small>started today</small></button>
+    <article class="card" data-state="card"><div class="card-heading"><span class="identity-mark" aria-hidden="true">DC</span><strong class="card-title">Detail card Workstream</strong></div></article>
     <details data-state="drawer">
-      <summary><span>Workstream</span><strong>A very long Workstream title that must remain identifiable in a narrow three-hundred-and-twenty-pixel viewport</strong></summary>
+      <summary><span class="identity-mark" aria-hidden="true">VL</span><span class="context-label">Workstream</span><strong>A very long Workstream title that must remain identifiable in a narrow three-hundred-and-twenty-pixel viewport</strong></summary>
       <div class="sheet">Open Workstream details</div>
     </details>
   </main>
   <script>
     const themes = {
-      "pi-web-dark": { scheme: "dark", bg: "#070912", surface: "#101527", hover: "#151b31", border: "#4d61a0", text: "#f7f4ff", muted: "#aaa4bd", accent: "#7c3cff" },
-      "pi-web-light": { scheme: "light", bg: "#f7f1e6", surface: "#fff9ee", hover: "#f0e6d6", border: "#a38d6b", text: "#15131b", muted: "#5f586a", accent: "#6430d8" },
-      "github-light": { scheme: "light", bg: "#f6f8fa", surface: "#ffffff", hover: "#eff2f5", border: "#8096aa", text: "#1f2328", muted: "#59636e", accent: "#0969da" },
-      "github-dark": { scheme: "dark", bg: "#0d1117", surface: "#151b23", hover: "#212830", border: "#5e6876", text: "#f0f6fc", muted: "#9198a1", accent: "#4493f8" },
-      classic: { scheme: "dark", bg: "#0d1117", surface: "#161b22", hover: "#21262d", border: "#5d6976", text: "#e6edf3", muted: "#8b949e", accent: "#58a6ff" },
+      "pi-web-dark": { scheme: "dark", bg: "#070912", surface: "#101527", hover: "#151b31", border: "#4d61a0", text: "#f7f4ff", muted: "#aaa4bd", accent: "#7c3cff", success: "#00f0d8" },
+      "pi-web-light": { scheme: "light", bg: "#f7f1e6", surface: "#fff9ee", hover: "#f0e6d6", border: "#a38d6b", text: "#15131b", muted: "#5f586a", accent: "#6430d8", success: "#008c82" },
+      "github-light": { scheme: "light", bg: "#f6f8fa", surface: "#ffffff", hover: "#eff2f5", border: "#8096aa", text: "#1f2328", muted: "#59636e", accent: "#0969da", success: "#1a7f37" },
+      "github-dark": { scheme: "dark", bg: "#0d1117", surface: "#151b23", hover: "#212830", border: "#5e6876", text: "#f0f6fc", muted: "#9198a1", accent: "#4493f8", success: "#3fb950" },
+      classic: { scheme: "dark", bg: "#0d1117", surface: "#161b22", hover: "#21262d", border: "#5d6976", text: "#e6edf3", muted: "#8b949e", accent: "#58a6ff", success: "#3fb950" },
     };
     const root = document.documentElement;
     const details = document.querySelector("details");
     const summary = details.querySelector("summary");
-    const rect = (element) => {
-      const value = element.getBoundingClientRect();
-      return { left: value.left, right: value.right, top: value.top, bottom: value.bottom, width: value.width, height: value.height };
-    };
+    const rect = (element) => { const value = element.getBoundingClientRect(); return { left: value.left, right: value.right, width: value.width }; };
     window.workstreamIdentityFixture = {
       themes: Object.keys(themes),
       measure(themeName, grayscale = false) {
         const theme = themes[themeName];
         root.style.colorScheme = theme.scheme;
-        for (const [token, value] of Object.entries({ "--pi-bg": theme.bg, "--pi-surface": theme.surface, "--pi-surface-hover": theme.hover, "--pi-border": theme.border, "--pi-text": theme.text, "--pi-muted": theme.muted, "--pi-accent": theme.accent })) root.style.setProperty(token, value);
+        for (const [token, value] of Object.entries({ "--pi-bg": theme.bg, "--pi-surface": theme.surface, "--pi-surface-hover": theme.hover, "--pi-border": theme.border, "--pi-text": theme.text, "--pi-muted": theme.muted, "--pi-accent": theme.accent, "--pi-success": theme.success })) root.style.setProperty(token, value);
         document.body.classList.toggle("grayscale", grayscale);
         details.open = false;
         const drawerDefault = getComputedStyle(summary).backgroundColor;
         details.open = true;
         summary.focus();
-        const selected = document.querySelector('[data-state="selected"]');
-        const defaultRow = document.querySelector('[data-state="default"]');
-        const hoverRow = document.querySelector('[data-state="hover"]');
-        const card = document.querySelector('[data-state="card"]');
+        const byState = (state) => document.querySelector(`[data-state="${state}"]`);
+        const selected = byState("selected");
+        const defaultRow = byState("default");
+        const hoverRow = byState("hover");
+        const selectedHover = byState("selected-hover");
+        const card = byState("card");
         const title = summary.querySelector("strong");
+        const marks = [...document.querySelectorAll(".identity-mark")];
         return {
           theme: themeName,
           grayscale,
+          forcedColors: matchMedia("(forced-colors: active)").matches,
           width: innerWidth,
-          backgrounds: { default: getComputedStyle(defaultRow).backgroundColor, hover: getComputedStyle(hoverRow).backgroundColor, selected: getComputedStyle(selected).backgroundColor, card: getComputedStyle(card).backgroundColor, drawerDefault, drawerOpen: getComputedStyle(summary).backgroundColor },
-          cues: { rowRail: getComputedStyle(defaultRow).borderLeftWidth, selectedBorder: getComputedStyle(selected).borderTopWidth, selectedState: selected.getAttribute("aria-pressed"), cardRail: getComputedStyle(card).borderLeftWidth, drawerRail: getComputedStyle(details).borderLeftWidth, drawerRadius: getComputedStyle(summary).borderRadius, drawerOpen: details.open, drawerArrow: getComputedStyle(summary, "::after").content, focusVisible: summary.matches(":focus-visible"), outlineWidth: getComputedStyle(summary).outlineWidth },
-          bounds: { default: rect(defaultRow), selected: rect(selected), card: rect(card), summary: rect(summary) },
+          backgrounds: { default: getComputedStyle(defaultRow).backgroundColor, hover: getComputedStyle(hoverRow).backgroundColor, selected: getComputedStyle(selected).backgroundColor, selectedHover: getComputedStyle(selectedHover).backgroundColor, card: getComputedStyle(card).backgroundColor, drawerDefault, drawerOpen: getComputedStyle(summary).backgroundColor },
+          cues: { monograms: marks.map((mark) => mark.textContent), markBorder: getComputedStyle(marks[0]).borderWidth, markColor: getComputedStyle(marks[0]).color, rowRail: getComputedStyle(defaultRow).borderLeftWidth, selectedState: selected.getAttribute("aria-pressed"), cardRail: getComputedStyle(card).borderLeftWidth, drawerRail: getComputedStyle(details).borderLeftWidth, drawerOpen: details.open, drawerArrow: getComputedStyle(summary, "::after").content, focusVisible: summary.matches(":focus-visible"), outlineWidth: getComputedStyle(summary).outlineWidth, openQuestionColor: getComputedStyle(defaultRow.querySelector("b")).color, rowTextColor: getComputedStyle(defaultRow).color, drawerLabelColor: getComputedStyle(summary.querySelector(".context-label")).color, contextLabelDisplay: getComputedStyle(summary.querySelector(".context-label")).display, statusOutline: getComputedStyle(defaultRow.querySelector(".status-dot")).boxShadow, statusBorder: getComputedStyle(defaultRow.querySelector(".status-dot")).borderWidth },
+          bounds: [defaultRow, selected, selectedHover, card, summary].map(rect),
           narrow: { documentScrollWidth: document.documentElement.scrollWidth, titleClientWidth: title.clientWidth, titleScrollWidth: title.scrollWidth, titleOverflow: getComputedStyle(title).overflow, titleTextOverflow: getComputedStyle(title).textOverflow },
         };
       },

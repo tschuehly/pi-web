@@ -7,7 +7,7 @@ import type { SessionActivity, SessionStatus } from "../api";
 import { isSessionActive, sessionActivityText } from "../../../shared/activity";
 import { renderActivityIndicator } from "./activityBadge";
 import { listStyles } from "./shared";
-import { workstreamAccentColor } from "../workstreamColor";
+import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor, workstreamMonogram } from "../workstreamColor";
 
 // Workstream re-entry view backed by the user-local Workbench plugin service.
 
@@ -389,7 +389,7 @@ export class WorkstreamChooser extends LitElement {
         <div class="list" role="list">
           ${items.map((item) => html`
             <button role="listitem" class="row" style=${`--workstream-color:${workstreamAccentColor(item.id)}`} aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
-              <span class="row-title">${this.liveWorkstreamIds.has(item.id) ? renderActivityIndicator("session", "Session active") : nothing}<strong>${item.title}</strong></span>
+              <span class="row-title"><span class="identity-mark" aria-hidden="true">${workstreamMonogram(item.title)}</span><strong>${item.title}</strong>${this.liveWorkstreamIds.has(item.id) ? renderActivityIndicator("session", "Session active") : nothing}</span>
               <small>${item.lastCheckpointAt === null ? "no checkpoint yet" : `worked on ${ago(item.lastCheckpointAt)}`} · started ${ago(item.createdAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${String(item.unresolvedHumanTaskCount)} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
             </button>
             ${this.selected?.id === item.id ? this.renderCard(this.selected) : nothing}
@@ -419,6 +419,7 @@ export class WorkstreamChooser extends LitElement {
     const blocksFirstChat = snapshot.sessions.some((session) => session.status !== "failed");
     return html`
       <article class="card" tabindex="-1" style=${`--workstream-color:${workstreamAccentColor(snapshot.id)}`} aria-label=${`Re-entry card for ${snapshot.title}`}>
+        <div class="card-heading"><span class="identity-mark" aria-hidden="true">${workstreamMonogram(snapshot.title)}</span><strong class="card-title">${snapshot.title}</strong></div>
         ${overview === null
           ? html`<p class="missing">No overview stored yet. Ask Pi: “write the overview for ${snapshot.id}”.</p>`
           : html`<p class="goal">${overview.goal}<small>Done when: ${overview.doneWhen}</small></p>`}
@@ -491,51 +492,59 @@ export class WorkstreamChooser extends LitElement {
     button { box-sizing: border-box; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 12px; font: inherit; text-align: left; cursor: pointer; }
     button:hover { background: var(--pi-surface-hover); }
     button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .row { width: 100%; display: grid; gap: 2px; border-left: 3px solid var(--workstream-color, transparent); background: color-mix(in srgb, var(--workstream-color) 12%, var(--pi-bg)); }
-    .row:hover { background: color-mix(in srgb, var(--workstream-color) 18%, var(--pi-surface-hover)); }
-    .row-title { display: flex; align-items: center; overflow-wrap: anywhere; }
-    .row[aria-pressed="true"] { border-color: var(--pi-accent); border-left-color: var(--workstream-color, var(--pi-accent)); background: color-mix(in srgb, var(--workstream-color) 22%, var(--pi-surface)); }
-    .row small { color: var(--pi-muted); }
-    .row small b { color: var(--pi-danger); }
-    .card { display: grid; gap: 8px; margin: 2px 0 8px; padding: 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color, var(--pi-border)); border-radius: 10px; background: color-mix(in srgb, var(--workstream-color) 9%, var(--pi-surface)); }
+    .row { width: 100%; display: grid; gap: 2px; border-left: 3px solid var(--workstream-color, transparent); background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.row}%, var(--pi-bg)); }
+    .row:hover { background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.rowHover}%, var(--pi-surface-hover)); }
+    .row-title, .card-heading { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+    .row-title strong, .card-title { flex: 1 1 auto; }
+    .row[aria-pressed="true"] { border-color: var(--pi-accent); border-left-color: var(--workstream-color, var(--pi-accent)); background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.rowSelected}%, var(--pi-surface)); }
+    .row[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.rowSelectedHover}%, var(--pi-surface-hover)); }
+    .row small { color: var(--pi-text); }
+    .row small b { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+    .identity-mark { flex: 0 0 auto; display: inline-grid; place-items: center; width: 28px; height: 24px; border: 2px solid var(--pi-text); border-radius: 7px 7px 3px 7px; background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.mark}%, var(--pi-surface)); color: var(--pi-text); font-size: 10px; font-weight: 850; letter-spacing: .03em; line-height: 1; }
+    .row .activity-indicator, .session-row .activity-indicator { box-shadow: 0 0 0 1px var(--pi-text); }
+    .card { display: grid; gap: 8px; margin: 2px 0 8px; padding: 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color, var(--pi-border)); border-radius: 10px; background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.card}%, var(--pi-surface)); }
+    .card-title { font-size: 14px; }
     .goal { font-weight: 700; font-size: 15px; }
-    .goal small { display: block; margin-top: 2px; font-weight: 500; color: var(--pi-muted); font-size: 12px; }
-    .next { display: grid; gap: 4px; padding: 12px 14px; border-radius: 10px; background: var(--pi-accent); color: white; }
-    .kicker { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; opacity: .85; }
-    .who { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; background: white; color: var(--pi-accent); font-size: 11px; font-weight: 800; }
+    .goal small { display: block; margin-top: 2px; font-weight: 500; color: var(--pi-text); font-size: 12px; }
+    .next { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--pi-accent); border-radius: 10px; background: var(--pi-surface-hover); color: var(--pi-text); }
+    .kicker { color: var(--pi-text); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .who { display: inline-block; margin-right: 8px; padding: 1px 8px; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-surface); color: var(--pi-text); font-size: 11px; font-weight: 800; }
     .next p { font-size: 15px; }
-    .next small { font-size: 11px; opacity: .8; }
+    .next small { color: var(--pi-text); font-size: 11px; }
     .warn { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--pi-purple-border); background: var(--pi-purple-surface); font-size: 13px; }
     details { border: 1px solid var(--pi-border); border-radius: 8px; }
     summary { display: flex; gap: 8px; align-items: baseline; padding: 8px 12px; font-weight: 700; font-size: 13px; cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
     summary::before { content: "▸"; color: var(--pi-muted); }
     details[open] summary::before { content: "▾"; }
-    .peek { flex: 1; min-width: 0; font-weight: 500; color: var(--pi-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .peek { flex: 1; min-width: 0; font-weight: 500; color: var(--pi-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     details > div { display: grid; gap: 10px; padding: 0 12px 10px 28px; font-size: 14px; line-height: 1.55; }
     details ol, details ul { margin: 0; padding-left: 18px; }
     details li + li { margin-top: 6px; }
     .now-block, .task-list, .task { display: grid; gap: 6px; }
     .task + .task { border-top: 1px solid var(--pi-border); padding-top: 10px; }
-    .task p, .task small { color: var(--pi-muted); }
+    .task p, .task small { color: var(--pi-text); }
     .task form, .task-options { display: flex; gap: 6px; flex-wrap: wrap; }
     .task input { flex: 1 1 220px; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 10px; font: inherit; }
     code { font-size: 12px; overflow-wrap: anywhere; }
-    .prompt { padding: 8px 10px; border: 1px dashed var(--pi-border); border-radius: 6px; color: var(--pi-muted); font-size: 12px; }
+    .prompt { padding: 8px 10px; border: 1px dashed var(--pi-border); border-radius: 6px; color: var(--pi-text); font-size: 12px; }
     .session-list { display: grid; gap: 4px; }
     .session-row { width: 100%; min-width: 0; display: grid; gap: 4px; padding: 6px 8px; font-size: 13px; }
     .session-row.live { border-color: var(--pi-success-border); background: var(--pi-success-bg); }
-    .session-meta { display: flex; align-items: center; gap: 4px; color: var(--pi-muted); font-size: 11px; }
+    .session-meta { display: flex; align-items: center; gap: 4px; color: var(--pi-text); font-size: 11px; }
     .status { padding: 0 5px; border: 1px solid var(--pi-border); border-radius: 999px; }
     .session-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
     .missing, .error { color: var(--pi-muted); font-size: 13px; }
+    .card .missing { color: var(--pi-text); }
     .error { color: var(--pi-danger); }
     @media (forced-colors: active) {
       .row { border-left-color: LinkText; }
       .row[aria-pressed="true"] { border-color: Highlight; border-left-color: LinkText; }
       .card { border-left-color: LinkText; }
+      .identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }
+      .row .activity-indicator, .session-row .activity-indicator { border: 1px solid CanvasText; background: Highlight; box-shadow: none; }
     }
   `];
 }
