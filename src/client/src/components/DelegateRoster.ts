@@ -33,7 +33,7 @@ export class DelegateRoster extends LitElement {
               <span class="section-name"><span class="chevron" aria-hidden="true">${this.collapsed ? "▸" : "▾"}</span> Activity</span>
               <small class="aggregate">${String(delegates.length - uncollected)} running ${delegates.length - uncollected === 1 ? "delegate" : "delegates"} · ${String(uncollected)} uncollected · ${String(watchers.length)} ${watchers.length === 1 ? "watcher" : "watchers"} · ${String(shells.length)} ${shells.length === 1 ? "shell" : "shells"}</small>
             </span>
-            <small class="section-count" aria-label=${`${String(rows.length)} total`}>${String(rows.length)}</small>
+            <small class="section-count">${String(rows.length)}<span class="visually-hidden"> total</span></small>
           </button>
         </header>
         <div class="rows" id="delegate-roster-rows" ?hidden=${this.collapsed}>${repeat(rows, (row) => row.key, (row) => {
@@ -66,7 +66,6 @@ export class DelegateRoster extends LitElement {
           const terminal = isTerminalDelegate(item);
           const inferredActivity = item.activity ?? "starting";
           const activity = item.reportedStatus ?? `No status report · ${inferredActivity}`;
-          const activityLabel = item.reportedStatus === undefined ? `No status report; inferred activity: ${inferredActivity}` : `Reported status: ${item.reportedStatus}`;
           const kind = item.kind === "worker" ? "Worker" : "Subagent";
           const stateLabel = terminal ? "Uncollected" : "Running";
           const metadata = [item.role, shortModel(item.model), item.effort].filter(Boolean).join(" · ");
@@ -78,7 +77,9 @@ export class DelegateRoster extends LitElement {
               ${metadata ? html`<span class="meta" title=${metadataTitle}>${metadata}</span>` : null}
             </span>
             <span class="task" title=${item.objective ?? ""}>${item.objective ?? "No task"}</span>
-            <span class="activity" title=${activity} aria-label=${activityLabel}>${activity}</span>
+            <span class="activity" title=${activity}>${item.reportedStatus === undefined
+              ? html`No status report<span class="visually-hidden">; inferred activity:</span><span aria-hidden="true"> ·</span> ${inferredActivity}`
+              : html`<span class="visually-hidden">Reported status: </span>${item.reportedStatus}`}</span>
             <span class="state ${terminal ? "uncollected" : "running"}" role="img" aria-label=${stateLabel} title=${stateLabel}></span>
           </div>`;
         })}</div>
@@ -96,6 +97,7 @@ export class DelegateRoster extends LitElement {
     .chevron { display: inline-block; width: 1em; color: var(--pi-muted); }
     .aggregate { min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
     .section-count { flex: 0 0 auto; color: var(--pi-muted); font-size: 10px; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
     .rows { display: grid; gap: 2px; }
     .rows[hidden] { display: none; }
     .row { min-width: 0; display: grid; grid-template-columns: 8px minmax(105px, 180px) minmax(160px, 1.5fr) minmax(180px, 1.2fr) 8px; align-items: center; gap: 8px; padding: 3px 5px; border-radius: 5px; color: var(--pi-text); font-size: 11px; }
@@ -116,7 +118,8 @@ export class DelegateRoster extends LitElement {
     .activity { color: var(--pi-muted); }
     @media (max-width: 700px) {
       section { padding-inline: 6px; }
-      .aggregate { order: -1; flex: 0 0 auto; }
+      .section-title { flex-wrap: wrap; }
+      .aggregate { order: -1; flex: 0 1 100%; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
       .section-name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .row { grid-template-columns: 8px minmax(70px, .7fr) minmax(70px, 1fr) minmax(90px, 1.2fr) 8px; gap: 6px; padding-inline: 3px; }
       .meta { display: none; }

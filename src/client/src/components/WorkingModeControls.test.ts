@@ -70,7 +70,7 @@ describe("DelegateRoster", () => {
     expect(toggle.type).toBe("button");
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(root(element).querySelector(".section-name")?.textContent).toContain("Activity");
-    expect(root(element).querySelector(".section-count")?.textContent).toBe("2");
+    expect(root(element).querySelector(".section-count")?.textContent).toBe("2 total");
     expect(root(element).querySelector(".aggregate")?.textContent).toBe("1 running delegate · 1 uncollected · 0 watchers · 0 shells");
     expect(root(element).querySelector(".aggregate")?.hasAttribute("aria-live")).toBe(false);
     expect(root(element).querySelector("#delegate-roster-rows")?.hasAttribute("hidden")).toBe(false);
@@ -82,9 +82,10 @@ describe("DelegateRoster", () => {
     expect(running.querySelector(".meta")?.getAttribute("title")).toContain("openai-codex/gpt-5.6-sol-20260921");
     expect(running.querySelector(".task")?.textContent).toBe(longObjective);
     expect(running.querySelector(".task")?.getAttribute("title")).toBe(longObjective);
-    expect(running.querySelector(".activity")?.textContent).toBe("Wiring the roster CSS");
+    expect(running.querySelector(".activity")?.textContent).toBe("Reported status: Wiring the roster CSS");
     expect(running.querySelector(".activity")?.getAttribute("title")).toBe("Wiring the roster CSS");
-    expect(running.querySelector(".activity")?.getAttribute("aria-label")).toBe("Reported status: Wiring the roster CSS");
+    expect(running.querySelector(".activity")?.hasAttribute("aria-label")).toBe(false);
+    expect(running.querySelector(".activity .visually-hidden")?.textContent).toBe("Reported status: ");
     expect(running.querySelector(".activity")?.textContent).not.toContain("running tests");
     const terminal = required(rows[1]);
     expect(terminal.classList.contains("terminal")).toBe(true);
@@ -123,7 +124,7 @@ describe("DelegateRoster", () => {
     toggle = required(root(element).querySelector<HTMLButtonElement>(".section-toggle"));
     expect(element.collapsed).toBe(true);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(root(element).querySelector(".section-count")?.textContent).toBe("3");
+    expect(root(element).querySelector(".section-count")?.textContent).toBe("3 total");
     expect(root(element).querySelector(".aggregate")?.textContent).toBe("2 running delegates · 1 uncollected · 0 watchers · 0 shells");
     expect(root(element).querySelector<HTMLElement>("#delegate-roster-rows")?.hidden).toBe(true);
     expect(root(element).querySelectorAll(".row")).toHaveLength(3);
@@ -156,7 +157,8 @@ describe("DelegateRoster", () => {
     expect(shadow.querySelector("section")?.getAttribute("aria-label")).toBe("Activity");
     expect([...shadow.querySelectorAll(".row")].map((row) => row.getAttribute("data-row-key"))).toEqual(["delegate:same", "delegate:done", "watcher:same", "shell:same"]);
     expect(shadow.querySelector(".aggregate")?.textContent).toBe("1 running delegate · 1 uncollected · 1 watcher · 1 shell");
-    expect(shadow.querySelector(".section-count")?.getAttribute("aria-label")).toBe("4 total");
+    expect(shadow.querySelector(".section-count")?.hasAttribute("aria-label")).toBe(false);
+    expect(shadow.querySelector(".section-count .visually-hidden")?.textContent).toBe(" total");
     expect(shadow.querySelector('[data-row-key="watcher:same"] .kind')?.getAttribute("aria-label")).toBe("Poll watcher");
     expect(shadow.querySelector('[data-row-key="watcher:same"] .state')?.getAttribute("aria-label")).toBe("Monitor: watching");
     expect(shadow.querySelector('[data-row-key="watcher:same"] .activity')?.textContent).toBe("Monitor: watching");
@@ -198,7 +200,7 @@ describe("DelegateRoster", () => {
     await element.updateComplete;
     expect(shadow.querySelectorAll(".row")).toHaveLength(2);
     expect(shadow.querySelector('[data-row-key="delegate:done"] .state')?.getAttribute("aria-label")).toBe("Uncollected");
-    expect(shadow.querySelector(".section-count")?.textContent).toBe("2");
+    expect(shadow.querySelector(".section-count")?.textContent).toBe("2 total");
     element.status = status({}); // reconnect/clear: no cached rows
     await element.updateComplete;
     expect(shadow.querySelector("section")).toBeNull();
@@ -223,7 +225,7 @@ describe("DelegateRoster", () => {
     expect(DelegateRoster.styles.cssText).toMatch(/\.state\.watcher-state\.warning\s*\{[^}]*var\(--pi-warning\)/);
     element.status = { ...status({}), activeToolExecutions: [{ id: "shell:old", kind: "shell", toolName: "shell", label: "Interactive shell" }] };
     await element.updateComplete;
-    expect(root(element).querySelector(".section-count")?.textContent).toBe("1");
+    expect(root(element).querySelector(".section-count")?.textContent).toBe("1 total");
     expect(root(element).querySelector(".kind")?.getAttribute("aria-label")).toBe("Shell");
     expect(root(element).querySelector(".row")?.getAttribute("data-row-key")).toBe("shell:shell:old");
   });
@@ -271,6 +273,27 @@ describe("DelegateRoster", () => {
     expect(root(element).querySelector(".aggregate")?.textContent).toBe("1 running delegate · 0 uncollected · 0 watchers · 1 shell");
   });
 
+  it("keeps a long mixed-source aggregate readable within a narrow header", async () => {
+    const element = new DelegateRoster();
+    element.status = {
+      ...status({ [WATCHER_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, watchers: Array.from({ length: 12 }, (_, i) => ({
+        logicalId: `watch-${String(i)}`, handleId: `handle-${String(i)}`, mode: "poll", scope: "scope", state: "watching", consecutiveFailures: 0, startedAt: "2026-08-02T10:00:00.000Z",
+      })) }) }),
+      activeToolExecutions: Array.from({ length: 13 }, (_, i) => ({ id: `shell-${String(i)}`, kind: "shell" as const, toolName: "bash", label: "Shell command" })),
+    };
+    document.body.append(element);
+    await element.updateComplete;
+
+    const aggregate = required(root(element).querySelector(".aggregate"));
+    expect(aggregate.textContent).toBe("0 running delegates · 0 uncollected · 12 watchers · 13 shells");
+    const mobile = required(/@media \(max-width: 700px\)\s*\{([\s\S]*)\}\s*$/.exec(DelegateRoster.styles.cssText)?.[1]);
+    expect(mobile).toMatch(/\.section-title\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(mobile).toMatch(/\.aggregate\s*\{[^}]*flex:\s*0 1 100%/);
+    expect(mobile).toMatch(/\.aggregate\s*\{[^}]*white-space:\s*normal/);
+    expect(mobile).toMatch(/\.aggregate\s*\{[^}]*overflow-wrap:\s*anywhere/);
+    expect(mobile).not.toMatch(/\.aggregate\s*\{[^}]*flex:\s*0 0 auto/);
+  });
+
   it("falls back to inferred activity when reportedStatus is absent", async () => {
     const element = new DelegateRoster();
     document.body.append(element);
@@ -280,9 +303,11 @@ describe("DelegateRoster", () => {
     await element.updateComplete;
     const row = required(root(element).querySelector(".row"));
     expect(row.querySelector(".kind")?.getAttribute("aria-label")).toBe("Worker");
-    expect(row.querySelector(".activity")?.textContent).toBe("No status report · running bash");
+    expect(row.querySelector(".activity")?.textContent).toBe("No status report; inferred activity: · running bash");
     expect(row.querySelector(".activity")?.getAttribute("title")).toBe("No status report · running bash");
-    expect(row.querySelector(".activity")?.getAttribute("aria-label")).toBe("No status report; inferred activity: running bash");
+    expect(row.querySelector(".activity")?.hasAttribute("aria-label")).toBe(false);
+    expect(row.querySelector(".activity .visually-hidden")?.textContent).toBe("; inferred activity:");
+    expect(row.querySelector('.activity [aria-hidden="true"]')?.textContent).toBe(" ·");
   });
 
   it("tolerates a snapshot without the reportedStatus field at all", async () => {
@@ -293,7 +318,8 @@ describe("DelegateRoster", () => {
     ] }) });
     await element.updateComplete;
     const row = required(root(element).querySelector(".row"));
-    expect(row.querySelector(".activity")?.textContent).toBe("No status report · starting");
-    expect(row.querySelector(".activity")?.getAttribute("aria-label")).toBe("No status report; inferred activity: starting");
+    expect(row.querySelector(".activity")?.textContent).toBe("No status report; inferred activity: · starting");
+    expect(row.querySelector(".activity")?.hasAttribute("aria-label")).toBe(false);
+    expect(row.querySelector(".activity .visually-hidden")?.textContent).toBe("; inferred activity:");
   });
 });
