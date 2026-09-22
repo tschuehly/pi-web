@@ -162,7 +162,8 @@ describe("DesktopNotificationController", () => {
     expect(adapter.permission()).toBe("default");
     await adapter.requestPermission();
 
-    expect(host.notify).toHaveBeenCalledWith("PI WEB notifications enabled", "PI WEB can now notify you when a Chat needs attention.");
+    expect(host.requestNotificationPermission).toHaveBeenCalledOnce();
+    expect(host.notify).not.toHaveBeenCalled();
     expect(adapter.permission()).toBe("granted");
     expect(desktopNotifications(host, storage).permission()).toBe("granted");
     expect(browserRequestPermission).not.toHaveBeenCalled();
@@ -171,7 +172,7 @@ describe("DesktopNotificationController", () => {
   it("keeps native permission at default when explicit enablement is rejected", async () => {
     const storage = memoryStorage();
     const host = nativeHost();
-    host.notify.mockRejectedValueOnce(new Error("denied"));
+    host.requestNotificationPermission.mockRejectedValueOnce(new Error("denied"));
     const adapter = desktopNotifications(host, storage);
     const onPermissionChange = vi.fn();
     const controller = new DesktopNotificationController(adapter, onPermissionChange);
@@ -213,7 +214,7 @@ describe("DesktopNotificationController", () => {
     expect(desktopNotifications(host, storage).permission()).toBe("default");
   });
 
-  it("falls back to browser notifications", () => {
+  it("falls back to browser notifications unless both native capabilities exist", () => {
     const shown: FakeNotification[] = [];
     class BrowserNotification extends FakeNotification {
       static permission: NotificationPermission = "granted";
@@ -224,20 +225,30 @@ describe("DesktopNotificationController", () => {
       }
     }
     vi.stubGlobal("Notification", BrowserNotification);
-    const adapter = desktopNotifications(undefined, memoryStorage());
+    const pickDirectory = () => Promise.resolve(null);
+    const staleNotify = vi.fn(() => Promise.resolve());
+    const oldShell = desktopNotifications({ pickDirectory }, memoryStorage());
+    const incompleteShell = desktopNotifications({ pickDirectory, notify: staleNotify }, memoryStorage());
 
-    const handle = adapter.show("Browser title", { body: "Browser body" });
+    const oldHandle = oldShell.show("Browser title", { body: "Browser body" });
+    const incompleteHandle = incompleteShell.show("Browser title 2", { body: "Browser body 2" });
 
-    expect(handle).toBe(shown[0]);
-    expect(shown[0]).toMatchObject({ title: "Browser title", options: { body: "Browser body" } });
+    expect(oldHandle).toBe(shown[0]);
+    expect(incompleteHandle).toBe(shown[1]);
+    expect(staleNotify).not.toHaveBeenCalled();
+    expect(shown).toMatchObject([
+      { title: "Browser title", options: { body: "Browser body" } },
+      { title: "Browser title 2", options: { body: "Browser body 2" } },
+    ]);
   });
 });
 
-function nativeHost(): PiWebNativeHost & { notify: ReturnType<typeof vi.fn<(title: string, body: string) => Promise<void>>> } {
+function nativeHost() {
   return {
     pickDirectory: () => Promise.resolve(null),
-    notify: vi.fn(() => Promise.resolve()),
-  };
+    requestNotificationPermission: vi.fn(() => Promise.resolve()),
+    notify: vi.fn<(title: string, body: string) => Promise<void>>(() => Promise.resolve()),
+  } satisfies PiWebNativeHost;
 }
 
 function memoryStorage(): DesktopNotificationStorage {

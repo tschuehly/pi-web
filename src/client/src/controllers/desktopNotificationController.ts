@@ -132,7 +132,7 @@ export function desktopNotifications(
   nativeHost: PiWebNativeHost | undefined = typeof window === "undefined" ? undefined : window.piWebNative,
   storage: DesktopNotificationStorage | undefined = browserLocalStorage(),
 ): DesktopNotificationBrowser {
-  return nativeHost === undefined ? browserDesktopNotifications() : nativeDesktopNotifications(nativeHost, storage);
+  return supportsNativeNotifications(nativeHost) ? nativeDesktopNotifications(nativeHost, storage) : browserDesktopNotifications();
 }
 
 export function browserDesktopNotifications(): DesktopNotificationBrowser {
@@ -145,7 +145,13 @@ export function browserDesktopNotifications(): DesktopNotificationBrowser {
   };
 }
 
-function nativeDesktopNotifications(nativeHost: PiWebNativeHost, storage: DesktopNotificationStorage | undefined): DesktopNotificationBrowser {
+type NativeNotificationHost = Required<Pick<PiWebNativeHost, "requestNotificationPermission" | "notify">>;
+
+function supportsNativeNotifications(nativeHost: PiWebNativeHost | undefined): nativeHost is PiWebNativeHost & NativeNotificationHost {
+  return typeof nativeHost?.requestNotificationPermission === "function" && typeof nativeHost.notify === "function";
+}
+
+function nativeDesktopNotifications(nativeHost: NativeNotificationHost, storage: DesktopNotificationStorage | undefined): DesktopNotificationBrowser {
   let permission: NotificationPermission = readNativePermission(storage);
   const downgrade = (): void => {
     permission = "default";
@@ -155,7 +161,7 @@ function nativeDesktopNotifications(nativeHost: PiWebNativeHost, storage: Deskto
     permission: () => permission,
     requestPermission: async () => {
       try {
-        await nativeHost.notify("PI WEB notifications enabled", "PI WEB can now notify you when a Chat needs attention.");
+        await nativeHost.requestNotificationPermission();
         permission = "granted";
         try { storage?.setItem(NATIVE_NOTIFICATION_PERMISSION_KEY, "granted"); } catch { /* Keep this page enabled. */ }
       } catch {
