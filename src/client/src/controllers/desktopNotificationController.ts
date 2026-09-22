@@ -9,6 +9,7 @@ export interface DesktopNotificationHandle {
 }
 
 export interface DesktopNotificationBrowser {
+  diagnostic?: string;
   permission(): NotificationPermission | "unsupported";
   requestPermission(): Promise<NotificationPermission>;
   isBackground(): boolean;
@@ -26,6 +27,7 @@ export type DesktopNotificationKind = "complete" | "ask" | "dialog" | "error";
 
 export class DesktopNotificationController {
   private sessionKey: string | undefined;
+  diagnostic: string | undefined;
   private armed = false;
   private streaming: boolean | undefined;
   private readonly askIds = new Set<string>();
@@ -35,7 +37,9 @@ export class DesktopNotificationController {
   constructor(
     private readonly browser: DesktopNotificationBrowser,
     private readonly onPermissionChange: () => void = () => undefined,
-  ) {}
+  ) {
+    this.diagnostic = browser.diagnostic;
+  }
 
   canRequestPermission(): boolean {
     return this.browser.permission() === "default";
@@ -45,9 +49,13 @@ export class DesktopNotificationController {
     if (!this.canRequestPermission()) return;
     try {
       await this.browser.requestPermission();
-    } finally {
-      this.onPermissionChange();
+      this.diagnostic = this.browser.permission() === "denied"
+        ? "Desktop notification permission was denied. Enable notifications in your browser or System Settings."
+        : this.browser.diagnostic;
+    } catch (error) {
+      this.diagnostic = notificationDiagnostic(error, "permission");
     }
+    this.onPermissionChange();
   }
 
   sync(previous: AppState, next: AppState): void {
@@ -110,12 +118,21 @@ export class DesktopNotificationController {
 
   private notify(tag: DesktopNotificationKind, title: string, body: string): void {
     if (this.browser.permission() !== "granted" || !this.browser.isBackground()) return;
-    const shown = this.browser.show(`PI WEB · ${title}`, { body, tag: `${this.sessionKey ?? "chat"}:${tag}` });
-    if (shown instanceof Promise) {
-      void shown.then((notification) => { this.bindClick(notification); }).catch(() => { this.onPermissionChange(); });
-      return;
+    try {
+      const shown = this.browser.show(`PI WEB · ${title}`, { body, tag: `${this.sessionKey ?? "chat"}:${tag}` });
+      if (shown instanceof Promise) {
+        void shown.then((notification) => { this.bindClick(notification); }).catch((error: unknown) => { this.deliveryFailed(error); });
+        return;
+      }
+      this.bindClick(shown);
+    } catch (error) {
+      this.deliveryFailed(error);
     }
-    this.bindClick(shown);
+  }
+
+  private deliveryFailed(error: unknown): void {
+    this.diagnostic = notificationDiagnostic(error, "delivery");
+    this.onPermissionChange();
   }
 
   private bindClick(notification: DesktopNotificationHandle): void {
@@ -132,7 +149,10 @@ export function desktopNotifications(
   nativeHost: PiWebNativeHost | undefined = typeof window === "undefined" ? undefined : window.piWebNative,
   storage: DesktopNotificationStorage | undefined = browserLocalStorage(),
 ): DesktopNotificationBrowser {
-  return supportsNativeNotifications(nativeHost) ? nativeDesktopNotifications(nativeHost, storage) : browserDesktopNotifications();
+  if (supportsNativeNotifications(nativeHost)) return nativeDesktopNotifications(nativeHost, storage);
+  const browser = browserDesktopNotifications();
+  if (nativeHost !== undefined) browser.diagnostic = "The installed app's native notification bridge is missing. Update the app to enable native notifications; browser notifications remain available.";
+  return browser;
 }
 
 export function browserDesktopNotifications(): DesktopNotificationBrowser {
@@ -164,8 +184,9 @@ function nativeDesktopNotifications(nativeHost: NativeNotificationHost, storage:
         await nativeHost.requestNotificationPermission();
         permission = "granted";
         try { storage?.setItem(NATIVE_NOTIFICATION_PERMISSION_KEY, "granted"); } catch { /* Keep this page enabled. */ }
-      } catch {
+      } catch (error) {
         downgrade();
+        throw error;
       }
       return permission;
     },
@@ -181,6 +202,15 @@ function nativeDesktopNotifications(nativeHost: NativeNotificationHost, storage:
     },
     focus: () => undefined,
   };
+}
+
+function notificationDiagnostic(error: unknown, operation: "permission" | "delivery"): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  if (/installed app bundle/i.test(detail)) return "Native notifications require the installed app bundle. Launch the installed app to enable them.";
+  if (/denied/i.test(detail)) return "Desktop notification permission was denied. Enable notifications for PI WEB in System Settings.";
+  return operation === "permission"
+    ? `Desktop notification permission request failed: ${detail}. Try again or check System Settings.`
+    : `Desktop notification delivery failed: ${detail}. Check notification settings and try enabling notifications again.`;
 }
 
 function readNativePermission(storage: DesktopNotificationStorage | undefined): NotificationPermission {

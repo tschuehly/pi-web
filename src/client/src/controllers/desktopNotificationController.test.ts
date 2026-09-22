@@ -182,6 +182,19 @@ describe("DesktopNotificationController", () => {
     expect(onPermissionChange).toHaveBeenCalledOnce();
     expect(adapter.permission()).toBe("default");
     expect(desktopNotifications(host, storage).permission()).toBe("default");
+    expect(controller.diagnostic).toContain("denied");
+    expect(controller.diagnostic).toContain("System Settings");
+  });
+
+  it("explains a missing installed bundle and clears the diagnostic after a successful retry", async () => {
+    const host = nativeHost();
+    host.requestNotificationPermission.mockRejectedValueOnce(new Error("Native notifications require the installed app bundle"));
+    const controller = new DesktopNotificationController(desktopNotifications(host, memoryStorage()));
+
+    await controller.requestPermission();
+    expect(controller.diagnostic).toContain("installed app bundle");
+    await controller.requestPermission();
+    expect(controller.diagnostic).toBeUndefined();
   });
 
   it("uses the native bridge after enablement and returns a no-op handle", async () => {
@@ -212,6 +225,7 @@ describe("DesktopNotificationController", () => {
     await vi.waitFor(() => { expect(onPermissionChange).toHaveBeenCalledOnce(); });
     expect(adapter.permission()).toBe("default");
     expect(desktopNotifications(host, storage).permission()).toBe("default");
+    expect(controller.diagnostic).toContain("delivery failed");
   });
 
   it("falls back to browser notifications unless both native capabilities exist", () => {
@@ -236,6 +250,9 @@ describe("DesktopNotificationController", () => {
     expect(oldHandle).toBe(shown[0]);
     expect(incompleteHandle).toBe(shown[1]);
     expect(staleNotify).not.toHaveBeenCalled();
+    expect(oldShell.diagnostic).toContain("native notification bridge");
+    expect(incompleteShell.diagnostic).toContain("native notification bridge");
+    expect(desktopNotifications(undefined, memoryStorage()).diagnostic).toBeUndefined();
     expect(shown).toMatchObject([
       { title: "Browser title", options: { body: "Browser body" } },
       { title: "Browser title 2", options: { body: "Browser body 2" } },

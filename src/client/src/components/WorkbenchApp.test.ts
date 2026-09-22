@@ -98,6 +98,21 @@ describe("Workbench Chat chooser", () => {
     expect(app.shadowRoot?.querySelector('button[aria-label="Enable desktop notifications"]')).toBeNull();
   });
 
+  it("shows a native permission failure in the chooser without hiding the retry control", async () => {
+    window.piWebNative = {
+      pickDirectory: () => Promise.resolve(null),
+      requestNotificationPermission: vi.fn(() => Promise.reject(new Error("Notification authorization was denied"))),
+      notify: vi.fn(() => Promise.resolve()),
+    };
+    const app = await mountChooser([]);
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Enable desktop notifications"]')?.click();
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("System Settings");
+    });
+    expect(app.shadowRoot?.querySelector('button[aria-label="Enable desktop notifications"]')).not.toBeNull();
+    delete window.piWebNative;
+  });
+
   it("hides Workbench agent sessions until the user asks to see them", async () => {
     const human = session("human", "Plan the release");
     const reviewer = session("reviewer", "ignored", "workbench-reviewer-deadbeef");

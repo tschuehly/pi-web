@@ -712,6 +712,10 @@ export class WorkbenchApp extends LitElement {
     `;
   }
 
+  private renderDesktopNotificationDiagnostic() {
+    return this.desktopNotifications.diagnostic === undefined ? null : html`<p class="error" role="alert">${this.desktopNotifications.diagnostic}</p>`;
+  }
+
   private renderDesktopNotificationButton() {
     if (!this.desktopNotifications.canRequestPermission()) return null;
     return html`
@@ -770,6 +774,7 @@ export class WorkbenchApp extends LitElement {
             <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} .serviceMachineId=${serviceMachineId} .serviceProjectId=${serviceProjectId} .serviceWorkspaceId=${serviceWorkspaceId} .canStartEmpty=${this.app.selectedWorkspace !== undefined} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>
           `}
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
+          ${this.renderDesktopNotificationDiagnostic()}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
           ${this.chooserView !== "project" || this.app.selectedWorkspace === undefined ? null : html`
             <div class="sessions">
@@ -809,6 +814,7 @@ export class WorkbenchApp extends LitElement {
           ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}
         </header>
+        ${this.renderDesktopNotificationDiagnostic()}
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
         <chat-view
           .sessionId=${session.id}
