@@ -109,6 +109,26 @@ describe("ChatView transcript density", () => {
     expect(root.querySelector<FormattedText>("article.msg.assistant formatted-text")?.text).toBe("Done");
   });
 
+  it("renders preview errors outside closed Activity even when execution succeeds", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [
+      { role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "file", status: "success", resultText: "contents" }] },
+      { role: "tool", parts: [{ type: "toolExecution", toolName: "edit", summary: "file", status: "success", resultText: "unchanged", preview: { error: "Preview failed" } }] },
+    ];
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    expect(root.querySelector<HTMLDetailsElement>(".activity-group")?.open).toBe(false);
+    const tool = root.querySelector<ToolExecutionView>(".event-group:not(.activity-group) tool-execution-view");
+    expect(tool).not.toBeNull();
+    expect(root.querySelectorAll(".activity-group tool-execution-view")).toHaveLength(1);
+    await tool?.updateComplete;
+    expect(tool?.shadowRoot?.querySelector(".tool-row")?.textContent).toContain("edit");
+    expect(tool?.shadowRoot?.querySelector(".error-text")?.textContent).toBe("Preview failed");
+  });
+
   it("keeps a pending routine tool in the same collapsed Activity on success", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
