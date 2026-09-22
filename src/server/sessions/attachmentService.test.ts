@@ -56,7 +56,7 @@ describe("attachmentsToInlineImages", () => {
     await expect(attachmentsToInlineImages([
       { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: firstInput.toString("base64"), name: "first.png" },
       { kind: "image", reference: "[PIC_3]", mimeType: "image/jpeg", data: secondInput.toString("base64"), name: "second.jpg" },
-    ])).resolves.toEqual([
+    ], false)).resolves.toEqual([
       { image: { type: "image", data: "first-resized", mimeType: "image/webp" }, dimensionNote: "[Image dimensions changed.]" },
       { image: { type: "image", data: "second-resized", mimeType: "image/jpeg" } },
     ]);
@@ -68,7 +68,16 @@ describe("attachmentsToInlineImages", () => {
     vi.mocked(resizeImage).mockResolvedValueOnce(null);
     await expect(attachmentsToInlineImages([
       { kind: "image", reference: "[PIC_2]", mimeType: "image/png", data: pngBase64 },
-    ])).rejects.toThrow("Image conversion failed for [PIC_2]");
+    ], true)).rejects.toThrow("Image conversion failed for [PIC_2]");
+  });
+
+  it("retains legacy omission behavior when references were assigned server-side", async () => {
+    vi.mocked(resizeImage).mockResolvedValueOnce(null).mockResolvedValueOnce(resizedImage({ data: "surviving" }));
+    vi.mocked(formatDimensionNote).mockReturnValueOnce(undefined);
+    await expect(attachmentsToInlineImages([
+      { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 },
+      { kind: "image", reference: "[PIC_2]", mimeType: "image/png", data: pngBase64 },
+    ], false)).resolves.toEqual([{ image: { type: "image", data: "surviving", mimeType: "image/png" } }]);
   });
 });
 

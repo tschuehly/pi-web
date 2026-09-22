@@ -156,8 +156,8 @@ export class PromptEditor extends LitElement {
           ${this.showUsage ? this.renderUsage() : null}
           <working-mode-controls compact .status=${this.status} .onRunCommand=${this.onRunCommand}></working-mode-controls>
           <div class="composer-actions">
-            <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
-            ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
+            <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { void this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
+            ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { void this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
             <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
           </div>
         </div>
@@ -323,7 +323,7 @@ export class PromptEditor extends LitElement {
   }
 
   private async addAttachmentFiles(files: File[], position: number) {
-    this.attachmentError = undefined;
+    if (this.pendingImageReferences.length === 0) this.attachmentError = undefined;
     const sourceKey = draftStorageKey(this.machineId, this.sessionId);
     const generation = this.draftGeneration;
     const draftAtInvocation = this.draft;
@@ -372,7 +372,8 @@ export class PromptEditor extends LitElement {
     this.pendingImageReferences = this.pendingImageReferences.filter((reference) => !references.includes(reference));
     if (additions.length > 0) this.attachments = [...this.attachments, ...additions].sort((a, b) => attachmentIdSequence(a.id) - attachmentIdSequence(b.id));
     for (const reference of failedReferences) this.removeImageReferenceTokens(reference);
-    this.attachmentError = failed ? READ_FAILURE_MESSAGE : undefined;
+    if (failed) this.attachmentError = READ_FAILURE_MESSAGE;
+    else if (this.attachmentError === "Wait for image attachments to finish loading.") this.attachmentError = undefined;
     this.saveCurrentStaging();
   }
 
@@ -610,11 +611,11 @@ export class PromptEditor extends LitElement {
       return true;
     }
     if (primaryModifierEnter && (send || usesAutomaticComposerEnter(this.shortcuts, this.mobilePromptEnterMedia))) {
-      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, true));
+      void this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, true));
       return true;
     }
     if (send) {
-      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, false));
+      void this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, false));
       return true;
     }
     if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -663,17 +664,21 @@ export class PromptEditor extends LitElement {
     this.completions = [];
   }
 
-  private send(streamingBehavior?: "steer" | "followUp") {
+  private async send(streamingBehavior?: "steer" | "followUp") {
     if (this.disabled || this.sending) return;
     if (this.pendingImageReferences.length > 0) {
       this.attachmentError = "Wait for image attachments to finish loading.";
       return;
     }
-    const text = this.draft.trim();
+    if (leadingSlashCommandName(this.draft) !== undefined) await this.isLeadingCommandDraft(this.draft);
+    if (this.sendBecameBlocked()) return;
+    const commandMode = isLeadingKnownCommandDraft(this.draft, this.knownCommandNames);
     const pending = this.attachments;
+    const attachments = pending.length > 0 ? this.currentAttachments() : undefined;
+    const references = attachments?.flatMap((attachment) => attachment.kind === "image" ? [attachment.reference] : []) ?? [];
+    const text = (commandMode ? removeImageReferenceTokensFromText(this.draft, references) : this.draft).trim();
     if (text === "" && pending.length === 0) return;
     const behavior = this.canSteer || this.isCompacting ? streamingBehavior : undefined;
-    const attachments = pending.length > 0 ? this.currentAttachments() : undefined;
     const delivery = this.effectiveAttachmentDelivery();
     // Folder delivery sends the displayed workspace-effective folder explicitly
     // (the uploads pattern): the save lands exactly where the label pointed,
@@ -683,6 +688,11 @@ export class PromptEditor extends LitElement {
     this.resetComposer();
     const resetGeneration = this.draftGeneration;
     void this.deliverComposer(snapshot, resetGeneration, text, behavior, attachments, attachments === undefined ? undefined : delivery, folder);
+  }
+
+  private sendBecameBlocked(): boolean {
+    if (this.pendingImageReferences.length > 0) this.attachmentError = "Wait for image attachments to finish loading.";
+    return this.disabled || this.sending || this.pendingImageReferences.length > 0;
   }
 
   private composerSnapshot() {
@@ -819,7 +829,8 @@ function dataTransferHasFiles(data: DataTransfer): boolean {
 
 export function sanitizeDraftImageReferences(text: string, attachments: readonly { kind: string; reference?: string }[], pendingReferences: readonly string[] = []): string {
   const references = new Set([...pendingReferences, ...attachments.flatMap((attachment) => attachment.kind === "image" ? [attachment.reference] : [])]);
-  return text.replace(/\[PIC_[1-9]\d*\]/g, (reference) => references.has(reference) ? reference : "");
+  const dangling = Array.from(text.matchAll(/\[PIC_[1-9]\d*\]/g), (match) => match[0]).filter((reference) => !references.has(reference));
+  return removeImageReferenceTokensFromText(text, dangling);
 }
 
 export function isLeadingKnownCommandDraft(draft: string, knownCommandNames: ReadonlySet<string>): boolean {

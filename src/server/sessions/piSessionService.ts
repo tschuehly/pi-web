@@ -2612,7 +2612,7 @@ export class PiSessionService implements SessionRouteService {
     const requestedBehavior = parsePromptStreamingBehavior(streamingBehavior);
     const appendReferenceMapping = hasExplicitPromptImageReference(attachments);
     const parsedAttachments = parsePromptAttachments(attachments, { enforceInlineSizeLimit: false });
-    const images = (await attachmentsToInlineImages(parsedAttachments)).map((entry) => entry.image);
+    const images = (await attachmentsToInlineImages(parsedAttachments, appendReferenceMapping)).map((entry) => entry.image);
     await this.assertWritable(ref);
     const session = await this.getOrOpen(ref);
     this.assertTreeNavigationInactive(session, "send a prompt");

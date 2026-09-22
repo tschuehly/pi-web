@@ -117,9 +117,9 @@ describe("prompt image references", () => {
   it("removes dangling restored references but preserves staged mappings", () => {
     expect(sanitizeDraftImageReferences("keep [PIC_2], drop [PIC_1] [PIC_3]", [
       { kind: "image", reference: "[PIC_2]" },
-    ])).toBe("keep [PIC_2], drop  ");
+    ])).toBe("keep [PIC_2], drop");
     expect(sanitizeDraftImageReferences("reading [PIC_4]", [], ["[PIC_4]"])).toBe("reading [PIC_4]");
-    expect(sanitizeDraftImageReferences("reload [PIC_9]", [])).toBe("reload ");
+    expect(sanitizeDraftImageReferences("reload [PIC_9]", [])).toBe("reload");
   });
 });
 
@@ -145,7 +145,73 @@ describe("PromptEditor attachment wiring", () => {
       templateEventHandlerAfterMarker(editor.render(), "@paste=")(pasteEventWithFiles([new File(["image"], "image.png", { type: "image/png" })]));
       await flushMicrotasks();
       templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
+      await flushMicrotasks();
       expect(onSend).toHaveBeenCalledWith(draft, undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+    } finally {
+      restoreFileReader();
+    }
+  });
+
+  it.each([
+    ["builtin", "model"],
+    ["extension", "extension-command"],
+    ["template", "template-name"],
+    ["skill", "skill:skill-name"],
+  ])("strips staged tokens when prose transitions to a known %s command before send", async (_kind, commandName) => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn<NonNullable<PromptEditor["onSend"]>>();
+    editor.onSend = onSend;
+    setPromptEditorPrivate(editor, "draft", "describe this");
+    const restoreFileReader = installFileReaderStub([{ kind: "load", result: "data:image/png;base64,SU1BR0U=" }]);
+    try {
+      templateEventHandlerAfterMarker(editor.render(), "@paste=")(pasteEventWithFiles([new File(["image"], "image.png", { type: "image/png" })]));
+      await flushMicrotasks();
+      expect(Reflect.get(editor, "draft")).toBe("describe this [PIC_1] ");
+
+      editor.replaceText(`/${commandName} ${String(Reflect.get(editor, "draft"))}`);
+      setPromptEditorPrivate(editor, "knownCommandNames", new Set([commandName]));
+      templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
+      await flushMicrotasks();
+
+      expect(onSend).toHaveBeenCalledWith(`/${commandName} describe this`, undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+    } finally {
+      restoreFileReader();
+    }
+  });
+
+  it("waits for a late command catalog and self-heals staged prose tokens", async () => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn<NonNullable<PromptEditor["onSend"]>>();
+    editor.onSend = onSend;
+    let resolveCatalog: (commands: { name: string; source: "extension" }[]) => void = () => undefined;
+    setPromptEditorPrivate(editor, "commandCatalogRequest", new Promise((resolve) => { resolveCatalog = resolve; }));
+    setPromptEditorPrivate(editor, "draft", "/late-command inspect [PIC_1]");
+    setPromptEditorPrivate(editor, "attachments", [{ id: "attachment-1", kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "SU1BR0U=" }]);
+
+    templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
+    await flushMicrotasks();
+    expect(onSend).not.toHaveBeenCalled();
+
+    resolveCatalog([{ name: "late-command", source: "extension" }]);
+    await flushMicrotasks();
+    expect(onSend).toHaveBeenCalledWith("/late-command inspect", undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+  });
+
+  it("retains staged tokens when prose transitions to an absolute-path sentence before send", async () => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn<NonNullable<PromptEditor["onSend"]>>();
+    editor.onSend = onSend;
+    setPromptEditorPrivate(editor, "draft", "describe this");
+    const restoreFileReader = installFileReaderStub([{ kind: "load", result: "data:image/png;base64,SU1BR0U=" }]);
+    try {
+      templateEventHandlerAfterMarker(editor.render(), "@paste=")(pasteEventWithFiles([new File(["image"], "image.png", { type: "image/png" })]));
+      await flushMicrotasks();
+      editor.replaceText(`/Users/thomas/project ${String(Reflect.get(editor, "draft"))}`);
+      setPromptEditorPrivate(editor, "knownCommandNames", new Set(["model"]));
+      templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
+      await flushMicrotasks();
+
+      expect(onSend.mock.calls[0]?.[0]).toBe("/Users/thomas/project describe this [PIC_1]");
     } finally {
       restoreFileReader();
     }
@@ -162,6 +228,7 @@ describe("PromptEditor attachment wiring", () => {
       templateEventHandlerAfterMarker(editor.render(), "@paste=")(pasteEventWithFiles([new File(["image"], "image.png", { type: "image/png" })]));
       await flushMicrotasks();
       templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
+      await flushMicrotasks();
       expect(onSend.mock.calls[0]?.[0]).toBe("/Users/thomas/project screenshot [PIC_1]");
     } finally {
       restoreFileReader();
@@ -269,6 +336,25 @@ describe("PromptEditor attachment wiring", () => {
       expect(Reflect.get(editor, "attachmentError")).toBeUndefined();
       templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
       expect(onSend).toHaveBeenCalledWith("[PIC_1]", undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+    } finally {
+      readers.restore();
+    }
+  });
+
+  it("does not clear an earlier concurrent read failure when a later batch succeeds", async () => {
+    const editor = new PromptEditor();
+    const readers = installControlledFileReaderStub();
+    try {
+      const paste = templateEventHandlerAfterMarker(editor.render(), "@paste=");
+      paste(pasteEventWithFiles([new File(["bad"], "bad.png", { type: "image/png" })]));
+      paste(pasteEventWithFiles([new File(["good"], "good.png", { type: "image/png" })]));
+      readers.reject(0, new DOMException("unreadable", "NotReadableError"));
+      await flushMicrotasks();
+      expect(Reflect.get(editor, "attachmentError")).toBe(READ_FAILURE_MESSAGE);
+
+      readers.resolve(1, "data:image/png;base64,R09PRA==");
+      await flushMicrotasks();
+      expect(Reflect.get(editor, "attachmentError")).toBe(READ_FAILURE_MESSAGE);
     } finally {
       readers.restore();
     }
@@ -428,7 +514,7 @@ function installFileReaderStub(outcomes: StubFileReaderOutcome[]): () => void {
 }
 
 
-function installControlledFileReaderStub(): { resolve: (index: number, result: string) => void; restore: () => void } {
+function installControlledFileReaderStub(): { resolve: (index: number, result: string) => void; reject: (index: number, error: DOMException) => void; restore: () => void } {
   const hadFileReader = Reflect.has(globalThis, "FileReader");
   const previousFileReader = Reflect.get(globalThis, "FileReader");
   const readers: { reader: ControlledFileReader }[] = [];
@@ -451,6 +537,12 @@ function installControlledFileReaderStub(): { resolve: (index: number, result: s
       if (reader === undefined) throw new Error(`Missing controlled FileReader ${String(index)}`);
       reader.result = result;
       reader.onload?.();
+    },
+    reject: (index, error) => {
+      const reader = readers[index]?.reader;
+      if (reader === undefined) throw new Error(`Missing controlled FileReader ${String(index)}`);
+      reader.error = error;
+      reader.onerror?.();
     },
     restore: () => {
       if (hadFileReader) Reflect.set(globalThis, "FileReader", previousFileReader);

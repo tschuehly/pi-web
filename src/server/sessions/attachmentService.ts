@@ -18,15 +18,19 @@ export interface InlineImage {
  *
  * Mirrors pi's own CLI/TUI behaviour: each image is run through pi's
  * `resizeImage` so it fits within pi's max dimensions and inline byte budget
- * (2000x2000, ~4.5MB base64). A failed conversion rejects the whole delivery:
- * dropping one image would shift every later `[PIC_n]` mapping.
+ * (2000x2000, ~4.5MB base64). Explicitly referenced deliveries reject an
+ * omission because dropping one image would shift every later `[PIC_n]`
+ * mapping; legacy reference-less requests retain pi's prior drop behavior.
  */
-export async function attachmentsToInlineImages(attachments: PromptImageAttachment[]): Promise<InlineImage[]> {
+export async function attachmentsToInlineImages(attachments: PromptImageAttachment[], rejectOmitted: boolean): Promise<InlineImage[]> {
   const results: InlineImage[] = [];
   for (const attachment of attachments) {
     const bytes = Buffer.from(attachment.data, "base64");
     const resized = await resizeImage(bytes, attachment.mimeType);
-    if (resized === null) throw new Error(`Image conversion failed for ${attachment.reference}`);
+    if (resized === null) {
+      if (rejectOmitted) throw new Error(`Image conversion failed for ${attachment.reference}`);
+      continue;
+    }
     const note = formatDimensionNote(resized);
     results.push({
       image: { type: "image", data: resized.data, mimeType: resized.mimeType },
