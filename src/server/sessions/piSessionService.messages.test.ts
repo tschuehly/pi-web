@@ -69,6 +69,31 @@ describe("PiSessionService", () => {
       await service.dispose();
     });
 
+    it("suppresses display:false custom messages but preserves other custom messages live", async () => {
+      const { fake, service, events } = messagesService([]);
+      await service.status(sessionRef("session-1"));
+      const eventStart = events.sessionEvents.length;
+      const messages = [
+        { role: "custom", customType: "goal-contract", content: "hidden goal context", display: false, details: { version: 2, goalId: "goal-1" } },
+        { role: "custom", customType: "other.hidden", content: "hidden extension context", display: false, details: { source: "other" } },
+        { role: "custom", customType: "other.default", content: "implicit extension context", details: { source: "other" } },
+        { role: "custom", customType: "pi-goal.lifecycle", content: "Goal resumed", display: true, details: { schemaVersion: 1, eventId: "event-1", kind: "resumed", goalId: "goal-1", objective: "Ship it" } },
+        { role: "custom", customType: "other.visible", content: "visible extension message", display: true, details: { source: "other" } },
+      ];
+      const original = structuredClone(messages);
+
+      for (const message of messages) fake.emit({ type: "message_end", message });
+      await Promise.resolve();
+
+      expect(events.sessionEvents.slice(eventStart).flatMap(({ event }) => event.type === "message.end" ? [event.message] : [])).toEqual([
+        messages[2],
+        messages[3],
+        messages[4],
+      ]);
+      expect(messages).toEqual(original);
+      await service.dispose();
+    });
+
     it("publishes the durable transcript entry id with a finalized live message", async () => {
       const entryId = "assistant-entry";
       const message = { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }] };
