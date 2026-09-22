@@ -121,6 +121,7 @@ export class PromptEditor extends LitElement {
     const currentKey = draftStorageKey(this.machineId, this.sessionId);
     const staged = currentKey !== undefined ? loadStagedAttachmentDraft(currentKey) : emptyStagedAttachmentDraft();
     this.attachments = staged.attachments;
+    this.attachmentSeq = Math.max(this.attachmentSeq, ...staged.attachments.map((attachment) => attachmentIdSequence(attachment.id)));
     this.nextImageReference = staged.nextImageReference;
     this.pendingImageReferences = staged.pendingImageReferences;
     this.draftGeneration = staged.generation;

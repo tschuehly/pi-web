@@ -47,7 +47,8 @@ import { computeEditPreview, type EditPreviewResult } from "./editPreview.js";
 import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
 import type { PiWebConfigService } from "../configRoutes.js";
-import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText } from "../../shared/promptAttachments.js";
+import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
+export { stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 import { ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ASK_USER_ANSWERS_CUSTOM_TYPE, EXTENSION_STATUS_KEY_MAX_LENGTH, EXTENSION_STATUS_LIMIT, EXTENSION_STATUS_TEXT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_LIMIT } from "../../shared/apiTypes.js";
 import type {
   ActiveToolExecution,
@@ -5184,16 +5185,10 @@ function queuedMessagesFromSession(session: PiAgentSession): { kind: "steer" | "
   ];
 }
 
-const inlineImageReferenceMappingPattern = /(?:^|\n\n)Image blocks immediately following this text map in order as follows:\n(?:\d+\. \[PIC_[1-9]\d*\](?:\n|$))+$/;
-
 export function appendInlineImageReferenceMapping(text: string, references: readonly string[]): string {
   if (references.length === 0) return text;
   const mapping = `Image blocks immediately following this text map in order as follows:\n${references.map((reference, index) => `${String(index + 1)}. ${reference}`).join("\n")}`;
   return text === "" ? mapping : `${text}\n\n${mapping}`;
-}
-
-export function stripInlineImageReferenceMapping(text: string): string {
-  return text.replace(inlineImageReferenceMappingPattern, "");
 }
 
 function displayPromptMessage(message: unknown): unknown {

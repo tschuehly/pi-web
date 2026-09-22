@@ -1,14 +1,53 @@
 // @vitest-environment happy-dom
 import { isolateHistory, undo } from "@codemirror/commands";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { clearStagedAttachments, loadStagedAttachmentDraft } from "../promptAttachmentStaging";
 import { PromptEditor } from "./PromptEditor";
 
 afterEach(() => {
   document.body.replaceChildren();
   localStorage.clear();
+  clearStagedAttachments("local:remount-image-ids");
+  vi.unstubAllGlobals();
 });
 
 describe("PromptEditor image attachment accessibility", () => {
+  it("keeps remounted image chips distinct when a new paste is removed", async () => {
+    class FileReaderStub {
+      result: string | null = null;
+      onload: (() => void) | null = null;
+      readAsDataURL(): void { this.result = "data:image/png;base64,UE5H"; this.onload?.(); }
+    }
+    vi.stubGlobal("FileReader", FileReaderStub);
+    const first = new PromptEditor();
+    first.sessionId = "remount-image-ids";
+    document.body.append(first);
+    await first.updateComplete;
+    pasteImage(first, "first.png");
+    pasteImage(first, "second.png");
+    await vi.waitFor(() => { expect(loadStagedAttachmentDraft("local:remount-image-ids").attachments).toHaveLength(2); });
+    first.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Remove [PIC_1] image first.png"]')?.click();
+    await first.updateComplete;
+    first.remove();
+
+    const remounted = new PromptEditor();
+    remounted.sessionId = "remount-image-ids";
+    document.body.append(remounted);
+    await remounted.updateComplete;
+    expect(remounted.shadowRoot?.querySelectorAll(".attachment-chip")).toHaveLength(1);
+    pasteImage(remounted, "third.png");
+    await vi.waitFor(() => { expect(loadStagedAttachmentDraft("local:remount-image-ids").attachments).toHaveLength(2); });
+    await remounted.updateComplete;
+    expect(loadStagedAttachmentDraft("local:remount-image-ids").attachments.map(({ id, kind }) => ({ id, kind }))).toEqual([
+      { id: "attachment-2", kind: "image" }, { id: "attachment-3", kind: "image" },
+    ]);
+    remounted.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Remove [PIC_3] image third.png"]')?.click();
+    await remounted.updateComplete;
+    expect(loadStagedAttachmentDraft("local:remount-image-ids").attachments).toEqual([expect.objectContaining({ id: "attachment-2", reference: "[PIC_2]" })]);
+    expect(remounted.view?.state.doc.toString()).toContain("[PIC_2]");
+    expect(remounted.view?.state.doc.toString()).not.toContain("[PIC_3]");
+  });
+
   it.each([
     ["send", false, false, ".send-button", undefined],
     ["steer", true, false, ".send-button", "steer"],
@@ -95,3 +134,11 @@ describe("PromptEditor image attachment accessibility", () => {
     expect(editor.shadowRoot?.querySelector(".attachment-error")?.textContent).toContain("restored for retry");
   });
 });
+
+function pasteImage(editor: PromptEditor, name: string): void {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Reflect.set(event, "clipboardData", { files: [new File(["png"], name, { type: "image/png" })] });
+  const footer = editor.shadowRoot?.querySelector("footer");
+  if (footer === null || footer === undefined) throw new Error("PromptEditor footer missing");
+  footer.dispatchEvent(event);
+}

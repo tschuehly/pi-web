@@ -35,6 +35,13 @@ export function removeImageReferenceTokensFromText(text: string, references: rea
     .replaceAll(reference, ""), text);
 }
 
+const inlineImageReferenceMappingPattern = /(?:^|\n\n)Image blocks immediately following this text map in order as follows:\n(?:\d+\. \[PIC_[1-9]\d*\](?:\n|$))+$/;
+
+/** Remove only PI WEB's trailing provider legend, keeping the user's own references. */
+export function stripInlineImageReferenceMapping(text: string): string {
+  return text.replace(inlineImageReferenceMappingPattern, "");
+}
+
 export function extensionForImageMimeType(mimeType: string): string {
   switch (mimeType) {
     case "image/jpeg": return "jpg";
