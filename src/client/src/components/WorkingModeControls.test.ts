@@ -134,7 +134,7 @@ describe("DelegateRoster", () => {
     expect(element.collapsed).toBe(false);
     expect(root(element).querySelector<HTMLElement>("#delegate-roster-rows")?.hidden).toBe(false);
     expect(root(element).querySelectorAll(".row")).toHaveLength(3);
-    expect(DelegateRoster.styles.cssText).toMatch(/@media \(max-width: 700px\)[\s\S]*\.aggregate\s*\{[^}]*order:\s*-1/);
+    expect(DelegateRoster.styles.cssText).toMatch(/@container \(max-width: 700px\)[\s\S]*\.aggregate\s*\{[^}]*order:\s*-1/);
   });
 
   it("merges sources across lifecycle and reconnect without stale rows or lost collapse", async () => {
@@ -286,12 +286,22 @@ describe("DelegateRoster", () => {
 
     const aggregate = required(root(element).querySelector(".aggregate"));
     expect(aggregate.textContent).toBe("0 running delegates · 0 uncollected · 12 watchers · 13 shells");
-    const mobile = required(/@media \(max-width: 700px\)\s*\{([\s\S]*)\}\s*$/.exec(DelegateRoster.styles.cssText)?.[1]);
-    expect(mobile).toMatch(/\.section-title\s*\{[^}]*flex-wrap:\s*wrap/);
-    expect(mobile).toMatch(/\.aggregate\s*\{[^}]*flex:\s*0 1 100%/);
-    expect(mobile).toMatch(/\.aggregate\s*\{[^}]*white-space:\s*normal/);
-    expect(mobile).toMatch(/\.aggregate\s*\{[^}]*overflow-wrap:\s*anywhere/);
-    expect(mobile).not.toMatch(/\.aggregate\s*\{[^}]*flex:\s*0 0 auto/);
+    const compact = required(/@container \(max-width: 700px\)\s*\{([\s\S]*)\}\s*$/.exec(DelegateRoster.styles.cssText)?.[1]);
+    expect(compact).toMatch(/\.section-title\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(compact).toMatch(/\.aggregate\s*\{[^}]*flex:\s*0 1 100%/);
+    expect(compact).toMatch(/\.aggregate\s*\{[^}]*white-space:\s*normal/);
+    expect(compact).toMatch(/\.aggregate\s*\{[^}]*overflow-wrap:\s*anywhere/);
+    expect(compact).not.toMatch(/\.aggregate\s*\{[^}]*flex:\s*0 0 auto/);
+  });
+
+  it("uses its own width for the compact grid, even on a wide viewport", () => {
+    const styles = DelegateRoster.styles.cssText;
+    expect(styles).toMatch(/:host\s*\{[^}]*container-type:\s*inline-size/);
+    const compact = required(/@container \(max-width: 700px\)\s*\{([\s\S]*)\}\s*$/.exec(styles)?.[1]);
+    // At 320px: 246px of minimum tracks + 24px gaps + 6px row padding + 12px section padding = 288px.
+    expect(compact).toMatch(/\.row\s*\{[^}]*grid-template-columns:\s*8px minmax\(70px, \.7fr\) minmax\(70px, 1fr\) minmax\(90px, 1\.2fr\) 8px/);
+    expect(compact).toMatch(/\.row\s*\{[^}]*gap:\s*6px;\s*padding-inline:\s*3px/);
+    expect(compact).toMatch(/section\s*\{[^}]*padding-inline:\s*6px/);
   });
 
   it("falls back to inferred activity when reportedStatus is absent", async () => {

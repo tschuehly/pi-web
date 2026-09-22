@@ -88,7 +88,7 @@ export class DelegateRoster extends LitElement {
   }
 
   static override styles = css`
-    :host { display: block; flex: 0 0 auto; background: var(--pi-surface); }
+    :host { display: block; flex: 0 0 auto; container-type: inline-size; background: var(--pi-surface); }
     section { display: grid; gap: 2px; padding: 5px 12px 3px; border-top: 1px solid var(--pi-border-muted); }
     .section-toggle { width: 100%; min-height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 5px; border: 0; background: transparent; color: var(--pi-text); font: inherit; text-align: left; cursor: pointer; }
     .section-toggle:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
@@ -116,7 +116,7 @@ export class DelegateRoster extends LitElement {
     .meta { flex: 1 1 auto; color: var(--pi-muted); }
     strong, .meta, .task, .activity { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .activity { color: var(--pi-muted); }
-    @media (max-width: 700px) {
+    @container (max-width: 700px) {
       section { padding-inline: 6px; }
       .section-title { flex-wrap: wrap; }
       .aggregate { order: -1; flex: 0 1 100%; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
