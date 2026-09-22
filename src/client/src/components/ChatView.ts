@@ -111,8 +111,9 @@ export function chatMessageAnchorKey(index: number): string {
 }
 
 /** The stable scroll-anchor/render key for an event group starting at `startIndex`. */
-export function chatGroupAnchorKey(startIndex: number): string {
-  return `g:${String(startIndex)}`;
+export function chatGroupAnchorKey(startIndex: number, presentation?: "activity" | "thinking" | "events", occurrence = 0): string {
+  const base = `g:${String(startIndex)}`;
+  return presentation === undefined ? base : `${base}:${presentation}:${String(occurrence)}`;
 }
 
 /** The stable scroll-anchor key for an event inside a group at `index`. */
@@ -121,8 +122,9 @@ export function chatEventAnchorKey(index: number): string {
 }
 
 /** The stable scroll-marker id emitted before an event group ending at `endIndex`. */
-export function chatGroupScrollMarkerId(endIndex: number): string {
-  return `g:${String(endIndex)}`;
+export function chatGroupScrollMarkerId(endIndex: number, presentation?: "activity" | "thinking" | "events", occurrence = 0): string {
+  const base = `g:${String(endIndex)}`;
+  return presentation === undefined ? base : `${base}:${presentation}:${String(occurrence)}`;
 }
 
 /** Whether a queued-message section shows the server clear-queue action. */
@@ -447,8 +449,14 @@ export class ChatView extends LitElement {
     return repeat(
       groups,
       (group, index) => group.kind === "group" ? this.groupRenderKey(groups, index, group.startIndex, group.presentation) : this.messageAnchorKey(group.index),
-      (group) => {
-        if (group.kind === "group") return this.renderMessageGroup(group.messages, group.startIndex, group.endIndex, group.presentation);
+      (group, index) => {
+        if (group.kind === "group") return this.renderMessageGroup(
+          group.messages,
+          group.startIndex,
+          this.groupAnchorKey(groups, index, group.startIndex, group.presentation),
+          this.groupScrollMarkerId(groups, index, group.endIndex, group.presentation),
+          group.presentation,
+        );
         if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, group.toolName);
         return this.renderMessage(group.message, group.index);
       },
@@ -879,11 +887,11 @@ export class ChatView extends LitElement {
     return message.parts.length > 0 && message.parts.every((part) => part.type === "skillRead");
   }
 
-  private renderMessageGroup(messages: ChatLine[], startIndex: number, endIndex: number, presentation?: "activity" | "thinking") {
-    const marker = this.renderScrollMarker(this.groupScrollMarkerId(endIndex));
+  private renderMessageGroup(messages: ChatLine[], startIndex: number, anchorId: string, markerId: string, presentation?: "activity" | "thinking") {
+    const marker = this.renderScrollMarker(markerId);
     if (presentation === "activity") return html`
       ${marker}
-      <details class="event-group activity-group" data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)}>
+      <details class="event-group activity-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId}>
         <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><strong>Activity</strong><span>${this.activityStepCount(messages)} ${this.activityStepCount(messages) === 1 ? "step" : "steps"}</span></summary>
         <div class="group-body">${this.renderMessageGroupBody(messages, startIndex)}</div>
       </details>
@@ -892,17 +900,25 @@ export class ChatView extends LitElement {
       const text = messages.flatMap((message) => message.parts).filter((part): part is Extract<ChatPart, { type: "thinking" }> => part.type === "thinking").map((part) => part.text).join("\n\n");
       return html`
         ${marker}
-        <details class="event-group thinking-group" data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)} open>
+        <details class="event-group thinking-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId} open>
           <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><small>Thinking</small></summary>
           <formatted-text .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>
         </details>
       `;
     }
-    return html`${marker}<div class="event-group" data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)}>${this.renderMessageGroupBody(messages, startIndex)}</div>`;
+    return html`${marker}<div class="event-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId}>${this.renderMessageGroupBody(messages, startIndex)}</div>`;
   }
 
   private activityStepCount(messages: ChatLine[]): number {
-    return messages.reduce((count, message) => count + message.parts.length, 0);
+    const parts = messages.flatMap((message) => message.parts).filter((part) => part.type === "toolCall" || part.type === "toolExecution" || part.type === "toolResult");
+    const ids = new Set(parts.flatMap((part) => part.toolCallId === undefined ? [] : [part.toolCallId]));
+    const anonymousExecutions = parts.filter((part) => part.toolCallId === undefined && part.type === "toolExecution").length;
+    const anonymousNames = new Set(parts.filter((part) => part.toolCallId === undefined).map((part) => part.toolName));
+    const anonymousCallsAndResults = [...anonymousNames].reduce((count, toolName) => count + Math.max(
+      parts.filter((part) => part.toolCallId === undefined && part.toolName === toolName && part.type === "toolCall").length,
+      parts.filter((part) => part.toolCallId === undefined && part.toolName === toolName && part.type === "toolResult").length,
+    ), 0);
+    return ids.size + anonymousExecutions + anonymousCallsAndResults;
   }
 
   private renderMessageGroupBody(messages: ChatLine[], startIndex: number) {
@@ -1407,8 +1423,11 @@ export class ChatView extends LitElement {
     return `${chatGroupAnchorKey(startIndex)}:${presentation ?? "events"}:${String(occurrence)}`;
   }
 
-  private groupAnchorKey(startIndex: number): string {
-    return chatGroupAnchorKey(startIndex);
+  private groupAnchorKey(groups: ChatGroup[], index: number, startIndex: number, presentation?: "activity" | "thinking"): string {
+    const preceding = groups.slice(0, index).filter((group) => group.kind === "group" && group.startIndex === startIndex);
+    if (preceding.length === 0) return chatGroupAnchorKey(startIndex);
+    const occurrence = preceding.filter((group) => group.kind === "group" && group.presentation === presentation).length;
+    return chatGroupAnchorKey(startIndex, presentation ?? "events", occurrence);
   }
 
   private eventAnchorKey(index: number): string {
@@ -1419,8 +1438,11 @@ export class ChatView extends LitElement {
     return chatMessageAnchorKey(index);
   }
 
-  private groupScrollMarkerId(endIndex: number): string {
-    return chatGroupScrollMarkerId(endIndex);
+  private groupScrollMarkerId(groups: ChatGroup[], index: number, endIndex: number, presentation?: "activity" | "thinking"): string {
+    const preceding = groups.slice(0, index).filter((group) => group.kind === "group" && group.endIndex === endIndex);
+    if (preceding.length === 0) return chatGroupScrollMarkerId(endIndex);
+    const occurrence = preceding.filter((group) => group.kind === "group" && group.presentation === presentation).length;
+    return chatGroupScrollMarkerId(endIndex, presentation ?? "events", occurrence);
   }
 
   static override styles = chatStyles;

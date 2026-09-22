@@ -100,6 +100,32 @@ describe("ChatView transcript density", () => {
     expect(toolResult?.querySelector("summary")?.textContent).toContain("✖ read result");
   });
 
+  it("gives split groups unique anchors and markers and counts executions once", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [{
+      role: "assistant",
+      parts: [
+        { type: "thinking", text: "before" },
+        { type: "toolCall", toolCallId: "call-1", toolName: "bash", summary: "echo hi" },
+        { type: "toolResult", toolCallId: "call-1", toolName: "bash", text: "hi", isError: false },
+        { type: "thinking", text: "after" },
+      ],
+    }];
+
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const groups = Array.from(root.querySelectorAll<HTMLElement>(".event-group"));
+    const anchors = groups.map((group) => group.dataset["scrollAnchorId"]);
+    const markers = Array.from(root.querySelectorAll<HTMLElement>(".scroll-marker"), (marker) => marker.dataset["markerId"]);
+    expect(groups).toHaveLength(3);
+    expect(new Set(anchors).size).toBe(anchors.length);
+    expect(new Set(markers).size).toBe(markers.length);
+    expect(root.querySelector(".activity-group summary")?.textContent).toContain("1 step");
+  });
+
   it("keeps the thinking anchor mounted while collapsed activity appends", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";

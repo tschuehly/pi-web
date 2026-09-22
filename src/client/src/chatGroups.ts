@@ -101,14 +101,13 @@ function chatPartKind(message: ChatLine, part: ChatPart): "activity" | "thinking
   if (message.source === "compaction" || message.source === "branch_summary") return "event";
   if (part.type === "thinking") return "thinking";
   if (part.type === "toolCall" && message.severity !== "error") return "activity";
-  if (part.type === "toolExecution" && part.status === "success" && message.severity !== "error" && !hasMaterialFileDiff(part.toolName, part.details, part.preview?.diff)) return "activity";
-  if (part.type === "toolResult" && !part.isError && message.severity !== "error" && !hasMaterialFileDiff(part.toolName, part.details)) return "activity";
+  if (part.type === "toolExecution" && part.status === "success" && message.severity !== "error" && !hasMaterialFileDiff(part.details, part.preview?.diff)) return "activity";
+  if (part.type === "toolResult" && !part.isError && message.severity !== "error" && !hasMaterialFileDiff(part.details)) return "activity";
   if (part.type === "skillInvocation" || part.type === "skillRead" || part.type === "image" || part.type === "askUserRecord") return "readable";
   if (part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash")) return "readable";
   return "event";
 }
 
-function hasMaterialFileDiff(toolName: string, details: unknown, previewDiff?: string): boolean {
-  if (toolName !== "edit" && toolName !== "write") return false;
+function hasMaterialFileDiff(details: unknown, previewDiff?: string): boolean {
   return previewDiff !== undefined || (typeof details === "object" && details !== null && typeof Reflect.get(details, "diff") === "string");
 }

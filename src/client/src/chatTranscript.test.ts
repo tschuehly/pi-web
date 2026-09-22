@@ -324,7 +324,7 @@ describe("applyTranscriptEvent", () => {
     };
     expect(messages).toEqual([finalizedToolLine, textMessage("assistant", "done")]);
     expect(groupChatMessages(messages)).toEqual([
-      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ ...finalizedToolLine, parts: [finalizedToolLine.parts[0]] }] },
+      { kind: "group", presentation: "activity", startIndex: 0, endIndex: 0, messages: [{ ...finalizedToolLine, parts: [finalizedToolLine.parts[0]] }] },
       { kind: "tool-image", index: 0, message: { ...finalizedToolLine, parts: [finalImage] }, toolName: "read" },
       { kind: "message", index: 1, message: textMessage("assistant", "done") },
     ]);

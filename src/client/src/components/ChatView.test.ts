@@ -260,9 +260,11 @@ describe("chatMessageMetadataLabel", () => {
 describe("chat event-group content seams", () => {
   it("keeps stable group and per-event scroll anchors without disclosure state", () => {
     expect(chatGroupAnchorKey(40)).toBe("g:40");
+    expect(chatGroupAnchorKey(40, "activity", 1)).toBe("g:40:activity:1");
     expect(chatEventAnchorKey(40)).toBe("e:40");
     expect(chatEventAnchorKey(41)).toBe("e:41");
     expect(chatGroupScrollMarkerId(41)).toBe("g:41");
+    expect(chatGroupScrollMarkerId(41, "thinking", 1)).toBe("g:41:thinking:1");
   });
 });
 

@@ -55,6 +55,16 @@ describe("groupChatMessages", () => {
     ]);
   });
 
+  it("keeps successful diffs visible regardless of the tool name", () => {
+    const actualDiff: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "patch", summary: "file", status: "success", details: { diff: "+changed" } }] };
+    const previewDiff: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "replace", summary: "file", status: "success", preview: { diff: "+preview" } }] };
+    const resultDiff: ChatLine = { role: "tool", parts: [{ type: "toolResult", toolName: "apply", text: "ok", isError: false, details: { diff: "+applied" } }] };
+
+    expect(groupChatMessages([actualDiff, previewDiff, resultDiff])).toEqual([
+      { kind: "group", startIndex: 0, endIndex: 2, messages: [actualDiff, previewDiff, resultDiff] },
+    ]);
+  });
+
   it("merges adjacent thinking but lets assistant speech separate thinking blocks", () => {
     expect(groupChatMessages([
       { role: "assistant", parts: [{ type: "thinking", text: "first" }] },
