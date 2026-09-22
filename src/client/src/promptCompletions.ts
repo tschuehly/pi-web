@@ -34,25 +34,39 @@ export function detectPromptCompletionTrigger(draft: string, cursor = draft.leng
 // Match Pi's literal-context and token rules without loading its filesystem skill scanner.
 function activeSkillDirective(draft: string, cursor: number, knownNames?: ReadonlySet<string>): PromptCompletionTrigger | undefined {
   let fence: { marker: string; length: number } | undefined;
+  let inlineCodeRun = 0;
   let offset = 0;
   for (const line of draft.split("\n")) {
     const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-    if (fenceMatch) {
+    if (fenceMatch && (fence !== undefined || inlineCodeRun === 0)) {
       const marker = fenceMatch[1]?.charAt(0) ?? "";
       const length = fenceMatch[1]?.length ?? 0;
       if (fence === undefined) fence = { marker, length };
       else if (fence.marker === marker && length >= fence.length && /^\s*$/.test(line.slice(fenceMatch[0].length))) fence = undefined;
     } else if (fence === undefined && !/^\s*>/.test(line)) {
-      let quote: "'" | '"' | "`" | undefined;
+      let quote: "'" | '"' | undefined;
       for (let i = 0; i < line.length; i++) {
         const char = line.charAt(i);
-        if (quote !== undefined) {
+        if (inlineCodeRun === 0 && quote !== undefined) {
           if (char === quote && line[i - 1] !== "\\") quote = undefined;
           continue;
         }
-        if (char === "`" || char === '"' || (char === "'" && !/\w/.test(line[i - 1] ?? ""))) {
+        if (char === "`") {
+          let end = i + 1;
+          while (line[end] === "`") end++;
+          let backslashes = 0;
+          while (line[i - backslashes - 1] === "\\") backslashes++;
+          if (backslashes % 2 === 0) {
+            if (inlineCodeRun === end - i) inlineCodeRun = 0;
+            else if (inlineCodeRun === 0) inlineCodeRun = end - i;
+          }
+          i = end - 1;
+          continue;
+        }
+        if (inlineCodeRun !== 0) continue;
+        if (char === '"' || (char === "'" && !/\w/.test(line[i - 1] ?? ""))) {
           // Unpaired prose quotes must not hide later directives.
-          if (char === "`" || line.slice(i + 1).split("").some((next, index) => next === char && line[i + 1 + index - 1] !== "\\")) quote = char;
+          if (line.slice(i + 1).split("").some((next, index) => next === char && line[i + 1 + index - 1] !== "\\")) quote = char;
           if (quote !== undefined) continue;
         }
         if (!line.startsWith("/skill:", i) || (i > 0 && !/\s/.test(line.charAt(i - 1)))) continue;

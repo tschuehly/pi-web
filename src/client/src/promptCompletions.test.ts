@@ -94,6 +94,32 @@ describe("detectPromptCompletionTrigger", () => {
     expect(detectPromptCompletionTrigger('unmatched " prose /skill:rev')).toEqual({ kind: "command", query: "skill:rev", from: 18, to: 28 });
   });
 
+  it("keeps skill directives inside matched multi-backtick spans literal", () => {
+    const draft = "say `` /skill:rev ` /skill:rev `` then /skill:rev";
+    const first = draft.indexOf("/skill:rev");
+    const second = draft.indexOf("/skill:rev", first + 1);
+    expect(detectPromptCompletionTrigger(draft, first + 10)).toBeUndefined();
+    expect(detectPromptCompletionTrigger(draft, second + 10)).toBeUndefined();
+    expect(detectPromptCompletionTrigger(draft)).toEqual({ kind: "command", query: "skill:rev", from: draft.lastIndexOf("/skill:rev"), to: draft.length });
+  });
+
+  it("keeps inline-code state across lines and ignores mismatched runs and apparent fences", () => {
+    const draft = "say ``\n/skill:rev\n` /skill:rev\n```\n/skill:rev\n``\nplease /skill:rev, later";
+    let from = draft.indexOf("/skill:rev");
+    for (let i = 0; i < 3; i++) {
+      expect(detectPromptCompletionTrigger(draft, from + 10)).toBeUndefined();
+      from = draft.indexOf("/skill:rev", from + 1);
+    }
+    expect(detectPromptCompletionTrigger(draft, from + 9)).toEqual({ kind: "command", query: "skill:re", from, to: from + 10 });
+    expect(detectPromptCompletionTrigger(draft, from + 11)).toEqual({ kind: "command", query: "skill:rev", from, to: from + 10 });
+  });
+
+  it("does not treat escaped opening backticks as code spans", () => {
+    const escaped = "say \\` /skill:rev";
+    expect(detectPromptCompletionTrigger(escaped)).toEqual({ kind: "command", query: "skill:rev", from: escaped.indexOf("/skill:rev"), to: escaped.length });
+    expect(detectPromptCompletionTrigger("say \\\\` /skill:rev")).toBeUndefined();
+  });
+
   it("does not suggest malformed, ambiguous, URL or code-like tokens", () => {
     for (const draft of ["/skill:rev!!", "/skill:rev,more", "/skill:rev/path", "/skill:rev.ts", "/skill:rev=foo", "/skill:rev()",  "read https://host/skill:rev", "read src/skill:rev", "run `/skill:rev` now", "foo/skill:rev"]) {
       expect(detectPromptCompletionTrigger(draft)).toBeUndefined();
