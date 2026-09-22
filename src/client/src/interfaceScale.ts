@@ -1,6 +1,7 @@
 import type { DensityStorage } from "./density";
 
 export const INTERFACE_SCALE_STORAGE_KEY = "pi-web-app-scale";
+export const INTERFACE_SCALE_CSS_PROPERTY = "--pi-interface-scale";
 export const DEFAULT_INTERFACE_SCALE = 1;
 export const MIN_INTERFACE_SCALE = 0.8;
 export const MAX_INTERFACE_SCALE = 1.6;
@@ -44,7 +45,9 @@ export function writeStoredInterfaceScale(scale: number, storage: DensityStorage
 // native resolution underneath the zoom and will blur or mis-measure; upgrade path is
 // tokenizing their font sizes and reacting to scale changes instead of relying on zoom.
 export function applyInterfaceScale(scale: number, root: InterfaceScaleRoot = document.documentElement): void {
-  root.style.setProperty("zoom", String(clampInterfaceScale(scale)));
+  const value = String(clampInterfaceScale(scale));
+  root.style.setProperty("zoom", value);
+  root.style.setProperty(INTERFACE_SCALE_CSS_PROPERTY, value);
 }
 
 /** Move to the next or previous step in INTERFACE_SCALE_STEPS, clamped at the ends. */

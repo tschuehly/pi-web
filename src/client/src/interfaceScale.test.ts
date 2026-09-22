@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_INTERFACE_SCALE,
+  INTERFACE_SCALE_CSS_PROPERTY,
   INTERFACE_SCALE_STEPS,
   INTERFACE_SCALE_STORAGE_KEY,
   MAX_INTERFACE_SCALE,
@@ -48,10 +49,11 @@ describe("PI WEB interface scale preference", () => {
     expect(() => { writeStoredInterfaceScale(1.1, throwingStorage()); }).not.toThrow();
   });
 
-  it("applies the scale as a zoom style property on the provided root", () => {
+  it.each([0.8, 1, 1.25, 1.5])("applies zoom and the shared active-scale property at %s", (scale) => {
     const setProperty = vi.fn();
-    applyInterfaceScale(1.25, { style: { setProperty } });
-    expect(setProperty).toHaveBeenCalledWith("zoom", "1.25");
+    applyInterfaceScale(scale, { style: { setProperty } });
+    expect(setProperty).toHaveBeenNthCalledWith(1, "zoom", String(scale));
+    expect(setProperty).toHaveBeenNthCalledWith(2, INTERFACE_SCALE_CSS_PROPERTY, String(scale));
   });
 
   it("steps up through the supported sizes and clamps at the maximum", () => {

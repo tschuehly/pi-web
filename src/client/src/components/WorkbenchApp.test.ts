@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type Machine, type Project, type SessionInfo, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
 import { ACTIVITY_STATUS_KEY } from "../extensionStatusSnapshots";
-import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
+import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
@@ -485,6 +485,10 @@ function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: W
 }
 
 describe("Workbench interface scale shortcuts", () => {
+  it("sizes the fixed Workbench host against the unzoomed physical viewport", () => {
+    expect(WorkbenchApp.styles.cssText).toMatch(/:host\s*\{[^}]*height:\s*calc\(100dvh\s*\/\s*var\(--pi-interface-scale,\s*1\)\)/);
+  });
+
   it("steps the stored scale up, down, and back to the default on Cmd/Ctrl +/-/0", async () => {
     const app = await mountChooser([]);
 
@@ -497,6 +501,7 @@ describe("Workbench interface scale shortcuts", () => {
 
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "0", metaKey: true, cancelable: true }));
     expect(readStoredInterfaceScale()).toBe(DEFAULT_INTERFACE_SCALE);
+    expect(document.documentElement.style.getPropertyValue(INTERFACE_SCALE_CSS_PROPERTY)).toBe("1");
     app.remove();
   });
 
@@ -542,6 +547,7 @@ describe("Workbench settings panel", () => {
 
     expect(readStoredInterfaceScale()).toBe(1.25);
     expect(document.documentElement.style.getPropertyValue("zoom")).toBe("1.25");
+    expect(document.documentElement.style.getPropertyValue(INTERFACE_SCALE_CSS_PROPERTY)).toBe("1.25");
     app.remove();
   });
 
