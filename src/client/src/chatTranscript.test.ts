@@ -146,6 +146,26 @@ describe("applyTranscriptEvent", () => {
     ]);
   });
 
+  it("keeps a live finalized entry id when replacing the streamed assistant message", () => {
+    const streamed: ChatLine[] = [
+      textMessage("user", "question"),
+      textMessage("assistant", "partial"),
+    ];
+
+    expect(applyTranscriptEvent(streamed, {
+      type: "message.end",
+      message: { ...finalAssistant, entryId: "assistant-entry" },
+    })).toEqual([
+      textMessage("user", "question"),
+      {
+        role: "assistant",
+        parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "answer" }],
+        entryId: "assistant-entry",
+        meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "test", id: "model" } },
+      },
+    ]);
+  });
+
   it("replaces streamed skill reads when the finalized assistant tool call arrives after the tool result", () => {
     const streamed: ChatLine[] = [
       { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }] },

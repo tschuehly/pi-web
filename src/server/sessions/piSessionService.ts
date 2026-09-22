@@ -4098,6 +4098,7 @@ export class PiSessionService implements SessionRouteService {
       }
     }
     let queuedPublications = 0;
+    let subscribed = true;
     const unsubscribe = session.subscribe((event) => {
       const publish = () => {
         this.events.publish(session.sessionId, toClientEvent(event, session.thinkingLevel, finalizedMessageEntryId(session, event)));
@@ -4117,11 +4118,20 @@ export class PiSessionService implements SessionRouteService {
         queuedPublications += 1;
         queueMicrotask(() => {
           queuedPublications -= 1;
-          publish();
+          if (!subscribed) return;
+          try {
+            publish();
+          } catch (error: unknown) {
+            this.logger.info(
+              { sessionId: session.sessionId, eventType: getString(event, "type"), error: error instanceof Error ? error.message : String(error) },
+              "failed to publish deferred session event",
+            );
+          }
         });
       } else publish();
     });
     active.unsubscribe = () => {
+      subscribed = false;
       this.sessionEvents.close(session);
       unsubscribe();
     };
@@ -5196,7 +5206,10 @@ function toClientEvent(event: unknown, thinkingLevel?: string, entryId?: string)
     const message = getProperty(event, "message");
     if (message === undefined) return { type: "message.end" };
     const annotated = annotateAssistantThinkingLevel(message, thinkingLevel);
-    return { type: "message.end", message: entryId === undefined || !isRecord(annotated) ? annotated : { ...annotated, entryId } };
+    if (!isRecord(annotated)) return { type: "message.end", message: annotated };
+    const authoritative = { ...annotated };
+    delete authoritative["entryId"];
+    return { type: "message.end", message: entryId === undefined ? authoritative : { ...authoritative, entryId } };
   }
   return { type: "pi.event", eventType: eventType ?? "unknown" };
 }

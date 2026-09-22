@@ -6,13 +6,12 @@ const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 
 describe("PiSessionService", () => {
   describe("assistant thinking-level attribution", () => {
-    function messagesService(branch: unknown[], patch: Parameters<typeof fakeRuntime>[1] = {}) {
+    function messagesService(branch: unknown[], patch: Parameters<typeof fakeRuntime>[1] = {}, events = new CapturingSessionEventHub()) {
       const fake = fakeRuntime("session-1", {
         sessionFile: "/tmp/session-1.jsonl",
         sessionManager: fakeSessionManager("/workspace", { getBranch: () => branch }),
         ...patch,
       });
-      const events = new CapturingSessionEventHub();
       const service = new PiSessionService(events, {
         agentDir: TEST_AGENT_DIR,
         modelRuntime: testModelRuntime,
@@ -74,9 +73,7 @@ describe("PiSessionService", () => {
       const entryId = "assistant-entry";
       const message = { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }] };
       const branch: unknown[] = [];
-      const { fake, service, events } = messagesService(branch, {
-        sessionManager: fakeSessionManager("/workspace", { getBranch: () => branch }),
-      });
+      const { fake, service, events } = messagesService(branch);
       await service.status(sessionRef("session-1"));
       const eventStart = events.sessionEvents.length;
 
@@ -89,6 +86,56 @@ describe("PiSessionService", () => {
       expect(liveEvents[0]).toEqual({ sessionId: "session-1", event: { type: "message.end", message: { ...message, entryId } } });
       expect(liveEvents.findIndex(({ event }) => event.type === "pi.event" && event.eventType === "turn_end")).toBeGreaterThan(0);
       expect((await service.messages(sessionRef("session-1"))).messages).toEqual([{ ...message, entryId }]);
+      await service.dispose();
+    });
+
+    it("omits entryId when the last durable branch message has different identity", async () => {
+      const staleMessage = { role: "assistant", content: [{ type: "text", text: "stale" }] };
+      const branch = [{ type: "message", id: "stale-entry", message: staleMessage }];
+      const message = { role: "assistant", entryId: "raw-entry", content: [{ type: "text", text: "current" }] };
+      const { fake, service, events } = messagesService(branch);
+      await service.status(sessionRef("session-1"));
+      const eventStart = events.sessionEvents.length;
+
+      fake.emit({ type: "message_end", message });
+      await Promise.resolve();
+
+      expect(events.sessionEvents.slice(eventStart)[0]).toEqual({ sessionId: "session-1", event: {
+        type: "message.end",
+        message: { role: "assistant", content: [{ type: "text", text: "current" }] },
+      } });
+      await service.dispose();
+    });
+
+    it("does not publish a deferred finalized message after disposal", async () => {
+      const message = { role: "assistant", content: [{ type: "text", text: "answer" }] };
+      const branch = [{ type: "message", id: "assistant-entry", message }];
+      const { fake, service, events } = messagesService(branch);
+      await service.status(sessionRef("session-1"));
+      const eventStart = events.sessionEvents.length;
+
+      fake.emit({ type: "message_end", message });
+      await service.dispose();
+      await Promise.resolve();
+
+      expect(events.sessionEvents.slice(eventStart).filter(({ event }) => event.type === "message.end")).toEqual([]);
+    });
+
+    it("contains deferred publication failures", async () => {
+      let failPublications = false;
+      const events = new class extends CapturingSessionEventHub {
+        override publish(sessionId: string, event: Parameters<CapturingSessionEventHub["publish"]>[1]): void {
+          if (failPublications) throw new Error("publication failed");
+          super.publish(sessionId, event);
+        }
+      }();
+      const { fake, service } = messagesService([], {}, events);
+      await service.status(sessionRef("session-1"));
+      failPublications = true;
+
+      fake.emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } });
+      await Promise.resolve();
+
       await service.dispose();
     });
 
