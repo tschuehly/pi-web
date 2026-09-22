@@ -75,10 +75,14 @@ describe("WorkstreamContextDrawer", () => {
 
     const root = element.shadowRoot;
     const details = root?.querySelector("details");
-    expect(details?.querySelector("summary")?.textContent).toContain("Build the Workbench launcher");
+    const summary = details?.querySelector("summary");
+    expect(summary?.querySelector("span")?.textContent).toBe("Workstream");
+    expect(summary?.querySelector("strong")?.textContent).toBe("Build the Workbench launcher");
     expect(root?.textContent).not.toContain("Unassociated Chat");
     expect(details?.open).toBe(false);
-    details?.querySelector("summary")?.click();
+    summary?.focus();
+    expect(root?.activeElement).toBe(summary);
+    summary?.click();
     expect(details?.open).toBe(true);
     expect(root?.textContent).toContain("Restore Workstream context inside Chat.");
     expect(root?.textContent).toContain("Done when");

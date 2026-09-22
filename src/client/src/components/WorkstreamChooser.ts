@@ -482,7 +482,6 @@ export class WorkstreamChooser extends LitElement {
     * { box-sizing: border-box; min-width: 0; }
     .card p, .card li, .goal, .next p, .warn { overflow-wrap: anywhere; }
     .card p, .card ul, .card ol { max-width: 65ch; }
-    .row { width: 100%; }
     h2 { margin: 0; font-size: 16px; }
     .group { display: grid; gap: 6px; }
     h3 { margin: 6px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--pi-muted); }
@@ -492,12 +491,13 @@ export class WorkstreamChooser extends LitElement {
     button { box-sizing: border-box; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 12px; font: inherit; text-align: left; cursor: pointer; }
     button:hover { background: var(--pi-surface-hover); }
     button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .row { display: grid; gap: 2px; border-left: 3px solid var(--workstream-color, transparent); }
+    .row { width: 100%; display: grid; gap: 2px; border-left: 3px solid var(--workstream-color, transparent); background: color-mix(in srgb, var(--workstream-color) 12%, var(--pi-bg)); }
+    .row:hover { background: color-mix(in srgb, var(--workstream-color) 18%, var(--pi-surface-hover)); }
     .row-title { display: flex; align-items: center; overflow-wrap: anywhere; }
-    .row[aria-pressed="true"] { border-color: var(--pi-accent); border-left-color: var(--workstream-color, var(--pi-accent)); }
+    .row[aria-pressed="true"] { border-color: var(--pi-accent); border-left-color: var(--workstream-color, var(--pi-accent)); background: color-mix(in srgb, var(--workstream-color) 22%, var(--pi-surface)); }
     .row small { color: var(--pi-muted); }
     .row small b { color: var(--pi-danger); }
-    .card { display: grid; gap: 8px; margin: 2px 0 8px; padding: 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color, var(--pi-border)); border-radius: 10px; background: var(--pi-surface); }
+    .card { display: grid; gap: 8px; margin: 2px 0 8px; padding: 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color, var(--pi-border)); border-radius: 10px; background: color-mix(in srgb, var(--workstream-color) 9%, var(--pi-surface)); }
     .goal { font-weight: 700; font-size: 15px; }
     .goal small { display: block; margin-top: 2px; font-weight: 500; color: var(--pi-muted); font-size: 12px; }
     .next { display: grid; gap: 4px; padding: 12px 14px; border-radius: 10px; background: var(--pi-accent); color: white; }
@@ -532,5 +532,10 @@ export class WorkstreamChooser extends LitElement {
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
     .missing, .error { color: var(--pi-muted); font-size: 13px; }
     .error { color: var(--pi-danger); }
+    @media (forced-colors: active) {
+      .row { border-left-color: LinkText; }
+      .row[aria-pressed="true"] { border-color: Highlight; border-left-color: LinkText; }
+      .card { border-left-color: LinkText; }
+    }
   `];
 }

@@ -45,14 +45,17 @@ export class WorkstreamContextDrawer extends LitElement {
     :host { position: static; display: block; min-width: 0; color: var(--pi-text); }
     * { box-sizing: border-box; min-width: 0; }
     details { position: static; border-left: 3px solid var(--workstream-color, transparent); }
-    summary, .tab { min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; }
-    summary { list-style: none; cursor: pointer; }
+    summary, .tab { min-height: 32px; display: flex; align-items: center; gap: 8px; }
+    summary { padding: 0 10px; border: 1px solid var(--pi-border); border-radius: 8px; background: color-mix(in srgb, var(--workstream-color) 12%, var(--pi-surface)); list-style: none; cursor: pointer; }
+    summary:hover { background: color-mix(in srgb, var(--workstream-color) 18%, var(--pi-surface-hover)); }
+    details[open] summary { background: color-mix(in srgb, var(--workstream-color) 18%, var(--pi-surface-hover)); }
+    summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     summary::-webkit-details-marker { display: none; }
     summary::after { content: "↓"; flex: 0 0 auto; color: var(--pi-muted); }
     details[open] summary::after { content: "↑"; }
     summary span { flex: 0 0 auto; color: var(--pi-accent); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-    summary strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-    .tab { overflow: hidden; color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
+    summary strong { flex: 1 1 auto; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+    .tab { overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
     .fallback-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sheet { position: absolute; top: 100%; left: 0; right: 0; max-height: calc(var(--pi-workbench-viewport-height, 100vh) - 56px); overflow: auto; display: grid; padding: 20px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
     .row { position: relative; padding: 18px 0 12px; border-top: 1px solid var(--pi-border-muted); }
@@ -62,6 +65,11 @@ export class WorkstreamContextDrawer extends LitElement {
     .about p { color: var(--pi-muted); }
     .next { margin: 8px 0 4px; padding: 18px 12px 12px; border: 1px solid var(--pi-success-border); border-radius: 9px; background: var(--pi-success-bg); }
     .next .label { left: 12px; background: var(--pi-success-bg); }
+    @media (forced-colors: active) {
+      details { border-left-color: LinkText; }
+      summary { background: Canvas; }
+      details[open] summary { border-color: Highlight; }
+    }
     @media (max-width: 520px) {
       .sheet { padding: 12px 16px; }
       .goal { font-size: 16px; }
