@@ -1,6 +1,11 @@
 export const WORKING_MODE_STATUS_KEY = "working-mode";
 export const ACTIVITY_STATUS_KEY = "pi-workbench:activity";
 export const GOAL_STATUS_KEY = "goal";
+const GOAL_STATUS_RAW_MAX_BYTES = 8_192;
+const GOAL_TEXT_MAX_CHARACTERS = 240;
+const CONTROL = /\p{Cc}/gu;
+const INVISIBLE_SPOOF = /(?:(?!\u200d)\p{Cf})|[\u115f\u2800\u3164\uffa0]/u;
+const INVISIBLE_SPOOF_GLOBAL = /(?:(?!\u200d)\p{Cf})|[\u115f\u2800\u3164\uffa0]/gu;
 
 export const GOAL_STATUS_STATE_VALUES = ["active", "waiting", "paused", "blocked", "usage_limited", "budget_limited"] as const;
 export type GoalStatusState = typeof GOAL_STATUS_STATE_VALUES[number];
@@ -49,18 +54,33 @@ function isGoalStatusState(value: unknown): value is GoalStatusState {
 }
 
 export function parseGoalStatusSnapshot(text: string | undefined): GoalStatusSnapshot | undefined {
-  if (text === undefined || new TextEncoder().encode(text).byteLength > 2_048) return undefined;
+  if (!boundedGoalStatusText(text)) return undefined;
   const value = parseJson(text);
-  if (!record(value) || Object.keys(value).length !== 4 || !["schemaVersion", "goalId", "state", "objective"].every((key) => Object.hasOwn(value, key))) return undefined;
-  const goalId = value["goalId"];
-  const objective = value["objective"];
-  if (
-    value["schemaVersion"] !== 1 ||
-    typeof goalId !== "string" || goalId === "" || goalId !== goalId.trim() || Array.from(goalId).length > 128 ||
-    !isGoalStatusState(value["state"]) ||
-    typeof objective !== "string" || objective === "" || objective !== objective.trim() || Array.from(objective).length > 240
-  ) return undefined;
+  if (!record(value) || !["schemaVersion", "goalId", "state", "objective"].every((key) => Object.hasOwn(value, key))) return undefined;
+  const rawGoalId = value["goalId"];
+  const rawObjective = value["objective"];
+  if (value["schemaVersion"] !== 1 || typeof rawGoalId !== "string" || !isGoalStatusState(value["state"]) || typeof rawObjective !== "string") return undefined;
+  if (INVISIBLE_SPOOF.test(rawGoalId)) return undefined;
+  const goalId = rawGoalId.trim();
+  const objective = normalizeGoalText(rawObjective);
+  if (goalId === "" || goalId.search(CONTROL) >= 0 || Array.from(goalId).length > 128 || objective === "" || Array.from(objective).length > GOAL_TEXT_MAX_CHARACTERS) return undefined;
   return { schemaVersion: 1, goalId, state: value["state"], objective };
+}
+
+export function parseLegacyGoalStatus(text: string | undefined): string | undefined {
+  if (!boundedGoalStatusText(text)) return undefined;
+  const trimmed = text.trim();
+  if (parseJson(trimmed) !== undefined || trimmed.startsWith("{") || trimmed.startsWith("[")) return undefined;
+  const value = normalizeGoalText(trimmed);
+  return value !== "" && Array.from(value).length <= GOAL_TEXT_MAX_CHARACTERS ? value : undefined;
+}
+
+function boundedGoalStatusText(text: string | undefined): text is string {
+  return text !== undefined && new TextEncoder().encode(text).byteLength <= GOAL_STATUS_RAW_MAX_BYTES;
+}
+
+function normalizeGoalText(value: string): string {
+  return value.replace(INVISIBLE_SPOOF_GLOBAL, "").replace(CONTROL, " ").replace(/\s+/gu, " ").trim();
 }
 
 function isAlignment(value: unknown): value is Alignment {
