@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { normalizeMessages } from "../chatMessages";
 import { ChatView } from "./ChatView";
 import { FormattedText } from "./FormattedText";
 import { chatStyles, formattedTextStyles, type ToolExecutionPart } from "./shared";
@@ -66,7 +67,61 @@ describe("transcript preformatted soft wrapping", () => {
     expect(rule(ToolExecutionView.styles.cssText, ".error-text")).toContain("overflow-wrap:anywhere");
     expect(rule(ToolExecutionView.styles.cssText, ".detail-result pre")).toContain("white-space:pre-wrap");
     expect(rule(ToolExecutionView.styles.cssText, ".detail-result pre")).toContain("overflow-wrap:anywhere");
-    expect(rule(ToolExecutionView.styles.cssText, ".diff span")).toContain("white-space:pre");
+    expect(rule(ToolExecutionView.styles.cssText, ".diff span")).toContain("white-space:pre;");
+  });
+
+  it("renders a page-boundary tool result as literal soft-wrapped preformatted text", async () => {
+    const result = `  indented\n# not a heading\n* not emphasis\n[not a link](https://example.test)\n${"token".repeat(50)}`;
+    const view = await renderChat(normalizeMessages([{
+      role: "toolResult",
+      toolCallId: "call-from-earlier-page",
+      toolName: "read",
+      content: [{ type: "text", text: result }],
+      isError: false,
+    }]));
+
+    const orphan = view.shadowRoot?.querySelector<HTMLPreElement>(".tool-result pre.orphan-tool-result");
+    expect(orphan?.textContent).toBe(result);
+    expect(view.shadowRoot?.querySelectorAll(".tool-result pre.orphan-tool-result")).toHaveLength(1);
+    expect(view.shadowRoot?.querySelector(".tool-result formatted-text")).toBeNull();
+    expect(rule(chatStyles.cssText, "pre")).toContain("white-space:pre-wrap");
+    expect(rule(chatStyles.cssText, "pre")).toContain("overflow-wrap:anywhere");
+    expect(rule(chatStyles.cssText, ".orphan-tool-result")).toContain("font:12pxui-monospace,SFMono-Regular,Menlo,Consolas,monospace");
+  });
+
+  it("preserves an orphan error result's leading newline and trailing whitespace", async () => {
+    const result = ["", "  failure **is literal**\t ", "last line  ", ""].join("\n");
+    const view = await renderChat(normalizeMessages([{
+      role: "toolResult",
+      toolCallId: "missing-call",
+      toolName: "bash",
+      content: [{ type: "text", text: result }],
+      isError: true,
+    }]));
+
+    const details = view.shadowRoot?.querySelector("details.tool-result.error");
+    expect(details?.querySelector("pre.orphan-tool-result")?.textContent).toBe(result);
+    expect(details?.querySelector("formatted-text")).toBeNull();
+    expect(view.shadowRoot?.querySelectorAll("pre.orphan-tool-result")).toHaveLength(1);
+  });
+
+  it("renders a missing-id history result once without changing matched execution rendering", async () => {
+    const result = `    literal indentation\n## literal Markdown\n${"unbroken".repeat(30)}`;
+    const missingId = await renderChat(normalizeMessages([
+      { role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: { command: "echo" } }] },
+      { role: "toolResult", toolName: "bash", content: [{ type: "text", text: result }], isError: false },
+    ]));
+    expect(missingId.shadowRoot?.querySelectorAll("pre.orphan-tool-result")).toHaveLength(1);
+    expect(missingId.shadowRoot?.querySelector("pre.orphan-tool-result")?.textContent).toBe(result);
+    expect(missingId.shadowRoot?.querySelector(".tool-result formatted-text")).toBeNull();
+
+    const matched = await renderChat(normalizeMessages([
+      { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "echo" } }] },
+      { role: "toolResult", toolCallId: "call-1", toolName: "bash", content: [{ type: "text", text: result }], isError: false },
+    ]));
+    const execution = matched.shadowRoot?.querySelector<ToolExecutionView>("tool-execution-view");
+    expect(matched.shadowRoot?.querySelector(".tool-result")).toBeNull();
+    expect(execution?.execution?.resultText).toBe(result);
   });
 });
 
@@ -86,6 +141,15 @@ function stubClipboard() {
 function restoreProperty(target: object, key: PropertyKey, descriptor: PropertyDescriptor | undefined): void {
   if (descriptor === undefined) Reflect.deleteProperty(target, key);
   else Object.defineProperty(target, key, descriptor);
+}
+
+async function renderChat(messages: ChatView["messages"]): Promise<ChatView> {
+  const view = new ChatView();
+  view.sessionId = "session-1";
+  view.messages = messages;
+  document.body.append(view);
+  await view.updateComplete;
+  return view;
 }
 
 async function renderTool(overrides: Partial<ToolExecutionPart>): Promise<ToolExecutionView> {

@@ -1093,7 +1093,7 @@ export class ChatView extends LitElement {
     if (part.type === "toolResult") return html`
       <details class=${part.isError ? "part tool-result error" : "part tool-result"}>
         <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
-        <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>
+        <pre class="orphan-tool-result">${part.text}</pre>
       </details>
     `;
     return null;
