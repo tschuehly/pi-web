@@ -3,7 +3,7 @@ import type { ChatLine, ChatPart } from "./components/shared";
 export type ChatGroup =
   | { kind: "message"; message: ChatLine; index: number }
   | { kind: "tool-image"; message: ChatLine; index: number; toolName?: string }
-  | { kind: "group"; messages: ChatLine[]; startIndex: number; endIndex: number };
+  | { kind: "group"; messages: ChatLine[]; startIndex: number; endIndex: number; presentation?: "activity" | "thinking" };
 
 export interface CurrentExchangeGroups {
   history: ChatGroup[];
@@ -30,39 +30,48 @@ export function currentExchangeGroups(messages: ChatLine[], groups: ChatGroup[],
 
 export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGroup[] {
   const groups: ChatGroup[] = [];
-  let eventMessages: ChatLine[] = [];
-  let eventStartIndex = 0;
 
-  const pushEvent = (message: ChatLine, index: number) => {
-    if (!eventMessages.length) eventStartIndex = index;
-    eventMessages.push(message);
-  };
-  const flushEvents = () => {
-    if (!eventMessages.length) return;
-    groups.push({ kind: "group", messages: eventMessages, startIndex: eventStartIndex, endIndex: eventStartIndex + eventMessages.length - 1 });
-    eventMessages = [];
-  };
-
-  messages.forEach((message, index) => {
-    const readableParts = message.parts.filter((part) => isReadablePart(message, part));
-    const technicalParts = message.parts.filter((part) => !isReadablePart(message, part));
-
-    const absoluteIndex = indexOffset + index;
-    const metadata = { ...(message.entryId === undefined ? {} : { entryId: message.entryId }), ...(message.source === undefined ? {} : { source: message.source }), ...(message.severity === undefined ? {} : { severity: message.severity }), ...(message.meta === undefined ? {} : { meta: message.meta }) };
-    if (technicalParts.length) pushEvent({ role: message.role, parts: technicalParts, ...metadata }, absoluteIndex);
-    if (readableParts.length) {
-      flushEvents();
-      const role = readableParts.every((part) => part.type === "skillRead") ? "skill" : message.role;
-      const readableMessage = { role, parts: readableParts, ...metadata };
-      if (isToolImageMessage(readableMessage)) {
-        const toolName = toolNameFromParts(technicalParts);
-        groups.push({ kind: "tool-image", message: readableMessage, index: absoluteIndex, ...(toolName === undefined ? {} : { toolName }) });
-      } else {
-        groups.push({ kind: "message", message: readableMessage, index: absoluteIndex });
-      }
+  const pushGroup = (message: ChatLine, index: number, presentation?: "activity" | "thinking") => {
+    const previous = groups.at(-1);
+    if (previous?.kind === "group" && previous.presentation === presentation) {
+      previous.messages.push(message);
+      previous.endIndex = index;
+      return;
     }
+    groups.push({ kind: "group", messages: [message], startIndex: index, endIndex: index, ...(presentation === undefined ? {} : { presentation }) });
+  };
+
+  messages.forEach((message, localIndex) => {
+    const index = indexOffset + localIndex;
+    const metadata = { ...(message.entryId === undefined ? {} : { entryId: message.entryId }), ...(message.source === undefined ? {} : { source: message.source }), ...(message.severity === undefined ? {} : { severity: message.severity }), ...(message.meta === undefined ? {} : { meta: message.meta }) };
+    let run: ChatPart[] = [];
+    let runKind: "activity" | "thinking" | "event" | "readable" | undefined;
+
+    const flush = () => {
+      if (runKind === undefined || run.length === 0) return;
+      const parts = run;
+      const kind = runKind;
+      run = [];
+      runKind = undefined;
+      const role = parts.every((part) => part.type === "skillRead") ? "skill" : message.role;
+      const splitMessage: ChatLine = { role, parts, ...metadata };
+      if (kind === "thinking") pushGroup(splitMessage, index, "thinking");
+      else if (kind === "activity") pushGroup(splitMessage, index, "activity");
+      else if (kind === "event") pushGroup(splitMessage, index);
+      else if (isToolImageMessage(splitMessage)) {
+        const toolName = toolNameFromParts(message.parts);
+        groups.push({ kind: "tool-image", message: splitMessage, index, ...(toolName === undefined ? {} : { toolName }) });
+      } else groups.push({ kind: "message", message: splitMessage, index });
+    };
+
+    for (const part of message.parts) {
+      const kind = chatPartKind(message, part);
+      if (kind !== runKind) flush();
+      runKind = kind;
+      run.push(part);
+    }
+    flush();
   });
-  flushEvents();
   return groups;
 }
 
@@ -88,8 +97,18 @@ function toolNameFromParts(parts: ChatPart[]): string | undefined {
   return undefined;
 }
 
-function isReadablePart(message: ChatLine, part: ChatPart): boolean {
-  if (message.source === "compaction" || message.source === "branch_summary") return false;
-  if (part.type === "skillInvocation" || part.type === "skillRead" || part.type === "image" || part.type === "askUserRecord") return true;
-  return part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash");
+function chatPartKind(message: ChatLine, part: ChatPart): "activity" | "thinking" | "event" | "readable" {
+  if (message.source === "compaction" || message.source === "branch_summary") return "event";
+  if (part.type === "thinking") return "thinking";
+  if (part.type === "toolCall" && message.severity !== "error") return "activity";
+  if (part.type === "toolExecution" && part.status === "success" && message.severity !== "error" && !hasMaterialFileDiff(part.toolName, part.details, part.preview?.diff)) return "activity";
+  if (part.type === "toolResult" && !part.isError && message.severity !== "error" && !hasMaterialFileDiff(part.toolName, part.details)) return "activity";
+  if (part.type === "skillInvocation" || part.type === "skillRead" || part.type === "image" || part.type === "askUserRecord") return "readable";
+  if (part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash")) return "readable";
+  return "event";
+}
+
+function hasMaterialFileDiff(toolName: string, details: unknown, previewDiff?: string): boolean {
+  if (toolName !== "edit" && toolName !== "write") return false;
+  return previewDiff !== undefined || (typeof details === "object" && details !== null && typeof Reflect.get(details, "diff") === "string");
 }

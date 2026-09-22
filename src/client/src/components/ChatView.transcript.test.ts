@@ -11,8 +11,8 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe("ChatView flat transcript", () => {
-  it("renders event rows inline without group summaries or metadata fallback", async () => {
+describe("ChatView transcript density", () => {
+  it("keeps thinking expanded and exceptional events individually visible", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
     view.messageStart = 40;
@@ -44,18 +44,14 @@ describe("ChatView flat transcript", () => {
     await view.updateComplete;
 
     const root = requireShadowRoot(view);
-    expect(root.querySelector("details.event-group")).toBeNull();
-    const summaryLabels = Array.from(root.querySelectorAll("summary"), (summary) => summary.textContent.trim().toLowerCase());
-    expect(summaryLabels).not.toContain("events");
-    expect(summaryLabels).not.toContain("live events");
+    const thinking = root.querySelector<HTMLDetailsElement>("details.thinking-group");
+    expect(thinking?.open).toBe(true);
+    expect(root.querySelector("details.activity-group")).toBeNull();
     expect(root.textContent).not.toContain("No Pi message metadata available");
     expect(root.textContent).not.toContain("provider/model");
     expect(root.textContent).not.toContain("high");
 
-    const thinking = root.querySelector(".thinking");
-    expect(thinking?.tagName).toBe("DIV");
-    expect(thinking?.querySelector("details")).toBeNull();
-    expect(thinking?.querySelector(".thinking-label")?.textContent).toBe("Thinking");
+    expect(thinking?.querySelector("summary")?.textContent).toContain("Thinking");
     const thinkingText = thinking?.querySelector<FormattedText>("formatted-text");
     if (thinkingText === undefined || thinkingText === null) throw new Error("Expected visible thinking text");
     await thinkingText.updateComplete;
@@ -63,7 +59,6 @@ describe("ChatView flat transcript", () => {
     expect(thinkingText.shadowRoot?.textContent).toContain("More detail follows.");
 
     expect(root.querySelector('[data-scroll-anchor-id="g:40"]')).not.toBeNull();
-    expect(root.querySelector('[data-scroll-anchor-id="e:40"]')).not.toBeNull();
     expect(root.querySelector('[data-scroll-anchor-id="e:41"]')).not.toBeNull();
     expect(root.querySelector('[data-scroll-anchor-id="e:42"]')).not.toBeNull();
 
@@ -105,7 +100,7 @@ describe("ChatView flat transcript", () => {
     expect(toolResult?.querySelector("summary")?.textContent).toContain("✖ read result");
   });
 
-  it("keeps the group anchor mounted while streaming rows append", async () => {
+  it("keeps the thinking anchor mounted while collapsed activity appends", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
     view.messageStart = 8;
@@ -124,8 +119,10 @@ describe("ChatView flat transcript", () => {
     await view.updateComplete;
 
     expect(root.querySelector('[data-scroll-anchor-id="g:8"]')).toBe(group);
-    expect(root.querySelector('[data-scroll-anchor-id="e:8"]')).not.toBeNull();
-    expect(root.querySelector('[data-scroll-anchor-id="e:9"]')).not.toBeNull();
+    const activity = root.querySelector<HTMLDetailsElement>('[data-scroll-anchor-id="g:9"].activity-group');
+    expect(activity).not.toBeNull();
+    expect(activity?.open).toBe(false);
+    expect(activity?.querySelector(".tool-result")?.textContent).toContain("read result");
   });
 
   it("renders user and assistant messages as distinct chat bubbles with muted thinking parts", async () => {
@@ -137,7 +134,9 @@ describe("ChatView flat transcript", () => {
         role: "assistant",
         parts: [
           { type: "thinking", text: "pondering" },
+          { type: "thinking", text: "still pondering" },
           { type: "text", text: "answer" },
+          { type: "thinking", text: "after speech" },
         ],
       },
     ];
@@ -159,10 +158,31 @@ describe("ChatView flat transcript", () => {
 
     // Thinking parts are technical events, so they render outside the assistant
     // bubble as a distinct, muted row rather than as assistant speech.
-    const thinking = root.querySelector<HTMLElement>(".thinking");
-    if (thinking === null) throw new Error("Expected thinking part");
-    expect(thinking.closest("article.msg.assistant")).toBeNull();
-    expect(getComputedStyle(thinking).fontStyle).toBe("italic");
+    const thinking = Array.from(root.querySelectorAll<HTMLElement>(".thinking-group"));
+    expect(thinking).toHaveLength(2);
+    expect(thinking[0]?.querySelector<FormattedText>("formatted-text")?.text).toBe("pondering\n\nstill pondering");
+    expect(thinking[1]?.querySelector<FormattedText>("formatted-text")?.text).toBe("after speech");
+    expect(thinking[0]?.closest("article.msg.assistant")).toBeNull();
+    expect(getComputedStyle(thinking[0] ?? document.body).fontStyle).toBe("italic");
+  });
+
+  it("renders skill loading as one small line without metadata or a path", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [{
+      role: "assistant",
+      parts: [{ type: "skillRead", name: "testing-guide", path: "/repo/.agents/skills/testing-guide/SKILL.md" }],
+      meta: { timestamp: "2026-07-10T19:15:30.000Z" },
+    }];
+
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const line = root.querySelector(".skill-read-shell");
+    expect(line?.textContent.trim()).toBe("Skill: testing-guide");
+    expect(line?.querySelector(".msg-header")).toBeNull();
+    expect(root.textContent).not.toContain("/repo/.agents");
   });
 
   it("keeps earlier conversation expanded by default", async () => {

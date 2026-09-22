@@ -378,8 +378,16 @@ export const chatStyles = css`
   .msg.tool, .msg.system { color: var(--pi-text); }
   .msg.error { color: var(--pi-danger); }
   .msg.tool-execution-shell, .msg.ask-user-record-shell { padding: 0 2px var(--pi-message-padding); color: var(--pi-text); }
+  .msg.skill-read-shell { padding: 2px 2px var(--pi-message-padding); color: var(--pi-purple); }
   .msg.ask-user-record-shell ask-user-card { margin: 0 auto; }
   .event-group { max-width: var(--pi-content-max-width); margin: 0 0 16px; }
+  .activity-group > summary, .thinking-group > summary { display: flex; align-items: center; gap: 7px; padding: 5px 2px; color: var(--pi-muted); list-style: none; cursor: pointer; }
+  .activity-group > summary::-webkit-details-marker, .thinking-group > summary::-webkit-details-marker { display: none; }
+  .activity-group > summary strong { color: var(--pi-text); }
+  .activity-group > .group-body { padding-left: 21px; }
+  .thinking-group { padding: 6px 10px; border-left: 2px solid var(--pi-border); border-radius: 4px; background: var(--pi-surface-hover); color: var(--pi-muted); font-size: 13px; font-style: italic; }
+  .thinking-group > summary { padding: 0 0 4px; font-style: normal; }
+  .thinking-group > formatted-text { display: block; min-width: 0; }
   .chat-image { display: block; max-width: 100%; max-height: 320px; margin: 8px 0 0; border: 1px solid var(--pi-border); border-radius: 8px; object-fit: contain; cursor: zoom-in; }
   .chat-image:focus-visible { outline: 2px solid var(--pi-accent, var(--pi-success-border)); outline-offset: 2px; }
   dialog.image-zoom { position: fixed; inset: 0; margin: auto; max-width: calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)); max-height: calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: visible; }
@@ -444,9 +452,9 @@ export const chatStyles = css`
   .summary { color: var(--pi-muted); margin-left: 6px; }
   .part:is(details) { padding: 0; }
   .part > formatted-text { display: block; max-width: 100%; min-width: 0; margin-top: 8px; overflow: visible; }
-  .skill-invocation, .skill-read { padding: 6px 0; }
-  .skill-invocation > summary, .skill-read > strong { color: var(--pi-purple); }
-  .skill-invocation > small, .skill-read > small { display: block; margin: 6px 0 0; color: var(--pi-muted); }
+  .skill-invocation { padding: 6px 0; }
+  .skill-invocation > summary { color: var(--pi-purple); }
+  .skill-invocation > small { display: block; margin: 6px 0 0; color: var(--pi-muted); }
   .part > summary { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--pi-muted); list-style: none; cursor: pointer; }
   .part > summary::-webkit-details-marker { display: none; }
   .chevron { flex: 0 0 auto; display: inline-grid; transition: transform .12s ease; }

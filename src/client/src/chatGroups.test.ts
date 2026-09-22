@@ -13,9 +13,10 @@ describe("groupChatMessages", () => {
     ];
 
     expect(groupChatMessages(messages, 10)).toEqual([
-      { kind: "group", startIndex: 10, endIndex: 10, messages: [messages[0]] },
+      { kind: "group", presentation: "thinking", startIndex: 10, endIndex: 10, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "plan" }] }] },
+      { kind: "group", presentation: "activity", startIndex: 10, endIndex: 10, messages: [{ role: "assistant", parts: [{ type: "toolCall", toolName: "read", summary: "file" }] }] },
       { kind: "message", index: 11, message: text("assistant", "visible answer") },
-      { kind: "group", startIndex: 12, endIndex: 12, messages: [messages[2]] },
+      { kind: "group", presentation: "activity", startIndex: 12, endIndex: 12, messages: [messages[2]] },
     ]);
   });
 
@@ -25,19 +26,52 @@ describe("groupChatMessages", () => {
     ];
 
     expect(groupChatMessages(messages)).toEqual([
-      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "hidden" }] }] },
+      { kind: "group", presentation: "thinking", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "hidden" }] }] },
       { kind: "message", index: 0, message: { role: "assistant", parts: [{ type: "text", text: "shown" }] } },
     ]);
   });
 
-  it("keeps skill reads out of event groups", () => {
+  it("keeps skill reads visible after thinking", () => {
     const messages: ChatLine[] = [
       { role: "assistant", parts: [{ type: "thinking", text: "plan" }, { type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }] },
     ];
 
     expect(groupChatMessages(messages)).toEqual([
-      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "plan" }] }] },
+      { kind: "group", presentation: "thinking", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "plan" }] }] },
       { kind: "message", index: 0, message: { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }] } },
+    ]);
+  });
+
+  it("collapses adjacent successful tool activity but keeps errors and edit diffs separate", () => {
+    const readCall: ChatLine = { role: "assistant", parts: [{ type: "toolCall", toolName: "read", summary: "file" }] };
+    const readSuccess: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "file", status: "success", resultText: "contents" }] };
+    const editDiff: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "edit", summary: "file", status: "success", details: { diff: "+changed" } }] };
+    const writeDiff: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "write", summary: "file", status: "success", preview: { diff: "+written" } }] };
+    const error: ChatLine = { role: "tool", parts: [{ type: "toolResult", toolName: "bash", text: "failed", isError: true }] };
+
+    expect(groupChatMessages([readCall, readSuccess, editDiff, writeDiff, error])).toEqual([
+      { kind: "group", presentation: "activity", startIndex: 0, endIndex: 1, messages: [readCall, readSuccess] },
+      { kind: "group", startIndex: 2, endIndex: 4, messages: [editDiff, writeDiff, error] },
+    ]);
+  });
+
+  it("merges adjacent thinking but lets assistant speech separate thinking blocks", () => {
+    expect(groupChatMessages([
+      { role: "assistant", parts: [{ type: "thinking", text: "first" }] },
+      { role: "assistant", parts: [{ type: "thinking", text: "second" }, { type: "text", text: "visible" }, { type: "thinking", text: "third" }] },
+    ])).toEqual([
+      {
+        kind: "group",
+        presentation: "thinking",
+        startIndex: 0,
+        endIndex: 1,
+        messages: [
+          { role: "assistant", parts: [{ type: "thinking", text: "first" }] },
+          { role: "assistant", parts: [{ type: "thinking", text: "second" }] },
+        ],
+      },
+      { kind: "message", index: 1, message: { role: "assistant", parts: [{ type: "text", text: "visible" }] } },
+      { kind: "group", presentation: "thinking", startIndex: 1, endIndex: 1, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "third" }] }] },
     ]);
   });
 
@@ -50,6 +84,7 @@ describe("groupChatMessages", () => {
     expect(groupChatMessages(messages)).toEqual([
       {
         kind: "group",
+        presentation: "activity",
         startIndex: 0,
         endIndex: 0,
         messages: [{ role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "Read image file [image/png]", isError: false }] }],
@@ -64,7 +99,7 @@ describe("groupChatMessages", () => {
     const message: ChatLine = { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "ok", isError: false }, image], meta };
 
     expect(groupChatMessages([message])).toEqual([
-      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "tool", parts: [message.parts[0]], meta }] },
+      { kind: "group", presentation: "activity", startIndex: 0, endIndex: 0, messages: [{ role: "tool", parts: [message.parts[0]], meta }] },
       { kind: "tool-image", index: 0, message: { role: "tool", parts: [image], meta }, toolName: "read" },
     ]);
   });
@@ -82,7 +117,7 @@ describe("groupChatMessages", () => {
     const message: ChatLine = { role: "assistant", parts: [{ type: "thinking", text: "hidden" }, { type: "text", text: "shown" }], meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "test", id: "model" } } };
 
     expect(groupChatMessages([message])).toEqual([
-      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "hidden" }], meta: message.meta }] },
+      { kind: "group", presentation: "thinking", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "hidden" }], meta: message.meta }] },
       { kind: "message", index: 0, message: { role: "assistant", parts: [{ type: "text", text: "shown" }], meta: message.meta } },
     ]);
   });

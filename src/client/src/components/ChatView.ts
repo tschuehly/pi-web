@@ -446,9 +446,9 @@ export class ChatView extends LitElement {
   private renderGroups(groups: ChatGroup[]) {
     return repeat(
       groups,
-      (group) => group.kind === "group" ? this.groupRenderKey(group.startIndex) : this.messageAnchorKey(group.index),
+      (group, index) => group.kind === "group" ? this.groupRenderKey(groups, index, group.startIndex, group.presentation) : this.messageAnchorKey(group.index),
       (group) => {
-        if (group.kind === "group") return this.renderMessageGroup(group.messages, group.startIndex, group.endIndex);
+        if (group.kind === "group") return this.renderMessageGroup(group.messages, group.startIndex, group.endIndex, group.presentation);
         if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, group.toolName);
         return this.renderMessage(group.message, group.index);
       },
@@ -844,11 +844,13 @@ export class ChatView extends LitElement {
   private renderMessage(message: ChatLine, index: number) {
     const toolOnly = this.isToolExecutionOnlyMessage(message);
     const askUserRecordOnly = this.isAskUserRecordOnlyMessage(message);
-    const shellClass = toolOnly ? "msg tool-execution-shell" : "msg ask-user-record-shell";
+    const skillReadOnly = this.isSkillReadOnlyMessage(message);
+    const headerless = toolOnly || askUserRecordOnly || skillReadOnly;
+    const shellClass = toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : "msg skill-read-shell";
     return html`
       ${this.renderScrollMarker(this.messageScrollMarkerId(index))}
-      <article class=${`${toolOnly || askUserRecordOnly ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${this.messageAnchorKey(index)}>
-        ${toolOnly || askUserRecordOnly ? null : this.renderMessageHeader(message, String(index))}
+      <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${this.messageAnchorKey(index)}>
+        ${headerless ? null : this.renderMessageHeader(message, String(index))}
         ${message.parts.map((part) => this.renderPart(part, message))}
       </article>
     `;
@@ -873,22 +875,47 @@ export class ChatView extends LitElement {
     return message.parts.length > 0 && message.parts.every((part) => part.type === "askUserRecord");
   }
 
-  private renderMessageGroup(messages: ChatLine[], startIndex: number, endIndex: number) {
-    return html`
-      ${this.renderScrollMarker(this.groupScrollMarkerId(endIndex))}
-      <div class="event-group" data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)}>
-        ${messages.map((message, offset) => {
-          const toolOnly = this.isToolExecutionOnlyMessage(message);
-          const classes = `${toolOnly ? "group-msg tool-execution-shell" : `group-msg ${message.role}`}${message.severity === "error" ? " error" : ""}`;
-          return html`
-            <article class=${classes} data-index=${startIndex + offset} data-scroll-anchor-id=${this.eventAnchorKey(startIndex + offset)}>
-              ${toolOnly ? null : this.renderMessageHeader(message, `${String(startIndex)}:${String(offset)}`)}
-              ${message.parts.map((part) => this.renderPart(part, message))}
-            </article>
-          `;
-        })}
-      </div>
+  private isSkillReadOnlyMessage(message: ChatLine): boolean {
+    return message.parts.length > 0 && message.parts.every((part) => part.type === "skillRead");
+  }
+
+  private renderMessageGroup(messages: ChatLine[], startIndex: number, endIndex: number, presentation?: "activity" | "thinking") {
+    const marker = this.renderScrollMarker(this.groupScrollMarkerId(endIndex));
+    if (presentation === "activity") return html`
+      ${marker}
+      <details class="event-group activity-group" data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)}>
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><strong>Activity</strong><span>${this.activityStepCount(messages)} ${this.activityStepCount(messages) === 1 ? "step" : "steps"}</span></summary>
+        <div class="group-body">${this.renderMessageGroupBody(messages, startIndex)}</div>
+      </details>
     `;
+    if (presentation === "thinking") {
+      const text = messages.flatMap((message) => message.parts).filter((part): part is Extract<ChatPart, { type: "thinking" }> => part.type === "thinking").map((part) => part.text).join("\n\n");
+      return html`
+        ${marker}
+        <details class="event-group thinking-group" data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)} open>
+          <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><small>Thinking</small></summary>
+          <formatted-text .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>
+        </details>
+      `;
+    }
+    return html`${marker}<div class="event-group" data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)}>${this.renderMessageGroupBody(messages, startIndex)}</div>`;
+  }
+
+  private activityStepCount(messages: ChatLine[]): number {
+    return messages.reduce((count, message) => count + message.parts.length, 0);
+  }
+
+  private renderMessageGroupBody(messages: ChatLine[], startIndex: number) {
+    return messages.map((message, offset) => {
+      const toolOnly = this.isToolExecutionOnlyMessage(message);
+      const classes = `${toolOnly ? "group-msg tool-execution-shell" : `group-msg ${message.role}`}${message.severity === "error" ? " error" : ""}`;
+      return html`
+        <article class=${classes} data-index=${startIndex + offset} data-scroll-anchor-id=${this.eventAnchorKey(startIndex + offset)}>
+          ${toolOnly ? null : this.renderMessageHeader(message, `${String(startIndex)}:${String(offset)}`)}
+          ${message.parts.map((part) => this.renderPart(part, message))}
+        </article>
+      `;
+    });
   }
 
   private renderScrollMarker(markerId: string) {
@@ -1001,12 +1028,7 @@ export class ChatView extends LitElement {
         <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.content}></formatted-text>
       </details>
     `;
-    if (part.type === "skillRead") return html`
-      <div class="part skill-read">
-        <strong>Loaded ${part.name}</strong>
-        <small>read ${part.path}</small>
-      </div>
-    `;
+    if (part.type === "skillRead") return html`<div class="part skill-read">Skill: ${part.name}</div>`;
     if (part.type === "askUserRecord") return html`
       <ask-user-card
         class="part"
@@ -1380,8 +1402,9 @@ export class ChatView extends LitElement {
     return chatMessageAnchorKey(index);
   }
 
-  private groupRenderKey(startIndex: number): string {
-    return chatGroupAnchorKey(startIndex);
+  private groupRenderKey(groups: ChatGroup[], index: number, startIndex: number, presentation?: "activity" | "thinking"): string {
+    const occurrence = groups.slice(0, index).filter((group) => group.kind === "group" && group.startIndex === startIndex && group.presentation === presentation).length;
+    return `${chatGroupAnchorKey(startIndex)}:${presentation ?? "events"}:${String(occurrence)}`;
   }
 
   private groupAnchorKey(startIndex: number): string {
