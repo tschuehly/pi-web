@@ -33,7 +33,7 @@ import "./SessionTreeNavigator";
 import "./WorkstreamChooser";
 import "./WorkstreamContextDrawer";
 import "./WorkbenchSettingsPanel";
-import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamServiceContext, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, watchWorkstreams, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamServiceContext, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
@@ -63,6 +63,8 @@ export class WorkbenchApp extends LitElement {
   private loadSequence = 0;
   private modelDialogInstanceId = 0;
   private workstreamLoadSequence = 0;
+  private workstreamWatchSequence = 0;
+  private workstreamWatchTimer: number | undefined;
   private readonly themes = new PluginRegistry();
   private themesInitialized = false;
   @state() private themePreference: ThemePreference = readStoredThemePreference() ?? { themeId: "themes:github-dark", auto: true };
@@ -170,6 +172,7 @@ export class WorkbenchApp extends LitElement {
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
     this.systemLightThemeMedia?.removeEventListener("change", this.onSystemLightThemeChange);
     this.realtime.close();
+    window.clearTimeout(this.workstreamWatchTimer);
     this.auth.dispose();
     this.sessions.dispose();
     this.notifications.dispose();
@@ -179,6 +182,11 @@ export class WorkbenchApp extends LitElement {
   private setApp(patch: Partial<AppState>): void {
     const previous = this.app;
     this.app = { ...this.app, ...patch };
+    if (previous.selectedSession?.id !== this.app.selectedSession?.id || selectedMachineId(previous) !== selectedMachineId(this.app)) {
+      window.clearTimeout(this.workstreamWatchTimer);
+      this.workstreamWatchSequence = 0;
+      ++this.workstreamLoadSequence;
+    }
     this.notifications.syncEnvironment(previous, this.app);
     this.desktopNotifications.sync(previous, this.app);
   }
@@ -486,22 +494,48 @@ export class WorkbenchApp extends LitElement {
       : { machineId: selectedMachineId(this.app), projectId, workspaceId };
   }
 
-  private async loadCurrentWorkstream(): Promise<void> {
+  private async loadCurrentWorkstream(reset = true): Promise<void> {
     const sessionId = this.app.selectedSession?.id;
     const sequence = ++this.workstreamLoadSequence;
-    this.currentWorkstream = undefined;
-    this.currentWorkstreamError = "";
+    window.clearTimeout(this.workstreamWatchTimer);
+    if (reset) {
+      this.currentWorkstream = undefined;
+      this.currentWorkstreamError = "";
+    }
     const context = this.workstreamServiceContext;
     if (sessionId === undefined || context === undefined) return;
     try {
       const snapshot = await workstreamForSession(context, sessionId);
-      if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) this.currentWorkstream = snapshot;
+      if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) {
+        this.currentWorkstream = snapshot;
+        this.currentWorkstreamError = "";
+      }
     } catch (error) {
       if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) {
         this.currentWorkstream = null;
         this.currentWorkstreamError = error instanceof Error ? error.message : String(error);
       }
+    } finally {
+      if (sequence === this.workstreamLoadSequence && this.isConnected) this.scheduleWorkstreamWatch(context, sessionId);
     }
+  }
+
+  private scheduleWorkstreamWatch(context: WorkstreamServiceContext, sessionId: string): void {
+    this.workstreamWatchTimer = window.setTimeout(() => {
+      void (async () => {
+        const sequence = this.workstreamLoadSequence;
+        try {
+          const batch = await watchWorkstreams(context, this.workstreamWatchSequence);
+          if (sequence !== this.workstreamLoadSequence || this.app.selectedSession?.id !== sessionId) return;
+          if (batch.nextSequence !== this.workstreamWatchSequence || this.currentWorkstreamError !== "") {
+            this.workstreamWatchSequence = batch.nextSequence;
+            await this.loadCurrentWorkstream(false);
+            return;
+          }
+        } catch { /* Keep the last known title; retry on the next watch. */ }
+        if (sequence === this.workstreamLoadSequence && this.isConnected) this.scheduleWorkstreamWatch(context, sessionId);
+      })();
+    }, 2_000);
   }
 
   private async preloadWorkstreamPrompt(prompt: string, machineId: string, sessionId: string): Promise<void> {

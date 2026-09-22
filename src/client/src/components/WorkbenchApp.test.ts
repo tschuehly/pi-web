@@ -472,13 +472,13 @@ function pluginLifecycleResponse(): Response {
   }), { status: 200 });
 }
 
-function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: WorkstreamServiceCall) => unknown, protocol?: string[]): void {
+function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: WorkstreamServiceCall) => unknown, protocol?: string[], handleList = false): void {
   vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
     if (url.endsWith("/plugins")) return Promise.resolve(pluginLifecycleResponse());
     if (typeof init?.body !== "string") throw new Error("missing Workstream request body");
     const envelope = JSON.parse(init.body) as { input: Record<string, unknown> }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
     const body = { operation: decodeURIComponent(url.slice(url.lastIndexOf("/") + 1)), input: envelope.input };
-    if (body.operation === "list") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }));
+    if (body.operation === "list" && !handleList) return Promise.resolve(new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }));
     calls.push(body);
     if (body.operation === "inspect") protocol?.push("inspect");
     return Promise.resolve(new Response(JSON.stringify(respond(body)), { status: 200 }));
@@ -590,7 +590,44 @@ describe("Workbench settings panel", () => {
 });
 
 describe("Workbench Chat controls", () => {
-  it("mounts Workbench status controls in the header and beside the composer", async () => {
+  it("refreshes the open header when an external Workstream association appears, changes title, or disappears", async () => {
+    const current = session("current", "Initial prompt", "Named chat");
+    let revision = 0;
+    let associated = false;
+    let title = "External Workstream";
+    const calls: WorkstreamServiceCall[] = [];
+    stubWorkstreamService(calls, ({ operation }) => {
+      if (operation === "list") return { ok: true, value: associated ? [{ id: "external" }] : [] };
+      if (operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: revision } };
+      return { ok: true, value: { id: "external", title, revision, sessions: [], humanTasks: [], links: [], overview: null, closed: false } };
+    }, undefined, true);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
+    vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
+    const app = await mountChooser([current]);
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".session")?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("current"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
+    await vi.waitFor(() => { expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined(); });
+    await app.updateComplete;
+    expect(drawerTitle(app)).toBe("Named chat");
+
+    associated = true;
+    revision = 1;
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("External Workstream"); }, { timeout: 3_000 });
+
+    title = "Renamed elsewhere";
+    revision = 2;
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Renamed elsewhere"); }, { timeout: 3_000 });
+
+    associated = false;
+    revision = 3;
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Named chat"); }, { timeout: 3_000 });
+    expect(calls.filter((call) => call.operation === "watch")).toHaveLength(3);
+    expect(getState(app).selectedSession?.id).toBe("current");
+  }, 10_000);
+
+  it("keeps identity in the header and mounts status controls beside the composer", async () => {
     const current = session("current", "Build the UI");
     const app = await mountChooser([current]);
     setState(app, {
@@ -665,6 +702,10 @@ async function mountChooser(sessions: SessionInfo[]): Promise<WorkbenchApp> {
 
 function setState(app: WorkbenchApp, state: AppState): void {
   if (!Reflect.set(app, "app", state)) throw new Error("Could not set WorkbenchApp state");
+}
+
+function drawerTitle(app: WorkbenchApp): string | null | undefined {
+  return app.shadowRoot?.querySelector<WorkstreamContextDrawer>("workstream-context-drawer")?.shadowRoot?.querySelector("summary strong, .fallback-title")?.textContent;
 }
 
 function promptEditor(app: WorkbenchApp): PromptEditor {

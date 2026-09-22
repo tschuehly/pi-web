@@ -82,6 +82,7 @@ const isSnapshot = (value: unknown): value is WorkstreamSnapshot => isRecord(val
 const isReceipt = (value: unknown): value is { acceptedRevision: number } => isRecord(value) && Number.isInteger(value["acceptedRevision"]);
 export const listWorkstreams = (context: WorkstreamServiceContext, query: WorkstreamListQuery = {}): Promise<WorkstreamSummary[]> => service(context, "list", query, isSummaryList);
 export const inspectWorkstream = (context: WorkstreamServiceContext, workstreamId: string): Promise<WorkstreamSnapshot> => service(context, "inspect", { workstreamId }, isSnapshot);
+export const watchWorkstreams = (context: WorkstreamServiceContext, afterSequence: number): Promise<{ nextSequence: number }> => service(context, "watch", { afterSequence }, (value): value is { nextSequence: number } => isRecord(value) && Number.isSafeInteger(value["nextSequence"]) && typeof value["nextSequence"] === "number" && value["nextSequence"] >= 0 && (value["mode"] === "snapshot" && Array.isArray(value["snapshots"]) || value["mode"] === "replay" && Array.isArray(value["events"])));
 export const appendWorkstream = (context: WorkstreamServiceContext, input: WorkstreamAppendInput): Promise<{ acceptedRevision: number }> => service(context, "append", input, isReceipt);
 export async function workstreamForSession(context: WorkstreamServiceContext, sessionId: string): Promise<WorkstreamSnapshot | null> {
   const matches = await listWorkstreams(context, { sessionId, includeClosed: true });
