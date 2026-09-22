@@ -589,6 +589,7 @@ describe("Workbench Chat controls", () => {
     expect(shell.querySelector("header > workstream-context-drawer")).not.toBeNull();
     expect(shell.querySelector("header > strong")).toBeNull();
     expect(shell.querySelector("delegate-roster")).not.toBeNull();
+    expect(shell.querySelector("status-bar")).toBeNull();
     expect(shell.querySelector("working-mode-controls")).toBeNull();
     const promptEditor = shell.querySelector<PromptEditor>("prompt-editor");
     if (promptEditor === null) throw new Error("Prompt editor was not rendered");

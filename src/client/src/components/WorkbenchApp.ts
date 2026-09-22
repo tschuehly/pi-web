@@ -28,7 +28,6 @@ import "./DelegateRoster";
 import "./ProjectDialog";
 import "./PromptEditor";
 import "./SessionTreeNavigator";
-import "./StatusBar";
 import "./WorkstreamChooser";
 import "./WorkstreamContextDrawer";
 import "./WorkbenchSettingsPanel";
@@ -808,7 +807,6 @@ export class WorkbenchApp extends LitElement {
           .onSelectThinking=${() => { void this.openThinkingDialog(); }}
           .onRunCommand=${(command: string) => this.sessions.runCommand(command)}
         ></prompt-editor>
-        <status-bar .status=${state.status}></status-bar>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
         ${state.modelDialog === undefined ? null : html`<command-picker .title=${state.modelDialog.title} .searchable=${true} .options=${state.modelDialog.options} .selectedValue=${state.modelDialog.selectedValue} .onPick=${(value: string) => { void this.pickModel(value); }} .onCancel=${() => { this.setApp({ modelDialog: undefined }); }}></command-picker>`}
         ${state.thinkingDialog === undefined ? null : html`<command-picker .title=${state.thinkingDialog.title} .options=${state.thinkingDialog.options} .selectedValue=${state.thinkingDialog.selectedValue} .onPick=${(value: string) => { void this.pickThinking(value); }} .onCancel=${() => { this.setApp({ thinkingDialog: undefined }); }}></command-picker>`}
@@ -875,7 +873,7 @@ export class WorkbenchApp extends LitElement {
     header span { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-    delegate-roster, prompt-editor, status-bar { flex: 0 0 auto; }
+    delegate-roster, prompt-editor { flex: 0 0 auto; }
     @media (max-width: 600px) {
       .chooser, .chooser > section { grid-template-columns: minmax(0, 1fr); }
       .chooser { padding: 16px; }

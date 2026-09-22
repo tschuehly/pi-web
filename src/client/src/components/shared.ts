@@ -531,6 +531,8 @@ export const promptEditorStyles = css`
   .compact-status { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--pi-muted); font-size: 12px; flex: 1 1 0; }
   .compact-status > button { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .select-model { max-width: min(42vw, 320px); }
+  .usage { display: flex; flex: 0 1 auto; min-width: 0; align-items: center; gap: 6px; color: var(--pi-muted); font-size: 11px; }
+  .usage > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .icon-button { flex: 0 0 auto; display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; }
   .icon-button .prompt-action-icon, .icon-button .prompt-thinking-gauge { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   .icon-button .prompt-action-icon-filled { fill: currentColor; stroke: none; }
@@ -571,14 +573,14 @@ export const promptEditorStyles = css`
   button:disabled, textarea:disabled, .markdown-editor-disabled .cm-editor { opacity: .5; cursor: not-allowed; }
   @media (max-width: 640px) {
     footer { gap: 8px; padding: 8px; }
-    .actions { gap: 6px; }
+    .actions { gap: 6px; flex-wrap: wrap; }
     .compact-status { flex: 1 1 220px; gap: 4px; }
+    .usage { flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 4px 6px; }
     .select-model { max-width: min(58vw, 260px); }
     button { padding: 6px 8px; }
   }
   @media (max-width: 430px) {
-    .actions { flex-wrap: wrap; }
-    working-mode-controls[compact] { flex: 1 1 100%; }
+    working-mode-controls[compact], .usage { flex: 1 1 100%; }
     .compact-status { flex-basis: 170px; font-size: 11px; }
     .select-model { max-width: 48vw; }
     button { padding: 5px 7px; }
