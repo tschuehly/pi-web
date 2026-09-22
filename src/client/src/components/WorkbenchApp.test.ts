@@ -58,7 +58,7 @@ describe("Chat in a folder", () => {
     vi.spyOn(api, "sessions").mockResolvedValue([]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/anywhere/notes" });
     vi.spyOn(api, "status").mockResolvedValue({ sessionId: "adhoc", persisted: false, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
-    window.piWebNative = { pickDirectory: () => Promise.resolve("/anywhere/notes") };
+    window.piWebNative = { pickDirectory: () => Promise.resolve("/anywhere/notes"), notify: () => Promise.resolve() };
 
     const app = new WorkbenchApp();
     document.body.append(app);

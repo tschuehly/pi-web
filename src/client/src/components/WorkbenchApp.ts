@@ -4,7 +4,7 @@ import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, 
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { initialAppState, type AppState } from "../appState";
 import { AuthController } from "../controllers/authController";
-import { browserDesktopNotifications, DesktopNotificationController } from "../controllers/desktopNotificationController";
+import { desktopNotifications, DesktopNotificationController } from "../controllers/desktopNotificationController";
 import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
@@ -84,7 +84,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   private readonly desktopNotifications = new DesktopNotificationController(
-    browserDesktopNotifications(),
+    desktopNotifications(),
     () => { this.requestUpdate(); },
   );
 

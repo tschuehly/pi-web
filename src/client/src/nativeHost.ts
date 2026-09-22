@@ -1,5 +1,6 @@
 export interface PiWebNativeHost {
   pickDirectory(): Promise<string | null>;
+  notify(title: string, body: string): Promise<void>;
 }
 
 declare global {

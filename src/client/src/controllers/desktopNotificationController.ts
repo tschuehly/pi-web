@@ -1,5 +1,6 @@
 import type { AppState } from "../appState";
 import { machineSessionKey } from "../machineKeys";
+import type { PiWebNativeHost } from "../nativeHost";
 import { selectedMachineId } from "./types";
 
 export interface DesktopNotificationHandle {
@@ -11,8 +12,14 @@ export interface DesktopNotificationBrowser {
   permission(): NotificationPermission | "unsupported";
   requestPermission(): Promise<NotificationPermission>;
   isBackground(): boolean;
-  show(title: string, options: NotificationOptions): DesktopNotificationHandle;
+  show(title: string, options: NotificationOptions): DesktopNotificationHandle | Promise<DesktopNotificationHandle>;
   focus(): void;
+}
+
+export interface DesktopNotificationStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
 export type DesktopNotificationKind = "complete" | "ask" | "dialog" | "error";
@@ -36,8 +43,11 @@ export class DesktopNotificationController {
 
   async requestPermission(): Promise<void> {
     if (!this.canRequestPermission()) return;
-    await this.browser.requestPermission();
-    this.onPermissionChange();
+    try {
+      await this.browser.requestPermission();
+    } finally {
+      this.onPermissionChange();
+    }
   }
 
   sync(previous: AppState, next: AppState): void {
@@ -100,12 +110,29 @@ export class DesktopNotificationController {
 
   private notify(tag: DesktopNotificationKind, title: string, body: string): void {
     if (this.browser.permission() !== "granted" || !this.browser.isBackground()) return;
-    const notification = this.browser.show(`PI WEB · ${title}`, { body, tag: `${this.sessionKey ?? "chat"}:${tag}` });
+    const shown = this.browser.show(`PI WEB · ${title}`, { body, tag: `${this.sessionKey ?? "chat"}:${tag}` });
+    if (shown instanceof Promise) {
+      void shown.then((notification) => { this.bindClick(notification); }).catch(() => { this.onPermissionChange(); });
+      return;
+    }
+    this.bindClick(shown);
+  }
+
+  private bindClick(notification: DesktopNotificationHandle): void {
     notification.onclick = () => {
       this.browser.focus();
       notification.close();
     };
   }
+}
+
+const NATIVE_NOTIFICATION_PERMISSION_KEY = "pi-web:native-notifications:permission";
+
+export function desktopNotifications(
+  nativeHost: PiWebNativeHost | undefined = typeof window === "undefined" ? undefined : window.piWebNative,
+  storage: DesktopNotificationStorage | undefined = browserLocalStorage(),
+): DesktopNotificationBrowser {
+  return nativeHost === undefined ? browserDesktopNotifications() : nativeDesktopNotifications(nativeHost, storage);
 }
 
 export function browserDesktopNotifications(): DesktopNotificationBrowser {
@@ -116,6 +143,46 @@ export function browserDesktopNotifications(): DesktopNotificationBrowser {
     show: (title, options) => new Notification(title, options),
     focus: () => { window.focus(); },
   };
+}
+
+function nativeDesktopNotifications(nativeHost: PiWebNativeHost, storage: DesktopNotificationStorage | undefined): DesktopNotificationBrowser {
+  let permission: NotificationPermission = readNativePermission(storage);
+  const downgrade = (): void => {
+    permission = "default";
+    try { storage?.removeItem(NATIVE_NOTIFICATION_PERMISSION_KEY); } catch { /* Storage may be unavailable. */ }
+  };
+  return {
+    permission: () => permission,
+    requestPermission: async () => {
+      try {
+        await nativeHost.notify("PI WEB notifications enabled", "PI WEB can now notify you when a Chat needs attention.");
+        permission = "granted";
+        try { storage?.setItem(NATIVE_NOTIFICATION_PERMISSION_KEY, "granted"); } catch { /* Keep this page enabled. */ }
+      } catch {
+        downgrade();
+      }
+      return permission;
+    },
+    isBackground: () => document.hidden || !document.hasFocus(),
+    show: async (title, options) => {
+      try {
+        await nativeHost.notify(title, options.body ?? "");
+        return { onclick: null, close: () => undefined };
+      } catch (error) {
+        downgrade();
+        throw error;
+      }
+    },
+    focus: () => undefined,
+  };
+}
+
+function readNativePermission(storage: DesktopNotificationStorage | undefined): NotificationPermission {
+  try { return storage?.getItem(NATIVE_NOTIFICATION_PERMISSION_KEY) === "granted" ? "granted" : "default"; } catch { return "default"; }
+}
+
+function browserLocalStorage(): DesktopNotificationStorage | undefined {
+  try { return typeof localStorage === "undefined" ? undefined : localStorage; } catch { return undefined; }
 }
 
 function selectedSessionKey(state: AppState): string | undefined {
