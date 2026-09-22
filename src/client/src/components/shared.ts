@@ -528,11 +528,16 @@ export const promptEditorStyles = css`
   footer.shell-mode { border-top-color: var(--pi-success); background: var(--pi-success-bg); }
   .editor-wrap { position: relative; min-width: 0; }
   .actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: nowrap; white-space: nowrap; }
+  :host([show-usage]) .actions { flex-wrap: wrap; }
   .compact-status { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--pi-muted); font-size: 12px; flex: 1 1 0; }
+  :host([show-usage]) .compact-status { flex: 1 1 220px; min-width: 170px; }
   .compact-status > button { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .select-model { max-width: min(42vw, 320px); }
-  .usage { display: flex; flex: 0 1 auto; min-width: 0; align-items: center; gap: 6px; color: var(--pi-muted); font-size: 11px; }
-  .usage > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .usage { display: flex; flex: 0 0 auto; min-width: 0; align-items: center; gap: 6px; margin: 0; padding: 0; color: var(--pi-muted); font-size: 11px; list-style: none; }
+  .usage > li { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; white-space: nowrap !important; border: 0 !important; }
+  :host([show-usage]) working-mode-controls[compact] { flex: 0 0 auto; }
+  .composer-actions { display: flex; flex: 0 0 auto; gap: 8px; margin-left: auto; }
   .icon-button { flex: 0 0 auto; display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; }
   .icon-button .prompt-action-icon, .icon-button .prompt-thinking-gauge { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   .icon-button .prompt-action-icon-filled { fill: currentColor; stroke: none; }
@@ -573,14 +578,15 @@ export const promptEditorStyles = css`
   button:disabled, textarea:disabled, .markdown-editor-disabled .cm-editor { opacity: .5; cursor: not-allowed; }
   @media (max-width: 640px) {
     footer { gap: 8px; padding: 8px; }
-    .actions { gap: 6px; flex-wrap: wrap; }
+    .actions, .composer-actions { gap: 6px; }
+    .actions { flex-wrap: wrap; }
     .compact-status { flex: 1 1 220px; gap: 4px; }
     .usage { flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 4px 6px; }
     .select-model { max-width: min(58vw, 260px); }
     button { padding: 6px 8px; }
   }
   @media (max-width: 430px) {
-    working-mode-controls[compact], .usage { flex: 1 1 100%; }
+    working-mode-controls[compact], :host([show-usage]) working-mode-controls[compact], .usage { flex: 1 1 100%; min-width: 0; }
     .compact-status { flex-basis: 170px; font-size: 11px; }
     .select-model { max-width: 48vw; }
     button { padding: 5px 7px; }

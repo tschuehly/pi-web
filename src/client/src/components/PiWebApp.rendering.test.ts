@@ -14,6 +14,7 @@ import { FormattedText } from "./FormattedText";
 import { WorkspacePanel } from "./WorkspacePanel";
 import { WorkspaceList } from "./WorkspaceList";
 import { ProjectList } from "./ProjectList";
+import { PromptEditor } from "./PromptEditor";
 import { SessionList } from "./SessionList";
 
 // Exercise the real shell and child rendering without starting API/socket
@@ -55,6 +56,10 @@ describe("application rendering boundaries", () => {
     const roster = app.shadowRoot?.querySelector("delegate-roster");
     if (!(roster instanceof DelegateRoster)) throw new Error("Expected delegate roster");
     expect(roster.collapsed).toBe(false);
+    const editor = app.shadowRoot?.querySelector("prompt-editor");
+    if (!(editor instanceof PromptEditor)) throw new Error("Expected prompt editor");
+    expect(editor.showUsage).toBe(false);
+    expect(app.shadowRoot?.querySelector("status-bar")).not.toBeNull();
 
     roster.onToggleCollapsed?.();
     await settle(app);

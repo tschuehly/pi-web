@@ -10,6 +10,7 @@ import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery } from "../promptAttachmentCapture";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
+import { WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
@@ -44,6 +45,7 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean }) isCompacting = false;
   @property({ type: Boolean }) canStop = false;
   @property({ attribute: false }) status?: SessionStatus;
+  @property({ type: Boolean, reflect: true, attribute: "show-usage" }) showUsage = false;
   @property({ type: Number }) warningCount = 0;
   @property({ type: Boolean }) sending = false;
   @property({ attribute: false }) onSend?: (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string) => void | Promise<void>;
@@ -99,7 +101,7 @@ export class PromptEditor extends LitElement {
     // status field the template actually displays differs, so streaming does not
     // disturb the editor DOM (and any in-progress touch gesture survives).
     if (changed.has("status") && changed.size === 1) {
-      return !sessionStatusRenderEqual(changed.get("status"), this.status);
+      return !sessionStatusRenderEqual(changed.get("status"), this.status, this.showUsage);
     }
     return true;
   }
@@ -138,11 +140,13 @@ export class PromptEditor extends LitElement {
         </div>
         <div class="actions">
           ${this.renderCompactStatus()}
-          ${this.renderUsage()}
+          ${this.showUsage ? this.renderUsage() : null}
           <working-mode-controls compact .status=${this.status} .onRunCommand=${this.onRunCommand}></working-mode-controls>
-          <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
-          ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
-          <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
+          <div class="composer-actions">
+            <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
+            ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
+            <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
+          </div>
         </div>
       </footer>
     `;
@@ -200,29 +204,28 @@ export class PromptEditor extends LitElement {
     const status = this.status;
     if (status === undefined) return null;
     const context = status.contextUsage;
-    const contextPercent = context?.percent === null || context?.percent === undefined ? undefined : String(context.percent);
+    const exactContextPercent = context?.percent === null || context?.percent === undefined ? undefined : String(context.percent);
+    const visibleContextPercent = context?.percent?.toFixed(1);
     const contextText = context === undefined
       ? "Context unknown"
-      : contextPercent === undefined
+      : visibleContextPercent === undefined
         ? context.tokens === null ? `Context window ${formatTokenCount(context.contextWindow)}` : `Context ${formatTokenCount(context.tokens)}/${formatTokenCount(context.contextWindow)}`
-        : `Context ${contextPercent}%`;
+        : `Context ${visibleContextPercent}%`;
     const contextLabel = context === undefined
       ? "Context usage unavailable"
       : context.tokens === null
         ? `Context used tokens unavailable; window: ${String(context.contextWindow)} tokens`
-        : `Context: ${String(context.tokens)} of ${String(context.contextWindow)} tokens used${contextPercent === undefined ? "" : ` (${contextPercent}%)`}`;
-    const inputLabel = `Input tokens: ${String(status.tokens.input)}`;
-    const outputLabel = `Output tokens: ${String(status.tokens.output)}`;
-    const costLabel = `Session cost: $${String(status.cost)}`;
+        : `Context: ${String(context.tokens)} of ${String(context.contextWindow)} tokens used${exactContextPercent === undefined ? "" : ` (${exactContextPercent}%)`}`;
+    const metric = (name: string, visible: string, exact: string) => html`<li data-usage=${name} title=${exact}><span aria-hidden="true">${visible}</span><span class="visually-hidden">${exact}</span></li>`;
     return html`
-      <div class="usage" aria-label="Session usage">
-        <span data-usage="input" title=${inputLabel} aria-label=${inputLabel}>Input ${formatTokenCount(status.tokens.input)}</span>
-        <span data-usage="output" title=${outputLabel} aria-label=${outputLabel}>Output ${formatTokenCount(status.tokens.output)}</span>
-        <span data-usage="context" title=${contextLabel} aria-label=${contextLabel}>${contextText}</span>
-        <span data-usage="cost" title=${costLabel} aria-label=${costLabel}>Cost ${formatCost(status.cost)}</span>
-        ${this.warningCount > 0 ? html`<span data-usage="warnings" title=${`Session warnings: ${String(this.warningCount)}`} aria-label=${`Session warnings: ${String(this.warningCount)}`}>Warnings ${String(this.warningCount)}</span>` : null}
-        ${status.pendingMessageCount > 0 ? html`<span data-usage="queued" title=${`Queued messages: ${String(status.pendingMessageCount)}`} aria-label=${`Queued messages: ${String(status.pendingMessageCount)}`}>Queued ${String(status.pendingMessageCount)}</span>` : null}
-      </div>
+      <ul class="usage" aria-label="Session usage">
+        ${metric("input", `Input ${formatTokenCount(status.tokens.input)}`, `Input tokens: ${String(status.tokens.input)}`)}
+        ${metric("output", `Output ${formatTokenCount(status.tokens.output)}`, `Output tokens: ${String(status.tokens.output)}`)}
+        ${metric("context", contextText, contextLabel)}
+        ${metric("cost", `Cost ${formatCost(status.cost)}`, `Session cost: $${String(status.cost)}`)}
+        ${this.warningCount > 0 ? metric("warnings", `Warnings ${String(this.warningCount)}`, `Session warnings: ${String(this.warningCount)}`) : null}
+        ${status.pendingMessageCount > 0 ? metric("queued", `Queued ${String(status.pendingMessageCount)}`, `Queued messages: ${String(status.pendingMessageCount)}`) : null}
+      </ul>
     `;
   }
 
@@ -582,19 +585,20 @@ export class PromptEditor extends LitElement {
 
 // Compare only status fields rendered by PromptEditor so unrelated streaming
 // churn does not disturb the editor DOM or an in-progress touch gesture.
-function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus | undefined): boolean {
+function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus | undefined, showUsage: boolean): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;
-  return a.model?.id === b.model?.id
-    && a.model?.provider === b.model?.provider
-    && a.thinkingLevel === b.thinkingLevel
-    && a.tokens.input === b.tokens.input
+  if (a.model?.id !== b.model?.id
+    || a.model?.provider !== b.model?.provider
+    || a.thinkingLevel !== b.thinkingLevel
+    || a.extensionStatuses?.[WORKING_MODE_STATUS_KEY] !== b.extensionStatuses?.[WORKING_MODE_STATUS_KEY]) return false;
+  return !showUsage || (a.tokens.input === b.tokens.input
     && a.tokens.output === b.tokens.output
     && a.contextUsage?.tokens === b.contextUsage?.tokens
     && a.contextUsage?.contextWindow === b.contextUsage?.contextWindow
     && a.contextUsage?.percent === b.contextUsage?.percent
     && a.cost === b.cost
-    && a.pendingMessageCount === b.pendingMessageCount;
+    && a.pendingMessageCount === b.pendingMessageCount);
 }
 
 function draftStorageKey(machineId: unknown, sessionId: unknown): string | undefined {

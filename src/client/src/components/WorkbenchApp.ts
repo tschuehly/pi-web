@@ -800,6 +800,7 @@ export class WorkbenchApp extends LitElement {
           .isCompacting=${state.status?.isCompacting === true}
           .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0}
           .status=${state.status}
+          .showUsage=${true}
           .warningCount=${warningCount}
           .availableThinkingLevels=${state.availableThinkingLevels}
           .sending=${state.sendingPrompts[session.id] === true}

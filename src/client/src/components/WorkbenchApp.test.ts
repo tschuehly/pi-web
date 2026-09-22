@@ -605,9 +605,11 @@ describe("Workbench Chat controls", () => {
     const promptEditor = shell.querySelector<PromptEditor>("prompt-editor");
     if (promptEditor === null) throw new Error("Prompt editor was not rendered");
     await promptEditor.updateComplete;
+    expect(promptEditor.showUsage).toBe(true);
     const controls = promptEditor.shadowRoot?.querySelector("working-mode-controls");
     expect(controls).not.toBeNull();
-    expect(controls?.nextElementSibling?.classList.contains("send-button")).toBe(true);
+    expect(controls?.nextElementSibling?.classList.contains("composer-actions")).toBe(true);
+    expect(controls?.nextElementSibling?.querySelector(".send-button")).not.toBeNull();
   });
 });
 
