@@ -48,7 +48,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     await service.dispose();
   });
 
-  it("keeps display text clean while sending an image legend only to the provider", async () => {
+  it("preserves slash prose byte-for-byte while sending image legends only to the provider", async () => {
     const fake = fakeRuntime("image-text-session");
     const hub = new CapturingSessionEventHub();
     const service = new PiSessionService(hub, {
@@ -59,15 +59,45 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       heartbeatIntervalMs: 60_000,
     });
     const attachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
-    const displayText = "/Users/thomas/project screenshot [PIC_1]";
-    const providerText = appendInlineImageReferenceMapping(displayText, ["[PIC_1]"]);
+    const displayTexts = [
+      "/Users/thomas/project screenshot [PIC_1]",
+      "  /not-a-command inspect [PIC_1]\n",
+    ];
 
-    await service.prompt(sessionRef("image-text-session"), displayText, undefined, [attachment]);
+    for (const displayText of displayTexts) await service.prompt(sessionRef("image-text-session"), displayText, undefined, [attachment]);
 
-    expect(fake.calls.prompt[0]?.text).toBe(providerText);
-    const appendEvent = hub.sessionEvents.find(({ event }) => event.type === "message.append")?.event;
-    expect(JSON.stringify(appendEvent)).toContain(displayText);
-    expect(JSON.stringify(appendEvent)).not.toContain("Image blocks immediately following");
+    expect(fake.calls.prompt.map(({ text }) => text)).toEqual(displayTexts.map((text) => appendInlineImageReferenceMapping(text, ["[PIC_1]"])));
+    const appendEvents = hub.sessionEvents.filter(({ event }) => event.type === "message.append").map(({ event }) => JSON.stringify(event));
+    expect(appendEvents).toHaveLength(displayTexts.length);
+    expect(appendEvents.every((event, index) => event.includes(JSON.stringify(displayTexts[index] ?? "").slice(1, -1)) && !event.includes("Image blocks immediately following"))).toBe(true);
+    await service.dispose();
+  });
+
+  it("keeps two explicit references aligned with native image order", async () => {
+    const fake = fakeRuntime("ordered-image-session");
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("ordered-image-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+    const redPixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+    const bluePixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC";
+    const attachments = [
+      { kind: "image", reference: "[PIC_2]", mimeType: "image/png", data: bluePixel },
+      { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: redPixel },
+    ];
+
+    await service.prompt(sessionRef("ordered-image-session"), "compare [PIC_1] with [PIC_2]", undefined, attachments);
+
+    expect(fake.calls.prompt[0]?.text).toBe(appendInlineImageReferenceMapping("compare [PIC_1] with [PIC_2]", ["[PIC_2]", "[PIC_1]"]));
+    const options = fake.calls.prompt[0]?.options;
+    const images: unknown = typeof options === "object" && options !== null ? Reflect.get(options, "images") : undefined;
+    expect(Array.isArray(images) ? images.map((image: unknown) => {
+      const data: unknown = typeof image === "object" && image !== null ? Reflect.get(image, "data") : undefined;
+      return data;
+    }) : []).toEqual([bluePixel, redPixel]);
     await service.dispose();
   });
 
@@ -141,12 +171,13 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     await service.dispose();
   });
 
-  it("keeps slash commands, templates, and skills byte-compatible when images are attached", async () => {
+  it("strips staged tokens from known commands before display and provider delivery", async () => {
     const fake = fakeRuntime("slash-image-session");
     fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "command" }];
     fake.session.promptTemplates = [{ name: "template-name" }];
     fake.session.resourceLoader.getSkills = () => ({ skills: [{ name: "skill-name" }] });
-    const service = new PiSessionService(new CapturingSessionEventHub(), {
+    const hub = new CapturingSessionEventHub();
+    const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
@@ -154,16 +185,30 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       heartbeatIntervalMs: 60_000,
     });
     const attachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
-    const prompts = ["/command --raw", "/template-name exact bytes", "/skill:skill-name exact bytes"];
+    const prompts = [
+      ["/model inspect [PIC_1]", "/model inspect"],
+      ["/command [PIC_1] --raw", "/command --raw"],
+      ["/template-name exact [PIC_1] bytes", "/template-name exact bytes"],
+      ["  /skill:skill-name [PIC_1] exact bytes\n\n", "/skill:skill-name exact bytes"],
+    ];
 
-    for (const prompt of prompts) await service.prompt(sessionRef("slash-image-session"), prompt, undefined, [attachment]);
+    for (const [input] of prompts) await service.prompt(sessionRef("slash-image-session"), input, undefined, [attachment]);
 
-    expect(fake.calls.prompt.map(({ text }) => text)).toEqual(prompts);
+    const cleaned = prompts.map(([, expected]) => expected);
+    expect(fake.calls.prompt.map(({ text }) => text)).toEqual(cleaned);
+    const displayed = hub.sessionEvents.filter(({ event }) => event.type === "message.append").map(({ event }) => JSON.stringify(event));
+    expect(displayed).toHaveLength(cleaned.length);
+    expect(displayed.every((event, index) => event.includes(cleaned[index] ?? "") && !event.includes("[PIC_1]"))).toBe(true);
     expect(fake.calls.prompt.every(({ options }) => {
       if (typeof options !== "object" || options === null) return false;
       const images: unknown = Reflect.get(options, "images");
       return Array.isArray(images) && images.length === 1;
     })).toBe(true);
+
+    const legacyAttachment = { kind: "image", mimeType: "image/png", data: attachment.data };
+    await service.prompt(sessionRef("slash-image-session"), "  /command literal [PIC_1]\n", undefined, [legacyAttachment]);
+    expect(fake.calls.prompt.at(-1)?.text).toBe("/command literal [PIC_1]");
+    expect(fake.calls.prompt.at(-1)?.text).not.toContain("Image blocks immediately following");
     await service.dispose();
   });
 

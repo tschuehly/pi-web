@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { imageReferenceInsertion, isLeadingKnownCommandDraft, PromptEditor, removeImageReferenceTokensFromText, sanitizeDraftImageReferences } from "./components/PromptEditor";
+import { imageReferenceInsertion, isLeadingKnownCommandDraft, PromptEditor, sanitizeDraftImageReferences } from "./components/PromptEditor";
+import { removeImageReferenceTokensFromText } from "../../shared/promptAttachments";
 import { clearStagedAttachments, loadStagedAttachmentDraft, moveStagedAttachments } from "./promptAttachmentStaging";
 import { capturePromptAttachments, DEFAULT_FILE_MIME_TYPE, effectivePromptAttachmentDelivery, READ_FAILURE_MESSAGE, type CapturableFile } from "./promptAttachmentCapture";
 import { templateEventHandlerAfterMarker, templateEventHandlerAfterValue } from "./templateInspection.testSupport";
@@ -157,7 +158,7 @@ describe("PromptEditor attachment wiring", () => {
     ["extension", "extension-command"],
     ["template", "template-name"],
     ["skill", "skill:skill-name"],
-  ])("strips staged tokens when prose transitions to a known %s command before send", async (_kind, commandName) => {
+  ])("forwards staged tokens immediately when prose transitions to a known %s command", async (_kind, commandName) => {
     const editor = new PromptEditor();
     const onSend = vi.fn<NonNullable<PromptEditor["onSend"]>>();
     editor.onSend = onSend;
@@ -173,13 +174,30 @@ describe("PromptEditor attachment wiring", () => {
       templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
       await flushMicrotasks();
 
-      expect(onSend).toHaveBeenCalledWith(`/${commandName} describe this`, undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+      expect(onSend).toHaveBeenCalledWith(`/${commandName} describe this [PIC_1]`, undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
     } finally {
       restoreFileReader();
     }
   });
 
-  it("waits for a late command catalog and self-heals staged prose tokens", async () => {
+  it("does not let a stalled command catalog block attachment capture or send", async () => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn<NonNullable<PromptEditor["onSend"]>>();
+    editor.onSend = onSend;
+    setPromptEditorPrivate(editor, "commandCatalogRequest", new Promise(() => undefined));
+    setPromptEditorPrivate(editor, "draft", "/stalled-command inspect");
+    const restoreFileReader = installFileReaderStub([{ kind: "load", result: "data:image/png;base64,SU1BR0U=" }]);
+    try {
+      templateEventHandlerAfterMarker(editor.render(), "@paste=")(pasteEventWithFiles([new File(["image"], "image.png", { type: "image/png" })]));
+      await flushMicrotasks();
+      templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
+      expect(onSend).toHaveBeenCalledWith("/stalled-command inspect [PIC_1]", undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+    } finally {
+      restoreFileReader();
+    }
+  });
+
+  it("does not resend or alter delivery when a delayed command catalog arrives", async () => {
     const editor = new PromptEditor();
     const onSend = vi.fn<NonNullable<PromptEditor["onSend"]>>();
     editor.onSend = onSend;
@@ -189,12 +207,11 @@ describe("PromptEditor attachment wiring", () => {
     setPromptEditorPrivate(editor, "attachments", [{ id: "attachment-1", kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "SU1BR0U=" }]);
 
     templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
-    await flushMicrotasks();
-    expect(onSend).not.toHaveBeenCalled();
+    expect(onSend).toHaveBeenCalledWith("/late-command inspect [PIC_1]", undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
 
     resolveCatalog([{ name: "late-command", source: "extension" }]);
     await flushMicrotasks();
-    expect(onSend).toHaveBeenCalledWith("/late-command inspect", undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+    expect(onSend).toHaveBeenCalledOnce();
   });
 
   it("retains staged tokens when prose transitions to an absolute-path sentence before send", async () => {

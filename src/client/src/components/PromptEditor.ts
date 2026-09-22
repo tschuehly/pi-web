@@ -8,7 +8,7 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type FileSuggestion, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE } from "../promptAttachmentCapture";
-import { isSupportedImageMimeType } from "../../../shared/promptAttachments";
+import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
 import { WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
@@ -159,8 +159,8 @@ export class PromptEditor extends LitElement {
           ${this.showUsage ? this.renderUsage() : null}
           <working-mode-controls compact .status=${this.status} .onRunCommand=${this.onRunCommand}></working-mode-controls>
           <div class="composer-actions">
-            <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { void this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
-            ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { void this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
+            <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
+            ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
             <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
           </div>
         </div>
@@ -342,8 +342,7 @@ export class PromptEditor extends LitElement {
     // Known leading commands/templates/skills must stay byte-compatible for Pi
     // expansion. Unknown slash-leading prose (for example /Users/...) still gets
     // a visible token; all images retain their internal reference and preview.
-    const commandCandidate = leadingSlashCommandName(draftAtInvocation) !== undefined;
-    const suppressTokens = commandCandidate && await this.isLeadingCommandDraft(draftAtInvocation);
+    const suppressTokens = isLeadingKnownCommandDraft(draftAtInvocation, this.knownCommandNames);
     if (generation !== this.draftGeneration) { await capturedPromise; return; }
     const insertionPosition = position === draftAtInvocation.length ? this.draft.length : position;
     if (references.length > 0 && !suppressTokens) this.insertImageReferenceTokens(references, insertionPosition);
@@ -573,14 +572,6 @@ export class PromptEditor extends LitElement {
     return this.commandCatalogRequest;
   }
 
-  private async isLeadingCommandDraft(draft: string): Promise<boolean> {
-    if (isLeadingKnownCommandDraft(draft, this.knownCommandNames)) return true;
-    if (leadingSlashCommandName(draft) === undefined) return false;
-    const commands = await this.commandCatalog();
-    this.knownCommandNames = new Set(commands.map((command) => command.name));
-    return isLeadingKnownCommandDraft(draft, this.knownCommandNames);
-  }
-
   private currentTrigger(): PromptCompletionTrigger | undefined {
     return detectPromptCompletionTrigger(this.draft, this.editor?.state.selection.main.head ?? this.draft.length);
   }
@@ -633,11 +624,11 @@ export class PromptEditor extends LitElement {
       return true;
     }
     if (primaryModifierEnter && composerKeyboardSubmissionEnabled(this.shortcuts, this.mobilePromptEnterMedia)) {
-      void this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, true));
+      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, true));
       return true;
     }
     if (send) {
-      void this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, false));
+      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, false));
       return true;
     }
     if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -699,21 +690,17 @@ export class PromptEditor extends LitElement {
     this.completions = [];
   }
 
-  private async send(streamingBehavior?: "steer" | "followUp") {
+  private send(streamingBehavior?: "steer" | "followUp") {
     if (this.disabled || this.sending) return;
     if (this.pendingImageReferences.length > 0) {
       this.attachmentError = "Wait for image attachments to finish loading.";
       return;
     }
-    if (leadingSlashCommandName(this.draft) !== undefined) await this.isLeadingCommandDraft(this.draft);
-    if (this.sendBecameBlocked()) return;
-    const commandMode = isLeadingKnownCommandDraft(this.draft, this.knownCommandNames);
+    const text = this.draft.trim();
     const pending = this.attachments;
-    const attachments = pending.length > 0 ? this.currentAttachments() : undefined;
-    const references = attachments?.flatMap((attachment) => attachment.kind === "image" ? [attachment.reference] : []) ?? [];
-    const text = (commandMode ? removeImageReferenceTokensFromText(this.draft, references) : this.draft).trim();
     if (text === "" && pending.length === 0) return;
     const behavior = this.canSteer || this.isCompacting ? streamingBehavior : undefined;
+    const attachments = pending.length > 0 ? this.currentAttachments() : undefined;
     const delivery = this.effectiveAttachmentDelivery();
     // Folder delivery sends the displayed workspace-effective folder explicitly
     // (the uploads pattern): the save lands exactly where the label pointed,
@@ -723,11 +710,6 @@ export class PromptEditor extends LitElement {
     this.resetComposer();
     const resetGeneration = this.draftGeneration;
     void this.deliverComposer(snapshot, resetGeneration, text, behavior, attachments, attachments === undefined ? undefined : delivery, folder);
-  }
-
-  private sendBecameBlocked(): boolean {
-    if (this.pendingImageReferences.length > 0) this.attachmentError = "Wait for image attachments to finish loading.";
-    return this.disabled || this.sending || this.pendingImageReferences.length > 0;
   }
 
   private composerSnapshot() {
@@ -889,13 +871,6 @@ export function imageReferenceInsertion(text: string, position: number, referenc
   const prefix = position > 0 && !/\s/.test(text[position - 1] ?? "") ? " " : "";
   const suffix = position >= text.length || !/\s/.test(text[position] ?? "") ? " " : "";
   return `${prefix}${references.join(" ")}${suffix}`;
-}
-
-export function removeImageReferenceTokensFromText(text: string, references: readonly string[]): string {
-  return references.reduce((current, reference) => current
-    .replaceAll(`${reference} `, "")
-    .replaceAll(` ${reference}`, "")
-    .replaceAll(reference, ""), text);
 }
 
 function isSupportedImageFile(file: File): boolean {

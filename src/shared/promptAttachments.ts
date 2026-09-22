@@ -28,6 +28,13 @@ export function hasExplicitPromptImageReference(value: unknown): boolean {
   return Array.isArray(value) && value.some((entry: unknown) => isRecord(entry) && entry["kind"] === "image" && entry["reference"] !== undefined);
 }
 
+export function removeImageReferenceTokensFromText(text: string, references: readonly string[]): string {
+  return references.reduce((current, reference) => current
+    .replaceAll(`${reference} `, "")
+    .replaceAll(` ${reference}`, "")
+    .replaceAll(reference, ""), text);
+}
+
 export function extensionForImageMimeType(mimeType: string): string {
   switch (mimeType) {
     case "image/jpeg": return "jpg";

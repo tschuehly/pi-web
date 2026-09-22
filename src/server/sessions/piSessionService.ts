@@ -47,7 +47,7 @@ import { computeEditPreview, type EditPreviewResult } from "./editPreview.js";
 import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
 import type { PiWebConfigService } from "../configRoutes.js";
-import { hasExplicitPromptImageReference, parsePromptAttachments } from "../../shared/promptAttachments.js";
+import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText } from "../../shared/promptAttachments.js";
 import { ASK_USER_ANSWERS_CUSTOM_TYPE, EXTENSION_STATUS_KEY_MAX_LENGTH, EXTENSION_STATUS_LIMIT, EXTENSION_STATUS_TEXT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_LIMIT } from "../../shared/apiTypes.js";
 import type {
   AskUserCloseResponse,
@@ -2603,7 +2603,7 @@ export class PiSessionService implements SessionRouteService {
   }
 
   async prompt(ref: PiSessionRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { echoUserMessage?: boolean; preservePendingAsk?: boolean }): Promise<void> {
-    const promptText = requirePromptText(text);
+    const incomingPromptText = requirePromptText(text);
     // Command-forwarded prompts (e.g. /skill:*) are expanded by the agent, which
     // streams the canonical message back. The client doesn't render the raw
     // command text, so the server must not echo it either, or it would show up
@@ -2616,13 +2616,18 @@ export class PiSessionService implements SessionRouteService {
     await this.assertWritable(ref);
     const session = await this.getOrOpen(ref);
     this.assertTreeNavigationInactive(session, "send a prompt");
-    // Pi expands known slash commands/templates/skills from the raw string. The
-    // current SDK has no post-expansion text-block hook, so those stay byte-
-    // compatible and rely on native image order. Slash-leading prose remains an
-    // ordinary prompt and receives the same provider legend as other prose.
-    const providerText = !appendReferenceMapping || isLeadingSessionCommand(session, promptText)
+    // The server catalog is authoritative: client command data can be stale or
+    // unavailable. Strip staged tokens before Pi parses a known command, while
+    // slash-leading prose keeps normal named-image legend semantics.
+    const commandCandidate = incomingPromptText.trim();
+    const references = parsedAttachments.map((attachment) => attachment.reference);
+    const commandMode = isLeadingSessionCommand(session, commandCandidate);
+    const promptText = commandMode
+      ? (appendReferenceMapping ? removeImageReferenceTokensFromText(commandCandidate, references) : commandCandidate).trim()
+      : incomingPromptText;
+    const providerText = !appendReferenceMapping || commandMode
       ? promptText
-      : appendInlineImageReferenceMapping(promptText, parsedAttachments.map((attachment) => attachment.reference));
+      : appendInlineImageReferenceMapping(promptText, references);
     this.maybeGenerateSessionName(session, promptText);
     const isQueued = session.isStreaming || session.isCompacting;
     const behavior = isQueued ? requestedBehavior ?? "followUp" : undefined;
