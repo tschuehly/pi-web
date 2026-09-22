@@ -82,11 +82,33 @@ describe("composer keyboard handling", () => {
     expect(editor.onSend).toHaveBeenCalledWith("Hello", expected, undefined, undefined, undefined);
   });
 
-  it.each<PromptEnterPreference>(["auto", "send", "newline"])("queues follow-ups with Cmd/Ctrl+Enter for the %s preference before global shortcuts", async (preference) => {
+  it.each<PromptEnterPreference>(["auto", "send", "newline"])("sends immediately with Cmd/Ctrl+Enter while idle for the %s preference", async (preference) => {
+    localStorage.setItem(PROMPT_ENTER_PREFERENCE_STORAGE_KEY, preference);
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+      const editor = await mount(undefined);
+      editor.canSteer = false;
+      editor.isCompacting = false;
+      const globalStartSession = vi.fn();
+      const capture = (event: KeyboardEvent) => { if (!editor.ownsKeyboardEvent(event)) globalStartSession(); };
+      window.addEventListener("keydown", capture, true);
+      try {
+        press(editor, "Enter", modifier);
+        expect(editor.onSend).toHaveBeenCalledWith("Hello", undefined, undefined, undefined, undefined);
+        expect(globalStartSession).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener("keydown", capture, true);
+        editor.remove();
+        vi.restoreAllMocks();
+      }
+    }
+  });
+
+  it.each<PromptEnterPreference>(["auto", "send", "newline"])("queues follow-ups with Cmd/Ctrl+Enter while streaming for the %s preference before global shortcuts", async (preference) => {
     localStorage.setItem(PROMPT_ENTER_PREFERENCE_STORAGE_KEY, preference);
     for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
       const editor = await mount(undefined);
       editor.canSteer = true;
+      editor.isCompacting = false;
       const globalStartSession = vi.fn();
       const capture = (event: KeyboardEvent) => { if (!editor.ownsKeyboardEvent(event)) globalStartSession(); };
       window.addEventListener("keydown", capture, true);
@@ -99,6 +121,60 @@ describe("composer keyboard handling", () => {
         editor.remove();
         vi.restoreAllMocks();
       }
+    }
+  });
+
+  it.each<PromptEnterPreference>(["auto", "send", "newline"])("queues follow-ups with Cmd/Ctrl+Enter while compacting for the %s preference before global shortcuts", async (preference) => {
+    localStorage.setItem(PROMPT_ENTER_PREFERENCE_STORAGE_KEY, preference);
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+      const editor = await mount(undefined);
+      editor.canSteer = false;
+      editor.isCompacting = true;
+      const globalStartSession = vi.fn();
+      const capture = (event: KeyboardEvent) => { if (!editor.ownsKeyboardEvent(event)) globalStartSession(); };
+      window.addEventListener("keydown", capture, true);
+      try {
+        press(editor, "Enter", modifier);
+        expect(editor.onSend).toHaveBeenCalledWith("Hello", "followUp", undefined, undefined, undefined);
+        expect(globalStartSession).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener("keydown", capture, true);
+        editor.remove();
+        vi.restoreAllMocks();
+      }
+    }
+  });
+
+  it("releases Cmd/Ctrl+Enter to global shortcuts when keyboard submission is None", async () => {
+    const editor = await mount(null);
+    const globalStartSession = vi.fn();
+    const capture = (event: KeyboardEvent) => { if (!editor.ownsKeyboardEvent(event)) globalStartSession(); };
+    window.addEventListener("keydown", capture, true);
+    try {
+      press(editor, "Enter", { ctrlKey: true });
+      expect(editor.onSend).not.toHaveBeenCalled();
+      expect(globalStartSession).toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", capture, true);
+    }
+  });
+
+  it("reports ownsKeyboardEvent false for Cmd/Ctrl+Enter and releases to global shortcuts when keyboard submission is None", async () => {
+    const editor = await mount(null);
+    const ownership: { key: string; owns: boolean }[] = [];
+    const capture = (event: KeyboardEvent) => { ownership.push({ key: `${event.ctrlKey ? "ctrl+" : ""}${event.metaKey ? "meta+" : ""}${event.key}`, owns: editor.ownsKeyboardEvent(event) }); };
+    window.addEventListener("keydown", capture, true);
+    try {
+      press(editor, "Enter");
+      press(editor, "Enter", { ctrlKey: true });
+      press(editor, "Enter", { metaKey: true });
+      press(editor, "a");
+      const primaryModifierOwnerships = ownership.filter((e) => (e.key.includes("ctrl") || e.key.includes("meta")) && e.key.includes("Enter"));
+      expect(primaryModifierOwnerships.every((e) => !e.owns)).toBe(true);
+      const plainEnter = ownership.find((e) => e.key === "Enter");
+      expect(plainEnter?.owns).toBe(true);
+    } finally {
+      window.removeEventListener("keydown", capture, true);
     }
   });
 
