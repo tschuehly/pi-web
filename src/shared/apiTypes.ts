@@ -1120,6 +1120,20 @@ export type SessionWarningSeverity = "info" | "warning" | "error";
 export const EXTENSION_STATUS_LIMIT = 64;
 export const EXTENSION_STATUS_KEY_MAX_LENGTH = 128;
 export const EXTENSION_STATUS_TEXT_MAX_LENGTH = 65_536;
+export const ACTIVE_TOOL_EXECUTION_LIMIT = 32;
+export const ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH = 256;
+export const ACTIVE_TOOL_EXECUTION_TOOL_NAME_MAX_LENGTH = 64;
+export const ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH = 80;
+export const ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH = 64;
+
+/** A safe, bounded description of one daemon-observed shell or process execution. */
+export interface ActiveToolExecution {
+  id: string;
+  kind: "shell" | "process";
+  toolName: string;
+  label: string;
+  startedAt?: string;
+}
 
 /**
  * A live, runtime-scoped warning surfaced to the browser (skill/resource
@@ -1176,6 +1190,11 @@ export interface SessionStatus {
    * restarts. Several may be open at once; the UI presents them as a queue.
    */
   pendingDialogs?: PendingExtensionDialog[];
+  /**
+   * Currently running shell/process executions observed by the session daemon.
+   * Labels are generic and never contain commands, arguments, cwd, or environment.
+   */
+  activeToolExecutions?: ActiveToolExecution[];
   /** Disposable extension UI status entries owned by the current live runtime. */
   extensionStatuses?: Record<string, string>;
 }

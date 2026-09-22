@@ -48,8 +48,9 @@ import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachm
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
 import type { PiWebConfigService } from "../configRoutes.js";
 import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText } from "../../shared/promptAttachments.js";
-import { ASK_USER_ANSWERS_CUSTOM_TYPE, EXTENSION_STATUS_KEY_MAX_LENGTH, EXTENSION_STATUS_LIMIT, EXTENSION_STATUS_TEXT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_LIMIT } from "../../shared/apiTypes.js";
+import { ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ASK_USER_ANSWERS_CUSTOM_TYPE, EXTENSION_STATUS_KEY_MAX_LENGTH, EXTENSION_STATUS_LIMIT, EXTENSION_STATUS_TEXT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_LIMIT } from "../../shared/apiTypes.js";
 import type {
+  ActiveToolExecution,
   AskUserCloseResponse,
   AskUserOutcome,
   AskUserSubmission,
@@ -140,6 +141,16 @@ const IDLE_SESSION_FILE_RESOLUTION_THROTTLE_MS = 30_000;
 
 function noop(): void {
   // Intentionally empty default unsubscribe callback.
+}
+
+function activeExecutionTool(toolName: string): Pick<ActiveToolExecution, "kind" | "toolName" | "label"> | undefined {
+  return toolName === "bash" ? { kind: "shell", toolName, label: "Shell command" } : undefined;
+}
+
+function compareActiveToolExecutions(a: ActiveToolExecution, b: ActiveToolExecution): number {
+  const startedAt = (a.startedAt ?? "") < (b.startedAt ?? "") ? -1 : (a.startedAt ?? "") > (b.startedAt ?? "") ? 1 : 0;
+  if (startedAt !== 0) return startedAt;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 function spawnTargetError(decision: Extract<SpawnTargetDecision, { allowed: false }>): Error {
@@ -1159,6 +1170,8 @@ export class PiSessionService implements SessionRouteService {
   private readonly startupSessions = new Map<string, PiAgentSession>();
   private readonly activities = new Map<string, { phase: "active" | "idle" | "error"; label: string; detail?: string; at: string }>();
   private readonly extensionStatuses = new WeakMap<PiAgentSession, Map<string, string>>();
+  private readonly activeToolExecutions = new WeakMap<PiAgentSession, Map<string, ActiveToolExecution>>();
+  private nextActiveToolExecutionId = 0;
   private readonly heartbeat: NodeJS.Timeout;
   private readonly commandService: SessionCommandService<PiAgentSession>;
   /** Runtime-identity gate held while Pi may await abandoned-branch summarization. */
@@ -1430,6 +1443,7 @@ export class PiSessionService implements SessionRouteService {
     const activeSessions = Array.from(new Set(this.active.values()));
     for (const active of activeSessions) {
       this.forgetUnreadActivity(active.runtime.session);
+      this.activeToolExecutions.delete(active.runtime.session);
       this.pendingAskStore.forgetSession(active.runtime.session.sessionId);
       this.endSessionExtensionDialogs(active.runtime.session.sessionId);
     }
@@ -2755,13 +2769,20 @@ export class PiSessionService implements SessionRouteService {
     if (!command) throw new Error("Usage: !<shell command>");
     if (session.isBashRunning) throw new Error("A bash command is already running");
 
+    const executionId = this.beginActiveToolExecution(session, {
+      kind: "shell",
+      toolName: "shell",
+      label: "Interactive shell",
+    });
     this.publishActivity(session, "running bash", "active", command);
     this.events.publish(session.sessionId, { type: "shell.start", command, excludeFromContext: isExcluded });
+    this.publishStatus(session);
     void this.runSessionEntryMutation(session, "run a shell command", () => session.executeBash(command, (chunk) => {
       this.events.publish(session.sessionId, { type: "shell.chunk", chunk });
       this.publishActivity(session, "running bash", "active", command);
       this.publishStatus(session);
     }, { excludeFromContext: isExcluded })).then((result) => {
+      this.endActiveToolExecution(session, executionId);
       this.events.publish(session.sessionId, {
         type: "shell.end",
         output: result.output,
@@ -2773,6 +2794,7 @@ export class PiSessionService implements SessionRouteService {
       this.publishActivity(session, "bash complete", result.exitCode === 0 ? "idle" : "error", command);
       this.publishStatus(session);
     }).catch((error: unknown) => {
+      this.endActiveToolExecution(session, executionId);
       const message = error instanceof Error ? error.message : String(error);
       this.events.publish(session.sessionId, { type: "shell.end", output: message, isError: true });
       this.events.publish(session.sessionId, { type: "session.error", message });
@@ -3298,6 +3320,7 @@ export class PiSessionService implements SessionRouteService {
     const sessionId = active.runtime.session.sessionId;
     this.clearCompactionPromptQueue(sessionId);
     this.runtimePromptProvenance.delete(active.runtime.session);
+    this.activeToolExecutions.delete(active.runtime.session);
     clearSessionQueue(active.runtime.session);
     // Settle run-scoped dialogs now, at abort-request time: pi's agent loop
     // waits for a parked `tool_call` dialog handler before it can emit
@@ -3490,6 +3513,7 @@ export class PiSessionService implements SessionRouteService {
     this.clearAuthLossWarningsForSession(sessionId);
     this.clearCompactionPromptQueue(sessionId);
     this.runtimePromptProvenance.delete(active.runtime.session);
+    this.activeToolExecutions.delete(active.runtime.session);
     // Disarm subsession notification before teardown so the abort below cannot
     // emit a "stopped working" event that notifies the parent (e.g. on archive).
     // The parent/children link is kept so the parent can still see the child.
@@ -3803,7 +3827,9 @@ export class PiSessionService implements SessionRouteService {
             this.notificationGenerationBySession.set(session, candidateGeneration);
           }
           this.runtimePromptProvenance.delete(boundSession);
+          this.activeToolExecutions.delete(boundSession);
           this.bindRuntime(active, session);
+          this.publishStatus(session);
           // The runtime being replaced parked every dialog the store still
           // holds for this session; settle those waits before the new
           // runtime's extensions can open fresh dialogs under the same id.
@@ -3841,6 +3867,7 @@ export class PiSessionService implements SessionRouteService {
       }
       active.unsubscribe();
       this.forgetUnreadActivity(boundSession);
+      this.activeToolExecutions.delete(boundSession);
       // A session_start dialog may already be parked when a later startup
       // step fails; its waiter dies with the runtime being torn down here.
       this.endSessionExtensionDialogs(boundSession.sessionId);
@@ -4122,6 +4149,7 @@ export class PiSessionService implements SessionRouteService {
           this.events.publish(session.sessionId, toClientEvent(event, session.thinkingLevel, finalizedMessageEntryId(session, event)));
         }
         this.publishActivityForEvent(session, event);
+        this.updateActiveToolExecutionsForEvent(session, event);
         const eventType = getString(event, "type");
         if (eventType === "queue_update") this.pruneRuntimePromptProvenance(session);
         if (eventType === "agent_end") this.abortRunScopedExtensionDialogs(session.sessionId);
@@ -4483,6 +4511,63 @@ export class PiSessionService implements SessionRouteService {
     return (this.sessionEntryMutationCounts.get(session) ?? 0) > 0;
   }
 
+  private beginActiveToolExecution(
+    session: PiAgentSession,
+    execution: Pick<ActiveToolExecution, "kind" | "toolName" | "label">,
+  ): string {
+    const id = `shell:${String(++this.nextActiveToolExecutionId)}`;
+    this.addActiveToolExecution(session, { id, ...execution, startedAt: this.now().toISOString() });
+    return id;
+  }
+
+  private addActiveToolExecution(session: PiAgentSession, execution: ActiveToolExecution): void {
+    const executions = this.activeToolExecutions.get(session) ?? new Map<string, ActiveToolExecution>();
+    if (executions.has(execution.id)) return;
+    executions.set(execution.id, { ...execution, label: execution.label.slice(0, ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH) });
+    while (executions.size > ACTIVE_TOOL_EXECUTION_LIMIT) {
+      const oldest = executions.keys().next();
+      if (oldest.done === false) executions.delete(oldest.value);
+    }
+    this.activeToolExecutions.set(session, executions);
+  }
+
+  private endActiveToolExecution(session: PiAgentSession, id: string): void {
+    const executions = this.activeToolExecutions.get(session);
+    if (executions === undefined) return;
+    executions.delete(id);
+    if (executions.size === 0) this.activeToolExecutions.delete(session);
+  }
+
+  private updateActiveToolExecutionsForEvent(session: PiAgentSession, event: unknown): void {
+    const eventType = getString(event, "type");
+    const toolCallId = getString(event, "toolCallId");
+    if (eventType === "tool_execution_start") {
+      const toolName = getString(event, "toolName");
+      const tool = toolName === undefined ? undefined : activeExecutionTool(toolName);
+      if (tool === undefined || toolCallId === undefined || toolCallId === "") return;
+      const id = `tool:${toolCallId}`;
+      if (id.length > ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH) return;
+      this.addActiveToolExecution(session, { id, ...tool, startedAt: this.now().toISOString() });
+      return;
+    }
+    if (eventType === "tool_execution_end" && toolCallId !== undefined) {
+      this.endActiveToolExecution(session, `tool:${toolCallId}`);
+      return;
+    }
+    if (eventType === "agent_end") {
+      const executions = this.activeToolExecutions.get(session);
+      if (executions === undefined) return;
+      for (const id of executions.keys()) {
+        if (id.startsWith("tool:")) executions.delete(id);
+      }
+      if (executions.size === 0) this.activeToolExecutions.delete(session);
+    }
+  }
+
+  private activeToolExecutionSnapshot(session: PiAgentSession): ActiveToolExecution[] {
+    return [...(this.activeToolExecutions.get(session)?.values() ?? [])].sort(compareActiveToolExecutions);
+  }
+
   private publishActivityForEvent(session: PiAgentSession, event: unknown): void {
     const eventType = getString(event, "type");
     if (eventType === undefined) return;
@@ -4609,6 +4694,7 @@ export class PiSessionService implements SessionRouteService {
     const pendingAsk = this.pendingAskStore.pendingAsk(session.sessionId);
     const pendingDialogs = this.pendingExtensionDialogStore.pendingDialogs(session.sessionId);
     const extensionStatuses = this.extensionStatuses.get(session);
+    const activeToolExecutions = this.activeToolExecutionSnapshot(session);
     return {
       sessionId: session.sessionId,
       persisted: sessionFileExists(session.sessionFile),
@@ -4626,6 +4712,7 @@ export class PiSessionService implements SessionRouteService {
       ...(warnings.length === 0 ? {} : { warnings }),
       ...(pendingAsk === undefined ? {} : { pendingAsk }),
       ...(pendingDialogs.length === 0 ? {} : { pendingDialogs }),
+      ...(activeToolExecutions.length === 0 ? {} : { activeToolExecutions }),
       ...(extensionStatuses === undefined || extensionStatuses.size === 0 ? {} : { extensionStatuses: Object.fromEntries(extensionStatuses) }),
     };
   }

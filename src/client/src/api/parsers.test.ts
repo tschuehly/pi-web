@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ASK_USER_TEXT_MAX_LENGTH, EXTENSION_DIALOG_TEXT_MAX_LENGTH, SESSION_NOTIFICATION_LIMIT, SESSION_NOTIFICATION_MESSAGE_BYTES, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../../shared/apiTypes";
+import { ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, EXTENSION_DIALOG_TEXT_MAX_LENGTH, SESSION_NOTIFICATION_LIMIT, SESSION_NOTIFICATION_MESSAGE_BYTES, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../../shared/apiTypes";
 import { parseAskUserCloseResponse, parseAuthProvidersResponse, parseCommandResult, parseExtensionDialogCloseResponse, parseFileContentResponse, parseFileSuggestion, parseMachineRuntime, parseMessagePage, parseOAuthFlowState, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseRealtimeStreamEvent, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionModelCatalogResponse, parseSessionNotificationInboxEvent, parseSessionNotificationInboxSnapshot, parseSessionStartupProgressEvent, parseSessionStatus, parseSessionStreamSnapshot, parseSessionTreeForkResult, parseSessionTreeNavigateResult, parseSessionTreeSnapshot, parseSessionUnreadCatalogSnapshot, parseSessionUnreadEvent, parseSlashCommand, parseWorkspace, parseWorkspaceProviderResolution } from "./parsers";
 
 describe("API parsers", () => {
@@ -611,6 +611,30 @@ describe("API parsers", () => {
       thinkingLevel: "medium",
       extensionStatuses: { "working-mode": "{\"schemaVersion\":1}" },
     });
+  });
+
+  it("parses bounded active tool executions while accepting old daemon statuses without them", () => {
+    expect(parseSessionStatus(statusWire()).activeToolExecutions).toBeUndefined();
+    expect(parseSessionStatus({
+      ...statusWire(),
+      activeToolExecutions: [
+        { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" },
+        { id: "tool:call-2", kind: "process", toolName: "process", label: "Process" },
+      ],
+    }).activeToolExecutions).toEqual([
+      { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" },
+      { id: "tool:call-2", kind: "process", toolName: "process", label: "Process" },
+    ]);
+  });
+
+  it("rejects malformed or unbounded active tool executions", () => {
+    const execution = { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" };
+    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: Array.from({ length: ACTIVE_TOOL_EXECUTION_LIMIT + 1 }, (_, index) => ({ ...execution, id: `tool:${String(index)}` })) })).toThrow("Array field exceeds limit: activeToolExecutions");
+    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [execution, execution] })).toThrow("Duplicate active tool execution id");
+    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, kind: "read" }] })).toThrow("Invalid active tool execution kind");
+    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, label: "x".repeat(ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH + 1) }] })).toThrow("String field exceeds limit: label");
+    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, startedAt: "x".repeat(ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH + 1) }] })).toThrow("String field exceeds limit: startedAt");
+    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, startedAt: "eventually" }] })).toThrow("Invalid active tool execution start time");
   });
 
   it("rejects malformed or unbounded extension statuses", () => {
