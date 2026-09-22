@@ -3,13 +3,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type Machine, type Project, type SessionInfo, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
-import { ACTIVITY_STATUS_KEY } from "../extensionStatusSnapshots";
+import { ACTIVITY_STATUS_KEY, GOAL_STATUS_KEY } from "../extensionStatusSnapshots";
 import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { readStoredThemePreference } from "../theme";
 import { DelegateRoster } from "./DelegateRoster";
+import { GoalStatusChip } from "./GoalStatusChip";
 import { PromptEditor } from "./PromptEditor";
 import { WorkbenchApp, rootProjectOf, rootProjects } from "./WorkbenchApp";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
@@ -589,7 +590,7 @@ describe("Workbench settings panel", () => {
 });
 
 describe("Workbench Chat controls", () => {
-  it("mounts the delegate roster and Working Mode controls beside the composer", async () => {
+  it("mounts Workbench status controls in the header and beside the composer", async () => {
     const current = session("current", "Build the UI");
     const app = await mountChooser([current]);
     setState(app, {
@@ -599,7 +600,10 @@ describe("Workbench Chat controls", () => {
         sessionId: current.id, isStreaming: false, isCompacting: false, isBashRunning: false,
         pendingMessageCount: 0, queuedMessages: [],
         tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
-        extensionStatuses: { [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "worker-1", kind: "worker", activity: "running" }] }) },
+        extensionStatuses: {
+          [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "worker-1", kind: "worker", activity: "running" }] }),
+          [GOAL_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, goalId: "goal-1234567890", state: "active", objective: "Build the UI" }),
+        },
       },
     });
     await app.updateComplete;
@@ -609,6 +613,11 @@ describe("Workbench Chat controls", () => {
     const drawer = shell.querySelector("header > workstream-context-drawer");
     if (!(drawer instanceof WorkstreamContextDrawer)) throw new Error("Workstream context drawer was not rendered");
     expect(drawer.fallbackTitle).toBe("Build the UI");
+    const goal = shell.querySelector("header > goal-status-chip");
+    if (!(goal instanceof GoalStatusChip)) throw new Error("Goal status chip was not rendered");
+    expect(goal.status).toBe(getState(app).status);
+    await goal.updateComplete;
+    expect(goal.shadowRoot?.querySelector("summary")?.textContent).toContain("Build the UI");
     expect(shell.querySelector("header > strong")).toBeNull();
     const roster = shell.querySelector("delegate-roster");
     if (!(roster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered");

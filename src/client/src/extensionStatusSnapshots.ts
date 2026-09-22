@@ -1,5 +1,15 @@
 export const WORKING_MODE_STATUS_KEY = "working-mode";
 export const ACTIVITY_STATUS_KEY = "pi-workbench:activity";
+export const GOAL_STATUS_KEY = "goal";
+
+export const GOAL_STATUS_STATE_VALUES = ["active", "waiting", "paused", "blocked", "usage_limited", "budget_limited"] as const;
+export type GoalStatusState = typeof GOAL_STATUS_STATE_VALUES[number];
+export interface GoalStatusSnapshot {
+  schemaVersion: 1;
+  goalId: string;
+  state: GoalStatusState;
+  objective: string;
+}
 
 export const ALIGNMENT_VALUES = ["Vibe", "Align", "Plan", "Spec"] as const;
 export const CHECKING_VALUES = ["unset", "light", "tests", "adversarial"] as const;
@@ -32,6 +42,25 @@ function record(value: unknown): value is Record<string, unknown> {
 function parseJson(text: string | undefined): unknown {
   if (text === undefined) return undefined;
   try { return JSON.parse(text); } catch { return undefined; }
+}
+
+function isGoalStatusState(value: unknown): value is GoalStatusState {
+  return typeof value === "string" && GOAL_STATUS_STATE_VALUES.some((candidate) => candidate === value);
+}
+
+export function parseGoalStatusSnapshot(text: string | undefined): GoalStatusSnapshot | undefined {
+  if (text === undefined || new TextEncoder().encode(text).byteLength > 2_048) return undefined;
+  const value = parseJson(text);
+  if (!record(value) || Object.keys(value).length !== 4 || !["schemaVersion", "goalId", "state", "objective"].every((key) => Object.hasOwn(value, key))) return undefined;
+  const goalId = value["goalId"];
+  const objective = value["objective"];
+  if (
+    value["schemaVersion"] !== 1 ||
+    typeof goalId !== "string" || goalId === "" || goalId !== goalId.trim() || Array.from(goalId).length > 128 ||
+    !isGoalStatusState(value["state"]) ||
+    typeof objective !== "string" || objective === "" || objective !== objective.trim() || Array.from(objective).length > 240
+  ) return undefined;
+  return { schemaVersion: 1, goalId, state: value["state"], objective };
 }
 
 function isAlignment(value: unknown): value is Alignment {
