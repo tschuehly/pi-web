@@ -5,7 +5,7 @@ export type ChatGroupPresentation = "activity" | "thinking" | "history";
 export type ChatGroup =
   | { kind: "message"; message: ChatLine; index: number }
   | { kind: "tool-image"; message: ChatLine; index: number; toolName?: string }
-  | { kind: "group"; messages: ChatLine[]; startIndex: number; endIndex: number; presentation?: ChatGroupPresentation };
+  | { kind: "group"; messages: ChatLine[]; startIndex: number; endIndex: number; presentation?: ChatGroupPresentation; messageIndices?: number[] };
 
 export interface CurrentExchangeGroups {
   history: ChatGroup[];
@@ -32,15 +32,29 @@ export function currentExchangeGroups(messages: ChatLine[], groups: ChatGroup[],
 
 export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGroup[] {
   const groups: ChatGroup[] = [];
+  const groupIndices = new WeakMap<ChatGroup, number[]>();
 
   const pushGroup = (message: ChatLine, index: number, presentation?: ChatGroupPresentation) => {
     const previous = groups.at(-1);
+    const before = groups.at(-2);
+    if (presentation === "thinking" && previous?.kind === "group" && previous.presentation === "activity" && before?.kind === "group" && before.presentation === "thinking") {
+      before.messages.push(...previous.messages, message);
+      before.messageIndices = [...(groupIndices.get(before) ?? []), ...(groupIndices.get(previous) ?? []), index];
+      groupIndices.set(before, before.messageIndices);
+      before.endIndex = index;
+      groups.pop();
+      return;
+    }
     if (previous?.kind === "group" && previous.presentation === presentation) {
       previous.messages.push(message);
+      if (previous.messageIndices !== undefined) previous.messageIndices.push(index);
+      else groupIndices.get(previous)?.push(index);
       previous.endIndex = index;
       return;
     }
-    groups.push({ kind: "group", messages: [message], startIndex: index, endIndex: index, ...(presentation === undefined ? {} : { presentation }) });
+    const group: ChatGroup = { kind: "group", messages: [message], startIndex: index, endIndex: index, ...(presentation === undefined ? {} : { presentation }) };
+    groups.push(group);
+    groupIndices.set(group, [index]);
   };
 
   messages.forEach((message, localIndex) => {
@@ -105,11 +119,15 @@ function chatPartKind(message: ChatLine, part: ChatPart): ChatGroupPresentation 
   if (message.source === "compaction" || message.source === "branch_summary") return "history";
   if (part.type === "thinking") return "thinking";
   if (part.type === "toolCall" && message.severity !== "error") return "activity";
-  if (part.type === "toolExecution" && part.status === "success" && message.severity !== "error" && !hasMaterialFileDiff(part.details, part.preview?.diff)) return "activity";
-  if (part.type === "toolResult" && !part.isError && message.severity !== "error" && !hasMaterialFileDiff(part.details)) return "activity";
+  if (part.type === "toolExecution" && part.status === "success" && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details, part.preview?.diff)) return "activity";
+  if (part.type === "toolResult" && !part.isError && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details)) return "activity";
   if (part.type === "skillInvocation" || part.type === "skillRead" || part.type === "image" || part.type === "askUserRecord") return "readable";
   if (part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash")) return "readable";
   return "event";
+}
+
+function isMaterialWrite(toolName: string): boolean {
+  return toolName === "write" || toolName === "create" || toolName === "overwrite";
 }
 
 function hasMaterialFileDiff(details: unknown, previewDiff?: string): boolean {

@@ -80,6 +80,34 @@ describe("ChatView transcript density", () => {
     expect(tool.shadowRoot?.querySelector(".error-text")?.textContent).toBe("read failed");
   });
 
+  it("keeps tool activity between thinking segments in one expanded block and write results outside it", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [
+      { role: "assistant", parts: [{ type: "thinking", text: "Before read" }] },
+      { role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "file", status: "success", resultText: "contents" }] },
+      { role: "assistant", parts: [{ type: "thinking", text: "After read" }] },
+      { role: "tool", parts: [{ type: "toolExecution", toolName: "write", summary: "file", status: "success", resultText: "Wrote file" }] },
+      { role: "assistant", parts: [{ type: "thinking", text: "After write" }, { type: "text", text: "Done" }] },
+    ];
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const thinking = root.querySelectorAll<HTMLDetailsElement>(".thinking-group");
+    expect(thinking).toHaveLength(2);
+    expect(thinking[0]?.open).toBe(true);
+    const nestedActivity = thinking[0]?.querySelector<HTMLDetailsElement>(".activity-group");
+    expect(nestedActivity?.open).toBe(false);
+    expect(nestedActivity?.querySelector("tool-execution-view")).not.toBeNull();
+    const ordered = Array.from(thinking[0]?.querySelectorAll("formatted-text, .activity-group") ?? [], (element) => element.localName);
+    expect(ordered).toEqual(["formatted-text", "details", "formatted-text"]);
+    expect(root.querySelectorAll(".activity-group")).toHaveLength(1);
+    expect(root.querySelectorAll(".event-group:not(.thinking-group):not(.activity-group)")).toHaveLength(1);
+    expect(thinking[1]?.querySelector<FormattedText>("formatted-text")?.text).toBe("After write");
+    expect(root.querySelector<FormattedText>("article.msg.assistant formatted-text")?.text).toBe("Done");
+  });
+
   it("renders a long compaction summary once behind an accessible history boundary", async () => {
     const summary = `## Goal\n${"x".repeat(19_732 - "## Goal\n".length)}`;
     const sourceText = `Compacted history:\n\n${summary}`;
@@ -172,9 +200,12 @@ describe("ChatView transcript density", () => {
 
     const root = requireShadowRoot(view);
     const groups = Array.from(root.querySelectorAll<HTMLElement>(".event-group"));
-    const anchors = groups.map((group) => group.dataset["scrollAnchorId"]);
+    const anchors = Array.from(root.querySelectorAll<HTMLElement>("[data-scroll-anchor-id]"), (element) => element.dataset["scrollAnchorId"]);
     const markers = Array.from(root.querySelectorAll<HTMLElement>(".scroll-marker"), (marker) => marker.dataset["markerId"]);
-    expect(groups).toHaveLength(3);
+    expect(groups).toHaveLength(1);
+    expect(root.querySelector('.thinking-group [data-scroll-anchor-id="e:0"][data-index="0"]')).not.toBeNull();
+    expect(root.querySelectorAll(".thinking-group")).toHaveLength(1);
+    expect(root.querySelector(".thinking-group > .activity-group summary")?.textContent).toContain("1 step");
     expect(new Set(anchors).size).toBe(anchors.length);
     expect(new Set(markers).size).toBe(markers.length);
     expect(root.querySelector(".activity-group summary")?.textContent).toContain("1 step");

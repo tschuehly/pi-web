@@ -65,6 +65,38 @@ describe("groupChatMessages", () => {
     ]);
   });
 
+  it("keeps successful write/create/overwrite results individually visible even without diffs", () => {
+    for (const toolName of ["write", "create", "overwrite"]) {
+      const call: ChatLine = { role: "assistant", parts: [{ type: "toolCall", toolName, summary: "file" }] };
+      const execution: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName, summary: "file", status: "success", resultText: "Wrote file" }] };
+      const orphan: ChatLine = { role: "tool", parts: [{ type: "toolResult", toolName, text: "Wrote file", isError: false }] };
+      const groups = groupChatMessages([call, execution, orphan]);
+      expect(groups[0]).toMatchObject({ kind: "group", presentation: "activity" });
+      expect(groups[1]).toMatchObject({ kind: "group", messages: [execution, orphan] });
+      expect(groups[1]).not.toHaveProperty("presentation");
+    }
+  });
+
+  it("merges thinking across routine tool activity without crossing speech or material output", () => {
+    const first: ChatLine = { role: "assistant", parts: [{ type: "thinking", text: "first" }] };
+    const tool: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "file", status: "success", resultText: "contents" }] };
+    const second: ChatLine = { role: "assistant", parts: [{ type: "thinking", text: "second" }] };
+    const write: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "write", summary: "file", status: "success", resultText: "Wrote file" }] };
+    const third: ChatLine = { role: "assistant", parts: [{ type: "thinking", text: "third" }] };
+    const groups = groupChatMessages([first, tool, second, text("assistant", "visible answer"), third, write, second]);
+    expect(groups[0]).toEqual({ kind: "group", presentation: "thinking", startIndex: 0, endIndex: 2, messages: [first, tool, second], messageIndices: [0, 1, 2] });
+    expect(groups[1]).toEqual({ kind: "message", index: 3, message: text("assistant", "visible answer") });
+    expect(groups[2]).toMatchObject({ kind: "group", presentation: "thinking", messages: [third] });
+    expect(groups[3]).toMatchObject({ kind: "group", messages: [write] });
+    expect(groups[4]).toMatchObject({ kind: "group", presentation: "thinking", messages: [second] });
+
+    const error: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "file", status: "error", resultText: "failed" }] };
+    const afterError = groupChatMessages([first, tool, second, error, third]);
+    expect(afterError[0]).toMatchObject({ presentation: "thinking", messages: [first, tool, second] });
+    expect(afterError[1]).toMatchObject({ messages: [error] });
+    expect(afterError[2]).toMatchObject({ presentation: "thinking", messages: [third] });
+  });
+
   it("merges adjacent thinking but lets assistant speech separate thinking blocks", () => {
     expect(groupChatMessages([
       { role: "assistant", parts: [{ type: "thinking", text: "first" }] },

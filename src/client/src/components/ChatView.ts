@@ -497,6 +497,7 @@ export class ChatView extends LitElement {
           group.presentation,
           groups,
           index,
+          group.messageIndices,
         );
         if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, anchorId, group.toolName);
         return this.renderMessage(group.message, group.index, anchorId);
@@ -928,7 +929,7 @@ export class ChatView extends LitElement {
     return message.parts.length > 0 && message.parts.every((part) => part.type === "skillRead");
   }
 
-  private renderMessageGroup(messages: ChatLine[], startIndex: number, anchorId: string, markerId: string, presentation: ChatGroupPresentation | undefined, groups: ChatGroup[], groupIndex: number) {
+  private renderMessageGroup(messages: ChatLine[], startIndex: number, anchorId: string, markerId: string, presentation: ChatGroupPresentation | undefined, groups: ChatGroup[], groupIndex: number, messageIndices?: number[]) {
     const marker = this.renderScrollMarker(markerId);
     if (presentation === "history") return html`
       ${marker}
@@ -945,12 +946,28 @@ export class ChatView extends LitElement {
       </details>
     `;
     if (presentation === "thinking") {
-      const text = messages.flatMap((message) => message.parts).filter((part): part is Extract<ChatPart, { type: "thinking" }> => part.type === "thinking").map((part) => part.text).join("\n\n");
+      const segments: { thinking: boolean; messages: ChatLine[]; offset: number }[] = [];
+      for (const [offset, message] of messages.entries()) {
+        const thinking = message.parts.every((part) => part.type === "thinking");
+        const previous = segments.at(-1);
+        if (previous?.thinking === thinking) previous.messages.push(message);
+        else segments.push({ thinking, messages: [message], offset });
+      }
       return html`
         ${marker}
         <details class="event-group thinking-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId} open>
           <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><small>Thinking</small></summary>
-          <formatted-text .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>
+          ${segments.map((segment) => {
+            if (segment.thinking) {
+              const text = segment.messages.flatMap((message) => message.parts).filter((part): part is Extract<ChatPart, { type: "thinking" }> => part.type === "thinking").map((part) => part.text).join("\n\n");
+              return html`<formatted-text .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>`;
+            }
+            const steps = this.activityStepCount(segment.messages);
+            return html`<details class="activity-group">
+              <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><strong>Activity</strong><span>${steps} ${steps === 1 ? "step" : "steps"}</span></summary>
+              <div class="group-body">${this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset)}</div>
+            </details>`;
+          })}
         </details>
       `;
     }
@@ -969,12 +986,14 @@ export class ChatView extends LitElement {
     return ids.size + anonymousExecutions + anonymousCallsAndResults;
   }
 
-  private renderMessageGroupBody(messages: ChatLine[], startIndex: number, groups: ChatGroup[], groupIndex: number) {
+  private renderMessageGroupBody(messages: ChatLine[], startIndex: number, groups: ChatGroup[], groupIndex: number, messageIndices?: number[], segmentOffset = 0) {
     return messages.map((message, offset) => {
       const toolOnly = this.isToolExecutionOnlyMessage(message);
       const classes = `${toolOnly ? "group-msg tool-execution-shell" : `group-msg ${message.role}`}${message.severity === "error" ? " error" : ""}`;
-      const index = startIndex + offset;
-      const anchorId = this.eventAnchorKey(groups, groupIndex, index);
+      const index = messageIndices?.[segmentOffset + offset] ?? startIndex + offset;
+      const group = groups[groupIndex];
+      const withinGroup = messageIndices?.slice(0, segmentOffset + offset).filter((candidate, earlier) => candidate === index && group?.kind === "group" && group.messages[earlier]?.parts.some((part) => part.type !== "thinking") === true).length ?? 0;
+      const anchorId = this.eventAnchorKey(groups, groupIndex, index, withinGroup);
       return html`
         <article class=${classes} data-index=${index} data-scroll-anchor-id=${anchorId}>
           ${toolOnly ? null : this.renderMessageHeader(message, anchorId)}
@@ -1469,10 +1488,10 @@ export class ChatView extends LitElement {
     });
   }
 
-  private eventAnchorKey(groups: ChatGroup[], groupIndex: number, index: number): string {
-    const occurrence = groups.slice(0, groupIndex).reduce((count, group) => group.kind === "group" && group.presentation !== "thinking"
-      ? count + group.messages.filter((_, offset) => group.startIndex + offset === index).length
-      : count, 0);
+  private eventAnchorKey(groups: ChatGroup[], groupIndex: number, index: number, withinGroup = 0): string {
+    const occurrence = groups.slice(0, groupIndex).reduce((count, group) => group.kind === "group" && (group.presentation !== "thinking" || group.messageIndices !== undefined)
+      ? count + group.messages.filter((_, offset) => (group.messageIndices?.[offset] ?? group.startIndex + offset) === index && (group.presentation !== "thinking" || group.messages[offset]?.parts.every((part) => part.type !== "thinking") === true)).length
+      : count, withinGroup);
     const base = chatEventAnchorKey(index);
     return occurrence === 0 ? base : `${base}:${String(occurrence)}`;
   }
