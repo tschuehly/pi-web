@@ -67,7 +67,7 @@ describe("WorkbenchSettingsPanel sleep control", () => {
   it("polls external state while open without invoking the setter", async () => {
     vi.useFakeTimers();
     const setter = vi.fn();
-    const getter = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const getter = vi.fn().mockResolvedValueOnce(false).mockRejectedValueOnce(new Error("SLEEP_CONTROL_READ_FAILED: unexpected reread"));
     window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: setter };
     const panel = await mountPanel();
     trigger(panel).click();
@@ -100,7 +100,9 @@ describe("WorkbenchSettingsPanel sleep control", () => {
     expect(setter).toHaveBeenCalledTimes(1);
     finish(true);
     await settle(panel);
+    expect(getter).toHaveBeenCalledTimes(1);
     expect(panel.shadowRoot?.textContent).toContain("System sleep disabled");
+    expect(panel.shadowRoot?.querySelector('[role="alert"]')).toBeNull();
   });
 
   it.each([

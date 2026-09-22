@@ -176,7 +176,7 @@ export class WorkbenchSettingsPanel extends LitElement {
     } catch (error) {
       if (version !== this.sleepReadVersion) return;
       this.sleepDisabled = undefined;
-      this.sleepError = `Could not read system sleep state: ${String(error)}. Retry by reopening Settings.`;
+      this.sleepError = `Could not read system sleep state: ${String(error)}. Retrying while Settings is open; reopen to retry now.`;
     }
   }
 
@@ -201,10 +201,10 @@ export class WorkbenchSettingsPanel extends LitElement {
         : `System sleep change failed: ${detail}.`;
     } finally {
       this.sleepPending = false;
-      if (this.open) {
+      if (this.open && this.sleepError !== "") {
         const error = this.sleepError;
         await this.readSleep();
-        if (error !== "") this.sleepError = `${error} ${this.sleepDisabled === undefined ? "Current state could not be verified; reopen Settings to retry." : "Current state was reread."}`;
+        this.sleepError = `${error} ${this.sleepDisabled === undefined ? "Current state could not be verified; Settings will retry." : "Current state was reread."}`;
       }
     }
   }
