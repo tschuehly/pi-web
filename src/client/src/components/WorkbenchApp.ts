@@ -567,9 +567,9 @@ export class WorkbenchApp extends LitElement {
     }
   }
 
-  private readonly handleSend = (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery): void => {
-    if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && this.auth.handleSlashCommand(text)) return;
-    void this.sessions.send(text, streamingBehavior, attachments, delivery);
+  private readonly handleSend = (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string): Promise<boolean> => {
+    if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && this.auth.handleSlashCommand(text)) return Promise.resolve(true);
+    return this.sessions.send(text, streamingBehavior, attachments, delivery, folder);
   };
 
   private async openModelDialog(): Promise<void> {

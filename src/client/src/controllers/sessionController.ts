@@ -413,9 +413,9 @@ export class SessionController {
     }
   }
 
-  async send(text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery: PromptAttachmentDelivery = "inline", folder?: string) {
+  async send(text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery: PromptAttachmentDelivery = "inline", folder?: string): Promise<boolean> {
     const session = this.getState().selectedSession;
-    if (!session || session.archived === true) return;
+    if (!session || session.archived === true) return false;
 
     const trimmed = text.trim();
     const hasAttachments = attachments !== undefined && attachments.length > 0;
@@ -423,17 +423,23 @@ export class SessionController {
       if (!hasAttachments && trimmed.startsWith("/")) this.enqueuePendingSessionSend(session, { type: "command", text });
       else if (!hasAttachments && isShellInput(text)) this.enqueuePendingSessionSend(session, { type: "shell", text });
       else this.enqueuePendingSessionSend(session, { type: "prompt", text, streamingBehavior, attachments, delivery, folder });
-      return;
+      return true;
     }
-    if (!hasAttachments && trimmed.startsWith("/")) return this.runCommand(text);
-    if (!hasAttachments && isShellInput(text)) return this.runShell(text);
+    if (!hasAttachments && trimmed.startsWith("/")) {
+      await this.runCommand(text);
+      return true;
+    }
+    if (!hasAttachments && isShellInput(text)) {
+      await this.runShell(text);
+      return true;
+    }
 
     // Capture the originating session/machine/context before any await so the
     // request, its sending indicator, and any failure stay bound to the right
     // session even if the user navigates elsewhere mid-upload.
     const machineId = selectedMachineId(this.getState());
     const errorOwner = this.captureSessionErrorOwner(session);
-    await this.deliverPromptToSession(session, text, streamingBehavior, attachments, delivery, folder, machineId, { markSending: hasAttachments }, errorOwner);
+    return this.deliverPromptToSession(session, text, streamingBehavior, attachments, delivery, folder, machineId, { markSending: hasAttachments }, errorOwner);
   }
 
   private markSendingPrompt(sessionId: string, sending: boolean): void {
@@ -512,7 +518,7 @@ export class SessionController {
         // the save destination matches the label for every workspace of the
         // project; the server only re-resolves config when folder is omitted.
         const saved = await this.api.saveAttachments(session, attachments, machineId, folder);
-        const references = saved.map((file) => fileCompletionInsertText(file.path, false)).join(" ");
+        const references = saved.map((file) => `${file.reference === undefined ? "" : `${file.reference} `}${fileCompletionInsertText(file.path, false)}`).join(" ");
         const body = text === "" ? references : `${text}\n\n${references}`;
         await this.api.prompt(session, body, streamingBehavior, machineId);
       } else {

@@ -955,7 +955,7 @@ describe("session routes", () => {
     const routeService = new CapturingRouteSessionService();
     registerSessionRoutes(routeApp, routeService, eventHub);
 
-    const attachments = [{ kind: "image", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
+    const attachments = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     try {
       const promptResponse = await routeApp.inject({ method: "POST", url: "/sessions/session-1/prompt", payload: { cwd: "/repo", text: "look", attachments } });
       expect(promptResponse.statusCode).toBe(200);

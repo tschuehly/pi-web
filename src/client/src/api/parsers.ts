@@ -2058,7 +2058,7 @@ export function parseSavedAttachments(value: unknown): SavedPromptAttachment[] {
 
 function parseSavedAttachment(value: unknown): SavedPromptAttachment {
   const record = requireRecord(value);
-  return { path: requireString(record, "path"), mimeType: requireString(record, "mimeType"), size: requireNumber(record, "size") };
+  return { path: requireString(record, "path"), mimeType: requireString(record, "mimeType"), size: requireNumber(record, "size"), ...optionalField("reference", optionalString(record, "reference")) };
 }
 
 export function parseClosed(value: unknown): { closed: true } {

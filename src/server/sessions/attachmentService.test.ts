@@ -45,46 +45,30 @@ function resizedImage(overrides: Partial<ResizedImage> = {}): ResizedImage {
 }
 
 describe("attachmentsToInlineImages", () => {
-  it("resizes images, drops unresizable images, and preserves dimension notes", async () => {
+  it("resizes images in reference order and preserves dimension notes", async () => {
     const firstInput = Buffer.from("first image");
-    const droppedInput = Buffer.from("too large");
-    const thirdInput = Buffer.from("third image");
+    const secondInput = Buffer.from("second image");
     const firstResized = resizedImage({ data: "first-resized", mimeType: "image/webp" });
-    const thirdResized = resizedImage({
-      data: "third-resized",
-      mimeType: "image/jpeg",
-      originalWidth: 640,
-      originalHeight: 480,
-      width: 640,
-      height: 480,
-      wasResized: false,
-    });
-
-    vi.mocked(resizeImage)
-      .mockResolvedValueOnce(firstResized)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(thirdResized);
-    vi.mocked(formatDimensionNote)
-      .mockReturnValueOnce("[Image dimensions changed.]")
-      .mockReturnValueOnce(undefined);
+    const secondResized = resizedImage({ data: "second-resized", mimeType: "image/jpeg", wasResized: false });
+    vi.mocked(resizeImage).mockResolvedValueOnce(firstResized).mockResolvedValueOnce(secondResized);
+    vi.mocked(formatDimensionNote).mockReturnValueOnce("[Image dimensions changed.]").mockReturnValueOnce(undefined);
 
     await expect(attachmentsToInlineImages([
-      { kind: "image", mimeType: "image/png", data: firstInput.toString("base64"), name: "first.png" },
-      { kind: "image", mimeType: "image/png", data: droppedInput.toString("base64"), name: "huge.png" },
-      { kind: "image", mimeType: "image/jpeg", data: thirdInput.toString("base64"), name: "photo.jpg" },
+      { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: firstInput.toString("base64"), name: "first.png" },
+      { kind: "image", reference: "[PIC_3]", mimeType: "image/jpeg", data: secondInput.toString("base64"), name: "second.jpg" },
     ])).resolves.toEqual([
-      {
-        image: { type: "image", data: "first-resized", mimeType: "image/webp" },
-        dimensionNote: "[Image dimensions changed.]",
-      },
-      { image: { type: "image", data: "third-resized", mimeType: "image/jpeg" } },
+      { image: { type: "image", data: "first-resized", mimeType: "image/webp" }, dimensionNote: "[Image dimensions changed.]" },
+      { image: { type: "image", data: "second-resized", mimeType: "image/jpeg" } },
     ]);
-
     expect(resizeImage).toHaveBeenNthCalledWith(1, firstInput, "image/png");
-    expect(resizeImage).toHaveBeenNthCalledWith(2, droppedInput, "image/png");
-    expect(resizeImage).toHaveBeenNthCalledWith(3, thirdInput, "image/jpeg");
-    expect(formatDimensionNote).toHaveBeenNthCalledWith(1, firstResized);
-    expect(formatDimensionNote).toHaveBeenNthCalledWith(2, thirdResized);
+    expect(resizeImage).toHaveBeenNthCalledWith(2, secondInput, "image/jpeg");
+  });
+
+  it("rejects the delivery instead of shifting later references when conversion omits an image", async () => {
+    vi.mocked(resizeImage).mockResolvedValueOnce(null);
+    await expect(attachmentsToInlineImages([
+      { kind: "image", reference: "[PIC_2]", mimeType: "image/png", data: pngBase64 },
+    ])).rejects.toThrow("Image conversion failed for [PIC_2]");
   });
 });
 
@@ -94,8 +78,8 @@ describe("saveAttachmentsToWorkspace", () => {
     const saved = await saveAttachmentsToWorkspace(
       workspace,
       [
-        { kind: "image", mimeType: "image/png", data: pngBase64, name: "a.png" },
-        { kind: "image", mimeType: "image/webp", data: pngBase64, name: "b.webp" },
+        { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64, name: "a.png" },
+        { kind: "image", reference: "[PIC_2]", mimeType: "image/webp", data: pngBase64, name: "b.webp" },
       ],
       { now: fixedNow },
     );
@@ -104,7 +88,8 @@ describe("saveAttachmentsToWorkspace", () => {
     expect(saved[0]?.path.startsWith(`${DEFAULT_ATTACHMENT_FOLDER}/attachment-`)).toBe(true);
     expect(saved[0]?.path.endsWith(".png")).toBe(true);
     expect(saved[1]?.path.endsWith(".webp")).toBe(true);
-    expect(saved[0]?.size).toBe(pngBytes.byteLength);
+    expect(saved[0]).toMatchObject({ size: pngBytes.byteLength, reference: "[PIC_1]" });
+    expect(saved[1]).toMatchObject({ reference: "[PIC_2]" });
 
     const folderEntries = await readdir(join(workspace, ".pi-web", "attachments"));
     expect(folderEntries).toHaveLength(2);
@@ -140,7 +125,7 @@ describe("saveAttachmentsToWorkspace", () => {
     const saved = await saveAttachmentsToWorkspace(
       workspace,
       [
-        { kind: "image", mimeType: "image/jpeg", data: pngBase64 },
+        { kind: "image", reference: "[PIC_1]", mimeType: "image/jpeg", data: pngBase64 },
         { kind: "file", mimeType: "application/octet-stream", data: "QUJD", name: "\u0000\u001f\u007f" },
         { kind: "file", mimeType: "text/plain", data: "REVG", name: "nested/bad\u0000\u007fname\n.txt" },
         { kind: "file", mimeType: "application/pdf", data: "R0hJ", name: `${longStem}.pdf` },
@@ -178,12 +163,12 @@ describe("saveAttachmentsToWorkspace", () => {
   it("rejects unsafe custom folders", async () => {
     await expect(saveAttachmentsToWorkspace(
       workspace,
-      [{ kind: "image", mimeType: "image/png", data: pngBase64 }],
+      [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 }],
       { folder: "/tmp/uploads" },
     )).rejects.toThrow(/Absolute paths/);
     await expect(saveAttachmentsToWorkspace(
       workspace,
-      [{ kind: "image", mimeType: "image/png", data: pngBase64 }],
+      [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 }],
       { folder: "../uploads" },
     )).rejects.toThrow(/Path traversal/);
   });
@@ -191,7 +176,7 @@ describe("saveAttachmentsToWorkspace", () => {
   it("honors a custom folder", async () => {
     const saved = await saveAttachmentsToWorkspace(
       workspace,
-      [{ kind: "image", mimeType: "image/png", data: pngBase64 }],
+      [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 }],
       { folder: "uploads/images" },
     );
     expect(saved[0]?.path.startsWith("uploads/images/")).toBe(true);

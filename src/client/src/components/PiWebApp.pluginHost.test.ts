@@ -534,7 +534,7 @@ describe("PiWebApp plugin host", () => {
     rememberCachedNewSession(cached);
     saveDraft(sessionKey(cached.id), "carried draft");
     const attachment: PendingAttachment = { id: "recreation-file", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGk=", size: 2 };
-    saveStagedAttachments(sessionKey(cached.id), [attachment]);
+    saveStagedAttachments(sessionKey(cached.id), { attachments: [attachment], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
     try {
       const selecting = sessions.selectSession(cached, { updateUrl: false });
       await vi.waitFor(() => { expect(startSession).toHaveBeenCalledOnce(); });

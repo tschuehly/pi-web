@@ -47,7 +47,7 @@ import { computeEditPreview, type EditPreviewResult } from "./editPreview.js";
 import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
 import type { PiWebConfigService } from "../configRoutes.js";
-import { parsePromptAttachments } from "../../shared/promptAttachments.js";
+import { hasExplicitPromptImageReference, parsePromptAttachments } from "../../shared/promptAttachments.js";
 import { ASK_USER_ANSWERS_CUSTOM_TYPE, EXTENSION_STATUS_KEY_MAX_LENGTH, EXTENSION_STATUS_LIMIT, EXTENSION_STATUS_TEXT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_LIMIT } from "../../shared/apiTypes.js";
 import type {
   AskUserCloseResponse,
@@ -196,7 +196,10 @@ type QueuedPromptKind = "steer" | "followUp";
 
 interface QueuedPrompt {
   kind: QueuedPromptKind;
+  /** Original text shown in PI WEB queue controls and transcript echoes. */
   text: string;
+  /** Provider-facing text when PI WEB appends an image-reference legend. */
+  providerText?: string;
   images?: ImageContent[];
   echoUserMessage?: boolean;
 }
@@ -2380,7 +2383,7 @@ export class PiSessionService implements SessionRouteService {
 
   async messages(ref: PiSessionRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
     const session = await this.getOrOpen(ref);
-    return pageMessagesAtSafeBoundary(historyMessagesFromEntries(await this.readableSessionBranch(ref, session)), page);
+    return pageMessagesAtSafeBoundary(historyMessagesFromEntries(await this.readableSessionBranch(ref, session)).map(displayPromptMessage), page);
   }
 
   async status(ref: PiSessionRef): Promise<ClientSessionStatus> {
@@ -2607,11 +2610,19 @@ export class PiSessionService implements SessionRouteService {
     // as a transient line that vanishes on reload.
     const echoUserMessage = options?.echoUserMessage !== false;
     const requestedBehavior = parsePromptStreamingBehavior(streamingBehavior);
+    const appendReferenceMapping = hasExplicitPromptImageReference(attachments);
     const parsedAttachments = parsePromptAttachments(attachments, { enforceInlineSizeLimit: false });
     const images = (await attachmentsToInlineImages(parsedAttachments)).map((entry) => entry.image);
     await this.assertWritable(ref);
     const session = await this.getOrOpen(ref);
     this.assertTreeNavigationInactive(session, "send a prompt");
+    // Pi expands known slash commands/templates/skills from the raw string. The
+    // current SDK has no post-expansion text-block hook, so those stay byte-
+    // compatible and rely on native image order. Slash-leading prose remains an
+    // ordinary prompt and receives the same provider legend as other prose.
+    const providerText = !appendReferenceMapping || isLeadingSessionCommand(session, promptText)
+      ? promptText
+      : appendInlineImageReferenceMapping(promptText, parsedAttachments.map((attachment) => attachment.reference));
     this.maybeGenerateSessionName(session, promptText);
     const isQueued = session.isStreaming || session.isCompacting;
     const behavior = isQueued ? requestedBehavior ?? "followUp" : undefined;
@@ -2626,22 +2637,22 @@ export class PiSessionService implements SessionRouteService {
     // purpose: they must not void an ask posted after the queued original.
     if (options?.preservePendingAsk !== true) await this.voidOpenAskForUserMessage(session);
     if (session.isCompacting) {
-      this.enqueuePromptDuringCompaction(session, promptText, behavior ?? "followUp", images, echoUserMessage);
+      this.enqueuePromptDuringCompaction(session, promptText, providerText, behavior ?? "followUp", images, echoUserMessage);
       return;
     }
-    void this.submitPrompt(session, promptText, behavior, images, echoUserMessage);
+    void this.submitPrompt(session, promptText, behavior, images, echoUserMessage, providerText);
   }
 
-  private submitPrompt(session: PiAgentSession, text: string, behavior: QueuedPromptKind | undefined, images: ImageContent[] = [], echoUserMessage = true): Promise<void> {
-    return this.beginPromptSubmission(session, text, behavior, images, echoUserMessage).catch(() => undefined);
+  private submitPrompt(session: PiAgentSession, text: string, behavior: QueuedPromptKind | undefined, images: ImageContent[] = [], echoUserMessage = true, providerText = text): Promise<void> {
+    return this.beginPromptSubmission(session, text, behavior, images, echoUserMessage, providerText).catch(() => undefined);
   }
 
-  private beginPromptSubmission(session: PiAgentSession, text: string, behavior: QueuedPromptKind | undefined, images: ImageContent[] = [], echoUserMessage = true): Promise<void> {
+  private beginPromptSubmission(session: PiAgentSession, text: string, behavior: QueuedPromptKind | undefined, images: ImageContent[] = [], echoUserMessage = true, providerText = text): Promise<void> {
     this.publishActivity(session, behavior === "steer" ? "steering queued" : behavior === "followUp" ? "message queued" : "prompt accepted", "active");
     if (behavior === undefined && echoUserMessage) this.events.publish(session.sessionId, { type: "message.append", message: userMessage(text, images) });
-    if (behavior !== undefined) this.trackRuntimePrompt(session, { kind: behavior, text, images: [...images] });
+    if (behavior !== undefined) this.trackRuntimePrompt(session, { kind: behavior, text, ...(providerText === text ? {} : { providerText }), images: [...images] });
     const promptOptions = buildPromptOptions(behavior, images);
-    const promptPromise = this.runSessionEntryMutation(session, "send a prompt", () => session.prompt(text, promptOptions));
+    const promptPromise = this.runSessionEntryMutation(session, "send a prompt", () => session.prompt(providerText, promptOptions));
     void promptPromise.catch((error: unknown) => {
       this.pruneRuntimePromptProvenance(session);
       const message = error instanceof Error ? error.message : String(error);
@@ -2694,9 +2705,9 @@ export class PiSessionService implements SessionRouteService {
     }
   }
 
-  private enqueuePromptDuringCompaction(session: PiAgentSession, text: string, kind: QueuedPromptKind, images: ImageContent[] = [], echoUserMessage = true): void {
+  private enqueuePromptDuringCompaction(session: PiAgentSession, text: string, providerText: string, kind: QueuedPromptKind, images: ImageContent[] = [], echoUserMessage = true): void {
     const queue = this.compactionPromptQueues.get(session.sessionId) ?? [];
-    queue.push({ kind, text, ...(images.length > 0 ? { images } : {}), ...(echoUserMessage ? {} : { echoUserMessage: false }) });
+    queue.push({ kind, text, ...(providerText === text ? {} : { providerText }), ...(images.length > 0 ? { images } : {}), ...(echoUserMessage ? {} : { echoUserMessage: false }) });
     this.compactionPromptQueues.set(session.sessionId, queue);
     this.publishActivity(session, "message queued during compaction", "active");
     this.publishStatus(session);
@@ -4101,7 +4112,10 @@ export class PiSessionService implements SessionRouteService {
     let subscribed = true;
     const unsubscribe = session.subscribe((event) => {
       const publish = () => {
-        this.events.publish(session.sessionId, toClientEvent(event, session.thinkingLevel, finalizedMessageEntryId(session, event)));
+        const message = getProperty(event, "message");
+        if (getString(event, "type") !== "message_end" || !isRecord(message) || message["role"] !== "custom" || message["display"] !== false) {
+          this.events.publish(session.sessionId, toClientEvent(event, session.thinkingLevel, finalizedMessageEntryId(session, event)));
+        }
         this.publishActivityForEvent(session, event);
         const eventType = getString(event, "type");
         if (eventType === "queue_update") this.pruneRuntimePromptProvenance(session);
@@ -4149,7 +4163,7 @@ export class PiSessionService implements SessionRouteService {
     const matched: QueuedPrompt[] = [];
     let complete = true;
     for (const current of queuedMessagesFromSession(session)) {
-      const index = remaining.findIndex((prompt) => prompt.kind === current.kind && prompt.text === current.text);
+      const index = remaining.findIndex((prompt) => prompt.kind === current.kind && (prompt.providerText ?? prompt.text) === current.text);
       if (index === -1) {
         complete = false;
         continue;
@@ -4179,9 +4193,10 @@ export class PiSessionService implements SessionRouteService {
     this.runtimePromptProvenance.delete(session);
     const requeued = messages.map((message) => {
       this.trackRuntimePrompt(session, message);
+      const providerText = message.providerText ?? message.text;
       return message.kind === "steer"
-        ? session.steer(message.text, message.images)
-        : session.followUp(message.text, message.images);
+        ? session.steer(providerText, message.images)
+        : session.followUp(providerText, message.images);
     });
     await Promise.all(requeued);
   }
@@ -4208,14 +4223,14 @@ export class PiSessionService implements SessionRouteService {
       const queued = this.takeCompactionPromptQueue(sessionId);
       if (queued.length === 0) return;
       this.publishStatus(session);
-      for (const prompt of queued) void this.submitPrompt(session, prompt.text, prompt.kind, prompt.images, prompt.echoUserMessage ?? true);
+      for (const prompt of queued) void this.submitPrompt(session, prompt.text, prompt.kind, prompt.images, prompt.echoUserMessage ?? true, prompt.providerText);
       return;
     }
 
     const prompt = this.shiftCompactionPrompt(sessionId);
     if (prompt === undefined) return;
     this.publishStatus(session);
-    const submitted = this.submitPrompt(session, prompt.text, undefined, prompt.images, prompt.echoUserMessage ?? true);
+    const submitted = this.submitPrompt(session, prompt.text, undefined, prompt.images, prompt.echoUserMessage ?? true, prompt.providerText);
     void submitted.finally(() => { this.scheduleCompactionQueueDrain(sessionId); });
   }
 
@@ -4598,7 +4613,7 @@ export class PiSessionService implements SessionRouteService {
       isCompacting: session.isCompacting,
       isBashRunning: session.isBashRunning,
       pendingMessageCount: this.pendingMessageCount(session),
-      queuedMessages: queuedMessagesFromSession(session, this.compactionQueuedMessages(session.sessionId)),
+      queuedMessages: this.displayQueuedMessages(session),
       messageCount,
       tokens: stats.tokens,
       cost: stats.cost,
@@ -4639,8 +4654,18 @@ export class PiSessionService implements SessionRouteService {
     return this.compactionPromptQueues.get(sessionId) ?? [];
   }
 
+  private displayQueuedMessages(session: PiAgentSession): { kind: "steer" | "followUp"; text: string }[] {
+    const remaining = [...(this.runtimePromptProvenance.get(session) ?? [])];
+    const native = queuedMessagesFromSession(session).map((current) => {
+      const index = remaining.findIndex((prompt) => prompt.kind === current.kind && (prompt.providerText ?? prompt.text) === current.text);
+      const [matched] = index === -1 ? [] : remaining.splice(index, 1);
+      return matched === undefined ? current : { kind: current.kind, text: matched.text };
+    });
+    return [...native, ...this.compactionQueuedMessages(session.sessionId).map(({ kind, text }) => ({ kind, text }))];
+  }
+
   private hasQueuedMessageText(session: PiAgentSession, text: string): boolean {
-    return queuedMessagesFromSession(session, this.compactionQueuedMessages(session.sessionId)).some((message) => message.text === text);
+    return this.displayQueuedMessages(session).some((message) => message.text === text);
   }
 }
 
@@ -5064,12 +5089,46 @@ function clearSessionQueue(session: PiAgentSession): void {
   session.clearQueue();
 }
 
-function queuedMessagesFromSession(session: PiAgentSession, extraQueuedMessages: readonly QueuedPrompt[] = []): { kind: "steer" | "followUp"; text: string }[] {
+function queuedMessagesFromSession(session: PiAgentSession): { kind: "steer" | "followUp"; text: string }[] {
   return [
     ...session.getSteeringMessages().map((text) => ({ kind: "steer" as const, text })),
     ...session.getFollowUpMessages().map((text) => ({ kind: "followUp" as const, text })),
-    ...extraQueuedMessages,
   ];
+}
+
+const inlineImageReferenceMappingPattern = /(?:^|\n\n)Image blocks immediately following this text map in order as follows:\n(?:\d+\. \[PIC_[1-9]\d*\](?:\n|$))+$/;
+
+export function appendInlineImageReferenceMapping(text: string, references: readonly string[]): string {
+  if (references.length === 0) return text;
+  const mapping = `Image blocks immediately following this text map in order as follows:\n${references.map((reference, index) => `${String(index + 1)}. ${reference}`).join("\n")}`;
+  return text === "" ? mapping : `${text}\n\n${mapping}`;
+}
+
+export function stripInlineImageReferenceMapping(text: string): string {
+  return text.replace(inlineImageReferenceMappingPattern, "");
+}
+
+function displayPromptMessage(message: unknown): unknown {
+  if (!isRecord(message) || message["role"] !== "user") return message;
+  const content = message["content"];
+  if (typeof content === "string") return { ...message, content: stripInlineImageReferenceMapping(content) };
+  if (!Array.isArray(content)) return message;
+  return {
+    ...message,
+    content: content.map((part: unknown) => isRecord(part) && part["type"] === "text" && typeof part["text"] === "string"
+      ? { ...part, text: stripInlineImageReferenceMapping(part["text"]) }
+      : part),
+  };
+}
+
+function isLeadingSessionCommand(session: PiAgentSession, text: string): boolean {
+  const match = /^\/([^\s]+)(?:\s|$)/.exec(text);
+  const name = match?.[1];
+  if (name === undefined) return false;
+  if (BUILTIN_COMMANDS.some((command) => command.name === name)) return true;
+  if (session.extensionRunner.getRegisteredCommands().some((command) => command.invocationName === name)) return true;
+  if (session.promptTemplates.some((template) => template.name === name)) return true;
+  return session.resourceLoader.getSkills().skills.some((skill) => `skill:${skill.name}` === name);
 }
 
 function userTextMessage(text: string): { role: "user"; content: string } {
@@ -5097,7 +5156,7 @@ function buildPromptOptions(behavior: QueuedPromptKind | undefined, images: Imag
 }
 
 function historyMessages(session: PiAgentSession): unknown[] {
-  return historyMessagesFromEntries(session.sessionManager.getBranch());
+  return historyMessagesFromEntries(session.sessionManager.getBranch()).map(displayPromptMessage);
 }
 
 function transcriptMessageCount(entries: readonly unknown[]): number {
@@ -5205,7 +5264,7 @@ function toClientEvent(event: unknown, thinkingLevel?: string, entryId?: string)
   if (eventType === "message_end") {
     const message = getProperty(event, "message");
     if (message === undefined) return { type: "message.end" };
-    const annotated = annotateAssistantThinkingLevel(message, thinkingLevel);
+    const annotated = annotateAssistantThinkingLevel(displayPromptMessage(message), thinkingLevel);
     if (!isRecord(annotated)) return { type: "message.end", message: annotated };
     const authoritative = { ...annotated };
     delete authoritative["entryId"];

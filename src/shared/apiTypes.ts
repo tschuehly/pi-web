@@ -963,6 +963,8 @@ export interface SessionStartupProgressEvent {
  */
 export interface PromptImageAttachment {
   kind: "image";
+  /** Stable per-draft reference shown in the prompt (for example `[PIC_1]`). */
+  reference: string;
   /** Supported image MIME type (image/png, image/jpeg, image/gif, or image/webp). */
   mimeType: string;
   /** Base64-encoded binary payload (no data: URL prefix). */
@@ -997,6 +999,8 @@ export interface SavedPromptAttachment {
   path: string;
   mimeType: string;
   size: number;
+  /** Present only for images, so folder delivery can retain the draft reference. */
+  reference?: string;
 }
 
 export interface SessionModel {

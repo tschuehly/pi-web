@@ -568,6 +568,7 @@ export const promptEditorStyles = css`
   .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
   .attachment-chip { position: relative; width: 56px; height: 56px; border: 1px solid var(--pi-border); border-radius: 8px; overflow: hidden; background: var(--pi-bg); }
   .attachment-chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .attachment-image-reference { position: absolute; right: 3px; bottom: 3px; left: 3px; overflow: hidden; border-radius: 3px; background: color-mix(in srgb, var(--pi-bg) 82%, transparent); color: var(--pi-text); font: 700 10px/1.4 system-ui, sans-serif; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
   .attachment-chip-file { display: grid; place-items: center; }
   .attachment-file-preview { display: grid; place-items: center; width: 34px; height: 26px; border: 1px solid var(--pi-border); border-radius: 4px; background: var(--pi-surface); color: var(--pi-muted); font: 700 10px/1 system-ui, sans-serif; letter-spacing: .03em; }
   .attachment-file-name { position: absolute; right: 4px; bottom: 3px; left: 4px; overflow: hidden; color: var(--pi-muted); font-size: 10px; line-height: 1.2; text-align: center; text-overflow: ellipsis; white-space: nowrap; }

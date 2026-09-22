@@ -8,7 +8,7 @@ import { PiSessionService } from "./piSessionService.js";
 import { CapturingSessionEventHub, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
-const ATTACHMENTS = [{ kind: "image", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
+const ATTACHMENTS = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
 
 let workspace: string;
 const services: PiSessionService[] = [];

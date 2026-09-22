@@ -7,14 +7,15 @@ import { LitElement, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type FileSuggestion, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
-import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery } from "../promptAttachmentCapture";
+import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE } from "../promptAttachmentCapture";
+import { isSupportedImageMimeType } from "../../../shared/promptAttachments";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
 import { WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
-import { clearStagedAttachments, loadStagedAttachments, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
+import { clearStagedAttachments, emptyStagedAttachmentDraft, loadStagedAttachmentDraft, resolveStagedAttachmentKey, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
 import { composerSendShortcut, matchesComposerSend, usesAutomaticComposerEnter } from "../composerShortcuts";
@@ -48,7 +49,7 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean, reflect: true, attribute: "show-usage" }) showUsage = false;
   @property({ type: Number }) warningCount = 0;
   @property({ type: Boolean }) sending = false;
-  @property({ attribute: false }) onSend?: (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string) => void | Promise<void>;
+  @property({ attribute: false }) onSend?: (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string) => unknown;
   @property({ attribute: false }) onStop?: () => void;
   @property({ attribute: false }) onSelectModel?: () => void;
   @property({ attribute: false }) onSelectThinking?: () => void;
@@ -70,6 +71,11 @@ export class PromptEditor extends LitElement {
   @state() private attachmentDelivery: PromptAttachmentDelivery = loadAttachmentDelivery();
   @state() private attachmentError: string | undefined = undefined;
   private attachmentSeq = 0;
+  private nextImageReference = 1;
+  private pendingImageReferences: readonly string[] = [];
+  private draftGeneration = 0;
+  private knownCommandNames = new Set<string>();
+  private commandCatalogRequest: Promise<SlashCommand[]> | undefined;
   private requestVersion = 0;
   private editor: EditorView | undefined;
   private readonly editableCompartment = new Compartment();
@@ -84,12 +90,19 @@ export class PromptEditor extends LitElement {
     const previousKey = draftStorageKey(previousMachineId, previousSessionId);
     if (previousKey !== undefined) {
       saveDraft(previousKey, this.draft);
-      saveStagedAttachments(previousKey, this.attachments);
+      saveStagedAttachments(previousKey, this.stagedAttachmentDraft());
     }
     const currentKey = draftStorageKey(this.machineId, this.sessionId);
-    this.draft = currentKey !== undefined ? loadDraft(currentKey) : "";
-    this.attachments = currentKey !== undefined ? loadStagedAttachments(currentKey) : [];
+    const staged = currentKey !== undefined ? loadStagedAttachmentDraft(currentKey) : emptyStagedAttachmentDraft();
+    this.attachments = staged.attachments;
+    this.nextImageReference = staged.nextImageReference;
+    this.pendingImageReferences = staged.pendingImageReferences;
+    this.draftGeneration = staged.generation;
+    this.draft = sanitizeDraftImageReferences(currentKey !== undefined ? loadDraft(currentKey) : "", this.attachments, this.pendingImageReferences);
+    if (currentKey !== undefined) saveDraft(currentKey, this.draft);
     this.attachmentError = undefined;
+    this.knownCommandNames.clear();
+    this.commandCatalogRequest = undefined;
     this.currentInputMode = inputModeForDraft(this.draft);
     this.completions = [];
     this.selectedIndex = 0;
@@ -236,9 +249,9 @@ export class PromptEditor extends LitElement {
     return html`
       <div class="attachments" aria-label="Pending attachments">
         ${this.attachments.map((attachment) => html`
-          <div class=${`attachment-chip ${isInlinePromptAttachment(attachment) ? "attachment-chip-image" : "attachment-chip-file"}`} title=${attachment.name}>
+          <div class=${`attachment-chip ${isInlinePromptAttachment(attachment) ? "attachment-chip-image" : "attachment-chip-file"}`} title=${attachment.kind === "image" ? `${attachment.reference} ${attachment.name}` : attachment.name}>
             ${this.renderAttachmentPreview(attachment)}
-            <button type="button" class="attachment-remove" title="Remove attachment" aria-label=${`Remove ${attachment.name}`} @click=${() => { this.removeAttachment(attachment.id); }}>×</button>
+            <button type="button" class="attachment-remove" title=${attachment.kind === "image" ? `Remove ${attachment.reference} image` : "Remove attachment"} aria-label=${attachment.kind === "image" ? `Remove ${attachment.reference} image ${attachment.name}` : `Remove ${attachment.name}`} @click=${() => { this.removeAttachment(attachment.id); }}>×</button>
           </div>
         `)}
         ${this.attachments.length > 0 ? html`
@@ -255,8 +268,8 @@ export class PromptEditor extends LitElement {
   }
 
   private renderAttachmentPreview(attachment: PendingAttachment) {
-    if (isInlinePromptAttachment(attachment)) {
-      return html`<img src=${`data:${attachment.mimeType};base64,${attachment.data}`} alt=${attachment.name} />`;
+    if (attachment.kind === "image" && isInlinePromptAttachment(attachment)) {
+      return html`<img src=${`data:${attachment.mimeType};base64,${attachment.data}`} alt=${`${attachment.reference} image ${attachment.name}`} /><span class="attachment-image-reference">${attachment.reference}</span>`;
     }
     return html`
       <div class="attachment-file-preview" aria-hidden="true">${fileExtensionLabel(attachment.name)}</div>
@@ -276,14 +289,17 @@ export class PromptEditor extends LitElement {
   }
 
   private removeAttachment(id: string) {
+    const removed = this.attachments.find((attachment) => attachment.id === id);
     this.attachments = this.attachments.filter((attachment) => attachment.id !== id);
+    if (removed?.kind === "image") this.removeImageReferenceTokens(removed.reference);
+    this.saveCurrentStaging();
   }
 
   private async handlePaste(event: ClipboardEvent) {
     const files = filesFromDataTransfer(event.clipboardData);
     if (files.length === 0) return;
     event.preventDefault();
-    await this.addAttachmentFiles(files);
+    await this.addAttachmentFiles(files, this.editor?.state.selection.main.head ?? this.draft.length);
   }
 
   private handleDragOver(event: DragEvent) {
@@ -295,23 +311,111 @@ export class PromptEditor extends LitElement {
     const files = filesFromDataTransfer(event.dataTransfer);
     if (files.length === 0) return;
     event.preventDefault();
-    await this.addAttachmentFiles(files);
+    const position = this.editor?.posAtCoords({ x: event.clientX, y: event.clientY }) ?? this.editor?.state.selection.main.head ?? this.draft.length;
+    await this.addAttachmentFiles(files, position);
   }
 
   private async handleFileInput(event: Event) {
     if (!(event.target instanceof HTMLInputElement) || event.target.files === null) return;
     const files = Array.from(event.target.files);
     event.target.value = "";
-    await this.addAttachmentFiles(files);
+    await this.addAttachmentFiles(files, this.editor?.state.selection.main.head ?? this.draft.length);
   }
 
-  private async addAttachmentFiles(files: File[]) {
+  private async addAttachmentFiles(files: File[], position: number) {
     this.attachmentError = undefined;
-    const { attachments, error } = await capturePromptAttachments(files, readFileAsBase64);
-    if (attachments.length > 0) {
-      this.attachments = [...this.attachments, ...attachments.map((attachment) => ({ id: `attachment-${String(++this.attachmentSeq)}`, ...attachment }))];
+    const sourceKey = draftStorageKey(this.machineId, this.sessionId);
+    const generation = this.draftGeneration;
+    const draftAtInvocation = this.draft;
+    const reserved = files.map((file) => ({
+      file,
+      id: `attachment-${String(++this.attachmentSeq)}`,
+      ...(isSupportedImageFile(file) ? { reference: `[PIC_${String(this.nextImageReference++)}]` } : {}),
+    }));
+    const references = reserved.flatMap((entry) => entry.reference === undefined ? [] : [entry.reference]);
+    this.pendingImageReferences = [...this.pendingImageReferences, ...references];
+    this.saveCurrentStaging();
+    const capturedPromise = Promise.all(reserved.map(async (entry) => ({ entry, result: await capturePromptAttachments([entry.file], readFileAsBase64) })));
+    // Known leading commands/templates/skills must stay byte-compatible for Pi
+    // expansion. Unknown slash-leading prose (for example /Users/...) still gets
+    // a visible token; all images retain their internal reference and preview.
+    const commandCandidate = leadingSlashCommandName(draftAtInvocation) !== undefined;
+    const suppressTokens = commandCandidate && await this.isLeadingCommandDraft(draftAtInvocation);
+    if (generation !== this.draftGeneration) { await capturedPromise; return; }
+    const insertionPosition = position === draftAtInvocation.length ? this.draft.length : position;
+    if (references.length > 0 && !suppressTokens) this.insertImageReferenceTokens(references, insertionPosition);
+
+    const captured = await capturedPromise;
+    const additions: PendingAttachment[] = [];
+    let failed = false;
+    for (const { entry, result } of captured) {
+      const attachment = result.attachments[0];
+      if (attachment === undefined) {
+        failed = true;
+        continue;
+      }
+      if (attachment.kind === "image" && entry.reference !== undefined) additions.push({ ...attachment, id: entry.id, reference: entry.reference });
+      else if (attachment.kind === "file") additions.push({ ...attachment, id: entry.id });
     }
-    if (error !== undefined) this.attachmentError = error;
+    const failedReferences = reserved.flatMap((entry) => additions.some((attachment) => attachment.id === entry.id) || entry.reference === undefined ? [] : [entry.reference]);
+    const targetKey = sourceKey === undefined ? undefined : resolveStagedAttachmentKey(sourceKey);
+    if (targetKey !== undefined && targetKey !== draftStorageKey(this.machineId, this.sessionId)) {
+      const staged = loadStagedAttachmentDraft(targetKey);
+      if (staged.generation !== generation) return;
+      const attachments = [...staged.attachments, ...additions].sort((a, b) => attachmentIdSequence(a.id) - attachmentIdSequence(b.id));
+      const pendingImageReferences = staged.pendingImageReferences.filter((reference) => !references.includes(reference));
+      saveStagedAttachments(targetKey, { ...staged, attachments, pendingImageReferences });
+      if (failedReferences.length > 0) saveDraft(targetKey, removeImageReferenceTokensFromText(loadDraft(targetKey), failedReferences));
+      return;
+    }
+    if (generation !== this.draftGeneration) return;
+    this.pendingImageReferences = this.pendingImageReferences.filter((reference) => !references.includes(reference));
+    if (additions.length > 0) this.attachments = [...this.attachments, ...additions].sort((a, b) => attachmentIdSequence(a.id) - attachmentIdSequence(b.id));
+    for (const reference of failedReferences) this.removeImageReferenceTokens(reference);
+    this.attachmentError = failed ? READ_FAILURE_MESSAGE : undefined;
+    this.saveCurrentStaging();
+  }
+
+  private insertImageReferenceTokens(references: readonly string[], position: number): void {
+    const insertion = imageReferenceInsertion(this.draft, position, references);
+    this.dispatchDraftChange(position, position, insertion);
+  }
+
+  private removeImageReferenceTokens(reference: string): void {
+    const text = removeImageReferenceTokensFromText(this.draft, [reference]);
+    if (text === this.draft) return;
+    const editor = this.editor;
+    if (editor !== undefined) {
+      editor.dispatch({
+        changes: { from: 0, to: this.draft.length, insert: text },
+        selection: EditorSelection.cursor(Math.min(editor.state.selection.main.head, text.length)),
+      });
+      return;
+    }
+    this.updateDraft(text);
+  }
+
+  private dispatchDraftChange(from: number, to: number, insert: string): void {
+    const editor = this.editor;
+    if (editor !== undefined) {
+      editor.dispatch({ changes: { from, to, insert }, selection: EditorSelection.cursor(from + insert.length) });
+      return;
+    }
+    this.updateDraft(`${this.draft.slice(0, from)}${insert}${this.draft.slice(to)}`);
+  }
+
+  private stagedAttachmentDraft() {
+    return {
+      attachments: this.attachments,
+      nextImageReference: this.nextImageReference,
+      pendingImageReferences: this.pendingImageReferences,
+      generation: this.draftGeneration,
+    };
+  }
+
+  private saveCurrentStaging(): void {
+    const key = draftStorageKey(this.machineId, this.sessionId);
+    if (key !== undefined) saveStagedAttachments(key, this.stagedAttachmentDraft());
   }
 
   private currentAttachments(): PromptAttachment[] {
@@ -400,8 +504,9 @@ export class PromptEditor extends LitElement {
     this.selectedIndex = 0;
     if (trigger === undefined) return;
     if (trigger.kind === "command" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
-      const commands = await api.commands({ id: this.sessionId, cwd: this.cwd }, this.machineId).catch(emptySlashCommands);
+      const commands = await this.commandCatalog();
       if (version !== this.requestVersion) return;
+      this.knownCommandNames = new Set(commands.map((command) => command.name));
       this.completions = commands
         .filter((command) => command.name.toLowerCase().includes(trigger.query.toLowerCase()))
         .map((command) => ({
@@ -439,6 +544,21 @@ export class PromptEditor extends LitElement {
         ...choice,
       }));
     }
+  }
+
+  private commandCatalog(): Promise<SlashCommand[]> {
+    if (this.commandCatalogRequest !== undefined) return this.commandCatalogRequest;
+    if (this.sessionId === undefined || this.sessionId === "" || this.cwd === undefined || this.cwd === "") return Promise.resolve([]);
+    this.commandCatalogRequest = api.commands({ id: this.sessionId, cwd: this.cwd }, this.machineId).catch(emptySlashCommands);
+    return this.commandCatalogRequest;
+  }
+
+  private async isLeadingCommandDraft(draft: string): Promise<boolean> {
+    if (isLeadingKnownCommandDraft(draft, this.knownCommandNames)) return true;
+    if (leadingSlashCommandName(draft) === undefined) return false;
+    const commands = await this.commandCatalog();
+    this.knownCommandNames = new Set(commands.map((command) => command.name));
+    return isLeadingKnownCommandDraft(draft, this.knownCommandNames);
   }
 
   private currentTrigger(): PromptCompletionTrigger | undefined {
@@ -545,6 +665,10 @@ export class PromptEditor extends LitElement {
 
   private send(streamingBehavior?: "steer" | "followUp") {
     if (this.disabled || this.sending) return;
+    if (this.pendingImageReferences.length > 0) {
+      this.attachmentError = "Wait for image attachments to finish loading.";
+      return;
+    }
     const text = this.draft.trim();
     const pending = this.attachments;
     if (text === "" && pending.length === 0) return;
@@ -555,23 +679,84 @@ export class PromptEditor extends LitElement {
     // (the uploads pattern): the save lands exactly where the label pointed,
     // independent of how the session cwd would resolve its own project config.
     const folder = attachments !== undefined && delivery === "folder" ? this.attachmentsFolder : undefined;
+    const snapshot = this.composerSnapshot();
     this.resetComposer();
-    // Sending is owned by the controller (it drives the chat activity dock and,
-    // for folder mode, orchestrates the upload + reference rewrite), so this is
-    // fire-and-forget here.
-    void this.onSend?.(text, behavior, attachments, attachments === undefined ? undefined : delivery, folder);
+    const resetGeneration = this.draftGeneration;
+    void this.deliverComposer(snapshot, resetGeneration, text, behavior, attachments, attachments === undefined ? undefined : delivery, folder);
+  }
+
+  private composerSnapshot() {
+    return {
+      key: draftStorageKey(this.machineId, this.sessionId),
+      draft: this.draft,
+      attachments: this.attachments,
+      nextImageReference: this.nextImageReference,
+      pendingImageReferences: this.pendingImageReferences,
+      generation: this.draftGeneration,
+      cursor: this.editor?.state.selection.main.head ?? this.draft.length,
+    };
+  }
+
+  private async deliverComposer(
+    snapshot: ReturnType<PromptEditor["composerSnapshot"]>,
+    resetGeneration: number,
+    text: string,
+    behavior: "steer" | "followUp" | undefined,
+    attachments: PromptAttachment[] | undefined,
+    delivery: PromptAttachmentDelivery | undefined,
+    folder: string | undefined,
+  ): Promise<void> {
+    try {
+      const delivered = await this.onSend?.(text, behavior, attachments, delivery, folder);
+      if (delivered !== false) return;
+    } catch {
+      // The controller owns the visible request error; the composer owns retry state.
+    }
+    this.restoreComposer(snapshot, resetGeneration);
+  }
+
+  private restoreComposer(snapshot: ReturnType<PromptEditor["composerSnapshot"]>, resetGeneration: number): void {
+    const key = snapshot.key === undefined ? undefined : resolveStagedAttachmentKey(snapshot.key);
+    if (key !== undefined) {
+      saveDraft(key, snapshot.draft);
+      saveStagedAttachments(key, {
+        attachments: snapshot.attachments,
+        nextImageReference: snapshot.nextImageReference,
+        pendingImageReferences: snapshot.pendingImageReferences,
+        generation: snapshot.generation,
+      });
+    }
+    if (key !== draftStorageKey(this.machineId, this.sessionId) || this.draftGeneration !== resetGeneration) return;
+    this.draft = snapshot.draft;
+    this.attachments = snapshot.attachments;
+    this.nextImageReference = snapshot.nextImageReference;
+    this.pendingImageReferences = snapshot.pendingImageReferences;
+    this.draftGeneration = snapshot.generation;
+    this.currentInputMode = inputModeForDraft(snapshot.draft);
+    this.attachmentError = "Attachment delivery failed. Draft restored for retry.";
+    const editor = this.editor;
+    if (editor !== undefined) {
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: snapshot.draft },
+        selection: EditorSelection.cursor(Math.min(snapshot.cursor, snapshot.draft.length)),
+      });
+    }
   }
 
   private resetComposer() {
     this.draft = "";
     this.currentInputMode = { kind: "normal" };
     const key = draftStorageKey(this.machineId, this.sessionId);
+    this.draftGeneration += 1;
     if (key !== undefined) {
       clearDraft(key);
       clearStagedAttachments(key);
     }
     this.completions = [];
     this.attachments = [];
+    this.nextImageReference = 1;
+    this.pendingImageReferences = [];
+    if (key !== undefined) saveStagedAttachments(key, this.stagedAttachmentDraft());
     this.attachmentError = undefined;
     // `draft` is not reactive, so the cleared text will not flow to CodeMirror
     // via `updated()`; push it to the editor document explicitly.
@@ -632,9 +817,48 @@ function dataTransferHasFiles(data: DataTransfer): boolean {
   return Array.from(data.types).includes("Files");
 }
 
+export function sanitizeDraftImageReferences(text: string, attachments: readonly { kind: string; reference?: string }[], pendingReferences: readonly string[] = []): string {
+  const references = new Set([...pendingReferences, ...attachments.flatMap((attachment) => attachment.kind === "image" ? [attachment.reference] : [])]);
+  return text.replace(/\[PIC_[1-9]\d*\]/g, (reference) => references.has(reference) ? reference : "");
+}
+
+export function isLeadingKnownCommandDraft(draft: string, knownCommandNames: ReadonlySet<string>): boolean {
+  const name = leadingSlashCommandName(draft);
+  return name !== undefined && knownCommandNames.has(name);
+}
+
+function leadingSlashCommandName(draft: string): string | undefined {
+  const match = /^\/([^\s]+)(?:\s|$)/.exec(draft);
+  if (match?.[1] === undefined || inputModeForDraft(match[0].trim()).kind !== "command") return undefined;
+  return match[1];
+}
+
+export function imageReferenceInsertion(text: string, position: number, references: readonly string[]): string {
+  if (references.length === 0) return "";
+  const prefix = position > 0 && !/\s/.test(text[position - 1] ?? "") ? " " : "";
+  const suffix = position >= text.length || !/\s/.test(text[position] ?? "") ? " " : "";
+  return `${prefix}${references.join(" ")}${suffix}`;
+}
+
+export function removeImageReferenceTokensFromText(text: string, references: readonly string[]): string {
+  return references.reduce((current, reference) => current
+    .replaceAll(`${reference} `, "")
+    .replaceAll(` ${reference}`, "")
+    .replaceAll(reference, ""), text);
+}
+
+function isSupportedImageFile(file: File): boolean {
+  return isSupportedImageMimeType(file.type);
+}
+
+function attachmentIdSequence(id: string): number {
+  const sequence = Number(id.slice(id.lastIndexOf("-") + 1));
+  return Number.isFinite(sequence) ? sequence : 0;
+}
+
 function pendingToPromptAttachment(attachment: PendingAttachment): PromptAttachment {
   if (attachment.kind === "image") {
-    return { kind: "image", mimeType: attachment.mimeType, data: attachment.data, name: attachment.name };
+    return { kind: "image", reference: attachment.reference, mimeType: attachment.mimeType, data: attachment.data, name: attachment.name };
   }
   return { kind: "file", mimeType: attachment.mimeType, data: attachment.data, name: attachment.name };
 }

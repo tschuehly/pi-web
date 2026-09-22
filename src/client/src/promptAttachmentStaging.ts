@@ -1,48 +1,79 @@
 import type { CapturedAttachment } from "./promptAttachmentCapture";
 
-/** A captured attachment staged in the composer, tagged with a stable id for chip removal/rendering. */
-export type PendingAttachment = CapturedAttachment & { id: string };
+export type PendingAttachment = (CapturedAttachment & { id: string }) & ({ kind: "image"; reference: string } | { kind: "file" });
 
-export type StagedAttachmentStore = Map<string, readonly PendingAttachment[]>;
+export interface StagedAttachmentDraft {
+  attachments: readonly PendingAttachment[];
+  nextImageReference: number;
+  pendingImageReferences: readonly string[];
+  generation: number;
+}
+
+export type StagedAttachmentStore = Map<string, StagedAttachmentDraft>;
 
 /**
- * In-memory (not localStorage) staging area for attachments pending send, keyed
- * the same way as `promptDraftStorage` (by `machineId:sessionId`). Attachment
- * payloads are base64 file/image data, which can be large, so unlike the draft
- * text they are not persisted across reloads.
- *
- * This mirrors `promptDraftStorage`/`cachedNewSessions` deliberately, both in
- * shape (an injectable store defaulting to a shared instance, the way those
- * modules default `storage` to `browserStorage()`) and in why it exists:
- * `PromptEditor` is a single long-lived element that just gets pointed at a
- * different session, and `sessionController` reassigns session ids under the
- * user in a few places (new-session provisioning, cached-session
- * replacement) where it already moves the draft via `moveDraft`. Staged
- * attachments need the same treatment so they migrate rather than vanish
- * when a session's id changes for reasons other than the user switching tabs.
+ * Attachment bytes, reference counters, and in-flight mappings intentionally
+ * live only for this app lifetime. Draft text remains persisted separately;
+ * after a full reload PromptEditor removes `[PIC_n]` tokens that no longer have
+ * an in-memory attachment mapping. Key aliases keep reads started under a
+ * temporary session id attached after that id moves to its real session.
  */
+const sharedStore: StagedAttachmentStore = new Map();
+const movedKeys = new WeakMap<StagedAttachmentStore, Map<string, string>>();
+
 function defaultStore(): StagedAttachmentStore {
   return sharedStore;
 }
 
-const sharedStore: StagedAttachmentStore = new Map();
-
-export function loadStagedAttachments(key: string, store: StagedAttachmentStore = defaultStore()): readonly PendingAttachment[] {
-  return store.get(key) ?? [];
+export function emptyStagedAttachmentDraft(generation = 0): StagedAttachmentDraft {
+  return { attachments: [], nextImageReference: 1, pendingImageReferences: [], generation };
 }
 
-export function saveStagedAttachments(key: string, attachments: readonly PendingAttachment[], store: StagedAttachmentStore = defaultStore()): void {
-  if (attachments.length > 0) store.set(key, attachments);
-  else store.delete(key);
+export function loadStagedAttachmentDraft(key: string, store: StagedAttachmentStore = defaultStore()): StagedAttachmentDraft {
+  return store.get(key) ?? emptyStagedAttachmentDraft();
+}
+
+export function loadStagedAttachments(key: string, store: StagedAttachmentStore = defaultStore()): readonly PendingAttachment[] {
+  return loadStagedAttachmentDraft(key, store).attachments;
+}
+
+export function saveStagedAttachments(key: string, draft: StagedAttachmentDraft, store: StagedAttachmentStore = defaultStore()): void {
+  const resolvedKey = resolveStagedAttachmentKey(key, store);
+  if (draft.attachments.length > 0 || draft.nextImageReference > 1 || draft.pendingImageReferences.length > 0 || draft.generation > 0) store.set(resolvedKey, draft);
+  else store.delete(resolvedKey);
+  if (resolvedKey !== key) store.delete(key);
 }
 
 export function clearStagedAttachments(key: string, store: StagedAttachmentStore = defaultStore()): void {
   store.delete(key);
 }
 
+export function resolveStagedAttachmentKey(key: string, store: StagedAttachmentStore = defaultStore()): string {
+  const aliases = movedKeys.get(store);
+  if (aliases === undefined) return key;
+  let resolved = key;
+  const visited = new Set<string>();
+  while (!visited.has(resolved)) {
+    visited.add(resolved);
+    const next = aliases.get(resolved);
+    if (next === undefined) break;
+    resolved = next;
+  }
+  return resolved;
+}
+
 export function moveStagedAttachments(fromKey: string, toKey: string, store: StagedAttachmentStore = defaultStore()): void {
-  const attachments = store.get(fromKey);
-  if (attachments === undefined) return;
-  store.set(toKey, attachments);
-  store.delete(fromKey);
+  const resolvedFrom = resolveStagedAttachmentKey(fromKey, store);
+  const resolvedTo = resolveStagedAttachmentKey(toKey, store);
+  let aliases = movedKeys.get(store);
+  if (aliases === undefined) {
+    aliases = new Map();
+    movedKeys.set(store, aliases);
+  }
+  aliases.set(fromKey, resolvedTo);
+  aliases.set(resolvedFrom, resolvedTo);
+  if (resolvedFrom === resolvedTo) return;
+  const draft = store.get(resolvedFrom);
+  if (draft !== undefined) store.set(resolvedTo, draft);
+  store.delete(resolvedFrom);
 }

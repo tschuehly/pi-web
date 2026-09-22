@@ -5,10 +5,21 @@ import { createAssistantMessageEventStream, InMemoryCredentialStore, type Assist
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, createTestModelRuntime, fakeRuntime, runtimeCreator, seedCredential, sessionGateway, sessionRecord, sessionRef, TEST_MODEL_ID, TEST_MODEL_PROVIDER, testModel, testModelRuntime, type RuntimeCreator } from "./piSessionService.testSupport.js";
+import { appendInlineImageReferenceMapping, PiSessionService, stripInlineImageReferenceMapping } from "./piSessionService.js";
+import { CapturingSessionEventHub, createTestModelRuntime, fakeRuntime, fakeSessionManager, runtimeCreator, seedCredential, sessionGateway, sessionRecord, sessionRef, TEST_MODEL_ID, TEST_MODEL_PROVIDER, testModel, testModelRuntime, type RuntimeCreator } from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
+
+describe("appendInlineImageReferenceMapping", () => {
+  it("maps the exact surviving reference order to the following image blocks", () => {
+    const displayText = "compare [PIC_3] and [PIC_1]";
+    const providerText = appendInlineImageReferenceMapping(displayText, ["[PIC_1]", "[PIC_3]"]);
+    expect(providerText).toBe(
+      "compare [PIC_3] and [PIC_1]\n\nImage blocks immediately following this text map in order as follows:\n1. [PIC_1]\n2. [PIC_3]",
+    );
+    expect(stripInlineImageReferenceMapping(providerText)).toBe(displayText);
+  });
+});
 
 beforeEach(() => {
   // Pi 0.82 uses PI_OFFLINE for refreshes after runtime creation. These tests
@@ -34,6 +45,125 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     await service.prompt(sessionRef("prompt-session"), "Build the thing");
 
     expect(fake.calls.prompt).toEqual([{ text: "Build the thing", options: undefined }]);
+    await service.dispose();
+  });
+
+  it("keeps display text clean while sending an image legend only to the provider", async () => {
+    const fake = fakeRuntime("image-text-session");
+    const hub = new CapturingSessionEventHub();
+    const service = new PiSessionService(hub, {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("image-text-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+    const attachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
+    const displayText = "/Users/thomas/project screenshot [PIC_1]";
+    const providerText = appendInlineImageReferenceMapping(displayText, ["[PIC_1]"]);
+
+    await service.prompt(sessionRef("image-text-session"), displayText, undefined, [attachment]);
+
+    expect(fake.calls.prompt[0]?.text).toBe(providerText);
+    const appendEvent = hub.sessionEvents.find(({ event }) => event.type === "message.append")?.event;
+    expect(JSON.stringify(appendEvent)).toContain(displayText);
+    expect(JSON.stringify(appendEvent)).not.toContain("Image blocks immediately following");
+    await service.dispose();
+  });
+
+  it("keeps old-client image prompts unchanged for both display and provider text", async () => {
+    const fake = fakeRuntime("old-client-image-session");
+    const hub = new CapturingSessionEventHub();
+    const service = new PiSessionService(hub, {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("old-client-image-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+    const legacyAttachment = { kind: "image", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
+
+    await service.prompt(sessionRef("old-client-image-session"), "legacy image", undefined, [legacyAttachment]);
+
+    expect(fake.calls.prompt[0]?.text).toBe("legacy image");
+    const appendEvent = hub.sessionEvents.find(({ event }) => event.type === "message.append")?.event;
+    expect(JSON.stringify(appendEvent)).toContain("legacy image");
+    expect(JSON.stringify(appendEvent)).not.toContain("Image blocks immediately following");
+    await service.dispose();
+  });
+
+  it("strips provider-only image legends from durable transcript history", async () => {
+    const displayText = "inspect [PIC_1]";
+    const providerText = appendInlineImageReferenceMapping(displayText, ["[PIC_1]"]);
+    const fake = fakeRuntime("image-history-session", {
+      sessionManager: fakeSessionManager("/workspace", {
+        getBranch: () => [{ type: "message", id: "user-1", message: { role: "user", content: providerText } }],
+      }),
+    });
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("image-history-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+
+    await expect(service.messages(sessionRef("image-history-session"))).resolves.toMatchObject({
+      messages: [{ role: "user", content: displayText }],
+    });
+    await service.dispose();
+  });
+
+  it("keeps queued display text clean while retaining provider mapping through promotion", async () => {
+    const queued: string[] = [];
+    const fake = fakeRuntime("queued-image-text-session", { isStreaming: true, getFollowUpMessages: () => queued });
+    const prompt = fake.session.prompt.bind(fake.session);
+    fake.session.prompt = (text, options) => {
+      queued.push(text);
+      return prompt(text, options);
+    };
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("queued-image-text-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+    const attachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
+    const providerText = appendInlineImageReferenceMapping("inspect [PIC_1]", ["[PIC_1]"]);
+
+    await service.prompt(sessionRef("queued-image-text-session"), "inspect [PIC_1]", "followUp", [attachment]);
+
+    expect(fake.calls.prompt[0]?.text).toBe(providerText);
+    await expect(service.status(sessionRef("queued-image-text-session"))).resolves.toMatchObject({
+      queuedMessages: [{ kind: "followUp", text: "inspect [PIC_1]" }],
+    });
+    await service.dispose();
+  });
+
+  it("keeps slash commands, templates, and skills byte-compatible when images are attached", async () => {
+    const fake = fakeRuntime("slash-image-session");
+    fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "command" }];
+    fake.session.promptTemplates = [{ name: "template-name" }];
+    fake.session.resourceLoader.getSkills = () => ({ skills: [{ name: "skill-name" }] });
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("slash-image-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+    const attachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
+    const prompts = ["/command --raw", "/template-name exact bytes", "/skill:skill-name exact bytes"];
+
+    for (const prompt of prompts) await service.prompt(sessionRef("slash-image-session"), prompt, undefined, [attachment]);
+
+    expect(fake.calls.prompt.map(({ text }) => text)).toEqual(prompts);
+    expect(fake.calls.prompt.every(({ options }) => {
+      if (typeof options !== "object" || options === null) return false;
+      const images: unknown = Reflect.get(options, "images");
+      return Array.isArray(images) && images.length === 1;
+    })).toBe(true);
     await service.dispose();
   });
 
@@ -290,7 +420,8 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       sessionManager: sessionGateway([sessionRecord("promote-one-session")]),
       heartbeatIntervalMs: 60_000,
     });
-    const imageAttachment = { kind: "image", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", name: "pixel.png" };
+    const imageAttachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", name: "pixel.png" };
+    const promotedText = appendInlineImageReferenceMapping("promote me", [imageAttachment.reference]);
     await service.prompt(sessionRef("promote-one-session"), "existing steer", "steer");
     await service.prompt(sessionRef("promote-one-session"), "promote me", "followUp", [imageAttachment]);
     await service.prompt(sessionRef("promote-one-session"), "keep later", "followUp");
@@ -301,8 +432,8 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const promotion = service.promoteQueuedMessage(sessionRef("promote-one-session"), { kind: "followUp", text: "promote me" });
     await vi.waitFor(() => { expect(operations).toHaveLength(4); });
 
-    expect(operations).toEqual(["clear", "steer:existing steer", "steer:promote me", "followUp:keep later"]);
-    expect(steeringMessages).toEqual(["existing steer", "promote me"]);
+    expect(operations).toEqual(["clear", "steer:existing steer", `steer:${promotedText}`, "followUp:keep later"]);
+    expect(steeringMessages).toEqual(["existing steer", promotedText]);
     expect(followUpMessages).toEqual(["keep later"]);
     expect(requeuedImages[1]).toEqual(originalImages);
     releases.forEach((release) => { release(); });

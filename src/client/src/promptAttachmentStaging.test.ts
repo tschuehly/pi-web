@@ -1,46 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { clearStagedAttachments, loadStagedAttachments, moveStagedAttachments, saveStagedAttachments, type PendingAttachment, type StagedAttachmentStore } from "./promptAttachmentStaging";
+import { clearStagedAttachments, emptyStagedAttachmentDraft, loadStagedAttachmentDraft, moveStagedAttachments, resolveStagedAttachmentKey, saveStagedAttachments, type PendingAttachment, type StagedAttachmentStore } from "./promptAttachmentStaging";
 
-const attachment: PendingAttachment = { id: "attachment-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 };
+const attachment: PendingAttachment = { id: "attachment-1", kind: "image", reference: "[PIC_3]", name: "shot.png", mimeType: "image/png", data: "aGVsbG8=", size: 5 };
 
 describe("promptAttachmentStaging", () => {
-  it("returns an empty list for a key with nothing staged", () => {
-    const store: StagedAttachmentStore = new Map();
-    expect(loadStagedAttachments("local:session-a", store)).toEqual([]);
+  it("defaults an unstaged draft to its first image reference", () => {
+    expect(loadStagedAttachmentDraft("local:session-a", new Map())).toEqual(emptyStagedAttachmentDraft());
   });
 
-  it("saves and loads attachments staged for a key", () => {
+  it("saves one explicit staging state", () => {
     const store: StagedAttachmentStore = new Map();
-    saveStagedAttachments("local:session-a", [attachment], store);
-    expect(loadStagedAttachments("local:session-a", store)).toEqual([attachment]);
+    const draft = { attachments: [attachment], nextImageReference: 5, pendingImageReferences: ["[PIC_4]"], generation: 2 };
+    saveStagedAttachments("local:session-a", draft, store);
+    expect(loadStagedAttachmentDraft("local:session-a", store)).toEqual(draft);
   });
 
-  it("drops the key once it is saved with no attachments left", () => {
+  it("keeps a generation tombstone after reset", () => {
     const store: StagedAttachmentStore = new Map();
-    saveStagedAttachments("local:session-a", [attachment], store);
-    saveStagedAttachments("local:session-a", [], store);
-    expect(store.has("local:session-a")).toBe(false);
+    saveStagedAttachments("local:session-a", emptyStagedAttachmentDraft(3), store);
+    expect(loadStagedAttachmentDraft("local:session-a", store)).toEqual(emptyStagedAttachmentDraft(3));
   });
 
-  it("clears a key outright", () => {
+  it("clears all staged draft state", () => {
     const store: StagedAttachmentStore = new Map();
-    saveStagedAttachments("local:session-a", [attachment], store);
+    saveStagedAttachments("local:session-a", { attachments: [attachment], nextImageReference: 4, pendingImageReferences: [], generation: 0 }, store);
     clearStagedAttachments("local:session-a", store);
-    expect(loadStagedAttachments("local:session-a", store)).toEqual([]);
+    expect(loadStagedAttachmentDraft("local:session-a", store)).toEqual(emptyStagedAttachmentDraft());
   });
 
-  it("moves staged attachments from one key to another, leaving the source empty", () => {
+  it("moves staging and resolves in-flight writes to the replacement key", () => {
     const store: StagedAttachmentStore = new Map();
-    saveStagedAttachments("local:temp-1", [attachment], store);
+    const draft = { attachments: [attachment], nextImageReference: 5, pendingImageReferences: ["[PIC_4]"], generation: 2 };
+    saveStagedAttachments("local:temp-1", draft, store);
     moveStagedAttachments("local:temp-1", "local:session-a", store);
-    expect(loadStagedAttachments("local:temp-1", store)).toEqual([]);
-    expect(loadStagedAttachments("local:session-a", store)).toEqual([attachment]);
+    expect(loadStagedAttachmentDraft("local:temp-1", store)).toEqual(emptyStagedAttachmentDraft());
+    expect(loadStagedAttachmentDraft("local:session-a", store)).toEqual(draft);
+    expect(resolveStagedAttachmentKey("local:temp-1", store)).toBe("local:session-a");
   });
 
-  it("does nothing when moving from a key with nothing staged", () => {
+  it("records an empty move so a later async read lands on the real key", () => {
     const store: StagedAttachmentStore = new Map();
-    saveStagedAttachments("local:session-a", [attachment], store);
     moveStagedAttachments("local:temp-1", "local:session-a", store);
-    expect(loadStagedAttachments("local:session-a", store)).toEqual([attachment]);
+    expect(resolveStagedAttachmentKey("local:temp-1", store)).toBe("local:session-a");
   });
 });

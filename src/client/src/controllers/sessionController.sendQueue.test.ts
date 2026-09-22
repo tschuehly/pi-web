@@ -8,7 +8,7 @@ describe("SessionController send queue", () => {
     let resolvePrompt: (() => void) | undefined;
     let promptArgs: { attachments?: PromptAttachment[] } | undefined;
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
-    const attachments: PromptAttachment[] = [{ kind: "image", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
+    const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const api: typeof defaultApi = {
       ...defaultApi,
       prompt: (_session, _text, _behavior, _machineId, sentAttachments) => new Promise<{ accepted: true }>((resolve) => {
@@ -34,10 +34,25 @@ describe("SessionController send queue", () => {
     expect(promptArgs).toEqual({ attachments });
   });
 
+  it("returns a failed delivery result so the composer can restore attachments", async () => {
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
+    const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api: { ...defaultApi, prompt: () => Promise.reject(new Error("Image conversion failed for [PIC_1]")) }, socket: new FakeSocket() },
+    );
+
+    await expect(controller.send("look [PIC_1]", undefined, attachments, "inline")).resolves.toBe(false);
+    expect(state.sendingPrompts).toEqual({});
+  });
+
   it("keeps the sending state scoped to the originating session when the user switches away", async () => {
     let resolvePrompt: (() => void) | undefined;
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession, replacementSession] };
-    const attachments: PromptAttachment[] = [{ kind: "image", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
+    const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const api: typeof defaultApi = {
       ...defaultApi,
       prompt: () => new Promise<{ accepted: true }>((resolve) => { resolvePrompt = () => { resolve({ accepted: true }); }; }),
@@ -67,10 +82,10 @@ describe("SessionController send queue", () => {
     let promptText: string | undefined;
     let promptAttachments: PromptAttachment[] | undefined;
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
-    const attachments: PromptAttachment[] = [{ kind: "image", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
+    const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const api: typeof defaultApi = {
       ...defaultApi,
-      saveAttachments: (_session, sent, _machineId, folder) => { savedCalledWith = sent; savedFolder = folder; return Promise.resolve([{ path: ".pi-web/attachments/shot.png", mimeType: "image/png", size: 3 }]); },
+      saveAttachments: (_session, sent, _machineId, folder) => { savedCalledWith = sent; savedFolder = folder; return Promise.resolve([{ path: ".pi-web/attachments/shot.png", mimeType: "image/png", size: 3, reference: "[PIC_1]" }]); },
       prompt: (_session, text, _behavior, _machineId, sentAttachments) => { promptText = text; promptAttachments = sentAttachments; return Promise.resolve({ accepted: true }); },
     };
     const controller = new SessionController(
@@ -87,7 +102,7 @@ describe("SessionController send queue", () => {
     // No composer folder on the send: the request omits it so the server-side
     // configured-default fallback applies.
     expect(savedFolder).toBeUndefined();
-    expect(promptText).toBe("check this\n\n@.pi-web/attachments/shot.png");
+    expect(promptText).toBe("check this\n\n[PIC_1] @.pi-web/attachments/shot.png");
     expect(promptAttachments).toBeUndefined();
     expect(state.sendingPrompts).toEqual({});
   });
@@ -96,10 +111,10 @@ describe("SessionController send queue", () => {
     let savedFolder: string | undefined;
     let promptText: string | undefined;
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
-    const attachments: PromptAttachment[] = [{ kind: "image", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
+    const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const api: typeof defaultApi = {
       ...defaultApi,
-      saveAttachments: (_session, _sent, _machineId, folder) => { savedFolder = folder; return Promise.resolve([{ path: "project-attachments/shot.png", mimeType: "image/png", size: 3 }]); },
+      saveAttachments: (_session, _sent, _machineId, folder) => { savedFolder = folder; return Promise.resolve([{ path: "project-attachments/shot.png", mimeType: "image/png", size: 3, reference: "[PIC_1]" }]); },
       prompt: (_session, text) => { promptText = text; return Promise.resolve({ accepted: true }); },
     };
     const controller = new SessionController(
@@ -116,7 +131,7 @@ describe("SessionController send queue", () => {
     await controller.send("check this", undefined, attachments, "folder", "project-attachments");
 
     expect(savedFolder).toBe("project-attachments");
-    expect(promptText).toBe("check this\n\n@project-attachments/shot.png");
+    expect(promptText).toBe("check this\n\n[PIC_1] @project-attachments/shot.png");
   });
 
   it("does not set the sending state for plain text messages", async () => {
@@ -224,7 +239,7 @@ describe("SessionController send queue", () => {
     const startRequest = deferred<SessionInfo>();
     const calls: string[] = [];
     const promptCalls: { text: string; attachments?: PromptAttachment[] }[] = [];
-    const attachments: PromptAttachment[] = [{ kind: "image", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
+    const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
     const api: typeof defaultApi = {
       ...defaultApi,
@@ -241,7 +256,7 @@ describe("SessionController send queue", () => {
       },
       saveAttachments: (session, sentAttachments, _machineId, folder) => {
         calls.push(`save:${sessionLookupId(session)}:${sentAttachments[0]?.name ?? ""}:${folder ?? "no-folder"}`);
-        return Promise.resolve([{ path: ".pi-web/attachments/shot.png", mimeType: "image/png", size: 3 }]);
+        return Promise.resolve([{ path: ".pi-web/attachments/shot.png", mimeType: "image/png", size: 3, reference: "[PIC_1]" }]);
       },
       prompt: (session, text, _behavior, _machineId, sentAttachments) => {
         calls.push(`prompt:${sessionLookupId(session)}:${text}`);
@@ -284,11 +299,11 @@ describe("SessionController send queue", () => {
       // The queued folder delivery keeps the composer-displayed folder through
       // the pending-start flush.
       `save:${started.id}:shot.png:project-attachments`,
-      `prompt:${started.id}:save\n\n@.pi-web/attachments/shot.png`,
+      `prompt:${started.id}:save\n\n[PIC_1] @.pi-web/attachments/shot.png`,
     ]);
     expect(promptCalls).toEqual([
       { text: "look", attachments },
-      { text: "save\n\n@.pi-web/attachments/shot.png" },
+      { text: "save\n\n[PIC_1] @.pi-web/attachments/shot.png" },
     ]);
     expect(state.clientQueuedSessionMessages[started.id]).toBeUndefined();
   });

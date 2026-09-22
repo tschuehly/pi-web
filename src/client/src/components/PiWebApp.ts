@@ -3140,18 +3140,16 @@ export class PiWebApp extends LitElement {
     if (value !== "") await this.sessions.setThinkingLevel(value);
   }
 
-  private sendPrompt(text: string, streamingBehavior?: "steer" | "followUp", attachments?: import("../api").PromptAttachment[], delivery?: import("../../../shared/apiTypes").PromptAttachmentDelivery, folder?: string): void {
+  private sendPrompt(text: string, streamingBehavior?: "steer" | "followUp", attachments?: import("../api").PromptAttachment[], delivery?: import("../../../shared/apiTypes").PromptAttachmentDelivery, folder?: string): Promise<boolean> {
     const hasAttachments = attachments !== undefined && attachments.length > 0;
-    if (!hasAttachments && streamingBehavior === undefined && this.auth.handleSlashCommand(text)) return;
-    void this.sessions.send(text, streamingBehavior, attachments, delivery, folder);
+    if (!hasAttachments && streamingBehavior === undefined && this.auth.handleSlashCommand(text)) return Promise.resolve(true);
+    return this.sessions.send(text, streamingBehavior, attachments, delivery, folder);
   }
 
   // Stable handler identities for child components. Inlined arrow closures
   // would be a fresh reference on every render, forcing Lit to re-commit the
   // bindings each time the app re-renders; bound class fields keep them constant.
-  private readonly handleSendPrompt = (text: string, streamingBehavior?: "steer" | "followUp", attachments?: import("../api").PromptAttachment[], delivery?: import("../../../shared/apiTypes").PromptAttachmentDelivery, folder?: string): void => {
-    this.sendPrompt(text, streamingBehavior, attachments, delivery, folder);
-  };
+  private readonly handleSendPrompt = (text: string, streamingBehavior?: "steer" | "followUp", attachments?: import("../api").PromptAttachment[], delivery?: import("../../../shared/apiTypes").PromptAttachmentDelivery, folder?: string): Promise<boolean> => this.sendPrompt(text, streamingBehavior, attachments, delivery, folder);
 
   private readonly handleStopActiveWork = (): void => {
     void this.sessions.stopActiveWork();

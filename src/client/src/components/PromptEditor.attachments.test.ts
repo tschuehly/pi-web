@@ -89,7 +89,7 @@ describe("PromptEditor folder delivery sends the displayed folder", () => {
     editor.machineId = "local";
     editor.sessionId = "session-a";
     editor.attachmentsFolder = "project-attachments";
-    Reflect.set(editor, "attachments", [{ id: "attachment-1", kind: "image" as const, name: "shot.png", mimeType: "image/png", data: "QUJD", size: 3 }]);
+    Reflect.set(editor, "attachments", [{ id: "attachment-1", kind: "image" as const, reference: "[PIC_1]", name: "shot.png", mimeType: "image/png", data: "QUJD", size: 3 }]);
     Reflect.set(editor, "draft", "look");
     const sent: unknown[][] = [];
     editor.onSend = (...args: unknown[]) => { sent.push(args); };

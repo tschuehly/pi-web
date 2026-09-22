@@ -24,6 +24,10 @@ export function isSupportedImageMimeType(value: unknown): value is SupportedImag
   return typeof value === "string" && supportedImageMimeTypes.has(value);
 }
 
+export function hasExplicitPromptImageReference(value: unknown): boolean {
+  return Array.isArray(value) && value.some((entry: unknown) => isRecord(entry) && entry["kind"] === "image" && entry["reference"] !== undefined);
+}
+
 export function extensionForImageMimeType(mimeType: string): string {
   switch (mimeType) {
     case "image/jpeg": return "jpg";
@@ -35,6 +39,7 @@ export function extensionForImageMimeType(mimeType: string): string {
 }
 
 const base64Pattern = /^[A-Za-z0-9+/]*={0,2}$/;
+const imageReferencePattern = /^\[PIC_[1-9]\d*\]$/;
 
 export function base64ByteLength(data: string): number {
   const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
@@ -63,14 +68,29 @@ export function parsePromptAttachments(value: unknown, options: AttachmentValida
   if (!Array.isArray(value)) throw new Error("attachments must be an array");
   const maxAttachments = options.maxAttachments ?? MAX_PROMPT_ATTACHMENTS;
   if (value.length > maxAttachments) throw new Error(`too many attachments (max ${String(maxAttachments)})`);
-  return value.map((entry, index) => parsePromptAttachment(entry, index, options));
+  const parsed = value.map((entry, index) => parsePromptAttachment(entry, index, options));
+  const explicitReferences = parsed.flatMap((attachment) => attachment.kind === "image" && attachment.reference !== undefined ? [attachment.reference] : []);
+  if (new Set(explicitReferences).size !== explicitReferences.length) throw new Error("image attachment references must be unique");
+  const usedReferences = new Set(explicitReferences);
+  let nextReference = 1;
+  return parsed.map((attachment): PromptAttachment => {
+    if (attachment.kind !== "image") return attachment;
+    if (attachment.reference !== undefined) return { ...attachment, reference: attachment.reference };
+    while (usedReferences.has(`[PIC_${String(nextReference)}]`)) nextReference += 1;
+    const reference = `[PIC_${String(nextReference++)}]`;
+    usedReferences.add(reference);
+    return { ...attachment, reference };
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parsePromptAttachment(value: unknown, index: number, options: AttachmentValidationOptions): PromptAttachment {
+type ParsedImageAttachment = Omit<PromptImageAttachment, "reference"> & { reference?: string };
+type ParsedPromptAttachment = ParsedImageAttachment | PromptFileAttachment;
+
+function parsePromptAttachment(value: unknown, index: number, options: AttachmentValidationOptions): ParsedPromptAttachment {
   if (!isRecord(value)) throw new Error(`attachment ${String(index)} must be an object`);
   const record = value;
   const kind = record["kind"];
@@ -79,15 +99,18 @@ function parsePromptAttachment(value: unknown, index: number, options: Attachmen
   throw new Error(`attachment ${String(index)} has unsupported kind`);
 }
 
-function parseImageAttachment(record: Record<string, unknown>, index: number, options: AttachmentValidationOptions): PromptImageAttachment {
+function parseImageAttachment(record: Record<string, unknown>, index: number, options: AttachmentValidationOptions): ParsedImageAttachment {
   const mimeType = record["mimeType"];
   if (!isSupportedImageMimeType(mimeType)) throw new Error(`attachment ${String(index)} has unsupported image type`);
   const data = requireBase64Data(record["data"], index, { allowEmpty: false });
   if (options.enforceInlineSizeLimit === true && base64ByteLength(data) > MAX_INLINE_IMAGE_BASE64_BYTES) {
     throw new Error(`attachment ${String(index)} exceeds the inline image size limit`);
   }
+  const reference = record["reference"];
+  if (reference !== undefined && (typeof reference !== "string" || !imageReferencePattern.test(reference))) throw new Error(`attachment ${String(index)} has invalid image reference`);
   return {
     kind: "image",
+    ...(typeof reference === "string" ? { reference } : {}),
     mimeType,
     data,
     ...attachmentName(record),
