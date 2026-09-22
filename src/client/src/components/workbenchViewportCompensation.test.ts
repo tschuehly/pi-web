@@ -78,6 +78,7 @@ describe("Workbench zoom-compensated viewport contracts", () => {
     expect(manualRule).toContain("height: var(--prompt-editor-manual-height)");
     expect(manualRule).toContain("max-height: var(--prompt-editor-maximum-height)");
     expect(promptEditorMaximumHeight(1_000, 1.25, 100)).toBe(300);
+    expect(promptEditorMaximumHeight(1_000, 2, 100)).toBe(150);
   });
 });
 

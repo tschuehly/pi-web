@@ -4,8 +4,8 @@ export const INTERFACE_SCALE_STORAGE_KEY = "pi-web-app-scale";
 export const INTERFACE_SCALE_CSS_PROPERTY = "--pi-interface-scale";
 export const DEFAULT_INTERFACE_SCALE = 1;
 export const MIN_INTERFACE_SCALE = 0.8;
-export const MAX_INTERFACE_SCALE = 1.6;
-export const INTERFACE_SCALE_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.5] as const;
+export const MAX_INTERFACE_SCALE = 2;
+export const INTERFACE_SCALE_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 2] as const;
 
 export interface InterfaceScaleRoot {
   style: { setProperty(name: string, value: string): void };

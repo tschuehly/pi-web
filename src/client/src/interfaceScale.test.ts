@@ -20,6 +20,7 @@ describe("PI WEB interface scale preference", () => {
     expect(clampInterfaceScale(0.1)).toBe(MIN_INTERFACE_SCALE);
     expect(clampInterfaceScale(10)).toBe(MAX_INTERFACE_SCALE);
     expect(clampInterfaceScale(1.1)).toBe(1.1);
+    expect(clampInterfaceScale(2)).toBe(2);
   });
 
   it("parses numeric strings and rejects non-numeric junk", () => {
@@ -45,11 +46,11 @@ describe("PI WEB interface scale preference", () => {
     };
     writeStoredInterfaceScale(2, storage);
     expect(setItem).toHaveBeenCalledWith(INTERFACE_SCALE_STORAGE_KEY, String(MAX_INTERFACE_SCALE));
-    expect(readStoredInterfaceScale(storage)).toBe(MAX_INTERFACE_SCALE);
+    expect(readStoredInterfaceScale(storage)).toBe(2);
     expect(() => { writeStoredInterfaceScale(1.1, throwingStorage()); }).not.toThrow();
   });
 
-  it.each([0.8, 1, 1.25, 1.5])("applies zoom and the shared active-scale property at %s", (scale) => {
+  it.each([0.8, 1, 1.25, 1.5, 2])("applies zoom and the shared active-scale property at %s", (scale) => {
     const setProperty = vi.fn();
     applyInterfaceScale(scale, { style: { setProperty } });
     expect(setProperty).toHaveBeenCalledTimes(2);
@@ -60,6 +61,8 @@ describe("PI WEB interface scale preference", () => {
   it("steps up through the supported sizes and clamps at the maximum", () => {
     expect(stepInterfaceScale(1, 1)).toBe(1.1);
     const max = INTERFACE_SCALE_STEPS.at(-1) ?? DEFAULT_INTERFACE_SCALE;
+    expect(max).toBe(2);
+    expect(stepInterfaceScale(1.5, 1)).toBe(2);
     expect(stepInterfaceScale(max, 1)).toBe(max);
   });
 

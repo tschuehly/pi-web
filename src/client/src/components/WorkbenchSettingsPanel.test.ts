@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyInterfaceScale, INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 
-const scales = [0.8, 1, 1.25, 1.5] as const;
+const scales = [0.8, 1, 1.25, 1.5, 2] as const;
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -28,7 +28,7 @@ describe("WorkbenchSettingsPanel zoom geometry", () => {
     expect(Number.parseFloat(popover.style.right) * scale).toBeCloseTo(8);
   });
 
-  it("reanchors immediately when the open panel changes scale", async () => {
+  it.each([1.5, 2])("reanchors immediately when the open panel changes to scale %s", async (scale) => {
     const panel = await mountPanel();
     const opener = trigger(panel);
     vi.spyOn(opener, "getBoundingClientRect").mockImplementation(() => {
@@ -40,13 +40,13 @@ describe("WorkbenchSettingsPanel zoom geometry", () => {
     await panel.updateComplete;
 
     const select = requiredElement(panel.shadowRoot?.querySelector<HTMLSelectElement>("#workbench-settings-scale"), "scale select");
-    select.value = "1.5";
+    select.value = String(scale);
     select.dispatchEvent(new Event("change"));
     await panel.updateComplete;
 
     const popover = requiredElement(panel.shadowRoot?.querySelector<HTMLElement>(".popover"), "settings popover");
-    expect(Number.parseFloat(popover.style.top) * 1.5 - 60).toBeCloseTo(6);
-    expect(Number.parseFloat(popover.style.right) * 1.5).toBeCloseTo(76);
+    expect(Number.parseFloat(popover.style.top) * scale - 40 * scale).toBeCloseTo(6);
+    expect(Number.parseFloat(popover.style.right) * scale).toBeCloseTo(76);
   });
 });
 
