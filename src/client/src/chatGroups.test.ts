@@ -70,6 +70,17 @@ describe("groupChatMessages", () => {
     ]);
   });
 
+  it("keeps orphan successful results with preview errors outside routine Activity at a page boundary", () => {
+    const routine: ChatLine = { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "contents", isError: false }] };
+    const orphan: ChatLine = { role: "tool", parts: [{ type: "toolResult", toolCallId: "edit-before-page", toolName: "edit", text: "Applied edit", isError: false, details: { preview: { error: "Preview failed" } } }] };
+
+    expect(groupChatMessages([routine, orphan, routine], 40)).toEqual([
+      { kind: "group", presentation: "activity", startIndex: 40, endIndex: 40, messages: [routine] },
+      { kind: "group", startIndex: 41, endIndex: 41, messages: [orphan] },
+      { kind: "group", presentation: "activity", startIndex: 42, endIndex: 42, messages: [routine] },
+    ]);
+  });
+
   it("keeps successful diffs visible regardless of the tool name", () => {
     const actualDiff: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "patch", summary: "file", status: "success", details: { diff: "+changed" } }] };
     const previewDiff: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolName: "replace", summary: "file", status: "success", preview: { diff: "+preview" } }] };

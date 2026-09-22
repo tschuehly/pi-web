@@ -137,6 +137,28 @@ describe("ChatView transcript density", () => {
     expect(details?.querySelector(".diff-heading")?.textContent).toContain("Applied diff");
   });
 
+  it("shows an orphan result's preview error outside Activity at a page boundary", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messageStart = 40;
+    view.hasMore = true;
+    view.messages = normalizeMessages([
+      { role: "toolResult", toolCallId: "read-before-page", toolName: "read", content: [{ type: "text", text: "contents" }], isError: false },
+      { role: "toolResult", toolCallId: "edit-before-page", toolName: "edit", content: [{ type: "text", text: "Applied edit" }], isError: false, details: { preview: { error: "Preview failed" } } },
+    ]);
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    expect(root.querySelector<HTMLDetailsElement>(".activity-group")?.open).toBe(false);
+    expect(root.querySelectorAll(".activity-group .tool-result")).toHaveLength(1);
+    const result = root.querySelector<HTMLDetailsElement>(".event-group:not(.activity-group) .tool-result");
+    expect(result?.open).toBe(true);
+    expect(result?.querySelector("summary")?.textContent).toContain("✓ edit result");
+    expect(result?.querySelector(".orphan-tool-result")?.textContent).toBe("Applied edit");
+    expect(result?.querySelector(".orphan-preview-error")?.textContent).toContain("Preview failed");
+  });
+
   it("keeps execution failure separate from a preview error", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";

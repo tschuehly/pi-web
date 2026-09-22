@@ -473,6 +473,7 @@ export const chatStyles = css`
   .disclosure-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   pre { box-sizing: border-box; max-width: 100%; margin: 6px 0 0; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; direction: ltr; text-align: left; unicode-bidi: isolate; }
   .orphan-tool-result { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .orphan-preview-error { color: var(--pi-danger); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .shell-output { color: var(--pi-text); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.5; direction: ltr; text-align: left; unicode-bidi: isolate; }
   @keyframes pulse { 0%, 100% { transform: scale(.75); opacity: .55; } 50% { transform: scale(1.2); opacity: 1; } }
 `;

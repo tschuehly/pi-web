@@ -2,6 +2,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
+import { previewFromDetails } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
@@ -1149,12 +1150,16 @@ export class ChatView extends LitElement {
       </details>
     `;
     if (part.type === "toolExecution") return html`<tool-execution-view class="part" .execution=${part}></tool-execution-view>`;
-    if (part.type === "toolResult") return html`
-      <details class=${part.isError ? "part tool-result error" : "part tool-result"}>
-        <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
-        <pre class="orphan-tool-result">${part.text}</pre>
-      </details>
-    `;
+    if (part.type === "toolResult") {
+      const previewError = previewFromDetails(part.details)?.error;
+      return html`
+        <details class=${part.isError ? "part tool-result error" : "part tool-result"} ?open=${previewError !== undefined && previewError !== ""}>
+          <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
+          <pre class="orphan-tool-result">${part.text}</pre>
+          ${previewError === undefined || previewError === "" ? null : html`<pre class="orphan-preview-error">Preview error: ${previewError}</pre>`}
+        </details>
+      `;
+    }
     return null;
   }
 
