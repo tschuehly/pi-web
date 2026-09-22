@@ -64,10 +64,15 @@ describe("DelegateRoster", () => {
     const running = required(rows[0]);
     expect(running.querySelector(".kind")?.getAttribute("aria-label")).toBe("Subagent");
     expect(running.querySelector(".state")?.getAttribute("aria-label")).toBe("Running");
+    expect(running.querySelector("strong")?.textContent).toBe("Roster implementation");
     expect(running.querySelector(".meta")?.textContent).toBe("implementation · gpt-5.6-sol · medium");
     expect(running.querySelector(".meta")?.getAttribute("title")).toContain("openai-codex/gpt-5.6-sol-20260921");
+    expect(running.querySelector(".task")?.textContent).toBe(longObjective);
     expect(running.querySelector(".task")?.getAttribute("title")).toBe(longObjective);
     expect(running.querySelector(".activity")?.textContent).toBe("Wiring the roster CSS");
+    expect(running.querySelector(".activity")?.getAttribute("title")).toBe("Wiring the roster CSS");
+    expect(running.querySelector(".activity")?.getAttribute("aria-label")).toBe("Reported status: Wiring the roster CSS");
+    expect(running.querySelector(".activity")?.textContent).not.toContain("running tests");
     const terminal = required(rows[1]);
     expect(terminal.classList.contains("terminal")).toBe(true);
     expect(terminal.querySelector(".state")?.getAttribute("aria-label")).toBe("Uncollected");
@@ -82,7 +87,9 @@ describe("DelegateRoster", () => {
     await element.updateComplete;
     const row = required(root(element).querySelector(".row"));
     expect(row.querySelector(".kind")?.getAttribute("aria-label")).toBe("Worker");
-    expect(row.querySelector(".activity")?.textContent).toBe("running bash");
+    expect(row.querySelector(".activity")?.textContent).toBe("No status report · running bash");
+    expect(row.querySelector(".activity")?.getAttribute("title")).toBe("No status report · running bash");
+    expect(row.querySelector(".activity")?.getAttribute("aria-label")).toBe("No status report; inferred activity: running bash");
   });
 
   it("tolerates a snapshot without the reportedStatus field at all", async () => {
@@ -93,6 +100,7 @@ describe("DelegateRoster", () => {
     ] }) });
     await element.updateComplete;
     const row = required(root(element).querySelector(".row"));
-    expect(row.textContent).toContain("starting");
+    expect(row.querySelector(".activity")?.textContent).toBe("No status report · starting");
+    expect(row.querySelector(".activity")?.getAttribute("aria-label")).toBe("No status report; inferred activity: starting");
   });
 });
