@@ -67,7 +67,7 @@ describe("WorkbenchSettingsPanel sleep control", () => {
   it("polls external state while open without invoking the setter", async () => {
     vi.useFakeTimers();
     const setter = vi.fn();
-    const getter = vi.fn().mockResolvedValueOnce(false).mockRejectedValueOnce(new Error("SLEEP_CONTROL_READ_FAILED: unexpected reread"));
+    const getter = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: setter };
     const panel = await mountPanel();
     trigger(panel).click();
@@ -86,7 +86,7 @@ describe("WorkbenchSettingsPanel sleep control", () => {
     let finish!: (value: boolean) => void;
     const pending = new Promise<boolean>((resolve) => { finish = resolve; });
     const setter = vi.fn(() => pending);
-    const getter = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const getter = vi.fn().mockResolvedValueOnce(false).mockRejectedValueOnce(new Error("SLEEP_CONTROL_READ_FAILED: unexpected reread"));
     window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: setter };
     window.confirm = vi.fn().mockReturnValue(true);
     const panel = await mountPanel();
@@ -139,6 +139,23 @@ describe("WorkbenchSettingsPanel zoom geometry", () => {
     expect(Number.parseFloat(popover.style.right) * scale).toBeCloseTo(8);
   });
 
+  it.each([1, 1.25, 1.5, 2])("bounds the panel below its anchor at 1000x600 and scale %s", async (scale) => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1000);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(600);
+    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: () => Promise.resolve(false), setSleepDisabled: () => Promise.resolve(true) };
+    const popover = await openPanelAt(scale, { bottom: 40 * scale, right: 924 });
+    const top = Number.parseFloat(popover.style.top);
+    const availableHeight = window.innerHeight / scale - top - 12;
+
+    expect(top * scale).toBeCloseTo(40 * scale + 6);
+    expect(Number.parseFloat(popover.style.right) * scale).toBeCloseTo(76);
+    expect(popover.style.maxHeight).toBe(`calc(var(--pi-workbench-viewport-height, 100vh) - ${String(top)}px - 12px)`);
+    expect(popover.querySelector("fieldset button")?.textContent).toContain("system sleep");
+    expect(availableHeight * scale).toBeCloseTo(600 - 40 * scale - 6 - 12 * scale);
+    expect(availableHeight).toBeGreaterThan(0);
+    expect(WorkbenchSettingsPanel.styles.cssText).toMatch(/\.popover\s*\{[^}]*overflow-y:\s*auto/);
+  });
+
   it.each([1.5, 2])("reanchors immediately when the open panel changes to scale %s", async (scale) => {
     const panel = await mountPanel();
     const opener = trigger(panel);
@@ -158,6 +175,7 @@ describe("WorkbenchSettingsPanel zoom geometry", () => {
     const popover = requiredElement(panel.shadowRoot?.querySelector<HTMLElement>(".popover"), "settings popover");
     expect(Number.parseFloat(popover.style.top) * scale - 40 * scale).toBeCloseTo(6);
     expect(Number.parseFloat(popover.style.right) * scale).toBeCloseTo(76);
+    expect(popover.style.maxHeight).toContain(`- ${popover.style.top} - 12px`);
   });
 });
 

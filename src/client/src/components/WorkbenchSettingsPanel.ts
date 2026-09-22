@@ -66,7 +66,7 @@ export class WorkbenchSettingsPanel extends LitElement {
     const pair = findThemePairForTheme(this.themePairs, this.themePreference.themeId);
     const currentScheme = this.themes.find((theme) => theme.id === this.themePreference.themeId)?.colorScheme;
     return html`
-      <div class="popover" role="dialog" aria-label="Workbench settings" style="top: ${String(this.anchorTop)}px; right: ${String(this.anchorRight)}px;" @keydown=${(event: KeyboardEvent) => { this.onPopoverKeyDown(event); }}>
+      <div class="popover" role="dialog" aria-label="Workbench settings" style="top: ${String(this.anchorTop)}px; right: ${String(this.anchorRight)}px; max-height: calc(var(--pi-workbench-viewport-height, 100vh) - ${String(this.anchorTop)}px - 12px);" @keydown=${(event: KeyboardEvent) => { this.onPopoverKeyDown(event); }}>
         <fieldset>
           <legend>Theme</legend>
           <label class="checkbox">
@@ -237,7 +237,7 @@ export class WorkbenchSettingsPanel extends LitElement {
     .trigger { box-sizing: border-box; width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--pi-muted); font-size: 16px; cursor: pointer; }
     .trigger:hover { border-color: var(--pi-border); color: var(--pi-text); background: var(--pi-surface-hover); }
     .trigger:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .popover { position: fixed; z-index: 20; box-sizing: border-box; width: min(260px, calc(var(--pi-workbench-viewport-width, 100vw) - 24px)); display: grid; gap: 12px; padding: 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 12px 30px var(--pi-shadow); }
+    .popover { position: fixed; z-index: 20; box-sizing: border-box; width: min(260px, calc(var(--pi-workbench-viewport-width, 100vw) - 24px)); overflow-y: auto; display: grid; gap: 12px; padding: 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 12px 30px var(--pi-shadow); }
     fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 6px; }
     legend { padding: 0; margin-bottom: 4px; color: var(--pi-text); font-size: 12px; font-weight: 700; text-transform: uppercase; }
     label { color: var(--pi-text); font-size: 13px; }
