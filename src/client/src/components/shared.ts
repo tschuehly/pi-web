@@ -461,7 +461,7 @@ export const chatStyles = css`
   .chevron .tab-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   details[open] > summary .chevron { transform: rotate(90deg); }
   .disclosure-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  pre { box-sizing: border-box; max-width: 100%; margin: 6px 0 0; overflow-x: auto; white-space: pre; font: inherit; direction: ltr; text-align: left; unicode-bidi: isolate; }
+  pre { box-sizing: border-box; max-width: 100%; margin: 6px 0 0; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; direction: ltr; text-align: left; unicode-bidi: isolate; }
   .shell-output { color: var(--pi-text); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.5; direction: ltr; text-align: left; unicode-bidi: isolate; }
   @keyframes pulse { 0%, 100% { transform: scale(.75); opacity: .55; } 50% { transform: scale(1.2); opacity: 1; } }
 `;
@@ -476,7 +476,7 @@ export const formattedTextStyles = css`
   code { border: 1px solid var(--pi-border); border-radius: 4px; background: var(--pi-bg); padding: 1px 4px; font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
   .code-block-wrapper { position: relative; }
   .code-block-wrapper pre { margin: 0; padding-right: 40px; }
-  pre { box-sizing: border-box; max-width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); padding: 10px; overflow-x: auto; overflow-y: hidden; direction: ltr; text-align: left; unicode-bidi: isolate; }
+  pre { box-sizing: border-box; max-width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); padding: 10px; overflow-x: auto; overflow-y: hidden; white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; unicode-bidi: isolate; }
   pre code { border: 0; padding: 0; background: transparent; }
   .code-copy-button { position: absolute; top: 6px; right: 6px; z-index: 1; display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 0; font: 14px system-ui, sans-serif; line-height: 1; cursor: pointer; }
   .code-copy-button:hover, .code-copy-button:focus { color: var(--pi-text); border-color: var(--pi-accent); }

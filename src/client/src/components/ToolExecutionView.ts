@@ -150,10 +150,10 @@ export class ToolExecutionView extends LitElement {
     .status-label { text-transform: uppercase; letter-spacing: .04em; color: var(--pi-muted); }
     .notice { margin: 0; color: var(--pi-warning); }
     .muted { margin: 0; color: var(--pi-muted); }
-    .error-text { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; background: color-mix(in srgb, var(--pi-danger) 7%, transparent); color: var(--pi-danger); padding: 8px; white-space: pre; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .error-text { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; background: color-mix(in srgb, var(--pi-danger) 7%, transparent); color: var(--pi-danger); padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .detail-target, .detail-result { display: grid; gap: 4px; min-width: 0; }
     .detail-label { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-    .detail-result pre { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; padding: 8px 0; white-space: pre; overflow-wrap: normal; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
+    .detail-result pre { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; padding: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
     .detail-target-value { box-sizing: border-box; max-width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-accent); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
     .diff-details { min-width: 0; max-width: 100%; padding-top: 2px; }
     .diff-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; color: var(--pi-muted); }
