@@ -126,6 +126,49 @@ describe("ChatView transcript density", () => {
     expect(root.querySelector(".activity-group summary")?.textContent).toContain("1 step");
   });
 
+  it("namespaces every anchor for text-thinking-text fragments", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [{
+      role: "assistant",
+      parts: [
+        { type: "text", text: "before" },
+        { type: "thinking", text: "thought" },
+        { type: "text", text: "after" },
+      ],
+    }];
+
+    document.body.append(view);
+    await view.updateComplete;
+
+    const anchors = Array.from(requireShadowRoot(view).querySelectorAll<HTMLElement>("[data-scroll-anchor-id]"), (element) => element.dataset["scrollAnchorId"]);
+    expect(anchors).toHaveLength(3);
+    expect(new Set(anchors).size).toBe(anchors.length);
+  });
+
+  it("namespaces every anchor for activity-thinking-activity fragments", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [{
+      role: "assistant",
+      parts: [
+        { type: "toolCall", toolCallId: "first", toolName: "read", summary: "first" },
+        { type: "thinking", text: "thought" },
+        { type: "toolCall", toolCallId: "second", toolName: "read", summary: "second" },
+      ],
+    }];
+
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const anchors = Array.from(root.querySelectorAll<HTMLElement>("[data-scroll-anchor-id]"), (element) => element.dataset["scrollAnchorId"]);
+    expect(anchors).toHaveLength(5);
+    expect(new Set(anchors).size).toBe(anchors.length);
+    const markers = Array.from(root.querySelectorAll<HTMLElement>(".scroll-marker"), (element) => element.dataset["markerId"]);
+    expect(new Set(markers).size).toBe(markers.length);
+  });
+
   it("keeps the thinking anchor mounted while collapsed activity appends", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";

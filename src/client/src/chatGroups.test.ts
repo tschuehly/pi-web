@@ -132,11 +132,13 @@ describe("groupChatMessages", () => {
     ]);
   });
 
-  it("preserves the entry id when grouping", () => {
-    const message: ChatLine = { role: "user", parts: [{ type: "text", text: "hi" }], entryId: "entry-1" };
+  it("preserves the entry id across split fragments", () => {
+    const message: ChatLine = { role: "assistant", parts: [{ type: "text", text: "before" }, { type: "thinking", text: "thought" }, { type: "text", text: "after" }], entryId: "entry-1" };
 
     expect(groupChatMessages([message])).toEqual([
-      { kind: "message", index: 0, message: { role: "user", parts: [{ type: "text", text: "hi" }], entryId: "entry-1" } },
+      { kind: "message", index: 0, message: { role: "assistant", parts: [{ type: "text", text: "before" }], entryId: "entry-1" } },
+      { kind: "group", presentation: "thinking", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "thought" }], entryId: "entry-1" }] },
+      { kind: "message", index: 0, message: { role: "assistant", parts: [{ type: "text", text: "after" }], entryId: "entry-1" } },
     ]);
   });
 
