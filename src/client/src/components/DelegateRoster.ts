@@ -10,7 +10,7 @@ function shortModel(model: string | undefined): string | undefined {
 @customElement("delegate-roster")
 export class DelegateRoster extends LitElement {
   @property({ attribute: false }) status?: SessionStatus;
-  @property({ type: Boolean, reflect: true }) collapsed = false;
+  @property({ type: Boolean }) collapsed = false;
   @property({ attribute: false }) onToggleCollapsed?: () => void;
 
   override render() {
@@ -21,15 +21,15 @@ export class DelegateRoster extends LitElement {
     return html`
       <section aria-label="Workers and Subagents">
         <header>
-          <button class="section-toggle" aria-expanded=${String(!this.collapsed)} aria-controls="delegate-roster-rows" @click=${() => { this.onToggleCollapsed?.(); }}>
+          <button type="button" class="section-toggle" aria-expanded=${String(!this.collapsed)} aria-controls="delegate-roster-rows" @click=${() => { this.onToggleCollapsed?.(); }}>
             <span class="section-title">
               <span class="section-name"><span class="chevron" aria-hidden="true">${this.collapsed ? "▸" : "▾"}</span> Workers & Subagents</span>
-              <small class="aggregate" aria-live="polite">${String(running)} running · ${String(uncollected)} uncollected</small>
+              <small class="aggregate">${String(running)} running · ${String(uncollected)} uncollected</small>
             </span>
             <small class="section-count" aria-label=${`${String(items.length)} total`}>${String(items.length)}</small>
           </button>
         </header>
-        ${this.collapsed ? null : html`<div class="rows" id="delegate-roster-rows">${items.map((item) => {
+        <div class="rows" id="delegate-roster-rows" ?hidden=${this.collapsed}>${items.map((item) => {
           const terminal = isTerminalDelegate(item);
           const inferredActivity = item.activity ?? "starting";
           const activity = item.reportedStatus ?? `No status report · ${inferredActivity}`;
@@ -48,7 +48,7 @@ export class DelegateRoster extends LitElement {
             <span class="activity" title=${activity} aria-label=${activityLabel}>${activity}</span>
             <span class="state ${terminal ? "uncollected" : "running"}" role="img" aria-label=${stateLabel} title=${stateLabel}></span>
           </div>`;
-        })}</div>`}
+        })}</div>
       </section>
     `;
   }
@@ -64,6 +64,7 @@ export class DelegateRoster extends LitElement {
     .aggregate { min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
     .section-count { flex: 0 0 auto; color: var(--pi-muted); font-size: 10px; }
     .rows { display: grid; gap: 2px; }
+    .rows[hidden] { display: none; }
     .row { min-width: 0; display: grid; grid-template-columns: 8px minmax(105px, 180px) minmax(160px, 1.5fr) minmax(180px, 1.2fr) 8px; align-items: center; gap: 8px; padding: 3px 5px; border-radius: 5px; color: var(--pi-text); font-size: 11px; }
     .row:nth-child(odd) { background: color-mix(in srgb, var(--pi-surface-hover) 45%, transparent); }
     .terminal { opacity: .72; }
@@ -78,6 +79,8 @@ export class DelegateRoster extends LitElement {
     .activity { color: var(--pi-muted); }
     @media (max-width: 700px) {
       section { padding-inline: 6px; }
+      .aggregate { order: -1; flex: 0 0 auto; }
+      .section-name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .row { grid-template-columns: 8px minmax(70px, .7fr) minmax(70px, 1fr) minmax(90px, 1.2fr) 8px; gap: 6px; padding-inline: 3px; }
       .meta { display: none; }
     }

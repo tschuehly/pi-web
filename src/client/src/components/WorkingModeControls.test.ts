@@ -66,10 +66,14 @@ describe("DelegateRoster", () => {
     await element.updateComplete;
     const rows = [...root(element).querySelectorAll<HTMLElement>(".row")];
     expect(rows).toHaveLength(2);
-    expect(root(element).querySelector(".section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+    const toggle = required(root(element).querySelector<HTMLButtonElement>(".section-toggle"));
+    expect(toggle.type).toBe("button");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(root(element).querySelector(".section-name")?.textContent).toContain("Workers & Subagents");
     expect(root(element).querySelector(".section-count")?.textContent).toBe("2");
     expect(root(element).querySelector(".aggregate")?.textContent).toBe("1 running · 1 uncollected");
+    expect(root(element).querySelector(".aggregate")?.hasAttribute("aria-live")).toBe(false);
+    expect(root(element).querySelector("#delegate-roster-rows")?.hasAttribute("hidden")).toBe(false);
     const running = required(rows[0]);
     expect(running.querySelector(".kind")?.getAttribute("aria-label")).toBe("Subagent");
     expect(running.querySelector(".state")?.getAttribute("aria-label")).toBe("Running");
@@ -103,8 +107,11 @@ describe("DelegateRoster", () => {
     toggle.click();
     await element.updateComplete;
     expect(element.collapsed).toBe(true);
+    expect(element.hasAttribute("collapsed")).toBe(false);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(root(element).querySelectorAll(".row")).toHaveLength(0);
+    expect(toggle.getAttribute("aria-controls")).toBe("delegate-roster-rows");
+    expect(root(element).querySelector<HTMLElement>("#delegate-roster-rows")?.hidden).toBe(true);
+    expect(root(element).querySelectorAll(".row")).toHaveLength(2);
     expect(root(element).querySelector(".aggregate")?.textContent).toBe("1 running · 1 uncollected");
 
     element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
@@ -118,12 +125,15 @@ describe("DelegateRoster", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(root(element).querySelector(".section-count")?.textContent).toBe("3");
     expect(root(element).querySelector(".aggregate")?.textContent).toBe("2 running · 1 uncollected");
-    expect(root(element).querySelectorAll(".row")).toHaveLength(0);
+    expect(root(element).querySelector<HTMLElement>("#delegate-roster-rows")?.hidden).toBe(true);
+    expect(root(element).querySelectorAll(".row")).toHaveLength(3);
 
     toggle.click();
     await element.updateComplete;
     expect(element.collapsed).toBe(false);
+    expect(root(element).querySelector<HTMLElement>("#delegate-roster-rows")?.hidden).toBe(false);
     expect(root(element).querySelectorAll(".row")).toHaveLength(3);
+    expect(DelegateRoster.styles.cssText).toMatch(/@media \(max-width: 700px\)[\s\S]*\.aggregate\s*\{[^}]*order:\s*-1/);
   });
 
   it("falls back to inferred activity when reportedStatus is absent", async () => {

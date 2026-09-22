@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type Machine, type Project, type SessionInfo, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
+import { ACTIVITY_STATUS_KEY } from "../extensionStatusSnapshots";
 import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
@@ -583,7 +584,16 @@ describe("Workbench Chat controls", () => {
   it("mounts the delegate roster and Working Mode controls beside the composer", async () => {
     const current = session("current", "Build the UI");
     const app = await mountChooser([current]);
-    setState(app, { ...getState(app), selectedSession: current });
+    setState(app, {
+      ...getState(app),
+      selectedSession: current,
+      status: {
+        sessionId: current.id, isStreaming: false, isCompacting: false, isBashRunning: false,
+        pendingMessageCount: 0, queuedMessages: [],
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+        extensionStatuses: { [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "worker-1", kind: "worker", activity: "running" }] }) },
+      },
+    });
     await app.updateComplete;
 
     const shell = app.shadowRoot?.querySelector(".chat-shell");
@@ -595,7 +605,10 @@ describe("Workbench Chat controls", () => {
     const roster = shell.querySelector("delegate-roster");
     if (!(roster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered");
     expect(roster.collapsed).toBe(false);
-    roster.onToggleCollapsed?.();
+    await roster.updateComplete;
+    const rosterToggle = roster.shadowRoot?.querySelector<HTMLButtonElement>(".section-toggle");
+    if (rosterToggle === null || rosterToggle === undefined) throw new Error("Delegate roster toggle was not rendered");
+    rosterToggle.click();
     await app.updateComplete;
     const collapsedRoster = app.shadowRoot?.querySelector("delegate-roster");
     if (!(collapsedRoster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered after collapse");
