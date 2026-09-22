@@ -96,6 +96,19 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(FakeBrowserNotification.requestPermission).toHaveBeenCalledOnce(); });
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector('button[aria-label="Enable desktop notifications"]')).toBeNull();
+    expect(app.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("browser's site settings");
+  });
+
+  it("keeps denied browser permission guidance visible after reload in the chooser and Chat", async () => {
+    FakeBrowserNotification.permission = "denied";
+    vi.stubGlobal("Notification", FakeBrowserNotification);
+    const app = await mountChooser([]);
+
+    expect(app.shadowRoot?.querySelector('button[aria-label="Enable desktop notifications"]')).toBeNull();
+    expect(app.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("browser's site settings");
+    setState(app, { ...getState(app), selectedSession: session("denied", "Chat") });
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector('[data-view="chat"] [role="alert"]')?.textContent).toContain("browser's site settings");
   });
 
   it("shows a native permission failure in the chooser without hiding the retry control", async () => {

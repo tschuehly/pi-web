@@ -50,7 +50,7 @@ export class DesktopNotificationController {
     try {
       await this.browser.requestPermission();
       this.diagnostic = this.browser.permission() === "denied"
-        ? "Desktop notification permission was denied. Enable notifications in your browser or System Settings."
+        ? BROWSER_PERMISSION_DENIED
         : this.browser.diagnostic;
     } catch (error) {
       this.diagnostic = notificationDiagnostic(error, "permission");
@@ -144,6 +144,7 @@ export class DesktopNotificationController {
 }
 
 const NATIVE_NOTIFICATION_PERMISSION_KEY = "pi-web:native-notifications:permission";
+const BROWSER_PERMISSION_DENIED = "Desktop notification permission was denied. Enable notifications for PI WEB in your browser's site settings (and System Settings if needed), then reload.";
 
 export function desktopNotifications(
   nativeHost: PiWebNativeHost | undefined = typeof window === "undefined" ? undefined : window.piWebNative,
@@ -151,12 +152,16 @@ export function desktopNotifications(
 ): DesktopNotificationBrowser {
   if (supportsNativeNotifications(nativeHost)) return nativeDesktopNotifications(nativeHost, storage);
   const browser = browserDesktopNotifications();
-  if (nativeHost !== undefined) browser.diagnostic = "The installed app's native notification bridge is missing. Update the app to enable native notifications; browser notifications remain available.";
+  if (nativeHost !== undefined) {
+    const bridgeDiagnostic = "The installed app's native notification bridge is missing. Update the app to enable native notifications; browser notifications remain available.";
+    browser.diagnostic = browser.diagnostic === undefined ? bridgeDiagnostic : `${bridgeDiagnostic} ${browser.diagnostic}`;
+  }
   return browser;
 }
 
 export function browserDesktopNotifications(): DesktopNotificationBrowser {
   return {
+    ...(typeof Notification !== "undefined" && Notification.permission === "denied" ? { diagnostic: BROWSER_PERMISSION_DENIED } : {}),
     permission: () => typeof Notification === "undefined" ? "unsupported" : Notification.permission,
     requestPermission: () => Notification.requestPermission(),
     isBackground: () => document.hidden || !document.hasFocus(),

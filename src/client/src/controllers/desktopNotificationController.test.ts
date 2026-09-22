@@ -152,6 +152,18 @@ describe("DesktopNotificationController", () => {
     expect(test.controller.canRequestPermission()).toBe(false);
   });
 
+  it("diagnoses browser permission already denied before a request, including an incomplete native bridge", () => {
+    vi.stubGlobal("Notification", { permission: "denied" });
+    const browser = desktopNotifications(undefined, memoryStorage());
+    const controller = new DesktopNotificationController(browser);
+    const incomplete = desktopNotifications({ pickDirectory: () => Promise.resolve(null) }, memoryStorage());
+
+    expect(controller.diagnostic).toContain("browser's site settings");
+    expect(controller.canRequestPermission()).toBe(false);
+    expect(incomplete.diagnostic).toContain("native notification bridge");
+    expect(incomplete.diagnostic).toContain("browser's site settings");
+  });
+
   it("prefers native notifications and persists explicit enablement", async () => {
     const storage = memoryStorage();
     const host = nativeHost();
@@ -160,6 +172,7 @@ describe("DesktopNotificationController", () => {
     const adapter = desktopNotifications(host, storage);
 
     expect(adapter.permission()).toBe("default");
+    expect(new DesktopNotificationController(adapter).diagnostic).toBeUndefined();
     await adapter.requestPermission();
 
     expect(host.requestNotificationPermission).toHaveBeenCalledOnce();
