@@ -52,8 +52,9 @@ describe("PI WEB interface scale preference", () => {
   it.each([0.8, 1, 1.25, 1.5])("applies zoom and the shared active-scale property at %s", (scale) => {
     const setProperty = vi.fn();
     applyInterfaceScale(scale, { style: { setProperty } });
-    expect(setProperty).toHaveBeenNthCalledWith(1, "zoom", String(scale));
-    expect(setProperty).toHaveBeenNthCalledWith(2, INTERFACE_SCALE_CSS_PROPERTY, String(scale));
+    expect(setProperty).toHaveBeenCalledTimes(2);
+    expect(setProperty).toHaveBeenCalledWith("zoom", String(scale));
+    expect(setProperty).toHaveBeenCalledWith(INTERFACE_SCALE_CSS_PROPERTY, String(scale));
   });
 
   it("steps up through the supported sizes and clamps at the maximum", () => {

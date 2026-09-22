@@ -485,8 +485,10 @@ function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: W
 }
 
 describe("Workbench interface scale shortcuts", () => {
-  it("sizes the fixed Workbench host against the unzoomed physical viewport", () => {
-    expect(WorkbenchApp.styles.cssText).toMatch(/:host\s*\{[^}]*height:\s*calc\(100dvh\s*\/\s*var\(--pi-interface-scale,\s*1\)\)/);
+  it("sizes the fixed Workbench host against inherited compensated viewport dimensions", () => {
+    expect(WorkbenchApp.styles.cssText).toMatch(/:host\s*\{[^}]*--pi-workbench-viewport-height:\s*calc\(100dvh\s*\/\s*var\(--pi-interface-scale,\s*1\)\)/);
+    expect(WorkbenchApp.styles.cssText).toMatch(/:host\s*\{[^}]*--pi-workbench-viewport-width:\s*calc\(100dvw\s*\/\s*var\(--pi-interface-scale,\s*1\)\)/);
+    expect(WorkbenchApp.styles.cssText).toMatch(/:host\s*\{[^}]*height:\s*var\(--pi-workbench-viewport-height\)/);
   });
 
   it("steps the stored scale up, down, and back to the default on Cmd/Ctrl +/-/0", async () => {
