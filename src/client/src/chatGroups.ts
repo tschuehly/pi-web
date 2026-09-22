@@ -36,31 +36,12 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
 
   const pushGroup = (message: ChatLine, index: number, presentation?: ChatGroupPresentation) => {
     const previous = groups.at(-1);
-    const before = groups.at(-2);
-    if (presentation === "thinking" && previous?.kind === "group" && previous.presentation === "activity" && before?.kind === "group" && before.presentation === "thinking") {
-      before.messages.push(...previous.messages, message);
-      before.messageIndices = [...(groupIndices.get(before) ?? []), ...(groupIndices.get(previous) ?? []), index];
-      groupIndices.set(before, before.messageIndices);
-      before.endIndex = index;
-      groups.pop();
+    // Fold routine activity as it arrives: a later thinking/skill line must not reparent its live DOM node.
+    if (previous?.kind === "group" && previous.presentation === "thinking" && (presentation === "activity" || message.parts.every((part) => part.type === "skillRead"))) {
+      previous.messages.push(message);
+      previous.messageIndices = [...(previous.messageIndices ?? groupIndices.get(previous) ?? []), index];
+      previous.endIndex = index;
       return;
-    }
-    // Skill reads stay visible as compact lines but may bridge thinking without splitting it.
-    if (message.parts.every((part) => part.type === "skillRead") && previous?.kind === "group") {
-      const thinking = previous.presentation === "thinking" ? previous : previous.presentation === "activity" && before?.kind === "group" && before.presentation === "thinking" ? before : undefined;
-      if (thinking !== undefined) {
-        if (thinking !== previous) {
-          thinking.messages.push(...previous.messages);
-          thinking.messageIndices = [...(groupIndices.get(thinking) ?? []), ...(groupIndices.get(previous) ?? [])];
-          groupIndices.set(thinking, thinking.messageIndices);
-          groups.pop();
-        }
-        thinking.messages.push(message);
-        thinking.messageIndices = [...(thinking.messageIndices ?? groupIndices.get(thinking) ?? []), index];
-        groupIndices.set(thinking, thinking.messageIndices);
-        thinking.endIndex = index;
-        return;
-      }
     }
     if (previous?.kind === "group" && previous.presentation === presentation) {
       previous.messages.push(message);
@@ -112,8 +93,7 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
 
 function skillContinuesThinking(groups: ChatGroup[]): boolean {
   const previous = groups.at(-1);
-  const before = groups.at(-2);
-  return previous?.kind === "group" && (previous.presentation === "thinking" || previous.presentation === "activity" && before?.kind === "group" && before.presentation === "thinking");
+  return previous?.kind === "group" && previous.presentation === "thinking";
 }
 
 export function summarizeChatGroup(messages: ChatLine[]): string {

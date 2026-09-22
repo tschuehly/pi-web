@@ -137,6 +137,41 @@ describe("ChatView transcript density", () => {
     expect(root.querySelectorAll(".activity-group")).toHaveLength(1);
   });
 
+  it("folds live pending/running Activity before trailing thinking without moving or resetting its disclosure", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    const first = { role: "assistant" as const, parts: [{ type: "thinking" as const, text: "before" }] };
+    const tool = (status: "pending" | "running") => ({ role: "tool" as const, parts: [{ type: "toolExecution" as const, toolCallId: "read-1", toolName: "read", summary: "file", status }] });
+    const last = { role: "assistant" as const, parts: [{ type: "thinking" as const, text: "after" }] };
+    view.messages = [first];
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const thinking = root.querySelector<HTMLDetailsElement>(".thinking-group");
+    view.messages = [first, tool("pending")];
+    await view.updateComplete;
+    const activity = thinking?.querySelector<HTMLDetailsElement>(".activity-group");
+    expect(activity).not.toBeNull();
+    expect(root.querySelectorAll(".activity-group")).toHaveLength(1);
+    activity?.querySelector("summary")?.click();
+    expect(activity?.open).toBe(true);
+
+    view.messages = [first, tool("running")];
+    await view.updateComplete;
+    expect(root.querySelector(".thinking-group")).toBe(thinking);
+    expect(thinking?.querySelector(".activity-group")).toBe(activity);
+    expect(activity?.open).toBe(true);
+
+    view.messages = [first, tool("running"), last];
+    await view.updateComplete;
+    expect(root.querySelectorAll(".thinking-group")).toHaveLength(1);
+    expect(root.querySelector(".thinking-group")).toBe(thinking);
+    expect(thinking?.querySelector(".activity-group")).toBe(activity);
+    expect(activity?.open).toBe(true);
+    expect(Array.from(thinking?.querySelectorAll("formatted-text, .activity-group") ?? [], (element) => element.localName)).toEqual(["formatted-text", "details", "formatted-text"]);
+  });
+
   it("renders skill lines between thinking segments once and without a separate header", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
@@ -318,7 +353,7 @@ describe("ChatView transcript density", () => {
 
     const root = requireShadowRoot(view);
     const anchors = Array.from(root.querySelectorAll<HTMLElement>("[data-scroll-anchor-id]"), (element) => element.dataset["scrollAnchorId"]);
-    expect(anchors).toHaveLength(5);
+    expect(anchors).toHaveLength(4);
     expect(new Set(anchors).size).toBe(anchors.length);
     const markers = Array.from(root.querySelectorAll<HTMLElement>(".scroll-marker"), (element) => element.dataset["markerId"]);
     expect(new Set(markers).size).toBe(markers.length);
@@ -343,7 +378,8 @@ describe("ChatView transcript density", () => {
     await view.updateComplete;
 
     expect(root.querySelector('[data-scroll-anchor-id="g:8"]')).toBe(group);
-    const activity = root.querySelector<HTMLDetailsElement>('[data-scroll-anchor-id="g:9"].activity-group');
+    const activity = group?.querySelector<HTMLDetailsElement>(".activity-group");
+    expect(root.querySelectorAll(".activity-group")).toHaveLength(1);
     expect(activity).not.toBeNull();
     expect(activity?.open).toBe(false);
     expect(activity?.querySelector(".tool-result")?.textContent).toContain("read result");

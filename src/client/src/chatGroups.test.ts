@@ -13,8 +13,10 @@ describe("groupChatMessages", () => {
     ];
 
     expect(groupChatMessages(messages, 10)).toEqual([
-      { kind: "group", presentation: "thinking", startIndex: 10, endIndex: 10, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "plan" }] }] },
-      { kind: "group", presentation: "activity", startIndex: 10, endIndex: 10, messages: [{ role: "assistant", parts: [{ type: "toolCall", toolName: "read", summary: "file" }] }] },
+      { kind: "group", presentation: "thinking", startIndex: 10, endIndex: 10, messages: [
+        { role: "assistant", parts: [{ type: "thinking", text: "plan" }] },
+        { role: "assistant", parts: [{ type: "toolCall", toolName: "read", summary: "file" }] },
+      ], messageIndices: [10, 10] },
       { kind: "message", index: 11, message: text("assistant", "visible answer") },
       { kind: "group", presentation: "activity", startIndex: 12, endIndex: 12, messages: [messages[2]] },
     ]);
