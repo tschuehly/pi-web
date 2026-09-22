@@ -58,14 +58,14 @@ export class WorkstreamContextDrawer extends LitElement {
     summary strong { flex: 1 1 auto; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
     .tab { overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
     .fallback-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sheet { position: absolute; top: 100%; left: 0; right: 0; max-height: calc(var(--pi-workbench-viewport-height, 100vh) - 56px); overflow: auto; display: grid; padding: 20px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); box-shadow: 0 18px 48px var(--pi-shadow); }
+    .sheet { --sheet-tint: color-mix(in srgb, var(--pi-purple-surface) 36%, transparent); --sheet-paint: linear-gradient(var(--sheet-tint), var(--sheet-tint)); position: absolute; top: 100%; left: 0; right: 0; max-height: calc(var(--pi-workbench-viewport-height, 100vh) - 56px); overflow: auto; display: grid; padding: 20px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: var(--sheet-paint) var(--pi-surface); box-shadow: 0 18px 48px var(--pi-shadow); }
     .row { position: relative; padding: 18px 0 12px; border-top: 1px solid var(--pi-border-muted); }
-    .label { position: absolute; top: 0; left: 0; padding-right: 10px; color: var(--pi-text); background: color-mix(in srgb, var(--pi-purple-surface) 36%, var(--pi-surface)); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; transform: translateY(-50%); }
+    .label { position: absolute; top: 0; left: 0; padding-right: 10px; color: var(--pi-text); background: var(--sheet-paint) var(--pi-surface); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; transform: translateY(-50%); }
     p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
     .goal { width: 100%; font-size: 18px; font-weight: 750; line-height: 1.35; }
     .about p { color: var(--pi-text); }
-    .next { margin: 8px 0 4px; padding: 18px 12px 12px; border: 1px solid var(--pi-success-border); border-radius: 9px; background: var(--pi-success-bg); }
-    .next .label { left: 12px; background: var(--pi-success-bg); }
+    .next { margin: 8px 0 4px; padding: 18px 12px 12px; border: 1px solid var(--pi-success-border); border-radius: 9px; background: linear-gradient(var(--pi-success-bg), var(--pi-success-bg)), var(--sheet-paint) var(--pi-surface); }
+    .next .label { left: 12px; background: linear-gradient(var(--pi-success-bg), var(--pi-success-bg)), var(--sheet-paint) var(--pi-surface); }
     @media (forced-colors: active) {
       details { border-left-color: LinkText; }
       summary { background: Canvas; }

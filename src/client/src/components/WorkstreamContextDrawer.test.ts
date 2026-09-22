@@ -91,7 +91,10 @@ describe("WorkstreamContextDrawer", () => {
     expect(root?.textContent).toContain("The Workstream joins project navigation");
     expect(root?.textContent).toContain("Thomas chooses the preferred drawer.");
     expect(root?.querySelectorAll(".row > .label")).toHaveLength(4);
+    expect(root?.querySelector(".next > .label")?.textContent).toBe("Do next");
     expect(details?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor(snapshot.id));
+    summary?.click();
+    expect(details?.open).toBe(false);
   });
 
   it("shows the Chat title in the existing status tab when no Workstream is associated", async () => {
