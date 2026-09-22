@@ -1,9 +1,11 @@
 import type { ChatLine, ChatPart } from "./components/shared";
 
+export type ChatGroupPresentation = "activity" | "thinking" | "history";
+
 export type ChatGroup =
   | { kind: "message"; message: ChatLine; index: number }
   | { kind: "tool-image"; message: ChatLine; index: number; toolName?: string }
-  | { kind: "group"; messages: ChatLine[]; startIndex: number; endIndex: number; presentation?: "activity" | "thinking" };
+  | { kind: "group"; messages: ChatLine[]; startIndex: number; endIndex: number; presentation?: ChatGroupPresentation };
 
 export interface CurrentExchangeGroups {
   history: ChatGroup[];
@@ -31,7 +33,7 @@ export function currentExchangeGroups(messages: ChatLine[], groups: ChatGroup[],
 export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGroup[] {
   const groups: ChatGroup[] = [];
 
-  const pushGroup = (message: ChatLine, index: number, presentation?: "activity" | "thinking") => {
+  const pushGroup = (message: ChatLine, index: number, presentation?: ChatGroupPresentation) => {
     const previous = groups.at(-1);
     if (previous?.kind === "group" && previous.presentation === presentation) {
       previous.messages.push(message);
@@ -45,7 +47,7 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
     const index = indexOffset + localIndex;
     const metadata = { ...(message.entryId === undefined ? {} : { entryId: message.entryId }), ...(message.source === undefined ? {} : { source: message.source }), ...(message.severity === undefined ? {} : { severity: message.severity }), ...(message.meta === undefined ? {} : { meta: message.meta }) };
     let run: ChatPart[] = [];
-    let runKind: "activity" | "thinking" | "event" | "readable" | undefined;
+    let runKind: ChatGroupPresentation | "event" | "readable" | undefined;
 
     const flush = () => {
       if (runKind === undefined || run.length === 0) return;
@@ -57,6 +59,7 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
       const splitMessage: ChatLine = { role, parts, ...metadata };
       if (kind === "thinking") pushGroup(splitMessage, index, "thinking");
       else if (kind === "activity") pushGroup(splitMessage, index, "activity");
+      else if (kind === "history") pushGroup(splitMessage, index, "history");
       else if (kind === "event") pushGroup(splitMessage, index);
       else if (isToolImageMessage(splitMessage)) {
         const toolName = toolNameFromParts(message.parts);
@@ -78,6 +81,7 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
 export function summarizeChatGroup(messages: ChatLine[]): string {
   if (messages.every((message) => message.source === "compaction")) return `${String(messages.length)} history compaction ${messages.length === 1 ? "summary" : "summaries"}`;
   if (messages.every((message) => message.source === "branch_summary")) return `${String(messages.length)} branch ${messages.length === 1 ? "summary" : "summaries"}`;
+  if (messages.every((message) => message.source === "compaction" || message.source === "branch_summary")) return `${String(messages.length)} history summaries`;
   const counts = messages.reduce<Record<string, number>>((acc, message) => {
     acc[message.role] = (acc[message.role] ?? 0) + 1;
     return acc;
@@ -97,8 +101,8 @@ function toolNameFromParts(parts: ChatPart[]): string | undefined {
   return undefined;
 }
 
-function chatPartKind(message: ChatLine, part: ChatPart): "activity" | "thinking" | "event" | "readable" {
-  if (message.source === "compaction" || message.source === "branch_summary") return "event";
+function chatPartKind(message: ChatLine, part: ChatPart): ChatGroupPresentation | "event" | "readable" {
+  if (message.source === "compaction" || message.source === "branch_summary") return "history";
   if (part.type === "thinking") return "thinking";
   if (part.type === "toolCall" && message.severity !== "error") return "activity";
   if (part.type === "toolExecution" && part.status === "success" && message.severity !== "error" && !hasMaterialFileDiff(part.details, part.preview?.diff)) return "activity";

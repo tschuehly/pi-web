@@ -3,6 +3,7 @@ import { historyMessagesFromEntries } from "./transcriptMessages.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import { projectBrowserMessageResponse } from "../browserMessageProjection.js";
 import { parseMessagePage } from "../../client/src/api/parsers.js";
+import { groupChatMessages } from "../../client/src/chatGroups.js";
 import { normalizeMessages } from "../../client/src/chatMessages.js";
 
 describe("durable transcript identity", () => {
@@ -33,6 +34,23 @@ describe("durable transcript identity", () => {
     expect(linesForPage()[1]?.meta?.thinkingLevel).toBe("high");
     expect(historyMessagesFromEntries(entries)).toEqual(messages);
     expect(entries).toEqual(original);
+  });
+
+  it("filters out aborted and model_change entries but preserves the compaction boundary with user entries", () => {
+    const summary = `## Goal\n${"x".repeat(19_732 - "## Goal\n".length)}`;
+    const lines = normalizeMessages(historyMessagesFromEntries([
+      { type: "message", id: "aborted", message: { role: "assistant", content: [], stopReason: "aborted", errorMessage: "Request aborted" } },
+      { type: "compaction", id: "compact", summary },
+      { type: "model_change", id: "model", provider: "openai-codex", modelId: "gpt-5.6-sol" },
+      { type: "message", id: "user", message: { role: "user", content: "Continue" } },
+    ]));
+
+    expect(lines.map((line) => line.entryId)).toEqual(["compact", "user"]);
+    expect(lines[0]?.parts).toEqual([{ type: "text", text: `Compacted history:\n\n${summary}` }]);
+    expect(groupChatMessages(lines)).toEqual([
+      { kind: "group", presentation: "history", startIndex: 0, endIndex: 0, messages: [lines[0]] },
+      { kind: "message", index: 1, message: lines[1] },
+    ]);
   });
 
   it("does not invent IDs for entries without durable identity", () => {

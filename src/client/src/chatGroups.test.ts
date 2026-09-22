@@ -142,16 +142,33 @@ describe("groupChatMessages", () => {
     ]);
   });
 
-  it("treats compaction and branch summaries as grouped events", () => {
+  it("isolates long history summaries from adjacent technical and user events", () => {
+    const summary = `## Goal\n${"preserve this history exactly\n".repeat(700)}`;
+    const aborted: ChatLine = { role: "system", parts: [{ type: "text", text: "Request aborted" }], severity: "error" };
+    const compaction: ChatLine = { ...text("system", summary), source: "compaction" };
+    const modelChange: ChatLine = text("system", "Model changed to openai-codex/gpt-5.6-sol");
+    const user = text("user", "Continue");
+
+    const groups = groupChatMessages([aborted, compaction, modelChange, user]);
+
+    expect(groups).toEqual([
+      { kind: "message", index: 0, message: aborted },
+      { kind: "group", presentation: "history", startIndex: 1, endIndex: 1, messages: [compaction] },
+      { kind: "message", index: 2, message: modelChange },
+      { kind: "message", index: 3, message: user },
+    ]);
+    expect((groups[1]?.kind === "group" ? groups[1].messages[0]?.parts[0] : undefined)).toEqual({ type: "text", text: summary });
+  });
+
+  it("keeps adjacent compaction and branch summaries in one history group", () => {
     const messages: ChatLine[] = [
       { ...text("assistant", "summary"), source: "compaction" },
       { ...text("assistant", "branch"), source: "branch_summary" },
     ];
 
-    const groups = groupChatMessages(messages);
-
-    expect(groups).toHaveLength(1);
-    expect(groups[0]).toMatchObject({ kind: "group", startIndex: 0, endIndex: 1 });
+    expect(groupChatMessages(messages)).toEqual([
+      { kind: "group", presentation: "history", startIndex: 0, endIndex: 1, messages },
+    ]);
   });
 
   it("keeps a stable group end index when older events are prepended into a group", () => {
@@ -170,6 +187,10 @@ describe("summarizeChatGroup", () => {
       { ...text("assistant", "a"), source: "branch_summary" },
       { ...text("assistant", "b"), source: "branch_summary" },
     ])).toBe("2 branch summaries");
+    expect(summarizeChatGroup([
+      { ...text("assistant", "a"), source: "compaction" },
+      { ...text("assistant", "b"), source: "branch_summary" },
+    ])).toBe("2 history summaries");
   });
 
   it("summarizes mixed groups by role counts", () => {

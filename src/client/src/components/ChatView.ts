@@ -1,7 +1,7 @@
-import { LitElement, html } from "lit";
+import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import { currentExchangeGroups, groupChatMessages, type ChatGroup } from "../chatGroups";
+import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
@@ -111,7 +111,7 @@ export function chatMessageAnchorKey(index: number): string {
 }
 
 /** The stable scroll-anchor/render key for an event group starting at `startIndex`. */
-export function chatGroupAnchorKey(startIndex: number, presentation?: "activity" | "thinking" | "events", occurrence = 0): string {
+export function chatGroupAnchorKey(startIndex: number, presentation?: ChatGroupPresentation | "events", occurrence = 0): string {
   const base = `g:${String(startIndex)}`;
   return presentation === undefined ? base : `${base}:${presentation}:${String(occurrence)}`;
 }
@@ -122,7 +122,7 @@ export function chatEventAnchorKey(index: number): string {
 }
 
 /** The stable scroll-marker id emitted before an event group ending at `endIndex`. */
-export function chatGroupScrollMarkerId(endIndex: number, presentation?: "activity" | "thinking" | "events", occurrence = 0): string {
+export function chatGroupScrollMarkerId(endIndex: number, presentation?: ChatGroupPresentation | "events", occurrence = 0): string {
   const base = `g:${String(endIndex)}`;
   return presentation === undefined ? base : `${base}:${presentation}:${String(occurrence)}`;
 }
@@ -905,8 +905,15 @@ export class ChatView extends LitElement {
     return message.parts.length > 0 && message.parts.every((part) => part.type === "skillRead");
   }
 
-  private renderMessageGroup(messages: ChatLine[], startIndex: number, anchorId: string, markerId: string, presentation: "activity" | "thinking" | undefined, groups: ChatGroup[], groupIndex: number) {
+  private renderMessageGroup(messages: ChatLine[], startIndex: number, anchorId: string, markerId: string, presentation: ChatGroupPresentation | undefined, groups: ChatGroup[], groupIndex: number) {
     const marker = this.renderScrollMarker(markerId);
+    if (presentation === "history") return html`
+      ${marker}
+      <details class="event-group history-summary-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId}>
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><strong>${summarizeChatGroup(messages)}</strong><span>Context compacted</span></summary>
+        <div class="group-body">${this.renderMessageGroupBody(messages, startIndex, groups, groupIndex)}</div>
+      </details>
+    `;
     if (presentation === "activity") return html`
       ${marker}
       <details class="event-group activity-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId}>
@@ -1442,12 +1449,20 @@ export class ChatView extends LitElement {
     return occurrence === 0 ? base : `${base}:${String(occurrence)}`;
   }
 
-  private groupScrollMarkerId(groups: ChatGroup[], index: number, endIndex: number, presentation?: "activity" | "thinking"): string {
+  private groupScrollMarkerId(groups: ChatGroup[], index: number, endIndex: number, presentation?: ChatGroupPresentation): string {
     const preceding = groups.slice(0, index).filter((group) => group.kind === "group" && group.endIndex === endIndex);
     if (preceding.length === 0) return chatGroupScrollMarkerId(endIndex);
     const occurrence = preceding.filter((group) => group.kind === "group" && group.presentation === presentation).length;
     return chatGroupScrollMarkerId(endIndex, presentation ?? "events", occurrence);
   }
 
-  static override styles = chatStyles;
+  static override styles = [chatStyles, css`
+    .history-summary-group { border: 1px solid var(--pi-border); border-left: 3px solid var(--pi-accent); border-radius: 8px; background: color-mix(in srgb, var(--pi-accent) 6%, var(--pi-surface)); }
+    .history-summary-group > summary { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 10px; color: var(--pi-muted); list-style: none; cursor: pointer; }
+    .history-summary-group > summary::-webkit-details-marker { display: none; }
+    .history-summary-group > summary strong { color: var(--pi-text); }
+    .history-summary-group > summary span:last-child { margin-left: auto; font-size: 11px; text-transform: uppercase; }
+    .history-summary-group > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .history-summary-group > .group-body { padding: 6px 10px 10px 31px; border-top: 1px solid var(--pi-border-muted); }
+  `];
 }

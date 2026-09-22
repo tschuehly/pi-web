@@ -80,6 +80,60 @@ describe("ChatView transcript density", () => {
     expect(tool.shadowRoot?.querySelector(".error-text")?.textContent).toBe("read failed");
   });
 
+  it("renders a long compaction summary once behind an accessible history boundary", async () => {
+    const summary = `## Goal\n${"x".repeat(19_732 - "## Goal\n".length)}`;
+    const sourceText = `Compacted history:\n\n${summary}`;
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [
+      { role: "system", severity: "error", parts: [{ type: "text", text: "Request aborted" }] },
+      { role: "system", source: "compaction", parts: [{ type: "text", text: sourceText }] },
+      { role: "system", parts: [{ type: "text", text: "Model changed to openai-codex/gpt-5.6-sol" }] },
+      { role: "user", parts: [{ type: "text", text: "Continue" }] },
+    ];
+
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const boundary = root.querySelector<HTMLDetailsElement>("details.history-summary-group");
+    if (boundary === null) throw new Error("Expected history summary disclosure");
+    const toggle = boundary.querySelector<HTMLElement>("summary");
+    const formatted = boundary.querySelectorAll<FormattedText>("formatted-text");
+    expect(boundary.open).toBe(false);
+    expect(toggle?.textContent).toContain("1 history compaction summary");
+    expect(toggle?.textContent).toContain("Context compacted");
+    expect(toggle?.tagName).toBe("SUMMARY");
+    toggle?.focus();
+    expect(root.activeElement).toBe(toggle);
+    expect(formatted).toHaveLength(1);
+    expect(formatted[0]?.text).toBe(sourceText);
+    expect(root.querySelectorAll(".history-summary-group")).toHaveLength(1);
+    expect(root.querySelectorAll("article.msg.system")).toHaveLength(2);
+    expect(root.querySelectorAll("article.msg.user")).toHaveLength(1);
+    expect(styleText(ChatView.styles)).toMatch(/\.history-summary-group\s*\{[^}]*border-left:\s*3px solid var\(--pi-accent\)/u);
+
+    toggle?.click();
+    expect(boundary.open).toBe(true);
+    await formatted[0]?.updateComplete;
+    expect(formatted[0]?.shadowRoot?.textContent).toContain("Goal");
+    expect(formatted[0]?.shadowRoot?.textContent).toContain("x".repeat(200));
+  });
+
+  it("uses the same collapsed history disclosure for branch summaries", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [{ role: "system", source: "branch_summary", parts: [{ type: "text", text: "Branch summary:\n\nKeep this branch context." }] }];
+
+    document.body.append(view);
+    await view.updateComplete;
+
+    const boundary = requireShadowRoot(view).querySelector<HTMLDetailsElement>("details.history-summary-group");
+    expect(boundary?.open).toBe(false);
+    expect(boundary?.querySelector("summary")?.textContent).toContain("1 branch summary");
+    expect(boundary?.querySelectorAll("formatted-text")).toHaveLength(1);
+  });
+
   it("keeps tool call and error result details closed by default", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
@@ -278,4 +332,10 @@ function requireShadowRoot(view: ChatView): ShadowRoot {
   const root = view.shadowRoot;
   if (root === null) throw new Error("Expected ChatView shadow root");
   return root;
+}
+
+function styleText(styles: unknown): string {
+  if (Array.isArray(styles)) return styles.map(styleText).join("\n");
+  if (typeof styles === "object" && styles !== null && "cssText" in styles && typeof styles.cssText === "string") return styles.cssText;
+  return "";
 }

@@ -130,6 +130,23 @@ describe("applyTranscriptEvent", () => {
     expect(groupChatMessages(live).map((group) => group.kind)).toEqual(["group", "message"]);
   });
 
+  it("groups a finalized compaction identically live and after reload", () => {
+    const summary = `## Goal\n${"context\n".repeat(2_466)}tail`;
+    const rawCompaction = { role: "system", source: "compaction", content: `Compacted history:\n\n${summary}`, entryId: "compact-1" };
+    const hydrated = normalizeMessages([rawCompaction]);
+    const live = applyTranscriptEvent([], { type: "message.end", message: rawCompaction });
+
+    expect(live).toEqual(hydrated);
+    expect(groupChatMessages(live ?? [])).toEqual([{
+      kind: "group",
+      presentation: "history",
+      startIndex: 0,
+      endIndex: 0,
+      messages: hydrated,
+    }]);
+    expect(hydrated[0]?.parts).toEqual([{ type: "text", text: rawCompaction.content }]);
+  });
+
   it("replaces the streamed assistant message with the finalized history shape", () => {
     const streamed: ChatLine[] = [
       textMessage("user", "question"),
