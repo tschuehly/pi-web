@@ -48,6 +48,40 @@ describe("PromptEditor resize handle", () => {
     expect(editor.shadowRoot?.querySelector(".markdown-editor-manual-height")).toBeNull();
   });
 
+  it("owns separator keys before global shortcuts and stops handled keys from bubbling", async () => {
+    const editor = await mountEditor();
+    const handle = resizeHandle(editor);
+    const globalStartSession = vi.fn();
+    const bubbled = vi.fn();
+    const capture = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && !editor.ownsKeyboardEvent(event)) globalStartSession();
+    };
+    window.addEventListener("keydown", capture, true);
+    document.addEventListener("keydown", bubbled);
+    try {
+      handle.focus();
+      for (const keyName of ["ArrowUp", "ArrowDown", "Home", "End", "Enter"]) {
+        const event = new KeyboardEvent("keydown", { key: keyName, bubbles: true, composed: true, cancelable: true });
+        handle.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+      }
+      for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+        key(handle, "ArrowUp");
+        const event = new KeyboardEvent("keydown", { key: "Enter", ...modifier, bubbles: true, composed: true, cancelable: true });
+        handle.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+        expect(editor.shadowRoot?.querySelector(".markdown-editor-manual-height")).toBeNull();
+      }
+      expect(globalStartSession).not.toHaveBeenCalled();
+      expect(bubbled).not.toHaveBeenCalled();
+      handle.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true, composed: true, cancelable: true }));
+      expect(bubbled).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener("keydown", capture, true);
+      document.removeEventListener("keydown", bubbled);
+    }
+  });
+
   it("normalizes upward pointer drag by interface scale and resets on double-click and double-tap", async () => {
     document.documentElement.style.setProperty(INTERFACE_SCALE_CSS_PROPERTY, "1.5");
     const editor = await mountEditor();

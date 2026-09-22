@@ -30,6 +30,7 @@ import "./AutocompleteMenu";
 
 export const PROMPT_EDITOR_MIN_HEIGHT = 54;
 export const PROMPT_EDITOR_MAX_HEIGHT = 640;
+const EDITOR_RESIZE_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End", "Enter"]);
 
 export function promptEditorMaximumHeight(viewportHeight: number, interfaceScale: number, nonEditorChromeHeight = 0): number {
   const scale = Number.isFinite(interfaceScale) && interfaceScale > 0 ? interfaceScale : 1;
@@ -635,15 +636,16 @@ export class PromptEditor extends LitElement {
   }
 
   private handleEditorResizeKey(event: KeyboardEvent): void {
+    if (!EDITOR_RESIZE_KEYS.has(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Enter") { this.resetEditorHeight(); return; }
     const maximumHeight = this.maximumEditorHeight();
-    let height: number | undefined;
+    let height: number;
     if (event.key === "ArrowUp") height = this.currentEditorHeight(maximumHeight) + (event.shiftKey ? 72 : 24);
     else if (event.key === "ArrowDown") height = this.currentEditorHeight(maximumHeight) - (event.shiftKey ? 72 : 24);
     else if (event.key === "Home") height = PROMPT_EDITOR_MIN_HEIGHT;
-    else if (event.key === "End") height = maximumHeight;
-    else if (event.key === "Enter") { event.preventDefault(); this.resetEditorHeight(); return; }
-    else return;
-    event.preventDefault();
+    else height = maximumHeight;
     this.setManualEditorHeight(height);
   }
 
@@ -765,8 +767,9 @@ export class PromptEditor extends LitElement {
     return wasOpen;
   }
 
-  /** The capture-phase app dispatcher must leave composer-owned keys to CodeMirror. */
+  /** The capture-phase app dispatcher must leave composer-owned keys to the focused control. */
   ownsKeyboardEvent(event: KeyboardEvent): boolean {
+    if (EDITOR_RESIZE_KEYS.has(event.key) && this.editorResizeHandle !== undefined && event.composedPath().includes(this.editorResizeHandle)) return true;
     if (this.editor === undefined || !event.composedPath().includes(this.editor.contentDOM)) return false;
     // Keep Enter/newline handling and IME composition inside the editor, too.
     return event.isComposing || this.editor.composing
