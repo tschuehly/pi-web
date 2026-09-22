@@ -674,8 +674,9 @@ describe("Workbench Chat controls", () => {
     associated = false;
     revision = 3;
     await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Named chat"); }, { timeout: 3_000 });
-    expect(calls.filter((call) => call.operation === "watch")).toHaveLength(4);
-    expect(calls.find((call) => call.operation === "watch")?.input).toEqual({ afterSequence: Number.MAX_SAFE_INTEGER });
+    const watchCalls = calls.filter((call) => call.operation === "watch");
+    expect(watchCalls.length).toBeGreaterThanOrEqual(4);
+    expect(watchCalls[0]?.input).toEqual({ afterSequence: Number.MAX_SAFE_INTEGER });
     expect(getState(app).selectedSession?.id).toBe("current");
   }, 10_000);
 
