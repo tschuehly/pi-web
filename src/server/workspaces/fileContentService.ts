@@ -1,22 +1,31 @@
-import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, rename, stat, unlink } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { lstat, mkdir, realpath, rename, stat, unlink } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, join } from "node:path";
-import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import type { DeleteWorkspaceFileResponse, FileContentMediaType, FileContentResponse, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, PiWebPathAccessConfig, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse } from "../../shared/apiTypes.js";
 import { classifyWorkspaceFile, MAX_WORKSPACE_FILE_CONTENT_BYTES, type WorkspaceFileClassification } from "../../shared/workspaceFiles.js";
 import { resolveWorkspacePathAccessTarget } from "./pathAccessPolicy.js";
+import { openDirectoryFromDescriptor, relativeToGrantedRoot } from "./fileTreeService.js";
 import { ensureInside, isNodeErrorWithCode, resolveInsideWorkspace, resolveParentInsideWorkspace } from "./pathSafety.js";
 
 export async function readWorkspaceFile(rootPath: string, path: string | undefined, pathAccess?: PiWebPathAccessConfig): Promise<FileContentResponse> {
   if (path === undefined || path === "") throw new Error("path query parameter is required");
-  const { target, displayPath } = await resolveWorkspacePathAccessTarget(rootPath, path, pathAccess);
-  const s = await stat(target);
-  if (!s.isFile()) throw new Error("Path is not a file");
-  const bytesToRead = Math.min(s.size, MAX_WORKSPACE_FILE_CONTENT_BYTES);
-  const buffer = await readFilePrefix(target, bytesToRead);
+  const { root, target, displayPath } = await resolveWorkspacePathAccessTarget(rootPath, path, pathAccess);
+  if (process.platform !== "darwin" && process.platform !== "linux") throw new Error("Safe workspace reads are unavailable on this platform");
+  // Walk the canonical parent using pinned directory descriptors, then open
+  // the leaf without following symlinks. No path lookup after the final open.
+  const { stdout } = await promisify(execFile)("python3", ["-c", readFromDescriptor, root, relativeToGrantedRoot(root, dirname(target)), basename(target)], {
+    maxBuffer: Math.ceil(MAX_WORKSPACE_FILE_CONTENT_BYTES * 4 / 3) + 4096,
+  });
+  const result: unknown = JSON.parse(stdout);
+  if (!isReadResult(result)) throw new Error("Invalid workspace file helper response");
+  if ("error" in result) throw new Error(result.error);
+  const s = result;
+  const buffer = Buffer.from(s.content, "base64");
+  if (buffer.length !== Math.min(s.size, MAX_WORKSPACE_FILE_CONTENT_BYTES)) throw new Error("Incomplete workspace file read");
   const classification = classifyWorkspaceFile(displayPath);
   const media = mediaForClassification(classification);
   // Text-source formats (HTML, Markdown, SVG) retain capped literal UTF-8
@@ -29,7 +38,7 @@ export async function readWorkspaceFile(rootPath: string, path: string | undefin
     ...media,
     encoding: "utf8",
     size: s.size,
-    modifiedAt: s.mtime.toISOString(),
+    modifiedAt: new Date(s.mtime).toISOString(),
     ...(s.size <= MAX_WORKSPACE_FILE_CONTENT_BYTES ? { version: fileVersion(buffer) } : {}),
     content: binary ? "" : buffer.toString("utf8"),
     truncated: s.size > MAX_WORKSPACE_FILE_CONTENT_BYTES,
@@ -37,16 +46,35 @@ export async function readWorkspaceFile(rootPath: string, path: string | undefin
   };
 }
 
-async function readFilePrefix(target: string, bytesToRead: number): Promise<Buffer> {
-  if (bytesToRead === 0) return Buffer.alloc(0);
-  const buffer = Buffer.alloc(bytesToRead);
-  const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const result = await handle.read(buffer, 0, bytesToRead, 0);
-    return buffer.subarray(0, result.bytesRead);
-  } finally {
-    await handle.close();
-  }
+const readFromDescriptor = `${openDirectoryFromDescriptor}
+import base64, json, stat
+try:
+    leaf = os.open(sys.argv[3], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+    try:
+        info = os.fstat(leaf)
+        if not stat.S_ISREG(info.st_mode):
+            print(json.dumps({'error': 'Path is not a file'}))
+        else:
+            remaining = min(info.st_size, ${String(MAX_WORKSPACE_FILE_CONTENT_BYTES)})
+            chunks = []
+            while remaining:
+                chunk = os.read(leaf, remaining)
+                if not chunk: raise OSError('Incomplete workspace file read')
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            print(json.dumps({'size': info.st_size, 'mtime': info.st_mtime * 1000, 'content': base64.b64encode(b''.join(chunks)).decode('ascii')}))
+    finally:
+        os.close(leaf)
+finally:
+    os.close(fd)
+`;
+
+function isReadResult(value: unknown): value is { size: number; mtime: number; content: string } | { error: string } {
+  if (typeof value !== "object" || value === null) return false;
+  if ("error" in value) return value.error === "Path is not a file";
+  return "size" in value && typeof value.size === "number" && Number.isSafeInteger(value.size) && value.size >= 0
+    && "mtime" in value && typeof value.mtime === "number" && Number.isFinite(value.mtime)
+    && "content" in value && typeof value.content === "string";
 }
 
 function fileVersion(bytes: Buffer): string {

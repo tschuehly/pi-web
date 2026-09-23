@@ -1,11 +1,27 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../shared/workspaceFiles.js";
 import { readWorkspaceFile, writeWorkspaceFile } from "./fileContentService.js";
 import { cleanupTempWorkspaces, createTempWorkspace } from "./fileContentService.testSupport.js";
 
+const race = vi.hoisted(() => ({ afterResolve: () => Promise.resolve() }));
+vi.mock("./pathAccessPolicy.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pathAccessPolicy.js")>();
+  return {
+    ...actual,
+    resolveWorkspacePathAccessTarget: async (...args: Parameters<typeof actual.resolveWorkspacePathAccessTarget>) => {
+      const result = await actual.resolveWorkspacePathAccessTarget(...args);
+      await race.afterResolve();
+      return result;
+    },
+  };
+});
+
 afterEach(async () => {
+  race.afterResolve = () => Promise.resolve();
   await cleanupTempWorkspaces();
 });
 
@@ -68,6 +84,52 @@ describe("readWorkspaceFile", () => {
       binary: false,
     });
     await expect(readWorkspaceFile(root, join(external, "README.md"))).rejects.toThrow("Absolute paths are not allowed");
+  });
+
+  it("rejects a parent replaced by an outside symlink after resolution", async () => {
+    const root = await createTempWorkspace();
+    const outside = await createTempWorkspace();
+    await mkdir(join(root, "dir"));
+    await writeFile(join(root, "dir", "secret.txt"), "inside");
+    await writeFile(join(outside, "secret.txt"), "outside");
+    race.afterResolve = async () => {
+      await rename(join(root, "dir"), join(root, "old-dir"));
+      await symlink(outside, join(root, "dir"));
+    };
+    await expect(readWorkspaceFile(root, "dir/secret.txt")).rejects.toThrow();
+  });
+
+  it("rejects a granted workspace root replaced by an outside symlink after resolution", async () => {
+    const root = await createTempWorkspace();
+    const outside = await createTempWorkspace();
+    const displaced = `${root}-displaced`;
+    await writeFile(join(root, "note.txt"), "inside");
+    await writeFile(join(outside, "note.txt"), "outside");
+    race.afterResolve = async () => { await rename(root, displaced); await symlink(outside, root); };
+    try { await expect(readWorkspaceFile(root, "note.txt")).rejects.toThrow(); }
+    finally { await rm(displaced, { recursive: true, force: true }); }
+  });
+
+  it("rejects a FIFO swapped into place without waiting for a writer", async () => {
+    const root = await createTempWorkspace();
+    await writeFile(join(root, "note.txt"), "original");
+    await promisify(execFile)("mkfifo", [join(root, "pipe")]);
+    race.afterResolve = async () => {
+      await rename(join(root, "pipe"), join(root, "note.txt"));
+    };
+    await expect(readWorkspaceFile(root, "note.txt")).rejects.toThrow("Path is not a file");
+  });
+
+  it("rejects a file replaced by an outside symlink after resolution", async () => {
+    const root = await createTempWorkspace();
+    const outside = await createTempWorkspace();
+    await writeFile(join(root, "note.txt"), "inside");
+    await writeFile(join(outside, "secret.txt"), "outside");
+    race.afterResolve = async () => {
+      await rename(join(root, "note.txt"), join(root, "old-note.txt"));
+      await symlink(join(outside, "secret.txt"), join(root, "note.txt"));
+    };
+    await expect(readWorkspaceFile(root, "note.txt")).rejects.toThrow();
   });
 
   it("detects binary files and omits binary content", async () => {
