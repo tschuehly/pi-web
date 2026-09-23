@@ -13,6 +13,7 @@ import { DelegateRoster } from "./DelegateRoster";
 import { GoalStatusChip } from "./GoalStatusChip";
 import { PromptEditor } from "./PromptEditor";
 import { WorkbenchApp, rootProjectOf, rootProjects } from "./WorkbenchApp";
+import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
 
@@ -243,7 +244,7 @@ describe("Workbench Chat chooser", () => {
     expect(app.shadowRoot?.querySelector("prompt-editor")).toBe(composer);
     expect(app.shadowRoot?.querySelector("workbench-files-pane")).not.toBeNull();
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-    const pane = app.shadowRoot?.querySelector("workbench-files-pane");
+    const pane = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
     if (pane === undefined || pane === null) throw new Error("Files pane was not mounted");
     const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
     toggle?.click();
