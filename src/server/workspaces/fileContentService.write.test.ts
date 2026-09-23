@@ -1,6 +1,7 @@
-import { mkdir, readFile, readdir, readlink, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, readlink, rename, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../shared/workspaceFiles.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readWorkspaceFile, writeWorkspaceFile, WorkspaceFileConflictError } from "./fileContentService.js";
 import { cleanupTempWorkspaces, createTempWorkspace } from "./fileContentService.testSupport.js";
 
@@ -42,6 +43,17 @@ describe("writeWorkspaceFile", () => {
     expect(result).toMatchObject({ path: "notes.txt", created: false, size: 11 });
     const content = await readFile(join(root, "notes.txt"), "utf8");
     expect(content).toBe("new content");
+  });
+
+  it("fails closed when the Python 3 save helper is unavailable", async () => {
+    const root = await createTempWorkspace();
+    vi.stubEnv("PATH", "/nonexistent");
+    try {
+      await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"))).rejects.toThrow("requires Python 3");
+      await expect(readFile(join(root, "notes.md"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("throws when overwrite is false and file exists", async () => {
@@ -90,6 +102,67 @@ describe("writeWorkspaceFile", () => {
     })).rejects.toThrow(WorkspaceFileConflictError);
     await expect(readFile(victim, "utf8")).resolves.toBe("untouched");
     await expect(readlink(target)).resolves.toBe(victim);
+  });
+
+  it("does not redirect saves or cleanup through an ancestor swapped to an external symlink", async () => {
+    const root = await createTempWorkspace();
+    const outside = await createTempWorkspace("pi-web-outside-");
+    await mkdir(join(root, "dir"));
+    await writeFile(join(root, "dir", "notes.md"), "original");
+    await writeFile(join(outside, "notes.md"), "original");
+    const version = (await readWorkspaceFile(root, "dir/notes.md")).version;
+    if (version === undefined) throw new Error("Expected a file version");
+
+    await expect(writeWorkspaceFile(root, "dir/notes.md", Buffer.from("mine"), { expectedVersion: version }, {
+      beforeCommit: async () => {
+        await rename(join(root, "dir"), join(root, "saved-dir"));
+        await symlink(outside, join(root, "dir"));
+      },
+    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(readFile(join(outside, "notes.md"), "utf8")).resolves.toBe("original");
+    expect((await readdir(outside)).sort()).toEqual(["notes.md"]);
+  });
+
+  it("does not install through an ancestor swapped after displacement", async () => {
+    const root = await createTempWorkspace();
+    const outside = await createTempWorkspace("pi-web-outside-");
+    await mkdir(join(root, "dir"));
+    await writeFile(join(root, "dir", "notes.md"), "original");
+    await writeFile(join(outside, "notes.md"), "untouched");
+
+    await expect(writeWorkspaceFile(root, "dir/notes.md", Buffer.from("mine"), {}, {
+      afterDisplacement: async () => {
+        await rename(join(root, "dir"), join(root, "saved-dir"));
+        await symlink(outside, join(root, "dir"));
+      },
+    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(readFile(join(outside, "notes.md"), "utf8")).resolves.toBe("untouched");
+    expect((await readdir(outside)).sort()).toEqual(["notes.md"]);
+    await expect(readFile(join(root, "saved-dir", "notes.md"), "utf8")).resolves.toBe("original");
+  });
+
+  it("does not create a new file through an ancestor swapped before installation", async () => {
+    const root = await createTempWorkspace();
+    const outside = await createTempWorkspace("pi-web-outside-");
+    await mkdir(join(root, "dir"));
+
+    await expect(writeWorkspaceFile(root, "dir/new.md", Buffer.from("mine"), {}, {
+      beforeCommit: async () => {
+        await rename(join(root, "dir"), join(root, "saved-dir"));
+        await symlink(outside, join(root, "dir"));
+      },
+    })).rejects.toThrow(WorkspaceFileConflictError);
+    expect(await readdir(outside)).toEqual([]);
+    expect(await readdir(join(root, "saved-dir"))).toEqual([]);
+  });
+
+  it("rejects existing files too large to version before attempting a save", async () => {
+    const root = await createTempWorkspace();
+    const target = join(root, "large.md");
+    await writeFile(target, Buffer.alloc(MAX_WORKSPACE_FILE_CONTENT_BYTES + 1, 65));
+
+    await expect(writeWorkspaceFile(root, "large.md", Buffer.from("mine"))).rejects.toThrow(WorkspaceFileConflictError);
+    expect((await readFile(target)).length).toBe(MAX_WORKSPACE_FILE_CONTENT_BYTES + 1);
   });
 
   it("retains a displaced original when an external writer takes the destination after displacement", async () => {

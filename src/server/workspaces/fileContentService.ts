@@ -1,7 +1,10 @@
 import { constants } from "node:fs";
-import { link, lstat, mkdir, mkdtemp, open, readlink, realpath, rename, rmdir, stat, symlink, unlink } from "node:fs/promises";
-import { createHash, randomUUID } from "node:crypto";
-import { basename, dirname, join, relative, sep } from "node:path";
+import { lstat, mkdir, open, realpath, rename, stat, unlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { basename, dirname, join } from "node:path";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import type { DeleteWorkspaceFileResponse, FileContentMediaType, FileContentResponse, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, PiWebPathAccessConfig, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse } from "../../shared/apiTypes.js";
 import { classifyWorkspaceFile, MAX_WORKSPACE_FILE_CONTENT_BYTES, type WorkspaceFileClassification } from "../../shared/workspaceFiles.js";
 import { resolveWorkspacePathAccessTarget } from "./pathAccessPolicy.js";
@@ -52,6 +55,18 @@ function fileVersion(bytes: Buffer): string {
 
 export class WorkspaceFileConflictError extends Error {}
 
+interface WriteHelperEvent { kind: string; message?: string; conflict?: boolean; size?: number; modifiedAt?: number; created?: boolean }
+
+function isWriteHelperEvent(value: unknown): value is WriteHelperEvent {
+  if (typeof value !== "object" || value === null || !("kind" in value) || typeof value.kind !== "string") return false;
+  if ("message" in value && typeof value.message !== "string") return false;
+  if ("conflict" in value && typeof value.conflict !== "boolean") return false;
+  if ("size" in value && typeof value.size !== "number") return false;
+  if ("modifiedAt" in value && typeof value.modifiedAt !== "number") return false;
+  if ("created" in value && typeof value.created !== "boolean") return false;
+  return true;
+}
+
 const activeWrites = new Map<string, Promise<void>>();
 
 export async function writeWorkspaceFile(rootPath: string, path: string | undefined, content: Buffer, options: WriteWorkspaceFileOptions = {}, hooks?: { beforeCommit?: () => Promise<void>; afterDisplacement?: () => Promise<void> }): Promise<WriteWorkspaceFileResponse> {
@@ -73,112 +88,50 @@ export async function writeWorkspaceFile(rootPath: string, path: string | undefi
 }
 
 async function writeWorkspaceFileUnlocked(rootPath: string, path: string, content: Buffer, options: WriteWorkspaceFileOptions, hooks?: { beforeCommit?: () => Promise<void>; afterDisplacement?: () => Promise<void> }): Promise<WriteWorkspaceFileResponse> {
-  const { root, target, relativePath } = await resolveParentInsideWorkspace(rootPath, path);
-  let parent = root;
-  if (options.createDirs ?? true) {
-    // Check each component before creating the next; recursive mkdir could create directories through an escaping symlink.
-    for (const part of relative(root, dirname(target)).split(sep).filter((part) => part !== "" && part !== ".")) {
-      const next = join(parent, part);
-      try { await mkdir(next); } catch (error) { if (!isNodeErrorWithCode(error, "EEXIST")) throw error; }
-      parent = await realpath(next);
-      ensureInside(root, parent);
-    }
-  } else {
-    parent = await realpath(dirname(target));
-    ensureInside(root, parent);
-  }
-  const destination = join(parent, basename(target));
-  ensureInside(root, destination);
-  const initial = await snapshotForWrite(destination);
-  if (initial !== undefined && options.overwrite === false) throw new Error(`File already exists: ${relativePath}`);
-  if (options.expectedVersion !== undefined && options.overwrite !== true && initial?.version !== options.expectedVersion) {
-    throw new WorkspaceFileConflictError("File changed or was deleted since it was loaded");
-  }
-
-  const temp = join(parent, `.pi-web-write-${randomUUID()}`);
-  const handle = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, initial?.mode ?? 0o666);
-  let backupDir: string | undefined;
+  const { root, relativePath } = await resolveParentInsideWorkspace(rootPath, path);
+  // Node does not expose openat/linkat/renameat. The helper pins a directory fd
+  // and uses *at operations so a swapped ancestor cannot redirect mutations.
+  const helper = new URL("../../../scripts/workspace-file-write.py", import.meta.url);
+  const child = spawn("python3", [fileURLToPath(helper)], { stdio: ["pipe", "pipe", "pipe"] });
+  child.stdin.on("error", () => { /* Python may reject the request before consuming content. */ });
+  const exit = new Promise<number | Error>((resolve) => {
+    child.once("error", (error) => { resolve(error); });
+    child.once("close", (code) => { resolve(code ?? -1); });
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => { stderr = (stderr + chunk).slice(-4096); });
+  child.stdin.write(JSON.stringify({
+    root, path: relativePath, size: content.length,
+    createDirs: options.createDirs ?? true,
+    overwrite: options.overwrite !== false,
+    forceOverwrite: options.overwrite === true,
+    expectedVersion: options.expectedVersion,
+  }) + "\n");
+  child.stdin.write(content);
+  let result: WriteWorkspaceFileResponse | undefined;
+  let failure: Error | undefined;
   try {
-    if (initial !== undefined) await handle.chmod(initial.mode);
-    await handle.writeFile(content);
-    const written = await handle.stat();
-    await handle.close();
-    await hooks?.beforeCommit?.();
-
-    if (initial !== undefined) {
-      backupDir = await mkdtemp(join(parent, ".pi-web-backup-"));
-      const backup = join(backupDir, "original");
-      try {
-        await rename(destination, backup);
-      } catch (error) {
-        if (isNodeErrorWithCode(error, "ENOENT")) throw new WorkspaceFileConflictError("File changed or was deleted since it was loaded");
-        throw error;
-      }
-      try {
-        await hooks?.afterDisplacement?.();
-        const moved = await snapshotForWrite(backup);
-        if (moved?.dev !== initial.dev || moved.ino !== initial.ino || moved.version !== initial.version) {
-          throw new WorkspaceFileConflictError("File changed or was deleted since it was loaded");
-        }
-        await link(temp, destination); // EEXIST leaves any external replacement untouched.
-        const afterInstall = await snapshotForWrite(backup);
-        if (afterInstall?.version !== initial.version) {
-          throw new WorkspaceFileConflictError(`File changed after installation; displaced entry retained at ${backup}`);
-        }
-      } catch (error) {
-        try {
-          // macOS link() follows a symlink source; restore symlinks by their literal target instead.
-          if ((await lstat(backup)).isSymbolicLink()) await symlink(await readlink(backup), destination);
-          else await link(backup, destination); // Exclusive: never replace an external entry.
-          await unlink(backup);
-        } catch (restoreError) {
-          throw new WorkspaceFileConflictError(`File changed; displaced entry retained at ${backup}: ${String(restoreError)}`, { cause: error });
-        }
-        if (isNodeErrorWithCode(error, "EEXIST")) throw new WorkspaceFileConflictError("File changed or was deleted since it was loaded");
-        throw error;
-      }
-      await unlink(backup);
-    } else {
-      try { await link(temp, destination); }
-      catch (error) {
-        if (isNodeErrorWithCode(error, "EEXIST")) throw new WorkspaceFileConflictError("File changed or was deleted since it was loaded");
-        throw error;
+    for await (const line of createInterface({ input: child.stdout })) {
+      const event: unknown = JSON.parse(line);
+      if (!isWriteHelperEvent(event)) throw new Error("Invalid workspace file helper response");
+      if (event.kind === "beforeCommit" || event.kind === "afterDisplacement") {
+        try { await (event.kind === "beforeCommit" ? hooks?.beforeCommit?.() : hooks?.afterDisplacement?.()); }
+        catch (error) { failure = error instanceof Error ? error : new Error(String(error)); }
+        child.stdin.write(failure === undefined ? "go\n" : "abort\n");
+      } else if (event.kind === "error") {
+        failure ??= event.conflict === true ? new WorkspaceFileConflictError(event.message) : new Error(event.message);
+      } else if (event.kind === "result" && event.size !== undefined && event.modifiedAt !== undefined) {
+        result = { path: relativePath, size: event.size, modifiedAt: new Date(event.modifiedAt).toISOString(), created: event.created === true };
       }
     }
-    return { path: relativePath, size: written.size, modifiedAt: written.mtime.toISOString(), created: !initial };
+    const code = await exit;
+    if (failure !== undefined) throw failure;
+    if (code instanceof Error) throw new Error(`Workspace file save requires Python 3 on the web/API PATH: ${code.message}`, { cause: code });
+    if (code !== 0 || result === undefined) throw new Error(`Workspace file helper failed (${String(code)}): ${stderr || "no response"}`);
+    return result;
   } finally {
-    await handle.close();
-    await unlink(temp);
-    if (backupDir !== undefined) {
-      // A conflict can retain the displaced entry here; never delete it during cleanup.
-      await rmdir(backupDir).catch((error: unknown) => {
-        if (!isNodeErrorWithCode(error, "ENOTEMPTY")) return Promise.reject(error instanceof Error ? error : new Error(String(error)));
-        return undefined;
-      });
-    }
-  }
-}
-
-async function snapshotForWrite(path: string): Promise<{ version: string; dev: number; ino: number; mode: number } | undefined> {
-  let handle;
-  try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  } catch (error) {
-    if (isNodeErrorWithCode(error, "ENOENT")) return undefined;
-    if (isNodeErrorWithCode(error, "ELOOP")) throw new WorkspaceFileConflictError("File changed or is a symlink");
-    throw error;
-  }
-  try {
-    const before = await handle.stat();
-    if (!before.isFile()) throw new Error("Path is not a file");
-    const version = fileVersion(await handle.readFile());
-    const after = await handle.stat();
-    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
-      throw new WorkspaceFileConflictError("File changed or was deleted since it was loaded");
-    }
-    return { version, dev: after.dev, ino: after.ino, mode: after.mode & 0o777 };
-  } finally {
-    await handle.close();
+    child.stdin.end();
   }
 }
 

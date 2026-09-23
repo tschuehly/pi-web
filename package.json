@@ -33,6 +33,7 @@
     "dist",
     "!dist/**/*.testSupport.*",
     "install.sh",
+    "scripts/workspace-file-write.py",
     "README.md",
     "LICENSE",
     "extensions",
