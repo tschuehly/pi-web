@@ -7,7 +7,7 @@ export type WorkstreamLaunchRecord =
   | { token: string; cwd: string; status: "created"; sessionId: string };
 
 export function isWorkstreamLaunchToken(token: string): boolean {
-  return token.startsWith("pi-web:") || token.startsWith("launch-");
+  return token.startsWith("pi-web:") || token.startsWith("workbench-web:") || token.startsWith("launch-");
 }
 
 function checkToken(token: string): void {

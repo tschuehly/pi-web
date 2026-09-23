@@ -37,6 +37,14 @@ describe("Workstream launch token ledger", () => {
     await expect(reopened.confirm(token, "/repo", "session-1")).resolves.toBeUndefined();
   });
 
+  it("reserves the owned Workbench frontend's exact association token", async () => {
+    const { store: ledger } = await store();
+    const token = "workbench-web:52bfdbe7-7139-41e3-8c15-8bf639cda455";
+    await ledger.reserve(token, "/repo");
+    await ledger.confirm(token, "/repo", "session-owned");
+    await expect(ledger.lookup(token)).resolves.toEqual({ token, cwd: "/repo", sessionId: "session-owned", status: "created" });
+  });
+
   it("rejects malformed or unbounded Workstream tokens before filesystem use", async () => {
     const { root, store: ledger } = await store();
     await expect(ledger.reserve("pi-web:../escape", "/repo")).rejects.toThrow(/invalid/i);
