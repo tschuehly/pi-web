@@ -69,6 +69,15 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
+  app.get<{ Params: { token: string }; Querystring: SessionQuery }>(`${prefix}/sessions/workstream-launch/:token`, async (request, reply) => {
+    if (request.query.cwd === undefined || request.query.cwd === "") return reply.code(400).send({ error: "cwd query parameter is required" });
+    try {
+      return await sessions.lookupWorkstreamLaunch(request.params.token, normalizeRequestCwd(request.query.cwd));
+    } catch (error) {
+      return reply.code(400).send({ error: errorMessage(error) });
+    }
+  });
+
   app.get(`${prefix}/sessions/notifications`, async (_request, reply) => {
     try {
       return await sessions.notificationCatalog();

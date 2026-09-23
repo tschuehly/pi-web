@@ -101,6 +101,7 @@ import {
 } from "./sessionNotificationStore.js";
 import { plainTextTheme } from "./plainTextTheme.js";
 import { SessionUnreadStore, type SessionUnreadMutation } from "./sessionUnreadStore.js";
+import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 import { applyEnabledModelToggle, catalogWithEnabledFirst, modelScopeId, persistedEnabledModelPatterns, resolveEnabledModelIds, resolveSessionModelOptions, scopedModelsFromEnabledIds, type EnabledModelCatalogEntry } from "./sessionModelScope.js";
 
 /**
@@ -1089,6 +1090,8 @@ export interface PiSessionServiceDependencies {
   agentDir: string;
   sessionManager: PiSessionManagerGateway;
   archiveStore?: SessionArchiveRepository;
+  /** Persistent exact launch evidence; required when starting Workstream tokens. */
+  workstreamLaunchStore?: WorkstreamLaunchStore;
   createRuntime?: PiWebCreateAgentSessionRuntimeFactory;
   createAgentRuntime?: CreateAgentRuntime;
   modelRuntime: ModelRuntime;
@@ -1219,6 +1222,7 @@ export class PiSessionService implements SessionRouteService {
    */
   private readonly subsessionNotifyArmed = new Map<string, boolean>();
   private readonly archiveStore: SessionArchiveRepository;
+  private readonly workstreamLaunchStore: WorkstreamLaunchStore | undefined;
   private readonly agentDir: string;
   private readonly sessionManager: PiSessionManagerGateway;
   private readonly createRuntime: PiWebCreateAgentSessionRuntimeFactory;
@@ -1253,6 +1257,7 @@ export class PiSessionService implements SessionRouteService {
 
   constructor(private readonly events: SessionEventHub, deps: PiSessionServiceDependencies) {
     this.archiveStore = deps.archiveStore ?? new SessionArchiveStore();
+    this.workstreamLaunchStore = deps.workstreamLaunchStore;
     this.agentDir = deps.agentDir;
     this.sessionManager = deps.sessionManager;
     this.modelRuntime = deps.modelRuntime;
@@ -1507,7 +1512,26 @@ export class PiSessionService implements SessionRouteService {
   }
 
   async start(cwd: string, options: StartSessionOptions = {}): Promise<ClientSession> {
-    return this.startSession(cwd, options);
+    const token = options.startupToken;
+    if (token === undefined || !isWorkstreamLaunchToken(token)) return this.startSession(cwd, options);
+    if (this.workstreamLaunchStore === undefined) throw new Error("Workstream launch tracking is unavailable");
+    const location = canonicalizeStoredCwd(cwd);
+    await this.workstreamLaunchStore.reserve(token, location);
+    const created = await this.startSession(cwd, options);
+    await this.workstreamLaunchStore.confirm(token, location, created.id);
+    return created;
+  }
+
+  async lookupWorkstreamLaunch(token: string, cwd: string): Promise<{ status: "found"; sessionId: string; cwd: string } | { status: "unknown" }> {
+    if (this.workstreamLaunchStore === undefined) throw new Error("Workstream launch tracking is unavailable");
+    const record = await this.workstreamLaunchStore.lookup(token);
+    if (record?.status !== "created" || !cwdPathsEqual(record.cwd, cwd)) return { status: "unknown" };
+    const active = this.active.get(record.sessionId);
+    if (active !== undefined && cwdPathsEqual(active.runtime.cwd, cwd)) return { status: "found", sessionId: record.sessionId, cwd: record.cwd };
+    const persisted = await this.sessionManager.resolveSessionFile(cwd, record.sessionId);
+    return persisted?.id === record.sessionId && cwdPathsEqual(persisted.cwd, cwd)
+      ? { status: "found", sessionId: record.sessionId, cwd: record.cwd }
+      : { status: "unknown" };
   }
 
   /** Publish a host-owned conversation without submitting an initial prompt. */
