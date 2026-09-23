@@ -80,6 +80,15 @@ describe("readWorkspaceFile", () => {
     expect(file.size).toBe(4);
   });
 
+  it("does not expand control-heavy text into an oversized JSON response", async () => {
+    const root = await createTempWorkspace();
+    const bytes = Buffer.alloc(MAX_WORKSPACE_FILE_CONTENT_BYTES, 65);
+    bytes.fill(1, 8192);
+    await writeFile(join(root, "control.md"), bytes);
+    const file = await readWorkspaceFile(root, "control.md");
+    expect(file).toMatchObject({ size: MAX_WORKSPACE_FILE_CONTENT_BYTES, content: "", binary: true, truncated: false });
+  });
+
   it("marks supported images as previewable", async () => {
     const root = await createTempWorkspace();
     await writeFile(join(root, "logo.PNG"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]));

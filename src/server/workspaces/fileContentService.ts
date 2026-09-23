@@ -22,7 +22,7 @@ export async function readWorkspaceFile(rootPath: string, path: string | undefin
   // Text-source formats (HTML, Markdown, SVG) retain capped literal UTF-8
   // source for Raw mode. Raster image and PDF bytes stay out of JSON and are
   // served only by the preview response.
-  const binary = classification?.source === "stream" || (classification === undefined && isProbablyBinary(buffer));
+  const binary = classification?.source === "stream" || isProbablyBinary(buffer);
   return {
     path: displayPath,
     ...languageForPath(displayPath),
@@ -203,8 +203,7 @@ export async function moveWorkspaceFile(rootPath: string, fromPath: string | und
 }
 
 function isProbablyBinary(buffer: Buffer): boolean {
-  const sample = buffer.subarray(0, Math.min(buffer.length, 8192));
-  return sample.includes(0);
+  return buffer.some((byte) => byte < 32 && byte !== 9 && byte !== 10 && byte !== 13);
 }
 
 function languageForPath(path: string): { language?: string } {
