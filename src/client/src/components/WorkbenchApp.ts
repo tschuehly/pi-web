@@ -425,7 +425,11 @@ export class WorkbenchApp extends LitElement {
     let match: { project: Project; workspaces: Workspace[] } | undefined;
     try {
       const referencedDirectory = detail.directories[0];
-      if (referencedDirectory !== undefined) cwd = referencedDirectory;
+      if (detail.useSelectedWorkspace === true) {
+        const workspace = this.app.selectedWorkspace;
+        if (workspace === undefined) throw new Error("Choose a workspace before starting this Workstream.");
+        cwd = workspace.path;
+      } else if (referencedDirectory !== undefined) cwd = referencedDirectory;
       else if (detail.sessionId !== undefined) cwd = (await api.locate(detail.sessionId, machineId)).cwd;
       else {
         const workspace = this.app.selectedWorkspace;
