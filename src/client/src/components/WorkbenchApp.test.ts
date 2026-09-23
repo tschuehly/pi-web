@@ -304,6 +304,43 @@ describe("Workbench Chat chooser", () => {
     expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
   });
 
+  it("rejects a temporary Workstream directory before recording a pending launch", async () => {
+    const calls: WorkstreamServiceCall[] = [];
+    stubWorkstreamService(calls, () => ({ ok: true, value: { id: "workstream", revision: 1, sessions: [], humanTasks: [] } }));
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const startSession = vi.spyOn(api, "startSession");
+    const app = await mountChooser([]);
+
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
+      detail: { workstreamId: "workstream", directories: ["/private/tmp/pi-context-views-20260909"], prompt: "Continue" },
+    }));
+
+    await vi.waitFor(() => { expect(getState(app).error).toContain("temporary directory"); });
+    expect(startSession).not.toHaveBeenCalled();
+    expect(calls.filter((call) => call.operation === "append")).toHaveLength(0);
+  });
+
+  it("continues a stale temporary Workstream checkpoint explicitly in the selected workspace", async () => {
+    const calls: WorkstreamServiceCall[] = [];
+    let inspectCount = 0;
+    stubWorkstreamService(calls, (body) => body.operation === "inspect"
+      ? { ok: true, value: { id: "workstream", revision: inspectCount++ === 0 ? 1 : 2, sessions: [], humanTasks: [] } }
+      : { ok: true, value: { acceptedRevision: 2 } });
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const locate = vi.spyOn(api, "locate");
+    const start = vi.spyOn(api, "startSession").mockResolvedValue(session("new-session", ""));
+    const app = await mountChooser([]);
+
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
+      detail: { workstreamId: "workstream", sessionId: "previous", directories: [], useSelectedWorkspace: true, prompt: "Continue" },
+    }));
+
+    await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
+    expect(locate).not.toHaveBeenCalled();
+    expect(start).toHaveBeenCalledWith(workspace.path, "local", expect.stringMatching(/^pi-web:/));
+    expect(getState(app).selectedWorkspace?.path).toBe(workspace.path);
+  });
+
   it("starts an empty Workstream in the selected workspace without a previous session", async () => {
     const started = session("first-session", "");
     const calls: WorkstreamServiceCall[] = [];

@@ -53,6 +53,7 @@ export interface StartWorkstreamSessionDetail {
   prompt: string;
   directories: string[];
   sessionId?: string;
+  useSelectedWorkspace?: boolean;
 }
 
 export interface WorkstreamServiceContext { machineId: string; projectId: string; workspaceId: string }
@@ -153,9 +154,14 @@ export function withAnchors(text: string): TemplateResult {
   return html`${parts}`;
 }
 
+export function isTemporaryDirectory(value: string): boolean {
+  return /^(?:\/private)?\/(?:tmp|var\/tmp|var\/folders)(?:\/|$)/.test(value)
+    || /^(?:[A-Za-z]:[\\/])(?:Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Temp|Temp)(?:[\\/]|$)/i.test(value);
+}
+
 export function directoriesOf(checkpoint: WorkstreamCheckpoint | undefined): string[] {
   // ponytail: path kind is heuristic because the browser cannot stat local references.
-  const absolute = (checkpoint?.references ?? []).filter((ref) => ref.startsWith("/"));
+  const absolute = (checkpoint?.references ?? []).filter((ref) => ref.startsWith("/") && !isTemporaryDirectory(ref));
   const files = absolute.filter((ref) => /\.[a-z0-9]{1,5}$/i.test(ref));
   const directories = absolute.filter((ref) => !files.includes(ref));
   if (directories.length > 0) return [...new Set(directories)];
@@ -345,12 +351,13 @@ export class WorkstreamChooser extends LitElement {
     this.dispatchEvent(new CustomEvent<OpenWorkstreamSessionDetail>("open-workstream-session", { detail, bubbles: true, composed: true }));
   }
 
-  private start(snapshot: WorkstreamSnapshot, session: WorkstreamSession & { latestCheckpoint: WorkstreamCheckpoint }, prompt: string): void {
+  private start(snapshot: WorkstreamSnapshot, session: WorkstreamSession & { latestCheckpoint: WorkstreamCheckpoint }, prompt: string, useSelectedWorkspace = false): void {
     this.dispatchStart({
       workstreamId: snapshot.id,
       prompt,
-      directories: directoriesOf(session.latestCheckpoint),
+      directories: useSelectedWorkspace ? [] : directoriesOf(session.latestCheckpoint),
       sessionId: session.id,
+      ...(useSelectedWorkspace ? { useSelectedWorkspace: true } : {}),
     });
   }
 
@@ -466,7 +473,10 @@ export class WorkstreamChooser extends LitElement {
               : this.project === undefined
                 ? html`<p class="missing">This Workstream has no matching PI WEB project tab. Set its group to a registered project before starting it.</p>`
                 : html`<button class="primary" title=${this.canStartEmpty ? "Start Workstream Chat" : "Choose a workspace first"} ?disabled=${!this.canStartEmpty} @click=${() => { this.startEmpty(snapshot); }}>Start Workstream Chat</button>`}
-          ${latest === undefined || prompt === undefined || prompt === null ? nothing : html`<button @click=${() => { this.start(snapshot, latest, prompt); }}>New session with prompt</button>`}
+          ${latest === undefined || prompt === undefined || prompt === null ? nothing : html`
+            ${directories.length > 0 || cp?.references?.some(isTemporaryDirectory) !== true ? html`<button @click=${() => { this.start(snapshot, latest, prompt); }}>New session with prompt</button>` : nothing}
+            ${cp?.references?.some(isTemporaryDirectory) === true ? html`<button ?disabled=${!this.canStartEmpty} title="Choose a persistent workspace first" @click=${() => { this.start(snapshot, latest, prompt, true); }}>New session in selected workspace with prompt</button>` : nothing}
+          `}
         </div>
       </article>
     `;

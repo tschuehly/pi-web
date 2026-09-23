@@ -32,7 +32,7 @@ import "./StatusBar";
 import "./WorkstreamChooser";
 import "./WorkstreamContextDrawer";
 import "./WorkbenchSettingsPanel";
-import { appendWorkstream, inspectWorkstream, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamServiceContext, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamServiceContext, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
@@ -402,13 +402,18 @@ export class WorkbenchApp extends LitElement {
     let match: { project: Project; workspaces: Workspace[] } | undefined;
     try {
       const referencedDirectory = detail.directories[0];
-      if (referencedDirectory !== undefined) cwd = referencedDirectory;
+      if (detail.useSelectedWorkspace === true) {
+        const workspace = this.app.selectedWorkspace;
+        if (workspace === undefined) throw new Error("Choose a workspace before starting this Workstream.");
+        cwd = workspace.path;
+      } else if (referencedDirectory !== undefined) cwd = referencedDirectory;
       else if (detail.sessionId !== undefined) cwd = (await api.locate(detail.sessionId, machineId)).cwd;
       else {
         const workspace = this.app.selectedWorkspace;
         if (workspace === undefined) throw new Error("Choose a workspace before starting this Workstream.");
         cwd = workspace.path;
       }
+      if (isTemporaryDirectory(cwd)) throw new Error(`The Workstream points to a temporary directory (${cwd}). Move the work to a persistent workspace before starting a Chat.`);
       const candidates = await Promise.all(this.app.projects.map(async (project) => ({
         project,
         workspaces: await api.workspaces(project.id, machineId).catch((): Workspace[] => []),

@@ -126,6 +126,22 @@ describe("WorkstreamChooser", () => {
     expect(card.textContent).not.toContain("Copy prompt");
   });
 
+  it("offers a selected-workspace continuation for a temporary checkpoint", async () => {
+    const stale: WorkstreamSnapshot = { ...snapshot, sessions: [{ id: "old", status: "active", latestCheckpoint: checkpoint("old", "2026-09-22T10:00:00Z", "Continue", ["/private/tmp/pi-context-views-20260909"]) }] };
+    stubService(summaries, stale);
+    const element = newChooser();
+    element.canStartEmpty = true;
+    document.body.append(element);
+    await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".row")).not.toBeNull(); });
+    element.shadowRoot?.querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".card")).not.toBeNull(); });
+    let started: unknown;
+    element.addEventListener("start-workstream-session", (event) => { if (event instanceof CustomEvent) started = event.detail; });
+    [...shadow(element).querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "New session in selected workspace with prompt")?.click();
+    expect(started).toEqual({ workstreamId: "ws-1", prompt: "Continue old", directories: [], sessionId: "old", useSelectedWorkspace: true });
+    expect(shadow(element).textContent).not.toContain("New session with prompt");
+  });
+
   it("starts an empty Workstream from its project workspace", async () => {
     const empty: WorkstreamSnapshot = {
       ...snapshot,
@@ -426,6 +442,11 @@ describe("WorkstreamChooser", () => {
 });
 
 describe("re-entry helpers", () => {
+  it("drops temporary checkpoint directories before choosing a launch target", () => {
+    expect(directoriesOf(checkpoint("old", "", "", ["/private/tmp/pi-context-views-20260909", "/tmp/plan.md", "/repo/valid"]))).toEqual(["/repo/valid"]);
+    expect(directoriesOf(checkpoint("old", "", "", ["/private/tmp/pi-context-views-20260909"]))).toEqual([]);
+  });
+
   it("orders sessions by newest checkpoint, detects near-simultaneous conflicts, and extracts directories", () => {
     expect(latestCheckpoints(snapshot).map((session) => session.id)).toEqual(["s-b", "s-a", "s-old"]);
     expect(conflicting(checkpoint("a", "2026-09-18T07:00:00Z", ""), checkpoint("b", "2026-09-18T10:00:00Z", ""))).toBe(true);
