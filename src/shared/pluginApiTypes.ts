@@ -74,6 +74,8 @@ export interface FileContentResponse {
   encoding: "utf8";
   size: number;
   modifiedAt: string;
+  /** SHA-256 of loaded bytes; absent when content is truncated. */
+  version?: string;
   content: string;
   truncated: boolean;
   binary: boolean;
@@ -82,6 +84,7 @@ export interface FileContentResponse {
 export interface WriteWorkspaceFileOptions {
   createDirs?: boolean;     // default: true — mkdir -p equivalent
   overwrite?: boolean;      // default: true — throw if false and file exists
+  expectedVersion?: string; // reject a changed/deleted file unless overwrite is explicitly true
 }
 
 export interface WriteWorkspaceFileResponse {

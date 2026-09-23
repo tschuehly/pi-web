@@ -554,13 +554,14 @@ describe("workspace file read API", () => {
   it("forwards caller cancellation through selected-machine tree and file requests", async () => {
     const fetchMock = stubSequenceFetch([
       jsonResponse({ path: "src", entries: [], scannedAt: "2026-06-25T00:00:00.000Z", truncated: false }),
-      jsonResponse({ path: "README.md", encoding: "utf8", size: 2, modifiedAt: "2026-06-25T00:00:00.000Z", content: "hi", truncated: false, binary: false }),
+      jsonResponse({ path: "README.md", encoding: "utf8", size: 2, modifiedAt: "2026-06-25T00:00:00.000Z", version: "abc123", content: "hi", truncated: false, binary: false }),
     ]);
     const controller = new AbortController();
 
     await workspacesApi.workspaceTree("p 1", "w/1", "src", "remote a", { signal: controller.signal });
-    await workspacesApi.workspaceFile("p 1", "w/1", "README.md", "remote a", { signal: controller.signal });
+    const file = await workspacesApi.workspaceFile("p 1", "w/1", "README.md", "remote a", { signal: controller.signal });
 
+    expect(file.version).toBe("abc123");
     expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/projects/p%201/workspaces/w%2F1/tree?path=src");
     expect(fetchCall(fetchMock, 1)[0]).toBe("https://pi.example.test/api/machines/remote%20a/projects/p%201/workspaces/w%2F1/file?path=README.md");
     expect(fetchCall(fetchMock, 0)[1]?.signal).toBe(controller.signal);
@@ -603,6 +604,15 @@ describe("workspace file write API", () => {
     const [url] = fetchCall(fetchMock, 0);
     expect(url).toContain("createDirs=false");
     expect(url).toContain("overwrite=false");
+  });
+
+  it("sends the loaded version as a write precondition and explicit overwrite only when requested", async () => {
+    const fetchMock = stubSequenceFetch([0, 1].map(() => jsonResponse({ path: "notes.md", size: 4, modifiedAt: "2026-06-10T00:00:00.000Z", created: false })));
+    await workspacesApi.writeWorkspaceFile("p 1", "w/1", "notes.md", "edit", { expectedVersion: "abc+123" });
+    expect(fetchCall(fetchMock, 0)[0]).toContain("expectedVersion=abc%2B123");
+    expect(fetchCall(fetchMock, 0)[0]).not.toContain("overwrite=true");
+    await workspacesApi.writeWorkspaceFile("p 1", "w/1", "notes.md", "edit", { overwrite: true });
+    expect(fetchCall(fetchMock, 1)[0]).toContain("overwrite=true");
   });
 
   it("parses WriteWorkspaceFileResponse correctly", async () => {

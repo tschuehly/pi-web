@@ -228,6 +228,38 @@ describe("Workbench Chat chooser", () => {
     expect(getState(app).selectedSession?.id).toBe("fresh");
   });
 
+  it("opens and closes the side Files pane without remounting Chat", async () => {
+    const current = session("human", "Edit notes");
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    const chat = app.shadowRoot?.querySelector("chat-view");
+    const composer = app.shadowRoot?.querySelector("prompt-editor");
+    const toggle = app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    toggle?.click();
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
+    expect(app.shadowRoot?.querySelector("prompt-editor")).toBe(composer);
+    expect(app.shadowRoot?.querySelector("workbench-files-pane")).not.toBeNull();
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    const pane = app.shadowRoot?.querySelector("workbench-files-pane");
+    if (pane === undefined || pane === null) throw new Error("Files pane was not mounted");
+    const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
+    toggle?.click();
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector("workbench-files-pane")).toBe(pane);
+    window.history.pushState({}, "", "/?session=other&view=chat");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(window.location.search).toContain("session=human");
+    expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
+    canClose.mockReturnValue(true);
+    toggle?.click();
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
+    expect(app.shadowRoot?.querySelector("workbench-files-pane")).toBeNull();
+  });
+
   it("returns from a Chat to the current workspace chooser", async () => {
     const current = session("human", "Plan the release");
     const app = await mountChooser([current]);

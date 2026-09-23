@@ -1,4 +1,5 @@
-import { lstat, mkdir, open, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import type { DeleteWorkspaceFileResponse, FileContentMediaType, FileContentResponse, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, PiWebPathAccessConfig, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse } from "../../shared/apiTypes.js";
 import { classifyWorkspaceFile, MAX_WORKSPACE_FILE_CONTENT_BYTES, type WorkspaceFileClassification } from "../../shared/workspaceFiles.js";
@@ -25,6 +26,7 @@ export async function readWorkspaceFile(rootPath: string, path: string | undefin
     encoding: "utf8",
     size: s.size,
     modifiedAt: s.mtime.toISOString(),
+    ...(s.size <= MAX_WORKSPACE_FILE_CONTENT_BYTES ? { version: fileVersion(buffer) } : {}),
     content: binary ? "" : buffer.toString("utf8"),
     truncated: s.size > MAX_WORKSPACE_FILE_CONTENT_BYTES,
     binary,
@@ -43,9 +45,32 @@ async function readFilePrefix(target: string, bytesToRead: number): Promise<Buff
   }
 }
 
+function fileVersion(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+export class WorkspaceFileConflictError extends Error {}
+
+const activeWrites = new Map<string, Promise<void>>();
+
 export async function writeWorkspaceFile(rootPath: string, path: string | undefined, content: Buffer, options: WriteWorkspaceFileOptions = {}): Promise<WriteWorkspaceFileResponse> {
   if (path === undefined || path === "") throw new Error("path query parameter is required");
+  // ponytail: serialize same-path writes within this API process; external writers need filesystem-wide coordination if simultaneous writes become a real issue.
+  const key = `${rootPath}\0${path}`;
+  const previous = activeWrites.get(key);
+  let release!: () => void;
+  const complete = new Promise<void>((resolve) => { release = resolve; });
+  activeWrites.set(key, complete);
+  await previous;
+  try {
+    return await writeWorkspaceFileUnlocked(rootPath, path, content, options);
+  } finally {
+    if (activeWrites.get(key) === complete) activeWrites.delete(key);
+    release();
+  }
+}
 
+async function writeWorkspaceFileUnlocked(rootPath: string, path: string, content: Buffer, options: WriteWorkspaceFileOptions): Promise<WriteWorkspaceFileResponse> {
   const createDirs = options.createDirs ?? true;
   const overwrite = options.overwrite ?? true;
 
@@ -58,8 +83,9 @@ export async function writeWorkspaceFile(rootPath: string, path: string | undefi
     exists = true;
   } catch (error: unknown) {
     if (error instanceof Error && error.message.startsWith("File already exists")) throw error;
-    if (isNodeErrorWithCode(error, "ENOENT")) { /* expected for creation — continue */ }
-    else if (error instanceof Error && error.message === "Path does not exist") { /* expected for creation — continue */ }
+    if (isNodeErrorWithCode(error, "ENOENT") || (error instanceof Error && error.message === "Path does not exist")) {
+      if (options.expectedVersion !== undefined && options.overwrite !== true) throw new WorkspaceFileConflictError("File changed or was deleted since it was loaded");
+    }
     else throw error; // re-throw permission errors, "not a file", traversal errors, etc.
   }
 
@@ -72,6 +98,16 @@ export async function writeWorkspaceFile(rootPath: string, path: string | undefi
   const realParent = await realpath(dirname(target));
   const realTarget = join(realParent, basename(target));
   ensureInside(root, realTarget);
+  if (options.expectedVersion !== undefined && options.overwrite !== true) {
+    let current: Buffer;
+    try {
+      current = await readFile(realTarget);
+    } catch (error) {
+      if (isNodeErrorWithCode(error, "ENOENT")) throw new WorkspaceFileConflictError("File changed or was deleted since it was loaded");
+      throw error;
+    }
+    if (fileVersion(current) !== options.expectedVersion) throw new WorkspaceFileConflictError("File changed or was deleted since it was loaded");
+  }
   await writeFile(realTarget, content);
 
   const s = await stat(realTarget);

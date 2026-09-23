@@ -203,7 +203,8 @@ export const workspacesApi = {
   writeWorkspaceFile: (projectId: string, workspaceId: string, path: string, content: string | Uint8Array, options?: WriteWorkspaceFileOptions, machineId = "local") => {
     const params = new URLSearchParams({ path });
     if (options?.createDirs === false) params.set("createDirs", "false");
-    if (options?.overwrite === false) params.set("overwrite", "false");
+    if (options?.overwrite !== undefined) params.set("overwrite", String(options.overwrite));
+    if (options?.expectedVersion !== undefined) params.set("expectedVersion", options.expectedVersion);
     const isBinary = content instanceof Uint8Array;
     const body: BodyInit = isBinary ? new Uint8Array(content) : new TextEncoder().encode(content);
     return request(

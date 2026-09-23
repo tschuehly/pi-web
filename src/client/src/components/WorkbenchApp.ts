@@ -9,6 +9,7 @@ import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
 import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale, stepInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
+import { markdownWorkspaceContext, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { machineSessionKey } from "../machineKeys";
 import { nativeDirectoryPicker } from "../nativeHost";
 import { PluginRegistry } from "../plugins/registry";
@@ -21,6 +22,7 @@ import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
 import type { ChatView } from "./ChatView";
 import type { PromptEditor } from "./PromptEditor";
+import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import "./AllSessions";
 import "./AuthDialog";
 import "./ChatView";
@@ -33,6 +35,7 @@ import "./SessionTreeNavigator";
 import "./WorkstreamChooser";
 import "./WorkstreamContextDrawer";
 import "./WorkbenchSettingsPanel";
+import "./WorkbenchFilesPane";
 import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, watchWorkstreams, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamServiceContext, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
@@ -57,6 +60,7 @@ export class WorkbenchApp extends LitElement {
   @state() private currentWorkstream: WorkstreamSnapshot | null | undefined;
   @state() private currentWorkstreamError = "";
   @state() private delegateRosterCollapsed = false;
+  @state() private showFiles = false;
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -128,7 +132,14 @@ export class WorkbenchApp extends LitElement {
     (status) => { this.sessions.applySessionStatus(status); },
   );
 
-  private readonly onPopState = (): void => { void this.load(readRoute()); };
+  private readonly onPopState = (): void => {
+    if (this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) {
+      this.updateUrl({ replace: true });
+      return;
+    }
+    this.showFiles = false;
+    void this.load(readRoute());
+  };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!(event.metaKey || event.ctrlKey)) return;
@@ -799,6 +810,22 @@ export class WorkbenchApp extends LitElement {
     `;
   }
 
+  private readonly toggleFiles = (): void => {
+    if (this.showFiles && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
+    this.showFiles = !this.showFiles;
+  };
+
+  private readonly openWorkspaceFile = (event: CustomEvent<WorkspaceFileOpenRequest>): void => {
+    const workspace = this.app.selectedWorkspace;
+    const request = event.detail;
+    if (event.defaultPrevented || workspace?.projectId === undefined || workspace.projectId === ""
+      || request.machineId !== selectedMachineId(this.app) || request.projectId !== workspace.projectId
+      || request.workspaceId !== workspace.id || request.root !== workspace.path) return;
+    event.preventDefault();
+    this.showFiles = true;
+    void this.updateComplete.then(() => this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.openFile(request.path));
+  };
+
   private renderChat() {
     const state = this.app;
     const session = state.selectedSession;
@@ -807,16 +834,21 @@ export class WorkbenchApp extends LitElement {
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${selectedMachineId(state)} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         <header>
-          <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { this.sessions.deselectSession(); }}>←</button>
+          <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { if (this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false) { this.showFiles = false; this.sessions.deselectSession(); } }}>←</button>
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
+          <button type="button" class="files-toggle" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>Files</button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}
         </header>
         ${this.renderDesktopNotificationDiagnostic()}
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
+        <div class="chat-and-files">
+          <div class="chat-column">
         <chat-view
+          @workspace-file-open=${this.openWorkspaceFile}
+          .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)}
           .sessionId=${session.id}
           .messages=${state.messages}
           .messageStart=${state.messagePageStart}
@@ -871,6 +903,9 @@ export class WorkbenchApp extends LitElement {
           .onSelectThinking=${() => { void this.openThinkingDialog(); }}
           .onRunCommand=${(command: string) => this.sessions.runCommand(command)}
         ></prompt-editor>
+          </div>
+          ${this.showFiles ? html`<workbench-files-pane id="workbench-files" .workspace=${state.selectedWorkspace} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
+        </div>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
         ${state.modelDialog === undefined ? null : html`<command-picker .title=${state.modelDialog.title} .searchable=${true} .options=${state.modelDialog.options} .selectedValue=${state.modelDialog.selectedValue} .onPick=${(value: string) => { void this.pickModel(value); }} .onCancel=${() => { this.setApp({ modelDialog: undefined }); }}></command-picker>`}
         ${state.thinkingDialog === undefined ? null : html`<command-picker .title=${state.thinkingDialog.title} .options=${state.thinkingDialog.options} .selectedValue=${state.thinkingDialog.selectedValue} .onPick=${(value: string) => { void this.pickThinking(value); }} .onCancel=${() => { this.setApp({ thinkingDialog: undefined }); }}></command-picker>`}
@@ -936,8 +971,17 @@ export class WorkbenchApp extends LitElement {
     header workstream-context-drawer { flex: 1 1 auto; }
     header span { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
+    .chat-and-files { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
+    .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     delegate-roster, prompt-editor { flex: 0 0 auto; }
+    .files-toggle { flex: 0 0 auto; min-height: 32px; }
+    .files-toggle[aria-expanded="true"] { border-color: var(--pi-accent); }
+    workbench-files-pane { flex: 0 1 42%; width: min(520px, 50%); border-left: 1px solid var(--pi-border); }
+    @media (max-width: 760px) {
+      .chat-and-files { flex-direction: column; }
+      workbench-files-pane { flex: 0 1 48%; width: 100%; border-left: 0; border-top: 1px solid var(--pi-border); }
+    }
     @media (max-width: 600px) {
       .chooser, .chooser > section { grid-template-columns: minmax(0, 1fr); }
       .chooser { padding: 16px; }

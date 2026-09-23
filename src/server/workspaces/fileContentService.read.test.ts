@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../shared/workspaceFiles.js";
-import { readWorkspaceFile } from "./fileContentService.js";
+import { readWorkspaceFile, writeWorkspaceFile } from "./fileContentService.js";
 import { cleanupTempWorkspaces, createTempWorkspace } from "./fileContentService.testSupport.js";
 
 afterEach(async () => {
@@ -27,6 +27,19 @@ describe("readWorkspaceFile", () => {
     });
     expect(file.size).toBe(19);
     expect(Date.parse(file.modifiedAt)).not.toBeNaN();
+  });
+
+  it("serializes simultaneous versioned writes so only the first stale editor saves", async () => {
+    const root = await createTempWorkspace();
+    await writeFile(join(root, "notes.md"), "original");
+    const version = (await readWorkspaceFile(root, "notes.md")).version;
+    if (version === undefined) throw new Error("Expected an untruncated file version");
+    const results = await Promise.allSettled([
+      writeWorkspaceFile(root, "notes.md", Buffer.from("first"), { expectedVersion: version }),
+      writeWorkspaceFile(root, "notes.md", Buffer.from("second"), { expectedVersion: version }),
+    ]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+    expect((await readWorkspaceFile(root, "notes.md")).content).toBe("first");
   });
 
   it("rejects missing paths, directories, traversal, and absolute paths", async () => {
@@ -117,6 +130,7 @@ describe("readWorkspaceFile", () => {
 
     expect(file.content).toHaveLength(MAX_WORKSPACE_FILE_CONTENT_BYTES);
     expect(file.truncated).toBe(true);
+    expect(file.version).toBeUndefined();
     expect(file.binary).toBe(false);
   });
 
