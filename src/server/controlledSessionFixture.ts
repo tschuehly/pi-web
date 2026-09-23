@@ -83,7 +83,7 @@ export async function buildControlledSessionFixture(options: ControlledSessionFi
     blockers: [{
       code: "LIVE_ASK_UNREACHABLE",
       state: "partial",
-      message: "PI WEB pending asks are daemon-memory state opened only by an executing ask_user tool call. Persisted transcript entries expose completed asks but cannot create a live pending ask through a bounded production seam without running an agent/model or substituting the real sessiond.",
+      message: "Persisted sessions alone cannot hold a live pending ask. Start a separate, owned fixture session daemon with PI_WEB_FIXTURE_PENDING_ASK_MANIFEST pointing to this manifest to open one daemon-memory ask; never point this fixture at a live daemon.",
     }],
   };
 }
