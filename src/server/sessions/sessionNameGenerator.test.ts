@@ -55,6 +55,10 @@ describe("sessionNameGenerator", () => {
 
     expect(name).toBe("Fix the bug");
     expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ context: { messages: [
+      { role: "system", content: "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper." },
+      { role: "user", content: "Create a 2-6 word title for this request:\n\nPlease fix the login bug" },
+    ] } });
   });
 
   it("returns undefined when the stream reports an error", async () => {
