@@ -1,7 +1,7 @@
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, readlink, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { writeWorkspaceFile } from "./fileContentService.js";
+import { readWorkspaceFile, writeWorkspaceFile, WorkspaceFileConflictError } from "./fileContentService.js";
 import { cleanupTempWorkspaces, createTempWorkspace } from "./fileContentService.testSupport.js";
 
 afterEach(async () => {
@@ -51,6 +51,80 @@ describe("writeWorkspaceFile", () => {
     await expect(writeWorkspaceFile(root, "existing.txt", Buffer.from("new"), { overwrite: false })).rejects.toThrow("File already exists");
   });
 
+  it("preserves an external edit made after validation and before commit", async () => {
+    const root = await createTempWorkspace();
+    const target = join(root, "notes.md");
+    await writeFile(target, "original");
+    const version = (await readWorkspaceFile(root, "notes.md")).version;
+    if (version === undefined) throw new Error("Expected a file version");
+
+    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), { expectedVersion: version }, {
+      beforeCommit: async () => { await writeFile(target, "external"); },
+    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(readFile(target, "utf8")).resolves.toBe("external");
+  });
+
+  it("also detects external edits for an unversioned overwrite", async () => {
+    const root = await createTempWorkspace();
+    const target = join(root, "notes.md");
+    await writeFile(target, "original");
+
+    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), {}, {
+      beforeCommit: async () => { await writeFile(target, "external"); },
+    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(readFile(target, "utf8")).resolves.toBe("external");
+  });
+
+  it("does not follow a final-component symlink swapped in before commit", async () => {
+    const root = await createTempWorkspace();
+    const outside = await createTempWorkspace("pi-web-outside-");
+    const target = join(root, "notes.md");
+    const victim = join(outside, "victim.md");
+    await writeFile(target, "original");
+    await writeFile(victim, "untouched");
+    const version = (await readWorkspaceFile(root, "notes.md")).version;
+    if (version === undefined) throw new Error("Expected a file version");
+
+    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), { expectedVersion: version }, {
+      beforeCommit: async () => { await unlink(target); await symlink(victim, target); },
+    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(readFile(victim, "utf8")).resolves.toBe("untouched");
+    await expect(readlink(target)).resolves.toBe(victim);
+  });
+
+  it("retains a displaced original when an external writer takes the destination after displacement", async () => {
+    const root = await createTempWorkspace();
+    const target = join(root, "notes.md");
+    await writeFile(target, "original");
+    const version = (await readWorkspaceFile(root, "notes.md")).version;
+    if (version === undefined) throw new Error("Expected a file version");
+
+    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), { expectedVersion: version }, {
+      afterDisplacement: async () => { await writeFile(target, "external"); },
+    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(readFile(target, "utf8")).resolves.toBe("external");
+    const backups = (await readdir(root)).filter((name) => name.startsWith(".pi-web-backup-"));
+    expect(backups).toHaveLength(1);
+    const backup = backups[0];
+    if (backup === undefined) throw new Error("Expected displaced original");
+    await expect(readFile(join(root, backup, "original"), "utf8")).resolves.toBe("original");
+  });
+
+  it("restores external changes made through an open handle after displacement", async () => {
+    const root = await createTempWorkspace();
+    const target = join(root, "notes.md");
+    await writeFile(target, "original");
+
+    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), {}, {
+      afterDisplacement: async () => {
+        const backup = (await readdir(root)).find((name) => name.startsWith(".pi-web-backup-"));
+        if (backup === undefined) throw new Error("Expected displaced entry");
+        await writeFile(join(root, backup, "original"), "external");
+      },
+    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(readFile(target, "utf8")).resolves.toBe("external");
+  });
+
   it("creates intermediate directories by default", async () => {
     const root = await createTempWorkspace();
 
@@ -81,6 +155,17 @@ describe("writeWorkspaceFile", () => {
     await expect(writeWorkspaceFile(root, "mydir", Buffer.from("data"))).rejects.toThrow("Path is not a file");
   });
 
+  it("does not follow an existing final-component symlink", async () => {
+    const root = await createTempWorkspace();
+    const outside = await createTempWorkspace("pi-web-outside-");
+    const victim = join(outside, "victim.md");
+    await writeFile(victim, "untouched");
+    await symlink(victim, join(root, "notes.md"));
+
+    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"))).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(readFile(victim, "utf8")).resolves.toBe("untouched");
+  });
+
   it("prevents writing through symlinks that escape the workspace", async () => {
     const root = await createTempWorkspace();
     await mkdir(join(root, "subdir"), { recursive: true });
@@ -89,5 +174,7 @@ describe("writeWorkspaceFile", () => {
 
     await expect(writeWorkspaceFile(root, "subdir/escape/evil.txt", Buffer.from("evil"))).rejects.toThrow("Path escapes workspace");
     await expect(readFile(join(outsideDir, "evil.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(writeWorkspaceFile(root, "subdir/escape/new/evil.txt", Buffer.from("evil"))).rejects.toThrow("Path escapes workspace");
+    await expect(readFile(join(outsideDir, "new", "evil.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
