@@ -54,13 +54,15 @@ function fileVersion(bytes: Buffer): string {
 }
 
 export class WorkspaceFileConflictError extends Error {}
+export class WorkspaceFileOutcomeUnknownError extends Error {}
 
-interface WriteHelperEvent { kind: string; message?: string; conflict?: boolean; size?: number; modifiedAt?: number; created?: boolean }
+interface WriteHelperEvent { kind: string; message?: string; conflict?: boolean; uncertain?: boolean; size?: number; modifiedAt?: number; created?: boolean }
 
 function isWriteHelperEvent(value: unknown): value is WriteHelperEvent {
   if (typeof value !== "object" || value === null || !("kind" in value) || typeof value.kind !== "string") return false;
   if ("message" in value && typeof value.message !== "string") return false;
   if ("conflict" in value && typeof value.conflict !== "boolean") return false;
+  if ("uncertain" in value && typeof value.uncertain !== "boolean") return false;
   if ("size" in value && typeof value.size !== "number") return false;
   if ("modifiedAt" in value && typeof value.modifiedAt !== "number") return false;
   if ("created" in value && typeof value.created !== "boolean") return false;
@@ -69,7 +71,7 @@ function isWriteHelperEvent(value: unknown): value is WriteHelperEvent {
 
 const activeWrites = new Map<string, Promise<void>>();
 
-export async function writeWorkspaceFile(rootPath: string, path: string | undefined, content: Buffer, options: WriteWorkspaceFileOptions = {}, hooks?: { beforeCommit?: () => Promise<void>; afterDisplacement?: () => Promise<void> }): Promise<WriteWorkspaceFileResponse> {
+export async function writeWorkspaceFile(rootPath: string, path: string | undefined, content: Buffer, options: WriteWorkspaceFileOptions = {}, hooks?: { beforeCommit?: () => Promise<void>; afterDisplacement?: () => Promise<void>; afterInstallation?: () => Promise<void> }): Promise<WriteWorkspaceFileResponse> {
   // The optional hook is only used by deterministic filesystem race tests.
   if (path === undefined || path === "") throw new Error("path query parameter is required");
   // In-process serialization does not coordinate external writers; the filesystem commit below detects changed entries.
@@ -87,7 +89,7 @@ export async function writeWorkspaceFile(rootPath: string, path: string | undefi
   }
 }
 
-async function writeWorkspaceFileUnlocked(rootPath: string, path: string, content: Buffer, options: WriteWorkspaceFileOptions, hooks?: { beforeCommit?: () => Promise<void>; afterDisplacement?: () => Promise<void> }): Promise<WriteWorkspaceFileResponse> {
+async function writeWorkspaceFileUnlocked(rootPath: string, path: string, content: Buffer, options: WriteWorkspaceFileOptions, hooks?: { beforeCommit?: () => Promise<void>; afterDisplacement?: () => Promise<void>; afterInstallation?: () => Promise<void> }): Promise<WriteWorkspaceFileResponse> {
   const { root, relativePath } = await resolveParentInsideWorkspace(rootPath, path);
   // Node does not expose openat/linkat/renameat. The helper pins a directory fd
   // and uses *at operations so a swapped ancestor cannot redirect mutations.
@@ -115,12 +117,12 @@ async function writeWorkspaceFileUnlocked(rootPath: string, path: string, conten
     for await (const line of createInterface({ input: child.stdout })) {
       const event: unknown = JSON.parse(line);
       if (!isWriteHelperEvent(event)) throw new Error("Invalid workspace file helper response");
-      if (event.kind === "beforeCommit" || event.kind === "afterDisplacement") {
-        try { await (event.kind === "beforeCommit" ? hooks?.beforeCommit?.() : hooks?.afterDisplacement?.()); }
+      if (event.kind === "beforeCommit" || event.kind === "afterDisplacement" || event.kind === "afterInstallation") {
+        try { await (event.kind === "beforeCommit" ? hooks?.beforeCommit?.() : event.kind === "afterDisplacement" ? hooks?.afterDisplacement?.() : hooks?.afterInstallation?.()); }
         catch (error) { failure = error instanceof Error ? error : new Error(String(error)); }
         child.stdin.write(failure === undefined ? "go\n" : "abort\n");
       } else if (event.kind === "error") {
-        failure ??= event.conflict === true ? new WorkspaceFileConflictError(event.message) : new Error(event.message);
+        failure ??= event.uncertain === true ? new WorkspaceFileOutcomeUnknownError(event.message) : event.conflict === true ? new WorkspaceFileConflictError(event.message) : new Error(event.message);
       } else if (event.kind === "result" && event.size !== undefined && event.modifiedAt !== undefined) {
         result = { path: relativePath, size: event.size, modifiedAt: new Date(event.modifiedAt).toISOString(), created: event.created === true };
       }

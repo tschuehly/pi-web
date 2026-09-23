@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { effectiveAttachmentsConfig, effectiveUploadsConfig, parseAttachmentsConfig, parsePathAccessConfig, parseUploadsConfig, type PiWebConfig } from "../../config.js";
 import type { PiWebAttachmentsConfig, PiWebPathAccessConfig, PiWebUploadsConfig } from "../../shared/apiTypes.js";
@@ -21,9 +22,26 @@ export interface LoadedProjectPiWebConfig {
 export async function loadProjectPiWebConfig(projectPath: string): Promise<LoadedProjectPiWebConfig> {
   const path = join(projectPath, PROJECT_PI_WEB_CONFIG_PATH);
   try {
-    const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
-    if (!isRecord(parsed)) throw new Error(`PI WEB project config must be a JSON object: ${path}`);
-    return { path, exists: true, config: parseProjectPiWebConfig(parsed, path) };
+    const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
+    try {
+      const sizeLimit = 64 * 1024;
+      const stat = await handle.stat();
+      if (!stat.isFile()) throw new Error(`Project config must be a regular file: ${path}`);
+      if (stat.size > sizeLimit) throw new Error(`Project config exceeds 64 KiB: ${path}`);
+      const bytes = Buffer.alloc(sizeLimit + 1);
+      let length = 0;
+      while (length < bytes.length) {
+        const chunk = await handle.read(bytes, length, bytes.length - length, length);
+        if (chunk.bytesRead === 0) break;
+        length += chunk.bytesRead;
+      }
+      if (length > sizeLimit) throw new Error(`Project config exceeds 64 KiB: ${path}`);
+      const parsed: unknown = JSON.parse(bytes.toString("utf8", 0, length));
+      if (!isRecord(parsed)) throw new Error(`PI WEB project config must be a JSON object: ${path}`);
+      return { path, exists: true, config: parseProjectPiWebConfig(parsed, path) };
+    } finally {
+      await handle.close();
+    }
   } catch (error) {
     if (isNodeErrorWithCode(error, "ENOENT")) return { path, exists: false, config: {} };
     throw error;

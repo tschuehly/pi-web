@@ -2,6 +2,7 @@ import { mkdir, readFile, truncate, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAX_INLINE_PREVIEW_BYTES } from "../shared/workspaceFiles.js";
+import type { FileContentResponse, FileTreeResponse } from "../shared/apiTypes.js";
 import type { Project, WorkspaceProviderResolution } from "./types.js";
 import { appTestContext, registerAppTestHooks } from "./app.testSupport.js";
 import { workspaceFilePreviewErrorResponsePolicy, workspaceFilePreviewResponsePolicy } from "./workspaces/filePreviewResponsePolicy.js";
@@ -225,6 +226,31 @@ describe("buildApp workspace file routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual([{ path: "sdk.md", kind: "other" }]);
+  });
+
+  it("keeps relative tree, file, and preview access independent of invalid project path-access config", async () => {
+    const add = await appTestContext.app.inject({ method: "POST", url: "/api/projects", payload: { name: "Local Files", path: appTestContext.projectDir, create: true } });
+    const project = add.json<Project>();
+    const listed = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
+    const workspace = listed.json<WorkspaceProviderResolution>().workspaces[0];
+    if (workspace === undefined) throw new Error("Expected workspace");
+    await writeFile(join(appTestContext.projectDir, "local.txt"), "local content\n");
+    await mkdir(join(appTestContext.projectDir, ".pi-web"), { recursive: true });
+    await writeFile(join(appTestContext.projectDir, ".pi-web", "config.json"), "{invalid JSON");
+    const base = `/api/projects/${project.id}/workspaces/${workspace.id}`;
+    const [tree, file, preview, absolute] = await Promise.all([
+      appTestContext.app.inject({ method: "GET", url: `${base}/tree` }),
+      appTestContext.app.inject({ method: "GET", url: `${base}/file?path=local.txt` }),
+      appTestContext.app.inject({ method: "GET", url: `${base}/file/preview?path=local.txt&download=1` }),
+      appTestContext.app.inject({ method: "GET", url: `${base}/file?path=${encodeURIComponent(join(appTestContext.projectDir, "local.txt"))}` }),
+    ]);
+    expect(tree.statusCode).toBe(200);
+    expect(tree.json<FileTreeResponse>().entries).toContainEqual(expect.objectContaining({ name: "local.txt" }));
+    expect(file.statusCode).toBe(200);
+    expect(file.json<FileContentResponse>().content).toBe("local content\n");
+    expect(preview.statusCode).toBe(200);
+    expect(preview.body).toBe("local content\n");
+    expect(absolute.statusCode).toBe(400);
   });
 
   it("uses the owning project config for suggestions from an authoritative linked workspace", async () => {

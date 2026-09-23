@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, readlink, rename, symlink, unlink, writeFile 
 import { join } from "node:path";
 import { MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../shared/workspaceFiles.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readWorkspaceFile, writeWorkspaceFile, WorkspaceFileConflictError } from "./fileContentService.js";
+import { readWorkspaceFile, writeWorkspaceFile, WorkspaceFileConflictError, WorkspaceFileOutcomeUnknownError } from "./fileContentService.js";
 import { cleanupTempWorkspaces, createTempWorkspace } from "./fileContentService.testSupport.js";
 
 afterEach(async () => {
@@ -196,6 +196,26 @@ describe("writeWorkspaceFile", () => {
       },
     })).rejects.toThrow(WorkspaceFileConflictError);
     await expect(readFile(target, "utf8")).resolves.toBe("external");
+  });
+
+  it("reports an unknown outcome when validation fails after the new file is installed", async () => {
+    const root = await createTempWorkspace();
+    const target = join(root, "notes.md");
+    await writeFile(target, "original");
+    const version = (await readWorkspaceFile(root, "notes.md")).version;
+    if (version === undefined) throw new Error("Expected a file version");
+
+    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), { expectedVersion: version }, {
+      afterInstallation: async () => {
+        const backup = (await readdir(root)).find((name) => name.startsWith(".pi-web-backup-"));
+        if (backup === undefined) throw new Error("Expected displaced entry");
+        await writeFile(join(root, backup, "original"), "external");
+      },
+    })).rejects.toThrow(WorkspaceFileOutcomeUnknownError);
+    await expect(readFile(target, "utf8")).resolves.toBe("mine");
+    const backup = (await readdir(root)).find((name) => name.startsWith(".pi-web-backup-"));
+    if (backup === undefined) throw new Error("Expected retained backup");
+    await expect(readFile(join(root, backup, "original"), "utf8")).resolves.toBe("external");
   });
 
   it("creates intermediate directories by default", async () => {

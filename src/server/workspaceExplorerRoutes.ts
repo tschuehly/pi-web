@@ -2,9 +2,10 @@ import type { FastifyInstance } from "fastify";
 import type { WriteWorkspaceFileOptions } from "../shared/apiTypes.js";
 import type { PiWebConfigService } from "./configRoutes.js";
 import type { ProjectService } from "./projects/projectService.js";
-import { deleteWorkspaceFile, moveWorkspaceFile, readWorkspaceFile, writeWorkspaceFile, WorkspaceFileConflictError } from "./workspaces/fileContentService.js";
+import { deleteWorkspaceFile, moveWorkspaceFile, readWorkspaceFile, writeWorkspaceFile, WorkspaceFileConflictError, WorkspaceFileOutcomeUnknownError } from "./workspaces/fileContentService.js";
 import { isAbsoluteishFileSuggestionQuery, listFileSuggestions, listPathSuggestions } from "./workspaces/fileSuggestions.js";
 import { listWorkspaceTree } from "./workspaces/fileTreeService.js";
+import { isAbsoluteishPath } from "./workspaces/pathAccessPolicy.js";
 import { readWorkspaceFilePreview } from "./workspaces/filePreviewService.js";
 import { workspaceFilePreviewResponsePolicy } from "./workspaces/filePreviewResponsePolicy.js";
 import { applyWorkspaceFilePreviewErrorResponsePolicy } from "./workspaces/filePreviewResponseHeaders.js";
@@ -23,7 +24,8 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
   app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { path?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/tree`, async (request, reply) => {
     try {
       const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
-      return await listWorkspaceTree(context.root, request.query.path, await pathAccessForWorkspaceContext(context, options.config));
+      const pathAccess = isAbsoluteishPath(request.query.path ?? "") ? await pathAccessForWorkspaceContext(context, options.config) : undefined;
+      return await listWorkspaceTree(context.root, request.query.path, pathAccess);
     } catch (error) {
       return sendWorkspaceRequestError(reply, error, 400);
     }
@@ -32,7 +34,8 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
   app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { path?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/file`, async (request, reply) => {
     try {
       const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
-      return await readWorkspaceFile(context.root, request.query.path, await pathAccessForWorkspaceContext(context, options.config));
+      const pathAccess = isAbsoluteishPath(request.query.path ?? "") ? await pathAccessForWorkspaceContext(context, options.config) : undefined;
+      return await readWorkspaceFile(context.root, request.query.path, pathAccess);
     } catch (error) {
       return sendWorkspaceRequestError(reply, error, 400);
     }
@@ -48,7 +51,7 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
       };
       return await writeWorkspaceFile(context.root, request.query.path, request.body, writeOptions);
     } catch (error) {
-      return sendWorkspaceRequestError(reply, error, error instanceof WorkspaceFileConflictError ? 409 : 400);
+      return sendWorkspaceRequestError(reply, error, error instanceof WorkspaceFileOutcomeUnknownError ? 500 : error instanceof WorkspaceFileConflictError ? 409 : 400);
     }
   });
 
@@ -77,7 +80,8 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
     try {
       const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
       const download = request.query.download === "1" || request.query.download === "true";
-      const preview = await readWorkspaceFilePreview(context.root, request.query.path, await pathAccessForWorkspaceContext(context, options.config), { download });
+      const pathAccess = isAbsoluteishPath(request.query.path ?? "") ? await pathAccessForWorkspaceContext(context, options.config) : undefined;
+      const preview = await readWorkspaceFilePreview(context.root, request.query.path, pathAccess, { download });
       const policy = workspaceFilePreviewResponsePolicy(preview.path, { download });
       return await reply
         .header("Content-Type", policy.contentType)

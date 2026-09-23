@@ -20,6 +20,10 @@ class Conflict(Exception):
     pass
 
 
+class OutcomeUnknown(Exception):
+    pass
+
+
 def send(kind, **fields):
     sys.stdout.write(json.dumps({"kind": kind, **fields}) + "\n")
     sys.stdout.flush()
@@ -146,12 +150,15 @@ def write(request):
                             os.rename(leaf, "original", src_dir_fd=parent, dst_dir_fd=backup)
                         except FileNotFoundError as exc:
                             raise Conflict("File changed or was deleted since it was loaded") from exc
+                        installed = False
                         try:
                             gate("afterDisplacement")
                             assert_parent(root, parts[:-1], parent)
                             if snapshot(backup, "original") != initial:
                                 raise Conflict("File changed or was deleted since it was loaded")
                             os.link(temp, leaf, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
+                            installed = True
+                            gate("afterInstallation")
                             if snapshot(backup, "original") != initial:
                                 raise Conflict("File changed after installation; displaced entry retained")
                         except BaseException as exc:
@@ -162,7 +169,8 @@ def write(request):
                                     os.link("original", leaf, src_dir_fd=backup, dst_dir_fd=parent, follow_symlinks=False)
                                 os.unlink("original", dir_fd=backup)
                             except OSError as restore_error:
-                                raise Conflict("File changed; displaced entry retained in " + backup_dir + ": " + str(restore_error)) from exc
+                                error = OutcomeUnknown if installed else Conflict
+                                raise error("File changed; displaced entry retained in " + backup_dir + ": " + str(restore_error)) from exc
                             if isinstance(exc, FileExistsError):
                                 raise Conflict("File changed or was deleted since it was loaded") from exc
                             raise
@@ -188,7 +196,7 @@ def write(request):
                         os.rmdir(backup_dir, dir_fd=parent)
                     except OSError as exc:
                         if exc.errno != errno.ENOTEMPTY:
-                            raise
+                            raise OutcomeUnknown("File save cleanup failed after installation: " + str(exc)) from exc
         finally:
             os.close(parent)
     finally:
@@ -199,5 +207,5 @@ if __name__ == "__main__":
     try:
         write(json.loads(sys.stdin.buffer.readline()))
     except BaseException as exc:
-        send("error", conflict=isinstance(exc, Conflict), message=str(exc))
+        send("error", conflict=isinstance(exc, Conflict), uncertain=isinstance(exc, OutcomeUnknown), message=str(exc))
         sys.exit(1)
