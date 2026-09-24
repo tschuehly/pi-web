@@ -104,6 +104,18 @@ describe("Workbench Files", () => {
     await vi.waitFor(() => { expect(pane.shadowRoot?.querySelector(".toolbar span")?.textContent).toBe("Saved"); });
   });
 
+  it("does not open an editor for a file the server marks non-editable", async () => {
+    vi.spyOn(api, "workspaceFile").mockResolvedValue({ ...file("", "v1"), binary: true });
+    const write = vi.spyOn(api, "writeWorkspaceFile");
+    const pane = await mount();
+    pane.shadowRoot?.querySelector<HTMLButtonElement>(".file-row")?.click();
+    await vi.waitFor(() => { expect(pane.shadowRoot?.querySelectorAll(".file-row")).toHaveLength(3); });
+    pane.shadowRoot?.querySelectorAll<HTMLButtonElement>(".file-row")[1]?.click();
+    await vi.waitFor(() => { expect(pane.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("cannot be edited"); });
+    expect(pane.shadowRoot?.querySelector("textarea")).toBeNull();
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it("refuses an unsafe save when the loaded host did not supply a version", async () => {
     const unversioned = file("# Initial", "v1");
     delete unversioned.version;

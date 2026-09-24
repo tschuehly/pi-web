@@ -1,3 +1,4 @@
+import { isUtf8 } from "node:buffer";
 import { execFile, spawn } from "node:child_process";
 import { lstat, mkdir, realpath, rename, stat, unlink } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -31,7 +32,8 @@ export async function readWorkspaceFile(rootPath: string, path: string | undefin
   // Text-source formats (HTML, Markdown, SVG) retain capped literal UTF-8
   // source for Raw mode. Raster image and PDF bytes stay out of JSON and are
   // served only by the preview response.
-  const binary = classification?.source === "stream" || isProbablyBinary(buffer);
+  const binary = classification?.source === "stream" || isProbablyBinary(buffer)
+    || (s.size <= MAX_WORKSPACE_FILE_CONTENT_BYTES && !isUtf8(buffer));
   return {
     path: displayPath,
     ...languageForPath(displayPath),

@@ -45,6 +45,15 @@ describe("readWorkspaceFile", () => {
     expect(Date.parse(file.modifiedAt)).not.toBeNaN();
   });
 
+  it("refuses non-UTF-8 text instead of exposing lossy editable source", async () => {
+    const root = await createTempWorkspace();
+    await writeFile(join(root, "legacy.md"), Buffer.from([0x23, 0x20, 0x63, 0x61, 0x66, 0xe9, 0x0a]));
+    await writeFile(join(root, "utf8.md"), "\uFEFF# Café\n");
+
+    expect(await readWorkspaceFile(root, "legacy.md")).toMatchObject({ binary: true, content: "", truncated: false });
+    expect(await readWorkspaceFile(root, "utf8.md")).toMatchObject({ binary: false, content: "\uFEFF# Café\n" });
+  });
+
   it("serializes simultaneous versioned writes so only the first stale editor saves", async () => {
     const root = await createTempWorkspace();
     await writeFile(join(root, "notes.md"), "original");
@@ -191,6 +200,16 @@ describe("readWorkspaceFile", () => {
 
     expect(file.mediaType).toBeUndefined();
     expect(file).toMatchObject({ content: "", binary: true });
+  });
+
+  it("keeps truncated UTF-8 source previewable when the cap splits a code point", async () => {
+    const root = await createTempWorkspace();
+    await writeFile(join(root, "large.md"), "a".repeat(MAX_WORKSPACE_FILE_CONTENT_BYTES - 1) + "é");
+
+    const file = await readWorkspaceFile(root, "large.md");
+
+    expect(file).toMatchObject({ binary: false, truncated: true });
+    expect(file.content).toHaveLength(MAX_WORKSPACE_FILE_CONTENT_BYTES);
   });
 
   it.each(["large.md", "large.html"])("caps literal source for %s", async (path) => {
