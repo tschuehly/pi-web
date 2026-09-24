@@ -295,6 +295,32 @@ describe("session API compatibility", () => {
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ cwd: "/repo" });
   });
 
+  it("lists, creates, reads, posts and acknowledges encoded topic routes", async () => {
+    const summary = { topicId: "topic /1", title: "Files", preview: "Question", attention: "question", updatedAt: "now" } as const;
+    const snapshot = { topicId: summary.topicId, title: summary.title, attention: "question", state: "idle", messages: [{ id: "a", role: "assistant", text: "Choose", createdAt: "now", choices: [{ label: "Yes", detail: "Proceed" }], images: [{ mimeType: "image/png", data: "aGVsbG8=" }] }] } as const;
+    const fetchMock = stubSequenceFetch([
+      jsonResponse({ topics: [summary] }), jsonResponse(summary), jsonResponse(snapshot),
+      jsonResponse({ topicId: summary.topicId, status: "accepted" }), jsonResponse(snapshot),
+    ]);
+    const session = { id: "s 1", cwd: "/repo" };
+    expect((await sessionsApi.topics(session, "remote a")).topics).toEqual([summary]);
+    expect(await sessionsApi.createTopic(session, "Files", "remote a")).toEqual(summary);
+    const loadedTopic = await sessionsApi.topic(session, summary.topicId, "remote a");
+    expect(loadedTopic.messages[0]?.choices?.[0]?.label).toBe("Yes");
+    expect(loadedTopic.messages[0]?.images?.[0]).toEqual({ mimeType: "image/png", data: "aGVsbG8=" });
+    const image = { kind: "image" as const, reference: "[PIC_1]", mimeType: "image/png", data: "aGVsbG8=" };
+    expect(await sessionsApi.postTopic(session, summary.topicId, "Next question", "remote a", "request-1", [image])).toEqual({ topicId: summary.topicId, status: "accepted" });
+    expect((await sessionsApi.ackTopic(session, summary.topicId, "remote a")).topicId).toBe(summary.topicId);
+    const base = "https://pi.example.test/api/machines/remote%20a/sessions/s%201/topics";
+    expect(fetchCall(fetchMock, 0)[0]).toBe(`${base}?cwd=%2Frepo`);
+    expect(fetchCall(fetchMock, 1)[0]).toBe(base);
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ cwd: "/repo", title: "Files" });
+    expect(fetchCall(fetchMock, 2)[0]).toBe(`${base}/topic%20%2F1?cwd=%2Frepo`);
+    expect(fetchCall(fetchMock, 3)[0]).toBe(`${base}/topic%20%2F1/messages`);
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 3)[1]))).toEqual({ cwd: "/repo", text: "Next question", requestId: "request-1", attachments: [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "aGVsbG8=" }] });
+    expect(fetchCall(fetchMock, 4)[0]).toBe(`${base}/topic%20%2F1/ack`);
+  });
+
   it("adds cwd context when session refs include a workspace", async () => {
     const fetchMock = stubJsonFetch({ accepted: true });
 

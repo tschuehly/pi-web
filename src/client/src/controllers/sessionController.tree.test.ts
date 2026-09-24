@@ -73,6 +73,16 @@ describe("SessionController message shortcuts", () => {
 });
 
 describe("SessionController session tree navigation", () => {
+  it("does not put a hidden topic input's raw internal prompt in the editor", async () => {
+    const hiddenTree: SessionTreeSnapshot = { nodes: [{ id: "topic-input", parentId: null, kind: "custom-message", summary: "Hidden custom message" }], activeLeafId: "topic-input", activePathIds: ["topic-input"] };
+    const replacePromptEditorText = vi.fn();
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession], treeDialog: hiddenTree };
+    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined,
+      new InMemorySessionSelectionMemory(), { api: { ...defaultApi, navigateTree: () => Promise.resolve({ cancelled: false, editorText: "[Focused topic: focus] raw internal prompt" }), messages: () => Promise.resolve(page("fresh", 1)), status: () => Promise.resolve(status(oldSession.id)), streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }), thinkingLevels: () => Promise.resolve({ levels: [] }) }, socket: new FakeSocket(), replacePromptEditorText });
+    await controller.navigateTree("topic-input", { mode: "none" });
+    expect(loadDraft(machineSessionKey("local", oldSession.id))).toBe("");
+    expect(replacePromptEditorText).toHaveBeenCalledWith({ machineId: "local", sessionId: oldSession.id, text: "" });
+  });
   it("opens tree command results and keeps older-server unsupported results inert", async () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const navigateTree = vi.fn<typeof defaultApi.navigateTree>();

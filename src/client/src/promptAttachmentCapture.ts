@@ -38,6 +38,20 @@ export interface CaptureResult {
 export const DEFAULT_FILE_MIME_TYPE = "application/octet-stream";
 export const READ_FAILURE_MESSAGE = "Failed to read an attachment.";
 
+export function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => { reject(reader.error ?? new Error(READ_FAILURE_MESSAGE)); };
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") { reject(new Error("Unexpected file reader result")); return; }
+      const commaIndex = result.indexOf(",");
+      resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 /**
  * Read a batch of browser files as prompt attachments.
  *

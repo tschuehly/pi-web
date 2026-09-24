@@ -6,6 +6,7 @@ import { normalizeRequestCwd } from "../workingDirectory.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 import type { SessionRouteRef, SessionRouteService } from "./sessionService.js";
 import { normalizeSessionCleanupRequest } from "./sessionCleanup.js";
+import { topicId, topicImages, topicText, topicTitle } from "./sessionTopic.js";
 
 interface SessionQuery {
   cwd?: string;
@@ -190,6 +191,35 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     } catch (error) {
       return reply.code(notificationErrorStatus(error)).send({ error: errorMessage(error) });
     }
+  });
+
+  app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/topics`, async (request, reply) => {
+    const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
+    if (!ref) return reply;
+    try { return await sessions.topics(ref); }
+    catch (error) { return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) }); }
+  });
+
+  app.post<{ Params: { sessionId: string }; Body: Record<string, unknown> | undefined }>(`${prefix}/sessions/:sessionId/topics`, async (request, reply) => {
+    try { const body = requireRecord(request.body); return await sessions.createTopic(sessionRefFromBody(request.params.sessionId, body), topicTitle(body["title"])); }
+    catch (error) { return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) }); }
+  });
+
+  app.get<{ Params: { sessionId: string; topicId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/topics/:topicId`, async (request, reply) => {
+    const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
+    if (!ref) return reply;
+    try { return await sessions.topic(ref, topicId(request.params.topicId)); }
+    catch (error) { return reply.code(errorMessage(error) === "Topic not found" ? 404 : mutationErrorStatus(error)).send({ error: errorMessage(error) }); }
+  });
+
+  app.post<{ Params: { sessionId: string; topicId: string }; Body: Record<string, unknown> | undefined }>(`${prefix}/sessions/:sessionId/topics/:topicId/messages`, async (request, reply) => {
+    try { const body = requireRecord(request.body); const images = topicImages(body["attachments"]); return await sessions.postTopicMessage(sessionRefFromBody(request.params.sessionId, body), topicId(request.params.topicId), topicText(body["text"], images.length > 0), requireNonEmptyString(body, "requestId"), images); }
+    catch (error) { return reply.code(errorMessage(error) === "Topic not found" ? 404 : mutationErrorStatus(error)).send({ error: errorMessage(error) }); }
+  });
+
+  app.post<{ Params: { sessionId: string; topicId: string }; Body: Record<string, unknown> | undefined }>(`${prefix}/sessions/:sessionId/topics/:topicId/ack`, async (request, reply) => {
+    try { const body = requireRecord(request.body); return await sessions.acknowledgeTopic(sessionRefFromBody(request.params.sessionId, body), topicId(request.params.topicId)); }
+    catch (error) { return reply.code(errorMessage(error) === "Topic not found" ? 404 : mutationErrorStatus(error)).send({ error: errorMessage(error) }); }
   });
 
   app.get<{ Params: { sessionId: string }; Querystring: MessageQuery }>(`${prefix}/sessions/:sessionId/messages`, async (request, reply) => {
@@ -804,7 +834,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function mutationErrorStatus(error: unknown): 400 | 404 {
+function mutationErrorStatus(error: unknown): 400 | 404 | 409 {
+  if (errorMessage(error) === "Topic request id already used for different content") return 409;
   return isSessionNotFoundError(error) ? 404 : 400;
 }
 

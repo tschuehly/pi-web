@@ -16,6 +16,8 @@ import type {
   SessionDefaultsUpdate,
   SessionUnreadAcknowledgeRequest,
   SessionUnreadCatalogSnapshot,
+  SessionTopicSnapshot,
+  SessionTopicSummary,
 } from "../../shared/apiTypes.js";
 import type {
   ClientArchiveSessionsResponse,
@@ -58,6 +60,11 @@ export interface SessionRouteService {
   /** Unknown never proves non-creation. Only a live or persisted exact match is found. */
   lookupWorkstreamLaunch(token: string, cwd: string): Promise<{ status: "found"; sessionId: string; cwd: string } | { status: "unknown" }>;
   messages(ref: SessionRouteRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage>;
+  topics(ref: SessionRouteRef): Promise<{ topics: SessionTopicSummary[] }>;
+  createTopic(ref: SessionRouteRef, title: string): Promise<SessionTopicSummary>;
+  topic(ref: SessionRouteRef, topicId: string): Promise<SessionTopicSnapshot>;
+  postTopicMessage(ref: SessionRouteRef, topicId: string, text: string, requestId: string, attachments?: unknown): Promise<{ topicId: string; status: "accepted" | "queued" }>;
+  acknowledgeTopic(ref: SessionRouteRef, topicId: string): Promise<SessionTopicSnapshot>;
   status(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   streamSnapshot(ref: SessionRouteRef): Promise<SessionStreamSnapshot>;
   notificationCatalog(): SessionNotificationCatalogSnapshot | Promise<SessionNotificationCatalogSnapshot>;

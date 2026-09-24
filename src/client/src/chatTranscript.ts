@@ -44,9 +44,10 @@ export function applyTranscriptEvent(messages: ChatLine[], event: SessionUiEvent
   if (event.type === "message.append") return appendNewMessage(messages, event.message);
   if (event.type === "assistant.delta") return appendText(messages, "assistant", event.text);
   if (event.type === "assistant.thinking.delta") return appendThinking(messages, event.text);
-  if (event.type === "tool.start") return appendToolExecutionStart(messages, event);
-  if (event.type === "tool.update") return updateToolExecution(messages, event.toolCallId, (part) => mergeToolExecutionUpdate(part, event));
+  if (event.type === "tool.start") return (event.toolName === "topic_post" || event.toolName === "topic_open") ? messages : appendToolExecutionStart(messages, event);
+  if (event.type === "tool.update") return (event.toolName === "topic_post" || event.toolName === "topic_open") ? messages : updateToolExecution(messages, event.toolCallId, (part) => mergeToolExecutionUpdate(part, event));
   if (event.type === "tool.end") {
+    if ((event.toolName === "topic_post" || event.toolName === "topic_open") && !event.isError) return messages;
     return finalizeToolExecution(messages, {
       toolCallId: event.toolCallId,
       toolName: event.toolName,
@@ -68,7 +69,16 @@ export function applyTranscriptEvent(messages: ChatLine[], event: SessionUiEvent
 
 function applyFinalMessage(messages: ChatLine[], rawMessage: unknown): ChatLine[] | undefined {
   const rawToolResult = toolResultFromRawMessage(rawMessage);
-  if (rawToolResult !== undefined) return finalizeToolExecution(messages, rawToolResult);
+  if (rawToolResult !== undefined) {
+    if (rawToolResult.toolName === "topic_post" && !rawToolResult.isError) return messages;
+    if (rawToolResult.toolName === "topic_open" && !rawToolResult.isError) {
+      const link = normalizeMessage(rawMessage)[0];
+      const topicId = link?.parts[0]?.type === "topicLink" ? link.parts[0].topicId : undefined;
+      if (link === undefined || topicId === undefined || messages.some((line) => line.parts.some((part) => part.type === "topicLink" && part.topicId === topicId))) return messages;
+      return [...messages, link];
+    }
+    return finalizeToolExecution(messages, rawToolResult);
+  }
 
   const ended = normalizeMessage(rawMessage);
   if (ended.length === 0) return undefined;

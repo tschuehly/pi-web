@@ -7,7 +7,7 @@ import { LitElement, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type FileSuggestion, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
-import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE } from "../promptAttachmentCapture";
+import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, readFileAsBase64, READ_FAILURE_MESSAGE } from "../promptAttachmentCapture";
 import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
@@ -1086,20 +1086,6 @@ function fileExtensionLabel(name: string): string {
   const dotIndex = trimmed.lastIndexOf(".");
   if (dotIndex >= 0 && dotIndex < trimmed.length - 1) return trimmed.slice(dotIndex + 1, dotIndex + 5).toUpperCase();
   return "FILE";
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => { reject(reader.error ?? new Error("Failed to read file")); };
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") { reject(new Error("Unexpected file reader result")); return; }
-      const commaIndex = result.indexOf(",");
-      resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
-    };
-    reader.readAsDataURL(file);
-  });
 }
 
 const proseInputAssistanceAttributes: Record<string, string> = {

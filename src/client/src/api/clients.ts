@@ -1,6 +1,7 @@
 import { parseSessionDefaults } from "../../../shared/sessionDefaults";
 import type { SessionDefaultsUpdate } from "../../../shared/apiTypes";
-import type { AskUserSubmission, DeleteWorkspaceFileResponse, ExtensionDialogAnswer, FileSuggestion, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, QueuedSessionMessage, ServerNoticeDismissRequest, SessionBulkMutationRef, SessionCleanupRequest, SessionModelScopeMode, SessionNotificationDismissThrough, SessionRef, SessionTreeForkRequest, SessionTreeForkResult, SessionTreeNavigateRequest, SessionUnreadAcknowledgeRequest, WorkspaceRemovalRequest, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
+import type { AskUserSubmission, DeleteWorkspaceFileResponse, ExtensionDialogAnswer, FileSuggestion, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, PromptImageAttachment, QueuedSessionMessage, ServerNoticeDismissRequest, SessionBulkMutationRef, SessionCleanupRequest, SessionModelScopeMode, SessionNotificationDismissThrough, SessionRef, SessionTopicAttention, SessionTopicMessage, SessionTopicSummary, SessionTopicsSnapshot, SessionTopicSnapshot, SessionTreeForkRequest, SessionTreeForkResult, SessionTreeNavigateRequest, SessionUnreadAcknowledgeRequest, WorkspaceRemovalRequest, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
+import { isSupportedImageMimeType } from "../../../shared/promptAttachments";
 import { resolveAppUrl } from "../appUrl";
 import { request } from "./http";
 import {
@@ -229,6 +230,61 @@ export const workspacesApi = {
   },
 };
 
+function isTopicRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function topicAttention(value: unknown): SessionTopicAttention {
+  if (value !== "question" && value !== "update" && value !== "working" && value !== "unanswered" && value !== "clear") throw new Error("Invalid topic attention");
+  return value;
+}
+
+function parseTopicSummary(value: unknown): SessionTopicSummary {
+  if (!isTopicRecord(value) || typeof value["topicId"] !== "string" || typeof value["title"] !== "string"
+    || typeof value["preview"] !== "string" || typeof value["updatedAt"] !== "string") throw new Error("Invalid topic summary");
+  return { topicId: value["topicId"], title: value["title"], preview: value["preview"], attention: topicAttention(value["attention"]), updatedAt: value["updatedAt"] };
+}
+
+function parseTopics(value: unknown): SessionTopicsSnapshot {
+  if (!isTopicRecord(value) || !Array.isArray(value["topics"])) throw new Error("Invalid topics response");
+  return { topics: value["topics"].map(parseTopicSummary) };
+}
+
+function parseTopic(value: unknown): SessionTopicSnapshot {
+  if (!isTopicRecord(value) || typeof value["topicId"] !== "string" || typeof value["title"] !== "string"
+    || !Array.isArray(value["messages"]) || !["idle", "pending", "unanswered"].includes(String(value["state"]))
+    || !["question", "update", "working", "unanswered", "clear"].includes(String(value["attention"]))) throw new Error("Invalid topic response");
+  const messages = value["messages"].map((item: unknown): SessionTopicMessage => {
+    if (!isTopicRecord(item)) throw new Error("Invalid topic message");
+    const id = item["id"], role = item["role"], text = item["text"], createdAt = item["createdAt"];
+    const attention = item["attention"], choices = item["choices"], images = item["images"];
+    if (typeof id !== "string" || (role !== "user" && role !== "assistant") || typeof text !== "string" || typeof createdAt !== "string"
+      || (attention !== undefined && attention !== "question" && attention !== "update" && attention !== "working" && attention !== "clear")
+      || (choices !== undefined && (!Array.isArray(choices) || !choices.every((choice: unknown) => isTopicRecord(choice) && typeof choice["label"] === "string" && typeof choice["detail"] === "string")))
+      || (images !== undefined && (!Array.isArray(images) || !images.every((image: unknown) => isTopicRecord(image) && isSupportedImageMimeType(image["mimeType"]) && typeof image["data"] === "string")))) throw new Error("Invalid topic message");
+    return { id, role: role === "user" ? "user" : "assistant", text, createdAt,
+      ...(Array.isArray(images) ? { images: images.map((image: Record<string, unknown>) => ({ mimeType: String(image["mimeType"]), data: String(image["data"]) })) } : {}),
+      ...(typeof item["requestId"] === "string" ? { requestId: item["requestId"] } : {}),
+      ...(attention === undefined ? {} : { attention: attention === "question" ? "question" : attention === "update" ? "update" : attention === "working" ? "working" : "clear" }),
+      ...(choices === undefined ? {} : { choices: choices.map((choice: Record<string, unknown>) => ({ label: String(choice["label"]), detail: String(choice["detail"]) })) }),
+    };
+  });
+  return {
+    topicId: value["topicId"], title: value["title"], state: value["state"] === "pending" ? "pending" : value["state"] === "unanswered" ? "unanswered" : "idle",
+    attention: topicAttention(value["attention"]),
+    messages,
+  };
+}
+
+function parseTopicAcceptance(value: unknown): { topicId: string; status: "accepted" | "queued" } {
+  if (!isTopicRecord(value) || typeof value["topicId"] !== "string" || (value["status"] !== "accepted" && value["status"] !== "queued")) throw new Error("Invalid topic acceptance");
+  return { topicId: value["topicId"], status: value["status"] };
+}
+
+function topicPath(session: SessionRef, topicId: string, machineId: string): string {
+  return sessionPath(session, `topics/${encodeURIComponent(topicId)}`, machineId);
+}
+
 export const sessionsApi = {
   sessions: (cwd: string, machineId = "local", options?: { signal?: AbortSignal }) => request(
     `${machinePrefix(machineId)}/sessions?cwd=${encodeURIComponent(cwd)}`,
@@ -251,6 +307,11 @@ export const sessionsApi = {
   archiveMany: (sessions: readonly SessionRef[], machineId = "local") => request(`${machinePrefix(machineId)}/sessions/bulk/archive`, parseSessionBulkArchiveResponse, { method: "POST", body: sessionBulkMutationBody(sessions) }),
   deleteArchivedMany: (sessions: readonly SessionRef[], machineId = "local") => request(`${machinePrefix(machineId)}/sessions/bulk/delete-archived`, parseSessionBulkDeleteArchivedResponse, { method: "POST", body: sessionBulkMutationBody(sessions) }),
   messages: (session: SessionRef, options?: { limit?: number; before?: number }, machineId = "local") => request(messagePath(session, options, machineId), parseMessagePage),
+  topics: (session: SessionRef, machineId = "local") => request(sessionQueryPath(session, "topics", machineId), parseTopics),
+  createTopic: (session: SessionRef, title: string, machineId = "local") => request(sessionPath(session, "topics", machineId), parseTopicSummary, { method: "POST", body: sessionBody(session, { title }) }),
+  topic: (session: SessionRef, topicId: string, machineId = "local") => request(`${topicPath(session, topicId, machineId)}${sessionQuery(session)}`, parseTopic),
+  postTopic: (session: SessionRef, topicId: string, text: string, machineId: string, requestId: string, attachments: readonly PromptImageAttachment[] = []) => request(`${topicPath(session, topicId, machineId)}/messages`, parseTopicAcceptance, { method: "POST", body: sessionBody(session, { text, requestId, ...(attachments.length > 0 ? { attachments } : {}) }) }),
+  ackTopic: (session: SessionRef, topicId: string, machineId = "local") => request(`${topicPath(session, topicId, machineId)}/ack`, parseTopic, { method: "POST", body: sessionBody(session) }),
   status: (session: SessionRef, machineId = "local") => request(sessionQueryPath(session, "status", machineId), parseSessionStatus),
   streamSnapshot: (session: SessionRef, machineId = "local") => request(sessionQueryPath(session, "stream-snapshot", machineId), parseSessionStreamSnapshot),
   promoteQueuedMessage: (session: SessionRef, target: QueuedSessionMessage, machineId = "local") => request(sessionPath(session, "queue/promote", machineId), parseSessionStatus, { method: "POST", body: sessionBody(session, { kind: target.kind, text: target.text }) }),

@@ -1328,6 +1328,42 @@ export type SessionTreeForkResult =
   | { cancelled: false; session: SessionInfo; promptDraft?: string }
   | { cancelled: true };
 
+/** Topic entries are scoped to the selected branch of one native Pi session. */
+export type SessionTopicAttention = "question" | "update" | "working" | "unanswered" | "clear";
+
+export interface SessionTopicChoice { label: string; detail: string }
+export type SessionTopicImage = Pick<PromptImageAttachment, "mimeType" | "data">;
+
+export interface SessionTopicMessage {
+  id: string;
+  requestId?: string;
+  role: "user" | "assistant";
+  text: string;
+  createdAt: string;
+  images?: SessionTopicImage[];
+  attention?: SessionTopicAttention;
+  choices?: SessionTopicChoice[];
+}
+
+export interface SessionTopicSummary {
+  topicId: string;
+  title: string;
+  preview: string;
+  attention: SessionTopicAttention;
+  updatedAt: string;
+}
+
+export interface SessionTopicSnapshot {
+  topicId: string;
+  title: string;
+  messages: SessionTopicMessage[];
+  /** No assistant topic_post after the latest input is not a reply. */
+  state: "idle" | "pending" | "unanswered";
+  attention: SessionTopicAttention;
+}
+
+export interface SessionTopicsSnapshot { topics: SessionTopicSummary[] }
+
 /** Browser transcript payload; entryId identifies the durable session-tree entry, not the provider response. */
 export interface TranscriptMessage {
   entryId?: string;

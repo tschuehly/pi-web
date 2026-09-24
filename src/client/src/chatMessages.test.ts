@@ -132,6 +132,14 @@ describe("chat message normalization", () => {
   });
 
   it("normalizes tool calls and tool results", () => {
+    expect(normalizeMessage({ role: "assistant", content: [{ type: "toolCall", name: "topic_post", arguments: { topicId: "focus", text: "hi" } }] })).toEqual([]);
+    expect(normalizeMessage({ role: "toolResult", toolName: "topic_post", content: [{ type: "text", text: "Posted to focused topic" }] })).toEqual([]);
+    expect(normalizeMessage({ role: "toolResult", toolName: "topic_open", details: { topicId: "files", title: "Files" }, content: [{ type: "text", text: "Opened topic files" }] })).toEqual([
+      { role: "system", parts: [{ type: "topicLink", topicId: "files", title: "Files" }] },
+    ]);
+    expect(normalizeMessage({ role: "assistant", content: [{ type: "text", text: "Orchestrator update" }, { type: "toolCall", name: "topic_post", arguments: { topicId: "focus", text: "hi" } }] })).toEqual([
+      { role: "assistant", parts: [{ type: "text", text: "Orchestrator update" }] },
+    ]);
     expect(normalizeMessage({ role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: { command: "npm test" } }] })).toEqual([
       { role: "assistant", parts: [{ type: "toolCall", toolName: "bash", summary: "npm test", args: { command: "npm test" } }] },
     ]);

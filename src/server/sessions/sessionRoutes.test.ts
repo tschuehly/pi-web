@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ASK_USER_ID_MAX_LENGTH, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../shared/apiTypes.js";
 import type {
   AskUserCloseResponse,
@@ -59,6 +59,43 @@ afterEach(async () => {
 });
 
 describe("session routes", () => {
+  it("validates and scopes the focused-topic API without forwarding malformed requests", async () => {
+    const routeApp = Fastify({ logger: false });
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    try {
+      const url = "/sessions/session-1/topics/focus";
+      expect((await routeApp.inject({ method: "GET", url })).statusCode).toBe(400);
+      expect((await routeApp.inject({ method: "POST", url: `${url}/messages`, payload: { cwd: "/workspace" } })).statusCode).toBe(400);
+      expect((await routeApp.inject({ method: "POST", url: `${url}/messages`, payload: { cwd: "/workspace", text: 42 } })).statusCode).toBe(400);
+      expect((await routeApp.inject({ method: "POST", url: `${url}/messages`, payload: { cwd: "/workspace", text: " " } })).statusCode).toBe(400);
+      expect(routeService.topicCalls).toEqual([]);
+      expect(routeService.topicPostCalls).toEqual([]);
+      const read = await routeApp.inject({ method: "GET", url: `${url}?cwd=${encodeURIComponent("/workspace")}` });
+      const post = await routeApp.inject({ method: "POST", url: `${url}/messages`, payload: { cwd: "/workspace", text: "hello", requestId: "req-1" } });
+      expect(read.json()).toEqual({ topicId: "focus", title: "Focus", messages: [], state: "idle", attention: "clear" });
+      expect(post.json()).toEqual({ topicId: "focus", status: "accepted" });
+      expect(routeService.topicCalls).toEqual([{ id: "session-1", cwd: "/workspace" }]);
+      expect(routeService.topicPostCalls).toEqual([{ ref: { id: "session-1", cwd: "/workspace" }, id: "focus", text: "hello", requestId: "req-1", attachments: [] }]);
+      const picture = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "AQID" };
+      expect((await routeApp.inject({ method: "POST", url: `${url}/messages`, payload: { cwd: "/workspace", text: "", requestId: "req-image", attachments: [picture] } })).statusCode).toBe(200);
+      expect(routeService.topicPostCalls.at(-1)?.attachments).toEqual([picture]);
+      for (const attachments of [[{ ...picture, mimeType: "image/svg+xml" }], [{ ...picture, data: "!" }], [{ kind: "file", mimeType: "image/png", data: "AQID" }], Array.from({ length: 5 }, () => picture)]) {
+        expect((await routeApp.inject({ method: "POST", url: `${url}/messages`, payload: { cwd: "/workspace", text: "", requestId: "bad", attachments } })).statusCode).toBe(400);
+      }
+      expect(routeService.topicPostCalls).toHaveLength(2);
+      vi.spyOn(routeService, "postTopicMessage").mockRejectedValueOnce(new Error("Topic request id already used for different content"));
+      expect((await routeApp.inject({ method: "POST", url: `${url}/messages`, payload: { cwd: "/workspace", text: "changed", requestId: "req-1" } })).statusCode).toBe(409);
+      expect((await routeApp.inject({ method: "GET", url: `/sessions/session-1/topics?cwd=${encodeURIComponent("/workspace")}` })).json()).toEqual({ topics: [] });
+      expect((await routeApp.inject({ method: "POST", url: "/sessions/session-1/topics", payload: { cwd: "/workspace", title: "Files" } })).json()).toMatchObject({ topicId: "created", title: "Files" });
+      expect((await routeApp.inject({ method: "POST", url: "/sessions/session-1/topics", payload: { cwd: "/workspace", title: "\nunsafe" } })).statusCode).toBe(400);
+      expect((await routeApp.inject({ method: "GET", url: "/sessions/session-1/topics/%2F?cwd=%2Fworkspace" })).statusCode).toBe(400);
+      expect((await routeApp.inject({ method: "POST", url: `${url}/ack`, payload: { cwd: "/workspace" } })).json()).toMatchObject({ topicId: "focus", attention: "clear" });
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
   it("returns notification catalog and selected-inbox snapshots with required cwd context", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1334,6 +1371,27 @@ describe("session routes", () => {
 });
 
 class CapturingRouteSessionService implements SessionRouteService {
+  readonly topicCalls: SessionRouteRef[] = [];
+  readonly topicPostCalls: { ref: SessionRouteRef; id: string; text: string; requestId: string; attachments?: unknown }[] = [];
+  topics(ref: SessionRouteRef): Promise<import("../../shared/apiTypes.js").SessionTopicsSnapshot> {
+    this.topicCalls.push(ref);
+    return Promise.resolve({ topics: [] });
+  }
+  createTopic(_ref: SessionRouteRef, title: string): Promise<import("../../shared/apiTypes.js").SessionTopicSummary> {
+    return Promise.resolve({ topicId: "created", title, preview: "", attention: "clear", updatedAt: "" });
+  }
+  topic(ref: SessionRouteRef, id: string): Promise<import("../../shared/apiTypes.js").SessionTopicSnapshot> {
+    expect(id).toBe("focus");
+    this.topicCalls.push(ref);
+    return Promise.resolve({ topicId: "focus", title: "Focus", messages: [], state: "idle", attention: "clear" });
+  }
+  postTopicMessage(ref: SessionRouteRef, id: string, text: string, requestId: string, attachments?: unknown): Promise<{ topicId: string; status: "accepted" }> {
+    this.topicPostCalls.push({ ref, id, text, requestId, attachments });
+    return Promise.resolve({ topicId: id, status: "accepted" });
+  }
+  acknowledgeTopic(_ref: SessionRouteRef, id: string): Promise<import("../../shared/apiTypes.js").SessionTopicSnapshot> {
+    return Promise.resolve({ topicId: id, title: "Focus", messages: [], state: "idle", attention: "clear" });
+  }
   defaultsCalls: { ref: SessionRouteRef; defaults?: import("../../shared/apiTypes.js").SessionDefaultsUpdate }[] = [];
   getSessionDefaults(ref: SessionRouteRef): Promise<import("../../shared/apiTypes.js").SessionDefaults> {
     this.defaultsCalls.push({ ref });

@@ -1,6 +1,8 @@
 import { LitElement, css, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
+import type { PromptImageAttachment, SessionTopicMessage, SessionTopicSnapshot, SessionTopicSummary } from "../../../shared/apiTypes";
+import { base64ByteLength, isSupportedImageMimeType } from "../../../shared/promptAttachments";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { initialAppState, type AppState } from "../appState";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
@@ -16,7 +18,9 @@ import { nativeDirectoryPicker } from "../nativeHost";
 import { PluginRegistry } from "../plugins/registry";
 import { themePackPlugin } from "../plugins/themes";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile } from "../presentationProfiles";
+import { readFileAsBase64 } from "../promptAttachmentCapture";
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
+import { loadTopicImageState, saveTopicImageState, type PendingTopicImagePost } from "../topicImageDraftStorage";
 import { sessionTitle } from "../sessionLabels";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
@@ -51,6 +55,22 @@ export function rootProjectOf(project: Project, projects: readonly Project[]): P
 export const rootProjects = (projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === project.id);
 const subprojectsOf = (root: Project, projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === root.id);
 
+function isTopicStorageRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type PendingTopicPost = PendingTopicImagePost;
+const MAX_TOPIC_IMAGES = 4;
+const MAX_TOPIC_IMAGE_BYTES = 8 * 1024 * 1024;
+
+function savedTopicPosts(value: unknown): Record<string, PendingTopicPost> {
+  if (!isTopicStorageRecord(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, PendingTopicPost] => {
+    const post = entry[1];
+    return isTopicStorageRecord(post) && typeof post["requestId"] === "string" && typeof post["text"] === "string" && (post["status"] === "queued" || post["status"] === "sending" || post["status"] === "unknown" || post["status"] === "conflict" || post["status"] === "invalid");
+  }));
+}
+
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
   @state() private app: AppState = initialAppState();
@@ -63,6 +83,26 @@ export class WorkbenchApp extends LitElement {
   @state() private delegateRosterCollapsed = false;
   @state() private showFiles = false;
   @state() private filesWidth = 400;
+  @state() private showFocusTopic = false;
+  @state() private showNewTopic = false;
+  @state() private topics: SessionTopicSummary[] = [];
+  @state() private selectedTopicId = "";
+  @state() private topicSnapshot: SessionTopicSnapshot | undefined;
+  private topicSnapshotVersion = "";
+  @state() private focusTopicDraft = "";
+  @state() private focusTopicError = "";
+  @state() private focusTopicLoading = false;
+  @state() private focusTopicSending = false;
+  @state() private topicImagesReading = false;
+  private topicImageReadSequence = 0;
+  @state() private topicImageStorageError = false;
+  @state() private topicImageDrafts: Record<string, PromptImageAttachment[]> = {};
+  @state() private newTopicTitle = "";
+  private focusTopicLoadSequence = 0;
+  @state() private pendingTopicPosts: Record<string, PendingTopicPost> = {};
+  private topicDrafts: Record<string, string> = {};
+  private topicScrolls: Record<string, number> = {};
+  private topicRefreshTimer: number | undefined;
   private filesResize: { pointerId: number; startX: number; startWidth: number; handle: HTMLElement } | undefined;
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
@@ -115,6 +155,7 @@ export class WorkbenchApp extends LitElement {
       onSelectedSessionReady: () => {
         this.desktopNotifications.activate(this.app);
         void this.loadCurrentWorkstream();
+        void this.loadTopics(true);
       },
       onSessionError: (message, eventId) => { this.desktopNotifications.sessionError(this.app, message, eventId); },
       replacePromptEditorText: async ({ machineId, sessionId, text, mode }) => {
@@ -191,6 +232,7 @@ export class WorkbenchApp extends LitElement {
     this.systemLightThemeMedia?.removeEventListener("change", this.onSystemLightThemeChange);
     this.realtime.close();
     window.clearTimeout(this.workstreamWatchTimer);
+    window.clearTimeout(this.topicRefreshTimer);
     this.auth.dispose();
     this.sessions.dispose();
     this.notifications.dispose();
@@ -199,13 +241,50 @@ export class WorkbenchApp extends LitElement {
 
   private setApp(patch: Partial<AppState>): void {
     const previous = this.app;
-    this.app = { ...this.app, ...patch };
-    if (previous.selectedSession?.id !== this.app.selectedSession?.id || selectedMachineId(previous) !== selectedMachineId(this.app)) {
+    const next = { ...this.app, ...patch };
+    if (previous.selectedSession && (previous.selectedSession.id !== (next.selectedSession?.id ?? "") || previous.selectedSession.cwd !== (next.selectedSession?.cwd ?? "") || selectedMachineId(previous) !== selectedMachineId(next))) this.saveTopicPosition();
+    this.app = next;
+    if (previous.selectedSession?.id !== this.app.selectedSession?.id || previous.selectedSession?.cwd !== this.app.selectedSession?.cwd || selectedMachineId(previous) !== selectedMachineId(this.app)) {
+      ++this.focusTopicLoadSequence;
+      this.showFocusTopic = false;
+      this.showNewTopic = false;
+      this.topics = [];
+      this.selectedTopicId = "";
+      this.topicSnapshot = undefined;
+      this.topicSnapshotVersion = "";
+      this.pendingTopicPosts = {};
+      this.focusTopicDraft = "";
+      this.focusTopicError = "";
+      this.focusTopicLoading = false;
+      this.focusTopicSending = false;
+      this.topicImagesReading = false;
+      ++this.topicImageReadSequence;
+      this.topicImageStorageError = false;
+      this.topicImageDrafts = {};
+      window.clearTimeout(this.topicRefreshTimer);
+      this.topicRefreshTimer = undefined;
+      const storageKey = `pi-web.topics.${selectedMachineId(this.app)}.${this.app.selectedSession?.id ?? ""}.${this.app.selectedSession?.cwd ?? ""}`;
+      try {
+        const saved: unknown = JSON.parse(sessionStorage.getItem(storageKey) ?? "{}");
+        if (!isTopicStorageRecord(saved)) throw new Error("Invalid saved topic state");
+        const selected = saved["selected"];
+        const drafts = saved["drafts"];
+        const scrolls = saved["scrolls"];
+        this.selectedTopicId = typeof selected === "string" ? selected : "";
+        this.topicDrafts = isTopicStorageRecord(drafts) ? Object.fromEntries(Object.entries(drafts).filter((entry): entry is [string, string] => typeof entry[1] === "string")) : {};
+        this.topicScrolls = isTopicStorageRecord(scrolls) ? Object.fromEntries(Object.entries(scrolls).filter((entry): entry is [string, number] => typeof entry[1] === "number")) : {};
+        this.pendingTopicPosts = savedTopicPosts(saved["pendingPosts"]);
+        this.focusTopicDraft = this.topicDrafts[this.selectedTopicId] ?? "";
+      } catch { this.topicDrafts = {}; this.topicScrolls = {}; this.pendingTopicPosts = {}; }
       window.clearTimeout(this.workstreamWatchTimer);
       this.workstreamWatchSequence = undefined;
       this.workstreamWatchDelay = 2_000;
       ++this.workstreamLoadSequence;
     }
+    if (previous.status?.isStreaming === true && this.app.status?.isStreaming === false && this.app.selectedSession) {
+      void this.loadTopics();
+    }
+    if (this.app.status?.isStreaming === true && this.app.selectedSession && this.topicRefreshTimer === undefined) this.scheduleTopicRefresh();
     this.notifications.syncEnvironment(previous, this.app);
     this.desktopNotifications.sync(previous, this.app);
   }
@@ -870,7 +949,340 @@ export class WorkbenchApp extends LitElement {
   private readonly toggleFiles = (): void => {
     if (this.showFiles && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
     if (this.showFiles) this.finishFilesResize();
+    else { this.saveTopicPosition(); this.showFocusTopic = false; }
     this.showFiles = !this.showFiles;
+  };
+
+  private renderTopicMessage(message: SessionTopicMessage) {
+    return html`<article class=${`topic-message ${message.role}`} data-topic-entry=${message.id}><strong>${message.role === "user" ? "You" : "Orchestrator"}${message.attention === "question" ? " · Question" : message.attention === "update" ? " · Update" : ""}</strong>${message.text ? html`<p>${message.text}</p>` : null}${message.images?.map((image, index) => html`<img class="topic-image" src=${`data:${image.mimeType};base64,${image.data}`} alt=${`Attached image ${String(index + 1)}`}/>` )}</article>`;
+  }
+
+  private saveTopicPosition(captureScroll = true): void {
+    const history = this.shadowRoot?.querySelector<HTMLElement>(".focus-topic-history");
+    if (captureScroll && history && this.selectedTopicId) this.topicScrolls[this.selectedTopicId] = history.scrollTop;
+    const session = this.app.selectedSession;
+    if (session) sessionStorage.setItem(`pi-web.topics.${selectedMachineId(this.app)}.${session.id}.${session.cwd}`, JSON.stringify({ selected: this.selectedTopicId, drafts: this.topicDrafts, scrolls: this.topicScrolls, pendingPosts: this.pendingTopicPosts }));
+  }
+
+  private scheduleTopicRefresh(): void {
+    this.topicRefreshTimer = window.setTimeout(() => {
+      this.topicRefreshTimer = undefined;
+      if (this.app.status?.isStreaming === true) { void this.loadTopics(false, true); this.scheduleTopicRefresh(); }
+    }, 2_000);
+  }
+
+  private readonly toggleFocusTopic = (): void => {
+    if (this.showFocusTopic) { this.saveTopicPosition(); this.showFocusTopic = false; this.showNewTopic = false; return; }
+    if (this.showFiles && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
+    if (this.showFiles) { this.finishFilesResize(); this.showFiles = false; }
+    this.showFocusTopic = true;
+    void this.loadTopics();
+  };
+
+  private readonly toggleNewTopic = (): void => {
+    this.showNewTopic = !this.showNewTopic;
+    if (this.showNewTopic) void this.updateComplete.then(() => this.shadowRoot?.querySelector<HTMLInputElement>("#new-topic")?.focus());
+  };
+
+  private async loadTopics(openIfPopulated = false, pollOnly = false): Promise<void> {
+    const session = this.app.selectedSession;
+    if (!session) return;
+    const machineId = selectedMachineId(this.app);
+    const sequence = ++this.focusTopicLoadSequence;
+    this.focusTopicLoading = true;
+    try {
+      const { topics } = await api.topics({ id: session.id, cwd: session.cwd }, machineId);
+      if (sequence !== this.focusTopicLoadSequence || this.app.selectedSession?.id !== session.id || selectedMachineId(this.app) !== machineId) return;
+      this.topics = topics;
+      if (this.selectedTopicId === "") {
+        let stored: unknown;
+        try { stored = JSON.parse(sessionStorage.getItem(`pi-web.topics.${machineId}.${session.id}.${session.cwd}`) ?? "{}"); }
+        catch { stored = {}; }
+        if (isTopicStorageRecord(stored)) {
+          if (typeof stored["selected"] === "string") this.selectedTopicId = stored["selected"];
+          if (isTopicStorageRecord(stored["drafts"])) this.topicDrafts = Object.fromEntries(Object.entries(stored["drafts"]).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+          this.pendingTopicPosts = savedTopicPosts(stored["pendingPosts"]);
+          this.focusTopicDraft = this.topicDrafts[this.selectedTopicId] ?? "";
+        }
+      }
+      if (!topics.some((topic) => topic.topicId === this.selectedTopicId)) this.selectedTopicId = topics[0]?.topicId ?? "";
+      if (openIfPopulated && topics.length > 0 && !this.showFiles) this.showFocusTopic = true;
+      const selected = topics.find((topic) => topic.topicId === this.selectedTopicId);
+      if (selected && (!pollOnly || !this.topicSnapshot || this.topicSnapshotVersion !== `${selected.updatedAt}:${selected.attention}`)) await this.loadTopic(this.selectedTopicId);
+      else if (!selected) { this.topicSnapshot = undefined; this.topicSnapshotVersion = ""; }
+      if (!this.topicImageStorageError) this.focusTopicError = "";
+    } catch (error) {
+      if (sequence === this.focusTopicLoadSequence) this.focusTopicError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (this.app.selectedSession?.id === session.id) this.focusTopicLoading = false;
+    }
+  }
+
+  private async loadTopic(topicId: string): Promise<void> {
+    const session = this.app.selectedSession;
+    if (!session) return;
+    const machineId = selectedMachineId(this.app);
+    const sequence = ++this.focusTopicLoadSequence;
+    try {
+      const storageKey = `pi-web.topics.${machineId}.${session.id}.${session.cwd}:${topicId}`;
+      const [snapshot, storedState] = await Promise.all([
+        api.topic({ id: session.id, cwd: session.cwd }, topicId, machineId),
+        loadTopicImageState(storageKey).catch(() => undefined),
+      ]);
+      if (sequence !== this.focusTopicLoadSequence || this.selectedTopicId !== topicId || this.app.selectedSession?.id !== session.id || selectedMachineId(this.app) !== machineId) return;
+      this.topicSnapshot = snapshot;
+      this.topicSnapshotVersion = `${this.topics.find((topic) => topic.topicId === topicId)?.updatedAt ?? ""}:${snapshot.attention}`;
+      if (!storedState) {
+        this.topicImageStorageError = true;
+        this.focusTopicError = "Saved images could not be read. Do not resend; reload after browser storage recovers.";
+        return;
+      }
+      this.topicImageStorageError = false;
+      this.topicImageDrafts = { ...this.topicImageDrafts, [topicId]: storedState.images };
+      const pending = storedState.pending ?? this.pendingTopicPosts[topicId];
+      if (storedState.pending && this.pendingTopicPosts[topicId]?.requestId !== storedState.pending.requestId) {
+        this.recordTopicSend(`pi-web.topics.${machineId}.${session.id}.${session.cwd}`, topicId, storedState.pending);
+      }
+      if (pending && snapshot.messages.some((message) => message.role === "user" && message.requestId === pending.requestId)) {
+        try { if (storedState.pending) await saveTopicImageState(storageKey, { images: [] }); }
+        catch {
+          this.topicImageStorageError = true;
+          this.focusTopicError = "Input recorded, but saved image cleanup failed. Reload after browser storage recovers.";
+          this.recordTopicSend(`pi-web.topics.${machineId}.${session.id}.${session.cwd}`, topicId, undefined, pending.text);
+          this.topicImageDrafts = { ...this.topicImageDrafts, [topicId]: [] };
+          return;
+        }
+        this.recordTopicSend(`pi-web.topics.${machineId}.${session.id}.${session.cwd}`, topicId, undefined, pending.text);
+        this.topicImageDrafts = { ...this.topicImageDrafts, [topicId]: [] };
+      }
+      this.focusTopicError = "";
+      await this.updateComplete;
+      if (sequence === this.focusTopicLoadSequence) {
+        const history = this.shadowRoot?.querySelector<HTMLElement>(".focus-topic-history");
+        if (history) history.scrollTop = this.topicScrolls[topicId] ?? history.scrollHeight;
+      }
+    } catch (error) {
+      if (sequence === this.focusTopicLoadSequence) this.focusTopicError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  private readonly selectTopic = (topicId: string): void => {
+    if (topicId === this.selectedTopicId) return;
+    this.saveTopicPosition();
+    this.selectedTopicId = topicId;
+    this.focusTopicDraft = this.topicDrafts[topicId] ?? "";
+    this.topicSnapshot = undefined;
+    this.topicSnapshotVersion = "";
+    this.showFocusTopic = true;
+    this.saveTopicPosition(false);
+    void this.loadTopic(topicId);
+  };
+
+  private readonly openTopicLink = (event: CustomEvent<string>): void => {
+    const id = event.detail;
+    if (!id) return;
+    this.showFocusTopic = true;
+    if (this.topics.some((topic) => topic.topicId === id)) { this.selectTopic(id); return; }
+    void this.loadTopics().then(() => {
+      if (this.topics.some((topic) => topic.topicId === id)) this.selectTopic(id);
+      else this.focusTopicError = "Topic unavailable on this session branch";
+    });
+  };
+
+  private readonly topicKeys = (event: KeyboardEvent): void => {
+    const index = this.topics.findIndex((topic) => topic.topicId === this.selectedTopicId);
+    const next = event.key === "ArrowDown" ? index + 1 : event.key === "ArrowUp" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? this.topics.length - 1 : -1;
+    if (next < 0 && event.key !== "ArrowUp") return;
+    if (!this.topics.length) return;
+    event.preventDefault();
+    const id = this.topics[(next + this.topics.length) % this.topics.length]?.topicId;
+    if (id !== undefined) { this.selectTopic(id); void this.updateComplete.then(() => Array.from(this.shadowRoot?.querySelectorAll<HTMLElement>("[data-topic-id]") ?? []).find((tab) => tab.dataset["topicId"] === id)?.focus()); }
+  };
+
+  private readonly createTopic = async (event: Event): Promise<void> => {
+    event.preventDefault();
+    const session = this.app.selectedSession;
+    const title = this.newTopicTitle.trim();
+    if (!session || !title || this.focusTopicSending) return;
+    this.focusTopicSending = true;
+    try {
+      const topic = await api.createTopic({ id: session.id, cwd: session.cwd }, title, selectedMachineId(this.app));
+      if (this.app.selectedSession?.id !== session.id) return;
+      this.newTopicTitle = "";
+      this.showNewTopic = false;
+      await this.loadTopics();
+      this.selectTopic(topic.topicId);
+    } catch (error) { this.focusTopicError = error instanceof Error ? error.message : String(error); }
+    finally { this.focusTopicSending = false; }
+  };
+
+  private recordTopicSend(storageKey: string, id: string, pending?: PendingTopicPost, clearText?: string): void {
+    let saved: unknown;
+    try { saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "{}"); } catch { saved = {}; }
+    const record = isTopicStorageRecord(saved) ? saved : {};
+    const pendingPosts = Object.fromEntries(Object.entries(savedTopicPosts(record["pendingPosts"])).filter(([key]) => key !== id));
+    if (pending) pendingPosts[id] = pending;
+    const drafts = isTopicStorageRecord(record["drafts"]) ? { ...record["drafts"] } : {};
+    if (clearText !== undefined && typeof drafts[id] === "string" && drafts[id].trim() === clearText) drafts[id] = "";
+    sessionStorage.setItem(storageKey, JSON.stringify({ ...record, drafts, pendingPosts }));
+    const session = this.app.selectedSession;
+    if (!session || storageKey !== `pi-web.topics.${selectedMachineId(this.app)}.${session.id}.${session.cwd}`) return;
+    this.pendingTopicPosts = pendingPosts;
+    if (clearText !== undefined && this.topicDrafts[id]?.trim() === clearText) {
+      this.topicDrafts[id] = "";
+      if (this.selectedTopicId === id) this.focusTopicDraft = "";
+    }
+    this.saveTopicPosition(false);
+  }
+
+  private async addTopicImages(files: File[]): Promise<void> {
+    const session = this.app.selectedSession;
+    const topicId = this.selectedTopicId;
+    if (!session || !topicId || this.topicImagesReading || this.focusTopicSending || this.pendingTopicPosts[topicId] || this.topicImageStorageError || session.archived === true || this.app.status?.persisted === false || files.length === 0) return;
+    const machineId = selectedMachineId(this.app);
+    const key = `pi-web.topics.${machineId}.${session.id}.${session.cwd}:${topicId}`;
+    const readSequence = ++this.topicImageReadSequence;
+    this.topicImagesReading = true;
+    try {
+      const stored = await loadTopicImageState(key);
+      if (stored.pending) throw new Error("This topic message is still pending. Check the topic history before attaching more images.");
+      const current = stored.images;
+      if (current.length + files.length > MAX_TOPIC_IMAGES) throw new Error(`Attach up to ${String(MAX_TOPIC_IMAGES)} images per message.`);
+      const nextReference = Math.max(0, ...current.map((image) => Number(/^\[PIC_(\d+)\]$/.exec(image.reference)?.[1] ?? 0))) + 1;
+      const additions = await Promise.all(files.map(async (file, index): Promise<PromptImageAttachment> => {
+        if (!isSupportedImageMimeType(file.type)) throw new Error("Only PNG, JPEG, GIF and WebP images can be sent to a topic.");
+        if (file.size > MAX_TOPIC_IMAGE_BYTES) throw new Error("An image is too large (8 MiB maximum).");
+        const data = await readFileAsBase64(file);
+        if (base64ByteLength(data) > MAX_TOPIC_IMAGE_BYTES) throw new Error("An image is too large (8 MiB maximum).");
+        return { kind: "image", reference: `[PIC_${String(nextReference + index)}]`, mimeType: file.type, data, name: file.name };
+      }));
+      if (readSequence !== this.topicImageReadSequence) return;
+      const images = [...current, ...additions];
+      await saveTopicImageState(key, { images });
+      if (readSequence === this.topicImageReadSequence) {
+        this.topicImageDrafts = { ...this.topicImageDrafts, [topicId]: images };
+        this.focusTopicError = "";
+      }
+    } catch (error) { if (readSequence === this.topicImageReadSequence) this.focusTopicError = error instanceof Error ? error.message : String(error); }
+    finally { if (readSequence === this.topicImageReadSequence) this.topicImagesReading = false; }
+  }
+
+  private async removeTopicImage(reference: string): Promise<void> {
+    const session = this.app.selectedSession;
+    const topicId = this.selectedTopicId;
+    if (!session || !topicId || this.topicImagesReading || this.focusTopicSending || this.pendingTopicPosts[topicId] || this.topicImageStorageError) return;
+    const readSequence = ++this.topicImageReadSequence;
+    this.topicImagesReading = true;
+    try {
+      const key = `pi-web.topics.${selectedMachineId(this.app)}.${session.id}.${session.cwd}:${topicId}`;
+      const stored = await loadTopicImageState(key);
+      if (stored.pending) throw new Error("This topic message is still pending.");
+      const images = stored.images.filter((image) => image.reference !== reference);
+      await saveTopicImageState(key, { images });
+      if (readSequence === this.topicImageReadSequence) this.topicImageDrafts = { ...this.topicImageDrafts, [topicId]: images };
+    } catch (error) { if (readSequence === this.topicImageReadSequence) this.focusTopicError = error instanceof Error ? error.message : String(error); }
+    finally { if (readSequence === this.topicImageReadSequence) this.topicImagesReading = false; }
+  }
+
+  private readonly pasteTopicImages = (event: ClipboardEvent): void => {
+    const files = Array.from(event.clipboardData?.files ?? []);
+    if (files.length === 0) return;
+    event.preventDefault();
+    if (this.pendingTopicPosts[this.selectedTopicId]) return;
+    void this.addTopicImages(files);
+  };
+
+  private readonly chooseTopicImages = (event: Event): void => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const files = Array.from(input.files ?? []);
+    input.value = "";
+    void this.addTopicImages(files);
+  };
+
+  private async sendTopic(text: string): Promise<void> {
+    const session = this.app.selectedSession;
+    const topicId = this.selectedTopicId;
+    text = text.trim();
+    if (!session || !topicId || this.focusTopicSending || this.topicImagesReading || this.topicImageStorageError || session.archived === true || this.app.status?.persisted === false) return;
+    const machineId = selectedMachineId(this.app);
+    const storageKey = `pi-web.topics.${machineId}.${session.id}.${session.cwd}`;
+    const imageKey = `${storageKey}:${topicId}`;
+    let images = this.topicImageDrafts[topicId] ?? [];
+    let prior = this.pendingTopicPosts[topicId];
+    if (!text && images.length === 0 && !prior) return;
+    this.focusTopicSending = true;
+    this.focusTopicError = "";
+    let submitted = false;
+    let requestId = prior?.requestId ?? crypto.randomUUID();
+    try {
+      if (images.length > 0 || (prior?.imageCount ?? 0) > 0) {
+        const stored = await loadTopicImageState(imageKey);
+        prior = stored.pending ?? prior;
+        images = stored.images;
+        if (prior?.status === "conflict" || prior?.status === "invalid") throw new Error("This request cannot be retried. Check the topic history, then discard the local draft.");
+        if (prior && (prior.text !== text || (prior.imageCount ?? 0) !== images.length)) throw new Error("Original image draft unavailable or message changed. Check the topic history, then discard the local draft.");
+        requestId = prior?.requestId ?? requestId;
+      }
+      if (!text && images.length === 0) return;
+      const pending: PendingTopicPost = { requestId, text, status: "sending", ...(images.length ? { imageCount: images.length } : {}) };
+      if (images.length > 0) await saveTopicImageState(imageKey, { images, pending });
+      this.recordTopicSend(storageKey, topicId, pending);
+      submitted = true;
+      const receipt = await api.postTopic({ id: session.id, cwd: session.cwd }, topicId, text, machineId, requestId, images);
+      if (receipt.status === "queued") {
+        const queued = { ...pending, status: "queued" as const };
+        if (images.length > 0) await saveTopicImageState(imageKey, { images, pending: queued });
+        this.recordTopicSend(storageKey, topicId, queued);
+      } else {
+        let cleanupFailed = false;
+        if (images.length > 0) {
+          try { await saveTopicImageState(imageKey, { images: [] }); }
+          catch { cleanupFailed = true; }
+          if (this.app.selectedSession?.id === session.id) this.topicImageDrafts = { ...this.topicImageDrafts, [topicId]: [] };
+        }
+        this.recordTopicSend(storageKey, topicId, undefined, text);
+        if (cleanupFailed) this.focusTopicError = "Input recorded, but saved image cleanup failed. Reload after browser storage recovers.";
+      }
+      if (this.app.selectedSession?.id === session.id && selectedMachineId(this.app) === machineId) await this.loadTopics();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (submitted) {
+        const status = message === "Topic request id already used for different content" ? "conflict" : message.startsWith("Image conversion failed") ? "invalid" : "unknown";
+        const pending: PendingTopicPost = { requestId, text, status, ...(images.length ? { imageCount: images.length } : {}) };
+        if (images.length > 0) await saveTopicImageState(imageKey, { images, pending }).catch(() => undefined);
+        this.recordTopicSend(storageKey, topicId, pending);
+      }
+      if (this.app.selectedSession?.id === session.id) this.focusTopicError = `${message}. ${submitted ? "Delivery not confirmed; check the topic history before retrying." : "Nothing was sent; restore browser storage or the original draft."}`;
+    } finally { this.focusTopicSending = false; }
+  }
+
+  private async discardTopicSend(): Promise<void> {
+    const session = this.app.selectedSession;
+    const topicId = this.selectedTopicId;
+    const pending = this.pendingTopicPosts[topicId];
+    if (!session || !topicId || !pending || this.focusTopicSending || this.app.status?.isStreaming === true || (this.app.status?.pendingMessageCount ?? 0) > 0) return;
+    const storageKey = `pi-web.topics.${selectedMachineId(this.app)}.${session.id}.${session.cwd}`;
+    try {
+      await saveTopicImageState(`${storageKey}:${topicId}`, { images: [] });
+      this.topicImageDrafts = { ...this.topicImageDrafts, [topicId]: [] };
+      this.recordTopicSend(storageKey, topicId, undefined, pending.text);
+      this.focusTopicError = "";
+    } catch (error) { this.focusTopicError = error instanceof Error ? error.message : String(error); }
+  }
+
+  private readonly postFocusTopic = (event: Event): void => { event.preventDefault(); void this.sendTopic(this.focusTopicDraft); };
+
+  private readonly ackTopic = async (): Promise<void> => {
+    const session = this.app.selectedSession;
+    const topicId = this.selectedTopicId;
+    if (!session || !topicId || this.focusTopicSending) return;
+    this.focusTopicSending = true;
+    try {
+      this.topicSnapshot = await api.ackTopic({ id: session.id, cwd: session.cwd }, topicId, selectedMachineId(this.app));
+      await this.loadTopics();
+    } catch (error) { this.focusTopicError = error instanceof Error ? error.message : String(error); }
+    finally { this.focusTopicSending = false; }
   };
 
   private readonly openWorkspaceFile = (event: CustomEvent<WorkspaceFileOpenRequest>): void => {
@@ -894,7 +1306,8 @@ export class WorkbenchApp extends LitElement {
         <header>
           <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { if (this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false) { this.showFiles = false; this.sessions.deselectSession(); } }}>←</button>
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
-          <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
+          <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name !== undefined && state.selectedProject.name !== "" ? `${state.selectedProject.name} · ` : ""}${state.selectedWorkspace?.label}</span>
+          <button type="button" class="topic-toggle" title="Open topic conversations with this same agent" aria-label="Topics" aria-expanded=${this.showFocusTopic} aria-controls="focus-topic" @click=${this.toggleFocusTopic}>${this.topics.some((topic) => topic.attention === "question" || topic.attention === "update" || topic.attention === "unanswered") ? "● " : ""}Topics · ${this.topics.filter((topic) => topic.attention === "question" || topic.attention === "update" || topic.attention === "unanswered").length}<span class="topic-count-detail"> need you</span></button>
           <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("files")}</button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           ${this.renderSettingsPanel()}
@@ -902,10 +1315,12 @@ export class WorkbenchApp extends LitElement {
         </header>
         ${this.renderDesktopNotificationDiagnostic()}
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
-        <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>
+        <div class=${`chat-and-files${this.showFocusTopic ? " topic-open" : ""}`} style=${`--files-width: ${String(this.filesWidth)}px`}>
           <div class="chat-column">
+        ${this.showFocusTopic ? html`<div class="conversation-heading"><span>Orchestrator · same session</span></div>` : null}
         <chat-view
           @workspace-file-open=${this.openWorkspaceFile}
+          @open-topic=${this.openTopicLink}
           .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)}
           .sessionId=${session.id}
           .messages=${state.messages}
@@ -941,6 +1356,7 @@ export class WorkbenchApp extends LitElement {
         <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${() => { this.delegateRosterCollapsed = !this.delegateRosterCollapsed; }}></delegate-roster>
         <goal-status-chip .status=${state.status}></goal-status-chip>
         <prompt-editor
+          id="orchestrator-editor"
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
           .machineId=${selectedMachineId(state)}
@@ -962,6 +1378,41 @@ export class WorkbenchApp extends LitElement {
           .onRunCommand=${(command: string) => this.sessions.runCommand(command)}
         ></prompt-editor>
           </div>
+          ${this.showFocusTopic ? html`
+            <section id="focus-topic" class="focus-topic" aria-label="Topic conversations">
+              <header class="focus-topic-heading"><strong>Topics</strong><span>Same orchestrator · one session</span><button type="button" class="topic-create-toggle" title="New topic" aria-label="Create topic" aria-expanded=${this.showNewTopic} aria-controls="topic-create-form" @click=${this.toggleNewTopic}>+</button><button type="button" title="Refresh topics" aria-label="Refresh topics" @click=${() => { void this.loadTopics(); }}>↻</button><button type="button" aria-label="Stop current work" ?disabled=${!(state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0)} @click=${() => { void this.sessions.stopActiveWork(); }}>Stop</button><button type="button" aria-label="Close topics" @click=${this.toggleFocusTopic}>Close</button></header>
+              ${this.focusTopicError === "" ? null : html`<p class="topic-error" role="alert">${this.focusTopicError}</p>`}
+              ${this.showNewTopic ? html`<form id="topic-create-form" class="topic-create" @submit=${this.createTopic}><label for="new-topic">New topic</label><input id="new-topic" .value=${this.newTopicTitle} @input=${(event: Event) => { this.newTopicTitle = event.target instanceof HTMLInputElement ? event.target.value : ""; }} placeholder="Topic title"/><button type="submit" ?disabled=${!this.newTopicTitle.trim() || this.focusTopicSending || state.status?.persisted === false || state.status?.isStreaming === true || state.status?.isCompacting === true}>Create</button></form>` : null}
+              ${this.showNewTopic && (state.status?.isStreaming === true || state.status?.isCompacting === true) ? html`<p class="topic-notice">New topics wait for the current turn.</p>` : null}
+              ${state.status?.persisted === false ? html`<p class="topic-notice">Send an orchestrator message first to save this Chat before creating topics.</p>` : null}
+              <div class="topics-inner">
+                <nav class="topic-rail" role="tablist" aria-label="Session topics" aria-orientation="vertical" @keydown=${this.topicKeys}>
+                  ${this.topics.map((topic) => html`<button type="button" role="tab" data-topic-id=${topic.topicId} aria-selected=${topic.topicId === this.selectedTopicId} aria-controls="topic-panel" tabindex=${topic.topicId === this.selectedTopicId ? "0" : "-1"} @click=${() => { this.selectTopic(topic.topicId); }}><span class="topic-name">${topic.title}<span class=${`topic-mark ${topic.attention}`} aria-label=${topic.attention === "question" ? "Question for you" : topic.attention === "update" ? "Update for you" : topic.attention === "unanswered" ? "No reply recorded" : topic.attention === "working" ? "Agent working" : "No attention needed"}>${topic.attention === "question" ? "?" : topic.attention === "update" ? "i" : topic.attention === "unanswered" ? "!" : topic.attention === "working" ? "⋯" : "✓"}</span></span><small>${topic.preview}${this.topicDrafts[topic.topicId] !== undefined && this.topicDrafts[topic.topicId] !== "" ? " · draft" : ""}</small></button>`)}
+                </nav>
+                <div id="topic-panel" class="topic-panel" role="tabpanel" aria-label=${this.topics.find((topic) => topic.topicId === this.selectedTopicId)?.title ?? "Topic"}>
+                  ${this.topicSnapshot ? html`
+                    <div class="topic-title"><strong>${this.topicSnapshot.title}</strong></div>
+                    <div class="focus-topic-history" role="log" aria-label="Topic messages" @scroll=${() => { this.saveTopicPosition(); }}>
+                      ${this.topicSnapshot.messages.length === 0 ? html`<p class="topic-notice">No messages yet. Send one below.</p>` : null}
+                      ${this.topicSnapshot.messages.length > 1 ? html`<details><summary>Earlier in this topic · ${this.topicSnapshot.messages.length - 1} turns</summary>${this.topicSnapshot.messages.slice(0, -1).map((message) => this.renderTopicMessage(message))}</details>` : null}
+                      ${this.topicSnapshot.messages.slice(-1).map((message) => this.renderTopicMessage(message))}
+                      ${this.topicSnapshot.attention === "question" && this.topicSnapshot.state !== "pending" ? html`<div class="topic-attention"><strong>Question for you</strong>${this.topicSnapshot.messages.at(-1)?.choices?.map((choice) => html`<button type="button" ?disabled=${this.focusTopicSending || this.pendingTopicPosts[this.selectedTopicId] !== undefined} @click=${() => { void this.sendTopic(choice.label); }}>${choice.label}<small>${choice.detail}</small></button>`)}</div>` : null}
+                      ${this.topicSnapshot.attention === "update" && this.topicSnapshot.state !== "pending" ? html`<div class="topic-attention"><strong>Update · no answer needed</strong><button type="button" ?disabled=${this.focusTopicSending || state.status?.isStreaming === true || state.status?.isCompacting === true} @click=${this.ackTopic}>Acknowledge</button></div>` : null}
+                      ${this.pendingTopicPosts[this.selectedTopicId] ? html`<p class="topic-notice" role="status">${this.pendingTopicPosts[this.selectedTopicId]?.status === "queued" && (state.status?.isStreaming === true || (state.status?.pendingMessageCount ?? 0) > 0) ? "Queued for the agent’s next turn—not recorded yet." : this.pendingTopicPosts[this.selectedTopicId]?.status === "conflict" || this.pendingTopicPosts[this.selectedTopicId]?.status === "invalid" ? "This request cannot be retried." : "Delivery not confirmed. Check the topic history before retrying or discarding the local draft."}${(this.pendingTopicPosts[this.selectedTopicId]?.imageCount ?? 0) > (this.topicImageDrafts[this.selectedTopicId]?.length ?? 0) ? " Original image draft missing; retry is disabled." : ""} <button type="button" ?disabled=${this.focusTopicSending || this.topicImagesReading || this.topicImageStorageError || state.status?.isStreaming === true || state.status?.isCompacting === true || this.pendingTopicPosts[this.selectedTopicId]?.status === "conflict" || this.pendingTopicPosts[this.selectedTopicId]?.status === "invalid" || (this.pendingTopicPosts[this.selectedTopicId]?.imageCount ?? 0) !== (this.topicImageDrafts[this.selectedTopicId]?.length ?? 0)} @click=${() => { void this.sendTopic(this.pendingTopicPosts[this.selectedTopicId]?.text ?? ""); }}>Retry same message</button><button type="button" ?disabled=${this.focusTopicSending || this.topicImagesReading || this.topicImageStorageError || state.status?.isStreaming === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0} @click=${() => { void this.discardTopicSend(); }}>Discard local draft</button></p>` : null}
+                      ${this.topicSnapshot.attention === "working" ? html`<p class="topic-notice">The orchestrator is working; no answer needed.</p>` : null}
+                      ${this.topicSnapshot.state === "unanswered" ? html`<p class="topic-notice">No topic reply recorded. Refresh, or check the orchestrator conversation.</p>` : null}
+                      ${this.topicSnapshot.state === "pending" ? html`<p class="topic-notice">Waiting for the agent to process this topic.</p>` : null}
+                    </div>
+                    <form class="focus-topic-compose" @submit=${this.postFocusTopic} @paste=${this.pasteTopicImages}>
+                      <label for="focus-topic-input">${this.topicSnapshot.attention === "question" && this.topicSnapshot.state !== "pending" ? "Answer in your own words" : `Message about ${this.topicSnapshot.title}`}</label>
+                      <textarea id="focus-topic-input" .value=${this.focusTopicDraft} @input=${(event: Event) => { this.focusTopicDraft = event.target instanceof HTMLTextAreaElement ? event.target.value : ""; this.topicDrafts[this.selectedTopicId] = this.focusTopicDraft; this.saveTopicPosition(); }} ?disabled=${session.archived === true || this.focusTopicSending} rows="3"></textarea>
+                      ${(this.topicImageDrafts[this.selectedTopicId] ?? []).length ? html`<div class="topic-image-drafts">${this.topicImageDrafts[this.selectedTopicId]?.map((image) => html`<span class="topic-image-draft"><img src=${`data:${image.mimeType};base64,${image.data}`} alt=${`Image ${image.reference}`}/><button type="button" aria-label=${`Remove ${image.reference}`} ?disabled=${this.focusTopicSending || this.topicImagesReading || this.topicImageStorageError || this.pendingTopicPosts[this.selectedTopicId] !== undefined} @click=${() => { void this.removeTopicImage(image.reference); }}>×</button></span>`)}</div>` : null}
+                      <div class="topic-compose-actions"><input id="topic-image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden @change=${this.chooseTopicImages}/><button type="button" title="Attach images or paste into the message" aria-label="Attach images" ?disabled=${session.archived === true || state.status?.persisted === false || this.focusTopicSending || this.topicImagesReading || this.topicImageStorageError || this.pendingTopicPosts[this.selectedTopicId] !== undefined} @click=${() => { this.shadowRoot?.querySelector<HTMLInputElement>("#topic-image-input")?.click(); }}>＋ Image</button><button type="submit" ?disabled=${session.archived === true || this.focusTopicSending || this.topicImagesReading || this.topicImageStorageError || this.pendingTopicPosts[this.selectedTopicId] !== undefined || state.status?.isCompacting === true || (!this.focusTopicDraft.trim() && (this.topicImageDrafts[this.selectedTopicId]?.length ?? 0) === 0) || state.status?.persisted === false}>${this.focusTopicSending ? "Sending…" : this.topicSnapshot.attention === "question" && this.topicSnapshot.state !== "pending" ? "Send answer" : "Send to agent"}</button></div>
+                    </form>
+                  ` : html`<p class="focus-topic-empty">${this.focusTopicLoading ? "Loading topics…" : "Create a topic to start a focused conversation."}</p>`}
+                </div>
+              </div>
+            </section>` : null}
           ${this.showFiles ? html`
             <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
               @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
@@ -1034,6 +1485,50 @@ export class WorkbenchApp extends LitElement {
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     .chat-and-files { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
     .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
+    .conversation-heading { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--pi-border-muted); font-size: 12px; font-weight: 700; }
+    .conversation-heading span { flex: 1 1 auto; min-width: 0; }
+    .mobile-compose-toggle { display: none; }
+    .topic-toggle { flex: 0 0 auto; min-height: 32px; padding: 4px 9px; font-size: 12px; }
+    .topic-toggle[aria-expanded="true"] { border-color: var(--pi-accent); color: var(--pi-accent); }
+    .focus-topic { display: flex; flex: 0 0 44%; min-width: 300px; min-height: 0; flex-direction: column; border-left: 1px solid var(--pi-border); background: var(--pi-bg); }
+    .focus-topic-heading { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--pi-border-muted); }
+    .focus-topic-heading span { flex: 1 1 auto; min-width: 0; }
+    .focus-topic-heading button { flex: 0 0 auto; }
+    .topics-inner { display: flex; flex: 1 1 auto; min-height: 0; }
+    .topic-rail { flex: 0 0 35%; min-width: 110px; overflow: auto; border-right: 1px solid var(--pi-border); }
+    .topic-rail button { display: block; width: 100%; text-align: left; padding: 9px; background: transparent; border: 0; color: var(--pi-text); cursor: pointer; }
+    .topic-rail button[aria-selected="true"] { background: var(--pi-surface); border-left: 3px solid var(--pi-accent); }
+    .topic-rail small, .topic-title small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pi-muted); }
+    .topic-name { display: flex; justify-content: space-between; gap: 4px; }
+    .topic-mark { padding: 1px 5px; border-radius: 9px; background: var(--pi-surface); }
+    .topic-mark.question, .topic-mark.update, .topic-mark.unanswered { color: var(--pi-accent); }
+    .topic-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
+    .topic-title, .topic-create { padding: 8px; border-bottom: 1px solid var(--pi-border); }
+    .topic-create { display: flex; align-items: center; gap: 6px; }
+    .topic-create-toggle { min-width: 32px; font-size: 20px; line-height: 1; }
+    .topic-create input { flex: 1; min-width: 0; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-surface); color: var(--pi-text); font: inherit; }
+    .topic-attention { padding: 9px; border-left: 3px solid var(--pi-accent); }
+    .topic-attention button { display: block; margin: 6px 0; text-align: left; }
+    .topic-attention small { display: block; }
+    .focus-topic-history details { width: 100%; }
+    .focus-topic-history summary { cursor: pointer; }
+    .focus-topic-history { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; align-items: start; gap: 12px; }
+    .focus-topic-empty, .topic-notice { color: var(--pi-muted); font-size: 13px; }
+    .topic-message { max-width: 88%; padding: 10px 12px; border: 1px solid var(--pi-border-muted); border-radius: 9px; overflow-wrap: anywhere; }
+    .topic-message.user { align-self: end; background: var(--pi-surface); }
+    .topic-message strong { font-size: 11px; color: var(--pi-muted); }
+    .topic-message p { margin-top: 6px; white-space: pre-wrap; color: var(--pi-text); }
+    .topic-image { display: block; max-width: 100%; max-height: 240px; margin-top: 8px; border-radius: 6px; object-fit: contain; }
+    .topic-image-drafts { display: flex; flex-wrap: wrap; gap: 8px; }
+    .topic-image-draft { display: inline-flex; align-items: start; gap: 3px; }
+    .topic-image-draft img { width: 56px; height: 56px; border-radius: 5px; object-fit: cover; }
+    .topic-compose-actions { display: flex; justify-content: space-between; gap: 8px; }
+    .topic-compose-actions button { justify-self: auto; }
+    .topic-error { padding: 8px 12px; color: var(--pi-danger); }
+    .focus-topic-compose { flex: 0 0 auto; display: grid; gap: 6px; padding: 12px; border-top: 1px solid var(--pi-border-muted); }
+    .focus-topic-compose label { text-transform: none; }
+    .focus-topic-compose textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: 8px; border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-surface); color: var(--pi-text); font: inherit; }
+    .focus-topic-compose button { justify-self: end; }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     delegate-roster, prompt-editor { flex: 0 0 auto; }
     .files-toggle { flex: 0 0 auto; }
@@ -1044,11 +1539,15 @@ export class WorkbenchApp extends LitElement {
     .files-divider:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
     workbench-files-pane { flex: 0 0 min(var(--files-width), max(240px, calc(100% - 328px))); box-sizing: border-box; }
     @media (max-width: 760px) {
-      .chat-and-files { flex-direction: column; }
+      .chat-and-files { flex-direction: column; position: relative; }
+      .chat-and-files.topic-open .chat-column { display: none; }
+      .chat-and-files.topic-open .focus-topic { position: absolute; inset: 0; z-index: 4; background: var(--pi-bg); }
+      .focus-topic { flex: 1 1 auto; min-width: 0; width: 100%; border-left: 0; border-top: 1px solid var(--pi-border); }
       .files-divider { display: none; }
       workbench-files-pane { flex: 0 1 48%; width: 100%; border-top: 1px solid var(--pi-border); }
     }
     @media (max-width: 600px) {
+      .topic-count-detail { display: none; }
       .chooser, .chooser > section { grid-template-columns: minmax(0, 1fr); }
       .chooser { padding: 16px; }
       .chooser > section { padding: 16px; }

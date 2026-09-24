@@ -73,6 +73,10 @@ import type {
   SessionModelScopeMode,
   SessionUnreadAcknowledgeRequest,
   SessionUnreadCatalogSnapshot,
+  SessionTopicSnapshot,
+  SessionTopicSummary,
+  SessionTopicAttention,
+  SessionTopicChoice,
   SessionWarning,
 } from "../../shared/apiTypes.js";
 import type { SessionDefaults, SessionDefaultsUpdate } from "../../shared/apiTypes.js";
@@ -92,6 +96,7 @@ import { createSpawnSessionToolDefinition, type SpawnSessionInvocation, type Spa
 import { createSubsessionToolDefinitions, type SpawnSubsessionInvocation, type SpawnSubsessionResult, type SubsessionCheckResult, type SubsessionReadQuery, type SubsessionReadResult, type SubsessionStatus, type SubsessionSummary, type SubsessionToolDeps } from "./spawnSubsessionTool.js";
 import { buildTranscriptView } from "./subsessionTranscript.js";
 import { annotateAssistantThinkingLevel, historyMessagesFromEntries } from "./transcriptMessages.js";
+import { createTopicOpenToolDefinition, createTopicPostToolDefinition, newTopicId, topicId, topicImageDigest, topicImages, topicSnapshot, topicSummaries, topicText, topicTitle, TOPIC_ID, TOPIC_OPEN_TYPE, TOPIC_ACK_TYPE, TOPIC_INPUT_TYPE, TOPIC_POST_TYPE } from "./sessionTopic.js";
 import { planSessionCleanup, summarizeSessionCleanupExecution, type NormalizedSessionCleanupRequest, type SessionCleanupPlan } from "./sessionCleanup.js";
 import type { SpawnTargetDecision, SpawnTargetResolver } from "./spawnTargetResolver.js";
 import {
@@ -512,7 +517,7 @@ export interface PiAgentSession {
   prompt(text: string, options?: { streamingBehavior?: "steer" | "followUp"; images?: ImageContent[] }): Promise<void>;
   steer(text: string, images?: ImageContent[]): Promise<void>;
   followUp(text: string, images?: ImageContent[]): Promise<void>;
-  sendCustomMessage(message: { customType: string; content: string; display: boolean; details?: unknown }, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void>;
+  sendCustomMessage(message: { customType: string; content: string | ({ type: "text"; text: string } | ImageContent)[]; display: boolean; details?: unknown }, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void>;
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string }>;
   navigateTree?(targetId: string, options?: { summarize?: boolean; customInstructions?: string }): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: unknown }>;
   abortBranchSummary?(): void;
@@ -790,9 +795,13 @@ export function createPiWebCustomToolDefinitions(
   spawn?: SpawnSessionFn,
   subsessions?: SubsessionToolDeps,
   askUser?: AskUserToolDeps,
+  topicPost?: (sessionId: string, topicId: string, text: string, attention?: SessionTopicAttention, choices?: SessionTopicChoice[]) => string,
+  topicOpen?: (sessionId: string, title: string, summary?: string) => string,
 ) {
   return [
     createPiWebEditToolDefinition(cwd),
+    ...(topicPost === undefined ? [] : [createTopicPostToolDefinition(topicPost)]),
+    ...(topicOpen === undefined ? [] : [createTopicOpenToolDefinition(topicOpen)]),
     ...(delegationEnabled && spawn !== undefined ? [createSpawnSessionToolDefinition(cwd, { spawn })] : []),
     ...(delegationEnabled && subsessions !== undefined ? createSubsessionToolDefinitions(cwd, subsessions) : []),
     // Asking the user is not delegation: the questions land in the session the
@@ -996,6 +1005,8 @@ function createDefaultRuntimeFactory(
   subsessions?: SubsessionToolDeps,
   askUser?: AskUserToolDeps,
   appendSystemPromptSections: readonly string[] = [],
+  topicPost?: (sessionId: string, topicId: string, text: string, attention?: SessionTopicAttention, choices?: SessionTopicChoice[]) => string,
+  topicOpen?: (sessionId: string, title: string, summary?: string) => string,
 ): PiWebCreateAgentSessionRuntimeFactory {
   const resourceLoaderOptions = piWebResourceLoaderOptions(appendSystemPromptSections);
   return async ({ cwd, agentDir, sessionManager, sessionStartEvent, initialModel, initialThinkingLevel, delegationToolsEnabled }) => {
@@ -1046,7 +1057,7 @@ function createDefaultRuntimeFactory(
     services.diagnostics.push(...modelOptions.diagnostics);
     const resolvedDelegationToolsEnabled = delegationToolsEnabled
       ?? await sessionAllowsDelegationTools(sessionManager, sessionManagers);
-    const customTools = createPiWebCustomToolDefinitions(cwd, resolvedDelegationToolsEnabled, spawn, subsessions, askUser);
+    const customTools = createPiWebCustomToolDefinitions(cwd, resolvedDelegationToolsEnabled, spawn, subsessions, askUser, topicPost, topicOpen);
     const result = await createAgentSessionFromServices({
       services,
       sessionManager,
@@ -1180,6 +1191,8 @@ export class PiSessionService implements SessionRouteService {
   private readonly commandService: SessionCommandService<PiAgentSession>;
   /** Runtime-identity gate held while Pi may await abandoned-branch summarization. */
   private readonly treeNavigations = new WeakSet<PiAgentSession>();
+  private readonly unsettledAgentRuns = new WeakSet<PiAgentSession>();
+  private readonly pendingTopicInputs = new WeakMap<PiAgentSession, Map<string, { topicId: string; text: string; imageDigest?: string }>>();
   /**
    * Bare live leaf selected without an appended summary entry. Recording that
    * leaf distinguishes the unpersisted move from a later runtime append that
@@ -1298,6 +1311,20 @@ export class PiSessionService implements SessionRouteService {
       },
       deps.askUserEnabled === true ? { open: (input) => this.openAsk(input) } : undefined,
       deps.appendSystemPromptSections ?? [],
+      (sessionId, id, text, attention, choices) => {
+        const manager = this.active.get(sessionId)?.runtime.session.sessionManager;
+        if (manager?.appendCustomEntry === undefined || manager.getSessionId() !== sessionId) throw new Error("Active session is unavailable for topic_post");
+        topicSnapshot(manager.getBranch(), true, id);
+        return manager.appendCustomEntry(TOPIC_POST_TYPE, { topicId: id, text, ...(attention === undefined ? {} : { attention }), ...(choices === undefined ? {} : { choices }) });
+      },
+      (sessionId, title, summary) => {
+        const manager = this.active.get(sessionId)?.runtime.session.sessionManager;
+        if (manager?.appendCustomEntry === undefined || manager.getSessionId() !== sessionId) throw new Error("Active session is unavailable for topic_open");
+        if (summary !== undefined && (summary.length > 512 || !summary.trim())) throw new Error("Invalid topic summary");
+        const id = newTopicId();
+        manager.appendCustomEntry(TOPIC_OPEN_TYPE, { topicId: id, title, ...(summary === undefined ? {} : { summary }) });
+        return id;
+      },
     );
     this.createAgentRuntime = deps.createAgentRuntime ?? defaultCreateAgentRuntime;
     this.workspaceActivity = deps.workspaceActivity;
@@ -2423,6 +2450,138 @@ export class PiSessionService implements SessionRouteService {
   async messages(ref: PiSessionRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
     const session = await this.getOrOpen(ref);
     return pageMessagesAtSafeBoundary(historyMessagesFromEntries(await this.readableSessionBranch(ref, session)).map(displayPromptMessage), page);
+  }
+
+  async topics(ref: PiSessionRef): Promise<{ topics: SessionTopicSummary[] }> {
+    const session = await this.getOrOpen(ref);
+    return { topics: topicSummaries(await this.readableSessionBranch(ref, session), this.hasActiveWork(session)) };
+  }
+
+  async topic(ref: PiSessionRef, id = TOPIC_ID): Promise<SessionTopicSnapshot> {
+    topicId(id);
+    const session = await this.getOrOpen(ref);
+    return topicSnapshot(await this.readableSessionBranch(ref, session), this.hasActiveWork(session), id);
+  }
+
+  async createTopic(ref: PiSessionRef, title: string): Promise<SessionTopicSummary> {
+    title = topicTitle(title);
+    await this.assertWritable(ref);
+    const session = await this.getOrOpen(ref);
+    if (this.unsettledAgentRuns.has(session) || this.hasActiveWork(session)) throw new Error("Cannot open a topic while the session is busy");
+    if (!session.sessionManager.getBranch().some((entry) => isRecord(entry) && entry["type"] === "message" && isRecord(entry["message"]) && entry["message"]["role"] === "assistant")) throw new Error("Topic requires a persisted assistant turn");
+    if (session.sessionManager.appendCustomEntry === undefined || session.sessionManager.getSessionFile() === undefined) throw new Error("Topic requires a persisted session");
+    const id = newTopicId();
+    session.sessionManager.appendCustomEntry(TOPIC_OPEN_TYPE, { topicId: id, title });
+    const created = topicSummaries(session.sessionManager.getBranch(), false).find((topic) => topic.topicId === id);
+    if (!created) throw new Error("Topic was not persisted");
+    return created;
+  }
+
+  async acknowledgeTopic(ref: PiSessionRef, id: string): Promise<SessionTopicSnapshot> {
+    topicId(id);
+    await this.assertWritable(ref);
+    const session = await this.getOrOpen(ref);
+    if (this.unsettledAgentRuns.has(session) || this.hasActiveWork(session)) throw new Error("Cannot acknowledge a topic while the session is busy");
+    const topic = topicSnapshot(session.sessionManager.getBranch(), false, id);
+    const last = [...topic.messages].reverse().find((message) => message.role === "assistant");
+    if (topic.attention !== "update" || last?.attention !== "update" || session.sessionManager.appendCustomEntry === undefined || session.sessionManager.getSessionFile() === undefined) throw new Error("No update to acknowledge");
+    session.sessionManager.appendCustomEntry(TOPIC_ACK_TYPE, { topicId: id, messageId: last.id });
+    return topicSnapshot(session.sessionManager.getBranch(), false, id);
+  }
+
+  private recordedTopicInput(session: PiAgentSession, requestId: string): { topicId: string; text: string; imageDigest?: string } | undefined {
+    const entry = session.sessionManager.getBranch().find((item) => isRecord(item) && item["type"] === "custom_message" && item["customType"] === TOPIC_INPUT_TYPE && isRecord(item["details"]) && item["details"]["requestId"] === requestId);
+    if (!isRecord(entry) || !isRecord(entry["details"])) return undefined;
+    const { topicId, text, imageDigest } = entry["details"];
+    return typeof topicId === "string" && typeof text === "string" ? { topicId, text, ...(typeof imageDigest === "string" ? { imageDigest } : {}) } : undefined;
+  }
+
+  private reconcilePendingTopicInputs(session: PiAgentSession): void {
+    if (session.isStreaming || session.isCompacting || this.unsettledAgentRuns.has(session) || this.isSessionEntryMutationActive(session)) return;
+    this.pendingTopicInputs.delete(session);
+  }
+
+  async postTopicMessage(ref: PiSessionRef, id: string, text: string, requestId: string, attachments?: unknown): Promise<{ topicId: string; status: "accepted" | "queued" }> {
+    topicId(id);
+    const originals = topicImages(attachments);
+    topicText(text, originals.length > 0);
+    if (typeof requestId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(requestId)) throw new Error("Invalid topic request id");
+    const imageDigest = topicImageDigest(originals);
+    await this.assertWritable(ref);
+    const session = await this.getOrOpen(ref);
+    this.assertTreeNavigationInactive(session, "post to the topic");
+    const title = topicSnapshot(session.sessionManager.getBranch(), this.hasActiveWork(session), id).title;
+    const alreadyRecorded = this.recordedTopicInput(session, requestId);
+    const previous = alreadyRecorded ?? this.pendingTopicInputs.get(session)?.get(requestId);
+    if (previous && (previous.topicId !== id || previous.text !== text || previous.imageDigest !== imageDigest)) throw new Error("Topic request id already used for different content");
+    if (alreadyRecorded) return { topicId: id, status: "accepted" };
+    if (previous) {
+      this.reconcilePendingTopicInputs(session);
+      if (this.pendingTopicInputs.get(session)?.has(requestId) === true) return { topicId: id, status: "queued" };
+    }
+    // Conversion can await: recheck idempotency below before marking a request pending.
+    const images = (await attachmentsToInlineImages(originals, true)).map(({ image }) => image);
+    const recorded = this.recordedTopicInput(session, requestId);
+    const pending = this.pendingTopicInputs.get(session)?.get(requestId);
+    if (recorded !== undefined || pending !== undefined) {
+      const existing = recorded ?? pending;
+      if (existing?.topicId !== id || existing.text !== text || existing.imageDigest !== imageDigest) throw new Error("Topic request id already used for different content");
+      if (recorded !== undefined) return { topicId: id, status: "accepted" };
+      this.reconcilePendingTopicInputs(session);
+      if (this.pendingTopicInputs.get(session)?.has(requestId) === true) return { topicId: id, status: "queued" };
+    }
+    // ponytail: Pi does not flush until its first assistant message; reject blank
+    // sessions rather than add a second journal. Lift this if the SDK supports flush.
+    if (!session.sessionManager.getBranch().some((entry) => isRecord(entry) && entry["type"] === "message" && isRecord(entry["message"]) && entry["message"]["role"] === "assistant")) {
+      throw new Error("Focused topic requires a session with a persisted assistant turn");
+    }
+    // agent_start marks the entire streaming run unsettled; only the narrow
+    // post-stream/pre-settled window must refuse a new turn.
+    if (session.isCompacting || (!session.isStreaming && (this.unsettledAgentRuns.has(session) || this.hasActiveWork(session)))) {
+      throw new Error("Cannot post to the topic while the session is busy");
+    }
+    const queued = session.isStreaming;
+    const inputs = this.pendingTopicInputs.get(session) ?? new Map<string, { topicId: string; text: string; imageDigest?: string }>();
+    this.pendingTopicInputs.set(session, inputs);
+    inputs.set(requestId, { topicId: id, text, ...(imageDigest === undefined ? {} : { imageDigest }) });
+    // Pi emits message_end just before synchronously appending the entry.
+    let unsubscribe: () => void = () => undefined;
+    const persisted = queued ? undefined : new Promise<void>((resolve, reject) => {
+      unsubscribe = session.subscribe((event) => {
+        if (!isRecord(event) || event["type"] !== "message_end" || !isRecord(event["message"])) return;
+        const message = event["message"];
+        if (message["role"] !== "custom" || message["customType"] !== TOPIC_INPUT_TYPE || !isRecord(message["details"]) || message["details"]["requestId"] !== requestId) return;
+        queueMicrotask(() => {
+          if (this.recordedTopicInput(session, requestId)) resolve();
+          else reject(new Error("Focused topic input was not persisted"));
+        });
+      });
+    });
+    const turn = this.runSessionEntryMutation(session, "post to the topic", () => session.sendCustomMessage(
+      { customType: TOPIC_INPUT_TYPE, content: images.length ? [{ type: "text" as const, text: `[Topic: ${id} | ${title}] User message (reply via topic_post with topicId ${id}):\n${text}` }, ...images] : `[Topic: ${id} | ${title}] User message (reply via topic_post with topicId ${id}):\n${text}`, display: false, details: { topicId: id, text, requestId, ...(imageDigest === undefined ? {} : { imageDigest }) } },
+      { triggerTurn: true, ...(queued ? { deliverAs: "followUp" as const } : {}) },
+    ));
+    void turn.catch((error: unknown) => {
+      if (!this.recordedTopicInput(session, requestId)) inputs.delete(requestId);
+      const message = error instanceof Error ? error.message : String(error);
+      this.publishActivity(session, "error", "error", message);
+      this.events.publish(session.sessionId, { type: "session.error", message });
+    });
+    if (queued) {
+      await turn;
+      return { topicId: id, status: "queued" };
+    }
+    try {
+      if (persisted === undefined) throw new Error("Focused topic input was not persisted");
+      await Promise.race([persisted, turn.then(() => {
+        if (!this.recordedTopicInput(session, requestId)) throw new Error("Focused topic input was not persisted");
+      })]);
+      if (!this.recordedTopicInput(session, requestId)) throw new Error("Focused topic input was not persisted");
+      return { topicId: id, status: "accepted" };
+    } finally {
+      unsubscribe();
+      if (!this.recordedTopicInput(session, requestId)) inputs.delete(requestId);
+    }
   }
 
   async status(ref: PiSessionRef): Promise<ClientSessionStatus> {
@@ -4168,6 +4327,14 @@ export class PiSessionService implements SessionRouteService {
     let queuedPublications = 0;
     let subscribed = true;
     const unsubscribe = session.subscribe((event) => {
+      // Pi can report isStreaming=false while agent_settled handlers are still
+      // running; during that window sendCustomMessage silently defers the input.
+      const runEvent = getString(event, "type");
+      if (runEvent === "agent_start") this.unsettledAgentRuns.add(session);
+      if (runEvent === "agent_settled") {
+        this.unsettledAgentRuns.delete(session);
+        queueMicrotask(() => { this.reconcilePendingTopicInputs(session); });
+      }
       const publish = () => {
         const message = getProperty(event, "message");
         if (getString(event, "type") !== "message_end" || !isRecord(message) || message["role"] !== "custom" || message["display"] !== false) {
@@ -4204,6 +4371,7 @@ export class PiSessionService implements SessionRouteService {
     });
     active.unsubscribe = () => {
       subscribed = false;
+      this.unsettledAgentRuns.delete(session);
       this.sessionEvents.close(session);
       unsubscribe();
     };
@@ -4529,6 +4697,7 @@ export class PiSessionService implements SessionRouteService {
     const remaining = (this.sessionEntryMutationCounts.get(session) ?? 1) - 1;
     if (remaining <= 0) this.sessionEntryMutationCounts.delete(session);
     else this.sessionEntryMutationCounts.set(session, remaining);
+    this.reconcilePendingTopicInputs(session);
     this.observeUnreadActivityState(session);
   }
 

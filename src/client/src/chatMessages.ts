@@ -58,8 +58,23 @@ export function normalizeMessage(message: unknown): ChatLine[] {
   if (completion !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "subagentCompletion", text: completion }] }, message)];
   if (getString(message, "role") === "bashExecution") return [withMessageMeta(normalizeBashExecution(message), message)];
   const rawRole = getString(message, "role");
+  // Topic posts render only in their topic. Opening one leaves a route back to it.
+  if (rawRole === "toolResult" && getBoolean(message, "isError") !== true) {
+    if (getString(message, "toolName") === "topic_post") return [];
+    if (getString(message, "toolName") === "topic_open") {
+      const details = getProperty(message, "details");
+      const topicId = getString(details, "topicId");
+      if (topicId === undefined || topicId === "") return [];
+      const title = getString(details, "title");
+      return [withMessageMeta({ role: "system", parts: [{ type: "topicLink", topicId, ...(title === undefined ? {} : { title }) }] }, message)];
+    }
+  }
   const role = normalizeRole(rawRole);
-  const contentParts = normalizeContent(getProperty(message, "content"), message);
+  const rawContent = getProperty(message, "content");
+  const content = rawRole === "assistant" && Array.isArray(rawContent)
+    ? rawContent.filter((part) => getString(part, "type") !== "toolCall" || !["topic_post", "topic_open"].includes(getString(part, "name") ?? ""))
+    : rawContent;
+  const contentParts = normalizeContent(content, message);
   const supersededRecord = rawRole === "toolResult"
     ? askUserRecordFromToolDetails(getString(message, "toolName") ?? "", getProperty(message, "details"))
     : undefined;

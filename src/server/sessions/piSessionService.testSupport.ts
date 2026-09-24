@@ -139,7 +139,7 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
   const promptCalls: { text: string; options: unknown }[] = [];
   const steerCalls: { text: string; images: unknown }[] = [];
   const followUpCalls: { text: string; images: unknown }[] = [];
-  const customMessageCalls: { message: { customType: string; content: string; display: boolean; details?: unknown }; options: unknown }[] = [];
+  const customMessageCalls: { message: Parameters<PiAgentSession["sendCustomMessage"]>[0]; options: unknown }[] = [];
   const bindExtensionCalls: TestExtensionBindings[] = [];
   const listeners: ((event: unknown) => void)[] = [];
   const executeBash: PiAgentSession["executeBash"] = patch.executeBash
@@ -200,7 +200,7 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
       calls.followUp.push({ text, images });
       return Promise.resolve();
     },
-    sendCustomMessage: (message: { customType: string; content: string; display: boolean; details?: unknown }, options: unknown) => {
+    sendCustomMessage: (message: Parameters<PiAgentSession["sendCustomMessage"]>[0], options: unknown) => {
       calls.sendCustomMessage.push({ message, options });
       return Promise.resolve();
     },

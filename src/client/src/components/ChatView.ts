@@ -1124,6 +1124,7 @@ export class ChatView extends LitElement {
       </details>
     `;
     if (part.type === "skillRead") return html`<div class="part skill-read">Skill: ${part.name}</div>`;
+    if (part.type === "topicLink") return html`<button type="button" class="part topic-link" @click=${() => this.dispatchEvent(new CustomEvent("open-topic", { detail: part.topicId, bubbles: true, composed: true }))}>Open ${part.title ?? "new"} topic →</button>`;
     if (part.type === "subagentCompletion") return html`
       <details class="part subagent-completion">
         <summary>Subagents finished</summary>

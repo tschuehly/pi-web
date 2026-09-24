@@ -9,6 +9,7 @@ import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { readStoredThemePreference } from "../theme";
+import * as topicImageStorage from "../topicImageDraftStorage";
 import { DelegateRoster } from "./DelegateRoster";
 import { GoalStatusChip } from "./GoalStatusChip";
 import { PromptEditor } from "./PromptEditor";
@@ -37,6 +38,7 @@ beforeEach(() => {
 afterEach(() => {
   document.body.replaceChildren();
   localStorage.clear();
+  sessionStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -227,6 +229,292 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
     expect(getState(app).error).not.toContain("no longer available");
     expect(getState(app).selectedSession?.id).toBe("fresh");
+  });
+
+  it("shows multiple topic tabs, switches via keyboard, posts answers, and acknowledges updates", async () => {
+    const current = session("human", "Topic trial");
+    const topics = [
+      { topicId: "files", title: "Files", preview: "Choose layout", attention: "question" as const, updatedAt: "now" },
+      { topicId: "window", title: "Window", preview: "Review result", attention: "update" as const, updatedAt: "now" },
+    ];
+    vi.spyOn(api, "topics").mockResolvedValue({ topics });
+    vi.spyOn(api, "topic").mockImplementation((_session, id) => Promise.resolve({ topicId: id, title: id, attention: id === "files" ? "question" : "update", state: "idle", messages: [{ id: id + "-a", role: "assistant", text: id === "files" ? "Pick a layout" : "Windows restored", createdAt: "now", choices: id === "files" ? [{ label: "Yes", detail: "Build it" }] : [] }] }));
+    const post = vi.spyOn(api, "postTopic").mockResolvedValue({ topicId: "files", status: "accepted" });
+    const ack = vi.spyOn(api, "ackTopic").mockResolvedValue({ topicId: "window", title: "Window", attention: "clear", state: "idle", messages: [] });
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelectorAll('[role="tab"][data-topic-id]')).toHaveLength(2); });
+    expect(app.shadowRoot?.querySelector('.focus-topic-history')?.textContent).toContain("Pick a layout");
+    expect(app.shadowRoot?.querySelectorAll('#topic-panel textarea')).toHaveLength(1);
+    expect(app.shadowRoot?.querySelector('#topic-answer')).toBeNull();
+    expect(app.shadowRoot?.querySelector('label[for="focus-topic-input"]')?.textContent).toBe("Answer in your own words");
+    app.shadowRoot?.querySelector<HTMLButtonElement>('.topic-attention button')?.click();
+    await vi.waitFor(() => { expect(post).toHaveBeenCalledWith({ id: current.id, cwd: current.cwd }, "files", "Yes", "local", expect.any(String), []); });
+    const tab = app.shadowRoot?.querySelector<HTMLButtonElement>('[data-topic-id="files"]');
+    vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(vi.fn()); // happy-dom nested shadow focus breaks CodeMirror teardown.
+    tab?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-topic-id="window"]')?.getAttribute('aria-selected')).toBe('true'); });
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('.focus-topic-history')?.textContent).toContain("Windows restored"); });
+    app.shadowRoot?.querySelector<HTMLButtonElement>('.topic-attention button')?.click();
+    await vi.waitFor(() => { expect(ack).toHaveBeenCalledWith({ id: current.id, cwd: current.cwd }, "window", "local"); });
+    expect(app.shadowRoot?.querySelector('chat-view')).not.toBeNull();
+    expect(app.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Close topics"]')).not.toBeNull();
+  });
+
+  it("hides the chat column under the mobile topic overlay", () => {
+    expect(WorkbenchApp.styles.cssText).toContain(".chat-and-files.topic-open .chat-column { display: none; }");
+    expect(WorkbenchApp.styles.cssText).not.toContain(".chat-and-files.topic-open .chat-column { flex:");
+  });
+
+  it("restarts live topic refresh after switching between streaming sessions", async () => {
+    const first = session("first", "First");
+    const second = session("second", "Second");
+    vi.spyOn(api, "topics").mockResolvedValue({ topics: [] });
+    const app = await mountChooser([first, second]);
+    const method: unknown = Reflect.get(app, "setApp");
+    if (typeof method !== "function") throw new Error("Missing state setter");
+    const setApp = (patch: Partial<AppState>): void => { Reflect.apply(method, app, [patch]); };
+    const status = { sessionId: first.id, persisted: true, isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    setApp({ selectedSession: first, status });
+    const timer: unknown = Reflect.get(app, "topicRefreshTimer");
+    expect(timer).toBeDefined();
+    setApp({ selectedSession: second, status: { ...status, sessionId: second.id } });
+    expect(Reflect.get(app, "topicRefreshTimer")).toBeDefined();
+    expect(Reflect.get(app, "topicRefreshTimer")).not.toBe(timer);
+  });
+
+  it("queues a question answer while busy, retains its ID across reload, and clears it only after recording", async () => {
+    const current = session("human", "Topic trial");
+    vi.spyOn(api, "topics").mockResolvedValue({ topics: [{ topicId: "files", title: "Files", preview: "Choose", attention: "question", updatedAt: "now" }] });
+    let recorded = false;
+    let requestId = "";
+    vi.spyOn(api, "topic").mockImplementation(() => Promise.resolve({ topicId: "files", title: "Files", attention: "question", state: "idle", messages: [
+      { id: "question", role: "assistant", text: "Choose", createdAt: "now", choices: [{ label: "Yes", detail: "Proceed" }] },
+      ...(recorded ? [{ id: "answer", role: "user" as const, text: "Yes", requestId, createdAt: "later" }] : []),
+    ] }));
+    const post = vi.spyOn(api, "postTopic").mockImplementation((_session, _topic, _text, _machine, id) => {
+      requestId = id;
+      if (post.mock.calls.length === 2) { recorded = true; return Promise.resolve({ topicId: "files", status: "accepted" }); }
+      return Promise.resolve({ topicId: "files", status: "queued" });
+    });
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current, status: { sessionId: current.id, persisted: true, isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 } });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector(".topic-attention button")).not.toBeNull(); });
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".topic-attention button")?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[role="status"]')?.textContent).toContain("Queued for the agent’s next turn—not recorded yet"); });
+    expect(post).toHaveBeenCalledOnce();
+    const queuedId = post.mock.calls[0]?.[4];
+    app.remove();
+    const reopened = await mountChooser([current]);
+    setState(reopened, { ...getState(reopened), selectedSession: current, status: { sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 } });
+    await reopened.updateComplete;
+    reopened.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(reopened.shadowRoot?.querySelector('[role="status"]')?.textContent).toContain("Delivery not confirmed"); });
+    reopened.shadowRoot?.querySelector<HTMLButtonElement>('[role="status"] button')?.click();
+    await vi.waitFor(() => { expect(post).toHaveBeenCalledTimes(2); });
+    expect(post.mock.calls[1]?.[4]).toBe(queuedId);
+    await vi.waitFor(() => { expect(reopened.shadowRoot?.querySelector('[role="status"]')).toBeNull(); });
+  });
+
+  it("keeps an image-only queued topic post across reload and renders its persisted preview", async () => {
+    const current = session("image", "Image trial");
+    const saved = new Map<string, topicImageStorage.TopicImageDraftState>();
+    vi.spyOn(topicImageStorage, "loadTopicImageState").mockImplementation((key) => Promise.resolve(saved.get(key) ?? { images: [] }));
+    vi.spyOn(topicImageStorage, "saveTopicImageState").mockImplementation((key, state) => { saved.set(key, { images: [...state.images], ...(state.pending ? { pending: { ...state.pending } } : {}) }); return Promise.resolve(); });
+    vi.spyOn(api, "topics").mockResolvedValue({ topics: [{ topicId: "photos", title: "Photos", preview: "", attention: "clear", updatedAt: "now" }] });
+    let recorded = false;
+    let requestId = "";
+    let imageData = "";
+    vi.spyOn(api, "topic").mockImplementation(() => Promise.resolve({ topicId: "photos", title: "Photos", attention: "clear", state: "idle", messages: recorded
+      ? [{ id: "input", role: "user", text: "", requestId, createdAt: "now", images: [{ mimeType: "image/png", data: imageData }] }]
+      : [] }));
+    const post = vi.spyOn(api, "postTopic").mockImplementation((_session, _topic, _text, _machine, id, images) => {
+      requestId = id;
+      imageData = images?.[0]?.data ?? "";
+      if (post.mock.calls.length === 2) { recorded = true; return Promise.resolve({ topicId: "photos", status: "accepted" }); }
+      return Promise.resolve({ topicId: "photos", status: "queued" });
+    });
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector<HTMLInputElement>("#topic-image-input")).not.toBeNull(); });
+    const input = app.shadowRoot?.querySelector<HTMLInputElement>("#topic-image-input");
+    if (!input) throw new Error("Missing image picker");
+    Object.defineProperty(input, "files", { configurable: true, value: [new File(["image data"], "screenshot.png", { type: "image/png" })] });
+    input.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelectorAll(".topic-image-draft img")).toHaveLength(1); });
+    app.shadowRoot?.querySelector<HTMLButtonElement>('.focus-topic-compose button[type="submit"]')?.click();
+    await vi.waitFor(() => { expect(post).toHaveBeenCalledOnce(); });
+    expect(post.mock.calls[0]?.[2]).toBe("");
+    expect(post.mock.calls[0]?.[5]?.[0]?.mimeType).toBe("image/png");
+    const queuedId = post.mock.calls[0]?.[4];
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[role="status"]')?.textContent).toContain("Delivery not confirmed"); });
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: { files: [new File(["new image"], "new.png", { type: "image/png" })] } });
+    app.shadowRoot?.querySelector(".focus-topic-compose")?.dispatchEvent(paste);
+    expect(paste.defaultPrevented).toBe(true);
+    expect(saved.get(`pi-web.topics.local.${current.id}.${current.cwd}:photos`)?.images).toHaveLength(1);
+    expect(saved.get(`pi-web.topics.local.${current.id}.${current.cwd}:photos`)?.pending?.requestId).toBe(queuedId);
+    app.remove();
+    sessionStorage.clear(); // A new tab retains IndexedDB but not the previous tab's request id.
+    const reopened = await mountChooser([current]);
+    setState(reopened, { ...getState(reopened), selectedSession: current });
+    await reopened.updateComplete;
+    reopened.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(reopened.shadowRoot?.querySelectorAll(".topic-image-draft img")).toHaveLength(1); });
+    reopened.shadowRoot?.querySelector<HTMLButtonElement>('[role="status"] button')?.click();
+    await vi.waitFor(() => { expect(post).toHaveBeenCalledTimes(2); });
+    expect(post.mock.calls[1]?.[4]).toBe(queuedId);
+    expect(post.mock.calls[1]?.[5]).toEqual(post.mock.calls[0]?.[5]);
+    await vi.waitFor(() => { expect(reopened.shadowRoot?.querySelector('.topic-message.user .topic-image')).not.toBeNull(); });
+    expect(saved.get(`pi-web.topics.local.${current.id}.${current.cwd}:photos`)).toEqual({ images: [] });
+  });
+
+  it("restores an image request from browser storage and refuses conflicting retries", async () => {
+    const current = session("image-conflict", "Image conflict");
+    const key = `pi-web.topics.local.${current.id}.${current.cwd}:photos`;
+    const saved = new Map<string, topicImageStorage.TopicImageDraftState>([[key, { images: [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "aW1hZ2U=" }], pending: { requestId: "original-id", text: "", status: "queued", imageCount: 1 } }]]);
+    vi.spyOn(topicImageStorage, "loadTopicImageState").mockImplementation((id) => Promise.resolve(saved.get(id) ?? { images: [] }));
+    vi.spyOn(topicImageStorage, "saveTopicImageState").mockImplementation((id, value) => { saved.set(id, value); return Promise.resolve(); });
+    vi.spyOn(api, "topics").mockResolvedValue({ topics: [{ topicId: "photos", title: "Photos", preview: "", attention: "clear", updatedAt: "now" }] });
+    vi.spyOn(api, "topic").mockResolvedValue({ topicId: "photos", title: "Photos", attention: "clear", state: "idle", messages: [] });
+    const post = vi.spyOn(api, "postTopic").mockRejectedValue(new Error("Topic request id already used for different content"));
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelectorAll(".topic-image-draft img")).toHaveLength(1); });
+    app.shadowRoot?.querySelector<HTMLButtonElement>('[role="status"] button')?.click();
+    await vi.waitFor(() => { expect(post).toHaveBeenCalledOnce(); });
+    expect(post.mock.calls[0]?.[4]).toBe("original-id");
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[role="status"]')?.textContent).toContain("This request cannot be retried"); });
+    expect(app.shadowRoot?.querySelector<HTMLButtonElement>('[role="status"] button')?.disabled).toBe(true);
+    app.shadowRoot?.querySelectorAll<HTMLButtonElement>('[role="status"] button')[1]?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[role="status"]')).toBeNull(); });
+    expect(saved.get(key)).toEqual({ images: [] });
+  });
+
+  it("blocks image attachment instead of overwriting drafts after a storage read error", async () => {
+    const current = session("image-read-failure", "Unreadable images");
+    vi.spyOn(topicImageStorage, "loadTopicImageState").mockRejectedValue(new Error("Read failed"));
+    const save = vi.spyOn(topicImageStorage, "saveTopicImageState");
+    vi.spyOn(api, "topics").mockResolvedValue({ topics: [{ topicId: "photos", title: "Photos", preview: "", attention: "clear", updatedAt: "now" }] });
+    vi.spyOn(api, "topic").mockResolvedValue({ topicId: "photos", title: "Photos", attention: "clear", state: "idle", messages: [] });
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector(".topic-error")?.textContent).toContain("Saved images could not be read"); });
+    expect(app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Attach images"]')?.disabled).toBe(true);
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: { files: [new File(["image"], "new.png", { type: "image/png" })] } });
+    app.shadowRoot?.querySelector(".focus-topic-compose")?.dispatchEvent(paste);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("polls topic summaries without downloading unchanged image snapshots", async () => {
+    const current = session("image-poll", "Image poll");
+    let updatedAt = "first";
+    vi.spyOn(api, "topics").mockImplementation(() => Promise.resolve({ topics: [{ topicId: "photos", title: "Photos", preview: "", attention: "clear", updatedAt }] }));
+    const detail = vi.spyOn(api, "topic").mockResolvedValue({ topicId: "photos", title: "Photos", attention: "clear", state: "idle", messages: [{ id: "photo", role: "user", text: "", createdAt: "first", images: [{ mimeType: "image/png", data: "aW1hZ2U=" }] }] });
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector(".topic-message.user img")).not.toBeNull(); });
+    const firstCount = detail.mock.calls.length;
+    const poll: unknown = Reflect.get(app, "loadTopics");
+    if (typeof poll !== "function") throw new Error("Missing topic refresh");
+    await Reflect.apply(poll, app, [false, true]);
+    expect(detail).toHaveBeenCalledTimes(firstCount);
+    updatedAt = "second";
+    await Reflect.apply(poll, app, [false, true]);
+    expect(detail).toHaveBeenCalledTimes(firstCount + 1);
+  });
+
+  it("opens an agent-created topic from an orchestrator link", async () => {
+    const current = session("human", "Topic trial");
+    vi.spyOn(api, "topics").mockResolvedValue({ topics: [{ topicId: "files", title: "Files", preview: "", attention: "clear", updatedAt: "now" }] });
+    vi.spyOn(api, "topic").mockResolvedValue({ topicId: "files", title: "Files", attention: "clear", state: "idle", messages: [] });
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current, messages: [{ role: "system", parts: [{ type: "topicLink", topicId: "files", title: "Files" }] }] });
+    await app.updateComplete;
+    const chat = app.shadowRoot?.querySelector<HTMLElement & { updateComplete: Promise<boolean> }>("chat-view");
+    await chat?.updateComplete;
+    chat?.shadowRoot?.querySelector<HTMLButtonElement>(".topic-link")?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-topic-id="files"]')?.getAttribute("aria-selected")).toBe("true"); });
+  });
+
+  it("clears the posted topic's draft even if another topic is selected before acceptance", async () => {
+    const current = session("human", "Topic trial");
+    const topics = [
+      { topicId: "files", title: "Files", preview: "", attention: "clear" as const, updatedAt: "now" },
+      { topicId: "window", title: "Window", preview: "", attention: "clear" as const, updatedAt: "now" },
+    ];
+    vi.spyOn(api, "topics").mockResolvedValue({ topics });
+    vi.spyOn(api, "topic").mockImplementation((_session, id) => Promise.resolve({ topicId: id, title: id, attention: "clear", state: "idle", messages: [] }));
+    let accept: (response: { topicId: string; status: "accepted" }) => void = () => { throw new Error("Post not started"); };
+    const post = vi.spyOn(api, "postTopic").mockImplementation(() => new Promise((resolve) => { accept = resolve; }));
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-topic-id="files"]')).not.toBeNull(); });
+    const draft = app.shadowRoot?.querySelector<HTMLTextAreaElement>('#focus-topic-input');
+    if (!draft) throw new Error("Missing topic composer");
+    draft.value = "Send once";
+    draft.dispatchEvent(new Event("input", { bubbles: true }));
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('.focus-topic-compose button[type="submit"]')?.click();
+    await vi.waitFor(() => { expect(post).toHaveBeenCalledOnce(); });
+    app.shadowRoot?.querySelector<HTMLButtonElement>('[data-topic-id="window"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-topic-id="window"]')?.getAttribute("aria-selected")).toBe("true"); });
+    accept({ topicId: "files", status: "accepted" });
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-topic-id="files"]')?.textContent).not.toContain("draft"); });
+    app.shadowRoot?.querySelector<HTMLButtonElement>('[data-topic-id="files"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector<HTMLTextAreaElement>('#focus-topic-input')?.value).toBe(""); });
+  });
+
+  it("creates a topic and restores the selected topic and draft after reload", async () => {
+    const current = session("human", "Topic trial");
+    const topic = { topicId: "new", title: "New topic", preview: "Ready", attention: "clear" as const, updatedAt: "now" };
+    let topics = [topic];
+    vi.spyOn(api, "topics").mockImplementation(() => Promise.resolve({ topics }));
+    vi.spyOn(api, "topic").mockImplementation((_session, id) => Promise.resolve({ topicId: id, title: id, attention: "clear", state: "idle", messages: [] }));
+    const create = vi.spyOn(api, "createTopic").mockImplementation(() => { topics = [...topics, { ...topic, topicId: "next", title: "Next" }]; return Promise.resolve({ ...topic, topicId: "next", title: "Next" }); });
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-topic-id="new"]')).not.toBeNull(); });
+    expect(app.shadowRoot?.querySelector('#new-topic')).toBeNull();
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Create topic"]')?.click();
+    await app.updateComplete;
+    const title = app.shadowRoot?.querySelector<HTMLInputElement>('#new-topic');
+    if (!title) throw new Error('Missing title');
+    title.value = 'Next';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('.topic-create button')?.click();
+    await vi.waitFor(() => { expect(create).toHaveBeenCalledWith({ id: current.id, cwd: current.cwd }, 'Next', 'local'); });
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-topic-id="next"]')?.getAttribute('aria-selected')).toBe('true'); });
+    const draft = app.shadowRoot?.querySelector<HTMLTextAreaElement>('#focus-topic-input');
+    if (!draft) throw new Error('Missing composer');
+    draft.value = 'Keep this draft';
+    draft.dispatchEvent(new Event('input', { bubbles: true }));
+    await app.updateComplete;
+    app.remove();
+    const reopened = await mountChooser([current]);
+    setState(reopened, { ...getState(reopened), selectedSession: current });
+    await reopened.updateComplete;
+    reopened.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Topics"]')?.click();
+    await vi.waitFor(() => { expect(reopened.shadowRoot?.querySelector('[data-topic-id="next"]')?.getAttribute('aria-selected')).toBe('true'); });
+    expect(reopened.shadowRoot?.querySelector<HTMLTextAreaElement>('#focus-topic-input')?.value).toBe('Keep this draft');
   });
 
   it("opens and closes the side Files pane without remounting Chat", async () => {

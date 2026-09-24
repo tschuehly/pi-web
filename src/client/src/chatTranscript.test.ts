@@ -48,6 +48,31 @@ const finalAssistant = {
 };
 
 describe("applyTranscriptEvent", () => {
+  it("keeps successful topic posts out of live and saved chat while surfacing tool failures", () => {
+    for (const toolName of ["topic_open", "topic_post"]) {
+    const call = { role: "assistant", content: [{ type: "toolCall", id: "topic-1", name: toolName, arguments: { topicId: "focus", text: "private reply" } }] };
+    const result = { role: "toolResult", toolName, toolCallId: "topic-1", content: [{ type: "text", text: "Posted" }], isError: false };
+    expect(normalizeMessages([call, result])).toEqual([]);
+    let live: ChatLine[] = [];
+    live = applyTranscriptEvent(live, { type: "tool.start", toolName, toolCallId: "topic-1", summary: "private reply", args: { text: "private reply" } }) ?? live;
+    live = applyTranscriptEvent(live, { type: "tool.update", toolName, toolCallId: "topic-1", text: "private reply" }) ?? live;
+    live = applyTranscriptEvent(live, { type: "tool.end", toolName, toolCallId: "topic-1", text: "Posted", isError: false }) ?? live;
+    live = applyTranscriptEvent(live, { type: "message.end", message: result }) ?? live;
+    expect(live).toEqual([]);
+    const failure = { ...result, isError: true, content: [{ type: "text", text: "Post failed" }] };
+    expect(normalizeMessages([call, failure])).toMatchObject([{ role: "tool" }]);
+    expect(applyTranscriptEvent(live, { type: "tool.end", toolName, toolCallId: "topic-1", text: "Post failed", isError: true })?.[0]).toMatchObject({ role: "tool", parts: [{ status: "error", resultText: "Post failed" }] });
+    expect(applyTranscriptEvent(live, { type: "message.end", message: failure })?.[0]).toMatchObject({ role: "tool", parts: [{ status: "error" }] });
+    }
+  });
+  it("adds one orchestrator link when the agent opens a named topic", () => {
+    const result = { role: "toolResult", toolName: "topic_open", toolCallId: "open-1", details: { topicId: "files", title: "Files" }, content: [{ type: "text", text: "Opened topic files" }] };
+    const expected = [{ role: "system", parts: [{ type: "topicLink", topicId: "files", title: "Files" }] }];
+    expect(normalizeMessages([result])).toEqual(expected);
+    const once = applyTranscriptEvent([], { type: "message.end", message: result });
+    expect(once).toEqual(expected);
+    expect(applyTranscriptEvent(once ?? [], { type: "message.end", message: result })).toEqual(expected);
+  });
   it("keeps a live child completion in the same projection as loaded history", () => {
     const notice = { role: "custom", customType: "pi-workbench:child-completion", content: "Collect once; then resume.", details: { attention: "terminal-results" } };
     const history = normalizeMessages([notice]);

@@ -646,7 +646,9 @@ export class SessionController {
 
     if (result.cancelled) return result;
 
-    const editorText = result.editorText ?? "";
+    // Hidden custom messages (including focused-topic input) are internal prompts, not editable user drafts.
+    const hiddenInput = tree.nodes.some((node) => node.id === targetId && node.kind === "custom-message" && node.summary === "Hidden custom message");
+    const editorText = hiddenInput ? "" : result.editorText ?? "";
     saveDraft(cacheKey, editorText);
     this.transcripts.discard(cacheKey);
 

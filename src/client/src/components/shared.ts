@@ -70,6 +70,7 @@ export type ChatPart =
   | { type: "askUserRecord"; outcome: AskUserOutcome }
   | { type: "goalLifecycle"; details: GoalLifecycleDetails }
   | { type: "subagentCompletion"; text: string }
+  | { type: "topicLink"; topicId: string; title?: string }
   | { type: "toolCall"; toolCallId?: string; toolName: string; summary: string; args?: unknown }
   | ToolExecutionPart
   | { type: "toolResult"; toolCallId?: string; toolName: string; text: string; isError: boolean; content?: unknown; details?: unknown }
