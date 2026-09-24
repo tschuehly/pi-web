@@ -16,6 +16,16 @@ export interface ToolRowSummary {
   result?: string;
 }
 
+export function toolActionLabel(name: string): string {
+  switch (name) {
+    case "bash": return "Ran bash command";
+    case "subagent": return "Dispatched subagent";
+    case "worker_dispatch": return "Dispatched worker";
+    case "report_status": return "Reported status";
+    default: return name;
+  }
+}
+
 export function toolRowSummary(execution: ToolExecutionPart): ToolRowSummary {
   const argument = toolArgumentSummary(execution);
   if (execution.status === "pending" || execution.status === "running") return argument === "" ? {} : { argument };
@@ -56,7 +66,7 @@ export class ToolExecutionView extends LitElement {
         <summary class="tool-row">
           <span class="chevron">${renderBuiltinTabIcon("chevron")}</span>
           <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
-          <strong>${execution.toolName}</strong>
+          <strong>${toolActionLabel(execution.toolName)}</strong>
           ${row.argument === undefined ? null : html`<span class="row-argument">${row.argument}</span>`}
           ${row.result === undefined ? null : html`<span class="row-result">· ${row.result}</span>`}
         </summary>

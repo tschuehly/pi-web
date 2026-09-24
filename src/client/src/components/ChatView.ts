@@ -34,7 +34,7 @@ import { registerRenderedModal, type RenderedModalRegistration } from "./modalLa
 import "./ConversationMeter";
 import "./FormattedText";
 import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
-import "./ToolExecutionView";
+import { toolActionLabel } from "./ToolExecutionView";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
@@ -971,11 +971,7 @@ export class ChatView extends LitElement {
               return html`<formatted-text .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>`;
             }
             if (segment.kind === "skill") return this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset);
-            const steps = this.activityStepCount(segment.messages);
-            return html`<details class="activity-group">
-              <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><strong>Activity</strong><span>${steps} ${steps === 1 ? "step" : "steps"}</span></summary>
-              <div class="group-body">${this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset)}</div>
-            </details>`;
+            return this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset);
           })}
         </details>
       `;
@@ -1123,7 +1119,7 @@ export class ChatView extends LitElement {
         <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.content}></formatted-text>
       </details>
     `;
-    if (part.type === "skillRead") return html`<div class="part skill-read">Skill: ${part.name}</div>`;
+    if (part.type === "skillRead") return html`<div class="part skill-read">Read skill · ${part.name}</div>`;
     if (part.type === "subagentCompletion") return html`
       <details class="part subagent-completion">
         <summary>Subagents finished</summary>
@@ -1152,7 +1148,7 @@ export class ChatView extends LitElement {
     }
     if (part.type === "toolCall") return html`
       <details class="part tool-line">
-        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span>▶ ${part.toolName}<span class="summary">${part.summary}</span></summary>
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span>▶ ${toolActionLabel(part.toolName)}<span class="summary">${part.summary}</span></summary>
         ${part.args === undefined ? null : html`<pre>${formatToolCallArguments(part.args)}</pre>`}
       </details>
     `;
@@ -1168,7 +1164,7 @@ export class ChatView extends LitElement {
       const previewError = preview?.error;
       return html`
         <details class=${part.isError ? "part tool-result error" : "part tool-result"} ?open=${previewError !== undefined && previewError !== ""}>
-          <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
+          <summary>${part.isError ? "✖" : "✓"} ${toolActionLabel(part.toolName)} result</summary>
           <pre class="orphan-tool-result">${part.text}</pre>
           ${previewError === undefined || previewError === "" ? null : html`<pre class="orphan-preview-error">Preview error: ${previewError}</pre>`}
         </details>
