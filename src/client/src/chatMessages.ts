@@ -54,6 +54,8 @@ export function normalizeMessage(message: unknown): ChatLine[] {
   if (isChatLine(message)) return [message];
   const lifecycle = goalLifecycleDetails(message);
   if (lifecycle !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "goalLifecycle", details: lifecycle }] }, message)];
+  const completion = subagentCompletionText(message);
+  if (completion !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "subagentCompletion", text: completion }] }, message)];
   if (getString(message, "role") === "bashExecution") return [withMessageMeta(normalizeBashExecution(message), message)];
   const rawRole = getString(message, "role");
   const role = normalizeRole(rawRole);
@@ -72,6 +74,15 @@ export function normalizeMessage(message: unknown): ChatLine[] {
   const lines = visible.length > 0 ? [withMessageMeta({ role: displayRole, parts: visible, ...(source === undefined ? {} : { source }) }, message)] : [];
   const errorLine = assistantErrorLine(message);
   return errorLine === undefined ? lines : [...lines, withMessageMeta(errorLine, message)];
+}
+
+function subagentCompletionText(message: unknown): string | undefined {
+  const details = getProperty(message, "details");
+  if (getString(message, "role") !== "custom" || getString(message, "customType") !== "pi-workbench:child-completion"
+    || !isRecord(details) || Array.isArray(details) || Object.keys(details).length !== 1
+    || details["attention"] !== "terminal-results") return undefined;
+  const content = getString(message, "content");
+  return content === "" ? undefined : content;
 }
 
 function assistantErrorLine(message: unknown): ChatLine | undefined {

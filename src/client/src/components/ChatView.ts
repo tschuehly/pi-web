@@ -901,9 +901,10 @@ export class ChatView extends LitElement {
     const toolOnly = this.isToolExecutionOnlyMessage(message);
     const askUserRecordOnly = this.isAskUserRecordOnlyMessage(message);
     const goalLifecycleOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "goalLifecycle");
+    const subagentCompletionOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "subagentCompletion");
     const skillReadOnly = this.isSkillReadOnlyMessage(message);
-    const headerless = toolOnly || askUserRecordOnly || skillReadOnly || goalLifecycleOnly;
-    const shellClass = toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : "msg skill-read-shell";
+    const headerless = toolOnly || askUserRecordOnly || skillReadOnly || goalLifecycleOnly || subagentCompletionOnly;
+    const shellClass = toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : subagentCompletionOnly ? "msg subagent-completion-shell" : "msg skill-read-shell";
     return html`
       ${this.renderScrollMarker(anchorId)}
       <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${anchorId}>
@@ -1123,6 +1124,12 @@ export class ChatView extends LitElement {
       </details>
     `;
     if (part.type === "skillRead") return html`<div class="part skill-read">Skill: ${part.name}</div>`;
+    if (part.type === "subagentCompletion") return html`
+      <details class="part subagent-completion">
+        <summary>Subagents finished</summary>
+        <div class="subagent-completion-instruction" dir="auto">${part.text}</div>
+      </details>
+    `;
     if (part.type === "goalLifecycle") return html`
       <details class="part goal-lifecycle">
         <summary>${goalTransitionLabels[part.details.transition]}</summary>
@@ -1545,5 +1552,10 @@ export class ChatView extends LitElement {
     .goal-lifecycle > summary { cursor: pointer; font-weight: 600; }
     .goal-lifecycle > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .goal-lifecycle > div { margin-top: 6px; overflow-wrap: anywhere; }
+    .msg.subagent-completion-shell { padding: 0 2px var(--pi-message-padding); }
+    .subagent-completion { color: var(--pi-muted); font-size: 12px; }
+    .subagent-completion > summary { width: fit-content; cursor: pointer; }
+    .subagent-completion > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .subagent-completion-instruction { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text); }
   `];
 }

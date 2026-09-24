@@ -287,6 +287,32 @@ describe("ChatView transcript density", () => {
     expect(root.querySelector<FormattedText>("article.msg.assistant formatted-text")?.text).toBe("answer");
   });
 
+  it("renders only the normal child completion as a collapsed disclosure with the full instruction", async () => {
+    const content = "Background children finished. Call `subagent_collect` without an executionId once, then resume the run.\nDo not publish.";
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = normalizeMessages([
+      { role: "custom", customType: "pi-workbench:child-completion", content, details: { attention: "terminal-results" } },
+      { role: "custom", customType: "pi-workbench:child-completion", content: "Receipt failed; inspect worker_status", details: { receiptStatus: "failed" } },
+      { role: "system", content: "Other system notice" },
+    ]);
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const card = root.querySelector<HTMLDetailsElement>("details.subagent-completion");
+    expect(card?.open).toBe(false);
+    expect(card?.querySelector("summary")?.textContent).toBe("Subagents finished");
+    expect(card?.closest("article")?.querySelector(".msg-header")).toBeNull();
+    expect(card?.querySelector(".subagent-completion-instruction")?.textContent).toBe(content);
+    expect(root.querySelectorAll("article.msg.system")).toHaveLength(2);
+    expect(Array.from(root.querySelectorAll<FormattedText>("article.msg.system formatted-text"), (text) => text.text)).toEqual([
+      "Receipt failed; inspect worker_status", "Other system notice",
+    ]);
+    card?.querySelector("summary")?.click();
+    expect(card?.open).toBe(true);
+  });
+
   it("renders a validated Goal lifecycle as one collapsed accessible card without model-only text", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";

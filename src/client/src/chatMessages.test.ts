@@ -53,6 +53,21 @@ describe("chat message normalization", () => {
     expect(normalizeMessages([{ role: "user", content: "raw" }, line])).toEqual([textMessage("user", "raw"), line]);
   });
 
+  it("projects only the normal child completion notice in live and history normalization", () => {
+    const content = "Background children finished. Call `subagent_collect` without an executionId once, then resume.";
+    const notice = { role: "custom", customType: "pi-workbench:child-completion", content, details: { attention: "terminal-results" }, entryId: "wake-1" };
+    const projected = { role: "system", entryId: "wake-1", parts: [{ type: "subagentCompletion", text: content }] };
+    expect(normalizeMessage(notice)).toEqual([projected]);
+    expect(normalizeMessages([notice])).toEqual([projected]);
+    for (const other of [
+      { ...notice, role: "system" },
+      { ...notice, customType: "other" },
+      { ...notice, details: { attention: "receipt-failure" } },
+      { ...notice, details: { attention: "terminal-results", receiptStatus: "failed" } },
+      { ...notice, details: undefined },
+    ]) expect(normalizeMessages([other])).toEqual([{ role: "system", entryId: "wake-1", parts: [{ type: "text", text: content }] }]);
+  });
+
   it("projects ask_user answer messages into visible read-only record parts", () => {
     const normalized = normalizeMessage({
       role: "custom",

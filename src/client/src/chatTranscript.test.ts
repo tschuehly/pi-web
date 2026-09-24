@@ -48,6 +48,12 @@ const finalAssistant = {
 };
 
 describe("applyTranscriptEvent", () => {
+  it("keeps a live child completion in the same projection as loaded history", () => {
+    const notice = { role: "custom", customType: "pi-workbench:child-completion", content: "Collect once; then resume.", details: { attention: "terminal-results" } };
+    const history = normalizeMessages([notice]);
+    expect(applyTranscriptEvent([], { type: "message.append", message: notice })).toEqual(history);
+    expect(applyTranscriptEvent([], { type: "message.end", message: notice })).toEqual(history);
+  });
   it("marks only error-level runtime output as transcript errors", () => {
     let messages = applyTranscriptEvent([], { type: "command.output", level: "info", message: "watcher ready" }) ?? [];
     messages = applyTranscriptEvent(messages, { type: "command.output", level: "error", message: "watcher failed" }) ?? messages;
