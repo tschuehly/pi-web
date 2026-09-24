@@ -3,6 +3,7 @@ import { customElement, query, state } from "lit/decorators.js";
 import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { initialAppState, type AppState } from "../appState";
+import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { AuthController } from "../controllers/authController";
 import { desktopNotifications, DesktopNotificationController } from "../controllers/desktopNotificationController";
 import { SessionController } from "../controllers/sessionController";
@@ -61,6 +62,8 @@ export class WorkbenchApp extends LitElement {
   @state() private currentWorkstreamError = "";
   @state() private delegateRosterCollapsed = false;
   @state() private showFiles = false;
+  @state() private filesWidth = 400;
+  private filesResize: { pointerId: number; startX: number; startWidth: number; handle: HTMLElement } | undefined;
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -163,6 +166,7 @@ export class WorkbenchApp extends LitElement {
     this.notifications.resume();
     window.addEventListener("popstate", this.onPopState);
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
+    window.addEventListener("resize", this.onWindowResize);
     applyPresentationProfile(readStoredPresentationProfile() ?? builtInPresentationProfile("comfortable"));
     this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
     void this.initializeThemes();
@@ -182,6 +186,8 @@ export class WorkbenchApp extends LitElement {
   override disconnectedCallback(): void {
     window.removeEventListener("popstate", this.onPopState);
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
+    window.removeEventListener("resize", this.onWindowResize);
+    this.finishFilesResize();
     this.systemLightThemeMedia?.removeEventListener("change", this.onSystemLightThemeChange);
     this.realtime.close();
     window.clearTimeout(this.workstreamWatchTimer);
@@ -819,8 +825,51 @@ export class WorkbenchApp extends LitElement {
     `;
   }
 
+  private readonly onWindowResize = (): void => { this.requestUpdate(); };
+
+  private filesConstraints(): PanelResizeConstraints {
+    const container = this.shadowRoot?.querySelector<HTMLElement>(".chat-and-files");
+    const available = container !== null && container !== undefined && container.clientWidth > 0 ? container.clientWidth : this.filesWidth + 328;
+    return { minWidth: 240, maxWidth: Math.max(240, available - 328), defaultWidth: 400, keyboardStep: 24, largeKeyboardStep: 72 };
+  }
+
+  private startFilesResize(event: PointerEvent): void {
+    if (event.button !== 0 || !(event.currentTarget instanceof HTMLElement)) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    this.filesResize = { pointerId: event.pointerId, startX: event.clientX, startWidth: this.visibleFilesWidth(), handle };
+  }
+
+  private visibleFilesWidth(): number {
+    return clampPanelWidth("workspace", this.filesWidth, this.filesConstraints());
+  }
+
+  private moveFilesResize(event: PointerEvent): void {
+    const resize = this.filesResize;
+    if (resize?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    this.filesWidth = panelWidthFromDrag("workspace", resize.startWidth, resize.startX, event.clientX, this.filesConstraints());
+  }
+
+  private finishFilesResize(event?: PointerEvent): void {
+    const resize = this.filesResize;
+    if (resize === undefined || event !== undefined && resize.pointerId !== event.pointerId) return;
+    this.filesResize = undefined;
+    if (resize.handle.hasPointerCapture(resize.pointerId)) resize.handle.releasePointerCapture(resize.pointerId);
+  }
+
+  private resizeFilesWithKeyboard(event: KeyboardEvent): void {
+    const next = panelWidthFromKeyboard("workspace", this.visibleFilesWidth(), event.key, { largeStep: event.shiftKey, constraints: this.filesConstraints() });
+    if (next === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.filesWidth = next;
+  }
+
   private readonly toggleFiles = (): void => {
     if (this.showFiles && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
+    if (this.showFiles) this.finishFilesResize();
     this.showFiles = !this.showFiles;
   };
 
@@ -846,14 +895,14 @@ export class WorkbenchApp extends LitElement {
           <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { if (this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false) { this.showFiles = false; this.sessions.deselectSession(); } }}>←</button>
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
-          <button type="button" class="files-toggle" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>Files</button>
+          <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("files")}</button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}
         </header>
         ${this.renderDesktopNotificationDiagnostic()}
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
-        <div class="chat-and-files">
+        <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>
           <div class="chat-column">
         <chat-view
           @workspace-file-open=${this.openWorkspaceFile}
@@ -913,7 +962,10 @@ export class WorkbenchApp extends LitElement {
           .onRunCommand=${(command: string) => this.sessions.runCommand(command)}
         ></prompt-editor>
           </div>
-          ${this.showFiles ? html`<workbench-files-pane id="workbench-files" .workspace=${state.selectedWorkspace} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
+          ${this.showFiles ? html`
+            <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
+              @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
+            <workbench-files-pane id="workbench-files" .workspace=${state.selectedWorkspace} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
         </div>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
         ${state.modelDialog === undefined ? null : html`<command-picker .title=${state.modelDialog.title} .searchable=${true} .options=${state.modelDialog.options} .selectedValue=${state.modelDialog.selectedValue} .onPick=${(value: string) => { void this.pickModel(value); }} .onCancel=${() => { this.setApp({ modelDialog: undefined }); }}></command-picker>`}
@@ -984,12 +1036,17 @@ export class WorkbenchApp extends LitElement {
     .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     delegate-roster, prompt-editor { flex: 0 0 auto; }
-    .files-toggle { flex: 0 0 auto; min-height: 32px; }
+    .files-toggle { flex: 0 0 auto; }
     .files-toggle[aria-expanded="true"] { border-color: var(--pi-accent); }
-    workbench-files-pane { flex: 0 1 42%; width: min(520px, 50%); border-left: 1px solid var(--pi-border); }
+    .files-divider { position: relative; z-index: 2; flex: 0 0 8px; background: var(--pi-border-muted); cursor: col-resize; touch-action: none; }
+    .files-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: var(--pi-border); }
+    .files-divider:hover::after, .files-divider:focus-visible::after { background: var(--pi-accent); }
+    .files-divider:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
+    workbench-files-pane { flex: 0 0 min(var(--files-width), max(240px, calc(100% - 328px))); box-sizing: border-box; }
     @media (max-width: 760px) {
       .chat-and-files { flex-direction: column; }
-      workbench-files-pane { flex: 0 1 48%; width: 100%; border-left: 0; border-top: 1px solid var(--pi-border); }
+      .files-divider { display: none; }
+      workbench-files-pane { flex: 0 1 48%; width: 100%; border-top: 1px solid var(--pi-border); }
     }
     @media (max-width: 600px) {
       .chooser, .chooser > section { grid-template-columns: minmax(0, 1fr); }

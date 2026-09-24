@@ -178,7 +178,7 @@ export class WorkbenchFilesPane extends LitElement {
     const context = workspace === undefined ? undefined : markdownWorkspaceContext(this.machineId, workspace, { id: "files", cwd: workspace.path });
     return html`
       <section class="pane" aria-label="Workspace files">
-        <div class="toolbar"><strong>Files</strong><button type="button" @click=${() => { void this.refreshTree(); }}>Refresh list</button></div>
+        <div class="toolbar"><strong>Files</strong><button class="icon-button" type="button" title="Refresh list" aria-label="Refresh list" @click=${() => { void this.refreshTree(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M4 17v-5h5M5.6 9a7 7 0 0 1 12-2L20 12M4 12l2.4 5a7 7 0 0 0 12-2"/></svg></button></div>
         ${workspace?.projectId !== undefined && workspace.projectId !== "" ? html`<nav aria-label="Markdown files" class="tree">${this.renderEntries(this.entries)}${this.entries.length === 0 ? html`<p>No Markdown files at the workspace root.</p>` : null}</nav>` : html`<p role="status">Files are available in registered workspaces. Add this folder as a project to browse it.</p>`}
         <section class="surface" aria-label="Markdown preview and editor">
           ${file === undefined ? html`<p>${this.loading ? "Opening…" : "Choose a Markdown file."}</p>` : html`
@@ -214,6 +214,9 @@ export class WorkbenchFilesPane extends LitElement {
     textarea { flex: 1; min-height: 0; box-sizing: border-box; width: 100%; resize: none; border: 0; padding: 12px; background: var(--pi-bg); color: var(--pi-text); font: 13px/1.5 ui-monospace, monospace; tab-size: 2; }
     [hidden] { display: none !important; }
     button { min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); padding: 4px 8px; cursor: pointer; }
+    .icon-button { width: 32px; height: 32px; min-height: 0; padding: 6px; display: grid; place-items: center; border-color: transparent; background: none; color: var(--pi-muted); }
+    .icon-button:hover { border-color: var(--pi-border); color: var(--pi-text); background: var(--pi-surface-hover); }
+    .icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     button:focus-visible, textarea:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
     button[aria-pressed="true"] { border-color: var(--pi-accent); }
     button:disabled { opacity: .55; cursor: not-allowed; }

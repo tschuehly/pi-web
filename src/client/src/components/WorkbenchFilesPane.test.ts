@@ -38,6 +38,18 @@ function edit(pane: WorkbenchFilesPane, content: string): void {
 }
 
 describe("Workbench Files", () => {
+  it("refreshes the file list from a labelled icon button", async () => {
+    const pane = await mount();
+    const refresh = pane.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Refresh list"]');
+    expect(refresh?.title).toBe("Refresh list");
+    expect(refresh?.type).toBe("button");
+    expect(refresh?.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(refresh?.textContent).toBe("");
+    vi.mocked(api.workspaceTree).mockClear();
+    refresh?.click();
+    await vi.waitFor(() => { expect(api.workspaceTree).toHaveBeenCalledWith("p", "w", "", "local"); });
+  });
+
   it("lists only Markdown files, opens on filename click, previews, edits and saves with the loaded version", async () => {
     vi.spyOn(api, "workspaceFile").mockResolvedValueOnce(file("# Initial", "v1")).mockResolvedValueOnce(file("# Edited", "v2"));
     const write = vi.spyOn(api, "writeWorkspaceFile").mockResolvedValue({ path: "docs/notes.md", size: 8, modifiedAt: "2026-09-22", created: false });
