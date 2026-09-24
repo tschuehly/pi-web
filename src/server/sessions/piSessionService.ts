@@ -5339,10 +5339,14 @@ function finalAssistantText(messages: readonly unknown[]): string {
 function finalizedMessageEntryId(session: PiAgentSession, event: unknown): string | undefined {
   if (getString(event, "type") !== "message_end") return undefined;
   const message = getProperty(event, "message");
-  const entry = session.sessionManager.getBranch().at(-1);
-  if (!isRecord(entry) || entry["type"] !== "message" || entry["message"] !== message) return undefined;
-  const entryId = entry["id"];
-  return typeof entryId === "string" && entryId !== "" ? entryId : undefined;
+  const branch = session.sessionManager.getBranch();
+  for (let index = branch.length - 1; index >= 0; index--) {
+    const entry = branch[index];
+    if (!isRecord(entry) || entry["type"] !== "message" || entry["message"] !== message) continue;
+    const entryId = entry["id"];
+    return typeof entryId === "string" && entryId !== "" ? entryId : undefined;
+  }
+  return undefined;
 }
 
 function toClientEvent(event: unknown, thinkingLevel?: string, entryId?: string): SessionUiEvent {

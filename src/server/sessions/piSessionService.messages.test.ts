@@ -114,9 +114,31 @@ describe("PiSessionService", () => {
       await service.dispose();
     });
 
-    it("omits entryId when the last durable branch message has different identity", async () => {
-      const staleMessage = { role: "assistant", content: [{ type: "text", text: "stale" }] };
-      const branch = [{ type: "message", id: "stale-entry", message: staleMessage }];
+    it("publishes the matching durable entry id when another entry displaces it before publication", async () => {
+      const message = { role: "assistant", content: [{ type: "text", text: "answer" }] };
+      const branch: unknown[] = [];
+      const { fake, service, events } = messagesService(branch);
+      await service.status(sessionRef("session-1"));
+      const eventStart = events.sessionEvents.length;
+
+      fake.emit({ type: "message_end", message });
+      branch.push({ type: "message", id: "answer-entry", message });
+      branch.push({ type: "message", id: "later-entry", message: { role: "user", content: "next" } });
+      await Promise.resolve();
+
+      expect(events.sessionEvents.slice(eventStart)[0]).toEqual({ sessionId: "session-1", event: {
+        type: "message.end", message: { ...message, entryId: "answer-entry" },
+      } });
+      expect((await service.messages(sessionRef("session-1"))).messages[0]).toEqual({ ...message, entryId: "answer-entry" });
+      await service.dispose();
+    });
+
+    it("omits entryId when a deeper durable message has matching content but different identity", async () => {
+      const staleMessage = { role: "assistant", content: [{ type: "text", text: "current" }] };
+      const branch = [
+        { type: "message", id: "stale-entry", message: staleMessage },
+        { type: "message", id: "later-entry", message: { role: "user", content: "next" } },
+      ];
       const message = { role: "assistant", entryId: "raw-entry", content: [{ type: "text", text: "current" }] };
       const { fake, service, events } = messagesService(branch);
       await service.status(sessionRef("session-1"));
