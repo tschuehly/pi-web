@@ -377,10 +377,10 @@ export const chatStyles = css`
   .scroll-to-bottom:hover, .scroll-to-bottom:focus-visible { border-color: var(--pi-accent); color: var(--pi-text-bright); }
   .scroll-to-bottom:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
   .scroll-to-bottom svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .activity-dock { position: absolute; left: 16px; right: 16px; bottom: 12px; z-index: 20; display: flex; align-items: center; gap: 8px; min-width: 0; box-sizing: border-box; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-bg-overlay); color: var(--pi-muted); padding: 8px 12px; font-size: 13px; pointer-events: none; box-shadow: 0 8px 28px var(--pi-shadow); backdrop-filter: blur(6px); }
+  .activity-dock { position: absolute; left: 12px; bottom: 12px; z-index: 20; display: inline-flex; align-items: center; gap: 6px; max-width: min(320px, calc(50% - 32px)); min-width: 0; box-sizing: border-box; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-bg-overlay); color: var(--pi-muted); padding: 4px 8px; font-size: 12px; pointer-events: none; box-shadow: 0 4px 12px var(--pi-shadow); backdrop-filter: blur(6px); }
   .activity-dock.active { border-color: var(--pi-success-border); color: var(--pi-success); background: var(--pi-success-bg-overlay); }
   .activity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
+  .activity-dock .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
   .activity-dock.active .dot { animation: pulse 1s ease-in-out infinite; opacity: 1; }
   .msg { max-width: var(--pi-content-max-width); min-width: 0; box-sizing: border-box; margin: 0 0 16px; padding: 0 2px; border: 0; background: transparent; overflow: visible; overflow-wrap: anywhere; }
   .msg.user, .msg.assistant { padding: var(--pi-message-padding); border: 1px solid var(--pi-border); border-radius: 14px; }

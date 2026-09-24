@@ -13,6 +13,29 @@ afterEach(() => {
 });
 
 describe("ChatView transcript density", () => {
+  it("shows a polite activity chip during work but not while idle", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.activity = { sessionId: "session-1", phase: "idle", label: "idle", at: "2026-07-20T00:00:00.000Z" };
+    document.body.append(view);
+    await view.updateComplete;
+    expect(view.shadowRoot?.querySelector(".activity-dock")).toBeNull();
+
+    view.activity = { sessionId: "session-1", phase: "active", label: "Receiving response", at: "2026-07-20T00:00:01.000Z" };
+    await view.updateComplete;
+    const chip = view.shadowRoot?.querySelector(".activity-dock");
+    expect(chip?.textContent).toContain("Receiving response");
+    expect(chip?.getAttribute("aria-live")).toBe("polite");
+
+    view.activity = { sessionId: "session-1", phase: "idle", label: "tool complete", at: "2026-07-20T00:00:02.000Z" };
+    await view.updateComplete;
+    expect(view.shadowRoot?.querySelector(".activity-dock")).toBeNull();
+
+    view.activity = { sessionId: "session-1", phase: "error", label: "Session failed", at: "2026-07-20T00:00:03.000Z" };
+    await view.updateComplete;
+    expect(view.shadowRoot?.querySelector(".activity-dock")?.textContent).toContain("Session failed");
+  });
+
   it("keeps thinking expanded and exceptional events individually visible", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
