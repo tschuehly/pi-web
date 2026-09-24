@@ -89,7 +89,7 @@
         }
       }
       html, body { margin: 0; height: 100%; overflow: hidden; background: var(--pi-bg); color: var(--pi-text); }
-      body { min-height: 100dvh; }
+      body { min-height: calc(100dvh / var(--pi-interface-scale, 1)); }
     </style>
   </head>
   <body>

@@ -108,6 +108,7 @@
               <ul>
                 <li><strong>Node.js 22.19.0 or newer</strong> and npm.</li>
                 <li><strong>Pi Coding Agent <code>&gt;=0.84.0</code></strong> installed/configured so the <code>pi</code> command works for your user.</li>
+                <li><strong>Python 3</strong> on the web/API service's PATH to save workspace files. The save helper requires descriptor-relative file operations (available on macOS and Linux); saves fail closed without them. Existing files larger than 512 KiB cannot be saved through the editor because they cannot be version-checked.</li>
                 <li>A shell login environment that exposes Node, npm, Pi, git, and any tools your agents need.</li>
                 <li>For the automatic installer: a supported per-user service manager.</li>
               </ul>

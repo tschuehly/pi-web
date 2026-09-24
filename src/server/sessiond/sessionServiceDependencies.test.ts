@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
 import { SessionNotificationStore } from "../sessions/sessionNotificationStore.js";
 import { SessionUnreadStore } from "../sessions/sessionUnreadStore.js";
+import { WorkstreamLaunchStore } from "../sessions/workstreamLaunchStore.js";
 import { PiSessionService, type PiSessionServiceDependencies } from "../sessions/piSessionService.js";
 import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, sessionGateway, testModelRuntime } from "../sessions/piSessionService.testSupport.js";
 import { sessionServiceDependencies, type SessionServiceDependencyInput } from "./sessionServiceDependencies.js";
@@ -17,6 +18,7 @@ function daemonCollaborators(patch: Partial<SessionServiceDependencyInput> = {})
   return {
     agentDir: AGENT_DIR,
     archiveStore: emptyArchiveStore(),
+    workstreamLaunchStore: new WorkstreamLaunchStore("/tmp/pi-web-test-workstream-launches"),
     modelRuntime: testModelRuntime,
     sessionManager: sessionGateway([]),
     workspaceActivity: new WorkspaceActivityService(),
@@ -96,6 +98,11 @@ describe("sessiond session service dependency assembly", () => {
   it("passes the ask-user preference through to the session service", () => {
     expect(sessionServiceDependencies(daemonCollaborators({ askUserEnabled: true })).askUserEnabled).toBe(true);
     expect(sessionServiceDependencies(daemonCollaborators({ askUserEnabled: false })).askUserEnabled).toBe(false);
+  });
+
+  it("passes daemon-owned Workstream launch evidence through to the session service", () => {
+    const workstreamLaunchStore = new WorkstreamLaunchStore("/tmp/pi-web-test-workstream-launches");
+    expect(sessionServiceDependencies(daemonCollaborators({ workstreamLaunchStore })).workstreamLaunchStore).toBe(workstreamLaunchStore);
   });
 
   it("passes the live config reader through to the session service", () => {

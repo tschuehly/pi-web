@@ -30,6 +30,7 @@ export function toolRowSummary(execution: ToolExecutionPart): ToolRowSummary {
 @customElement("tool-execution-view")
 export class ToolExecutionView extends LitElement {
   @property({ attribute: false }) execution: ToolExecutionPart | undefined;
+  @property({ type: Boolean }) orphan = false;
   @state() private showFullDiff = false;
   @state() private copied = false;
 
@@ -40,16 +41,18 @@ export class ToolExecutionView extends LitElement {
     const path = pathFromArgs(execution.args);
     const actualDiff = diffFromDetails(execution.details);
     const preview = execution.preview;
+    const hasPreviewError = preview?.error !== undefined && preview.error !== "";
     const visibleDiff = actualDiff ?? preview?.diff;
     const diffStats = visibleDiff === undefined ? undefined : countDiffLines(visibleDiff);
     const previewMismatch = actualDiff !== undefined && preview?.diff !== undefined && actualDiff !== preview.diff;
-    const errorText = execution.status === "error" ? execution.resultText : preview?.error;
-    const bodyText = visibleDiff === undefined ? execution.resultText : undefined;
+    const errorText = execution.status === "error" ? execution.resultText : undefined;
+    const bodyText = this.orphan && execution.status === "error" ? undefined
+      : this.orphan || visibleDiff === undefined || (execution.status === "success" && hasPreviewError) ? execution.resultText : undefined;
     const target = toolTarget(execution, path);
     const row = toolRowSummary(execution);
 
     return html`
-      <details class=${`tool-card ${execution.status}`}>
+      <details class=${`tool-card ${execution.status}`} ?open=${hasPreviewError || (this.orphan && visibleDiff !== undefined)}>
         <summary class="tool-row">
           <span class="chevron">${renderBuiltinTabIcon("chevron")}</span>
           <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
@@ -66,7 +69,9 @@ export class ToolExecutionView extends LitElement {
           ${this.renderExpandedArguments(execution.args, target)}
           ${previewMismatch ? html`<p class="notice">Applied diff differs from the preview.</p>` : null}
           ${errorText === undefined || errorText === "" ? null : html`<pre class="error-text">${errorText}</pre>`}
-          ${visibleDiff === undefined ? this.renderTextBody(bodyText) : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff")}
+          ${hasPreviewError ? html`<span class="detail-label">Preview error</span><pre class="error-text">${preview.error}</pre>` : null}
+          ${this.renderTextBody(bodyText)}
+          ${visibleDiff === undefined ? null : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff")}
         </div>
       </details>
     `;
@@ -150,10 +155,10 @@ export class ToolExecutionView extends LitElement {
     .status-label { text-transform: uppercase; letter-spacing: .04em; color: var(--pi-muted); }
     .notice { margin: 0; color: var(--pi-warning); }
     .muted { margin: 0; color: var(--pi-muted); }
-    .error-text { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; background: color-mix(in srgb, var(--pi-danger) 7%, transparent); color: var(--pi-danger); padding: 8px; white-space: pre; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .error-text { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; background: color-mix(in srgb, var(--pi-danger) 7%, transparent); color: var(--pi-danger); padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .detail-target, .detail-result { display: grid; gap: 4px; min-width: 0; }
     .detail-label { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-    .detail-result pre { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; padding: 8px 0; white-space: pre; overflow-wrap: normal; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
+    .detail-result pre { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; padding: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
     .detail-target-value { box-sizing: border-box; max-width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-accent); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
     .diff-details { min-width: 0; max-width: 100%; padding-top: 2px; }
     .diff-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; color: var(--pi-muted); }

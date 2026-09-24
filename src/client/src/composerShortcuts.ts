@@ -12,7 +12,7 @@ export function isComposerShortcut(actionId: string): boolean {
 export function composerShortcutActions(preference = readPromptEnterPreference()): AppAction[] {
   return [false, true].map((mobile) => ({
     id: mobile ? COMPOSER_SEND_MOBILE : COMPOSER_SEND_DESKTOP,
-    title: `Send message — ${mobile ? "touch or narrow screen" : "desktop"}`,
+    title: `Send message — ${mobile ? "coarse pointer" : "fine pointer"}`,
     description: "One key combination, active only in the message editor. Overrides global shortcuts there.",
     group: "Chat composer",
     shortcut: defaultSendShortcut({ matches: mobile }, preference),
@@ -24,6 +24,10 @@ export function composerShortcutActions(preference = readPromptEnterPreference()
 export function composerSendShortcut(shortcuts: ShortcutPreferenceConfig, media?: PromptEnterMedia, preference = readPromptEnterPreference()): string | null {
   const id = media?.matches === true ? COMPOSER_SEND_MOBILE : COMPOSER_SEND_DESKTOP;
   return shortcuts[id] === undefined ? defaultSendShortcut(media, preference) : shortcuts[id];
+}
+
+export function composerKeyboardSubmissionEnabled(shortcuts: ShortcutPreferenceConfig, media?: PromptEnterMedia, preference = readPromptEnterPreference()): boolean {
+  return composerSendShortcut(shortcuts, media, preference) !== null;
 }
 
 export function matchesComposerSend(event: ShortcutKeyEvent, shortcut: string | null): boolean {

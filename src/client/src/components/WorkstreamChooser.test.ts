@@ -2,7 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkstreamChooser, actor, ago, conflicting, directoriesOf, firstClause, groupMatchesProject, latestCheckpoints, sentences, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { WorkstreamChooser, WorkstreamServiceError, actor, ago, appendWorkstream, conflicting, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, sentences, watchWorkstreams, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { workstreamAccentColor } from "../workstreamColor";
 import { pluginsApi } from "../api/clients";
 
@@ -72,6 +72,25 @@ beforeEach(() => {
   stubService();
 });
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+describe("Workstream service", () => {
+  it("caches the machine lifecycle across watches and exposes coded store details", async () => {
+    const lifecycle = vi.mocked(pluginsApi.plugins);
+    const context = { machineId: "cache-test-machine", projectId: "project", workspaceId: "workspace" };
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const body = requestBody(_url, init);
+      return Promise.resolve(new Response(JSON.stringify(body.operation === "watch"
+        ? { ok: true, value: { mode: "replay", events: [], nextSequence: 42 } }
+        : { ok: false, error: { code: "STALE_REVISION", message: "changed", details: { currentRevision: 42 } } }), { status: 200 }));
+    }));
+    await watchWorkstreams(context, Number.MAX_SAFE_INTEGER);
+    await watchWorkstreams(context, 42);
+    expect(lifecycle).toHaveBeenCalledTimes(1);
+    await expect(appendWorkstream(context, { workstreamId: "ws", expectedRevision: 1, idempotencyKey: "retry", records: [] }))
+      .rejects.toMatchObject({ code: "STALE_REVISION", details: { currentRevision: 42 } });
+    expect(WorkstreamServiceError.name).toBe("WorkstreamServiceError");
+  });
+});
 
 describe("WorkstreamChooser", () => {
   it("lists Workstreams newest first and opens the newest session from the re-entry card", async () => {
@@ -288,11 +307,19 @@ describe("WorkstreamChooser", () => {
     await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
     const row = shadow(element).querySelector<HTMLElement>(".row");
     expect(row?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor("ws-1"));
+    expect(row?.getAttribute("aria-pressed")).toBe("false");
+    expect(row?.querySelector("strong")?.textContent).toBe(snapshot.title);
+    expect(row?.querySelector(".identity-mark")?.textContent).toBe("IL");
+    expect(row?.querySelector(".identity-mark")?.getAttribute("aria-hidden")).toBe("true");
 
     row?.click();
     await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
+    expect(row?.getAttribute("aria-pressed")).toBe("true");
     const card = shadow(element).querySelector<HTMLElement>(".card");
     expect(card?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor("ws-1"));
+    expect(card?.getAttribute("aria-label")).toBe(`Re-entry card for ${snapshot.title}`);
+    expect(card?.querySelector(".identity-mark")?.textContent).toBe("IL");
+    expect(card?.querySelector(".card-title")?.textContent).toBe(snapshot.title);
     const liveRow = shadow(element).querySelector('[data-session-id="s-a"]');
     const idleRow = shadow(element).querySelector('[data-session-id="s-old"]');
     expect(liveRow?.querySelector(".activity-indicator.session")).not.toBeNull();
@@ -454,6 +481,10 @@ describe("re-entry helpers", () => {
     expect(directoriesOf(checkpoint("a", "", "", ["/repo/me", "/repo/me/plan.md", "docs/x", "/repo/me"]))).toEqual(["/repo/me"]);
     expect(directoriesOf(checkpoint("a", "", "", ["branch:main", "/repo/me/plan.md", "/repo/me/notes.txt", "docs/x", "/other/todo.md"]))).toEqual(["/repo/me", "/other"]);
     expect(directoriesOf(undefined)).toEqual([]);
+    expect(isTemporaryDirectory("/tmp/deleted-worktree")).toBe(true);
+    expect(isTemporaryDirectory("/private/tmp/deleted-worktree/notes.md")).toBe(true);
+    expect(isTemporaryDirectory("/Users/thomas/workbench")).toBe(false);
+    expect(directoriesOf(checkpoint("a", "", "", ["/private/tmp/deleted-worktree", "/repo/me"]))).toEqual(["/repo/me"]);
   });
 
   it("splits prose into readable sentences without breaking common abbreviations", () => {

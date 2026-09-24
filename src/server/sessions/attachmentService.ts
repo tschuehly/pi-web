@@ -18,15 +18,19 @@ export interface InlineImage {
  *
  * Mirrors pi's own CLI/TUI behaviour: each image is run through pi's
  * `resizeImage` so it fits within pi's max dimensions and inline byte budget
- * (2000x2000, ~4.5MB base64). Images that cannot be resized below the limit
- * are dropped, matching pi's `[Image omitted]` behaviour.
+ * (2000x2000, ~4.5MB base64). Explicitly referenced deliveries reject an
+ * omission because dropping one image would shift every later `[PIC_n]`
+ * mapping; legacy reference-less requests retain pi's prior drop behavior.
  */
-export async function attachmentsToInlineImages(attachments: PromptImageAttachment[]): Promise<InlineImage[]> {
+export async function attachmentsToInlineImages(attachments: PromptImageAttachment[], rejectOmitted: boolean): Promise<InlineImage[]> {
   const results: InlineImage[] = [];
   for (const attachment of attachments) {
     const bytes = Buffer.from(attachment.data, "base64");
     const resized = await resizeImage(bytes, attachment.mimeType);
-    if (resized === null) continue;
+    if (resized === null) {
+      if (rejectOmitted) throw new Error(`Image conversion failed for ${attachment.reference}`);
+      continue;
+    }
     const note = formatDimensionNote(resized);
     results.push({
       image: { type: "image", data: resized.data, mimeType: resized.mimeType },
@@ -65,7 +69,7 @@ export async function saveAttachmentsToWorkspace(
     const bytes = Buffer.from(attachment.data, "base64");
     const filename = await writeUniqueAttachmentFile(folderTarget, attachmentFilename(attachment, stamp, index), bytes);
     const relativePath = normalizedFolder === "" ? filename : `${normalizedFolder}/${filename}`;
-    saved.push({ path: relativePath, mimeType: attachment.mimeType, size: bytes.byteLength });
+    saved.push({ path: relativePath, mimeType: attachment.mimeType, size: bytes.byteLength, ...(attachment.kind === "image" ? { reference: attachment.reference } : {}) });
   }
   return saved;
 }

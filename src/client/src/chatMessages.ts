@@ -1,6 +1,7 @@
 import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes";
 import { parseAskUserOutcome } from "./api/parsers";
-import type { ChatLine, ChatPart, ToolExecutionPart, ToolPreview } from "./components/shared";
+import type { ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview } from "./components/shared";
+import { validGoalId } from "./extensionStatusSnapshots";
 
 export function normalizeMessages(messages: unknown[]): ChatLine[] {
   return coalesceToolExecutions(messages.flatMap(normalizeMessage)).filter((message) => message.parts.length > 0);
@@ -25,13 +26,13 @@ export function appendText(messages: ChatLine[], role: ChatLine["role"], text: s
   if (text === "") return messages;
   const last = messages.at(-1);
   const lastPart = last?.parts.at(-1);
-  if (last?.role === role && lastPart?.type === "text") {
+  if (last?.role === role && !last.parts.some((part) => part.type === "skillRead") && lastPart?.type === "text") {
     return [
       ...messages.slice(0, -1),
       { ...last, parts: [...last.parts.slice(0, -1), { ...lastPart, text: lastPart.text + text }] },
     ];
   }
-  if (last?.role === role) return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "text", text }] }];
+  if (last?.role === role && !last.parts.some((part) => part.type === "skillRead")) return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "text", text }] }];
   return [...messages, textMessage(role, text)];
 }
 
@@ -39,18 +40,20 @@ export function appendThinking(messages: ChatLine[], text: string): ChatLine[] {
   if (text === "") return messages;
   const last = messages.at(-1);
   const lastPart = last?.parts.at(-1);
-  if (last?.role === "assistant" && lastPart?.type === "thinking") {
+  if (last?.role === "assistant" && !last.parts.some((part) => part.type === "skillRead") && lastPart?.type === "thinking") {
     return [
       ...messages.slice(0, -1),
       { ...last, parts: [...last.parts.slice(0, -1), { ...lastPart, text: lastPart.text + text }] },
     ];
   }
-  if (last?.role === "assistant") return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "thinking", text }] }];
+  if (last?.role === "assistant" && !last.parts.some((part) => part.type === "skillRead")) return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "thinking", text }] }];
   return [...messages, { role: "assistant", parts: [{ type: "thinking", text }] }];
 }
 
 export function normalizeMessage(message: unknown): ChatLine[] {
   if (isChatLine(message)) return [message];
+  const lifecycle = goalLifecycleDetails(message);
+  if (lifecycle !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "goalLifecycle", details: lifecycle }] }, message)];
   if (getString(message, "role") === "bashExecution") return [withMessageMeta(normalizeBashExecution(message), message)];
   const rawRole = getString(message, "role");
   const role = normalizeRole(rawRole);
@@ -86,12 +89,23 @@ function isChatLine(message: unknown): message is ChatLine {
 
 function normalizeSkillInvocation(parts: ChatPart[]): ChatLine[] | undefined {
   if (parts.length !== 1 || parts[0]?.type !== "text") return undefined;
-  const skill = parseSkillBlock(parts[0].text);
-  if (skill === undefined) return undefined;
-  return [
+  const text = parts[0].text;
+  const skill = parseSkillBlock(text);
+  if (skill !== undefined) return [
     { role: "user", parts: [{ type: "skillInvocation", name: skill.name, location: skill.location, content: skill.content }] },
     ...(skill.userMessage === undefined ? [] : [{ role: "user" as const, parts: [{ type: "text" as const, text: skill.userMessage }] }]),
   ];
+  const segments: ChatPart[] = [];
+  const pattern = /<skill name="([^"\r\n]+)" location="([^"\r\n]+)">\n([\s\S]*?)\n<\/skill>/g;
+  let cursor = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > cursor) segments.push({ type: "text", text: text.slice(cursor, match.index) });
+    segments.push({ type: "skillInvocation", name: match[1] ?? "skill", location: match[2] ?? "", content: match[3] ?? "" });
+    cursor = match.index + match[0].length;
+  }
+  if (segments.length === 0) return undefined;
+  if (cursor < text.length) segments.push({ type: "text", text: text.slice(cursor) });
+  return [{ role: "user", parts: segments }];
 }
 
 function parseSkillBlock(text: string): { name: string; location: string; content: string; userMessage?: string } | undefined {
@@ -199,6 +213,41 @@ function normalizeContent(content: unknown, message: unknown): ChatPart[] {
     : part);
 }
 
+const GOAL_LIFECYCLE_STATES = {
+  start: "active", resume: "active", pause: "paused", wait: "waiting", block: "blocked",
+  usage_limit: "usage_limited", budget_limit: "budget_limited", complete: "complete", clear: "cleared",
+} as const;
+
+function goalLifecycleDetails(message: unknown): GoalLifecycleDetails | undefined {
+  if (getString(message, "role") !== "custom" || getString(message, "customType") !== "pi-goal.lifecycle") return undefined;
+  const details = getProperty(message, "details");
+  if (!isRecord(details) || Array.isArray(details)) return undefined;
+  const keys = Object.keys(details);
+  if (!["schemaVersion", "goalId", "transition", "state"].every((key) => Object.hasOwn(details, key))
+    || keys.some((key) => !["schemaVersion", "goalId", "transition", "state", "reason", "summary"].includes(key))
+    || details["schemaVersion"] !== 1 || !validGoalId(details["goalId"])) return undefined;
+  const transition = details["transition"];
+  if (!isGoalLifecycleTransition(transition) || details["state"] !== GOAL_LIFECYCLE_STATES[transition]) return undefined;
+  const reason = Object.hasOwn(details, "reason") ? details["reason"] : undefined;
+  const summary = Object.hasOwn(details, "summary") ? details["summary"] : undefined;
+  if ((Object.hasOwn(details, "reason") && !validLifecycleText(reason))
+    || (Object.hasOwn(details, "summary") && !validLifecycleText(summary))) return undefined;
+  try {
+    if (new TextEncoder().encode(JSON.stringify(details)).byteLength > 3_500) return undefined;
+  } catch { return undefined; }
+  return { schemaVersion: 1, goalId: details["goalId"], transition, state: GOAL_LIFECYCLE_STATES[transition],
+    ...(typeof reason === "string" ? { reason } : {}), ...(typeof summary === "string" ? { summary } : {}) };
+}
+
+function isGoalLifecycleTransition(value: unknown): value is keyof typeof GOAL_LIFECYCLE_STATES {
+  return typeof value === "string" && Object.hasOwn(GOAL_LIFECYCLE_STATES, value);
+}
+
+function validLifecycleText(value: unknown): value is string {
+  return typeof value === "string" && value !== "" && Array.from(value).length <= 400
+    && value === value.replace(/(?:(?!\u200d)\p{Cf})|[\u115f\u2800\u3164\uffa0]/gu, "").replace(/\p{Cc}/gu, " ").replace(/\s+/gu, " ").trim();
+}
+
 function askUserRecordPart(message: unknown): Extract<ChatPart, { type: "askUserRecord" }> | undefined {
   if (getString(message, "role") !== "custom" || getString(message, "customType") !== ASK_USER_ANSWERS_CUSTOM_TYPE) return undefined;
   return parsedAskUserRecord(getProperty(message, "details"));
@@ -247,6 +296,7 @@ function parseSkillReadPath(path: string | undefined): { name: string; path: str
 function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
   const result: ChatLine[] = [];
   const pendingTools = new Map<string, { lineIndex: number; partIndex: number }>();
+  const skillReadIds = new Set<string>();
 
   for (const line of lines) {
     let passthroughParts: ChatPart[] = [];
@@ -263,6 +313,7 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
     };
 
     for (const part of line.parts) {
+      if (part.type === "skillRead" && part.toolCallId !== undefined) skillReadIds.add(part.toolCallId);
       if (part.type === "toolCall") {
         flushPassthrough();
         const execution = toolExecutionFromCall(part);
@@ -273,6 +324,9 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
       }
 
       if (part.type === "toolResult") {
+        if (part.toolCallId !== undefined && part.toolName === "read" && skillReadIds.has(part.toolCallId) && !part.isError
+          && getString(part.details, "diff") === undefined && previewFromDetails(part.details)?.diff === undefined
+          && !line.parts.some((item) => item.type === "image" || item.type === "askUserRecord")) continue;
         const target = part.toolCallId === undefined ? undefined : pendingTools.get(part.toolCallId);
         if (target !== undefined && mergeToolResultInto(result, target, part)) {
           pendingTools.delete(part.toolCallId ?? "");

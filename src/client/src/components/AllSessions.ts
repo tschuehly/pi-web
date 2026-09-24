@@ -1,6 +1,7 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { api, type SessionActivity, type SessionInfo, type SessionStatus } from "../api";
+import { sessionTitle } from "../sessionLabels";
 import { isSessionActive, sessionActivityText } from "../../../shared/activity";
 import { renderActivityIndicator } from "./activityBadge";
 import { listStyles } from "./shared";
@@ -109,10 +110,6 @@ function isChildSession(session: SessionInfo): boolean {
 function matchesSearch(session: SessionInfo, needle: string): boolean {
   if (needle === "") return true;
   return [session.name ?? "", session.firstMessage, session.cwd, session.id].some((value) => value.toLowerCase().includes(needle));
-}
-
-function sessionTitle(session: SessionInfo): string {
-  return session.name !== undefined && session.name !== "" ? session.name : session.firstMessage === "" ? session.id : session.firstMessage;
 }
 
 function shortenHome(path: string): string {

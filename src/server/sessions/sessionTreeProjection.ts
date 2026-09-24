@@ -1,4 +1,5 @@
 import type { SessionTreeNode, SessionTreeNodeKind, SessionTreeSnapshot } from "../../shared/apiTypes.js";
+import { stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 
 const SUMMARY_MAX_LENGTH = 360;
 const SUMMARY_SOURCE_MAX_LENGTH = SUMMARY_MAX_LENGTH * 2;
@@ -112,7 +113,7 @@ function projectMessage(value: unknown): EntryProjection {
   if (!isRecord(value)) return { kind: "other", summary: "Message" };
   switch (value["role"]) {
     case "user":
-      return { kind: "user", summary: summary(contentPreview(value["content"], true), "User message") };
+      return { kind: "user", summary: summary(contentPreview(value["content"], true, true), "User message") };
     case "assistant":
       return { kind: "assistant", summary: assistantSummary(value) };
     case "toolResult":
@@ -178,7 +179,7 @@ function modelChangeSummary(entry: Record<string, unknown>): string {
   return namedSummary("Model", modelId ?? provider, "Model changed");
 }
 
-function contentPreview(content: unknown, includeImageMarkers: boolean): string {
+function contentPreview(content: unknown, includeImageMarkers: boolean, userMessage = false): string {
   const fragments: string[] = [];
   let remaining = SUMMARY_SOURCE_MAX_LENGTH;
   const append = (text: string): void => {
@@ -189,11 +190,11 @@ function contentPreview(content: unknown, includeImageMarkers: boolean): string 
   };
 
   if (typeof content === "string") {
-    append(content);
+    append(userMessage ? stripInlineImageReferenceMapping(content) : content);
   } else if (Array.isArray(content)) {
     for (const part of content) {
       if (!isRecord(part)) continue;
-      if (part["type"] === "text" && typeof part["text"] === "string") append(part["text"]);
+      if (part["type"] === "text" && typeof part["text"] === "string") append(userMessage ? stripInlineImageReferenceMapping(part["text"]) : part["text"]);
       else if (includeImageMarkers && part["type"] === "image") append("[image]");
       if (remaining <= 0) break;
     }

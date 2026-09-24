@@ -1,86 +1,168 @@
-import { lstat, mkdir, open, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { lstat, mkdir, realpath, rename, stat, unlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { basename, dirname, join } from "node:path";
+import { createInterface } from "node:readline";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import type { DeleteWorkspaceFileResponse, FileContentMediaType, FileContentResponse, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, PiWebPathAccessConfig, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse } from "../../shared/apiTypes.js";
 import { classifyWorkspaceFile, MAX_WORKSPACE_FILE_CONTENT_BYTES, type WorkspaceFileClassification } from "../../shared/workspaceFiles.js";
 import { resolveWorkspacePathAccessTarget } from "./pathAccessPolicy.js";
+import { openDirectoryFromDescriptor, relativeToGrantedRoot } from "./fileTreeService.js";
 import { ensureInside, isNodeErrorWithCode, resolveInsideWorkspace, resolveParentInsideWorkspace } from "./pathSafety.js";
 
 export async function readWorkspaceFile(rootPath: string, path: string | undefined, pathAccess?: PiWebPathAccessConfig): Promise<FileContentResponse> {
   if (path === undefined || path === "") throw new Error("path query parameter is required");
-  const { target, displayPath } = await resolveWorkspacePathAccessTarget(rootPath, path, pathAccess);
-  const s = await stat(target);
-  if (!s.isFile()) throw new Error("Path is not a file");
-  const bytesToRead = Math.min(s.size, MAX_WORKSPACE_FILE_CONTENT_BYTES);
-  const buffer = await readFilePrefix(target, bytesToRead);
+  const { root, target, displayPath } = await resolveWorkspacePathAccessTarget(rootPath, path, pathAccess);
+  if (process.platform !== "darwin" && process.platform !== "linux") throw new Error("Safe workspace reads are unavailable on this platform");
+  // Walk the canonical parent using pinned directory descriptors, then open
+  // the leaf without following symlinks. No path lookup after the final open.
+  const { stdout } = await promisify(execFile)("python3", ["-c", readFromDescriptor, root, relativeToGrantedRoot(root, dirname(target)), basename(target)], {
+    maxBuffer: Math.ceil(MAX_WORKSPACE_FILE_CONTENT_BYTES * 4 / 3) + 4096,
+  });
+  const result: unknown = JSON.parse(stdout);
+  if (!isReadResult(result)) throw new Error("Invalid workspace file helper response");
+  if ("error" in result) throw new Error(result.error);
+  const s = result;
+  const buffer = Buffer.from(s.content, "base64");
+  if (buffer.length !== Math.min(s.size, MAX_WORKSPACE_FILE_CONTENT_BYTES)) throw new Error("Incomplete workspace file read");
   const classification = classifyWorkspaceFile(displayPath);
   const media = mediaForClassification(classification);
   // Text-source formats (HTML, Markdown, SVG) retain capped literal UTF-8
   // source for Raw mode. Raster image and PDF bytes stay out of JSON and are
   // served only by the preview response.
-  const binary = classification?.source === "stream" || (classification === undefined && isProbablyBinary(buffer));
+  const binary = classification?.source === "stream" || isProbablyBinary(buffer);
   return {
     path: displayPath,
     ...languageForPath(displayPath),
     ...media,
     encoding: "utf8",
     size: s.size,
-    modifiedAt: s.mtime.toISOString(),
+    modifiedAt: new Date(s.mtime).toISOString(),
+    ...(s.size <= MAX_WORKSPACE_FILE_CONTENT_BYTES ? { version: fileVersion(buffer) } : {}),
     content: binary ? "" : buffer.toString("utf8"),
     truncated: s.size > MAX_WORKSPACE_FILE_CONTENT_BYTES,
     binary,
   };
 }
 
-async function readFilePrefix(target: string, bytesToRead: number): Promise<Buffer> {
-  if (bytesToRead === 0) return Buffer.alloc(0);
-  const buffer = Buffer.alloc(bytesToRead);
-  const handle = await open(target, "r");
+const readFromDescriptor = `${openDirectoryFromDescriptor}
+import base64, json, stat
+try:
+    leaf = os.open(sys.argv[3], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+    try:
+        info = os.fstat(leaf)
+        if not stat.S_ISREG(info.st_mode):
+            print(json.dumps({'error': 'Path is not a file'}))
+        else:
+            remaining = min(info.st_size, ${String(MAX_WORKSPACE_FILE_CONTENT_BYTES)})
+            chunks = []
+            while remaining:
+                chunk = os.read(leaf, remaining)
+                if not chunk: raise OSError('Incomplete workspace file read')
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            print(json.dumps({'size': info.st_size, 'mtime': info.st_mtime * 1000, 'content': base64.b64encode(b''.join(chunks)).decode('ascii')}))
+    finally:
+        os.close(leaf)
+finally:
+    os.close(fd)
+`;
+
+function isReadResult(value: unknown): value is { size: number; mtime: number; content: string } | { error: string } {
+  if (typeof value !== "object" || value === null) return false;
+  if ("error" in value) return value.error === "Path is not a file";
+  return "size" in value && typeof value.size === "number" && Number.isSafeInteger(value.size) && value.size >= 0
+    && "mtime" in value && typeof value.mtime === "number" && Number.isFinite(value.mtime)
+    && "content" in value && typeof value.content === "string";
+}
+
+function fileVersion(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+export class WorkspaceFileConflictError extends Error {}
+export class WorkspaceFileOutcomeUnknownError extends Error {}
+
+interface WriteHelperEvent { kind: string; message?: string; conflict?: boolean; uncertain?: boolean; size?: number; modifiedAt?: number; created?: boolean }
+
+function isWriteHelperEvent(value: unknown): value is WriteHelperEvent {
+  if (typeof value !== "object" || value === null || !("kind" in value) || typeof value.kind !== "string") return false;
+  if ("message" in value && typeof value.message !== "string") return false;
+  if ("conflict" in value && typeof value.conflict !== "boolean") return false;
+  if ("uncertain" in value && typeof value.uncertain !== "boolean") return false;
+  if ("size" in value && typeof value.size !== "number") return false;
+  if ("modifiedAt" in value && typeof value.modifiedAt !== "number") return false;
+  if ("created" in value && typeof value.created !== "boolean") return false;
+  return true;
+}
+
+const activeWrites = new Map<string, Promise<void>>();
+
+export async function writeWorkspaceFile(rootPath: string, path: string | undefined, content: Buffer, options: WriteWorkspaceFileOptions = {}, hooks?: { beforeCommit?: () => Promise<void>; afterDisplacement?: () => Promise<void>; afterInstallation?: () => Promise<void> }): Promise<WriteWorkspaceFileResponse> {
+  // The optional hook is only used by deterministic filesystem race tests.
+  if (path === undefined || path === "") throw new Error("path query parameter is required");
+  // In-process serialization does not coordinate external writers; the filesystem commit below detects changed entries.
+  const key = `${rootPath}\0${path}`;
+  const previous = activeWrites.get(key);
+  let release!: () => void;
+  const complete = new Promise<void>((resolve) => { release = resolve; });
+  activeWrites.set(key, complete);
+  await previous;
   try {
-    const result = await handle.read(buffer, 0, bytesToRead, 0);
-    return buffer.subarray(0, result.bytesRead);
+    return await writeWorkspaceFileUnlocked(rootPath, path, content, options, hooks);
   } finally {
-    await handle.close();
+    if (activeWrites.get(key) === complete) activeWrites.delete(key);
+    release();
   }
 }
 
-export async function writeWorkspaceFile(rootPath: string, path: string | undefined, content: Buffer, options: WriteWorkspaceFileOptions = {}): Promise<WriteWorkspaceFileResponse> {
-  if (path === undefined || path === "") throw new Error("path query parameter is required");
-
-  const createDirs = options.createDirs ?? true;
-  const overwrite = options.overwrite ?? true;
-
-  let exists = false;
+async function writeWorkspaceFileUnlocked(rootPath: string, path: string, content: Buffer, options: WriteWorkspaceFileOptions, hooks?: { beforeCommit?: () => Promise<void>; afterDisplacement?: () => Promise<void>; afterInstallation?: () => Promise<void> }): Promise<WriteWorkspaceFileResponse> {
+  const { root, relativePath } = await resolveParentInsideWorkspace(rootPath, path);
+  // Node does not expose openat/linkat/renameat. The helper pins a directory fd
+  // and uses *at operations so a swapped ancestor cannot redirect mutations.
+  const helper = new URL("../../../scripts/workspace-file-write.py", import.meta.url);
+  const child = spawn("python3", [fileURLToPath(helper)], { stdio: ["pipe", "pipe", "pipe"] });
+  child.stdin.on("error", () => { /* Python may reject the request before consuming content. */ });
+  const exit = new Promise<number | Error>((resolve) => {
+    child.once("error", (error) => { resolve(error); });
+    child.once("close", (code) => { resolve(code ?? -1); });
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => { stderr = (stderr + chunk).slice(-4096); });
+  child.stdin.write(JSON.stringify({
+    root, path: relativePath, size: content.length,
+    createDirs: options.createDirs ?? true,
+    overwrite: options.overwrite !== false,
+    forceOverwrite: options.overwrite === true,
+    expectedVersion: options.expectedVersion,
+  }) + "\n");
+  child.stdin.write(content);
+  let result: WriteWorkspaceFileResponse | undefined;
+  let failure: Error | undefined;
   try {
-    const { target, relativePath } = await resolveInsideWorkspace(rootPath, path);
-    const s = await stat(target);
-    if (!s.isFile()) throw new Error("Path is not a file");
-    if (!overwrite) throw new Error(`File already exists: ${relativePath}`);
-    exists = true;
-  } catch (error: unknown) {
-    if (error instanceof Error && error.message.startsWith("File already exists")) throw error;
-    if (isNodeErrorWithCode(error, "ENOENT")) { /* expected for creation — continue */ }
-    else if (error instanceof Error && error.message === "Path does not exist") { /* expected for creation — continue */ }
-    else throw error; // re-throw permission errors, "not a file", traversal errors, etc.
+    for await (const line of createInterface({ input: child.stdout })) {
+      const event: unknown = JSON.parse(line);
+      if (!isWriteHelperEvent(event)) throw new Error("Invalid workspace file helper response");
+      if (event.kind === "beforeCommit" || event.kind === "afterDisplacement" || event.kind === "afterInstallation") {
+        try { await (event.kind === "beforeCommit" ? hooks?.beforeCommit?.() : event.kind === "afterDisplacement" ? hooks?.afterDisplacement?.() : hooks?.afterInstallation?.()); }
+        catch (error) { failure = error instanceof Error ? error : new Error(String(error)); }
+        child.stdin.write(failure === undefined ? "go\n" : "abort\n");
+      } else if (event.kind === "error") {
+        failure ??= event.uncertain === true ? new WorkspaceFileOutcomeUnknownError(event.message) : event.conflict === true ? new WorkspaceFileConflictError(event.message) : new Error(event.message);
+      } else if (event.kind === "result" && event.size !== undefined && event.modifiedAt !== undefined) {
+        result = { path: relativePath, size: event.size, modifiedAt: new Date(event.modifiedAt).toISOString(), created: event.created === true };
+      }
+    }
+    const code = await exit;
+    if (failure !== undefined) throw failure;
+    if (code instanceof Error) throw new Error(`Workspace file save requires Python 3 on the web/API PATH: ${code.message}`, { cause: code });
+    if (code !== 0 || result === undefined) throw new Error(`Workspace file helper failed (${String(code)}): ${stderr || "no response"}`);
+    return result;
+  } finally {
+    child.stdin.end();
   }
-
-  // Use resolveParentInsideWorkspace for the actual write since the target may not exist yet
-  const { root, target, relativePath } = await resolveParentInsideWorkspace(rootPath, path);
-
-  if (createDirs) await mkdir(dirname(target), { recursive: true });
-
-  // Resolve symlinks in the parent path to prevent escape via symlink
-  const realParent = await realpath(dirname(target));
-  const realTarget = join(realParent, basename(target));
-  ensureInside(root, realTarget);
-  await writeFile(realTarget, content);
-
-  const s = await stat(realTarget);
-  return {
-    path: relativePath,
-    size: s.size,
-    modifiedAt: s.mtime.toISOString(),
-    created: !exists,
-  };
 }
 
 export async function deleteWorkspaceFile(rootPath: string, path: string | undefined): Promise<DeleteWorkspaceFileResponse> {
@@ -149,8 +231,7 @@ export async function moveWorkspaceFile(rootPath: string, fromPath: string | und
 }
 
 function isProbablyBinary(buffer: Buffer): boolean {
-  const sample = buffer.subarray(0, Math.min(buffer.length, 8192));
-  return sample.includes(0);
+  return buffer.some((byte) => byte < 32 && byte !== 9 && byte !== 10 && byte !== 13);
 }
 
 function languageForPath(path: string): { language?: string } {

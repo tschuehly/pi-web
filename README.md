@@ -38,6 +38,7 @@ Requirements:
 - npm
 - Pi Coding Agent `>=0.84.0`, configured for your user
 - git and the development tools your agents need
+- Python 3 for saving workspace files (see [requirements](docs/install.html#requirements))
 
 Install and start PI WEB as per-user services:
 

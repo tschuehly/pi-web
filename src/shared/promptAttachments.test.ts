@@ -43,12 +43,12 @@ describe("parsePromptAttachments", () => {
   });
 
   it("normalizes valid attachments", () => {
-    const result = parsePromptAttachments([{ kind: "image", mimeType: "image/png", data: validImageBase64, name: "shot.png" }]);
-    expect(result).toEqual([{ kind: "image", mimeType: "image/png", data: validImageBase64, name: "shot.png" }]);
+    const result = parsePromptAttachments([{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: validImageBase64, name: "shot.png" }]);
+    expect(result).toEqual([{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: validImageBase64, name: "shot.png" }]);
   });
 
   it("drops empty names", () => {
-    const result = parsePromptAttachments([{ kind: "image", mimeType: "image/png", data: validImageBase64, name: "" }]);
+    const result = parsePromptAttachments([{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: validImageBase64, name: "" }]);
     expect(result[0]).not.toHaveProperty("name");
   });
 
@@ -59,7 +59,7 @@ describe("parsePromptAttachments", () => {
   it("rejects unsupported kinds and mime types", () => {
     expect(() => parsePromptAttachments([{ kind: "video", mimeType: "image/png", data: validImageBase64 }])).toThrow(/unsupported kind/);
     expect(() => parsePromptAttachments([{ kind: "file", mimeType: "application/pdf", data: validImageBase64 }])).toThrow(/unsupported kind/);
-    expect(() => parsePromptAttachments([{ kind: "image", mimeType: "image/svg+xml", data: validImageBase64 }])).toThrow(/unsupported image type/);
+    expect(() => parsePromptAttachments([{ kind: "image", reference: "[PIC_1]", mimeType: "image/svg+xml", data: validImageBase64 }])).toThrow(/unsupported image type/);
   });
 
   it("accepts generic files only when file attachments are allowed", () => {
@@ -83,21 +83,40 @@ describe("parsePromptAttachments", () => {
   });
 
   it("keeps image MIME validation when file attachments are allowed", () => {
-    expect(() => parsePromptAttachments([{ kind: "image", mimeType: "image/svg+xml", data: validImageBase64 }], { allowFileAttachments: true })).toThrow(/unsupported image type/);
+    expect(() => parsePromptAttachments([{ kind: "image", reference: "[PIC_1]", mimeType: "image/svg+xml", data: validImageBase64 }], { allowFileAttachments: true })).toThrow(/unsupported image type/);
+  });
+
+  it("assigns dense references for older clients while preserving explicit references", () => {
+    expect(parsePromptAttachments([
+      { kind: "image", mimeType: "image/png", data: validImageBase64 },
+      { kind: "image", mimeType: "image/png", data: validImageBase64 },
+    ]).map((attachment) => attachment.reference)).toEqual(["[PIC_1]", "[PIC_2]"]);
+    expect(parsePromptAttachments([
+      { kind: "image", mimeType: "image/png", data: validImageBase64 },
+      { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: validImageBase64 },
+    ]).map((attachment) => attachment.reference)).toEqual(["[PIC_2]", "[PIC_1]"]);
+  });
+
+  it("rejects invalid or duplicate explicit image references", () => {
+    expect(() => parsePromptAttachments([{ kind: "image", reference: "PIC_1", mimeType: "image/png", data: validImageBase64 }])).toThrow(/invalid image reference/);
+    expect(() => parsePromptAttachments([
+      { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: validImageBase64 },
+      { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: validImageBase64 },
+    ])).toThrow(/must be unique/);
   });
 
   it("rejects invalid base64 data", () => {
-    expect(() => parsePromptAttachments([{ kind: "image", mimeType: "image/png", data: "not base64!!!" }])).toThrow(/invalid base64/);
+    expect(() => parsePromptAttachments([{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "not base64!!!" }])).toThrow(/invalid base64/);
   });
 
   it("enforces the inline size limit when requested", () => {
     const oversized = "A".repeat(MAX_INLINE_IMAGE_BASE64_BYTES * 2);
-    expect(() => parsePromptAttachments([{ kind: "image", mimeType: "image/png", data: oversized }], { enforceInlineSizeLimit: true })).toThrow(/inline image size limit/);
-    expect(parsePromptAttachments([{ kind: "image", mimeType: "image/png", data: oversized }])).toHaveLength(1);
+    expect(() => parsePromptAttachments([{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: oversized }], { enforceInlineSizeLimit: true })).toThrow(/inline image size limit/);
+    expect(parsePromptAttachments([{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: oversized }])).toHaveLength(1);
   });
 
   it("enforces the attachment count limit", () => {
-    const many = Array.from({ length: 3 }, () => ({ kind: "image", mimeType: "image/png", data: validImageBase64 }));
+    const many = Array.from({ length: 3 }, () => ({ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: validImageBase64 }));
     expect(() => parsePromptAttachments(many, { maxAttachments: 2 })).toThrow(/too many attachments/);
   });
 });

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -129,7 +129,7 @@ describe("sessiond persisted server plugin recovery", () => {
 
     const startupOutput = await waitForOutput(child, "Server listening at", 15_000);
     expect(startupOutput).toContain("STATE_PLUGIN_STARTED");
-    expect(JSON.parse(await readFile(startedMarker, "utf8"))).toEqual({ packageRoot: pluginRoot });
+    expect(JSON.parse(await readFile(startedMarker, "utf8"))).toEqual({ packageRoot: await realpath(pluginRoot) });
     expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "state-only", "state.json"), "utf8")))
       .toEqual({ starts: 1 });
     expect((await readdir(pluginRoot)).sort()).toEqual(["package.json", "server.mjs"]);

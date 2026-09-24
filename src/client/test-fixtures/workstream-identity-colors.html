@@ -1,0 +1,189 @@
+<!--
+  Live-component fixture: run from the repository root with
+  `npx vite --host 127.0.0.1 --port 4175`, then open
+  http://127.0.0.1:4175/test-fixtures/workstream-identity-colors.html.
+  Loading this fixture through file:// is not supported.
+  Opacity is a required real-browser/manual fixture check because happy-dom does not
+  resolve layered color-mix backgrounds; use #overlay to inspect transcript bleed-through.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workstream identity fixture</title>
+  <style>
+    :root { --pi-interface-scale: 1; zoom: var(--pi-interface-scale); }
+    * { box-sizing: border-box; min-width: 0; }
+    html, body { margin: 0; background: var(--pi-bg); color: var(--pi-text); font: 14px system-ui, sans-serif; }
+    body { padding: 12px; }
+    main { width: 100%; display: grid; gap: 10px; }
+    button { color: var(--pi-text); font: inherit; text-align: left; }
+    .row { width: 100%; display: grid; gap: 2px; padding: 8px 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color); border-radius: 7px; background: color-mix(in srgb, var(--workstream-color) 12%, var(--pi-bg)); }
+    .row:hover, .row.hover { background: color-mix(in srgb, var(--workstream-color) 18%, var(--pi-surface-hover)); }
+    .row[aria-pressed="true"] { border-color: var(--pi-accent); border-left-color: var(--workstream-color); background: color-mix(in srgb, var(--workstream-color) 22%, var(--pi-surface)); }
+    .row[aria-pressed="true"]:hover, .row[aria-pressed="true"].hover { background: color-mix(in srgb, var(--workstream-color) 28%, var(--pi-surface-hover)); }
+    .row-title, .card-heading { display: flex; align-items: center; gap: 8px; }
+    .row-title strong, .card-title { flex: 1 1 auto; }
+    .row small { color: var(--pi-text); }
+    .row small b { color: inherit; text-decoration: underline; text-decoration-style: dotted; }
+    .identity-mark { flex: 0 0 auto; display: inline-grid; place-items: center; width: 28px; height: 24px; border: 2px solid var(--pi-text); border-radius: 7px 7px 3px 7px; background: color-mix(in srgb, var(--workstream-color) 30%, var(--pi-surface)); color: var(--pi-text); font-size: 10px; font-weight: 850; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pi-success); box-shadow: 0 0 0 1px var(--pi-text); }
+    .card { padding: 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color); border-radius: 10px; background: color-mix(in srgb, var(--workstream-color) 9%, var(--pi-surface)); }
+    details { border-left: 3px solid var(--workstream-color); }
+    summary { min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--pi-border); border-radius: 8px; background: color-mix(in srgb, var(--workstream-color) 12%, var(--pi-surface)); list-style: none; cursor: pointer; }
+    summary:hover, summary.hover, details[open] summary { background: color-mix(in srgb, var(--workstream-color) 18%, var(--pi-surface-hover)); }
+    summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    summary::after { content: "↓"; flex: 0 0 auto; color: var(--pi-text); }
+    details[open] summary::after { content: "↑"; }
+    .context-label { flex: 0 0 auto; color: var(--pi-text); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+    summary strong { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sheet { padding: 12px; border-bottom: 1px solid var(--pi-border); background: var(--pi-surface); }
+    .workbench-shell { --pi-workbench-viewport-height: calc(100dvh / var(--pi-interface-scale, 1)); position: fixed; inset: 0 auto auto 0; z-index: 10; width: calc(100dvw / var(--pi-interface-scale, 1)); height: var(--pi-workbench-viewport-height); display: none; overflow: hidden; background: var(--pi-bg); }
+    .workbench-shell[data-visible], .workbench-shell:target { display: block; }
+    .drawer-header { position: relative; z-index: 2; padding: 8px 12px; background: var(--pi-surface); }
+    .close-overlay { position: absolute; top: 10px; right: 16px; z-index: 3; color: var(--pi-text); }
+    .dense-transcript { display: grid; gap: 6px; padding: 12px; color: var(--pi-text); font: 12px ui-monospace, monospace; }
+    .dense-transcript span { display: block; padding: 4px; background: var(--pi-bg); }
+    .grayscale { filter: grayscale(1); }
+    @media (forced-colors: active) {
+      .row { border-left-color: LinkText; }
+      .row[aria-pressed="true"] { border-color: Highlight; border-left-color: LinkText; }
+      .card, details { border-left-color: LinkText; }
+      summary { background: Canvas; }
+      details[open] summary { border-color: Highlight; }
+      .identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }
+      .status-dot { border: 1px solid CanvasText; background: Highlight; box-shadow: none; }
+    }
+    @media (max-width: 520px) { .context-label { display: none; } }
+  </style>
+</head>
+<body>
+  <main style="--workstream-color:light-dark(hsl(210deg 70% 40%), hsl(210deg 65% 65%))">
+    <a href="#overlay">Show drawer over dense transcript</a>
+    <button class="row" data-state="default" aria-pressed="false"><span class="row-title"><span class="identity-mark" aria-hidden="true">DW</span><strong>Default Workstream</strong><span class="status-dot" title="Session active"></span></span><small>started today · <b>1 open question</b></small></button>
+    <button class="row hover" data-state="hover" aria-pressed="false"><span class="row-title"><span class="identity-mark" aria-hidden="true">HW</span><strong>Hover Workstream</strong></span><small>started today</small></button>
+    <button class="row" data-state="selected" aria-pressed="true"><span class="row-title"><span class="identity-mark" aria-hidden="true">SW</span><strong>Selected Workstream</strong></span><small>started today</small></button>
+    <button class="row hover" data-state="selected-hover" aria-pressed="true"><span class="row-title"><span class="identity-mark" aria-hidden="true">SH</span><strong>Selected Hover Workstream</strong></span><small>started today</small></button>
+    <article class="card" data-state="card"><div class="card-heading"><span class="identity-mark" aria-hidden="true">DC</span><strong class="card-title">Detail card Workstream</strong></div></article>
+    <details data-state="drawer">
+      <summary><span class="identity-mark" aria-hidden="true">VL</span><span class="context-label">Workstream</span><strong>A very long Workstream title that must remain identifiable in a narrow three-hundred-and-twenty-pixel viewport</strong></summary>
+      <div class="sheet">Open Workstream details</div>
+    </details>
+    <section id="overlay" class="workbench-shell">
+      <a class="close-overlay" href="#">Close specimen</a>
+      <div class="drawer-header"><workstream-context-drawer></workstream-context-drawer></div>
+      <div class="dense-transcript" aria-hidden="true">
+        <span>Transcript line 01: dense text must never show through the open drawer.</span><span>Transcript line 02: dense text must never show through the open drawer.</span><span>Transcript line 03: dense text must never show through the open drawer.</span><span>Transcript line 04: dense text must never show through the open drawer.</span><span>Transcript line 05: dense text must never show through the open drawer.</span><span>Transcript line 06: dense text must never show through the open drawer.</span>
+      </div>
+    </section>
+  </main>
+  <script type="module">
+    import "../src/components/WorkstreamContextDrawer.ts";
+    const themes = {
+      "pi-web-dark": { scheme: "dark", bg: "#070912", surface: "#101527", hover: "#151b31", border: "#4d61a0", borderMuted: "#26304f", text: "#f7f4ff", muted: "#aaa4bd", accent: "#7c3cff", success: "#00f0d8", successBorder: "#00f0d8", successBg: "#071e22", purpleBorder: "#7c3cff", purpleSurface: "#181026", shadow: "#0008" },
+      "pi-web-light": { scheme: "light", bg: "#f7f1e6", surface: "#fff9ee", hover: "#f0e6d6", border: "#a38d6b", borderMuted: "#d8cdbc", text: "#15131b", muted: "#5f586a", accent: "#6430d8", success: "#008c82", successBorder: "#008c82", successBg: "#e1f4ef", purpleBorder: "#6430d8", purpleSurface: "#eadff8", shadow: "#15131b33" },
+      "github-light": { scheme: "light", bg: "#f6f8fa", surface: "#ffffff", hover: "#eff2f5", border: "#8096aa", borderMuted: "#d1d9e0b3", text: "#1f2328", muted: "#59636e", accent: "#0969da", success: "#1a7f37", successBorder: "#1a7f37", successBg: "#dafbe1", purpleBorder: "#8250df", purpleSurface: "#fbefff", shadow: "#25292e1f" },
+      "github-dark": { scheme: "dark", bg: "#0d1117", surface: "#151b23", hover: "#212830", border: "#5e6876", borderMuted: "#3d444db3", text: "#f0f6fc", muted: "#9198a1", accent: "#4493f8", success: "#3fb950", successBorder: "#238636", successBg: "#2ea04326", purpleBorder: "#8957e5", purpleSurface: "#ab7df826", shadow: "#01040999" },
+      classic: { scheme: "dark", bg: "#0d1117", surface: "#161b22", hover: "#21262d", border: "#5d6976", borderMuted: "#21262d", text: "#e6edf3", muted: "#8b949e", accent: "#58a6ff", success: "#3fb950", successBorder: "#238636", successBg: "#0f1b12", purpleBorder: "#a371f7", purpleSurface: "#21132f", shadow: "#0008" },
+    };
+    const overlay = document.querySelector(".workbench-shell");
+    const drawer = document.querySelector("workstream-context-drawer");
+    drawer.snapshot = {
+      id: "workstream-opacity-check", title: "Opaque Workstream drawer", revision: 1, updatedAt: "2026-09-22T00:00:00.000Z", closed: false,
+      sessions: [{ id: "session-1", status: "active", latestCheckpoint: { id: "checkpoint-1", whatChanged: "Added opacity coverage", remains: "Verify themes", next: "Read the Goal and dense details without transcript bleed-through.", nextSessionPrompt: "Continue", recordedAt: "2026-09-22T00:00:00.000Z" } }],
+      humanTasks: [], links: [], overview: { goal: "Keep the floating Workstream surface opaque over dense transcript text.", description: "Readable overlay text must retain the Workstream tint without leaking transcript glyphs.", doneWhen: "Every theme computes an alpha-one sheet and label.", history: [], recordedAt: "2026-09-22T00:00:00.000Z" },
+    };
+    await drawer.updateComplete;
+    const root = document.documentElement;
+    const details = document.querySelector("details");
+    const summary = details.querySelector("summary");
+    const rect = (element) => { const value = element.getBoundingClientRect(); return { top: value.top, right: value.right, bottom: value.bottom, left: value.left, width: value.width, height: value.height }; };
+    const rgba = (value) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d");
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = value;
+      context.fillRect(0, 0, 1, 1);
+      return [...context.getImageData(0, 0, 1, 1).data];
+    };
+    const luminance = ([red, green, blue]) => [red, green, blue].map((channel) => channel / 255).map((channel) => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0);
+    const contrast = (foreground, background) => {
+      const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+      return (values[0] + .05) / (values[1] + .05);
+    };
+    const composite = (foreground, background) => {
+      const alpha = foreground[3] / 255;
+      return foreground.slice(0, 3).map((channel, index) => Math.round(channel * alpha + background[index] * (1 - alpha))).concat(255);
+    };
+    window.workstreamIdentityFixture = {
+      themes: Object.keys(themes),
+      measure(themeName, grayscale = false, scale = 1) {
+        const theme = themes[themeName];
+        root.style.colorScheme = theme.scheme;
+        root.style.setProperty("--pi-interface-scale", String(scale));
+        for (const [token, value] of Object.entries({ "--pi-bg": theme.bg, "--pi-surface": theme.surface, "--pi-surface-hover": theme.hover, "--pi-border": theme.border, "--pi-border-muted": theme.borderMuted, "--pi-text": theme.text, "--pi-muted": theme.muted, "--pi-accent": theme.accent, "--pi-success": theme.success, "--pi-success-border": theme.successBorder, "--pi-success-bg": theme.successBg, "--pi-purple-border": theme.purpleBorder, "--pi-purple-surface": theme.purpleSurface, "--pi-shadow": theme.shadow })) root.style.setProperty(token, value);
+        document.body.classList.toggle("grayscale", grayscale);
+        overlay.removeAttribute("data-visible");
+
+        details.open = false;
+        const drawerDefault = getComputedStyle(summary).backgroundColor;
+        details.open = true;
+        summary.focus();
+        const outerFocusVisible = summary.matches(":focus-visible");
+        const outerOutlineWidth = getComputedStyle(summary).outlineWidth;
+        const byState = (state) => document.querySelector(`[data-state="${state}"]`);
+        const selected = byState("selected");
+        const defaultRow = byState("default");
+        const hoverRow = byState("hover");
+        const selectedHover = byState("selected-hover");
+        const card = byState("card");
+        const title = summary.querySelector("strong");
+        const marks = [...document.querySelectorAll(".identity-mark")];
+        const specimen = {
+          forcedColors: matchMedia("(forced-colors: active)").matches,
+          backgrounds: { default: getComputedStyle(defaultRow).backgroundColor, hover: getComputedStyle(hoverRow).backgroundColor, selected: getComputedStyle(selected).backgroundColor, selectedHover: getComputedStyle(selectedHover).backgroundColor, card: getComputedStyle(card).backgroundColor, drawerDefault, drawerOpen: getComputedStyle(summary).backgroundColor },
+          cues: { monograms: marks.map((mark) => mark.textContent), markBorder: getComputedStyle(marks[0]).borderWidth, markColor: getComputedStyle(marks[0]).color, rowRail: getComputedStyle(defaultRow).borderLeftWidth, selectedState: selected.getAttribute("aria-pressed"), cardRail: getComputedStyle(card).borderLeftWidth, drawerRail: getComputedStyle(details).borderLeftWidth, drawerOpen: details.open, drawerArrow: getComputedStyle(summary, "::after").content, focusVisible: outerFocusVisible, outlineWidth: outerOutlineWidth, openQuestionColor: getComputedStyle(defaultRow.querySelector("b")).color, rowTextColor: getComputedStyle(defaultRow).color, drawerLabelColor: getComputedStyle(summary.querySelector(".context-label")).color, contextLabelDisplay: getComputedStyle(summary.querySelector(".context-label")).display, statusOutline: getComputedStyle(defaultRow.querySelector(".status-dot")).boxShadow, statusBorder: getComputedStyle(defaultRow.querySelector(".status-dot")).borderWidth },
+          bounds: [defaultRow, selected, selectedHover, card, summary].map(rect),
+          narrow: { documentScrollWidth: document.documentElement.scrollWidth, titleClientWidth: title.clientWidth, titleScrollWidth: title.scrollWidth, titleOverflow: getComputedStyle(title).overflow, titleTextOverflow: getComputedStyle(title).textOverflow },
+        };
+
+        const drawerDetails = drawer.shadowRoot.querySelector("details");
+        const drawerSummary = drawerDetails.querySelector("summary");
+        overlay.setAttribute("data-visible", "");
+        drawerDetails.open = true;
+        drawerSummary.focus();
+        try {
+          const drawerSheet = drawerDetails.querySelector(".sheet");
+          const drawerLabel = drawerDetails.querySelector(".goal-row .label");
+          const drawerNext = drawerDetails.querySelector(".next");
+          const drawerNextLabel = drawerDetails.querySelector(".next .label");
+          const drawerText = drawerDetails.querySelector(".goal");
+          const background = (element) => {
+            const style = getComputedStyle(element);
+            return { alpha: rgba(style.backgroundColor)[3] / 255, color: style.backgroundColor, image: style.backgroundImage };
+          };
+          const surfaceColor = rgba(theme.surface);
+          const purpleColor = rgba(theme.purpleSurface);
+          const sheetPaintColor = composite(purpleColor.slice(0, 3).concat(purpleColor[3] * .36), surfaceColor);
+          const nextPaintColor = composite(rgba(theme.successBg), sheetPaintColor);
+          const textColor = rgba(getComputedStyle(drawerText).color);
+          return {
+            theme: themeName,
+            grayscale,
+            scale,
+            width: innerWidth,
+            ...specimen,
+            overlay: { sheet: background(drawerSheet), label: background(drawerLabel), next: background(drawerNext), nextLabel: background(drawerNextLabel), textContrast: contrast(textColor, sheetPaintColor), nextTextContrast: contrast(textColor, nextPaintColor), sheetBounds: rect(drawerSheet), summaryBounds: rect(drawerSummary), focused: drawer.shadowRoot.activeElement === drawerSummary, open: drawerDetails.open, tint: drawerDetails.style.getPropertyValue("--workstream-color"), documentScrollWidth: document.documentElement.scrollWidth },
+          };
+        } finally {
+          drawerDetails.open = false;
+          drawerSummary.blur();
+          overlay.removeAttribute("data-visible");
+        }
+      },
+    };
+  </script>
+</body>
+</html>

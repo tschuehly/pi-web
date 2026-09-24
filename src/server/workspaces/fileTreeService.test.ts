@@ -1,8 +1,23 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { listWorkspaceTree } from "./fileTreeService.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { listFromDescriptor, listWorkspaceTree } from "./fileTreeService.js";
+
+const race = vi.hoisted(() => ({ afterResolve: () => Promise.resolve() }));
+vi.mock("./pathAccessPolicy.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pathAccessPolicy.js")>();
+  return {
+    ...actual,
+    resolveWorkspacePathAccessTarget: async (...args: Parameters<typeof actual.resolveWorkspacePathAccessTarget>) => {
+      const result = await actual.resolveWorkspacePathAccessTarget(...args);
+      await race.afterResolve();
+      return result;
+    },
+  };
+});
 
 const roots: string[] = [];
 
@@ -13,6 +28,7 @@ async function tempWorkspace(): Promise<string> {
 }
 
 afterEach(async () => {
+  race.afterResolve = () => Promise.resolve();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -69,6 +85,48 @@ describe("listWorkspaceTree", () => {
       ["sdk.ts", join(external, "sdk.ts"), "file"],
     ]);
     await expect(listWorkspaceTree(root, external)).rejects.toThrow("Absolute paths are not allowed");
+  });
+
+  it("rejects a parent replaced by an outside symlink after resolution", async () => {
+    const root = await tempWorkspace();
+    const outside = await tempWorkspace();
+    await mkdir(join(root, "dir"));
+    await writeFile(join(root, "dir", "inside.txt"), "inside");
+    await writeFile(join(outside, "outside.txt"), "outside");
+    race.afterResolve = async () => {
+      await rename(join(root, "dir"), join(root, "old-dir"));
+      await symlink(outside, join(root, "dir"));
+    };
+    await expect(listWorkspaceTree(root, "dir")).rejects.toThrow();
+  });
+
+  it("rejects a granted workspace root replaced by an outside symlink after resolution", async () => {
+    const root = await tempWorkspace();
+    const outside = await tempWorkspace();
+    const displaced = `${root}-displaced`;
+    await writeFile(join(root, "inside.txt"), "inside");
+    await writeFile(join(outside, "outside.txt"), "outside");
+    race.afterResolve = async () => { await rename(root, displaced); await symlink(outside, root); };
+    try { await expect(listWorkspaceTree(root, "")).rejects.toThrow(); }
+    finally { await rm(displaced, { recursive: true, force: true }); }
+  });
+
+  it("skips an entry deleted between enumeration and stat", async () => {
+    const root = await tempWorkspace();
+    await writeFile(join(root, "gone.txt"), "gone");
+    await writeFile(join(root, "kept.txt"), "kept");
+    // Force deletion between fd-relative enumeration and a DirEntry stat.
+    const deleteAfterList = `import os\noriginal_scandir = os.scandir\ndef scan_then_delete(fd):\n    entries = list(original_scandir(fd))\n    os.unlink('gone.txt', dir_fd=fd)\n    return entries\nos.scandir = scan_then_delete\n`;
+    const { stdout } = await promisify(execFile)("python3", ["-c", deleteAfterList + listFromDescriptor, await realpath(root), ""]);
+    expect(JSON.parse(stdout)).toEqual([expect.arrayContaining(["kept.txt", false, false])]);
+  });
+
+  it("bounds enumeration as well as the returned listing", async () => {
+    const root = await tempWorkspace();
+    for (let i = 0; i < 1003; i += 1) await writeFile(join(root, `file-${String(i)}.txt`), "x");
+    const listing = await listWorkspaceTree(root, "");
+    expect(listing.entries).toHaveLength(1000);
+    expect(listing.truncated).toBe(true);
   });
 
   it("rejects non-directory targets and unsafe paths", async () => {

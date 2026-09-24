@@ -51,11 +51,12 @@ export interface SessionRouteService {
   list(cwd: string): Promise<ClientSession[]>;
   listRecent(limit: number): Promise<ClientSession[]>;
   /**
-   * Create a session. `startupToken` is an opaque label the caller supplies so
-   * it can recognise this construction's startup progress reports; the service
-   * echoes it and never interprets it.
+   * Create a session. Most startup tokens are ephemeral progress labels;
+   * Workstream launch tokens are reserved and recorded for exact reconciliation.
    */
   start(cwd: string, options?: { startupToken?: string }): Promise<ClientSession>;
+  /** Unknown never proves non-creation. Only a live or persisted exact match is found. */
+  lookupWorkstreamLaunch(token: string, cwd: string): Promise<{ status: "found"; sessionId: string; cwd: string } | { status: "unknown" }>;
   messages(ref: SessionRouteRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage>;
   status(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   streamSnapshot(ref: SessionRouteRef): Promise<SessionStreamSnapshot>;

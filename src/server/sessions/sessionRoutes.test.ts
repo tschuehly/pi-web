@@ -955,7 +955,7 @@ describe("session routes", () => {
     const routeService = new CapturingRouteSessionService();
     registerSessionRoutes(routeApp, routeService, eventHub);
 
-    const attachments = [{ kind: "image", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
+    const attachments = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     try {
       const promptResponse = await routeApp.inject({ method: "POST", url: "/sessions/session-1/prompt", payload: { cwd: "/repo", text: "look", attachments } });
       expect(promptResponse.statusCode).toBe(200);
@@ -1263,6 +1263,27 @@ describe("session routes", () => {
     }
   });
 
+  it("looks up a Workstream launch by exact token and cwd without starting another Chat", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    try {
+      const cwd = resolve("/repo");
+      const found = await routeApp.inject({ method: "GET", url: `/sessions/workstream-launch/${encodeURIComponent("pi-web:launch-one")}?cwd=${encodeURIComponent(cwd)}` });
+      const wrong = await routeApp.inject({ method: "GET", url: `/sessions/workstream-launch/${encodeURIComponent("pi-web:launch-one")}?cwd=${encodeURIComponent("/other")}` });
+      const missing = await routeApp.inject({ method: "GET", url: `/sessions/workstream-launch/${encodeURIComponent("pi-web:absent")}?cwd=${encodeURIComponent(cwd)}` });
+      expect(found.statusCode).toBe(200);
+      expect(found.json()).toEqual({ status: "found", sessionId: "session-1", cwd });
+      expect(wrong.json()).toEqual({ status: "unknown" });
+      expect(missing.json()).toEqual({ status: "unknown" });
+      expect(routeService.startCalls).toEqual([]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
   it("forwards a create's optional correlation token alongside the normalized cwd", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1350,6 +1371,12 @@ class CapturingRouteSessionService implements SessionRouteService {
   readonly answerDialogCalls: { lookup: SessionRouteRef; dialogId: string; value: ExtensionDialogAnswer }[] = [];
   readonly cancelDialogCalls: { lookup: SessionRouteRef; dialogId: string }[] = [];
   readonly startCalls: { cwd: string; startupToken: string | undefined }[] = [];
+
+  lookupWorkstreamLaunch(token: string, cwd: string): Promise<{ status: "found"; sessionId: string; cwd: string } | { status: "unknown" }> {
+    return Promise.resolve(token === "pi-web:launch-one" && cwd === resolve("/repo")
+      ? { status: "found", sessionId: "session-1", cwd }
+      : { status: "unknown" });
+  }
   readonly listRecentCalls: number[] = [];
   readonly recentSessionsResponse: ClientSession[] = [{ id: "recent", cwd: "/repo", path: "/sessions/recent.jsonl", persisted: true, created: "2026-01-01T00:00:00.000Z", modified: "2026-01-02T00:00:00.000Z", messageCount: 1, firstMessage: "Recent" }];
   askError: Error | undefined;

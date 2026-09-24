@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { mkdir, rm } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import { WorkspaceActivityService } from "./activity/workspaceActivityService.js";
@@ -20,6 +20,7 @@ import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGatewa
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
 import { SessionNotificationStore } from "./sessions/sessionNotificationStore.js";
 import { SessionArchiveStore, defaultSessionArchiveFilePath } from "./sessions/sessionArchiveStore.js";
+import { WorkstreamLaunchStore } from "./sessions/workstreamLaunchStore.js";
 import { FileSessionUnreadPersistence, SessionUnreadStore, defaultSessionUnreadFilePath } from "./sessions/sessionUnreadStore.js";
 import { ProjectScopedSpawnTargetResolver } from "./sessions/spawnTargetResolver.js";
 import { ProjectService } from "./projects/projectService.js";
@@ -155,6 +156,14 @@ app.log.info({ scrubbedEnvKeys }, "daemon-only environment keys hidden from agen
 // restarts briefly overlap the outgoing daemon, so the claim waits out a short
 // grace for it to release first. The web/API process of this instance shares
 // the data directory but never claims it.
+if (daemonEnvironment["PI_WEB_FIXTURE_PENDING_ASK_MANIFEST"] !== undefined) {
+  if (daemonEnvironment["PI_CODING_AGENT_DIR"] !== activeAgentProfile.dir
+    || agentSessionDirEnvOverride(daemonEnvironment) !== daemonEnvironment["PI_CODING_AGENT_SESSION_DIR"]) {
+    throw new Error("Pending ask fixture requires explicitly owned active agent and session directories");
+  }
+  const { validateControlledPendingAskFixture } = await import("./controlledPendingAskFixture.js");
+  await validateControlledPendingAskFixture(daemonEnvironment);
+}
 const stateOwnership = await claimSessiondStateOwnership({ env: daemonEnvironment, logger: app.log });
 
 const runtime = await createSessionDaemonRuntime();
@@ -271,6 +280,7 @@ async function createSessionDaemonRuntime() {
       modelRuntime: auth.runtime,
       agentDir: activeAgentProfile.dir,
       archiveStore: new SessionArchiveStore(defaultSessionArchiveFilePath(daemonEnvironment)),
+      workstreamLaunchStore: new WorkstreamLaunchStore(join(piWebDataDir(daemonEnvironment), "workstream-launches")),
       workspaceActivity,
       logger: app.log,
       ...(spawnTargets === undefined ? {} : { spawnTargets }),
@@ -304,6 +314,12 @@ async function createSessionDaemonRuntime() {
       }),
     }));
     sessionsForFailedConstruction = sessions;
+    // Test-only opt-in for a separate daemon whose state and socket are inside
+    // a controlled fixture root. No route can create an ask in a live daemon.
+    if (daemonEnvironment["PI_WEB_FIXTURE_PENDING_ASK_MANIFEST"] !== undefined) {
+      const { openControlledPendingAskFixture } = await import("./controlledPendingAskFixture.js");
+      await openControlledPendingAskFixture(sessions, daemonEnvironment);
+    }
     auth.subscribe((change) => { sessions.applyAuthChange(change); });
     // Current workspace authority and session ownership become available at
     // one atomic late boundary, so no dependent can start against a partial host.

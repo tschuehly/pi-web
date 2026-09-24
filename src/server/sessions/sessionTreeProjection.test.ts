@@ -14,6 +14,19 @@ function entry(id: string, parentId: string | null, type: string, patch: Record<
 }
 
 describe("projectSessionTree", () => {
+  it("omits provider-only image legends from user tree previews while keeping references and image markers", () => {
+    const text = "compare [PIC_3] and [PIC_1]";
+    const providerText = `${text}\n\nImage blocks immediately following this text map in order as follows:\n1. [PIC_1]\n2. [PIC_3]`;
+    const snapshot = projectSessionTree([
+      treeNode(entry("string", null, "message", { message: { role: "user", content: providerText } })),
+      treeNode(entry("blocks", null, "message", { message: { role: "user", content: [{ type: "text", text: providerText }, { type: "image", data: "private" }] } })),
+      treeNode(entry("plain", null, "message", { message: { role: "user", content: "Image blocks in a diagram: [PIC_4]" } })),
+    ], null);
+
+    expect(snapshot.nodes.map((node) => node.summary)).toEqual([text, `${text} [image]`, "Image blocks in a diagram: [PIC_4]"]);
+    expect(JSON.stringify(snapshot)).not.toContain("Image blocks immediately following");
+  });
+
   it("preserves complete pre-order structure while strictly excluding raw private fields", () => {
     const rootChildren: ProjectableSessionTreeNode[] = [];
     const assistantChildren: ProjectableSessionTreeNode[] = [];

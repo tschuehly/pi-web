@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import { PiSessionService, type PiSessionRuntime } from "./piSessionService.js";
 import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
 import { isSessionActive } from "../../shared/activity.js";
 import type { SessionActivity, SessionStartupProgressEvent } from "../../shared/apiTypes.js";
+import { WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 
@@ -47,6 +51,7 @@ interface StartupServiceOptions {
   catalogRefreshInFlight?: boolean;
   sessionRecords?: ReturnType<typeof sessionRecord>[];
   workspaceActivity?: ReturnType<typeof recordingWorkspaceActivity>["workspaceActivity"];
+  workstreamLaunchStore?: WorkstreamLaunchStore;
 }
 
 function startupService(options: StartupServiceOptions = {}) {
@@ -59,6 +64,7 @@ function startupService(options: StartupServiceOptions = {}) {
     createAgentRuntime: options.createAgentRuntime ?? (() => Promise.resolve(fake.runtime)),
     sessionManager: sessionGateway(options.sessionRecords ?? []),
     heartbeatIntervalMs: 60_000,
+    ...(options.workstreamLaunchStore === undefined ? {} : { workstreamLaunchStore: options.workstreamLaunchStore }),
     ...(options.workspaceActivity === undefined ? {} : { workspaceActivity: options.workspaceActivity }),
     ...(options.catalogRefreshInFlight === undefined ? {} : {
       catalogRefreshStatus: { isRefreshInFlight: () => options.catalogRefreshInFlight === true },
@@ -178,6 +184,39 @@ describe("PiSessionService session startup progress", () => {
     // The token is an opaque throwaway label, never the session's identity.
     expect(startupEvents(hub).map((event) => event.activity.sessionId)).toEqual(["session-1", "session-1", "session-1"]);
     await service.dispose();
+  });
+
+  it("reserves Workstream launches before startup and reconciles exact persisted evidence without relaunch", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-web-launch-service-"));
+    const storePath = join(root, "launches");
+    const store = new WorkstreamLaunchStore(storePath);
+    const runtimeResult = deferred<PiSessionRuntime>();
+    const first = startupService({ workstreamLaunchStore: store, createAgentRuntime: () => runtimeResult.promise });
+    const created = first.service.start("/workspace", { startupToken: "pi-web:launch-one" });
+    try {
+      await vi.waitFor(async () => {
+        expect(await new WorkstreamLaunchStore(storePath).lookup("pi-web:launch-one")).toEqual({ token: "pi-web:launch-one", cwd: "/workspace", status: "pending" });
+      });
+      expect(await first.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({ status: "unknown" });
+      await expect(first.service.start("/workspace", { startupToken: "pi-web:launch-one" })).rejects.toThrow(/already reserved/);
+      runtimeResult.resolve(first.fake.runtime);
+      expect((await created).id).toBe("session-1");
+      expect(await first.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({ status: "found", sessionId: "session-1", cwd: "/workspace" });
+      expect(await first.service.lookupWorkstreamLaunch("pi-web:launch-one", "/other")).toEqual({ status: "unknown" });
+      await first.service.dispose();
+      const restored = startupService({ workstreamLaunchStore: new WorkstreamLaunchStore(storePath), sessionRecords: [sessionRecord("session-1")] });
+      const lost = startupService({ workstreamLaunchStore: new WorkstreamLaunchStore(storePath) });
+      try {
+        expect(await restored.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({ status: "found", sessionId: "session-1", cwd: "/workspace" });
+        expect(await lost.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({ status: "unknown" });
+        expect(await restored.service.lookupWorkstreamLaunch("pi-web:absent", "/workspace")).toEqual({ status: "unknown" });
+      } finally { await restored.service.dispose(); await lost.service.dispose(); }
+    } finally {
+      runtimeResult.resolve(first.fake.runtime);
+      await created.catch(() => undefined);
+      await first.service.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("publishes no correlation token when a create supplies none, and none for an open", async () => {

@@ -1,7 +1,8 @@
-import { LitElement, html } from "lit";
+import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import { currentExchangeGroups, groupChatMessages, type ChatGroup } from "../chatGroups";
+import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
+import { previewFromDetails } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
@@ -24,7 +25,7 @@ import {
   type SelectedSessionNotificationView,
   type SessionNotificationTarget,
 } from "../sessionNotifications";
-import type { ChatLine, ChatPart } from "./shared";
+import type { ChatLine, ChatPart, GoalLifecycleDetails } from "./shared";
 import { chatStyles, renderSessionWarningIcon } from "./shared";
 import "./AskUserCard";
 import "./ExtensionDialogCard";
@@ -38,6 +39,11 @@ import { renderBuiltinTabIcon } from "./tabIcons";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
 const messageTimeFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+const goalTransitionLabels: Record<GoalLifecycleDetails["transition"], string> = {
+  start: "Goal started", resume: "Goal resumed", pause: "Goal paused", wait: "Goal waiting",
+  block: "Goal blocked", usage_limit: "Goal usage limited", budget_limit: "Goal budget limited",
+  complete: "Goal completed", clear: "Goal cleared",
+};
 const notificationTimestampFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 
 function renderNotificationDisclosureIcon(collapsed: boolean) {
@@ -111,8 +117,9 @@ export function chatMessageAnchorKey(index: number): string {
 }
 
 /** The stable scroll-anchor/render key for an event group starting at `startIndex`. */
-export function chatGroupAnchorKey(startIndex: number): string {
-  return `g:${String(startIndex)}`;
+export function chatGroupAnchorKey(startIndex: number, presentation?: ChatGroupPresentation | "events", occurrence = 0): string {
+  const base = `g:${String(startIndex)}`;
+  return presentation === undefined ? base : `${base}:${presentation}:${String(occurrence)}`;
 }
 
 /** The stable scroll-anchor key for an event inside a group at `index`. */
@@ -121,8 +128,24 @@ export function chatEventAnchorKey(index: number): string {
 }
 
 /** The stable scroll-marker id emitted before an event group ending at `endIndex`. */
-export function chatGroupScrollMarkerId(endIndex: number): string {
-  return `g:${String(endIndex)}`;
+export function chatGroupScrollMarkerId(endIndex: number, presentation?: ChatGroupPresentation | "events", occurrence = 0): string {
+  const base = `g:${String(endIndex)}`;
+  return presentation === undefined ? base : `${base}:${presentation}:${String(occurrence)}`;
+}
+
+/** The unique render key and outer scroll anchor for a split transcript fragment. */
+export function chatFragmentAnchorKey(groups: ChatGroup[], index: number): string {
+  const group = groups[index];
+  if (group === undefined) throw new RangeError("Chat fragment index is out of bounds");
+  if (group.kind === "group") {
+    const preceding = groups.slice(0, index).filter((candidate) => candidate.kind === "group" && candidate.startIndex === group.startIndex);
+    if (preceding.length === 0) return chatGroupAnchorKey(group.startIndex);
+    const occurrence = preceding.filter((candidate) => candidate.kind === "group" && candidate.presentation === group.presentation).length;
+    return chatGroupAnchorKey(group.startIndex, group.presentation ?? "events", occurrence);
+  }
+  const occurrence = groups.slice(0, index).filter((candidate) => candidate.kind !== "group" && candidate.index === group.index).length;
+  const base = chatMessageAnchorKey(group.index);
+  return occurrence === 0 ? base : `${base}:${String(occurrence)}`;
 }
 
 /** Whether a queued-message section shows the server clear-queue action. */
@@ -215,8 +238,8 @@ export class ChatView extends LitElement {
   @property({ type: Boolean }) warningsVisible = true;
   @property({ attribute: false }) onToggleWarnings?: () => void;
   @property({ attribute: false }) onLoadMore?: () => void;
-  @query(".chat") private chat?: HTMLDivElement;
-  @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement;
+  @query(".chat") private chat?: HTMLDivElement | null;
+  @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement | null;
   @state() private pinnedToBottom = true;
   @state() private zoomedImage: { src: string; alt: string } | undefined = undefined;
   @state() private copiedMessageKey: string | undefined;
@@ -226,6 +249,7 @@ export class ChatView extends LitElement {
   private pendingNotificationFocus: PendingNotificationFocus | undefined;
   private imageZoomModalRegistration: RenderedModalRegistration | undefined;
   private readonly scrollController = new ChatScrollController();
+  private chatResizeObserver: ResizeObserver | undefined;
   private suppressScrollSave = false;
   private suppressLoadMoreRequests = false;
   private loadMoreCheckFrame: number | undefined;
@@ -249,6 +273,16 @@ export class ChatView extends LitElement {
   private readonly onViewportResize = () => {
     if (this.pinnedToBottom) this.scrollToBottom();
     else this.lastClientHeight = this.chat?.clientHeight ?? 0;
+  };
+  private readonly onChatResize = (): void => {
+    const chat = this.chat;
+    if (!(chat instanceof HTMLElement)) return;
+    if (this.pinnedToBottom) {
+      this.scrollToBottom();
+      return;
+    }
+    chat.scrollTop = this.lastScrollTop;
+    this.lastClientHeight = chat.clientHeight;
   };
   private readonly onImageLoad = (): void => {
     if (this.pinnedToBottom) this.scrollToBottom();
@@ -277,15 +311,27 @@ export class ChatView extends LitElement {
     window.addEventListener("resize", this.onViewportResize);
     window.addEventListener("pagehide", this.onPageHide);
     window.visualViewport?.addEventListener("resize", this.onViewportResize);
+    this.observeChatResize();
   }
 
   protected override firstUpdated(): void {
     this.lastClientHeight = this.chat?.clientHeight ?? 0;
+    this.observeChatResize();
+  }
+
+  private observeChatResize(): void {
+    const chat = this.chat;
+    if (this.chatResizeObserver !== undefined || !(chat instanceof Element) || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(this.onChatResize);
+    observer.observe(chat);
+    this.chatResizeObserver = observer;
   }
 
   override disconnectedCallback(): void {
     this.saveScrollPosition();
     this.scrollController.dispose();
+    this.chatResizeObserver?.disconnect();
+    this.chatResizeObserver = undefined;
     this.releaseImageZoomModal();
     this.prependRestoreToken += 1;
     if (this.restoreScrollFrame !== undefined) cancelAnimationFrame(this.restoreScrollFrame);
@@ -371,7 +417,7 @@ export class ChatView extends LitElement {
 
   private syncImageZoomDialog(): void {
     const dialog = this.imageZoomDialog;
-    if (dialog === undefined) return;
+    if (!(dialog instanceof HTMLDialogElement)) return;
     if (this.zoomedImage !== undefined) {
       if (this.imageZoomModalRegistration === undefined) {
         const registration = registerRenderedModal({
@@ -446,11 +492,21 @@ export class ChatView extends LitElement {
   private renderGroups(groups: ChatGroup[]) {
     return repeat(
       groups,
-      (group) => group.kind === "group" ? this.groupRenderKey(group.startIndex) : this.messageAnchorKey(group.index),
-      (group) => {
-        if (group.kind === "group") return this.renderMessageGroup(group.messages, group.startIndex, group.endIndex);
-        if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, group.toolName);
-        return this.renderMessage(group.message, group.index);
+      (_, index) => chatFragmentAnchorKey(groups, index),
+      (group, index) => {
+        const anchorId = chatFragmentAnchorKey(groups, index);
+        if (group.kind === "group") return this.renderMessageGroup(
+          group.messages,
+          group.startIndex,
+          anchorId,
+          this.groupScrollMarkerId(groups, index, group.endIndex, group.presentation),
+          group.presentation,
+          groups,
+          index,
+          group.messageIndices,
+        );
+        if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, anchorId, group.toolName);
+        return this.renderMessage(group.message, group.index, anchorId);
       },
     );
   }
@@ -841,25 +897,28 @@ export class ChatView extends LitElement {
     return Math.max(this.messageEnd, this.messageStart + this.messages.length);
   }
 
-  private renderMessage(message: ChatLine, index: number) {
+  private renderMessage(message: ChatLine, index: number, anchorId: string) {
     const toolOnly = this.isToolExecutionOnlyMessage(message);
     const askUserRecordOnly = this.isAskUserRecordOnlyMessage(message);
-    const shellClass = toolOnly ? "msg tool-execution-shell" : "msg ask-user-record-shell";
+    const goalLifecycleOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "goalLifecycle");
+    const skillReadOnly = this.isSkillReadOnlyMessage(message);
+    const headerless = toolOnly || askUserRecordOnly || skillReadOnly || goalLifecycleOnly;
+    const shellClass = toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : "msg skill-read-shell";
     return html`
-      ${this.renderScrollMarker(this.messageScrollMarkerId(index))}
-      <article class=${`${toolOnly || askUserRecordOnly ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${this.messageAnchorKey(index)}>
-        ${toolOnly || askUserRecordOnly ? null : this.renderMessageHeader(message, String(index))}
+      ${this.renderScrollMarker(anchorId)}
+      <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${anchorId}>
+        ${headerless ? null : this.renderMessageHeader(message, anchorId)}
         ${message.parts.map((part) => this.renderPart(part, message))}
       </article>
     `;
   }
 
-  private renderToolImageOutput(message: ChatLine, index: number, toolName?: string) {
+  private renderToolImageOutput(message: ChatLine, index: number, anchorId: string, toolName?: string) {
     const label = chatToolOutputLabel(toolName);
     return html`
-      ${this.renderScrollMarker(this.messageScrollMarkerId(index))}
-      <article class="msg tool-image-output" data-index=${index} data-scroll-anchor-id=${this.messageAnchorKey(index)}>
-        ${this.renderMessageHeader(message, String(index), label)}
+      ${this.renderScrollMarker(anchorId)}
+      <article class="msg tool-image-output" data-index=${index} data-scroll-anchor-id=${anchorId}>
+        ${this.renderMessageHeader(message, anchorId, label)}
         ${message.parts.map((part) => this.renderPart(part, message))}
       </article>
     `;
@@ -873,22 +932,84 @@ export class ChatView extends LitElement {
     return message.parts.length > 0 && message.parts.every((part) => part.type === "askUserRecord");
   }
 
-  private renderMessageGroup(messages: ChatLine[], startIndex: number, endIndex: number) {
-    return html`
-      ${this.renderScrollMarker(this.groupScrollMarkerId(endIndex))}
-      <div class="event-group" data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)}>
-        ${messages.map((message, offset) => {
-          const toolOnly = this.isToolExecutionOnlyMessage(message);
-          const classes = `${toolOnly ? "group-msg tool-execution-shell" : `group-msg ${message.role}`}${message.severity === "error" ? " error" : ""}`;
-          return html`
-            <article class=${classes} data-index=${startIndex + offset} data-scroll-anchor-id=${this.eventAnchorKey(startIndex + offset)}>
-              ${toolOnly ? null : this.renderMessageHeader(message, `${String(startIndex)}:${String(offset)}`)}
-              ${message.parts.map((part) => this.renderPart(part, message))}
-            </article>
-          `;
-        })}
-      </div>
+  private isSkillReadOnlyMessage(message: ChatLine): boolean {
+    return message.parts.length > 0 && message.parts.every((part) => part.type === "skillRead");
+  }
+
+  private renderMessageGroup(messages: ChatLine[], startIndex: number, anchorId: string, markerId: string, presentation: ChatGroupPresentation | undefined, groups: ChatGroup[], groupIndex: number, messageIndices?: number[]) {
+    const marker = this.renderScrollMarker(markerId);
+    if (presentation === "history") return html`
+      ${marker}
+      <details class="event-group history-summary-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId}>
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><strong>${summarizeChatGroup(messages)}</strong><span>Context compacted</span></summary>
+        <div class="group-body">${this.renderMessageGroupBody(messages, startIndex, groups, groupIndex)}</div>
+      </details>
     `;
+    if (presentation === "activity") return html`
+      ${marker}
+      <details class="event-group activity-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId}>
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><strong>Activity</strong><span>${this.activityStepCount(messages)} ${this.activityStepCount(messages) === 1 ? "step" : "steps"}</span></summary>
+        <div class="group-body">${this.renderMessageGroupBody(messages, startIndex, groups, groupIndex)}</div>
+      </details>
+    `;
+    if (presentation === "thinking") {
+      const segments: { kind: "thinking" | "skill" | "activity"; messages: ChatLine[]; offset: number }[] = [];
+      for (const [offset, message] of messages.entries()) {
+        const kind = message.parts.every((part) => part.type === "thinking") ? "thinking" : this.isSkillReadOnlyMessage(message) ? "skill" : "activity";
+        const previous = segments.at(-1);
+        if (previous?.kind === kind) previous.messages.push(message);
+        else segments.push({ kind, messages: [message], offset });
+      }
+      return html`
+        ${marker}
+        <details class="event-group thinking-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId} open>
+          <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><small>Thinking</small></summary>
+          ${segments.map((segment) => {
+            if (segment.kind === "thinking") {
+              const text = segment.messages.flatMap((message) => message.parts).filter((part): part is Extract<ChatPart, { type: "thinking" }> => part.type === "thinking").map((part) => part.text).join("\n\n");
+              return html`<formatted-text .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>`;
+            }
+            if (segment.kind === "skill") return this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset);
+            const steps = this.activityStepCount(segment.messages);
+            return html`<details class="activity-group">
+              <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><strong>Activity</strong><span>${steps} ${steps === 1 ? "step" : "steps"}</span></summary>
+              <div class="group-body">${this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset)}</div>
+            </details>`;
+          })}
+        </details>
+      `;
+    }
+    return html`${marker}<div class="event-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId}>${this.renderMessageGroupBody(messages, startIndex, groups, groupIndex)}</div>`;
+  }
+
+  private activityStepCount(messages: ChatLine[]): number {
+    const parts = messages.flatMap((message) => message.parts).filter((part) => part.type === "toolCall" || part.type === "toolExecution" || part.type === "toolResult");
+    const ids = new Set(parts.flatMap((part) => part.toolCallId === undefined ? [] : [part.toolCallId]));
+    const anonymousExecutions = parts.filter((part) => part.toolCallId === undefined && part.type === "toolExecution").length;
+    const anonymousNames = new Set(parts.filter((part) => part.toolCallId === undefined).map((part) => part.toolName));
+    const anonymousCallsAndResults = [...anonymousNames].reduce((count, toolName) => count + Math.max(
+      parts.filter((part) => part.toolCallId === undefined && part.toolName === toolName && part.type === "toolCall").length,
+      parts.filter((part) => part.toolCallId === undefined && part.toolName === toolName && part.type === "toolResult").length,
+    ), 0);
+    return ids.size + anonymousExecutions + anonymousCallsAndResults;
+  }
+
+  private renderMessageGroupBody(messages: ChatLine[], startIndex: number, groups: ChatGroup[], groupIndex: number, messageIndices?: number[], segmentOffset = 0) {
+    return messages.map((message, offset) => {
+      const toolOnly = this.isToolExecutionOnlyMessage(message);
+      const skillOnly = this.isSkillReadOnlyMessage(message);
+      const classes = `${toolOnly ? "group-msg tool-execution-shell" : skillOnly ? "group-msg skill-read-shell" : `group-msg ${message.role}`}${message.severity === "error" ? " error" : ""}`;
+      const index = messageIndices?.[segmentOffset + offset] ?? startIndex + offset;
+      const group = groups[groupIndex];
+      const withinGroup = messageIndices?.slice(0, segmentOffset + offset).filter((candidate, earlier) => candidate === index && group?.kind === "group" && group.messages[earlier]?.parts.some((part) => part.type !== "thinking") === true).length ?? 0;
+      const anchorId = this.eventAnchorKey(groups, groupIndex, index, withinGroup);
+      return html`
+        <article class=${classes} data-index=${index} data-scroll-anchor-id=${anchorId}>
+          ${toolOnly || skillOnly ? null : this.renderMessageHeader(message, anchorId)}
+          ${message.parts.map((part) => this.renderPart(part, message))}
+        </article>
+      `;
+    });
   }
 
   private renderScrollMarker(markerId: string) {
@@ -1001,11 +1122,15 @@ export class ChatView extends LitElement {
         <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.content}></formatted-text>
       </details>
     `;
-    if (part.type === "skillRead") return html`
-      <div class="part skill-read">
-        <strong>Loaded ${part.name}</strong>
-        <small>read ${part.path}</small>
-      </div>
+    if (part.type === "skillRead") return html`<div class="part skill-read">Skill: ${part.name}</div>`;
+    if (part.type === "goalLifecycle") return html`
+      <details class="part goal-lifecycle">
+        <summary>${goalTransitionLabels[part.details.transition]}</summary>
+        <div><strong>State:</strong> ${part.details.state}</div>
+        <div><strong>Goal ID:</strong> <code>${part.details.goalId}</code></div>
+        ${part.details.reason === undefined ? null : html`<div><strong>Reason:</strong> ${part.details.reason}</div>`}
+        ${part.details.summary === undefined ? null : html`<div><strong>Summary:</strong> ${part.details.summary}</div>`}
+      </details>
     `;
     if (part.type === "askUserRecord") return html`
       <ask-user-card
@@ -1025,12 +1150,23 @@ export class ChatView extends LitElement {
       </details>
     `;
     if (part.type === "toolExecution") return html`<tool-execution-view class="part" .execution=${part}></tool-execution-view>`;
-    if (part.type === "toolResult") return html`
-      <details class=${part.isError ? "part tool-result error" : "part tool-result"}>
-        <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
-        <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>
-      </details>
-    `;
+    if (part.type === "toolResult") {
+      const preview = previewFromDetails(part.details);
+      if ((typeof part.details === "object" && part.details !== null && typeof Reflect.get(part.details, "diff") === "string") || preview?.diff !== undefined) return html`
+        <tool-execution-view class="part" .orphan=${true} .execution=${{
+          type: "toolExecution", toolName: part.toolName, summary: "", status: part.isError ? "error" : "success",
+          resultText: part.text, details: part.details, preview,
+        }}></tool-execution-view>
+      `;
+      const previewError = preview?.error;
+      return html`
+        <details class=${part.isError ? "part tool-result error" : "part tool-result"} ?open=${previewError !== undefined && previewError !== ""}>
+          <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
+          <pre class="orphan-tool-result">${part.text}</pre>
+          ${previewError === undefined || previewError === "" ? null : html`<pre class="orphan-preview-error">Preview error: ${previewError}</pre>`}
+        </details>
+      `;
+    }
     return null;
   }
 
@@ -1074,7 +1210,7 @@ export class ChatView extends LitElement {
 
   private didChatHeightChange(): boolean {
     const chat = this.chat;
-    return chat !== undefined && this.lastClientHeight !== 0 && chat.clientHeight !== this.lastClientHeight;
+    return chat != null && this.lastClientHeight !== 0 && chat.clientHeight !== this.lastClientHeight;
   }
 
   private isPrependingMessages(changed: Map<string, unknown>): boolean {
@@ -1121,7 +1257,7 @@ export class ChatView extends LitElement {
 
   private canScrollUp(): boolean {
     const chat = this.chat;
-    return chat !== undefined && chat.scrollTop > 0;
+    return chat != null && chat.scrollTop > 0;
   }
 
   private scrollToBottom() {
@@ -1170,8 +1306,9 @@ export class ChatView extends LitElement {
 
   private alignOpenAskToTop(): boolean {
     const chat = this.chat;
+    if (chat == null) return false;
     const card = this.renderRoot.querySelector<HTMLElement>(".chat > ask-user-card");
-    if (chat === undefined || card === null) return false;
+    if (card === null) return false;
     chat.scrollTop += card.getBoundingClientRect().top - chat.getBoundingClientRect().top;
     this.syncScrollMetrics();
     this.pinnedToBottom = this.isNearBottom();
@@ -1192,8 +1329,9 @@ export class ChatView extends LitElement {
 
   private alignOpenDialogToTop(): boolean {
     const chat = this.chat;
+    if (chat == null) return false;
     const card = this.renderRoot.querySelector<HTMLElement>(".chat > extension-dialog-card.open-dialog-card");
-    if (chat === undefined || card === null) return false;
+    if (card === null) return false;
     chat.scrollTop += card.getBoundingClientRect().top - chat.getBoundingClientRect().top;
     this.syncScrollMetrics();
     this.pinnedToBottom = this.isNearBottom();
@@ -1209,7 +1347,8 @@ export class ChatView extends LitElement {
       this.withSuppressedScrollSave(() => {
         if (this.pendingAsk !== undefined && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenAskToTop()) return;
         if (this.pendingDialogs.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenDialogToTop()) return;
-        const result = this.scrollController.restorePosition(sessionId, this.chat, this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
+        const chat = this.chat;
+        const result = this.scrollController.restorePosition(sessionId, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
         this.handleScrollRestoreResult(sessionId, result);
       });
     });
@@ -1223,7 +1362,8 @@ export class ChatView extends LitElement {
       this.restoreScrollFrame = undefined;
       if (this.sessionId !== sessionId) return;
       this.withSuppressedScrollSave(() => {
-        const result = this.scrollController.restoreExplicitPosition(position, this.chat, this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
+        const chat = this.chat;
+        const result = this.scrollController.restoreExplicitPosition(position, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
         this.handleScrollRestoreResult(sessionId, result);
       });
     });
@@ -1243,7 +1383,7 @@ export class ChatView extends LitElement {
     this.pendingScrollRestoreSessionId = sessionId;
     this.pendingScrollRestorePosition = result.position;
     const chat = this.chat;
-    if (chat === undefined || !this.hasMore || this.loadingMore) return;
+    if (chat == null || !this.hasMore || this.loadingMore) return;
     chat.scrollTop = 0;
     this.syncScrollMetrics();
     this.requestLoadMore();
@@ -1263,7 +1403,7 @@ export class ChatView extends LitElement {
 
   private syncScrollMetrics(): void {
     const chat = this.chat;
-    if (chat === undefined) return;
+    if (chat == null) return;
     this.lastScrollTop = chat.scrollTop;
     this.lastClientHeight = chat.clientHeight;
   }
@@ -1280,7 +1420,7 @@ export class ChatView extends LitElement {
   }
 
   restorePrependScrollAnchor(anchor: PrependScrollAnchor | undefined): void {
-    if (!this.chat || !anchor) return;
+    if (this.chat == null || !anchor) return;
     this.suppressLoadMoreRequests = true;
     this.suppressScrollSave = true;
     const token = this.prependRestoreToken + 1;
@@ -1309,8 +1449,9 @@ export class ChatView extends LitElement {
   }
 
   saveScrollPosition(sessionId = this.sessionId) {
-    if (!sessionId) return;
-    this.scrollController.savePosition(sessionId, this.chat, this.scrollAnchorElements());
+    const chat = this.chat;
+    if (!sessionId || chat == null) return;
+    this.scrollController.savePosition(sessionId, chat, this.scrollAnchorElements());
   }
 
   private scheduleScrollPositionSave() {
@@ -1353,7 +1494,7 @@ export class ChatView extends LitElement {
 
   private firstVisibleArticle(): HTMLElement | undefined {
     const chat = this.chat;
-    if (chat === undefined) return undefined;
+    if (chat == null) return undefined;
     const primaryArticles = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("article.msg"));
     return findFirstVisibleArticle(chat, primaryArticles) ?? findFirstVisibleArticle(chat, this.articles());
   }
@@ -1376,29 +1517,33 @@ export class ChatView extends LitElement {
     });
   }
 
-  private messageAnchorKey(index: number): string {
-    return chatMessageAnchorKey(index);
+  private eventAnchorKey(groups: ChatGroup[], groupIndex: number, index: number, withinGroup = 0): string {
+    const occurrence = groups.slice(0, groupIndex).reduce((count, group) => group.kind === "group" && (group.presentation !== "thinking" || group.messageIndices !== undefined)
+      ? count + group.messages.filter((_, offset) => (group.messageIndices?.[offset] ?? group.startIndex + offset) === index && (group.presentation !== "thinking" || group.messages[offset]?.parts.every((part) => part.type !== "thinking") === true)).length
+      : count, withinGroup);
+    const base = chatEventAnchorKey(index);
+    return occurrence === 0 ? base : `${base}:${String(occurrence)}`;
   }
 
-  private groupRenderKey(startIndex: number): string {
-    return chatGroupAnchorKey(startIndex);
+  private groupScrollMarkerId(groups: ChatGroup[], index: number, endIndex: number, presentation?: ChatGroupPresentation): string {
+    const preceding = groups.slice(0, index).filter((group) => group.kind === "group" && group.endIndex === endIndex);
+    if (preceding.length === 0) return chatGroupScrollMarkerId(endIndex);
+    const occurrence = preceding.filter((group) => group.kind === "group" && group.presentation === presentation).length;
+    return chatGroupScrollMarkerId(endIndex, presentation ?? "events", occurrence);
   }
 
-  private groupAnchorKey(startIndex: number): string {
-    return chatGroupAnchorKey(startIndex);
-  }
-
-  private eventAnchorKey(index: number): string {
-    return chatEventAnchorKey(index);
-  }
-
-  private messageScrollMarkerId(index: number): string {
-    return chatMessageAnchorKey(index);
-  }
-
-  private groupScrollMarkerId(endIndex: number): string {
-    return chatGroupScrollMarkerId(endIndex);
-  }
-
-  static override styles = chatStyles;
+  static override styles = [chatStyles, css`
+    .history-summary-group { border: 1px solid var(--pi-border); border-left: 3px solid var(--pi-accent); border-radius: 8px; background: color-mix(in srgb, var(--pi-accent) 6%, var(--pi-surface)); }
+    .history-summary-group > summary { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 10px; color: var(--pi-muted); list-style: none; cursor: pointer; }
+    .history-summary-group > summary::-webkit-details-marker { display: none; }
+    .history-summary-group > summary strong { color: var(--pi-text); }
+    .history-summary-group > summary span:last-child { margin-left: auto; font-size: 11px; text-transform: uppercase; }
+    .history-summary-group > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .history-summary-group > .group-body { padding: 6px 10px 10px 31px; border-top: 1px solid var(--pi-border-muted); }
+    .msg.goal-lifecycle-shell { padding: 0 2px var(--pi-message-padding); }
+    .goal-lifecycle { border-left: 3px solid var(--pi-accent); padding: 6px 12px; color: var(--pi-text); background: var(--pi-surface); border-radius: 6px; }
+    .goal-lifecycle > summary { cursor: pointer; font-weight: 600; }
+    .goal-lifecycle > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .goal-lifecycle > div { margin-top: 6px; overflow-wrap: anywhere; }
+  `];
 }

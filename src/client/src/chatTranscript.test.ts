@@ -130,6 +130,23 @@ describe("applyTranscriptEvent", () => {
     expect(groupChatMessages(live).map((group) => group.kind)).toEqual(["group", "message"]);
   });
 
+  it("groups a finalized compaction identically live and after reload", () => {
+    const summary = `## Goal\n${"context\n".repeat(2_466)}tail`;
+    const rawCompaction = { role: "system", source: "compaction", content: `Compacted history:\n\n${summary}`, entryId: "compact-1" };
+    const hydrated = normalizeMessages([rawCompaction]);
+    const live = applyTranscriptEvent([], { type: "message.end", message: rawCompaction });
+
+    expect(live).toEqual(hydrated);
+    expect(groupChatMessages(live ?? [])).toEqual([{
+      kind: "group",
+      presentation: "history",
+      startIndex: 0,
+      endIndex: 0,
+      messages: hydrated,
+    }]);
+    expect(hydrated[0]?.parts).toEqual([{ type: "text", text: rawCompaction.content }]);
+  });
+
   it("replaces the streamed assistant message with the finalized history shape", () => {
     const streamed: ChatLine[] = [
       textMessage("user", "question"),
@@ -141,6 +158,26 @@ describe("applyTranscriptEvent", () => {
       {
         role: "assistant",
         parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "answer" }],
+        meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "test", id: "model" } },
+      },
+    ]);
+  });
+
+  it("keeps a live finalized entry id when replacing the streamed assistant message", () => {
+    const streamed: ChatLine[] = [
+      textMessage("user", "question"),
+      textMessage("assistant", "partial"),
+    ];
+
+    expect(applyTranscriptEvent(streamed, {
+      type: "message.end",
+      message: { ...finalAssistant, entryId: "assistant-entry" },
+    })).toEqual([
+      textMessage("user", "question"),
+      {
+        role: "assistant",
+        parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "answer" }],
+        entryId: "assistant-entry",
         meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "test", id: "model" } },
       },
     ]);
@@ -324,7 +361,7 @@ describe("applyTranscriptEvent", () => {
     };
     expect(messages).toEqual([finalizedToolLine, textMessage("assistant", "done")]);
     expect(groupChatMessages(messages)).toEqual([
-      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ ...finalizedToolLine, parts: [finalizedToolLine.parts[0]] }] },
+      { kind: "group", presentation: "activity", startIndex: 0, endIndex: 0, messages: [{ ...finalizedToolLine, parts: [finalizedToolLine.parts[0]] }] },
       { kind: "tool-image", index: 0, message: { ...finalizedToolLine, parts: [finalImage] }, toolName: "read" },
       { kind: "message", index: 1, message: textMessage("assistant", "done") },
     ]);
@@ -448,6 +485,52 @@ describe("applyTranscriptEvent", () => {
     expect(visibleImages(liveGroups)).toEqual(visibleImages(historyGroups));
     expect(visibleImageMeta(historyGroups)).toEqual({ timestamp });
     expect(visibleImageMeta(liveGroups)).toEqual({ timestamp });
+  });
+
+  it("folds a matching SKILL.md read result in live and history without losing thinking order", () => {
+    const call = { type: "toolCall", id: "skill-1", name: "read", arguments: { path: "/skills/testing-guide/SKILL.md" } };
+    const result = { role: "toolResult", toolCallId: "skill-1", toolName: "read", content: [{ type: "text", text: "long skill body" }], isError: false };
+    const next = { role: "assistant", content: [{ type: "thinking", thinking: "after" }, { type: "text", text: "answer" }] };
+    const history = normalizeMessages([
+      { role: "assistant", content: [{ type: "thinking", thinking: "before" }, call] }, result, next,
+    ]);
+    let live: ChatLine[] = [];
+    const apply = (event: Parameters<typeof applyTranscriptEvent>[1]) => { live = applyTranscriptEvent(live, event) ?? live; };
+    apply({ type: "assistant.thinking.delta", text: "before" });
+    apply({ type: "tool.start", toolCallId: "skill-1", toolName: "read", summary: "", args: call.arguments });
+    apply({ type: "tool.end", toolCallId: "skill-1", toolName: "read", text: "long skill body", content: result.content, isError: false });
+    apply({ type: "message.end", message: result });
+    apply({ type: "message.end", message: { role: "assistant", content: [{ type: "thinking", thinking: "before" }, call] } });
+    apply({ type: "assistant.thinking.delta", text: "after" });
+    apply({ type: "assistant.delta", text: "answer" });
+    apply({ type: "message.end", message: next });
+
+    const skill = { type: "skillRead", toolCallId: "skill-1", name: "testing-guide", path: "/skills/testing-guide/SKILL.md" };
+    expect(live).toEqual(history);
+    expect(live).toEqual([
+      { role: "assistant", parts: [{ type: "thinking", text: "before" }, skill] },
+      { role: "assistant", parts: [{ type: "thinking", text: "after" }, { type: "text", text: "answer" }] },
+    ]);
+    expect(groupChatMessages(live).map((group) => group.kind === "group" ? group.presentation : group.message.parts[0]?.type)).toEqual(["thinking", "text"]);
+  });
+
+  it("does not drop unmatched, errored, or image-bearing skill read results", () => {
+    const skill = { role: "assistant", content: [{ type: "toolCall", id: "skill-1", name: "read", arguments: { path: "/skills/testing-guide/SKILL.md" } }] };
+    const results = [
+      { role: "toolResult", toolCallId: "other", toolName: "read", content: [{ type: "text", text: "other" }], isError: false },
+      { role: "toolResult", toolCallId: "skill-1", toolName: "read", content: [{ type: "text", text: "failed" }], isError: true },
+      { role: "toolResult", toolCallId: "skill-1", toolName: "read", content: [{ type: "image", mimeType: "image/png", data: "QUJD" }], isError: false },
+      { role: "toolResult", toolCallId: "skill-1", toolName: "read", content: [{ type: "text", text: "changed" }], details: { diff: "+changed" }, isError: false },
+    ];
+    for (const result of results) {
+      const history = normalizeMessages([skill, result]);
+      let live: ChatLine[] = [];
+      live = applyTranscriptEvent(live, { type: "tool.start", toolCallId: "skill-1", toolName: "read", summary: "", args: { path: "/skills/testing-guide/SKILL.md" } }) ?? live;
+      live = applyTranscriptEvent(live, { type: "message.end", message: result }) ?? live;
+      expect(history).toHaveLength(2);
+      expect(live).toHaveLength(2);
+      if (result.content[0]?.type === "image") expect(groupChatMessages(live).some((group) => group.kind === "tool-image")).toBe(true);
+    }
   });
 
   it("does not merge consecutive streamed skill reads", () => {

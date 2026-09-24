@@ -13,8 +13,8 @@ import {
 } from "./promptEnterBehavior";
 
 describe("promptEnterBehavior", () => {
-  it("uses the expected mobile media query", () => {
-    expect(MOBILE_PROMPT_ENTER_MEDIA_QUERY).toBe("(pointer: coarse), (max-width: 760px)");
+  it("uses coarse-pointer capability without changing semantics at narrow widths", () => {
+    expect(MOBILE_PROMPT_ENTER_MEDIA_QUERY).toBe("(pointer: coarse)");
   });
 
   it("uses the environment default when the preference is auto", () => {

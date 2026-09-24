@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -45,6 +45,18 @@ describe("project PI WEB config", () => {
       exists: true,
       config: { version: 1, attachments: { defaultFolder: "agent/dropped" } },
     });
+  });
+
+  it("rejects linked and oversized project config files before reading them", async () => {
+    const path = join(projectPath, PROJECT_PI_WEB_CONFIG_PATH);
+    await mkdir(dirname(path), { recursive: true });
+    const external = join(tempDir, "external.json");
+    await writeFile(external, "{}\n");
+    await symlink(external, path);
+    await expect(loadProjectPiWebConfig(projectPath)).rejects.toThrow();
+    await rm(path);
+    await writeFile(path, " ".repeat(64 * 1024 + 1));
+    await expect(loadProjectPiWebConfig(projectPath)).rejects.toThrow("Project config exceeds 64 KiB");
   });
 
   it("rejects unsupported project config versions", async () => {

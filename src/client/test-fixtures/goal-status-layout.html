@@ -1,0 +1,175 @@
+<!--
+  Real-component geometry fixture: run from the repository root with
+  `npx vite --host 127.0.0.1 --port 4175`, then open
+  http://127.0.0.1:4175/test-fixtures/goal-status-layout.html.
+  Loading this fixture through file:// is not supported.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Goal status real-component geometry</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      zoom: var(--pi-interface-scale, 1);
+      --pi-interface-scale: 1;
+      --pi-bg: #0d1117;
+      --pi-surface: #151b23;
+      --pi-surface-hover: #212830;
+      --pi-border: #5e6876;
+      --pi-border-muted: #3d444d;
+      --pi-text: #f0f6fc;
+      --pi-muted: #9198a1;
+      --pi-accent: #4493f8;
+      --pi-success: #3fb950;
+      --pi-purple: #ab7df8;
+      --pi-shadow: #01040999;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--pi-bg); color: var(--pi-text); font: 14px system-ui, sans-serif; }
+    .chat-shell { --pi-workbench-viewport-height: calc(100dvh / var(--pi-interface-scale, 1)); position: fixed; inset: 0 auto auto 0; width: calc(100dvw / var(--pi-interface-scale, 1)); height: var(--pi-workbench-viewport-height); display: flex; flex-direction: column; overflow: hidden; padding-top: var(--fixture-safe-area-top, 0px); background: var(--pi-bg); }
+    header { position: relative; z-index: 6; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
+    .back, .header-action { flex: 0 0 auto; width: 32px; height: 32px; }
+    .identity { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-error { position: relative; z-index: 6; flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); background: var(--pi-bg); color: #ff7b72; }
+    .transcript { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px; }
+    .roster { flex: 0 0 auto; min-height: 32px; padding: 5px 12px 3px; border-top: 1px solid var(--pi-border-muted); background: var(--pi-surface); color: var(--pi-muted); }
+    .prompt { position: relative; z-index: 5; flex: 0 0 var(--fixture-composer-height, 64px); height: var(--fixture-composer-height, 64px); min-height: 64px; border-top: 1px solid var(--pi-border); padding: 24px 12px 12px; background: var(--pi-surface); }
+    .prompt[data-composer="manual"] { --fixture-composer-height: min(180px, max(96px, calc(var(--pi-workbench-viewport-height) / 2 - 24px))); }
+    .editor-resize-handle { position: absolute; z-index: 4; top: 0; right: 0; left: 0; height: 20px; cursor: ns-resize; touch-action: none; }
+    .editor-resize-handle::after { position: absolute; top: 9px; left: 50%; width: 42px; height: 2px; border-radius: 999px; background: var(--pi-border); content: ""; transform: translateX(-50%); }
+    .prompt[data-pointer="coarse"] { min-height: 88px; padding-top: 48px; }
+    .prompt[data-pointer="coarse"] .editor-resize-handle { height: 44px; }
+    .prompt[data-pointer="coarse"] .editor-resize-handle::after { top: 21px; }
+  </style>
+</head>
+<body>
+  <main class="chat-shell">
+    <header>
+      <button class="back" aria-label="Back">←</button>
+      <strong class="identity">Canonical Workstream and session identity that must retain the available header width</strong>
+      <button class="header-action" aria-label="Session tree">⎇</button>
+      <button class="header-action" aria-label="Settings">⚙</button>
+    </header>
+    <div class="chat-error" role="alert" hidden>Workbench connection error chrome remains visible above the Goal sheet.</div>
+    <section class="transcript">Transcript</section>
+    <div class="roster">Workers and Subagents</div>
+    <goal-status-chip></goal-status-chip>
+    <footer class="prompt" data-pointer="fine" data-composer="minimum">
+      <div class="editor-resize-handle" role="separator" aria-label="Resize message editor"></div>
+      Message Pi
+    </footer>
+  </main>
+  <script type="module">
+    import "../src/components/GoalStatusChip.ts";
+
+    const root = document.documentElement;
+    const shell = document.querySelector(".chat-shell");
+    const header = document.querySelector("header");
+    const error = document.querySelector(".chat-error");
+    const goal = document.querySelector("goal-status-chip");
+    const prompt = document.querySelector(".prompt");
+    const objective = "Keep every line of this deliberately long objective reachable while the Goal sheet stays below safe-area, header, and error chrome across compact phone heights and manually resized composer variants without hiding the status or identifier.";
+    goal.status = {
+      sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false,
+      pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+      extensionStatuses: { goal: JSON.stringify({ schemaVersion: 1, goalId: "goal-1234567890-full-identifier-with-scroll-reachability", state: "blocked", objective, additiveFutureField: true }) },
+    };
+    await goal.updateComplete;
+
+    const rect = (element) => {
+      const value = element.getBoundingClientRect();
+      return { top: value.top, right: value.right, bottom: value.bottom, left: value.left, width: value.width, height: value.height };
+    };
+    const frame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const disclosure = () => goal.shadowRoot.querySelector("details");
+    const summary = () => goal.shadowRoot.querySelector("summary");
+    const sheet = () => goal.shadowRoot.querySelector(".sheet");
+    const topBoundary = () => error.hidden ? header : error;
+
+    const measure = () => {
+      const details = disclosure();
+      const panel = sheet();
+      const panelRect = rect(panel);
+      const summaryRect = rect(summary());
+      const boundaryRect = rect(topBoundary());
+      const previousScrollTop = panel.scrollTop;
+      panel.scrollTop = panel.scrollHeight;
+      const scrollReachable = panel.scrollHeight <= panel.clientHeight + 1 || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 1;
+      const reachedScrollTop = panel.scrollTop;
+      panel.scrollTop = previousScrollTop;
+      const scale = Number(root.style.getPropertyValue("--pi-interface-scale")) || 1;
+      const expectedMaximumHeight = Math.max(0, Math.floor((summaryRect.top - boundaryRect.bottom) / scale));
+      return {
+        viewport: { width: innerWidth, height: innerHeight, scale },
+        shell: rect(shell),
+        header: rect(header),
+        error: error.hidden ? null : rect(error),
+        boundary: boundaryRect,
+        goal: rect(goal),
+        summary: summaryRect,
+        sheet: panelRect,
+        sheetTopClear: panelRect.top + 1 >= boundaryRect.bottom,
+        sheetAttached: details.open && panelRect.height > 0 && Math.abs(panelRect.bottom - summaryRect.top) <= 1,
+        maximumHeight: getComputedStyle(panel).maxHeight,
+        expectedMaximumHeight,
+        scroll: { clientHeight: panel.clientHeight, scrollHeight: panel.scrollHeight, reachedScrollTop, reachable: scrollReachable },
+        prompt: rect(prompt),
+        pointer: prompt.dataset.pointer,
+        composer: prompt.dataset.composer,
+        safeAreaTop: shell.style.getPropertyValue("--fixture-safe-area-top"),
+        open: details.open,
+        objectiveText: goal.shadowRoot.querySelector(".objective").textContent,
+        shortIdDisplay: getComputedStyle(goal.shadowRoot.querySelector(".short-id")).display,
+        identityDisplay: getComputedStyle(goal.shadowRoot.querySelector(".identity")).display,
+      };
+    };
+
+    const open = async () => {
+      if (!disclosure().open) summary().click();
+      await frame();
+    };
+    const close = async () => {
+      if (disclosure().open) summary().click();
+      await frame();
+    };
+    const assertGeometry = () => {
+      const measured = measure();
+      if (!measured.sheetTopClear || !measured.sheetAttached || !measured.scroll.reachable || measured.maximumHeight !== `${measured.expectedMaximumHeight}px`) {
+        throw new Error(`Goal sheet geometry failed: ${JSON.stringify(measured)}`);
+      }
+      return measured;
+    };
+
+    window.goalStatusFixture = {
+      measure,
+      async configure({ scale = 1, pointer = "fine", composer = "minimum", safeArea = false, errorChrome = false } = {}) {
+        await close();
+        root.style.setProperty("--pi-interface-scale", String(scale));
+        shell.style.setProperty("--fixture-safe-area-top", safeArea ? "12px" : "0px");
+        prompt.dataset.pointer = pointer;
+        prompt.dataset.composer = composer;
+        error.hidden = !errorChrome;
+        await frame();
+        await open();
+        return assertGeometry();
+      },
+      async resizeComposer(composer) {
+        const before = measure();
+        prompt.dataset.composer = composer;
+        await frame();
+        return { before, after: assertGeometry() };
+      },
+      async toggleDetails() {
+        summary().click();
+        await frame();
+        return measure();
+      },
+      focusSummary() { summary().focus(); },
+      assertGeometry,
+    };
+  </script>
+</body>
+</html>

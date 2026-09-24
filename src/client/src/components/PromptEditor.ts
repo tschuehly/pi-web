@@ -7,22 +7,41 @@ import { LitElement, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type FileSuggestion, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
-import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery } from "../promptAttachmentCapture";
+import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE } from "../promptAttachmentCapture";
+import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
+import { WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
-import { clearStagedAttachments, loadStagedAttachments, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
+import { clearStagedAttachments, emptyStagedAttachmentDraft, loadStagedAttachmentDraft, resolveStagedAttachmentKey, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
-import { composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
+import { composerKeyboardSubmissionEnabled, composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge } from "./promptEditorIcons";
 import "./WorkingModeControls";
 import { thinkingGauge, thinkingLevelLabel } from "../../../shared/thinkingLevels";
+import { formatCost, formatTokenCount } from "../utils/format";
+import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import "./AutocompleteMenu";
+
+export const PROMPT_EDITOR_MIN_HEIGHT = 54;
+export const PROMPT_EDITOR_MAX_HEIGHT = 640;
+const EDITOR_RESIZE_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End", "Enter"]);
+
+export function promptEditorMaximumHeight(viewportHeight: number, interfaceScale: number, nonEditorChromeHeight = 0): number {
+  const scale = Number.isFinite(interfaceScale) && interfaceScale > 0 ? interfaceScale : 1;
+  const composerHeight = viewportHeight / scale / 2;
+  return Math.max(PROMPT_EDITOR_MIN_HEIGHT, Math.min(PROMPT_EDITOR_MAX_HEIGHT, composerHeight - Math.max(0, nonEditorChromeHeight)));
+}
+
+export function promptEditorDragHeight(startHeight: number, startY: number, currentY: number, interfaceScale: number, maximumHeight: number): number {
+  const scale = Number.isFinite(interfaceScale) && interfaceScale > 0 ? interfaceScale : 1;
+  return clampNumber(startHeight + ((startY - currentY) / scale), PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
+}
 
 @customElement("prompt-editor")
 export class PromptEditor extends LitElement {
@@ -43,13 +62,17 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean }) isCompacting = false;
   @property({ type: Boolean }) canStop = false;
   @property({ attribute: false }) status?: SessionStatus;
+  @property({ type: Boolean, reflect: true, attribute: "show-usage" }) showUsage = false;
+  @property({ type: Number }) warningCount = 0;
   @property({ type: Boolean }) sending = false;
-  @property({ attribute: false }) onSend?: (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string) => void | Promise<void>;
+  @property({ attribute: false }) onSend?: (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string) => unknown;
   @property({ attribute: false }) onStop?: () => void;
   @property({ attribute: false }) onSelectModel?: () => void;
   @property({ attribute: false }) onSelectThinking?: () => void;
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
   @property({ attribute: false }) availableThinkingLevels: readonly string[] = [];
+  @query("footer") private footer?: HTMLElement;
+  @query(".editor-resize-handle") private editorResizeHandle?: HTMLElement;
   @query(".markdown-editor") private editorHost?: HTMLDivElement;
   @query(".attachment-input") private attachmentInput?: HTMLInputElement;
   // `draft` is the live document text but is intentionally NOT reactive: it
@@ -66,12 +89,26 @@ export class PromptEditor extends LitElement {
   @state() private attachmentDelivery: PromptAttachmentDelivery = loadAttachmentDelivery();
   @state() private attachmentError: string | undefined = undefined;
   private attachmentSeq = 0;
+  private nextImageReference = 1;
+  private pendingImageReferences: readonly string[] = [];
+  private draftGeneration = 0;
+  private knownCommandNames = new Set<string>();
+  private commandCatalogRequest: Promise<SlashCommand[]> | undefined;
   private requestVersion = 0;
+  private completionResultVersion = 0;
+  private completionResultTrigger: string | undefined;
   private editor: EditorView | undefined;
   private readonly editableCompartment = new Compartment();
   private readonly readOnlyCompartment = new Compartment();
   private readonly mobilePromptEnterMedia = createMobilePromptEnterMedia();
   private explicitShiftKeyActive = false;
+  // Manual size belongs only to this mounted Chat composer: sends and in-place
+  // session changes preserve it; disconnect/remount and page reload reset it.
+  private manualEditorHeight: number | undefined;
+  private editorHeightObserver: ResizeObserver | undefined;
+  private resizePointer: { id: number; startY: number; startHeight: number; scale: number; restoreEditorFocus: boolean } | undefined;
+  private lastTouchTapAt: number | undefined;
+  private readonly onResizeViewport = (): void => { this.reconcileEditorHeight(); };
 
   protected override willUpdate(changed: PropertyValues<this>) {
     if (!changed.has("sessionId") && !changed.has("machineId")) return;
@@ -80,12 +117,21 @@ export class PromptEditor extends LitElement {
     const previousKey = draftStorageKey(previousMachineId, previousSessionId);
     if (previousKey !== undefined) {
       saveDraft(previousKey, this.draft);
-      saveStagedAttachments(previousKey, this.attachments);
+      saveStagedAttachments(previousKey, this.stagedAttachmentDraft());
     }
     const currentKey = draftStorageKey(this.machineId, this.sessionId);
-    this.draft = currentKey !== undefined ? loadDraft(currentKey) : "";
-    this.attachments = currentKey !== undefined ? loadStagedAttachments(currentKey) : [];
+    const staged = currentKey !== undefined ? loadStagedAttachmentDraft(currentKey) : emptyStagedAttachmentDraft();
+    this.attachments = staged.attachments;
+    this.attachmentSeq = Math.max(this.attachmentSeq, ...staged.attachments.map((attachment) => attachmentIdSequence(attachment.id)));
+    this.nextImageReference = staged.nextImageReference;
+    this.pendingImageReferences = staged.pendingImageReferences;
+    this.draftGeneration = staged.generation;
+    this.draft = sanitizeDraftImageReferences(currentKey !== undefined ? loadDraft(currentKey) : "", this.attachments, this.pendingImageReferences);
+    if (currentKey !== undefined) saveDraft(currentKey, this.draft);
     this.attachmentError = undefined;
+    this.knownCommandNames.clear();
+    this.commandCatalogRequest = undefined;
+    this.requestVersion += 1;
     this.currentInputMode = inputModeForDraft(this.draft);
     this.completions = [];
     this.selectedIndex = 0;
@@ -97,9 +143,16 @@ export class PromptEditor extends LitElement {
     // status field the template actually displays differs, so streaming does not
     // disturb the editor DOM (and any in-progress touch gesture survives).
     if (changed.has("status") && changed.size === 1) {
-      return !sessionStatusRenderEqual(changed.get("status"), this.status);
+      return !sessionStatusRenderEqual(changed.get("status"), this.status, this.showUsage);
     }
     return true;
+  }
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    window.addEventListener("resize", this.onResizeViewport);
+    window.visualViewport?.addEventListener("resize", this.onResizeViewport);
+    void this.updateComplete.then(() => { if (this.isConnected) this.createEditor(); });
   }
 
   override firstUpdated(): void {
@@ -112,8 +165,15 @@ export class PromptEditor extends LitElement {
   }
 
   override disconnectedCallback(): void {
+    window.removeEventListener("resize", this.onResizeViewport);
+    window.visualViewport?.removeEventListener("resize", this.onResizeViewport);
+    this.editorHeightObserver?.disconnect();
+    this.editorHeightObserver = undefined;
     this.editor?.destroy();
     this.editor = undefined;
+    this.manualEditorHeight = undefined;
+    this.resizePointer = undefined;
+    this.lastTouchTapAt = undefined;
     super.disconnectedCallback();
   }
 
@@ -123,23 +183,47 @@ export class PromptEditor extends LitElement {
     const steersInput = this.canSteer && !this.isCompacting;
     const queuesInput = this.canSteer || this.isCompacting;
     const busy = this.disabled || this.sending;
+    const maximumHeight = this.maximumEditorHeight();
+    const currentHeight = this.currentEditorHeight(maximumHeight);
+    const editorHeightStyle = `--prompt-editor-maximum-height: ${String(maximumHeight)}px${this.manualEditorHeight === undefined ? "" : `; --prompt-editor-manual-height: ${String(this.manualEditorHeight)}px`}`;
     return html`
       <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => { void this.handlePaste(event); }} @dragover=${(event: DragEvent) => { this.handleDragOver(event); }} @drop=${(event: DragEvent) => { void this.handleDrop(event); }}>
+        <div
+          class="editor-resize-handle"
+          role="separator"
+          aria-label="Resize message editor temporarily; Enter resets automatic height"
+          aria-orientation="horizontal"
+          aria-valuemin=${String(PROMPT_EDITOR_MIN_HEIGHT)}
+          aria-valuemax=${String(Math.round(maximumHeight))}
+          aria-valuenow=${String(Math.round(currentHeight))}
+          aria-valuetext=${`${String(Math.round(currentHeight))} pixels, ${this.manualEditorHeight === undefined ? "automatic" : "manual"} height`}
+          title="Temporary size lasts until Chat closes or reloads. Drag or use arrows; Enter resets."
+          tabindex="0"
+          @pointerdown=${(event: PointerEvent) => { this.startEditorResize(event); }}
+          @pointermove=${(event: PointerEvent) => { this.moveEditorResize(event); }}
+          @pointerup=${(event: PointerEvent) => { this.finishEditorResize(event); }}
+          @pointercancel=${(event: PointerEvent) => { this.cancelEditorResize(event); }}
+          @dblclick=${() => { this.resetEditorHeight(); }}
+          @keydown=${(event: KeyboardEvent) => { this.handleEditorResizeKey(event); }}
+        ></div>
         <div class="editor-wrap">
-          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}`} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
+          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${editorHeightStyle} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
           <button class="editor-attach icon-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
           ${this.renderAttachments()}
-          <autocomplete-menu .items=${this.completions} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
+          <autocomplete-menu .items=${this.currentCompletions()} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
         </div>
         <div class="actions">
           ${this.renderCompactStatus()}
+          ${this.showUsage ? this.renderUsage() : null}
           <working-mode-controls compact .status=${this.status} .onRunCommand=${this.onRunCommand}></working-mode-controls>
-          <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
-          ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
-          <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
+          <div class="composer-actions">
+            <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
+            ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
+            <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
+          </div>
         </div>
       </footer>
     `;
@@ -193,6 +277,35 @@ export class PromptEditor extends LitElement {
     `;
   }
 
+  private renderUsage() {
+    const status = this.status;
+    if (status === undefined) return null;
+    const context = status.contextUsage;
+    const exactContextPercent = context?.percent === null || context?.percent === undefined ? undefined : String(context.percent);
+    const visibleContextPercent = context?.percent?.toFixed(1);
+    const contextText = context === undefined
+      ? "Context unknown"
+      : visibleContextPercent === undefined
+        ? context.tokens === null ? `Context window ${formatTokenCount(context.contextWindow)}` : `Context ${formatTokenCount(context.tokens)}/${formatTokenCount(context.contextWindow)}`
+        : `Context ${visibleContextPercent}%`;
+    const contextLabel = context === undefined
+      ? "Context usage unavailable"
+      : context.tokens === null
+        ? `Context used tokens unavailable; window: ${String(context.contextWindow)} tokens`
+        : `Context: ${String(context.tokens)} of ${String(context.contextWindow)} tokens used${exactContextPercent === undefined ? "" : ` (${exactContextPercent}%)`}`;
+    const metric = (name: string, visible: string, exact: string) => html`<li data-usage=${name} title=${exact}><span aria-hidden="true">${visible}</span><span class="visually-hidden">${exact}</span></li>`;
+    return html`
+      <ul class="usage" aria-label="Session usage">
+        ${metric("input", `Input ${formatTokenCount(status.tokens.input)}`, `Input tokens: ${String(status.tokens.input)}`)}
+        ${metric("output", `Output ${formatTokenCount(status.tokens.output)}`, `Output tokens: ${String(status.tokens.output)}`)}
+        ${metric("context", contextText, contextLabel)}
+        ${metric("cost", `Cost ${formatCost(status.cost)}`, `Session cost: $${String(status.cost)}`)}
+        ${this.warningCount > 0 ? metric("warnings", `Warnings ${String(this.warningCount)}`, `Session warnings: ${String(this.warningCount)}`) : null}
+        ${status.pendingMessageCount > 0 ? metric("queued", `Queued ${String(status.pendingMessageCount)}`, `Queued messages: ${String(status.pendingMessageCount)}`) : null}
+      </ul>
+    `;
+  }
+
   private renderAttachments() {
     if (this.attachments.length === 0 && this.attachmentError === undefined) return null;
     const canUseInlineDelivery = promptAttachmentsCanUseInlineDelivery(this.attachments);
@@ -200,9 +313,9 @@ export class PromptEditor extends LitElement {
     return html`
       <div class="attachments" aria-label="Pending attachments">
         ${this.attachments.map((attachment) => html`
-          <div class=${`attachment-chip ${isInlinePromptAttachment(attachment) ? "attachment-chip-image" : "attachment-chip-file"}`} title=${attachment.name}>
+          <div class=${`attachment-chip ${isInlinePromptAttachment(attachment) ? "attachment-chip-image" : "attachment-chip-file"}`} title=${attachment.kind === "image" ? `${attachment.reference} ${attachment.name}` : attachment.name}>
             ${this.renderAttachmentPreview(attachment)}
-            <button type="button" class="attachment-remove" title="Remove attachment" aria-label=${`Remove ${attachment.name}`} @click=${() => { this.removeAttachment(attachment.id); }}>×</button>
+            <button type="button" class="attachment-remove" title=${attachment.kind === "image" ? `Remove ${attachment.reference} image` : "Remove attachment"} aria-label=${attachment.kind === "image" ? `Remove ${attachment.reference} image ${attachment.name}` : `Remove ${attachment.name}`} @click=${() => { this.removeAttachment(attachment.id); }}>×</button>
           </div>
         `)}
         ${this.attachments.length > 0 ? html`
@@ -219,8 +332,8 @@ export class PromptEditor extends LitElement {
   }
 
   private renderAttachmentPreview(attachment: PendingAttachment) {
-    if (isInlinePromptAttachment(attachment)) {
-      return html`<img src=${`data:${attachment.mimeType};base64,${attachment.data}`} alt=${attachment.name} />`;
+    if (attachment.kind === "image" && isInlinePromptAttachment(attachment)) {
+      return html`<img src=${`data:${attachment.mimeType};base64,${attachment.data}`} alt=${`${attachment.reference} image ${attachment.name}`} /><span class="attachment-image-reference">${attachment.reference}</span>`;
     }
     return html`
       <div class="attachment-file-preview" aria-hidden="true">${fileExtensionLabel(attachment.name)}</div>
@@ -240,14 +353,17 @@ export class PromptEditor extends LitElement {
   }
 
   private removeAttachment(id: string) {
+    const removed = this.attachments.find((attachment) => attachment.id === id);
     this.attachments = this.attachments.filter((attachment) => attachment.id !== id);
+    if (removed?.kind === "image") this.removeImageReferenceTokens(removed.reference);
+    this.saveCurrentStaging();
   }
 
   private async handlePaste(event: ClipboardEvent) {
     const files = filesFromDataTransfer(event.clipboardData);
     if (files.length === 0) return;
     event.preventDefault();
-    await this.addAttachmentFiles(files);
+    await this.addAttachmentFiles(files, this.editor?.state.selection.main.head ?? this.draft.length);
   }
 
   private handleDragOver(event: DragEvent) {
@@ -259,23 +375,111 @@ export class PromptEditor extends LitElement {
     const files = filesFromDataTransfer(event.dataTransfer);
     if (files.length === 0) return;
     event.preventDefault();
-    await this.addAttachmentFiles(files);
+    const position = this.editor?.posAtCoords({ x: event.clientX, y: event.clientY }) ?? this.editor?.state.selection.main.head ?? this.draft.length;
+    await this.addAttachmentFiles(files, position);
   }
 
   private async handleFileInput(event: Event) {
     if (!(event.target instanceof HTMLInputElement) || event.target.files === null) return;
     const files = Array.from(event.target.files);
     event.target.value = "";
-    await this.addAttachmentFiles(files);
+    await this.addAttachmentFiles(files, this.editor?.state.selection.main.head ?? this.draft.length);
   }
 
-  private async addAttachmentFiles(files: File[]) {
-    this.attachmentError = undefined;
-    const { attachments, error } = await capturePromptAttachments(files, readFileAsBase64);
-    if (attachments.length > 0) {
-      this.attachments = [...this.attachments, ...attachments.map((attachment) => ({ id: `attachment-${String(++this.attachmentSeq)}`, ...attachment }))];
+  private async addAttachmentFiles(files: File[], position: number) {
+    if (this.pendingImageReferences.length === 0) this.attachmentError = undefined;
+    const sourceKey = draftStorageKey(this.machineId, this.sessionId);
+    const generation = this.draftGeneration;
+    const draftAtInvocation = this.draft;
+    const reserved = files.map((file) => ({
+      file,
+      id: `attachment-${String(++this.attachmentSeq)}`,
+      ...(isSupportedImageFile(file) ? { reference: `[PIC_${String(this.nextImageReference++)}]` } : {}),
+    }));
+    const references = reserved.flatMap((entry) => entry.reference === undefined ? [] : [entry.reference]);
+    this.pendingImageReferences = [...this.pendingImageReferences, ...references];
+    this.saveCurrentStaging();
+    const capturedPromise = Promise.all(reserved.map(async (entry) => ({ entry, result: await capturePromptAttachments([entry.file], readFileAsBase64) })));
+    // Known leading commands/templates/skills must stay byte-compatible for Pi
+    // expansion. Unknown slash-leading prose (for example /Users/...) still gets
+    // a visible token; all images retain their internal reference and preview.
+    const suppressTokens = isLeadingKnownCommandDraft(draftAtInvocation, this.knownCommandNames);
+    if (generation !== this.draftGeneration) { await capturedPromise; return; }
+    const insertionPosition = position === draftAtInvocation.length ? this.draft.length : position;
+    if (references.length > 0 && !suppressTokens) this.insertImageReferenceTokens(references, insertionPosition);
+
+    const captured = await capturedPromise;
+    const additions: PendingAttachment[] = [];
+    let failed = false;
+    for (const { entry, result } of captured) {
+      const attachment = result.attachments[0];
+      if (attachment === undefined) {
+        failed = true;
+        continue;
+      }
+      if (attachment.kind === "image" && entry.reference !== undefined) additions.push({ ...attachment, id: entry.id, reference: entry.reference });
+      else if (attachment.kind === "file") additions.push({ ...attachment, id: entry.id });
     }
-    if (error !== undefined) this.attachmentError = error;
+    const failedReferences = reserved.flatMap((entry) => additions.some((attachment) => attachment.id === entry.id) || entry.reference === undefined ? [] : [entry.reference]);
+    const targetKey = sourceKey === undefined ? undefined : resolveStagedAttachmentKey(sourceKey);
+    if (targetKey !== undefined && targetKey !== draftStorageKey(this.machineId, this.sessionId)) {
+      const staged = loadStagedAttachmentDraft(targetKey);
+      if (staged.generation !== generation) return;
+      const attachments = [...staged.attachments, ...additions].sort((a, b) => attachmentIdSequence(a.id) - attachmentIdSequence(b.id));
+      const pendingImageReferences = staged.pendingImageReferences.filter((reference) => !references.includes(reference));
+      saveStagedAttachments(targetKey, { ...staged, attachments, pendingImageReferences });
+      if (failedReferences.length > 0) saveDraft(targetKey, removeImageReferenceTokensFromText(loadDraft(targetKey), failedReferences));
+      return;
+    }
+    if (generation !== this.draftGeneration) return;
+    this.pendingImageReferences = this.pendingImageReferences.filter((reference) => !references.includes(reference));
+    if (additions.length > 0) this.attachments = [...this.attachments, ...additions].sort((a, b) => attachmentIdSequence(a.id) - attachmentIdSequence(b.id));
+    for (const reference of failedReferences) this.removeImageReferenceTokens(reference);
+    if (failed) this.attachmentError = READ_FAILURE_MESSAGE;
+    else if (this.attachmentError === "Wait for image attachments to finish loading.") this.attachmentError = undefined;
+    this.saveCurrentStaging();
+  }
+
+  private insertImageReferenceTokens(references: readonly string[], position: number): void {
+    const insertion = imageReferenceInsertion(this.draft, position, references);
+    this.dispatchDraftChange(position, position, insertion);
+  }
+
+  private removeImageReferenceTokens(reference: string): void {
+    const text = removeImageReferenceTokensFromText(this.draft, [reference]);
+    if (text === this.draft) return;
+    const editor = this.editor;
+    if (editor !== undefined) {
+      editor.dispatch({
+        changes: { from: 0, to: this.draft.length, insert: text },
+        selection: EditorSelection.cursor(Math.min(editor.state.selection.main.head, text.length)),
+      });
+      return;
+    }
+    this.updateDraft(text);
+  }
+
+  private dispatchDraftChange(from: number, to: number, insert: string): void {
+    const editor = this.editor;
+    if (editor !== undefined) {
+      editor.dispatch({ changes: { from, to, insert }, selection: EditorSelection.cursor(from + insert.length) });
+      return;
+    }
+    this.updateDraft(`${this.draft.slice(0, from)}${insert}${this.draft.slice(to)}`);
+  }
+
+  private stagedAttachmentDraft() {
+    return {
+      attachments: this.attachments,
+      nextImageReference: this.nextImageReference,
+      pendingImageReferences: this.pendingImageReferences,
+      generation: this.draftGeneration,
+    };
+  }
+
+  private saveCurrentStaging(): void {
+    const key = draftStorageKey(this.machineId, this.sessionId);
+    if (key !== undefined) saveStagedAttachments(key, this.stagedAttachmentDraft());
   }
 
   private currentAttachments(): PromptAttachment[] {
@@ -311,6 +515,7 @@ export class PromptEditor extends LitElement {
           this.readOnlyCompartment.of(EditorState.readOnly.of(this.disabled)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) this.updateDraft(update.state.doc.toString());
+            else if (update.selectionSet) void this.refreshCompletions();
           }),
           keymap.of([
             { any: (view, event) => this.handleEditorKeyDown(event, view) },
@@ -326,6 +531,122 @@ export class PromptEditor extends LitElement {
         ],
       }),
     });
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => { this.reconcileEditorHeight(); });
+      observer.observe(this.editor.dom);
+      if (this.footer instanceof Element) observer.observe(this.footer);
+      this.editorHeightObserver = observer;
+    }
+    this.reconcileEditorHeight();
+  }
+
+  private interfaceScale(): number {
+    if (typeof document === "undefined") return 1;
+    const scale = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(INTERFACE_SCALE_CSS_PROPERTY));
+    return Number.isFinite(scale) && scale > 0 ? scale : 1;
+  }
+
+  private nonEditorChromeHeight(): number {
+    const footerHeight = this.footer?.offsetHeight ?? 0;
+    const editorHeight = this.editor?.dom.offsetHeight ?? 0;
+    return Math.max(0, footerHeight - editorHeight);
+  }
+
+  private maximumEditorHeight(): number {
+    const viewportHeight = typeof window === "undefined" ? PROMPT_EDITOR_MAX_HEIGHT * 2 : window.visualViewport?.height ?? window.innerHeight;
+    return promptEditorMaximumHeight(viewportHeight, this.interfaceScale(), this.nonEditorChromeHeight());
+  }
+
+  private reconcileEditorHeight(): void {
+    if (this.manualEditorHeight !== undefined) this.manualEditorHeight = clampNumber(this.manualEditorHeight, PROMPT_EDITOR_MIN_HEIGHT, this.maximumEditorHeight());
+    this.applyEditorHeight();
+  }
+
+  private currentEditorHeight(maximumHeight = this.maximumEditorHeight()): number {
+    return clampNumber(this.manualEditorHeight ?? this.editor?.dom.offsetHeight ?? PROMPT_EDITOR_MIN_HEIGHT, PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
+  }
+
+  private applyEditorHeight(): void {
+    const maximumHeight = this.maximumEditorHeight();
+    const currentHeight = this.currentEditorHeight(maximumHeight);
+    const manual = this.manualEditorHeight;
+    this.editorHost?.style.setProperty("--prompt-editor-maximum-height", `${String(maximumHeight)}px`);
+    this.editorHost?.classList.toggle("markdown-editor-manual-height", manual !== undefined);
+    if (manual === undefined) this.editorHost?.style.removeProperty("--prompt-editor-manual-height");
+    else this.editorHost?.style.setProperty("--prompt-editor-manual-height", `${String(manual)}px`);
+    this.editorResizeHandle?.setAttribute("aria-valuemax", String(Math.round(maximumHeight)));
+    this.editorResizeHandle?.setAttribute("aria-valuenow", String(Math.round(currentHeight)));
+    this.editorResizeHandle?.setAttribute("aria-valuetext", `${String(Math.round(currentHeight))} pixels, ${manual === undefined ? "automatic" : "manual"} height`);
+  }
+
+  private setManualEditorHeight(height: number): void {
+    this.manualEditorHeight = clampNumber(height, PROMPT_EDITOR_MIN_HEIGHT, this.maximumEditorHeight());
+    this.applyEditorHeight();
+  }
+
+  private resetEditorHeight(): void {
+    if (this.manualEditorHeight === undefined) return;
+    this.manualEditorHeight = undefined;
+    this.applyEditorHeight();
+  }
+
+  private startEditorResize(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    const handle = event.currentTarget;
+    if (!(handle instanceof HTMLElement)) return;
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    const restoreEditorFocus = event.pointerType !== "touch" && (this.editor?.hasFocus ?? false);
+    if (event.pointerType !== "touch") handle.focus({ preventScroll: true });
+    this.resizePointer = { id: event.pointerId, startY: event.clientY, startHeight: this.currentEditorHeight(), scale: this.interfaceScale(), restoreEditorFocus };
+  }
+
+  private moveEditorResize(event: PointerEvent): void {
+    const resize = this.resizePointer;
+    if (resize?.id !== event.pointerId) return;
+    event.preventDefault();
+    if (Math.abs(event.clientY - resize.startY) > 8) this.lastTouchTapAt = undefined;
+    this.setManualEditorHeight(promptEditorDragHeight(resize.startHeight, resize.startY, event.clientY, resize.scale, this.maximumEditorHeight()));
+  }
+
+  private finishEditorResize(event: PointerEvent): void {
+    const resize = this.resizePointer;
+    if (resize?.id !== event.pointerId) return;
+    releasePointerCapture(event.currentTarget, event.pointerId);
+    this.resizePointer = undefined;
+    if (resize.restoreEditorFocus) this.editor?.focus();
+    if (event.pointerType !== "touch") return;
+    if (Math.abs(event.clientY - resize.startY) > 8) { this.lastTouchTapAt = undefined; return; }
+    const now = event.timeStamp;
+    if (this.lastTouchTapAt !== undefined && now - this.lastTouchTapAt <= 300) {
+      this.lastTouchTapAt = undefined;
+      this.resetEditorHeight();
+      return;
+    }
+    this.lastTouchTapAt = now;
+  }
+
+  private cancelEditorResize(event: PointerEvent): void {
+    const resize = this.resizePointer;
+    if (resize?.id !== event.pointerId) return;
+    releasePointerCapture(event.currentTarget, event.pointerId);
+    this.resizePointer = undefined;
+    if (resize.restoreEditorFocus) this.editor?.focus();
+    if (event.pointerType === "touch") this.lastTouchTapAt = undefined;
+  }
+
+  private handleEditorResizeKey(event: KeyboardEvent): void {
+    if (!EDITOR_RESIZE_KEYS.has(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Enter") { this.resetEditorHeight(); return; }
+    const maximumHeight = this.maximumEditorHeight();
+    let height: number;
+    if (event.key === "ArrowUp") height = this.currentEditorHeight(maximumHeight) + (event.shiftKey ? 72 : 24);
+    else if (event.key === "ArrowDown") height = this.currentEditorHeight(maximumHeight) - (event.shiftKey ? 72 : 24);
+    else if (event.key === "Home") height = PROMPT_EDITOR_MIN_HEIGHT;
+    else height = maximumHeight;
+    this.setManualEditorHeight(height);
   }
 
   private syncEditorDoc() {
@@ -359,17 +680,20 @@ export class PromptEditor extends LitElement {
 
   private async refreshCompletions() {
     const trigger = this.currentTrigger();
+    const triggerKey = completionTriggerKey(trigger);
     const version = ++this.requestVersion;
+    this.completions = [];
     this.selectedIndex = 0;
     if (trigger === undefined) {
-      this.completions = [];
+      this.setCompletions(version, triggerKey, []);
       return;
     }
     if (trigger.kind === "command" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
-      const commands = await api.commands({ id: this.sessionId, cwd: this.cwd }, this.machineId).catch(emptySlashCommands);
+      const commands = await this.commandCatalog();
       if (version !== this.requestVersion) return;
-      this.completions = commands
-        .filter((command) => command.name.toLowerCase().includes(trigger.query.toLowerCase()))
+      this.knownCommandNames = new Set(commands.map((command) => command.name));
+      this.setCompletions(version, triggerKey, commands
+        .filter((command) => (trigger.from === 0 || command.source === "skill") && command.name.toLowerCase().includes(trigger.query.toLowerCase()))
         .map((command) => ({
           kind: "command",
           replaceFrom: trigger.from,
@@ -378,11 +702,12 @@ export class PromptEditor extends LitElement {
           detail: command.source,
           ...(command.description === undefined ? {} : { description: command.description }),
           ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
-        }));
-    } else if (trigger.kind === "file" && this.projectId !== undefined && this.workspaceId !== undefined) {
+        })));
+      return;
+    }
+    if (trigger.kind === "file" && this.projectId !== undefined && this.workspaceId !== undefined) {
       const files = await api.files(trigger.query, { scope: trigger.fileScope, machineId: this.machineId, projectId: this.projectId, workspaceId: this.workspaceId }).catch(emptyFileSuggestions);
-      if (version !== this.requestVersion) return;
-      this.completions = files
+      this.setCompletions(version, triggerKey, files
         .slice(0, 12)
         .map((file) => {
           const insertText = fileCompletionInsertText(file.path, trigger.quoted === true, file.path.endsWith("/") ? trigger.allPrefix : undefined);
@@ -394,41 +719,62 @@ export class PromptEditor extends LitElement {
             detail: file.kind,
             ...(file.path.endsWith("/") && insertText.endsWith("\"") ? { cursorOffset: insertText.length - 1 } : {}),
           };
-        });
-    } else if (trigger.kind === "model" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
+        }));
+      return;
+    }
+    if (trigger.kind === "model" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
       const models = await api.models({ id: this.sessionId, cwd: this.cwd }, this.machineId).then((response) => response.models).catch(emptySessionModels);
-      if (version !== this.requestVersion) return;
-      this.completions = modelCompletionChoices(models, trigger.query).map((choice) => ({
+      this.setCompletions(version, triggerKey, modelCompletionChoices(models, trigger.query).map((choice) => ({
         kind: "model",
         replaceFrom: trigger.from,
         replaceTo: trigger.to,
         ...choice,
-      }));
+      })));
+      return;
     }
+    this.setCompletions(version, triggerKey, []);
+  }
+
+  private setCompletions(version: number, trigger: string | undefined, completions: CompletionItem[]): void {
+    if (version !== this.requestVersion) return;
+    this.completionResultVersion = version;
+    this.completionResultTrigger = trigger;
+    this.completions = completions;
+  }
+
+  private commandCatalog(): Promise<SlashCommand[]> {
+    if (this.commandCatalogRequest !== undefined) return this.commandCatalogRequest;
+    if (this.sessionId === undefined || this.sessionId === "" || this.cwd === undefined || this.cwd === "") return Promise.resolve([]);
+    this.commandCatalogRequest = api.commands({ id: this.sessionId, cwd: this.cwd }, this.machineId).catch(emptySlashCommands);
+    return this.commandCatalogRequest;
   }
 
   private currentTrigger(): PromptCompletionTrigger | undefined {
-    return detectPromptCompletionTrigger(this.draft, this.editor?.state.selection.main.head ?? this.draft.length);
+    return detectPromptCompletionTrigger(this.draft, this.editor?.state.selection.main.head ?? this.draft.length, this.knownCommandNames);
   }
 
   private moveCompletion(delta: number): boolean {
-    if (!this.completions.length) return false;
-    this.selectedIndex = (this.selectedIndex + delta + this.completions.length) % this.completions.length;
+    const completions = this.currentCompletions();
+    if (!completions.length) return false;
+    this.selectedIndex = (this.selectedIndex + delta + completions.length) % completions.length;
     return true;
   }
 
   private closeCompletions(): boolean {
-    if (!this.completions.length) return false;
+    const wasOpen = this.currentCompletions().length > 0;
+    this.requestVersion += 1;
     this.completions = [];
-    return true;
+    return wasOpen;
   }
 
-  /** The capture-phase app dispatcher must leave composer-owned keys to CodeMirror. */
+  /** The capture-phase app dispatcher must leave composer-owned keys to the focused control. */
   ownsKeyboardEvent(event: KeyboardEvent): boolean {
+    if (EDITOR_RESIZE_KEYS.has(event.key) && this.editorResizeHandle !== undefined && event.composedPath().includes(this.editorResizeHandle)) return true;
     if (this.editor === undefined || !event.composedPath().includes(this.editor.contentDOM)) return false;
     // Keep Enter/newline handling and IME composition inside the editor, too.
     return event.isComposing || this.editor.composing
       || (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey)
+      || (isPrimaryModifierEnter(event) && composerKeyboardSubmissionEnabled(this.shortcuts, this.mobilePromptEnterMedia))
       || this.matchesSendShortcut(event);
   }
 
@@ -444,18 +790,18 @@ export class PromptEditor extends LitElement {
       this.explicitShiftKeyActive = true;
       return false;
     }
+    if (!event.shiftKey) this.explicitShiftKeyActive = false;
     if (event.defaultPrevented || event.isComposing || view.composing) return false;
-    const primaryModifierEnter = event.key === "Enter" && !event.altKey && (event.ctrlKey || event.metaKey);
+    const primaryModifierEnter = isPrimaryModifierEnter(event);
     const send = this.matchesSendShortcut(event);
     const plainEnter = event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey
       && !shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia);
-    this.explicitShiftKeyActive = false;
-    if (plainEnter && this.completions.length) {
-      const completion = this.completions[this.selectedIndex];
-      if (completion !== undefined) this.pick(completion);
+    const completion = this.selectedCompletion();
+    if (plainEnter && completion !== undefined) {
+      this.pick(completion);
       return true;
     }
-    if (primaryModifierEnter && (this.canSteer || this.isCompacting)) {
+    if (primaryModifierEnter && composerKeyboardSubmissionEnabled(this.shortcuts, this.mobilePromptEnterMedia)) {
       this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, true));
       return true;
     }
@@ -481,9 +827,9 @@ export class PromptEditor extends LitElement {
 
 
   private handleEditorTab(view: EditorView): boolean {
-    if (this.completions.length) {
-      const completion = this.completions[this.selectedIndex];
-      if (completion !== undefined) this.pick(completion);
+    const completion = this.selectedCompletion();
+    if (completion !== undefined) {
+      this.pick(completion);
       return true;
     }
     const trigger = this.currentTrigger();
@@ -494,10 +840,23 @@ export class PromptEditor extends LitElement {
     return indentWithTab.run?.(view) ?? false;
   }
 
+  private selectedCompletion(): CompletionItem | undefined {
+    return this.currentCompletions()[this.selectedIndex];
+  }
+
+  private currentCompletions(): CompletionItem[] {
+    return this.completionsAreCurrent() ? this.completions : [];
+  }
+
+  private completionsAreCurrent(): boolean {
+    return this.completionResultVersion === this.requestVersion
+      && this.completionResultTrigger === completionTriggerKey(this.currentTrigger());
+  }
+
   private pick(item: CompletionItem) {
     const editor = this.editor;
-    if (!editor) return;
-    const suffix = item.kind === "file" && (item.insertText.endsWith("/") || item.cursorOffset !== undefined) ? "" : " ";
+    if (!editor || !this.completionsAreCurrent() || !this.completions.includes(item)) return;
+    const suffix = item.kind === "file" && (item.insertText.endsWith("/") || item.cursorOffset !== undefined) || item.kind === "command" && (/\s/.test(this.draft[item.replaceTo] ?? "") || item.insertText.startsWith("/skill:") && /[,.!?;:]/.test(this.draft[item.replaceTo] ?? "")) ? "" : " ";
     const cursor = item.replaceFrom + (item.cursorOffset ?? item.insertText.length) + suffix.length;
     const replaceTo = item.insertText.endsWith("\"") && this.draft.slice(item.replaceTo).startsWith("\"") ? item.replaceTo + 1 : item.replaceTo;
     editor.dispatch({
@@ -511,7 +870,11 @@ export class PromptEditor extends LitElement {
 
   private send(streamingBehavior?: "steer" | "followUp") {
     if (this.disabled || this.sending) return;
-    const text = this.draft.trim();
+    if (this.pendingImageReferences.length > 0) {
+      this.attachmentError = "Wait for image attachments to finish loading.";
+      return;
+    }
+    const text = sanitizeDraftImageReferences(this.draft, this.attachments).trim();
     const pending = this.attachments;
     if (text === "" && pending.length === 0) return;
     const behavior = this.canSteer || this.isCompacting ? streamingBehavior : undefined;
@@ -521,23 +884,85 @@ export class PromptEditor extends LitElement {
     // (the uploads pattern): the save lands exactly where the label pointed,
     // independent of how the session cwd would resolve its own project config.
     const folder = attachments !== undefined && delivery === "folder" ? this.attachmentsFolder : undefined;
+    const snapshot = this.composerSnapshot();
     this.resetComposer();
-    // Sending is owned by the controller (it drives the chat activity dock and,
-    // for folder mode, orchestrates the upload + reference rewrite), so this is
-    // fire-and-forget here.
-    void this.onSend?.(text, behavior, attachments, attachments === undefined ? undefined : delivery, folder);
+    const resetGeneration = this.draftGeneration;
+    void this.deliverComposer(snapshot, resetGeneration, text, behavior, attachments, attachments === undefined ? undefined : delivery, folder);
+  }
+
+  private composerSnapshot() {
+    return {
+      key: draftStorageKey(this.machineId, this.sessionId),
+      draft: this.draft,
+      attachments: this.attachments,
+      nextImageReference: this.nextImageReference,
+      pendingImageReferences: this.pendingImageReferences,
+      generation: this.draftGeneration,
+      cursor: this.editor?.state.selection.main.head ?? this.draft.length,
+    };
+  }
+
+  private async deliverComposer(
+    snapshot: ReturnType<PromptEditor["composerSnapshot"]>,
+    resetGeneration: number,
+    text: string,
+    behavior: "steer" | "followUp" | undefined,
+    attachments: PromptAttachment[] | undefined,
+    delivery: PromptAttachmentDelivery | undefined,
+    folder: string | undefined,
+  ): Promise<void> {
+    try {
+      const delivered = await this.onSend?.(text, behavior, attachments, delivery, folder);
+      if (delivered !== false) return;
+    } catch {
+      // The controller owns the visible request error; the composer owns retry state.
+    }
+    this.restoreComposer(snapshot, resetGeneration);
+  }
+
+  private restoreComposer(snapshot: ReturnType<PromptEditor["composerSnapshot"]>, resetGeneration: number): void {
+    const key = snapshot.key === undefined ? undefined : resolveStagedAttachmentKey(snapshot.key);
+    if (key !== undefined) {
+      saveDraft(key, snapshot.draft);
+      saveStagedAttachments(key, {
+        attachments: snapshot.attachments,
+        nextImageReference: snapshot.nextImageReference,
+        pendingImageReferences: snapshot.pendingImageReferences,
+        generation: snapshot.generation,
+      });
+    }
+    if (key !== draftStorageKey(this.machineId, this.sessionId) || this.draftGeneration !== resetGeneration) return;
+    this.draft = snapshot.draft;
+    this.attachments = snapshot.attachments;
+    this.nextImageReference = snapshot.nextImageReference;
+    this.pendingImageReferences = snapshot.pendingImageReferences;
+    this.draftGeneration = snapshot.generation;
+    this.currentInputMode = inputModeForDraft(snapshot.draft);
+    this.attachmentError = "Attachment delivery failed. Draft restored for retry.";
+    const editor = this.editor;
+    if (editor !== undefined) {
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: snapshot.draft },
+        selection: EditorSelection.cursor(Math.min(snapshot.cursor, snapshot.draft.length)),
+      });
+    }
   }
 
   private resetComposer() {
     this.draft = "";
     this.currentInputMode = { kind: "normal" };
+    this.requestVersion += 1;
     const key = draftStorageKey(this.machineId, this.sessionId);
+    this.draftGeneration += 1;
     if (key !== undefined) {
       clearDraft(key);
       clearStagedAttachments(key);
     }
     this.completions = [];
     this.attachments = [];
+    this.nextImageReference = 1;
+    this.pendingImageReferences = [];
+    if (key !== undefined) saveStagedAttachments(key, this.stagedAttachmentDraft());
     this.attachmentError = undefined;
     // `draft` is not reactive, so the cleared text will not flow to CodeMirror
     // via `updated()`; push it to the editor document explicitly.
@@ -547,17 +972,30 @@ export class PromptEditor extends LitElement {
   static override styles = promptEditorStyles;
 }
 
-// The only `status` fields the template reads directly are the model identity
-// and thinking level (shown in renderCompactStatus). Everything else the editor
-// cares about (canSteer/canStop/isCompacting/sending) is passed as a separate
-// property that Lit already diffs by value. Comparing just these fields lets us
-// ignore the per-token status churn that does not change anything on screen.
-function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus | undefined): boolean {
+// Compare only status fields rendered by PromptEditor so unrelated streaming
+// churn does not disturb the editor DOM or an in-progress touch gesture.
+function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus | undefined, showUsage: boolean): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;
-  return a.model?.id === b.model?.id
-    && a.model?.provider === b.model?.provider
-    && a.thinkingLevel === b.thinkingLevel;
+  if (a.model?.id !== b.model?.id
+    || a.model?.provider !== b.model?.provider
+    || a.thinkingLevel !== b.thinkingLevel
+    || a.extensionStatuses?.[WORKING_MODE_STATUS_KEY] !== b.extensionStatuses?.[WORKING_MODE_STATUS_KEY]) return false;
+  return !showUsage || (a.tokens.input === b.tokens.input
+    && a.tokens.output === b.tokens.output
+    && a.contextUsage?.tokens === b.contextUsage?.tokens
+    && a.contextUsage?.contextWindow === b.contextUsage?.contextWindow
+    && a.contextUsage?.percent === b.contextUsage?.percent
+    && a.cost === b.cost
+    && a.pendingMessageCount === b.pendingMessageCount);
+}
+
+function completionTriggerKey(trigger: PromptCompletionTrigger | undefined): string | undefined {
+  return trigger === undefined ? undefined : JSON.stringify(trigger);
+}
+
+function isPrimaryModifierEnter(event: KeyboardEvent): boolean {
+  return event.key === "Enter" && !event.altKey && !event.shiftKey && (event.ctrlKey || event.metaKey);
 }
 
 function draftStorageKey(machineId: unknown, sessionId: unknown): string | undefined {
@@ -589,9 +1027,52 @@ function dataTransferHasFiles(data: DataTransfer): boolean {
   return Array.from(data.types).includes("Files");
 }
 
+export function sanitizeDraftImageReferences(text: string, attachments: readonly { kind: string; reference?: string }[], pendingReferences: readonly string[] = []): string {
+  const references = new Set([...pendingReferences, ...attachments.flatMap((attachment) => attachment.kind === "image" ? [attachment.reference] : [])]);
+  const dangling = Array.from(text.matchAll(/\[PIC_[1-9]\d*\]/g), (match) => match[0]).filter((reference) => !references.has(reference));
+  return removeImageReferenceTokensFromText(text, dangling);
+}
+
+export function isLeadingKnownCommandDraft(draft: string, knownCommandNames: ReadonlySet<string>): boolean {
+  const name = leadingSlashCommandName(draft);
+  return name !== undefined && knownCommandNames.has(name);
+}
+
+function leadingSlashCommandName(draft: string): string | undefined {
+  const match = /^\/([^\s]+)(?:\s|$)/.exec(draft);
+  if (match?.[1] === undefined || inputModeForDraft(match[0].trim()).kind !== "command") return undefined;
+  return match[1];
+}
+
+export function imageReferenceInsertion(text: string, position: number, references: readonly string[]): string {
+  if (references.length === 0) return "";
+  const prefix = position > 0 && !/\s/.test(text[position - 1] ?? "") ? " " : "";
+  const suffix = position >= text.length || !/\s/.test(text[position] ?? "") ? " " : "";
+  return `${prefix}${references.join(" ")}${suffix}`;
+}
+
+function isSupportedImageFile(file: File): boolean {
+  return isSupportedImageMimeType(file.type);
+}
+
+function releasePointerCapture(target: EventTarget | null, pointerId: number): void {
+  if (!(target instanceof HTMLElement)) return;
+  if (!target.hasPointerCapture(pointerId)) return;
+  target.releasePointerCapture(pointerId);
+}
+
+function clampNumber(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function attachmentIdSequence(id: string): number {
+  const sequence = Number(id.slice(id.lastIndexOf("-") + 1));
+  return Number.isFinite(sequence) ? sequence : 0;
+}
+
 function pendingToPromptAttachment(attachment: PendingAttachment): PromptAttachment {
   if (attachment.kind === "image") {
-    return { kind: "image", mimeType: attachment.mimeType, data: attachment.data, name: attachment.name };
+    return { kind: "image", reference: attachment.reference, mimeType: attachment.mimeType, data: attachment.data, name: attachment.name };
   }
   return { kind: "file", mimeType: attachment.mimeType, data: attachment.data, name: attachment.name };
 }

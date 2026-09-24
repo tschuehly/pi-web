@@ -29,14 +29,19 @@ describe("PromptEditor Working Mode controls", () => {
   it("renders the Working Mode controls between the model selector and Send, and runs their commands", async () => {
     const run = vi.fn();
     const editor = new PromptEditor();
+    editor.showUsage = true;
     editor.status = status();
     editor.onRunCommand = run;
     document.body.append(editor);
     await editor.updateComplete;
 
     const actions = required(editor.shadowRoot?.querySelector(".actions"));
-    const order = [...actions.children].map((child) => child.classList.contains("compact-status") ? "status" : child.classList.contains("send-button") ? "send" : child.localName);
-    expect(order.slice(0, 3)).toEqual(["status", "working-mode-controls", "send"]);
+    const order = [...actions.children].map((child) => child.classList.contains("compact-status") ? "status" : child.classList.contains("usage") ? "usage" : child.classList.contains("composer-actions") ? "composer-actions" : child.localName);
+    expect(order).toEqual(["status", "usage", "working-mode-controls", "composer-actions"]);
+    expect(getComputedStyle(actions).flexWrap).toBe("wrap");
+    const composerActions = required(actions.querySelector<HTMLElement>(".composer-actions"));
+    expect(getComputedStyle(composerActions).flexShrink).toBe("0");
+    expect([...composerActions.children].every((child) => child instanceof HTMLButtonElement)).toBe(true);
 
     const controls = required(actions.querySelector<WorkingModeControls>("working-mode-controls"));
     await controls.updateComplete;
@@ -46,4 +51,102 @@ describe("PromptEditor Working Mode controls", () => {
     required(buttons.find((button) => button.textContent === "Plan")).click();
     expect(run).toHaveBeenCalledWith("/mode alignment plan");
   });
+
+  it("rerenders Working Mode controls when only their extension status changes", async () => {
+    const editor = new PromptEditor();
+    editor.status = status();
+    document.body.append(editor);
+    await editor.updateComplete;
+
+    const controls = required(editor.shadowRoot?.querySelector<WorkingModeControls>("working-mode-controls"));
+    await controls.updateComplete;
+    expect(pressedButton(controls, "Align")?.getAttribute("aria-pressed")).toBe("true");
+
+    editor.status = {
+      ...required(editor.status),
+      extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Plan", checking: "adversarial" }, applied: null }) },
+    };
+    await editor.updateComplete;
+    await controls.updateComplete;
+
+    expect(pressedButton(controls, "Align")?.getAttribute("aria-pressed")).toBe("false");
+    expect(pressedButton(controls, "Plan")?.getAttribute("aria-pressed")).toBe("true");
+    expect(pressedButton(controls, "adversarial")?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("renders compact usage with exact values exposed through semantic list items", async () => {
+    const editor = new PromptEditor();
+    editor.showUsage = true;
+    editor.warningCount = 2;
+    editor.status = {
+      ...status(),
+      pendingMessageCount: 3,
+      tokens: { input: 434_000, output: 34_000, cacheRead: 0, cacheWrite: 0, total: 468_000 },
+      contextUsage: { tokens: 212_704, contextWindow: 272_000, percent: 78.234567 },
+      cost: 12.42,
+    };
+    document.body.append(editor);
+    await editor.updateComplete;
+
+    expect(editor.shadowRoot?.querySelector(".usage")?.localName).toBe("ul");
+    expectMetric(editor, "input", "Input 434k", "Input tokens: 434000");
+    expectMetric(editor, "output", "Output 34k", "Output tokens: 34000");
+    expectMetric(editor, "context", "Context 78.2%", "Context: 212704 of 272000 tokens used (78.234567%)");
+    expectMetric(editor, "cost", "Cost $12.42", "Session cost: $12.42");
+    expectMetric(editor, "warnings", "Warnings 2", "Session warnings: 2");
+    expectMetric(editor, "queued", "Queued 3", "Queued messages: 3");
+
+    const currentStatus = required(editor.status);
+    editor.status = {
+      ...currentStatus,
+      pendingMessageCount: 1,
+      tokens: { input: 500_000, output: 40_000, cacheRead: 0, cacheWrite: 0, total: 540_000 },
+      contextUsage: { tokens: 217_600, contextWindow: 272_000, percent: 80 },
+      cost: 12.5,
+    };
+    await editor.updateComplete;
+
+    expect(visibleMetricText(editor, "input")).toBe("Input 500k");
+    expect(visibleMetricText(editor, "context")).toBe("Context 80.0%");
+    expect(accessibleMetricText(editor, "context")).toBe("Context: 217600 of 272000 tokens used (80%)");
+    expect(visibleMetricText(editor, "cost")).toBe("Cost $12.50");
+    expect(visibleMetricText(editor, "queued")).toBe("Queued 1");
+  });
+
+  it("leaves usage metrics hidden by default for legacy PromptEditor hosts", async () => {
+    const editor = new PromptEditor();
+    editor.status = status();
+    document.body.append(editor);
+    await editor.updateComplete;
+
+    expect(editor.shadowRoot?.querySelector(".usage")).toBeNull();
+  });
 });
+
+function pressedButton(controls: WorkingModeControls, label: string): HTMLButtonElement | undefined {
+  return [...(controls.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((button) => button.textContent === label);
+}
+
+function metric(editor: PromptEditor, name: string): HTMLElement {
+  return required(editor.shadowRoot?.querySelector<HTMLElement>(`[data-usage="${name}"]`));
+}
+
+function visibleMetricText(editor: PromptEditor, name: string): string | null {
+  return metric(editor, name).querySelector('[aria-hidden="true"]')?.textContent ?? null;
+}
+
+function accessibleMetricText(editor: PromptEditor, name: string): string | null {
+  return metric(editor, name).querySelector(".visually-hidden")?.textContent ?? null;
+}
+
+function expectMetric(editor: PromptEditor, name: string, visible: string, accessible: string): void {
+  const item = metric(editor, name);
+  const visibleText = required(item.querySelector<HTMLElement>('[aria-hidden="true"]'));
+  const accessibleText = required(item.querySelector<HTMLElement>(".visually-hidden"));
+  expect(item.localName).toBe("li");
+  expect(item.getAttribute("aria-label")).toBeNull();
+  expect(visibleText.textContent).toBe(visible);
+  expect(accessibleText.textContent).toBe(accessible);
+  expect(getComputedStyle(accessibleText).position).toBe("absolute");
+  expect(item.title).toBe(accessible);
+}

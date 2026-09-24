@@ -64,7 +64,7 @@ describe("SessionController cached-new sessions", () => {
     );
     saveDraft(sessionKey(transientSession.id), "discard me");
     const discardedAttachment: PendingAttachment = { id: "attachment-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 };
-    saveStagedAttachments(sessionKey(transientSession.id), [discardedAttachment]);
+    saveStagedAttachments(sessionKey(transientSession.id), { attachments: [discardedAttachment], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
 
     await controller.deleteCachedNewSession(transientSession);
 
@@ -84,7 +84,7 @@ describe("SessionController cached-new sessions", () => {
     rememberCachedNewSession(oldSession);
     saveDraft(sessionKey(oldSession.id), "draft text");
     const carriedAttachment: PendingAttachment = { id: "attachment-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 };
-    saveStagedAttachments(sessionKey(oldSession.id), [carriedAttachment]);
+    saveStagedAttachments(sessionKey(oldSession.id), { attachments: [carriedAttachment], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
 
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [markCachedNewSessionInfo(oldSession)] };
     const urlUpdates: ({ replace?: boolean | undefined } | undefined)[] = [];

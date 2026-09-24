@@ -73,6 +73,21 @@ describe("PromptEditor draft replacement", () => {
     }
   });
 
+  it("submits a known slash command synchronously on Enter even when its catalog request is stalled", () => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn();
+    editor.onSend = onSend;
+    Reflect.set(editor, "draft", "/model inspect [PIC_1]");
+    Reflect.set(editor, "knownCommandNames", new Set(["model"]));
+    Reflect.set(editor, "commandCatalogRequest", new Promise(() => undefined));
+    Reflect.set(editor, "attachments", [{ id: "attachment-1", kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "SU1BR0U=" }]);
+    const handleEditorKeyDown: unknown = Reflect.get(editor, "handleEditorKeyDown");
+    if (!isEditorKeyDownHandler(handleEditorKeyDown)) throw new Error("Expected PromptEditor keydown handler");
+
+    expect(handleEditorKeyDown.call(editor, enterEvent(), { composing: false })).toBe(true);
+    expect(onSend).toHaveBeenCalledWith("/model inspect [PIC_1]", undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+  });
+
   it("prepends restored text to an existing durable draft with a blank-line separator", () => {
     const editor = new PromptEditor();
     editor.machineId = "local";

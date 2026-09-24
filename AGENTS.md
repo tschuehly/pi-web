@@ -11,6 +11,8 @@ If you make changes that affect `src/server/sessiond.ts`, session runtime owners
 
 Changes to the web/API/UI side generally only require the `pi-web-ui-dev.service` autoreload/restart path.
 
+Workstream continuation targets must use persistent workspace paths. If a checkpoint points into an OS temporary directory, reject the launch before recording `session.pending` and ask for a persistent workspace.
+
 ## Documentation boundaries
 
 `README.md` is a concise landing page and quick start. Keep it focused on what PI WEB is, basic requirements, the shortest supported install path, essential commands, the core model, and links to detailed documentation.

@@ -1,6 +1,7 @@
 import type { TemplateResult } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { QueuedSessionMessage, SessionStatus, SessionWarning } from "../api";
+import type { ChatGroup } from "../chatGroups";
 import {
   notificationTargetKey,
   notificationTrayIsCollapsed,
@@ -9,6 +10,7 @@ import {
 import {
   ChatView,
   chatEventAnchorKey,
+  chatFragmentAnchorKey,
   chatGroupAnchorKey,
   chatGroupScrollMarkerId,
   chatMessageMetadataLabel,
@@ -260,9 +262,23 @@ describe("chatMessageMetadataLabel", () => {
 describe("chat event-group content seams", () => {
   it("keeps stable group and per-event scroll anchors without disclosure state", () => {
     expect(chatGroupAnchorKey(40)).toBe("g:40");
+    expect(chatGroupAnchorKey(40, "activity", 1)).toBe("g:40:activity:1");
     expect(chatEventAnchorKey(40)).toBe("e:40");
     expect(chatEventAnchorKey(41)).toBe("e:41");
     expect(chatGroupScrollMarkerId(41)).toBe("g:41");
+    expect(chatGroupScrollMarkerId(41, "thinking", 1)).toBe("g:41:thinking:1");
+  });
+
+  it("gives split top-level fragments unique repeat keys", () => {
+    const groups: ChatGroup[] = [
+      { kind: "message", index: 40, message: { role: "assistant", parts: [{ type: "text", text: "before" }] } },
+      { kind: "group", presentation: "thinking", startIndex: 40, endIndex: 40, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "thought" }] }] },
+      { kind: "message", index: 40, message: { role: "assistant", parts: [{ type: "text", text: "after" }] } },
+    ];
+
+    const keys = groups.map((_, index) => chatFragmentAnchorKey(groups, index));
+    expect(keys).toEqual(["m:40", "g:40", "m:40:1"]);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 

@@ -142,6 +142,9 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
   const customMessageCalls: { message: { customType: string; content: string; display: boolean; details?: unknown }; options: unknown }[] = [];
   const bindExtensionCalls: TestExtensionBindings[] = [];
   const listeners: ((event: unknown) => void)[] = [];
+  const executeBash: PiAgentSession["executeBash"] = patch.executeBash
+    ?? (() => Promise.resolve({ output: "", exitCode: 0, cancelled: false, truncated: false }));
+  let pendingBashExecutions = 0;
   let extensionUiContext = testExtensionUiContext;
   const calls = { abort: 0, bindExtensions: bindExtensionCalls, clearQueue: 0, dispose: 0, followUp: followUpCalls, prompt: promptCalls, reload: 0, sendCustomMessage: customMessageCalls, steer: steerCalls };
   const session: TestSession = {
@@ -154,7 +157,6 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
     thinkingLevel: "off",
     isStreaming: false,
     isCompacting: false,
-    isBashRunning: false,
     pendingMessageCount: 0,
     sessionManager: fakeSessionManager(),
     settingsManager: { getWarnings: () => ({}), setWarnings: () => undefined, getEnabledModels: () => undefined, getProjectSettings: () => ({}), setEnabledModels: () => undefined },
@@ -202,7 +204,6 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
       calls.sendCustomMessage.push({ message, options });
       return Promise.resolve();
     },
-    executeBash: () => Promise.resolve({ output: "", exitCode: 0, cancelled: false, truncated: false }),
     abort: () => {
       calls.abort += 1;
       return Promise.resolve();
@@ -223,6 +224,15 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
     getUserMessagesForForking: () => [],
     agent: { streamFunction: () => { throw new Error("streamFunction should not be called in this test"); } },
     ...patch,
+    get isBashRunning() { return pendingBashExecutions > 0; },
+    executeBash: async (...args) => {
+      pendingBashExecutions += 1;
+      try {
+        return await executeBash(...args);
+      } finally {
+        pendingBashExecutions -= 1;
+      }
+    },
   };
   const runtime: PiSessionRuntime = {
     cwd: session.sessionManager.getCwd(),

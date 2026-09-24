@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it } from "vitest";
-import type { Machine } from "../../api";
+import type { Machine, SessionInfo } from "../../api";
 import { AppContextBar, machineContextDetail } from "./AppContextBar";
 
 afterEach(() => {
@@ -23,6 +23,26 @@ describe("machineContextDetail", () => {
     const remote = machine("remote-a");
     remote.baseUrl = "not a url";
     expect(machineContextDetail(remote, "pi-dev.example.com")).toBeUndefined();
+  });
+});
+
+describe("session crumb", () => {
+  it("uses the canonical trimmed session title and short-id fallback", async () => {
+    const current = session("019f22c5-d53e-7489-997f-fce1e570a202", "  First prompt  ", " \n ");
+    const bar = await mountBar({ machines: [machine("local")], session: current });
+
+    expect(sessionChip(bar)?.querySelector(".context-value")?.textContent).toBe("First prompt");
+
+    current.firstMessage = "  ";
+    bar.session = { ...current };
+    await bar.updateComplete;
+    expect(sessionChip(bar)?.querySelector(".context-value")?.textContent).toBe("e570a202");
+  });
+
+  it("handles an undefined session at the call site", async () => {
+    const bar = await mountBar({ machines: [machine("local")] });
+
+    expect(sessionChip(bar)?.querySelector(".context-value")?.textContent).toBe("No session");
   });
 });
 
@@ -84,6 +104,7 @@ interface BarFixture {
   machines: Machine[];
   machine?: Machine;
   locationIndicator?: boolean;
+  session?: SessionInfo;
   onOpenSection?: (section: "machines" | "projects" | "workspaces" | "sessions") => void;
 }
 
@@ -92,6 +113,7 @@ async function mountBar(fixture: BarFixture): Promise<AppContextBar> {
   bar.machines = fixture.machines;
   if (fixture.machine !== undefined) bar.machine = fixture.machine;
   bar.locationIndicator = fixture.locationIndicator ?? false;
+  if (fixture.session !== undefined) bar.session = fixture.session;
   if (fixture.onOpenSection !== undefined) bar.onOpenSection = fixture.onOpenSection;
   document.body.append(bar);
   await bar.updateComplete;
@@ -100,6 +122,14 @@ async function mountBar(fixture: BarFixture): Promise<AppContextBar> {
 
 function machineChip(bar: AppContextBar): HTMLElement | undefined {
   return bar.shadowRoot?.querySelector<HTMLElement>(".machine-chip") ?? undefined;
+}
+
+function sessionChip(bar: AppContextBar): HTMLElement | undefined {
+  return [...(bar.shadowRoot?.querySelectorAll<HTMLElement>(".context-chip") ?? [])].find((chip) => chip.textContent.includes("Session"));
+}
+
+function session(id: string, firstMessage: string, name?: string): SessionInfo {
+  return { id, cwd: "/repo", path: `/sessions/${id}.jsonl`, created: "now", modified: "now", messageCount: 1, firstMessage, ...(name === undefined ? {} : { name }) };
 }
 
 function machine(id: string): Machine {

@@ -52,6 +52,15 @@ export interface ToolExecutionPart {
   preview?: ToolPreview;
 }
 
+export interface GoalLifecycleDetails {
+  schemaVersion: 1;
+  goalId: string;
+  transition: "start" | "resume" | "pause" | "wait" | "block" | "usage_limit" | "budget_limit" | "complete" | "clear";
+  state: "active" | "waiting" | "paused" | "blocked" | "usage_limited" | "budget_limited" | "complete" | "cleared";
+  reason?: string;
+  summary?: string;
+}
+
 export type ChatPart =
   | { type: "text"; text: string }
   | { type: "image"; mimeType: string; data: string }
@@ -59,6 +68,7 @@ export type ChatPart =
   | { type: "skillInvocation"; name: string; location: string; content: string }
   | { type: "skillRead"; name: string; path: string; toolCallId?: string }
   | { type: "askUserRecord"; outcome: AskUserOutcome }
+  | { type: "goalLifecycle"; details: GoalLifecycleDetails }
   | { type: "toolCall"; toolCallId?: string; toolName: string; summary: string; args?: unknown }
   | ToolExecutionPart
   | { type: "toolResult"; toolCallId?: string; toolName: string; text: string; isError: boolean; content?: unknown; details?: unknown }
@@ -378,14 +388,22 @@ export const chatStyles = css`
   .msg.tool, .msg.system { color: var(--pi-text); }
   .msg.error { color: var(--pi-danger); }
   .msg.tool-execution-shell, .msg.ask-user-record-shell { padding: 0 2px var(--pi-message-padding); color: var(--pi-text); }
+  .msg.skill-read-shell { padding: 2px 2px var(--pi-message-padding); color: var(--pi-purple); }
   .msg.ask-user-record-shell ask-user-card { margin: 0 auto; }
   .event-group { max-width: var(--pi-content-max-width); margin: 0 0 16px; }
+  .activity-group > summary, .thinking-group > summary { display: flex; align-items: center; gap: 7px; padding: 5px 2px; color: var(--pi-muted); list-style: none; cursor: pointer; }
+  .activity-group > summary::-webkit-details-marker, .thinking-group > summary::-webkit-details-marker { display: none; }
+  .activity-group > summary strong { color: var(--pi-text); }
+  .activity-group > .group-body { padding-left: 21px; }
+  .thinking-group { padding: 6px 10px; border-left: 2px solid var(--pi-border); border-radius: 4px; background: var(--pi-surface-hover); color: var(--pi-muted); font-size: 13px; font-style: italic; }
+  .thinking-group > summary { padding: 0 0 4px; font-style: normal; }
+  .thinking-group > formatted-text { display: block; min-width: 0; }
   .chat-image { display: block; max-width: 100%; max-height: 320px; margin: 8px 0 0; border: 1px solid var(--pi-border); border-radius: 8px; object-fit: contain; cursor: zoom-in; }
   .chat-image:focus-visible { outline: 2px solid var(--pi-accent, var(--pi-success-border)); outline-offset: 2px; }
-  dialog.image-zoom { position: fixed; inset: 0; margin: auto; max-width: calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)); max-height: calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: visible; }
+  dialog.image-zoom { --image-zoom-max-width: min(calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)), calc(var(--pi-workbench-viewport-width, 100vw) - env(safe-area-inset-left) - env(safe-area-inset-right))); --image-zoom-max-height: min(calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)), calc(var(--pi-workbench-viewport-height, 100vh) - env(safe-area-inset-top) - env(safe-area-inset-bottom))); position: fixed; inset: 0; margin: auto; max-width: var(--image-zoom-max-width); max-height: var(--image-zoom-max-height); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: hidden; }
   dialog.image-zoom[open] { display: flex; }
   dialog.image-zoom::backdrop { background: rgba(0, 0, 0, 0.8); }
-  .image-zoom-full { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 8px; object-fit: contain; cursor: zoom-out; }
+  .image-zoom-full { display: block; max-width: var(--image-zoom-max-width); max-height: var(--image-zoom-max-height); width: auto; height: auto; border-radius: 8px; object-fit: contain; cursor: zoom-out; }
   .image-zoom-close { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; font: 16px/1 system-ui, sans-serif; color: var(--pi-muted); background: color-mix(in srgb, var(--pi-surface) 88%, transparent); border: 1px solid var(--pi-border); border-radius: 6px; cursor: pointer; }
   .image-zoom-close:hover, .image-zoom-close:focus-visible { color: var(--pi-text-bright); border-color: var(--pi-accent); }
   .image-zoom-close:focus-visible { outline: 1px solid var(--pi-border); outline-offset: 2px; }
@@ -444,16 +462,18 @@ export const chatStyles = css`
   .summary { color: var(--pi-muted); margin-left: 6px; }
   .part:is(details) { padding: 0; }
   .part > formatted-text { display: block; max-width: 100%; min-width: 0; margin-top: 8px; overflow: visible; }
-  .skill-invocation, .skill-read { padding: 6px 0; }
-  .skill-invocation > summary, .skill-read > strong { color: var(--pi-purple); }
-  .skill-invocation > small, .skill-read > small { display: block; margin: 6px 0 0; color: var(--pi-muted); }
+  .skill-invocation { padding: 6px 0; }
+  .skill-invocation > summary { color: var(--pi-purple); }
+  .skill-invocation > small { display: block; margin: 6px 0 0; color: var(--pi-muted); }
   .part > summary { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--pi-muted); list-style: none; cursor: pointer; }
   .part > summary::-webkit-details-marker { display: none; }
   .chevron { flex: 0 0 auto; display: inline-grid; transition: transform .12s ease; }
   .chevron .tab-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   details[open] > summary .chevron { transform: rotate(90deg); }
   .disclosure-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  pre { box-sizing: border-box; max-width: 100%; margin: 6px 0 0; overflow-x: auto; white-space: pre; font: inherit; direction: ltr; text-align: left; unicode-bidi: isolate; }
+  pre { box-sizing: border-box; max-width: 100%; margin: 6px 0 0; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; direction: ltr; text-align: left; unicode-bidi: isolate; }
+  .orphan-tool-result { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .orphan-preview-error { color: var(--pi-danger); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .shell-output { color: var(--pi-text); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.5; direction: ltr; text-align: left; unicode-bidi: isolate; }
   @keyframes pulse { 0%, 100% { transform: scale(.75); opacity: .55; } 50% { transform: scale(1.2); opacity: 1; } }
 `;
@@ -468,7 +488,7 @@ export const formattedTextStyles = css`
   code { border: 1px solid var(--pi-border); border-radius: 4px; background: var(--pi-bg); padding: 1px 4px; font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
   .code-block-wrapper { position: relative; }
   .code-block-wrapper pre { margin: 0; padding-right: 40px; }
-  pre { box-sizing: border-box; max-width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); padding: 10px; overflow-x: auto; overflow-y: hidden; direction: ltr; text-align: left; unicode-bidi: isolate; }
+  pre { box-sizing: border-box; max-width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); padding: 10px; overflow-x: auto; overflow-y: hidden; white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; unicode-bidi: isolate; }
   pre code { border: 0; padding: 0; background: transparent; }
   .code-copy-button { position: absolute; top: 6px; right: 6px; z-index: 1; display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 0; font: 14px system-ui, sans-serif; line-height: 1; cursor: pointer; }
   .code-copy-button:hover, .code-copy-button:focus { color: var(--pi-text); border-color: var(--pi-accent); }
@@ -516,13 +536,24 @@ export const autocompleteStyles = css`
 
 export const promptEditorStyles = css`
   :host { position: relative; z-index: 5; display: block; color: var(--pi-text); font: 14px system-ui, sans-serif; }
-  footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px; border-top: 1px solid var(--pi-border); }
+  footer { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 24px 12px 12px; border-top: 1px solid var(--pi-border); }
   footer.shell-mode { border-top-color: var(--pi-success); background: var(--pi-success-bg); }
+  .editor-resize-handle { position: absolute; z-index: 4; top: 0; right: 0; left: 0; height: 20px; cursor: ns-resize; touch-action: none; }
+  .editor-resize-handle::after { position: absolute; top: 9px; left: 50%; width: 42px; height: 2px; border-radius: 999px; background: var(--pi-border); content: ""; transform: translateX(-50%); }
+  .editor-resize-handle:hover::after, .editor-resize-handle:focus-visible::after { background: var(--pi-accent); }
+  .editor-resize-handle:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -4px; }
   .editor-wrap { position: relative; min-width: 0; }
   .actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: nowrap; white-space: nowrap; }
+  :host([show-usage]) .actions { flex-wrap: wrap; }
   .compact-status { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--pi-muted); font-size: 12px; flex: 1 1 0; }
+  :host([show-usage]) .compact-status { flex: 1 1 220px; min-width: 170px; }
   .compact-status > button { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .select-model { max-width: min(42vw, 320px); }
+  .usage { display: flex; flex: 0 0 auto; min-width: 0; align-items: center; gap: 6px; margin: 0; padding: 0; color: var(--pi-muted); font-size: 11px; list-style: none; }
+  .usage > li { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; white-space: nowrap !important; border: 0 !important; }
+  :host([show-usage]) working-mode-controls[compact] { flex: 0 0 auto; }
+  .composer-actions { display: flex; flex: 0 0 auto; gap: 8px; margin-left: auto; }
   .icon-button { flex: 0 0 auto; display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; }
   .icon-button .prompt-action-icon, .icon-button .prompt-thinking-gauge { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   .icon-button .prompt-action-icon-filled { fill: currentColor; stroke: none; }
@@ -532,9 +563,11 @@ export const promptEditorStyles = css`
   .select-thinking .prompt-thinking-gauge .gauge-bar-active { opacity: 1; }
   .editor-attach { position: absolute; right: 8px; bottom: 8px; z-index: 2; width: 30px; height: 30px; }
   .editor-attach .prompt-action-icon { width: 16px; height: 16px; }
-  textarea, .markdown-editor .cm-editor { box-sizing: border-box; width: 100%; min-height: 54px; max-height: 220px; resize: none; overflow: hidden; border-radius: 8px; border: 1px solid var(--pi-border); background: var(--pi-bg); color: var(--pi-text); font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); }
+  textarea, .markdown-editor .cm-editor { box-sizing: border-box; width: 100%; min-height: 54px; max-height: min(220px, var(--prompt-editor-maximum-height, 220px)); overflow: hidden; border-radius: 8px; border: 1px solid var(--pi-border); background: var(--pi-bg); color: var(--pi-text); font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); }
   textarea { overflow-y: auto; padding: 8px; }
-  .markdown-editor .cm-scroller { max-height: 220px; overflow-y: auto; font-family: var(--pi-control-font-family, system-ui, sans-serif); line-height: 1.4; }
+  .markdown-editor .cm-scroller { max-height: min(220px, var(--prompt-editor-maximum-height, 220px)); overflow-y: auto; font-family: var(--pi-control-font-family, system-ui, sans-serif); line-height: 1.4; }
+  .markdown-editor-manual-height .cm-editor { height: var(--prompt-editor-manual-height); max-height: var(--prompt-editor-maximum-height); }
+  .markdown-editor-manual-height .cm-scroller { height: 100%; max-height: none; }
   .markdown-editor .cm-content { min-height: 38px; padding: 8px 44px 8px 8px; caret-color: var(--pi-text); text-align: start; unicode-bidi: plaintext; }
   .markdown-editor .cm-line { padding: 0; unicode-bidi: plaintext; }
   .markdown-editor .cm-placeholder { color: var(--pi-dim); }
@@ -553,6 +586,7 @@ export const promptEditorStyles = css`
   .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
   .attachment-chip { position: relative; width: 56px; height: 56px; border: 1px solid var(--pi-border); border-radius: 8px; overflow: hidden; background: var(--pi-bg); }
   .attachment-chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .attachment-image-reference { position: absolute; right: 3px; bottom: 3px; left: 3px; overflow: hidden; border-radius: 3px; background: color-mix(in srgb, var(--pi-bg) 82%, transparent); color: var(--pi-text); font: 700 10px/1.4 system-ui, sans-serif; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
   .attachment-chip-file { display: grid; place-items: center; }
   .attachment-file-preview { display: grid; place-items: center; width: 34px; height: 26px; border: 1px solid var(--pi-border); border-radius: 4px; background: var(--pi-surface); color: var(--pi-muted); font: 700 10px/1 system-ui, sans-serif; letter-spacing: .03em; }
   .attachment-file-name { position: absolute; right: 4px; bottom: 3px; left: 4px; overflow: hidden; color: var(--pi-muted); font-size: 10px; line-height: 1.2; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
@@ -562,18 +596,24 @@ export const promptEditorStyles = css`
   button { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; }
   button:disabled, textarea:disabled, .markdown-editor-disabled .cm-editor { opacity: .5; cursor: not-allowed; }
   @media (max-width: 640px) {
-    footer { gap: 8px; padding: 8px; }
-    .actions { gap: 6px; }
+    footer { gap: 8px; padding: 24px 8px 8px; }
+    .actions, .composer-actions { gap: 6px; }
+    .actions { flex-wrap: wrap; }
     .compact-status { flex: 1 1 220px; gap: 4px; }
+    .usage { flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 4px 6px; }
     .select-model { max-width: min(58vw, 260px); }
     button { padding: 6px 8px; }
   }
   @media (max-width: 430px) {
-    .actions { flex-wrap: wrap; }
-    working-mode-controls[compact] { flex: 1 1 100%; }
+    working-mode-controls[compact], :host([show-usage]) working-mode-controls[compact], .usage { flex: 1 1 100%; min-width: 0; }
     .compact-status { flex-basis: 170px; font-size: 11px; }
     .select-model { max-width: 48vw; }
     button { padding: 5px 7px; }
     .icon-button { width: 34px; height: 34px; }
+  }
+  @media (pointer: coarse) {
+    footer { padding-top: 48px; }
+    .editor-resize-handle { top: 0; height: 44px; }
+    .editor-resize-handle::after { top: 21px; }
   }
 `;

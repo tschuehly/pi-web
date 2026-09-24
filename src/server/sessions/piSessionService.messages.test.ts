@@ -6,13 +6,12 @@ const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 
 describe("PiSessionService", () => {
   describe("assistant thinking-level attribution", () => {
-    function messagesService(branch: unknown[], patch: Parameters<typeof fakeRuntime>[1] = {}) {
+    function messagesService(branch: unknown[], patch: Parameters<typeof fakeRuntime>[1] = {}, events = new CapturingSessionEventHub()) {
       const fake = fakeRuntime("session-1", {
         sessionFile: "/tmp/session-1.jsonl",
         sessionManager: fakeSessionManager("/workspace", { getBranch: () => branch }),
         ...patch,
       });
-      const events = new CapturingSessionEventHub();
       const service = new PiSessionService(events, {
         agentDir: TEST_AGENT_DIR,
         modelRuntime: testModelRuntime,
@@ -60,12 +59,108 @@ describe("PiSessionService", () => {
 
       fake.emit({ type: "message_end", message: { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }] } });
       fake.emit({ type: "message_end", message: { role: "user", content: [{ type: "text", text: "next" }] } });
+      await Promise.resolve();
 
       const messageEnds = events.sessionEvents.map(({ event }) => event).filter((event) => event.type === "message.end");
       expect(messageEnds).toEqual([
         { type: "message.end", message: { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }], thinkingLevel: "high" } },
         { type: "message.end", message: { role: "user", content: [{ type: "text", text: "next" }] } },
       ]);
+      await service.dispose();
+    });
+
+    it("suppresses display:false custom messages but preserves other custom messages live", async () => {
+      const { fake, service, events } = messagesService([]);
+      await service.status(sessionRef("session-1"));
+      const eventStart = events.sessionEvents.length;
+      const messages = [
+        { role: "custom", customType: "goal-contract", content: "hidden goal context", display: false, details: { version: 2, goalId: "goal-1" } },
+        { role: "custom", customType: "other.hidden", content: "hidden extension context", display: false, details: { source: "other" } },
+        { role: "custom", customType: "other.default", content: "implicit extension context", details: { source: "other" } },
+        { role: "custom", customType: "pi-goal.lifecycle", content: "Goal resumed", display: true, details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" } },
+        { role: "custom", customType: "other.visible", content: "visible extension message", display: true, details: { source: "other" } },
+      ];
+      const original = structuredClone(messages);
+
+      for (const message of messages) fake.emit({ type: "message_end", message });
+      await Promise.resolve();
+
+      expect(events.sessionEvents.slice(eventStart).flatMap(({ event }) => event.type === "message.end" ? [event.message] : [])).toEqual([
+        messages[2],
+        messages[3],
+        messages[4],
+      ]);
+      expect(messages).toEqual(original);
+      await service.dispose();
+    });
+
+    it("publishes the durable transcript entry id with a finalized live message", async () => {
+      const entryId = "assistant-entry";
+      const message = { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }] };
+      const branch: unknown[] = [];
+      const { fake, service, events } = messagesService(branch);
+      await service.status(sessionRef("session-1"));
+      const eventStart = events.sessionEvents.length;
+
+      fake.emit({ type: "message_end", message });
+      branch.push({ type: "message", id: entryId, message });
+      fake.emit({ type: "turn_end" });
+      await Promise.resolve();
+
+      const liveEvents = events.sessionEvents.slice(eventStart);
+      expect(liveEvents[0]).toEqual({ sessionId: "session-1", event: { type: "message.end", message: { ...message, entryId } } });
+      expect(liveEvents.findIndex(({ event }) => event.type === "pi.event" && event.eventType === "turn_end")).toBeGreaterThan(0);
+      expect((await service.messages(sessionRef("session-1"))).messages).toEqual([{ ...message, entryId }]);
+      await service.dispose();
+    });
+
+    it("omits entryId when the last durable branch message has different identity", async () => {
+      const staleMessage = { role: "assistant", content: [{ type: "text", text: "stale" }] };
+      const branch = [{ type: "message", id: "stale-entry", message: staleMessage }];
+      const message = { role: "assistant", entryId: "raw-entry", content: [{ type: "text", text: "current" }] };
+      const { fake, service, events } = messagesService(branch);
+      await service.status(sessionRef("session-1"));
+      const eventStart = events.sessionEvents.length;
+
+      fake.emit({ type: "message_end", message });
+      await Promise.resolve();
+
+      expect(events.sessionEvents.slice(eventStart)[0]).toEqual({ sessionId: "session-1", event: {
+        type: "message.end",
+        message: { role: "assistant", content: [{ type: "text", text: "current" }] },
+      } });
+      await service.dispose();
+    });
+
+    it("does not publish a deferred finalized message after disposal", async () => {
+      const message = { role: "assistant", content: [{ type: "text", text: "answer" }] };
+      const branch = [{ type: "message", id: "assistant-entry", message }];
+      const { fake, service, events } = messagesService(branch);
+      await service.status(sessionRef("session-1"));
+      const eventStart = events.sessionEvents.length;
+
+      fake.emit({ type: "message_end", message });
+      await service.dispose();
+      await Promise.resolve();
+
+      expect(events.sessionEvents.slice(eventStart).filter(({ event }) => event.type === "message.end")).toEqual([]);
+    });
+
+    it("contains deferred publication failures", async () => {
+      let failPublications = false;
+      const events = new class extends CapturingSessionEventHub {
+        override publish(sessionId: string, event: Parameters<CapturingSessionEventHub["publish"]>[1]): void {
+          if (failPublications) throw new Error("publication failed");
+          super.publish(sessionId, event);
+        }
+      }();
+      const { fake, service } = messagesService([], {}, events);
+      await service.status(sessionRef("session-1"));
+      failPublications = true;
+
+      fake.emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } });
+      await Promise.resolve();
+
       await service.dispose();
     });
 

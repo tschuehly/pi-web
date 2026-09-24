@@ -963,6 +963,8 @@ export interface SessionStartupProgressEvent {
  */
 export interface PromptImageAttachment {
   kind: "image";
+  /** Stable per-draft reference shown in the prompt (for example `[PIC_1]`). */
+  reference: string;
   /** Supported image MIME type (image/png, image/jpeg, image/gif, or image/webp). */
   mimeType: string;
   /** Base64-encoded binary payload (no data: URL prefix). */
@@ -997,6 +999,8 @@ export interface SavedPromptAttachment {
   path: string;
   mimeType: string;
   size: number;
+  /** Present only for images, so folder delivery can retain the draft reference. */
+  reference?: string;
 }
 
 export interface SessionModel {
@@ -1116,6 +1120,25 @@ export type SessionWarningSeverity = "info" | "warning" | "error";
 export const EXTENSION_STATUS_LIMIT = 64;
 export const EXTENSION_STATUS_KEY_MAX_LENGTH = 128;
 export const EXTENSION_STATUS_TEXT_MAX_LENGTH = 65_536;
+export const ACTIVE_TOOL_EXECUTION_LIMIT = 32;
+export const ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH = 256;
+export const ACTIVE_TOOL_EXECUTION_TOOL_NAME_MAX_LENGTH = 64;
+export const ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH = 80;
+export const ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH = 64;
+
+/**
+ * A safe, bounded description of a daemon-observed built-in `bash` tool call
+ * or interactive `!` shell. Process-monitor watchers are reported separately
+ * through extension status key `pi-process-monitor:watchers`; child Pi work is
+ * reported through delegate activity.
+ */
+export interface ActiveToolExecution {
+  id: string;
+  kind: "shell";
+  toolName: string;
+  label: string;
+  startedAt?: string;
+}
 
 /**
  * A live, runtime-scoped warning surfaced to the browser (skill/resource
@@ -1172,6 +1195,13 @@ export interface SessionStatus {
    * restarts. Several may be open at once; the UI presents them as a queue.
    */
   pendingDialogs?: PendingExtensionDialog[];
+  /**
+   * Up to the 32 oldest currently running executions observed by the session
+   * daemon. Newer starts are omitted while the bound is full; a later start can
+   * be admitted after an older row ends. Labels are generic and never contain
+   * commands, arguments, cwd, or environment.
+   */
+  activeToolExecutions?: ActiveToolExecution[];
   /** Disposable extension UI status entries owned by the current live runtime. */
   extensionStatuses?: Record<string, string>;
 }

@@ -1,11 +1,26 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it } from "vitest";
 import { ChatView } from "./ChatView";
+import { normalizeMessage } from "../chatMessages";
 import type { FormattedText } from "./FormattedText";
 
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
 
-it("passes workspace context to queued, text, thinking, skill and tool-result Markdown and updates it on navigation", async () => {
+it("renders inline skills and surrounding text in order without treating text as HTML", async () => {
+  const view = new ChatView();
+  view.sessionId = "session";
+  view.messages = normalizeMessage({ role: "user", content: 'Before <img src=x onerror=alert(1)> <skill name="a" location="/a">\nOne\n</skill> between <skill name="b" location="/b">\nTwo\n</skill> after' });
+  document.body.append(view);
+  await view.updateComplete;
+  const parts = [...view.renderRoot.querySelectorAll("article.msg.user .part")];
+  expect(parts.map((part) => part.tagName.toLowerCase())).toEqual(["formatted-text", "details", "formatted-text", "details", "formatted-text"]);
+  expect(parts.filter((part) => part.matches("details")).map((part) => part.querySelector(".disclosure-preview")?.textContent)).toEqual(["[skill] a", "[skill] b"]);
+  const textParts = parts.filter((part): part is FormattedText => part.tagName.toLowerCase() === "formatted-text");
+  await Promise.all(textParts.map((part) => part.updateComplete));
+  expect(textParts[0]?.renderRoot.querySelector("img[src=x]")).toBeNull();
+});
+
+it("updates workspace links while keeping orphan tool results literal", async () => {
   const view = new ChatView();
   const text = "[file](result.zip)";
   view.sessionId = "session";
@@ -25,9 +40,13 @@ it("passes workspace context to queued, text, thinking, skill and tool-result Ma
   }
   await view.updateComplete;
 
+  const orphanResult = view.renderRoot.querySelector("pre.orphan-tool-result");
+  expect(orphanResult?.textContent).toBe(text);
+  expect(orphanResult?.querySelector("a")).toBeNull();
+
   async function hrefs() {
     const formatted = [...view.renderRoot.querySelectorAll<FormattedText>("formatted-text")];
-    expect(formatted).toHaveLength(5);
+    expect(formatted).toHaveLength(4);
     await Promise.all(formatted.map((element) => element.updateComplete));
     return formatted.map((element) => element.renderRoot.querySelector("a")?.getAttribute("href"));
   }
@@ -38,5 +57,5 @@ it("passes workspace context to queued, text, thinking, skill and tool-result Ma
   expect((await hrefs()).every((href) => href?.includes("/machines/other/projects/p2/workspaces/w2/") === true)).toBe(true);
   view.workspaceContext = undefined;
   await view.updateComplete;
-  expect(await hrefs()).toEqual([null, null, null, null, null]);
+  expect(await hrefs()).toEqual([null, null, null, null]);
 });

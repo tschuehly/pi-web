@@ -492,7 +492,7 @@ describe("SessionController pending starts", () => {
     if (temporaryId === undefined) throw new Error("Expected temporary session id");
     saveDraft(sessionKey(temporaryId), "draft text");
     const attachment: PendingAttachment = { id: "attachment-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 };
-    saveStagedAttachments(sessionKey(temporaryId), [attachment]);
+    saveStagedAttachments(sessionKey(temporaryId), { attachments: [attachment], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
 
     startRequest.resolve(started);
     await start;

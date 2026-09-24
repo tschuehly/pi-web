@@ -3,14 +3,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type Machine, type Project, type SessionInfo, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
-import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
+import { ACTIVITY_STATUS_KEY, GOAL_STATUS_KEY } from "../extensionStatusSnapshots";
+import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { readStoredThemePreference } from "../theme";
+import { DelegateRoster } from "./DelegateRoster";
+import { GoalStatusChip } from "./GoalStatusChip";
 import { PromptEditor } from "./PromptEditor";
 import { WorkbenchApp, rootProjectOf, rootProjects } from "./WorkbenchApp";
+import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
+import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
 
 beforeEach(() => {
   vi.spyOn(api, "machines").mockResolvedValue([machine]);
@@ -58,7 +63,7 @@ describe("Chat in a folder", () => {
     vi.spyOn(api, "sessions").mockResolvedValue([]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/anywhere/notes" });
     vi.spyOn(api, "status").mockResolvedValue({ sessionId: "adhoc", persisted: false, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
-    window.piWebNative = { pickDirectory: () => Promise.resolve("/anywhere/notes") };
+    window.piWebNative = { pickDirectory: () => Promise.resolve("/anywhere/notes"), notify: () => Promise.resolve() };
 
     const app = new WorkbenchApp();
     document.body.append(app);
@@ -92,6 +97,34 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(FakeBrowserNotification.requestPermission).toHaveBeenCalledOnce(); });
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector('button[aria-label="Enable desktop notifications"]')).toBeNull();
+    expect(app.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("browser's site settings");
+  });
+
+  it("keeps denied browser permission guidance visible after reload in the chooser and Chat", async () => {
+    FakeBrowserNotification.permission = "denied";
+    vi.stubGlobal("Notification", FakeBrowserNotification);
+    const app = await mountChooser([]);
+
+    expect(app.shadowRoot?.querySelector('button[aria-label="Enable desktop notifications"]')).toBeNull();
+    expect(app.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("browser's site settings");
+    setState(app, { ...getState(app), selectedSession: session("denied", "Chat") });
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector('[data-view="chat"] [role="alert"]')?.textContent).toContain("browser's site settings");
+  });
+
+  it("shows a native permission failure in the chooser without hiding the retry control", async () => {
+    window.piWebNative = {
+      pickDirectory: () => Promise.resolve(null),
+      requestNotificationPermission: vi.fn(() => Promise.reject(new Error("Notification authorization was denied"))),
+      notify: vi.fn(() => Promise.resolve()),
+    };
+    const app = await mountChooser([]);
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Enable desktop notifications"]')?.click();
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("System Settings");
+    });
+    expect(app.shadowRoot?.querySelector('button[aria-label="Enable desktop notifications"]')).not.toBeNull();
+    delete window.piWebNative;
   });
 
   it("hides Workbench agent sessions until the user asks to see them", async () => {
@@ -196,6 +229,38 @@ describe("Workbench Chat chooser", () => {
     expect(getState(app).selectedSession?.id).toBe("fresh");
   });
 
+  it("opens and closes the side Files pane without remounting Chat", async () => {
+    const current = session("human", "Edit notes");
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    const chat = app.shadowRoot?.querySelector("chat-view");
+    const composer = app.shadowRoot?.querySelector("prompt-editor");
+    const toggle = app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    toggle?.click();
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
+    expect(app.shadowRoot?.querySelector("prompt-editor")).toBe(composer);
+    expect(app.shadowRoot?.querySelector("workbench-files-pane")).not.toBeNull();
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    const pane = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+    if (pane === undefined || pane === null) throw new Error("Files pane was not mounted");
+    const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
+    toggle?.click();
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector("workbench-files-pane")).toBe(pane);
+    window.history.pushState({}, "", "/?session=other&view=chat");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(window.location.search).toContain("session=human");
+    expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
+    canClose.mockReturnValue(true);
+    toggle?.click();
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
+    expect(app.shadowRoot?.querySelector("workbench-files-pane")).toBeNull();
+  });
+
   it("returns from a Chat to the current workspace chooser", async () => {
     const current = session("human", "Plan the release");
     const app = await mountChooser([current]);
@@ -257,6 +322,7 @@ describe("Workbench Chat chooser", () => {
     let inspectCount = 0;
     stubWorkstreamService(calls, (body) => {
       if (body.operation === "inspect") return { ok: true, value: { id: "workstream", revision: inspectCount++ === 0 ? 70 : 71, sessions: [], humanTasks: [] } };
+      if (body.operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: 71 } };
       protocol.push("append");
       return { ok: true, value: { acceptedRevision: typeof body.input["expectedRevision"] === "number" ? body.input["expectedRevision"] + 1 : 0 } };
     }, protocol);
@@ -492,13 +558,13 @@ function pluginLifecycleResponse(): Response {
   }), { status: 200 });
 }
 
-function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: WorkstreamServiceCall) => unknown, protocol?: string[]): void {
+function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: WorkstreamServiceCall) => unknown, protocol?: string[], handleList = false): void {
   vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
     if (url.endsWith("/plugins")) return Promise.resolve(pluginLifecycleResponse());
     if (typeof init?.body !== "string") throw new Error("missing Workstream request body");
     const envelope = JSON.parse(init.body) as { input: Record<string, unknown> }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
     const body = { operation: decodeURIComponent(url.slice(url.lastIndexOf("/") + 1)), input: envelope.input };
-    if (body.operation === "list") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }));
+    if (body.operation === "list" && !handleList) return Promise.resolve(new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }));
     calls.push(body);
     if (body.operation === "inspect") protocol?.push("inspect");
     return Promise.resolve(new Response(JSON.stringify(respond(body)), { status: 200 }));
@@ -506,6 +572,12 @@ function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: W
 }
 
 describe("Workbench interface scale shortcuts", () => {
+  it("sizes the fixed Workbench host against inherited compensated viewport dimensions", () => {
+    expect(WorkbenchApp.styles.cssText).toMatch(/:host\s*\{[^}]*--pi-workbench-viewport-height:\s*calc\(100dvh\s*\/\s*var\(--pi-interface-scale,\s*1\)\)/);
+    expect(WorkbenchApp.styles.cssText).toMatch(/:host\s*\{[^}]*--pi-workbench-viewport-width:\s*calc\(100dvw\s*\/\s*var\(--pi-interface-scale,\s*1\)\)/);
+    expect(WorkbenchApp.styles.cssText).toMatch(/:host\s*\{[^}]*height:\s*var\(--pi-workbench-viewport-height\)/);
+  });
+
   it("steps the stored scale up, down, and back to the default on Cmd/Ctrl +/-/0", async () => {
     const app = await mountChooser([]);
 
@@ -518,6 +590,7 @@ describe("Workbench interface scale shortcuts", () => {
 
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "0", metaKey: true, cancelable: true }));
     expect(readStoredInterfaceScale()).toBe(DEFAULT_INTERFACE_SCALE);
+    expect(document.documentElement.style.getPropertyValue(INTERFACE_SCALE_CSS_PROPERTY)).toBe("1");
     app.remove();
   });
 
@@ -563,6 +636,7 @@ describe("Workbench settings panel", () => {
 
     expect(readStoredInterfaceScale()).toBe(1.25);
     expect(document.documentElement.style.getPropertyValue("zoom")).toBe("1.25");
+    expect(document.documentElement.style.getPropertyValue(INTERFACE_SCALE_CSS_PROPERTY)).toBe("1.25");
     app.remove();
   });
 
@@ -602,24 +676,132 @@ describe("Workbench settings panel", () => {
 });
 
 describe("Workbench Chat controls", () => {
-  it("mounts the delegate roster and Working Mode controls beside the composer", async () => {
+  it("backs off unchanged Workstream watches without repeated lifecycle lookups", async () => {
+    const current = session("backoff", "Chat", "Chat title");
+    const calls: WorkstreamServiceCall[] = [];
+    stubWorkstreamService(calls, ({ operation }) => operation === "watch"
+      ? { ok: true, value: { mode: "replay", events: [], nextSequence: 20 } }
+      : { ok: true, value: [] }, undefined, true);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
+    vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
+    const app = await mountChooser([current]);
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".session")?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("backoff"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
+    await vi.waitFor(() => { expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined(); });
+    const fetcher = vi.mocked(fetch);
+    const lifecycleCalls = () => fetcher.mock.calls.filter(([url]) => typeof url === "string" && url.endsWith("/plugins")).length;
+    const before = lifecycleCalls();
+    const timer: unknown = Reflect.get(app, "workstreamWatchTimer");
+    if (typeof timer === "number") window.clearTimeout(timer);
+    vi.useFakeTimers();
+    try {
+      const schedule: unknown = Reflect.get(app, "scheduleWorkstreamWatch");
+      if (typeof schedule !== "function") throw new Error("Watch scheduler missing");
+      Reflect.apply(schedule, app, [{ machineId: "local", projectId: "project", workspaceId: "workspace" }, current.id]);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(calls.filter((call) => call.operation === "watch")).toHaveLength(2);
+      expect(Reflect.get(app, "workstreamWatchDelay")).toBe(4_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(calls.filter((call) => call.operation === "watch")).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(calls.filter((call) => call.operation === "watch")).toHaveLength(3);
+      expect(lifecycleCalls()).toBe(before);
+    } finally { app.remove(); vi.useRealTimers(); }
+  });
+
+  it("refreshes the open header when an external Workstream association appears, changes title, or disappears", async () => {
+    const current = session("current", "Initial prompt", "Named chat");
+    let revision = 0;
+    let associated = false;
+    let title = "External Workstream";
+    const calls: WorkstreamServiceCall[] = [];
+    stubWorkstreamService(calls, ({ operation }) => {
+      if (operation === "list") return { ok: true, value: associated ? [{ id: "external" }] : [] };
+      if (operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: revision } };
+      return { ok: true, value: { id: "external", title, revision, sessions: [], humanTasks: [], links: [], overview: null, closed: false } };
+    }, undefined, true);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
+    vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
+    const app = await mountChooser([current]);
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".session")?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("current"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
+    await vi.waitFor(() => { expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined(); });
+    await app.updateComplete;
+    expect(drawerTitle(app)).toBe("Named chat");
+
+    associated = true;
+    revision = 1;
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("External Workstream"); }, { timeout: 3_000 });
+
+    title = "Renamed elsewhere";
+    revision = 2;
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Renamed elsewhere"); }, { timeout: 3_000 });
+
+    associated = false;
+    revision = 3;
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Named chat"); }, { timeout: 3_000 });
+    const watchCalls = calls.filter((call) => call.operation === "watch");
+    expect(watchCalls.length).toBeGreaterThanOrEqual(4);
+    expect(watchCalls[0]?.input).toEqual({ afterSequence: Number.MAX_SAFE_INTEGER });
+    expect(getState(app).selectedSession?.id).toBe("current");
+  }, 10_000);
+
+  it("keeps identity in the header and mounts status controls beside the composer", async () => {
     const current = session("current", "Build the UI");
     const app = await mountChooser([current]);
-    setState(app, { ...getState(app), selectedSession: current });
+    setState(app, {
+      ...getState(app),
+      selectedSession: current,
+      status: {
+        sessionId: current.id, isStreaming: false, isCompacting: false, isBashRunning: false,
+        pendingMessageCount: 0, queuedMessages: [],
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+        extensionStatuses: {
+          [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "worker-1", kind: "worker", activity: "running" }] }),
+          [GOAL_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, goalId: "goal-1234567890", state: "active", objective: "Build the UI" }),
+        },
+      },
+    });
     await app.updateComplete;
 
     const shell = app.shadowRoot?.querySelector(".chat-shell");
     if (shell === null || shell === undefined) throw new Error("Chat shell was not rendered");
-    expect(shell.querySelector("header > workstream-context-drawer")).not.toBeNull();
+    const drawer = shell.querySelector("header > workstream-context-drawer");
+    if (!(drawer instanceof WorkstreamContextDrawer)) throw new Error("Workstream context drawer was not rendered");
+    expect(drawer.fallbackTitle).toBe("Build the UI");
+    expect(shell.querySelector("header > goal-status-chip")).toBeNull();
     expect(shell.querySelector("header > strong")).toBeNull();
-    expect(shell.querySelector("delegate-roster")).not.toBeNull();
+    const roster = shell.querySelector("delegate-roster");
+    if (!(roster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered");
+    expect(roster.collapsed).toBe(false);
+    await roster.updateComplete;
+    const rosterToggle = roster.shadowRoot?.querySelector<HTMLButtonElement>(".section-toggle");
+    if (rosterToggle === null || rosterToggle === undefined) throw new Error("Delegate roster toggle was not rendered");
+    rosterToggle.click();
+    await app.updateComplete;
+    const collapsedRoster = app.shadowRoot?.querySelector("delegate-roster");
+    if (!(collapsedRoster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered after collapse");
+    const goal = shell.querySelector("delegate-roster + goal-status-chip");
+    if (!(goal instanceof GoalStatusChip)) throw new Error("Goal status chip was not rendered beside the composer");
+    expect(goal.status).toBe(getState(app).status);
+    await goal.updateComplete;
+    expect(goal.shadowRoot?.querySelector("summary")?.textContent).toContain("Build the UI");
+    expect(goal.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
+    expect(collapsedRoster.collapsed).toBe(true);
+    expect(shell.querySelector("status-bar")).toBeNull();
     expect(shell.querySelector("working-mode-controls")).toBeNull();
     const promptEditor = shell.querySelector<PromptEditor>("prompt-editor");
     if (promptEditor === null) throw new Error("Prompt editor was not rendered");
     await promptEditor.updateComplete;
+    expect(promptEditor.showUsage).toBe(true);
     const controls = promptEditor.shadowRoot?.querySelector("working-mode-controls");
     expect(controls).not.toBeNull();
-    expect(controls?.nextElementSibling?.classList.contains("send-button")).toBe(true);
+    expect(controls?.nextElementSibling?.classList.contains("composer-actions")).toBe(true);
+    expect(controls?.nextElementSibling?.querySelector(".send-button")).not.toBeNull();
   });
 });
 
@@ -643,6 +825,10 @@ async function mountChooser(sessions: SessionInfo[]): Promise<WorkbenchApp> {
 
 function setState(app: WorkbenchApp, state: AppState): void {
   if (!Reflect.set(app, "app", state)) throw new Error("Could not set WorkbenchApp state");
+}
+
+function drawerTitle(app: WorkbenchApp): string | null | undefined {
+  return app.shadowRoot?.querySelector<WorkstreamContextDrawer>("workstream-context-drawer")?.shadowRoot?.querySelector("summary strong, .fallback-title")?.textContent;
 }
 
 function promptEditor(app: WorkbenchApp): PromptEditor {

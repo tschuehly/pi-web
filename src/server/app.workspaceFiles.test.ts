@@ -1,7 +1,8 @@
-import { mkdir, truncate, writeFile } from "node:fs/promises";
+import { mkdir, readFile, truncate, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAX_INLINE_PREVIEW_BYTES } from "../shared/workspaceFiles.js";
+import type { FileContentResponse, FileTreeResponse } from "../shared/apiTypes.js";
 import type { Project, WorkspaceProviderResolution } from "./types.js";
 import { appTestContext, registerAppTestHooks } from "./app.testSupport.js";
 import { workspaceFilePreviewErrorResponsePolicy, workspaceFilePreviewResponsePolicy } from "./workspaces/filePreviewResponsePolicy.js";
@@ -227,6 +228,31 @@ describe("buildApp workspace file routes", () => {
     expect(response.json()).toEqual([{ path: "sdk.md", kind: "other" }]);
   });
 
+  it("keeps relative tree, file, and preview access independent of invalid project path-access config", async () => {
+    const add = await appTestContext.app.inject({ method: "POST", url: "/api/projects", payload: { name: "Local Files", path: appTestContext.projectDir, create: true } });
+    const project = add.json<Project>();
+    const listed = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
+    const workspace = listed.json<WorkspaceProviderResolution>().workspaces[0];
+    if (workspace === undefined) throw new Error("Expected workspace");
+    await writeFile(join(appTestContext.projectDir, "local.txt"), "local content\n");
+    await mkdir(join(appTestContext.projectDir, ".pi-web"), { recursive: true });
+    await writeFile(join(appTestContext.projectDir, ".pi-web", "config.json"), "{invalid JSON");
+    const base = `/api/projects/${project.id}/workspaces/${workspace.id}`;
+    const [tree, file, preview, absolute] = await Promise.all([
+      appTestContext.app.inject({ method: "GET", url: `${base}/tree` }),
+      appTestContext.app.inject({ method: "GET", url: `${base}/file?path=local.txt` }),
+      appTestContext.app.inject({ method: "GET", url: `${base}/file/preview?path=local.txt&download=1` }),
+      appTestContext.app.inject({ method: "GET", url: `${base}/file?path=${encodeURIComponent(join(appTestContext.projectDir, "local.txt"))}` }),
+    ]);
+    expect(tree.statusCode).toBe(200);
+    expect(tree.json<FileTreeResponse>().entries).toContainEqual(expect.objectContaining({ name: "local.txt" }));
+    expect(file.statusCode).toBe(200);
+    expect(file.json<FileContentResponse>().content).toBe("local content\n");
+    expect(preview.statusCode).toBe(200);
+    expect(preview.body).toBe("local content\n");
+    expect(absolute.statusCode).toBe(400);
+  });
+
   it("uses the owning project config for suggestions from an authoritative linked workspace", async () => {
     const addResponse = await appTestContext.app.inject({
       method: "POST",
@@ -396,6 +422,52 @@ describe("buildApp workspace file routes", () => {
       headers: { "content-type": "text/plain" },
     });
     expect(dirWriteResponse.statusCode).toBe(400);
+  });
+
+  it("lists and safely saves loaded Markdown, rejecting stale and deleted versions", async () => {
+    const add = await appTestContext.app.inject({ method: "POST", url: "/api/projects", payload: { name: "Markdown", path: appTestContext.projectDir, create: true } });
+    const project = add.json<Project>();
+    const workspaces = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
+    const workspace = workspaces.json<WorkspaceProviderResolution>().workspaces[0];
+    if (workspace === undefined) throw new Error("Expected workspace");
+    const target = join(appTestContext.projectDir, "notes.md");
+    await writeFile(target, "# Original\n");
+    const base = `/projects/${project.id}/workspaces/${workspace.id}`;
+    const tree = await appTestContext.app.inject({ method: "GET", url: `/api${base}/tree` });
+    expect(tree.statusCode).toBe(200);
+    expect(tree.json<{ entries: { path: string }[] }>().entries).toContainEqual(expect.objectContaining({ path: "notes.md" }));
+
+    const read = await appTestContext.app.inject({ method: "GET", url: `/api${base}/file?path=notes.md` });
+    expect(read.statusCode).toBe(200);
+    const loaded = read.json<{ content: string; version: string }>();
+    expect(loaded.content).toBe("# Original\n");
+    expect(loaded.version).toMatch(/^[a-f0-9]{64}$/u);
+    const save = (prefix: string, query: string, content: string) => appTestContext.app.inject({
+      method: "PUT", url: `${prefix}${base}/file?path=notes.md&expectedVersion=${loaded.version}${query}`,
+      payload: content, headers: { "content-type": "text/plain" },
+    });
+    const saved = await save("/api/machines/local", "", "# Saved\n");
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({ path: "notes.md", created: false });
+    expect(await readFile(target, "utf8")).toBe("# Saved\n");
+
+    await writeFile(target, "# Other\n");
+    for (const prefix of ["/api", "/api/machines/local"]) {
+      const stale = await save(prefix, "", "# Lost\n");
+      expect(stale.statusCode).toBe(409);
+      expect(stale.json()).toEqual({ error: "File changed or was deleted since it was loaded" });
+    }
+    expect(await readFile(target, "utf8")).toBe("# Other\n");
+    await unlink(target);
+    const deleted = await save("/api", "", "# Lost\n");
+    expect(deleted.statusCode).toBe(409);
+    expect(deleted.json()).toEqual({ error: "File changed or was deleted since it was loaded" });
+    await expect(readFile(target)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const forced = await save("/api", "&overwrite=true", "# Forced\n");
+    expect(forced.statusCode).toBe(200);
+    expect(forced.json()).toMatchObject({ path: "notes.md", created: true });
+    expect(await readFile(target, "utf8")).toBe("# Forced\n");
   });
 
   it("deletes workspace files through the HTTP contract", async () => {

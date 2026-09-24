@@ -11,6 +11,7 @@ export interface SessionServiceDependencyInput {
   agentDir: string;
   /** Daemon-lifetime session archive, constructed against the captured daemon environment. */
   archiveStore: NonNullable<PiSessionServiceDependencies["archiveStore"]>;
+  workstreamLaunchStore: NonNullable<PiSessionServiceDependencies["workstreamLaunchStore"]>;
   sessionManager: PiSessionServiceDependencies["sessionManager"];
   modelRuntime: PiSessionServiceDependencies["modelRuntime"];
   workspaceActivity: NonNullable<PiSessionServiceDependencies["workspaceActivity"]>;
@@ -50,6 +51,7 @@ export function sessionServiceDependencies(input: SessionServiceDependencyInput)
     modelRuntime: input.modelRuntime,
     agentDir: input.agentDir,
     archiveStore: input.archiveStore,
+    workstreamLaunchStore: input.workstreamLaunchStore,
     workspaceActivity: input.workspaceActivity,
     logger: input.logger,
     ...(input.spawnTargets === undefined ? {} : { spawnTargets: input.spawnTargets }),
