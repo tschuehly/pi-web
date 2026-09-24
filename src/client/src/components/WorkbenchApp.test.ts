@@ -315,6 +315,22 @@ describe("Workbench Chat chooser", () => {
     expect(sessions).not.toHaveBeenCalled();
   });
 
+  it("opens a rebound Workstream session in its registered sibling worktree", async () => {
+    const worktree: Workspace = { ...workspace, id: "persistent-worktree", path: "/ideas/pi-workbench.context-views-20260909", label: "context views" };
+    const locate = vi.spyOn(api, "locate").mockResolvedValue({ cwd: worktree.path });
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace, worktree]);
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "rebound", persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    const app = await mountChooser([]);
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("open-workstream-session", {
+      detail: { workstreamId: "workstream", sessionId: "rebound", directories: [worktree.path], prompt: "Continue" },
+    }));
+
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("rebound"); });
+    expect(locate).toHaveBeenCalledWith("rebound", "local");
+    expect(getState(app).selectedProject?.id).toBe(project.id);
+    expect(getState(app).selectedWorkspace?.id).toBe(worktree.id);
+  });
+
   it("records and confirms a Workstream launch around Chat creation, then preloads the durable prompt draft", async () => {
     const started = session("new-session", "");
     const protocol: string[] = [];

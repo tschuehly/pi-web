@@ -385,17 +385,23 @@ export class WorkbenchApp extends LitElement {
   private async openAllSession(session: SessionInfo): Promise<void> {
     this.setApp({ error: "" });
     try {
-      const project = this.app.projects
-        .filter((candidate) => session.cwd === candidate.path || session.cwd.startsWith(`${candidate.path}/`))
-        .sort((a, b) => b.path.length - a.path.length)[0];
-      const workspaces = project === undefined ? [] : await api.workspaces(project.id, selectedMachineId(this.app)).catch((): Workspace[] => []);
-      const registeredWorkspace = workspaces.find((candidate) => candidate.path === session.cwd);
-      const workspace = registeredWorkspace ?? adHocWorkspace(session.cwd);
-      this.setApp({ selectedProject: registeredWorkspace === undefined ? undefined : project, selectedWorkspace: workspace, workspaces: registeredWorkspace === undefined ? [workspace] : workspaces, sessions: [session] });
+      const registered = await this.registeredWorkspaceForCwd(session.cwd, selectedMachineId(this.app));
+      const workspace = registered?.workspace ?? adHocWorkspace(session.cwd);
+      this.setApp({ selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] });
       await this.openSession(session);
     } catch (error) {
       this.setApp({ error: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  /** A Git worktree may be a sibling of its registered project's root, not a descendant. */
+  private async registeredWorkspaceForCwd(cwd: string, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
+    for (const project of [...this.app.projects].sort((a, b) => b.path.length - a.path.length)) {
+      const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
+      const workspace = workspaces.find((candidate) => candidate.path === cwd);
+      if (workspace !== undefined) return { project, workspace, workspaces };
+    }
+    return undefined;
   }
 
   /** Open the session that wrote a Workstream's newest checkpoint, wherever it lives. */
@@ -404,14 +410,13 @@ export class WorkbenchApp extends LitElement {
     this.setApp({ error: "" });
     try {
       const { cwd } = await api.locate(detail.sessionId, machineId);
-      const project = this.app.projects.find((candidate) => cwd === candidate.path || cwd.startsWith(`${candidate.path}/`));
-      const [session, workspaces] = await Promise.all([
+      const [session, registered] = await Promise.all([
         this.unlistedSession(detail.sessionId, cwd, machineId),
-        project === undefined ? Promise.resolve([]) : api.workspaces(project.id, machineId).catch((): Workspace[] => []),
+        this.registeredWorkspaceForCwd(cwd, machineId),
       ]);
       if (session === undefined) throw new Error(`Session ${detail.sessionId} is unavailable under ${cwd}.`);
-      const workspace = workspaces.find((candidate) => candidate.path === cwd);
-      this.setApp({ selectedProject: project, selectedWorkspace: workspace, workspaces, sessions: [session] });
+      const workspace = registered?.workspace ?? adHocWorkspace(cwd);
+      this.setApp({ selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] });
       await this.openSession(session);
     } catch (error) {
       this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Start a new session with the checkpoint prompt instead.` });
