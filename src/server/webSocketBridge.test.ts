@@ -30,13 +30,17 @@ describe("bridgeSockets", () => {
     const upstreamSide = await createSocketPair();
     bridgeSockets(clientSide.bridgeSocket, upstreamSide.bridgeSocket);
 
-    const forwardedToUpstream = nextMessage(upstreamSide.peerSocket);
+    const forwardedToUpstream = nextFrame(upstreamSide.peerSocket);
     clientSide.peerSocket.send("to-upstream");
-    await expect(forwardedToUpstream).resolves.toBe("to-upstream");
+    await expect(forwardedToUpstream).resolves.toEqual({ text: "to-upstream", binary: false });
 
-    const forwardedToClient = nextMessage(clientSide.peerSocket);
+    const forwardedToClient = nextFrame(clientSide.peerSocket);
     upstreamSide.peerSocket.send("to-client");
-    await expect(forwardedToClient).resolves.toBe("to-client");
+    await expect(forwardedToClient).resolves.toEqual({ text: "to-client", binary: false });
+
+    const binaryToClient = nextFrame(clientSide.peerSocket);
+    upstreamSide.peerSocket.send(Buffer.from("binary"));
+    await expect(binaryToClient).resolves.toEqual({ text: "binary", binary: true });
   });
 
   it("propagates close and error events to the opposite socket", async () => {
@@ -240,10 +244,15 @@ describe("createBufferedSender", () => {
     const client = new WebSocket(serverUrl(socketServer));
     sockets.add(client);
     const send = createBufferedSender(client);
-    send("queued-before-open");
+    send(Buffer.from("queued-before-open"), false);
 
     const serverSocket = await connected;
-    await expect(nextMessage(serverSocket)).resolves.toBe("queued-before-open");
+    await expect(new Promise<{ text: string; binary: boolean }>((resolve) => {
+      serverSocket.once("message", (data, binary) => { resolve({ text: rawDataToString(data), binary }); });
+    })).resolves.toEqual({ text: "queued-before-open", binary: false });
+    const next = new Promise<boolean>((resolve) => { serverSocket.once("message", (_data, binary) => { resolve(binary); }); });
+    send(Buffer.from("binary"), true);
+    await expect(next).resolves.toBe(true);
     closeSocket(client);
     closeSocket(serverSocket);
   });
@@ -333,6 +342,10 @@ function nextCloseEvent(socket: WebSocket): Promise<{ code: number; reason: stri
       resolve({ code, reason: reason.toString("utf8") });
     });
   });
+}
+
+function nextFrame(socket: WebSocket): Promise<{ text: string; binary: boolean }> {
+  return new Promise((resolve) => { socket.once("message", (data, binary) => { resolve({ text: rawDataToString(data), binary }); }); });
 }
 
 function nextMessage(socket: WebSocket): Promise<string> {

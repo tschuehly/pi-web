@@ -13,6 +13,7 @@ export class SessionEventHub {
   private readonly socketsBySession = new Map<string, Set<RealtimeSocket>>();
   private readonly globalSockets = new Set<RealtimeSocket>();
   private readonly seqBySession = new Map<string, number>();
+  private readonly globalUpdates = new Map<string, { sent: string | undefined; sentAt: number; pending: string | undefined; timer: ReturnType<typeof setTimeout> | undefined }>();
   private globalJoinFrame: (() => RealtimeEvent) | undefined;
 
   add(sessionId: string, socket: RealtimeSocket): void {
@@ -67,13 +68,51 @@ export class SessionEventHub {
   }
 
   publishNotificationSummary(event: SessionNotificationSummaryEvent): void {
-    const payload = JSON.stringify(event);
-    this.sendToSockets(this.globalSockets, payload);
+    this.publishRealtime(event);
   }
 
   publishRealtime(event: RealtimeEvent): void {
     const payload = JSON.stringify(event);
+    if (event.type === "status.update" || event.type === "activity.update") {
+      const sessionId = event.type === "status.update" ? event.status.sessionId : event.activity.sessionId;
+      const key = `${event.type}:${sessionId}`;
+      let update = this.globalUpdates.get(key);
+      if (!update) {
+        update = { sent: undefined, sentAt: 0, pending: undefined, timer: undefined };
+        this.globalUpdates.set(key, update);
+      }
+      if (payload === (update.pending ?? update.sent)) return;
+      const final = event.type === "activity.update"
+        ? event.activity.phase !== "active"
+        : !event.status.isStreaming && !event.status.isCompacting && !event.status.isBashRunning;
+      const elapsed = Date.now() - update.sentAt;
+      if (final || update.sent === undefined || elapsed >= 500) {
+        this.flushGlobalUpdate(key, payload);
+      } else {
+        update.pending = payload;
+        if (!update.timer) {
+          update.timer = setTimeout(() => { this.flushGlobalUpdate(key); }, 500 - elapsed);
+          update.timer.unref();
+        }
+      }
+      return;
+    }
+    // Preserve causal ordering: queued snapshots precede subsequent global events.
+    for (const key of this.globalUpdates.keys()) this.flushGlobalUpdate(key);
     this.sendToSockets(this.globalSockets, payload);
+  }
+
+  private flushGlobalUpdate(key: string, payload?: string): void {
+    const update = this.globalUpdates.get(key);
+    if (!update) return;
+    if (update.timer) clearTimeout(update.timer);
+    update.timer = undefined;
+    const next = payload ?? update.pending;
+    update.pending = undefined;
+    if (next === undefined || next === update.sent) return;
+    update.sent = next;
+    update.sentAt = Date.now();
+    this.sendToSockets(this.globalSockets, next);
   }
 
   private sendToSockets(sockets: Set<RealtimeSocket> | undefined, payload: string): void {

@@ -3,15 +3,21 @@ import { resolveAppWebSocketUrl } from "../appUrl";
 
 export function sessionEvents(session: SessionRef, machineId = "local"): WebSocket {
   const query = `?${new URLSearchParams({ cwd: session.cwd }).toString()}`;
-  return new WebSocket(resolveAppWebSocketUrl(`${machinePrefix(machineId)}/sessions/${encodeURIComponent(session.id)}/events${query}`));
+  return openSocket(`${machinePrefix(machineId)}/sessions/${encodeURIComponent(session.id)}/events${query}`);
 }
 
 export function globalSessionEvents(machineId = "local"): WebSocket {
-  return new WebSocket(resolveAppWebSocketUrl(`${machinePrefix(machineId)}/sessions/events`));
+  return openSocket(`${machinePrefix(machineId)}/sessions/events`);
 }
 
 export function realtimeEvents(machineId = "local"): WebSocket {
-  return new WebSocket(resolveAppWebSocketUrl(`${machinePrefix(machineId)}/events`));
+  return openSocket(`${machinePrefix(machineId)}/events`);
+}
+
+function openSocket(path: string): WebSocket {
+  const socket = new WebSocket(resolveAppWebSocketUrl(path));
+  socket.binaryType = "arraybuffer";
+  return socket;
 }
 
 function machinePrefix(machineId: string): string {
