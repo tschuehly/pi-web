@@ -19,11 +19,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function harness(onPermissionChange: () => void = () => undefined) {
+function harness(onPermissionChange: () => void = () => undefined, workstreamTitle: () => string | undefined = () => undefined) {
   let permission: NotificationPermission = "granted";
   let background = true;
   const notifications: { title: string; options: NotificationOptions; handle: FakeNotification }[] = [];
   const focus = vi.fn();
+  const openChat = vi.fn();
   const browser: DesktopNotificationBrowser = {
     permission: () => permission,
     requestPermission: vi.fn(() => Promise.resolve(permission)),
@@ -36,9 +37,10 @@ function harness(onPermissionChange: () => void = () => undefined) {
     focus,
   };
   return {
-    controller: new DesktopNotificationController(browser, onPermissionChange),
+    controller: new DesktopNotificationController(browser, onPermissionChange, workstreamTitle, openChat),
     notifications,
     focus,
+    openChat,
     setBackground: (value: boolean) => { background = value; },
     setPermission: (value: NotificationPermission) => { permission = value; },
   };
@@ -69,7 +71,7 @@ function status(isStreaming: boolean): SessionStatus {
 
 const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-09-20T00:00:00Z", questions: [] };
 const dialog: PendingExtensionDialog = { dialogId: "dialog-1", kind: "confirm", title: "Proceed?", askedAt: "2026-09-20T00:00:00Z", runScoped: true };
-const session: SessionInfo = { id: "session-1", cwd: "/repo", path: "/sessions/1.jsonl", created: "2026-09-20T00:00:00Z", modified: "2026-09-20T00:00:00Z", messageCount: 1, firstMessage: "Hello" };
+const session: SessionInfo = { id: "session-1", name: "Build Chat", cwd: "/repo", path: "/sessions/1.jsonl", created: "2026-09-20T00:00:00Z", modified: "2026-09-20T00:00:00Z", messageCount: 1, firstMessage: "Hello" };
 
 describe("DesktopNotificationController", () => {
   it("suppresses foreground activity and notifies only a selected Chat completion transition", () => {
@@ -79,14 +81,14 @@ describe("DesktopNotificationController", () => {
     test.controller.activate(streaming);
 
     test.setBackground(false);
-    const completed = state({ status: status(false) });
+    const completed = state({ status: status(false), messages: [{ role: "assistant", parts: [{ type: "text", text: "The result is ready.\nMore detail" }] }] });
     test.controller.sync(streaming, completed);
     expect(test.notifications).toHaveLength(0);
 
     test.setBackground(true);
     test.controller.sync(completed, streaming);
     test.controller.sync(streaming, completed);
-    expect(test.notifications.map(({ title }) => title)).toEqual(["PI WEB · Chat complete"]);
+    expect(test.notifications.map(({ title, options }) => [title, options.body])).toEqual([["Build Chat", "Finished · The result is ready."]]);
   });
 
   it("treats reconnect hydration as a baseline and deduplicates asks, dialogs, and errors", () => {
@@ -99,7 +101,7 @@ describe("DesktopNotificationController", () => {
     test.controller.activate(hydrated);
     expect(test.notifications).toHaveLength(0);
 
-    const nextAsk = { ...ask, askId: "ask-2" };
+    const nextAsk = { ...ask, askId: "ask-2", questions: [{ id: "q", question: "Which branch?", options: [] }] };
     const nextDialog = { ...dialog, dialogId: "dialog-2" };
     const attention = state({ pendingAsk: nextAsk, pendingDialogs: [dialog, nextDialog] });
     test.controller.sync(hydrated, attention);
@@ -107,11 +109,23 @@ describe("DesktopNotificationController", () => {
     test.controller.sessionError(attention, "terminal failed", 42);
     test.controller.sessionError(attention, "terminal failed", 42);
 
-    expect(test.notifications.map(({ title }) => title)).toEqual([
-      "PI WEB · Question needs an answer",
-      "PI WEB · Dialog needs attention",
-      "PI WEB · Chat error",
+    expect(test.notifications.map(({ title, options }) => [title, options.body])).toEqual([
+      ["Build Chat", "Question · Which branch?"],
+      ["Build Chat", "Dialog · Proceed?"],
+      ["Build Chat", "Error · terminal failed"],
     ]);
+  });
+
+  it("uses Workstream or directory names when a Chat has no name, and trims reply previews", () => {
+    const test = harness();
+    const selected = state({ selectedSession: { ...session, name: "", firstMessage: "" }, workspaces: [], messages: [{ role: "assistant", parts: [{ type: "text", text: `${"x".repeat(140)}\nnext line` }] }] });
+    test.controller.activate(state({ ...selected, status: status(true) }));
+    test.controller.sync(state({ ...selected, status: status(true) }), selected);
+    expect(test.notifications[0]).toMatchObject({ title: "repo", options: { body: `Finished · ${"x".repeat(119)}…` } });
+    const workstream = harness(undefined, () => "Deploy project");
+    workstream.controller.activate(selected);
+    workstream.controller.sessionError(selected, "failed", 1);
+    expect(workstream.notifications[0]?.title).toBe("Deploy project");
   });
 
   it("resets deduplication on exact session identity", () => {
@@ -140,6 +154,8 @@ describe("DesktopNotificationController", () => {
     test.notifications[0]?.handle.onclick?.(new Event("click"));
 
     expect(test.focus).toHaveBeenCalledOnce();
+    expect(test.openChat).toHaveBeenCalledExactlyOnceWith("local", "session-1");
+    expect(test.notifications[0]?.options.data).toEqual({ machineId: "local", sessionId: "session-1" });
     expect(test.notifications[0]?.handle.close).toHaveBeenCalledOnce();
   });
 
@@ -215,9 +231,9 @@ describe("DesktopNotificationController", () => {
     const host = nativeHost();
     const adapter = desktopNotifications(host, storage);
     await adapter.requestPermission();
-    const handle = await adapter.show("PI WEB · Chat complete", { body: "Finished", tag: "chat:complete" });
+    const handle = await adapter.show("Build Chat", { body: "Finished", tag: "chat:complete", data: { machineId: "local", sessionId: "session-1" } });
 
-    expect(host.notify).toHaveBeenLastCalledWith("PI WEB · Chat complete", "Finished");
+    expect(host.notify).toHaveBeenLastCalledWith("Build Chat", "Finished", { machineId: "local", sessionId: "session-1" });
     expect(() => { handle.onclick = () => undefined; handle.close(); }).not.toThrow();
   });
 
@@ -277,7 +293,7 @@ function nativeHost() {
   return {
     pickDirectory: () => Promise.resolve(null),
     requestNotificationPermission: vi.fn(() => Promise.resolve()),
-    notify: vi.fn<(title: string, body: string) => Promise<void>>(() => Promise.resolve()),
+    notify: vi.fn<(title: string, body: string, target: { machineId: string; sessionId: string }) => Promise<void>>(() => Promise.resolve()),
   } satisfies PiWebNativeHost;
 }
 

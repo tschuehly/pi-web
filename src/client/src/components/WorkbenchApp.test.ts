@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type Machine, type Project, type SessionInfo, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
 import { ACTIVITY_STATUS_KEY, GOAL_STATUS_KEY } from "../extensionStatusSnapshots";
+import { DesktopNotificationController } from "../controllers/desktopNotificationController";
 import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
@@ -86,6 +87,41 @@ describe("Chat in a folder", () => {
 });
 
 describe("Workbench Chat chooser", () => {
+  it("does not use the previous Chat's Workstream title for a new Chat", async () => {
+    const app = await mountChooser([]);
+    setState(app, { ...getState(app), selectedSession: session("first", "", "") });
+    Reflect.set(app, "currentWorkstream", { id: "old", title: "Old Workstream", sessions: [] });
+    const setApp: unknown = Reflect.get(app, "setApp");
+    if (typeof setApp !== "function") throw new Error("State updater unavailable");
+    Reflect.apply(setApp, app, [{ selectedSession: session("second", "", "") }]);
+    expect(Reflect.get(app, "currentWorkstream")).toBeUndefined();
+  });
+
+  it("opens the originating Chat when a background browser notification is clicked", async () => {
+    const shown: FakeBrowserNotification[] = [];
+    class ClickNotification extends FakeBrowserNotification {
+      static override permission: NotificationPermission = "granted";
+      constructor() { super(); shown.push(this); }
+    }
+    vi.stubGlobal("Notification", ClickNotification);
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const first = session("first", "First", "First Chat");
+    const second = session("second", "Second", "Second Chat");
+    const app = await mountChooser([first, second]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    vi.spyOn(api, "sessions").mockResolvedValue([first, second]);
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "first", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    setState(app, { ...getState(app), selectedSession: first });
+    const controller: unknown = Reflect.get(app, "desktopNotifications");
+    if (!(controller instanceof DesktopNotificationController)) throw new Error("Notification controller unavailable");
+    controller.activate(getState(app));
+    controller.sessionError(getState(app), "Needs attention", 1);
+    expect(shown).toHaveLength(1);
+    setState(app, { ...getState(app), selectedSession: second });
+    shown[0]?.onclick?.(new Event("click"));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("first"); });
+    expect(window.location.search).toContain("session=first");
+  });
   it("offers notification permission through an explicit accessible gesture and hides the control after denial", async () => {
     FakeBrowserNotification.permission = "default";
     vi.stubGlobal("Notification", FakeBrowserNotification);
