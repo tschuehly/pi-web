@@ -799,7 +799,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       return Promise.resolve();
     };
     fake.session.prompt = (text) => {
-      if (text === "/ctx-stats") extensionNotify?.("context-mode stats", "info");
+      if (text === "/ctx-stats") extensionNotify?.("context-mode stats", "warning");
       return Promise.resolve();
     };
     const service = new PiSessionService(hub, {
@@ -820,18 +820,54 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       sessionId: "extension-command-session",
       event: {
         type: "notifications.inbox",
-        delta: { kind: "added", notification: { message: "context-mode stats", severity: "info" } },
+        delta: { kind: "added", notification: { message: "context-mode stats", severity: "warning" } },
       },
     });
     expect(hub.notificationSummaryEvents.at(-1)).toMatchObject({
       type: "notifications.summary",
-      summary: { sessionId: "extension-command-session", retainedCount: 1, highestSeverity: "info" },
+      summary: { sessionId: "extension-command-session", retainedCount: 1, highestSeverity: "warning" },
     });
 
     await service.dispose();
   });
 
-  it("stores every extension notification without touching Pi session history", async () => {
+  it("drops info extension notices without changing tray counts, revisions, or events", async () => {
+    const hub = new CapturingSessionEventHub();
+    const store = notificationStore();
+    const fake = fakeRuntime("filtered-notices");
+    const service = new PiSessionService(hub, {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      notificationStore: store,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([]),
+      heartbeatIntervalMs: 60_000,
+    });
+
+    await service.start("/workspace");
+    const notify = boundNotify(fake);
+    notify("warning", "warning");
+    const before = service.notificationInbox(sessionRef("filtered-notices"));
+    const eventCount = hub.sessionEvents.length;
+    const summaryCount = hub.notificationSummaryEvents.length;
+    notify("routine info", "info");
+    notify("default info");
+    expect(service.notificationInbox(sessionRef("filtered-notices"))).toEqual(before);
+    expect(store.catalogSnapshot().sessions).toEqual([before.summary]);
+    expect(hub.sessionEvents).toHaveLength(eventCount);
+    expect(hub.notificationSummaryEvents).toHaveLength(summaryCount);
+
+    notify("error", "error");
+    expect(service.notificationInbox(sessionRef("filtered-notices"))).toMatchObject({
+      summary: { retainedCount: 2, discardedCount: 0, highestSeverity: "error", inboxRevision: before.summary.inboxRevision + 1 },
+      notifications: [{ message: "error", severity: "error" }, { message: "warning", severity: "warning" }],
+    });
+    expect(hub.sessionEvents.filter(({ event }) => event.type === "notifications.inbox")).toHaveLength(2);
+    expect(hub.notificationSummaryEvents).toHaveLength(summaryCount + 1);
+    await service.dispose();
+  });
+
+  it("stores warning and error extension notifications without touching Pi session history", async () => {
     const hub = new CapturingSessionEventHub();
     const store = notificationStore();
     const branch = [{ type: "message", message: { role: "user", content: "existing" } }];
@@ -922,7 +958,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     });
 
     await service.status(sessionRef("failed-runtime-reload"));
-    boundNotify(fake)("prior", "info");
+    boundNotify(fake)("prior", "warning");
     fake.session.reload = async (options) => {
       await options?.beforeSessionStart?.();
       currentNotify(fake)("candidate before failure", "warning");
@@ -1030,7 +1066,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     });
 
     await service.start("/workspace");
-    boundNotify(first)("prior", "info");
+    boundNotify(first)("prior", "warning");
     Object.defineProperty(first.runtime, "session", { configurable: true, value: replacement.session });
     await expect(rebindSession?.(replacement.session)).rejects.toThrow("replacement bind failed");
 
@@ -1360,7 +1396,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     oldNotify("old", "warning");
     const disposeFirst = first.runtime.dispose.bind(first.runtime);
     first.runtime.dispose = async () => {
-      oldNotify("old shutdown", "info");
+      oldNotify("old shutdown", "warning");
       await disposeFirst();
     };
     await service.reload(sessionRef("reload-notification-session"));
@@ -1398,10 +1434,10 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
 
     await service.status(sessionRef("failed-disk-reload"));
     const oldNotify = boundNotify(first);
-    oldNotify("prior", "info");
+    oldNotify("prior", "warning");
     const disposeFirst = first.runtime.dispose.bind(first.runtime);
     first.runtime.dispose = async () => {
-      oldNotify("old shutdown", "info");
+      oldNotify("old shutdown", "warning");
       await disposeFirst();
     };
     await expect(service.reload(sessionRef("failed-disk-reload"))).rejects.toThrow("replacement open failed");
@@ -1433,7 +1469,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     const oldNotify = boundNotify(first);
     oldNotify("prior", "warning");
     first.runtime.dispose = () => {
-      oldNotify("shutdown before close failure", "info");
+      oldNotify("shutdown before close failure", "warning");
       return Promise.reject(new Error("close failed"));
     };
 
