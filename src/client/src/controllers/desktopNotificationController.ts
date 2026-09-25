@@ -37,6 +37,8 @@ export class DesktopNotificationController {
   constructor(
     private readonly browser: DesktopNotificationBrowser,
     private readonly onPermissionChange: () => void = () => undefined,
+    private readonly workstreamTitle: () => string | undefined = () => undefined,
+    private readonly openChat: (machineId: string, sessionId: string) => void = () => undefined,
   ) {
     this.diagnostic = browser.diagnostic;
   }
@@ -67,18 +69,22 @@ export class DesktopNotificationController {
     if (!this.armed || nextKey === undefined) return;
 
     const nextStreaming = next.status?.isStreaming;
-    if (this.streaming === true && nextStreaming === false) this.notify("complete", "Chat complete", "The selected Chat finished responding.");
+    if (this.streaming === true && nextStreaming === false) {
+      const reply = [...next.messages].reverse().find((line) => line.role === "assistant")?.parts
+        .filter((part) => part.type === "text").map((part) => part.text).join("");
+      this.notify(next, "complete", `Finished · ${preview(reply ?? "")}`);
+    }
     this.streaming = nextStreaming;
 
     const askId = next.pendingAsk?.askId;
     if (askId !== undefined && !this.askIds.has(askId)) {
       this.askIds.add(askId);
-      this.notify("ask", "Question needs an answer", "The selected Chat is waiting for input.");
+      this.notify(next, "ask", `Question · ${next.pendingAsk?.questions[0]?.question ?? "Needs an answer"}`);
     }
     for (const dialog of next.pendingDialogs) {
       if (this.dialogIds.has(dialog.dialogId)) continue;
       this.dialogIds.add(dialog.dialogId);
-      this.notify("dialog", "Dialog needs attention", dialog.title);
+      this.notify(next, "dialog", `Dialog · ${dialog.title}`);
     }
 
     void previous;
@@ -104,7 +110,7 @@ export class DesktopNotificationController {
     const id = eventId === undefined ? message : String(eventId);
     if (this.errorIds.has(id)) return;
     this.errorIds.add(id);
-    this.notify("error", "Chat error", message);
+    this.notify(state, "error", `Error · ${message}`);
   }
 
   private reset(sessionKey: string | undefined): void {
@@ -116,15 +122,20 @@ export class DesktopNotificationController {
     this.errorIds.clear();
   }
 
-  private notify(tag: DesktopNotificationKind, title: string, body: string): void {
+  private notify(state: AppState, tag: DesktopNotificationKind, body: string): void {
     if (this.browser.permission() !== "granted" || !this.browser.isBackground()) return;
+    const session = state.selectedSession;
+    if (session === undefined) return;
+    const machineId = selectedMachineId(state);
+    const title = [session.name, this.workstreamTitle(), session.cwd.split("/").filter(Boolean).at(-1), session.cwd]
+      .find((value) => value !== undefined && value.trim().length > 0)?.trim() ?? "Chat";
     try {
-      const shown = this.browser.show(`PI WEB · ${title}`, { body, tag: `${this.sessionKey ?? "chat"}:${tag}` });
+      const shown = this.browser.show(title, { body, tag: `${this.sessionKey ?? "chat"}:${tag}`, data: { machineId, sessionId: session.id } });
       if (shown instanceof Promise) {
-        void shown.then((notification) => { this.bindClick(notification); }).catch((error: unknown) => { this.deliveryFailed(error); });
+        void shown.then((notification) => { this.bindClick(notification, machineId, session.id); }).catch((error: unknown) => { this.deliveryFailed(error); });
         return;
       }
-      this.bindClick(shown);
+      this.bindClick(shown, machineId, session.id);
     } catch (error) {
       this.deliveryFailed(error);
     }
@@ -135,12 +146,18 @@ export class DesktopNotificationController {
     this.onPermissionChange();
   }
 
-  private bindClick(notification: DesktopNotificationHandle): void {
+  private bindClick(notification: DesktopNotificationHandle, machineId: string, sessionId: string): void {
     notification.onclick = () => {
       this.browser.focus();
+      this.openChat(machineId, sessionId);
       notification.close();
     };
   }
+}
+
+function preview(text: string): string {
+  const firstLine = text.trim().split(/\r?\n/u)[0]?.trim() ?? "";
+  return firstLine.length === 0 ? "Response complete" : firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
 }
 
 const NATIVE_NOTIFICATION_PERMISSION_KEY = "pi-web:native-notifications:permission";
@@ -198,7 +215,10 @@ function nativeDesktopNotifications(nativeHost: NativeNotificationHost, storage:
     isBackground: () => document.hidden || !document.hasFocus(),
     show: async (title, options) => {
       try {
-        await nativeHost.notify(title, options.body ?? "");
+        const target: unknown = options.data;
+        if (typeof target !== "object" || target === null || !("machineId" in target) || typeof target.machineId !== "string"
+          || !("sessionId" in target) || typeof target.sessionId !== "string") throw new Error("Notification requires a Chat target");
+        await nativeHost.notify(title, options.body ?? "", { machineId: target.machineId, sessionId: target.sessionId });
         return { onclick: null, close: () => undefined };
       } catch (error) {
         downgrade();

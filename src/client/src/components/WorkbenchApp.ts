@@ -101,7 +101,14 @@ export class WorkbenchApp extends LitElement {
   private readonly desktopNotifications = new DesktopNotificationController(
     desktopNotifications(),
     () => { this.requestUpdate(); },
+    () => this.currentWorkstream?.title,
+    (machineId, sessionId) => { this.openNotificationChat(machineId, sessionId); },
   );
+
+  private openNotificationChat(machineId: string, sessionId: string): void {
+    writeRoute({ machineId, sessionId, projectId: undefined, workspaceId: undefined, tool: undefined, view: undefined });
+    void this.load(readRoute());
+  }
 
   private readonly notifications = new SessionNotificationController(
     () => this.app,
@@ -209,6 +216,7 @@ export class WorkbenchApp extends LitElement {
     const previous = this.app;
     this.app = { ...this.app, ...patch };
     if (previous.selectedSession?.id !== this.app.selectedSession?.id || selectedMachineId(previous) !== selectedMachineId(this.app)) {
+      this.currentWorkstream = undefined;
       window.clearTimeout(this.workstreamWatchTimer);
       this.workstreamWatchSequence = undefined;
       this.workstreamWatchDelay = 2_000;

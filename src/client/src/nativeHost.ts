@@ -1,7 +1,7 @@
 export interface PiWebNativeHost {
   pickDirectory(): Promise<string | null>;
   requestNotificationPermission?: () => Promise<void>;
-  notify?: (title: string, body: string) => Promise<void>;
+  notify?: (title: string, body: string, target: { machineId: string; sessionId: string }) => Promise<void>;
   getSleepDisabled?: () => Promise<boolean>;
   setSleepDisabled?: (disabled: boolean) => Promise<boolean>;
 }
