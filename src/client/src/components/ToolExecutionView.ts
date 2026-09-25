@@ -60,6 +60,7 @@ export class ToolExecutionView extends LitElement {
       : this.orphan || visibleDiff === undefined || (execution.status === "success" && hasPreviewError) ? execution.resultText : undefined;
     const target = toolTarget(execution, path);
     const row = toolRowSummary(execution);
+    const diffBody = visibleDiff === undefined ? null : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff");
 
     return html`
       <details class=${`tool-card ${execution.status}`} ?open=${hasPreviewError || (this.orphan && visibleDiff !== undefined)}>
@@ -76,21 +77,26 @@ export class ToolExecutionView extends LitElement {
             ${diffStats === undefined ? null : html`<span class="diff-stats"><b class="added">+${String(diffStats.added)}</b><span>/</span><b class="removed">-${String(diffStats.removed)}</b></span>`}
             <span class="status-label">${statusLabel(execution.status)}</span>
           </div>
-          ${this.renderExpandedArguments(execution.args, target)}
+          ${diffBody}
+          ${this.renderExpandedArguments(execution.args, target, visibleDiff !== undefined)}
           ${previewMismatch ? html`<p class="notice">Applied diff differs from the preview.</p>` : null}
           ${errorText === undefined || errorText === "" ? null : html`<pre class="error-text">${errorText}</pre>`}
           ${hasPreviewError ? html`<span class="detail-label">Preview error</span><pre class="error-text">${preview.error}</pre>` : null}
           ${this.renderTextBody(bodyText)}
-          ${visibleDiff === undefined ? null : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff")}
         </div>
       </details>
     `;
   }
 
-  private renderExpandedArguments(args: unknown, target: ToolTarget | undefined) {
+  private renderExpandedArguments(args: unknown, target: ToolTarget | undefined, hasDiff: boolean) {
     const text = formattedArguments(args) ?? target?.text;
     if (text === undefined || text === "") return null;
-    return html`
+    return hasDiff ? html`
+      <details class="detail-target">
+        <summary class="detail-label">Arguments</summary>
+        <pre class="detail-target-value">${text}</pre>
+      </details>
+    ` : html`
       <div class="detail-target">
         <span class="detail-label">Arguments</span>
         <pre class="detail-target-value">${text}</pre>
@@ -168,6 +174,8 @@ export class ToolExecutionView extends LitElement {
     .error-text { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; background: color-mix(in srgb, var(--pi-danger) 7%, transparent); color: var(--pi-danger); padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .detail-target, .detail-result { display: grid; gap: 4px; min-width: 0; }
     .detail-label { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    details.detail-target { display: block; }
+    details.detail-target > summary { cursor: pointer; }
     .detail-result pre { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; padding: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
     .detail-target-value { box-sizing: border-box; max-width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-accent); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
     .diff-details { min-width: 0; max-width: 100%; padding-top: 2px; }
