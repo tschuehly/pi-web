@@ -62,10 +62,12 @@ describe("GoalStatusChip", () => {
     expect(summary?.textContent).toContain("Goal");
     expect(summary?.textContent).toContain("Active");
     expect(summary?.getAttribute("aria-label")).toBeNull();
-    expect(summary?.textContent).toContain("#goal-123…");
+    expect(summary?.querySelector(".short-id")).toBeNull();
+    expect(summary?.querySelector(".chevron")?.getAttribute("aria-hidden")).toBe("true");
     expect(objective?.textContent).toBe("Keep the Workbench Goal visible on narrow screens");
     expect(objective?.title).toBe("Keep the Workbench Goal visible on narrow screens");
     expect(details?.querySelector(".full-id")?.textContent).toBe("goal-1234567890");
+    expect(summary?.tabIndex).toBe(0);
     expect(details?.querySelector(".sheet")?.textContent).toContain("Keep the Workbench Goal visible on narrow screens");
 
     summary?.click();
@@ -178,15 +180,22 @@ describe("GoalStatusChip", () => {
     expect(GoalStatusChip.styles.cssText).toMatch(/details\[open\]\s*\{[^}]*z-index:\s*4/);
     expect(promptEditorStyles.cssText).toMatch(/:host\s*\{[^}]*z-index:\s*5/);
     expect(autocompleteStyles.cssText).toMatch(/\.menu\s*\{[^}]*z-index:\s*10/);
-    expect(GoalStatusChip.styles.cssText).toMatch(/:host\s*\{[^}]*margin:\s*0 12px 10px/);
+    expect(GoalStatusChip.styles.cssText).toMatch(/:host\s*\{[^}]*padding:\s*3px 8px 2px;[^}]*border-top:\s*1px solid var\(--pi-border-muted\)/);
     expect(promptEditorStyles.cssText).toMatch(/\.editor-resize-handle\s*\{[^}]*top:\s*-4px/);
-    expect(GoalStatusChip.styles.cssText).toMatch(/\.sheet\s*\{[^}]*max-height:\s*var\(--goal-sheet-max-height, 0px\)[^}]*overflow:\s*auto[^}]*border-bottom:\s*3px solid var\(--goal-color\)[^}]*border-radius:\s*9px 9px 0 0/);
+    expect(GoalStatusChip.styles.cssText).toMatch(/\.sheet\s*\{[^}]*max-height:\s*var\(--goal-sheet-max-height, 0px\)[^}]*overflow:\s*auto[^}]*border-radius:\s*9px 9px 0 0/);
   });
 
-  it("aligns with the 12px composer inset and prioritizes content at narrow widths", () => {
-    expect(GoalStatusChip.styles.cssText).toMatch(/:host\s*\{[^}]*width:\s*min\(560px, calc\(100% - 24px\)\)[^}]*margin:\s*0 12px 10px/);
+  it("matches the Activity dock row without losing state, full objective or keyboard focus", async () => {
+    const element = await mount(sessionStatus(snapshot("waiting")));
+    const summary = element.shadowRoot?.querySelector<HTMLElement>("summary");
+    expect(summary?.textContent).toContain("Waiting");
+    expect(summary?.querySelector<HTMLElement>(".objective")?.title).toBe("Keep the Workbench Goal visible on narrow screens");
+    summary?.focus();
+    expect(element.shadowRoot?.activeElement).toBe(summary);
+    expect(GoalStatusChip.styles.cssText).toMatch(/summary\s*\{[^}]*min-height:\s*24px;[^}]*border-radius:\s*5px/);
+    expect(GoalStatusChip.styles.cssText).not.toMatch(/summary\s*\{[^}]*border-left:/);
     expect(GoalStatusChip.styles.cssText).toMatch(/\.objective\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/);
-    expect(GoalStatusChip.styles.cssText).toMatch(/@media \(max-width: 700px\)\s*\{[^}]*\.short-id\s*\{\s*display:\s*none/);
-    expect(GoalStatusChip.styles.cssText).not.toMatch(/@media \(max-width: 430px\)\s*\{[^}]*\.identity\s*\{\s*display:\s*none/);
+    expect(GoalStatusChip.styles.cssText).toMatch(/summary:focus-visible\s*\{[^}]*outline:/);
+    expect(GoalStatusChip.styles.cssText).toMatch(/@media \(forced-colors: active\)/);
   });
 });
