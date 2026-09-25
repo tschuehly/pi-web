@@ -55,6 +55,55 @@ describe("project tabs", () => {
 });
 
 describe("Chat in a folder", () => {
+  it("shows the associated Workstream through a registered workspace without registering the Chat folder", async () => {
+    const current = { ...session("adhoc", "Investigate", "Nested chat"), cwd: "/outside/nested" };
+    const calls: WorkstreamServiceCall[] = [];
+    stubWorkstreamService(calls, ({ operation }) => operation === "watch"
+      ? { ok: true, value: { mode: "replay", events: [], nextSequence: 1 } }
+      : operation === "list" ? { ok: true, value: [{ id: "learning" }] }
+      : { ok: true, value: { id: "learning", title: "Source learning", revision: 1, sessions: [{ id: current.id, status: "active" }], humanTasks: [], links: [], overview: null, closed: false } }, undefined, true);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    const workspaces = vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: current.cwd });
+    vi.spyOn(api, "sessions").mockResolvedValue([current]);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
+    vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
+    window.history.replaceState({}, "", `/?session=${current.id}&view=chat`);
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Source learning"); });
+    expect(getState(app).selectedProject).toBeUndefined();
+    expect(getState(app).selectedWorkspace?.path).toBe(current.cwd);
+    expect(app.shadowRoot?.querySelector(".chat-shell header > span")?.textContent.trim()).toBe("nested");
+    expect(workspaces).toHaveBeenCalledWith(project.id, machine.id);
+    expect(calls.some(({ operation, input }) => operation === "list" && input["sessionId"] === current.id)).toBe(true);
+    const drawer = app.shadowRoot?.querySelector<WorkstreamContextDrawer>("workstream-context-drawer");
+    expect(drawer?.serviceContext).toEqual({ machineId: machine.id, projectId: project.id, workspaceId: workspace.id });
+    expect(calls.some(({ operation }) => operation === "watch")).toBe(true);
+    const reload: unknown = Reflect.get(app, "loadCurrentWorkstream");
+    if (typeof reload !== "function") throw new Error("Workstream loader missing");
+    await Reflect.apply(reload, app, []);
+    expect(workspaces).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the Chat title with a tooltip when no registered project can provide Workstream access", async () => {
+    const current = { ...session("adhoc", "Investigate", "Nested chat"), cwd: "/outside/nested" };
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: current.cwd });
+    vi.spyOn(api, "sessions").mockResolvedValue([current]);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
+    vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
+    window.history.replaceState({}, "", `/?session=${current.id}&view=chat`);
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Nested chat"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
+    const drawer = app.shadowRoot?.querySelector<WorkstreamContextDrawer>("workstream-context-drawer");
+    await drawer?.updateComplete;
+    expect(drawer?.shadowRoot?.querySelector(".tab")?.getAttribute("title")).toContain("registered project");
+  });
   it("starts a Chat in a picked folder without a project and reopens it from the session id alone", async () => {
     vi.spyOn(api, "projects").mockResolvedValue([]);
     const started = session("adhoc", "");
