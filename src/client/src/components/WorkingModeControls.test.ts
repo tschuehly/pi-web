@@ -27,22 +27,32 @@ function required<T>(value: T | null | undefined): T {
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
 
 describe("WorkingModeControls", () => {
-  it("renders independent pressed segments and waits for status before changing state", async () => {
+  it("shows one select per axis and waits for status before changing state", async () => {
     const run = vi.fn();
     const element = new WorkingModeControls();
-    element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Align", checking: "tests" }, applied: null }) });
+    element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" }, applied: null }) });
     element.onRunCommand = run;
     document.body.append(element);
     await element.updateComplete;
 
-    const buttons = [...root(element).querySelectorAll("button")];
-    const plan = required(buttons.find((button) => button.textContent === "Plan"));
-    expect(buttons.find((button) => button.textContent === "Align")?.getAttribute("aria-pressed")).toBe("true");
-    expect(buttons.find((button) => button.textContent === "tests")?.getAttribute("aria-pressed")).toBe("true");
-    plan.click();
+    const selects = [...root(element).querySelectorAll("select")];
+    expect(selects.map((select) => select.getAttribute("aria-label"))).toEqual(["Alignment", "Attention", "Checking", "Orchestration"]);
+    expect(selects.map((select) => select.value)).toEqual(["Align", "Default", "Test", "Main"]);
+    expect([...required(selects[1]).options].map((option) => option.value)).toEqual(["Default", "Focused", "Switching", "Phone", "AFK"]);
+    const alignment = required(selects[0]);
+    alignment.value = "Plan";
+    alignment.dispatchEvent(new Event("change"));
     await element.updateComplete;
     expect(run).toHaveBeenCalledWith("/mode alignment plan");
-    expect(plan.getAttribute("aria-pressed")).toBe("false");
+    expect(alignment.value).toBe("Align");
+  });
+
+  it("disables the selects until a current snapshot arrives", async () => {
+    const element = new WorkingModeControls();
+    element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Align", checking: "tests" }, applied: null }) });
+    document.body.append(element);
+    await element.updateComplete;
+    expect([...root(element).querySelectorAll("select")].every((select) => select.disabled)).toBe(true);
   });
 });
 

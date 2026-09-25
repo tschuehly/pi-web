@@ -16,7 +16,7 @@ function status(): SessionStatus {
     sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false,
     pendingMessageCount: 0, queuedMessages: [],
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
-    extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Align", checking: "tests" }, applied: null }) },
+    extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" }, applied: null }) },
   };
 }
 
@@ -46,9 +46,11 @@ describe("PromptEditor Working Mode controls", () => {
     const controls = required(actions.querySelector<WorkingModeControls>("working-mode-controls"));
     await controls.updateComplete;
     expect(controls.hasAttribute("compact")).toBe(true);
-    const buttons = [...required(controls.shadowRoot).querySelectorAll("button")];
-    expect(required(buttons.find((button) => button.textContent === "Align")).getAttribute("aria-pressed")).toBe("true");
-    required(buttons.find((button) => button.textContent === "Plan")).click();
+    const alignment = required(select(controls, "Alignment"));
+    expect(alignment.value).toBe("Align");
+    expect(alignment.selectedOptions[0]?.textContent).toBe("Alignment: Align");
+    alignment.value = "Plan";
+    alignment.dispatchEvent(new Event("change"));
     expect(run).toHaveBeenCalledWith("/mode alignment plan");
   });
 
@@ -60,18 +62,18 @@ describe("PromptEditor Working Mode controls", () => {
 
     const controls = required(editor.shadowRoot?.querySelector<WorkingModeControls>("working-mode-controls"));
     await controls.updateComplete;
-    expect(pressedButton(controls, "Align")?.getAttribute("aria-pressed")).toBe("true");
+    expect(select(controls, "Alignment")?.value).toBe("Align");
 
     editor.status = {
       ...required(editor.status),
-      extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Plan", checking: "adversarial" }, applied: null }) },
+      extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Plan", attention: "Phone", checking: "Challenge", orchestration: "Main" }, applied: null }) },
     };
     await editor.updateComplete;
     await controls.updateComplete;
 
-    expect(pressedButton(controls, "Align")?.getAttribute("aria-pressed")).toBe("false");
-    expect(pressedButton(controls, "Plan")?.getAttribute("aria-pressed")).toBe("true");
-    expect(pressedButton(controls, "adversarial")?.getAttribute("aria-pressed")).toBe("true");
+    expect(select(controls, "Alignment")?.value).toBe("Plan");
+    expect(select(controls, "Attention")?.value).toBe("Phone");
+    expect(select(controls, "Checking")?.value).toBe("Challenge");
   });
 
   it("renders compact usage with exact values exposed through semantic list items", async () => {
@@ -123,8 +125,8 @@ describe("PromptEditor Working Mode controls", () => {
   });
 });
 
-function pressedButton(controls: WorkingModeControls, label: string): HTMLButtonElement | undefined {
-  return [...(controls.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((button) => button.textContent === label);
+function select(controls: WorkingModeControls, label: string): HTMLSelectElement | null | undefined {
+  return controls.shadowRoot?.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`);
 }
 
 function metric(editor: PromptEditor, name: string): HTMLElement {

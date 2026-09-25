@@ -103,17 +103,14 @@ describe("extension status snapshots", () => {
   });
 
   it("parses versioned Working Mode selected and applied state", () => {
-    expect(parseWorkingModeSnapshot(JSON.stringify({
-      schemaVersion: 1, phase: "selected",
-      selected: { alignment: "Plan", checking: "tests" },
-      applied: { alignment: "Align", checking: "light" },
-    }))).toEqual({
-      schemaVersion: 1, phase: "selected",
-      selected: { alignment: "Plan", checking: "tests" },
-      applied: { alignment: "Align", checking: "light" },
+    const selected = { alignment: "Plan", attention: "Phone", checking: "Test", orchestration: "Workers" };
+    const applied = { alignment: "Align", attention: "Default", checking: "Exercise", orchestration: "Main" };
+    expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { ...selected, extra: 1 }, applied }))).toEqual({
+      schemaVersion: 2, phase: "selected", selected, applied,
     });
     expect(parseWorkingModeSnapshot("not json")).toBeUndefined();
-    expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 2 }))).toBeUndefined();
+    expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Plan", checking: "tests" }, applied: null }))).toBeUndefined();
+    expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { ...selected, attention: "Away" }, applied: null }))).toBeUndefined();
   });
 
   it("accepts bounded source-owned watcher rows and rejects malformed snapshots atomically", () => {

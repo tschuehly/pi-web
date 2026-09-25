@@ -20,13 +20,17 @@ export interface GoalStatusSnapshot {
   objective: string;
 }
 
-export const ALIGNMENT_VALUES = ["Vibe", "Align", "Plan", "Spec"] as const;
-export const CHECKING_VALUES = ["unset", "light", "tests", "adversarial"] as const;
-export type Alignment = typeof ALIGNMENT_VALUES[number];
-export type Checking = typeof CHECKING_VALUES[number];
-export interface WorkingModeState { alignment: Alignment; checking: Checking }
+export const WORKING_MODE_AXES = {
+  alignment: ["Default", "Align", "Plan", "Spec"],
+  attention: ["Default", "Focused", "Switching", "Phone", "AFK"],
+  checking: ["Default", "Exercise", "Test", "Challenge"],
+  orchestration: ["Main", "Subagents", "Workers"],
+} as const;
+export type WorkingModeAxis = keyof typeof WORKING_MODE_AXES;
+export const WORKING_MODE_AXIS_NAMES: readonly WorkingModeAxis[] = ["alignment", "attention", "checking", "orchestration"];
+export type WorkingModeState = { [A in WorkingModeAxis]: typeof WORKING_MODE_AXES[A][number] };
 export interface WorkingModeSnapshot {
-  schemaVersion: 1;
+  schemaVersion: 2;
   phase: "selected" | "applied";
   selected: WorkingModeState;
   applied: WorkingModeState | null;
@@ -175,26 +179,23 @@ function normalizeGoalText(value: string): string {
   return value.replace(INVISIBLE_SPOOF_GLOBAL, "").replace(CONTROL, " ").replace(/\s+/gu, " ").trim();
 }
 
-function isAlignment(value: unknown): value is Alignment {
-  return typeof value === "string" && ALIGNMENT_VALUES.some((candidate) => candidate === value);
-}
-
-function isChecking(value: unknown): value is Checking {
-  return typeof value === "string" && CHECKING_VALUES.some((candidate) => candidate === value);
-}
-
 function workingModeState(value: unknown): WorkingModeState | undefined {
-  if (!record(value) || !isAlignment(value["alignment"]) || !isChecking(value["checking"])) return undefined;
-  return { alignment: value["alignment"], checking: value["checking"] };
+  if (!record(value)) return undefined;
+  const alignment = WORKING_MODE_AXES.alignment.find((candidate) => candidate === value["alignment"]);
+  const attention = WORKING_MODE_AXES.attention.find((candidate) => candidate === value["attention"]);
+  const checking = WORKING_MODE_AXES.checking.find((candidate) => candidate === value["checking"]);
+  const orchestration = WORKING_MODE_AXES.orchestration.find((candidate) => candidate === value["orchestration"]);
+  if (alignment === undefined || attention === undefined || checking === undefined || orchestration === undefined) return undefined;
+  return { alignment, attention, checking, orchestration };
 }
 
 export function parseWorkingModeSnapshot(text: string | undefined): WorkingModeSnapshot | undefined {
   const value = parseJson(text);
-  if (!record(value) || value["schemaVersion"] !== 1 || (value["phase"] !== "selected" && value["phase"] !== "applied")) return undefined;
+  if (!record(value) || value["schemaVersion"] !== 2 || (value["phase"] !== "selected" && value["phase"] !== "applied")) return undefined;
   const selected = workingModeState(value["selected"]);
   const applied = value["applied"] === null ? null : workingModeState(value["applied"]);
   if (selected === undefined || applied === undefined) return undefined;
-  return { schemaVersion: 1, phase: value["phase"], selected, applied };
+  return { schemaVersion: 2, phase: value["phase"], selected, applied };
 }
 
 function optionalText(value: unknown): string | undefined {
