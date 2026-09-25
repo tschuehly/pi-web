@@ -74,6 +74,8 @@ export class WorkbenchApp extends LitElement {
   private workstreamLoadSequence = 0;
   private workstreamWatchSequence: number | undefined;
   private workstreamWatchDelay = 2_000;
+  private readonly workstreamContexts = new Map<string, WorkstreamServiceContext | undefined>();
+  private readonly pendingWorkstreamContexts = new Map<string, Promise<WorkstreamServiceContext | undefined>>();
   private orientationPendingSessionId: string | undefined;
   private workstreamWatchTimer: number | undefined;
   private readonly themes = new PluginRegistry();
@@ -475,9 +477,9 @@ export class WorkbenchApp extends LitElement {
     }
 
     const workspace = match?.workspaces.find((candidate) => candidate.path === cwd) ?? adHocWorkspace(cwd);
-    const workstreamContext = this.workstreamServiceContext;
+    const workstreamContext = await this.resolveWorkstreamServiceContext();
     if (workstreamContext === undefined) {
-      this.setApp({ error: "Choose a registered workspace before starting this Workstream." });
+      this.setApp({ error: this.app.selectedProject === undefined ? "A registered project with a workspace is needed to access Workstreams." : "Choose a registered workspace before starting this Workstream." });
       return;
     }
     const associationKey = `pi-web:${globalThis.crypto.randomUUID()}`;
@@ -551,9 +553,31 @@ export class WorkbenchApp extends LitElement {
   private get workstreamServiceContext(): WorkstreamServiceContext | undefined {
     const projectId = this.app.selectedProject?.id;
     const workspaceId = this.app.selectedWorkspace?.id;
-    return projectId === undefined || workspaceId === undefined
-      ? undefined
-      : { machineId: selectedMachineId(this.app), projectId, workspaceId };
+    if (projectId !== undefined && workspaceId !== undefined) return { machineId: selectedMachineId(this.app), projectId, workspaceId };
+    return this.app.selectedWorkspace === undefined ? undefined : this.workstreamContexts.get(selectedMachineId(this.app));
+  }
+
+  private async resolveWorkstreamServiceContext(): Promise<WorkstreamServiceContext | undefined> {
+    if (this.workstreamServiceContext !== undefined || this.app.selectedWorkspace === undefined || this.app.selectedProject !== undefined) return this.workstreamServiceContext;
+    const machineId = selectedMachineId(this.app);
+    if (this.workstreamContexts.has(machineId)) return this.workstreamContexts.get(machineId);
+    let pending = this.pendingWorkstreamContexts.get(machineId);
+    if (pending === undefined) {
+      pending = (async () => {
+        for (const project of rootProjects(this.app.projects)) {
+          const workspaces = await api.workspaces(project.id, machineId);
+          const workspace = workspaces.find((candidate) => candidate.projectId === project.id && candidate.isMain) ?? workspaces[0];
+          if (workspace !== undefined) return { machineId, projectId: workspace.projectId, workspaceId: workspace.id };
+        }
+        return undefined;
+      })();
+      this.pendingWorkstreamContexts.set(machineId, pending);
+    }
+    try {
+      const context = await pending;
+      if (context !== undefined) this.workstreamContexts.set(machineId, context);
+      return context;
+    } finally { this.pendingWorkstreamContexts.delete(machineId); }
   }
 
   private async loadCurrentWorkstream(reset = true): Promise<void> {
@@ -564,9 +588,16 @@ export class WorkbenchApp extends LitElement {
       this.currentWorkstream = undefined;
       this.currentWorkstreamError = "";
     }
-    const context = this.workstreamServiceContext;
-    if (sessionId === undefined || context === undefined) { this.currentWorkstream = null; return; }
+    if (sessionId === undefined) { this.currentWorkstream = null; return; }
+    let context: WorkstreamServiceContext | undefined;
     try {
+      context = await this.resolveWorkstreamServiceContext();
+      if (sequence !== this.workstreamLoadSequence) return;
+      if (context === undefined) {
+        this.currentWorkstream = null;
+        this.currentWorkstreamError = "Add a registered project to access Workstreams for this Chat.";
+        return;
+      }
       // Seed before inspecting: a mutation between these calls will still be observed.
       if (this.workstreamWatchSequence === undefined) {
         const head = await watchWorkstreams(context, Number.MAX_SAFE_INTEGER);
@@ -584,7 +615,7 @@ export class WorkbenchApp extends LitElement {
         this.currentWorkstreamError = error instanceof Error ? error.message : String(error);
       }
     } finally {
-      if (sequence === this.workstreamLoadSequence && this.isConnected) this.scheduleWorkstreamWatch(context, sessionId);
+      if (sequence === this.workstreamLoadSequence && this.isConnected && context !== undefined) this.scheduleWorkstreamWatch(context, sessionId);
     }
   }
 
@@ -941,7 +972,7 @@ export class WorkbenchApp extends LitElement {
         <header>
           <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { if (this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false) { this.showFiles = false; this.sessions.deselectSession(); } }}>←</button>
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
-          <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
+          <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${state.selectedWorkspace?.label}</span>
           <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("files")}</button>
           <button type="button" class="header-action" title="Search files (⌘P)" aria-label="Search files" ?disabled=${state.selectedWorkspace?.projectId === undefined || state.selectedWorkspace.projectId === ""} @click=${() => { this.openFileSearch(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><span>Search files</span></button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
