@@ -58,6 +58,8 @@ export function normalizeMessage(message: unknown): ChatLine[] {
   if (dials !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "workingMode", dials }] }, message)];
   const completion = subagentCompletionText(message);
   if (completion !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "subagentCompletion", text: completion }] }, message)];
+  const backgroundBash = backgroundBashPart(message);
+  if (backgroundBash !== undefined) return [withMessageMeta({ role: "system", parts: [backgroundBash] }, message)];
   if (getString(message, "role") === "bashExecution") return [withMessageMeta(normalizeBashExecution(message), message)];
   const rawRole = getString(message, "role");
   const role = normalizeRole(rawRole);
@@ -85,6 +87,27 @@ function subagentCompletionText(message: unknown): string | undefined {
     || details["attention"] !== "terminal-results") return undefined;
   const content = getString(message, "content");
   return content === "" ? undefined : content;
+}
+
+function backgroundBashPart(message: unknown): Extract<ChatPart, { type: "backgroundBash" }> | undefined {
+  if (getString(message, "role") !== "custom" || getString(message, "customType") !== "background-bash") return undefined;
+  const details = getProperty(message, "details");
+  const id = getString(details, "id");
+  const command = getString(details, "command");
+  const state = getString(details, "state");
+  const elapsedSeconds = getNumber(details, "elapsedSeconds");
+  const logPath = getString(details, "logPath");
+  const exitCode = getProperty(details, "exitCode");
+  const content = getString(message, "content");
+  if (id === undefined || id === "" || command === undefined || command === "" || logPath === undefined || logPath === ""
+    || elapsedSeconds === undefined || !Number.isInteger(elapsedSeconds) || elapsedSeconds < 0
+    || (state !== "complete" && state !== "failed" && state !== "cancelled")
+    || (exitCode !== undefined && (typeof exitCode !== "number" || !Number.isInteger(exitCode))) || content === undefined) return undefined;
+  const marker = `\nFull output (available until session shutdown): ${logPath}\n`;
+  const start = content.indexOf(marker);
+  if (start < 0) return undefined;
+  const output = content.slice(start + marker.length).replace(/^\[showing recent output only\]\n/, "");
+  return { type: "backgroundBash", details: { id, command, state, elapsedSeconds, logPath, ...(typeof exitCode === "number" ? { exitCode } : {}) }, output };
 }
 
 function assistantErrorLine(message: unknown): ChatLine | undefined {

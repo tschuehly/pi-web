@@ -68,6 +68,17 @@ describe("chat message normalization", () => {
     ]) expect(normalizeMessages([other])).toEqual([{ role: "system", entryId: "wake-1", parts: [{ type: "text", text: content }] }]);
   });
 
+  it("projects persisted background bash completions separately and falls back on malformed details", () => {
+    const details = { id: "job-1", command: "npm test", state: "complete", elapsedSeconds: 4, bytes: 12, logPath: "/tmp/job-1.log", exitCode: 0 };
+    const notice = { role: "custom", customType: "background-bash", content: "Background bash job-1 complete (exit 0).\nFull output (available until session shutdown): /tmp/job-1.log\npassed\n", details, entryId: "job-entry" };
+    expect(normalizeMessages([notice, { ...notice, entryId: "job-entry-2" }])).toEqual(["job-entry", "job-entry-2"].map((entryId) => ({
+      role: "system", entryId, parts: [{ type: "backgroundBash", details: { id: details.id, command: details.command, state: details.state, elapsedSeconds: details.elapsedSeconds, logPath: details.logPath, exitCode: details.exitCode }, output: "passed\n" }],
+    })));
+    for (const bad of [{ ...details, command: undefined }, { ...details, elapsedSeconds: -1 }, { ...details, logPath: null }]) {
+      expect(normalizeMessage({ ...notice, details: bad })).toEqual([{ role: "system", entryId: "job-entry", parts: [{ type: "text", text: notice.content }] }]);
+    }
+  });
+
   it("projects ask_user answer messages into visible read-only record parts", () => {
     const normalized = normalizeMessage({
       role: "custom",
