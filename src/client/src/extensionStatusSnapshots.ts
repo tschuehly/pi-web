@@ -3,6 +3,7 @@ import { ACTIVE_TOOL_EXECUTION_LIMIT, type ActiveToolExecution } from "../../sha
 export const WORKING_MODE_STATUS_KEY = "working-mode";
 export const ACTIVITY_STATUS_KEY = "pi-workbench:activity";
 export const WATCHER_STATUS_KEY = "pi-process-monitor:watchers";
+export const BACKGROUND_BASH_STATUS_KEY = "pi-workbench:background-bash";
 export const GOAL_STATUS_KEY = "goal";
 const GOAL_STATUS_RAW_MAX_BYTES = 8_192;
 const GOAL_TEXT_MAX_CHARACTERS = 240;
@@ -74,6 +75,26 @@ function validStatusTime(value: unknown): value is string {
   return typeof value === "string" && value.length <= 64
     && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/u.test(value)
     && Number.isFinite(Date.parse(value));
+}
+
+export interface BackgroundBashStatusItem { id: string; elapsedSeconds: number; bytes: number }
+
+export function parseBackgroundBashStatusSnapshot(text: string | undefined): BackgroundBashStatusItem[] {
+  if (text === undefined || text.length > 32_768) return [];
+  const value = parseJson(text);
+  if (!record(value) || value["schemaVersion"] !== 1 || !Array.isArray(value["jobs"]) || value["jobs"].length > 8) return [];
+  const ids = new Set<string>();
+  const jobs: BackgroundBashStatusItem[] = [];
+  for (const entry of value["jobs"]) {
+    if (!record(entry)) return [];
+    const { id, elapsedSeconds, bytes } = entry;
+    if (!safeStatusId(id, 128) || ids.has(id)
+      || typeof elapsedSeconds !== "number" || !Number.isSafeInteger(elapsedSeconds) || elapsedSeconds < 0
+      || typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes < 0) return [];
+    ids.add(id);
+    jobs.push({ id, elapsedSeconds, bytes });
+  }
+  return jobs;
 }
 
 export function visibleShellExecutions(value: unknown): ActiveToolExecution[] {

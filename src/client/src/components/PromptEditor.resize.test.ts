@@ -229,11 +229,13 @@ describe("PromptEditor resize handle", () => {
   it("keeps fine and coarse targets fully inside composer padding and clear of adjacent controls", () => {
     const promptCss = promptEditorStyles.cssText;
     expect(promptCss).toMatch(/footer\s*\{[^}]*padding:\s*24px 12px 12px/);
-    expect(promptCss).toMatch(/\.editor-resize-handle\s*\{[^}]*top:\s*0;[^}]*height:\s*20px/);
+    expect(promptCss).toMatch(/\.editor-resize-handle\s*\{[^}]*top:\s*0;[^}]*height:\s*24px/);
+    expect(promptCss).toMatch(/\.editor-resize-handle::after\s*\{[^}]*width:\s*26px/);
+    expect(promptCss).toMatch(/\.editor-resize-handle:focus-visible\s*\{[^}]*outline:/);
     expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*footer\s*\{[^}]*padding-top:\s*48px/);
     expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*\.editor-resize-handle\s*\{[^}]*top:\s*0;[^}]*height:\s*44px/);
     expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*\.editor-resize-handle::after\s*\{[^}]*top:\s*21px/);
-    expect(20).toBeLessThanOrEqual(24);
+    expect(promptCss).toMatch(/\.editor-resize-handle::after\s*\{[^}]*top:\s*11px/);
     expect(44).toBeLessThanOrEqual(48);
     expect(chatStyles.cssText).toMatch(/\.scroll-to-bottom\s*\{[^}]*bottom:\s*12px/);
   });

@@ -12,7 +12,7 @@ import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor, workstreamMonogram 
 // Workstream re-entry view backed by the user-local Workbench plugin service.
 
 export interface WorkstreamCheckpoint { id: string; whatChanged: string; remains: string; next: string; nextSessionPrompt: string | null; references?: string[]; recordedAt: string }
-export interface WorkstreamSession { id: string; status: string; projectId?: string; workspaceId?: string; latestCheckpoint: WorkstreamCheckpoint | null }
+export interface WorkstreamSession { id: string; status: string; machineId?: string; projectId?: string; workspaceId?: string; latestCheckpoint: WorkstreamCheckpoint | null }
 export interface WorkstreamOverview { goal: string; doneWhen: string; description: string; history: string[]; recordedAt: string }
 type HumanTaskAnswerKind = "yes-no" | "choice" | "free-text";
 type HumanTaskAnswer = { kind: "yes-no" | "choice"; optionId: string } | { kind: "free-text"; text: string };

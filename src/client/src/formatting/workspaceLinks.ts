@@ -5,6 +5,7 @@ export interface MarkdownWorkspaceContext {
   projectId: string;
   workspaceId: string;
   root: string;
+  sourcePath?: string;
 }
 
 /** Do not borrow a newly selected workspace while the old session is still rendered. */
@@ -31,14 +32,25 @@ export function workspaceMarkdownFilePath(href: string, context: MarkdownWorkspa
   // Reject URL paths containing control characters or platform-specific separators.
   // eslint-disable-next-line no-control-regex -- Explicitly reject control characters in file references.
   if (path === "" || /[\\\u0000-\u001f\u007f]/.test(path)) return undefined;
-  if (path.startsWith("/")) {
+  const absolute = path.startsWith("/");
+  if (absolute) {
     const prefix = `${trimTrailingSlashes(context.root)}/`;
     if (!path.startsWith(prefix)) return undefined;
     path = path.slice(prefix.length);
     if (path === "") return undefined;
   }
-  // Match server file identity without collapsing traversal segments: the server
-  // must still reject any `..` and enforce filesystem/symlink containment.
+  if (context.sourcePath !== undefined) {
+    const parts = absolute ? [] : context.sourcePath.split("/").slice(0, -1);
+    for (const part of path.split("/")) {
+      if (part === "" || part === ".") continue;
+      if (part === "..") {
+        if (parts.length === 0) return undefined;
+        parts.pop();
+      } else parts.push(part);
+    }
+    return parts.length === 0 ? undefined : parts.join("/");
+  }
+  // Chat links retain their existing server-validated traversal behavior.
   const normalized = path.split("/").filter((part) => part !== "" && part !== ".").join("/");
   return normalized === "" ? undefined : normalized;
 }

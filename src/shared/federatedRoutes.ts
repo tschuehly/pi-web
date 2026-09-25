@@ -67,6 +67,13 @@ export const FEDERATED_HTTP_ROUTES = [
   },
   {
     method: "GET",
+    path: "/projects/:projectId/workspaces/:workspaceId/search",
+    timeoutMs: WORKSPACE_FILE_FEDERATION_TIMEOUT_MS,
+    responseBodyLimit: WORKSPACE_FILE_JSON_RESPONSE_BODY_MAX_BYTES,
+    propagateCancellation: true,
+  },
+  {
+    method: "GET",
     path: "/projects/:projectId/workspaces/:workspaceId/tree",
     timeoutMs: WORKSPACE_FILE_FEDERATION_TIMEOUT_MS,
     responseBodyLimit: WORKSPACE_FILE_JSON_RESPONSE_BODY_MAX_BYTES,

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeMessages } from "../chatMessages";
 import { ChatView } from "./ChatView";
 import type { FormattedText } from "./FormattedText";
@@ -10,6 +10,7 @@ import type { ToolExecutionView } from "./ToolExecutionView";
 afterEach(() => {
   document.body.replaceChildren();
   localStorage.clear();
+  vi.restoreAllMocks();
 });
 
 describe("ChatView transcript density", () => {
@@ -567,6 +568,161 @@ describe("ChatView transcript density", () => {
     expect(root.textContent).not.toContain("/repo/.agents");
   });
 
+  it("filters normalized message content without thinking, calls, results or skill activity while retaining raw boundaries", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messageStart = 40;
+    view.messageEnd = 44;
+    view.messageTotal = 60;
+    view.hasMore = true;
+    view.workspaceContext = { machineId: "remote", projectId: "p", workspaceId: "w", root: "/work" };
+    view.messages = normalizeMessages([
+      { role: "user", content: [{ type: "text", text: "human one" }] },
+      { role: "assistant", content: [{ type: "thinking", thinking: "private thought" }, { type: "text", text: "answer one [file](result.zip)" }, { type: "toolCall", id: "read-1", name: "read", arguments: { path: "secret-file" } }] },
+      { role: "toolResult", toolCallId: "read-1", toolName: "read", content: [{ type: "text", text: "secret result" }] },
+      { role: "system", content: "system line" },
+    ]);
+    document.body.append(view);
+    await view.updateComplete;
+    const root = requireShadowRoot(view);
+    const toggle = root.querySelector<HTMLButtonElement>(".filter-toggle");
+    expect(toggle?.getAttribute("aria-label")).toBe("Filter transcript: Everything");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(root.querySelector(".filter-options")).toBeNull();
+    expect(root.querySelector("tool-execution-view")).not.toBeNull();
+    await selectFilter(view, "Human only");
+    expect(transcriptText(root)).toContain("human one");
+    expect(transcriptText(root)).not.toContain("answer one");
+    expect(transcriptText(root)).not.toContain("secret result");
+    expect(root.textContent).toContain("Showing messages 41–44 of 60");
+    expect(root.querySelector<HTMLButtonElement>(".history-load-button")).not.toBeNull();
+    view.messages = [...view.messages, ...normalizeMessages([{ role: "assistant", content: [{ type: "thinking", thinking: "live thought" }, { type: "toolCall", id: "skill-1", name: "read", arguments: { path: "/skills/review/SKILL.md" } }, { type: "text", text: "live answer" }] }])];
+    view.messageEnd = 45; await view.updateComplete;
+    expect(transcriptText(root)).not.toContain("live answer");
+    await selectFilter(view, "Assistant only");
+    expect(transcriptText(root)).toContain("answer one");
+    expect(transcriptText(root)).toContain("live answer");
+    const formatted = root.querySelector<FormattedText>('article.msg.assistant formatted-text');
+    await formatted?.updateComplete;
+    expect(formatted?.renderRoot.querySelector<HTMLAnchorElement>('a[href*="result.zip"]')?.href).toContain("/machines/remote/projects/p/workspaces/w/file/preview");
+    for (const hidden of ["private thought", "live thought", "Skill: review", "secret-file", "secret result", "system line"]) expect(transcriptText(root)).not.toContain(hidden);
+    expect(root.querySelector("tool-execution-view, .tool-result, .thinking-group, .skill-read")).toBeNull();
+    expect(root.querySelector('[data-scroll-anchor-id="m:41"]')).not.toBeNull();
+    await selectFilter(view, "Human + Assistant");
+    expect(transcriptText(root)).toContain("human one");
+    expect(transcriptText(root)).toContain("live answer");
+    for (const hidden of ["private thought", "live thought", "Skill: review", "secret-file", "secret result", "system line"]) expect(transcriptText(root)).not.toContain(hidden);
+    expect(root.querySelector("tool-execution-view, .tool-result, .thinking-group, .skill-read")).toBeNull();
+    view.messageStart = 39;
+    view.messages = [{ role: "user", parts: [{ type: "text", text: "earlier human" }] }, ...view.messages];
+    await view.updateComplete;
+    expect(root.querySelector('[data-scroll-anchor-id="m:41"]')).not.toBeNull();
+    await selectFilter(view, "Human only");
+    expect(transcriptText(root)).toContain("earlier human");
+    view.sessionId = "session-2"; await view.updateComplete;
+    expect(toggle?.getAttribute("aria-label")).toBe("Filter transcript: Everything");
+    expect(root.querySelector("tool-execution-view")).not.toBeNull();
+  });
+
+  it("explains empty loaded matches and keeps manual history loading available", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [{ role: "tool", parts: [{ type: "text", text: "tool" }] }];
+    view.messageStart = 40; view.messageTotal = 41; view.hasMore = true;
+    view.onLoadMore = vi.fn();
+    document.body.append(view); await view.updateComplete;
+    const root = requireShadowRoot(view);
+    await selectFilter(view, "Human only");
+    expect(root.querySelector(".filter-empty")?.textContent).toContain("No messages matching Human only in loaded history. Load earlier messages");
+    root.querySelector<HTMLButtonElement>(".history-load-button")?.click();
+    expect(view.onLoadMore).toHaveBeenCalledOnce();
+  });
+
+  it("retains the reading position when switching filters and follows new messages only while pinned", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = [{ role: "user", parts: [{ type: "text", text: "hello" }] }, { role: "assistant", parts: [{ type: "text", text: "answer" }] }];
+    document.body.append(view); await view.updateComplete;
+    const chat = view.shadowRoot?.querySelector<HTMLElement>(".chat");
+    if (!chat) throw new Error("Missing transcript scroller");
+    Object.defineProperty(chat, "scrollHeight", { configurable: true, value: 400 });
+    chat.scrollTop = 100;
+    Reflect.set(view, "pinnedToBottom", false);
+    const scrollToBottom = vi.fn(); Reflect.set(view, "scrollToBottom", scrollToBottom);
+    await selectFilter(view, "Human only");
+    expect(chat.scrollTop).toBe(100);
+    view.messages = [...view.messages, { role: "assistant", parts: [{ type: "text", text: "new answer" }] }];
+    await view.updateComplete;
+    expect(scrollToBottom).not.toHaveBeenCalled();
+    Reflect.set(view, "pinnedToBottom", true);
+    await selectFilter(view, "Assistant only");
+    expect(scrollToBottom).toHaveBeenCalled();
+    scrollToBottom.mockClear();
+    chat.scrollTop = 400;
+    view.messages = [...view.messages, { role: "assistant", parts: [{ type: "text", text: "newer answer" }] }];
+    await view.updateComplete;
+    expect(scrollToBottom).toHaveBeenCalled();
+  });
+
+  it("anchors Human-to-Assistant switches by the nearest raw index, even without a shared DOM marker", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-filter-anchor";
+    view.messages = [{ role: "user", parts: [{ type: "text", text: "question" }] }, { role: "assistant", parts: [{ type: "text", text: "answer" }] }];
+    document.body.append(view); await view.updateComplete;
+    const chat = view.shadowRoot?.querySelector<HTMLElement>(".chat");
+    if (!chat) throw new Error("Missing transcript scroller");
+    Object.defineProperty(chat, "scrollHeight", { configurable: true, value: 500 });
+    chat.scrollTop = 100;
+    Reflect.set(view, "pinnedToBottom", false);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this === chat) return DOMRect.fromRect({ y: 0, width: 200, height: 200 });
+      const index = this.dataset["index"] ?? this.dataset["markerId"]?.match(/^m:(\d+)/u)?.[1];
+      const top = (index === "1" ? 180 : 50) - (chat.scrollTop - 100);
+      return DOMRect.fromRect({ y: top, width: 100, height: 20 });
+    });
+    await selectFilter(view, "Human only");
+    expect(chat.scrollTop).toBe(100);
+    await selectFilter(view, "Assistant only");
+    expect(chat.scrollTop).toBe(230);
+  });
+
+  it("does not resume a pending raw-history restore after entering a filtered view", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-restore-filter";
+    view.messages = [{ role: "user", parts: [{ type: "text", text: "latest" }] }];
+    view.hasMore = true;
+    view.onLoadMore = vi.fn();
+    document.body.append(view); await view.updateComplete;
+    await selectFilter(view, "Human only");
+    Reflect.set(view, "pendingScrollRestoreSessionId", view.sessionId);
+    Reflect.set(view, "pendingScrollRestorePosition", { mode: "anchor", anchorId: "e:0", offset: 5 });
+    view.messages = [...view.messages]; await view.updateComplete;
+    expect(view.onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it("exposes three keyboard-operable non-default choices and a way back to Everything", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    document.body.append(view); await view.updateComplete;
+    const root = requireShadowRoot(view);
+    const toggle = root.querySelector<HTMLButtonElement>(".filter-toggle");
+    toggle?.focus();
+    expect(root.activeElement).toBe(toggle);
+    toggle?.click(); await view.updateComplete;
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.getAttribute("aria-controls")).toBe("transcript-filter-options");
+    expect(Array.from(root.querySelectorAll(".filter-options button"), (button) => button.textContent.trim())).toEqual(["Human only", "Assistant only", "Human + Assistant"]);
+    await selectFilter(view, "Assistant only");
+    expect(toggle?.getAttribute("data-filter-active")).toBe("true");
+    expect(toggle?.hasAttribute("aria-pressed")).toBe(false);
+    expect(styleText(ChatView.styles)).toMatch(/\.filter-toggle\[data-filter-active="true"\]\s*\{[^}]*border-color:\s*var\(--pi-accent\)/);
+    expect(root.activeElement).toBe(toggle);
+    toggle?.click(); await view.updateComplete;
+    expect(root.querySelector('.filter-options button[aria-pressed="true"]')?.textContent).toBe("Assistant only");
+    root.querySelector<HTMLButtonElement>(".filter-options button")?.click(); await view.updateComplete;
+    expect(toggle?.getAttribute("aria-label")).toBe("Filter transcript: Everything");
+  });
+
   it("keeps earlier conversation expanded by default", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
@@ -586,6 +742,19 @@ describe("ChatView transcript density", () => {
     expect(exchangeHistory?.open).toBe(true);
   });
 });
+
+async function selectFilter(view: ChatView, label: string): Promise<void> {
+  const root = requireShadowRoot(view);
+  const toggle = root.querySelector<HTMLButtonElement>(".filter-toggle");
+  if (toggle?.getAttribute("aria-expanded") !== "true") { toggle?.click(); await view.updateComplete; }
+  const option = Array.from(root.querySelectorAll<HTMLButtonElement>(".filter-options button")).find((button) => button.textContent.trim() === label);
+  if (!option) throw new Error(`Missing transcript filter option: ${label}`);
+  option.click(); await view.updateComplete;
+}
+
+function transcriptText(root: ShadowRoot): string {
+  return `${root.textContent} ${Array.from(root.querySelectorAll<FormattedText>("formatted-text"), (element) => element.text).join(" ")}`;
+}
 
 function requireShadowRoot(view: ChatView): ShadowRoot {
   const root = view.shadowRoot;

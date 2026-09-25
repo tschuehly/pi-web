@@ -52,7 +52,6 @@ describe("Workstream identity presentation contracts", () => {
       [".session-meta", chooser],
       [".task small", chooser],
       [".about p", drawer],
-      [".context-label", drawer],
     ];
 
     for (const [selector, source] of labels) {
@@ -70,8 +69,9 @@ describe("Workstream identity presentation contracts", () => {
 
     expect(rule(chooser, '.row[aria-pressed="true"]:hover')).toContain(`${String(WORKSTREAM_TINT_PERCENTAGES.rowSelectedHover)}%`);
     expect(chooser).toContain(".identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }");
-    expect(drawer).toContain(".identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }");
-    expect(drawer).toMatch(/@media \(max-width: 520px\)[^{]*\{[^}]*\.context-label\s*\{\s*display:\s*none/u);
+    expect(rule(drawer, "summary")).toContain("border-left: 4px solid var(--workstream-color)");
+    expect(drawer).toContain("summary { border-color: ButtonText; border-left-color: LinkText; background: Canvas; }");
+    expect(drawer).toMatch(/@media \(max-width: 520px\)[^{]*\{[^}]*\.sheet\s*\{\s*padding:\s*12px 16px/u);
     expect(rule(drawer, "summary:focus-visible")).toContain("outline: 2px solid var(--pi-accent)");
     expect(rule(drawer, ".sheet")).toContain("max-height: calc(var(--pi-workbench-viewport-height, 100vh) - 56px)");
     // Status indicator must declare --pi-text outline for visibility across all surfaces

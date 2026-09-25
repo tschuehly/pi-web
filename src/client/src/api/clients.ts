@@ -190,6 +190,19 @@ export const workspacesApi = {
       { method: "DELETE", body: JSON.stringify(body) },
     );
   },
+  searchWorkspaceFiles: (projectId: string, workspaceId: string, query: string, cursor = "", machineId = "local", options?: { signal?: AbortSignal }) => request(
+    `${machinePrefix(machineId)}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/search?${new URLSearchParams({ q: query, cursor })}`,
+    (value): { paths: string[]; cursor: string | null } => {
+      if (typeof value !== "object" || value === null || !("paths" in value) || !Array.isArray(value.paths)
+        || !value.paths.every((path: unknown) => typeof path === "string") || !("cursor" in value)
+        || value.cursor !== null && (typeof value.cursor !== "string" || !/^(?:0|[1-9]\d{0,8})$/.test(value.cursor))) throw new Error("Invalid workspace search response");
+      return { paths: value.paths.map((path: unknown) => {
+        if (typeof path !== "string") throw new Error("Invalid workspace search path");
+        return path;
+      }), cursor: value.cursor };
+    },
+    options?.signal === undefined ? undefined : { signal: options.signal },
+  ),
   workspaceTree: (projectId: string, workspaceId: string, path = "", machineId = "local", options?: { signal?: AbortSignal }) => request(
     `${machinePrefix(machineId)}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/tree?path=${encodeURIComponent(path)}`,
     parseFileTreeResponse,

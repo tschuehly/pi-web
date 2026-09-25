@@ -551,6 +551,12 @@ describe("machine-scoped workspace removal API", () => {
 });
 
 describe("workspace file read API", () => {
+  it("queries scoped paginated file search on the selected machine", async () => {
+    const fetchMock = stubJsonFetch({ paths: ["untracked a.txt"], cursor: "101" });
+    expect(await workspacesApi.searchWorkspaceFiles("p 1", "w/1", "a b", "100", "remote a")).toEqual({ paths: ["untracked a.txt"], cursor: "101" });
+    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/projects/p%201/workspaces/w%2F1/search?q=a+b&cursor=100");
+  });
+
   it("forwards caller cancellation through selected-machine tree and file requests", async () => {
     const fetchMock = stubSequenceFetch([
       jsonResponse({ path: "src", entries: [], scannedAt: "2026-06-25T00:00:00.000Z", truncated: false }),

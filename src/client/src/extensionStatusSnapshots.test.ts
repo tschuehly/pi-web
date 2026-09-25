@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { GOAL_STATUS_STATE_VALUES, isTerminalDelegate, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWatcherStatusSnapshot, parseWorkingModeSnapshot, visibleShellExecutions } from "./extensionStatusSnapshots";
+import { GOAL_STATUS_STATE_VALUES, isTerminalDelegate, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWatcherStatusSnapshot, parseWorkingModeSnapshot, visibleShellExecutions } from "./extensionStatusSnapshots";
 
 describe("extension status snapshots", () => {
+  it("accepts only bounded active background bash status", () => {
+    const parse = (jobs: unknown[]) => parseBackgroundBashStatusSnapshot(JSON.stringify({ schemaVersion: 1, jobs }));
+    expect(parse([{ id: "job-1", elapsedSeconds: 42, bytes: 1024, command: "TOKEN=secret" }])).toEqual([
+      { id: "job-1", elapsedSeconds: 42, bytes: 1024 },
+    ]);
+    expect(parse([{ id: "job-1", command: "test", elapsedSeconds: -1, bytes: 0 }])).toEqual([]);
+    expect(parse([{ id: "job-1", command: "test", elapsedSeconds: 1, bytes: 0 }, { id: "job-1", command: "test", elapsedSeconds: 1, bytes: 0 }])).toEqual([]);
+    expect(parse(Array.from({ length: 9 }, (_, index) => ({ id: `job-${String(index)}`, command: "test", elapsedSeconds: 0, bytes: 0 })))).toEqual([]);
+  });
   it("accepts the exact bounded Goal schema and every state", () => {
     for (const state of GOAL_STATUS_STATE_VALUES) {
       expect(parseGoalStatusSnapshot(JSON.stringify({ schemaVersion: 1, goalId: "🚀".repeat(128), state, objective: "界".repeat(240) }))).toEqual({

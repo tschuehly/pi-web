@@ -39,6 +39,23 @@ describe("buildApp remote machine proxy routes", () => {
     expect(request).toHaveBeenCalledWith("GET", "/api/projects?active=true", undefined);
   });
 
+  it("proxies remote workspace search with cursor and a cancellable bounded hop", async () => {
+    const added = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const remote = added.json<{ id: string }>();
+    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: Readable.from([JSON.stringify({ paths: ["src/App.ts"], cursor: "42" })]),
+    }));
+    appTestContext.remoteClient = fakeRemoteClient({ request });
+    const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/search?q=App&cursor=10` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ paths: ["src/App.ts"], cursor: "42" });
+    expect(proxiedCall(request, 0).arguments).toEqual(["GET", "/api/projects/p1/workspaces/w1/search?q=App&cursor=10", undefined]);
+    expect(proxiedCall(request, 0).signal).toBeInstanceOf(AbortSignal);
+    expect(request.mock.calls[0]?.[3]).toMatchObject({ timeoutMs: WORKSPACE_FILE_FEDERATION_TIMEOUT_MS });
+  });
+
   it("preserves the force-refresh query when proxying update checks", async () => {
     const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
     const remote = addResponse.json<{ id: string }>();

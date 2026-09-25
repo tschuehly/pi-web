@@ -107,12 +107,13 @@ describe("federated route contract", () => {
 
   it("bounds and cancels every federated workspace-file JSON route", () => {
     const paths = [
+      "/projects/:projectId/workspaces/:workspaceId/search",
       "/projects/:projectId/workspaces/:workspaceId/tree",
       "/projects/:projectId/workspaces/:workspaceId/file",
       "/projects/:projectId/workspaces/:workspaceId/file/move",
     ];
     const routes = FEDERATED_HTTP_ROUTES.filter((route) => paths.includes(route.path));
-    expect(routes).toHaveLength(5);
+    expect(routes).toHaveLength(6);
     for (const route of routes) {
       expect(route).toMatchObject({
         timeoutMs: WORKSPACE_FILE_FEDERATION_TIMEOUT_MS,

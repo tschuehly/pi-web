@@ -12,7 +12,7 @@ const markdownHtmlCache = new Map<string, string>();
 export function toSafeMarkdownHtml(text: string, workspace?: MarkdownWorkspaceContext): string {
   // Only workspace links depend on the effective application base, not route/query changes.
   const key = JSON.stringify([text, workspace === undefined ? null : [
-    workspace.machineId, workspace.projectId, workspace.workspaceId, workspace.root, resolveAppUrl(""),
+    workspace.machineId, workspace.projectId, workspace.workspaceId, workspace.root, workspace.sourcePath, resolveAppUrl(""),
   ]]);
   const cached = markdownHtmlCache.get(key);
   if (cached !== undefined) return cached;
@@ -46,6 +46,8 @@ function sanitizeHtml(html: string, workspace?: MarkdownWorkspaceContext): strin
       if (path !== undefined) {
         element.setAttribute("href", workspaceFilePreviewUrl(workspace.projectId, workspace.workspaceId, path, { machineId: workspace.machineId, download: true }));
         element.setAttribute("data-workspace-file", path);
+      } else if (workspace.sourcePath !== undefined && !/^(?:[#?]|\/\/|[a-z][a-z\d+.-]*:)/i.test(href.trim())) {
+        element.removeAttribute("href");
       }
     }
     for (const attribute of [...element.attributes]) {

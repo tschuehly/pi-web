@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { appendWorkstream, inspectWorkstream, WorkstreamServiceError, type WorkstreamAppendInput, type WorkstreamServiceContext, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { PluginBackendRequestUnavailableError } from "../api/pluginBackends";
-import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor, workstreamMonogram } from "../workstreamColor";
+import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor } from "../workstreamColor";
 
 const checkpointFields: { name: "whatChanged" | "remains" | "next" | "nextSessionPrompt"; label: string; max: number }[] = [
   { name: "whatChanged", label: "What changed", max: 4000 },
@@ -155,7 +155,7 @@ export class WorkstreamContextDrawer extends LitElement {
     const checkpoint = this.checkpoint(this.snapshot);
     return html`
       <details style=${`--workstream-color:${workstreamAccentColor(this.snapshot.id)}`}>
-        <summary><span class="identity-mark" aria-hidden="true">${workstreamMonogram(this.snapshot.title)}</span><span class="context-label">Workstream</span><strong>${this.snapshot.title}</strong></summary>
+        <summary><span class="visually-hidden">Workstream: </span><strong>${this.snapshot.title}</strong></summary>
         <div class="sheet">
           <section class="row goal-row">
             <span class="label">Goal</span>
@@ -197,17 +197,16 @@ export class WorkstreamContextDrawer extends LitElement {
   static override styles = css`
     :host { position: static; display: block; min-width: 0; color: var(--pi-text); }
     * { box-sizing: border-box; min-width: 0; }
-    details { position: static; border-left: 3px solid var(--workstream-color, transparent); }
+    details { position: static; }
     summary, .tab { min-height: 32px; display: flex; align-items: center; gap: 8px; }
-    summary { padding: 0 10px; border: 1px solid var(--pi-border); border-radius: 8px; background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.drawer}%, var(--pi-surface)); list-style: none; cursor: pointer; }
+    summary { padding: 0 10px; border: 1px solid color-mix(in srgb, var(--workstream-color) 55%, var(--pi-border)); border-left: 4px solid var(--workstream-color); border-radius: 8px; background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.drawer}%, var(--pi-surface)); list-style: none; cursor: pointer; }
     summary:hover { background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.drawerActive}%, var(--pi-surface-hover)); }
     details[open] summary { background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.drawerActive}%, var(--pi-surface-hover)); }
     summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     summary::-webkit-details-marker { display: none; }
     summary::after { content: "↓"; flex: 0 0 auto; color: var(--pi-text); }
     details[open] summary::after { content: "↑"; }
-    .context-label { flex: 0 0 auto; color: var(--pi-text); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-    .identity-mark { flex: 0 0 auto; display: inline-grid; place-items: center; width: 28px; height: 24px; border: 2px solid var(--pi-text); border-radius: 7px 7px 3px 7px; background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.mark}%, var(--pi-surface)); color: var(--pi-text); font-size: 10px; font-weight: 850; letter-spacing: .03em; line-height: 1; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     summary strong { flex: 1 1 auto; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
     .tab { overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
     .fallback-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -228,13 +227,10 @@ export class WorkstreamContextDrawer extends LitElement {
     .next { margin: 8px 0 4px; padding: 18px 12px 12px; border: 1px solid var(--pi-success-border); border-radius: 9px; background: linear-gradient(var(--pi-success-bg), var(--pi-success-bg)), var(--sheet-paint) var(--pi-surface); }
     .next .label { left: 12px; background: linear-gradient(var(--pi-success-bg), var(--pi-success-bg)), var(--sheet-paint) var(--pi-surface); }
     @media (forced-colors: active) {
-      details { border-left-color: LinkText; }
-      summary { background: Canvas; }
-      details[open] summary { border-color: Highlight; }
-      .identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }
+      summary { border-color: ButtonText; border-left-color: LinkText; background: Canvas; }
+      details[open] summary { border-color: Highlight; border-left-color: LinkText; }
     }
     @media (max-width: 520px) {
-      .context-label { display: none; }
       .sheet { padding: 12px 16px; }
       .goal { font-size: 16px; }
     }

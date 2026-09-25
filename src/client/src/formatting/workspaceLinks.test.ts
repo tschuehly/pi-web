@@ -16,6 +16,15 @@ describe("workspace Markdown path normalization", () => {
     expect(workspaceMarkdownFilePath(href, workspace)).toBeUndefined();
   });
 
+  it("resolves relative references from the source directory without escaping the workspace", () => {
+    const source = { ...workspace, sourcePath: "docs/deep/notes.md" };
+    expect(workspaceMarkdownFilePath("./target%20one.txt", source)).toBe("docs/deep/target one.txt");
+    expect(workspaceMarkdownFilePath("../shared.txt", source)).toBe("docs/shared.txt");
+    expect(workspaceMarkdownFilePath("../../../secret", source)).toBeUndefined();
+    expect(workspaceMarkdownFilePath("/work/../secret", source)).toBeUndefined();
+    expect(workspaceMarkdownFilePath("/work/docs/target.txt", source)).toBe("docs/target.txt");
+  });
+
   it("decodes only once and preserves meaningful filename characters", () => {
     expect(workspaceMarkdownFilePath("./.hidden//%252E%252E/a%20%23%3F%25.txt", workspace)).toBe(".hidden/%2E%2E/a #?%.txt");
   });

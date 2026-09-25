@@ -113,6 +113,16 @@ describe("workspace Markdown downloads", () => {
     expect(link(absolute, { ...workspace, root: "/another" }).getAttribute("href")).toBe("/srv/work/result.zip");
   });
 
+  it("isolates identical nested Markdown by source path and rejects escapes", () => {
+    const text = "[sibling](./target.txt) [parent](../shared.txt) [escape](../../../../outside.txt)";
+    const first = render(text, { ...workspace, sourcePath: "docs/a/notes.md" });
+    const second = render(text, { ...workspace, sourcePath: "docs/b/notes.md" });
+    expect([...first.querySelectorAll("a")].map((a) => a.getAttribute("data-workspace-file"))).toEqual(["docs/a/target.txt", "docs/shared.txt", null]);
+    expect([...second.querySelectorAll("a")].map((a) => a.getAttribute("data-workspace-file"))).toEqual(["docs/b/target.txt", "docs/shared.txt", null]);
+    expect(first.querySelectorAll("a")[2]?.hasAttribute("href")).toBe(false);
+    expect(second.querySelector("a")?.href).not.toBe(first.querySelector("a")?.href);
+  });
+
   it("keeps unsafe schemes, images and literal HTML out of download resolution", () => {
     const result = render('[bad](javascript:alert%281%29) [bad](data:text/plain,hi) ![image](report.png) <a href="report.zip">raw</a>', workspace);
     expect([...result.querySelectorAll("a")].every((a) => !a.hasAttribute("href"))).toBe(true);

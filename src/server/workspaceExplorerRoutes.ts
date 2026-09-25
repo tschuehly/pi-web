@@ -4,7 +4,7 @@ import type { PiWebConfigService } from "./configRoutes.js";
 import type { ProjectService } from "./projects/projectService.js";
 import { deleteWorkspaceFile, moveWorkspaceFile, readWorkspaceFile, writeWorkspaceFile, WorkspaceFileConflictError, WorkspaceFileOutcomeUnknownError } from "./workspaces/fileContentService.js";
 import { isAbsoluteishFileSuggestionQuery, listFileSuggestions, listPathSuggestions } from "./workspaces/fileSuggestions.js";
-import { listWorkspaceTree } from "./workspaces/fileTreeService.js";
+import { listWorkspaceTree, searchWorkspaceFiles } from "./workspaces/fileTreeService.js";
 import { isAbsoluteishPath } from "./workspaces/pathAccessPolicy.js";
 import { readWorkspaceFilePreview } from "./workspaces/filePreviewService.js";
 import { workspaceFilePreviewResponsePolicy } from "./workspaces/filePreviewResponsePolicy.js";
@@ -20,6 +20,20 @@ export interface WorkspaceExplorerRouteOptions {
 
 export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: ProjectService, workspaces: WorkspaceCatalog, prefix = "/api", options: WorkspaceExplorerRouteOptions = {}): void {
   registerWorkspaceFileContentParsers(app);
+
+  app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { q?: string; cursor?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/search`, async (request, reply) => {
+    const controller = new AbortController();
+    const onClose = () => { if (!reply.raw.writableEnded) controller.abort(); };
+    reply.raw.on("close", onClose);
+    try {
+      const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
+      return await searchWorkspaceFiles(context.root, request.query.q ?? "", request.query.cursor ?? "", controller.signal);
+    } catch (error) {
+      return await sendWorkspaceRequestError(reply, error, 400);
+    } finally {
+      reply.raw.off("close", onClose);
+    }
+  });
 
   app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { path?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/tree`, async (request, reply) => {
     try {

@@ -539,8 +539,8 @@ export const promptEditorStyles = css`
   :host { position: relative; z-index: 5; display: block; color: var(--pi-text); font: 14px system-ui, sans-serif; }
   footer { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 24px 12px 12px; border-top: 1px solid var(--pi-border); }
   footer.shell-mode { border-top-color: var(--pi-success); background: var(--pi-success-bg); }
-  .editor-resize-handle { position: absolute; z-index: 4; top: 0; right: 0; left: 0; height: 20px; cursor: ns-resize; touch-action: none; }
-  .editor-resize-handle::after { position: absolute; top: 9px; left: 50%; width: 42px; height: 2px; border-radius: 999px; background: var(--pi-border); content: ""; transform: translateX(-50%); }
+  .editor-resize-handle { position: absolute; z-index: 4; top: 0; right: 0; left: 0; height: 24px; cursor: ns-resize; touch-action: none; }
+  .editor-resize-handle::after { position: absolute; top: 11px; left: 50%; width: 26px; height: 2px; border-radius: 999px; background: var(--pi-border); content: ""; transform: translateX(-50%); }
   .editor-resize-handle:hover::after, .editor-resize-handle:focus-visible::after { background: var(--pi-accent); }
   .editor-resize-handle:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -4px; }
   .editor-wrap { position: relative; min-width: 0; }

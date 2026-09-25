@@ -16,6 +16,8 @@ import { nativeDirectoryPicker } from "../nativeHost";
 import { PluginRegistry } from "../plugins/registry";
 import { themePackPlugin } from "../plugins/themes";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile } from "../presentationProfiles";
+import { shouldAutoOrientWorkstream } from "../workstreamOrientation";
+import { hasRenderedModal } from "./modalLayerRegistry";
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
 import { sessionTitle } from "../sessionLabels";
 import { selectedNotificationView } from "../sessionNotifications";
@@ -72,6 +74,7 @@ export class WorkbenchApp extends LitElement {
   private workstreamLoadSequence = 0;
   private workstreamWatchSequence: number | undefined;
   private workstreamWatchDelay = 2_000;
+  private orientationPendingSessionId: string | undefined;
   private workstreamWatchTimer: number | undefined;
   private readonly themes = new PluginRegistry();
   private themesInitialized = false;
@@ -146,7 +149,12 @@ export class WorkbenchApp extends LitElement {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!(event.metaKey || event.ctrlKey)) return;
-    if (event.key === "+" || event.key === "=") { event.preventDefault(); this.stepScale(1); }
+    if (event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "p" && !event.altKey && !event.shiftKey && this.app.selectedSession !== undefined
+      && this.app.selectedWorkspace?.projectId !== undefined && this.app.selectedWorkspace.projectId !== ""
+      && !hasRenderedModal(this.ownerDocument)) {
+      event.preventDefault();
+      this.openFileSearch();
+    } else if (event.key === "+" || event.key === "=") { event.preventDefault(); this.stepScale(1); }
     else if (event.key === "-") { event.preventDefault(); this.stepScale(-1); }
     else if (event.key === "0") { event.preventDefault(); this.setScale(DEFAULT_INTERFACE_SCALE); }
   };
@@ -496,6 +504,7 @@ export class WorkbenchApp extends LitElement {
       return;
     }
 
+    this.orientationPendingSessionId = session.id;
     this.updateUrl();
     await this.preloadWorkstreamPrompt(detail.prompt, machineId, session.id);
     try {
@@ -510,8 +519,25 @@ export class WorkbenchApp extends LitElement {
       await appendWorkstream(confirmationContext, { workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:confirmed`, records: [record] });
       await this.loadCurrentWorkstream();
     } catch (error) {
+      if (this.orientationPendingSessionId === session.id) this.orientationPendingSessionId = undefined;
       this.setApp({ error: `Chat ${session.id} was created, but PI WEB could not record its Workstream confirmation. ${error instanceof Error ? error.message : String(error)}` });
+      return;
     }
+    if (!this.selectedChatIs(session.id, machineId)) return;
+    try {
+      const confirmed = await inspectWorkstream(this.workstreamServiceContext ?? workstreamContext, detail.workstreamId);
+      if (await shouldAutoOrientWorkstream(confirmed, session.id, machineId)
+        && this.orientationPendingSessionId === session.id && this.selectedChatIs(session.id, machineId)
+        && !this.app.messages.some((message) => message.role === "user")) await this.sessions.runCommand("/skill:orient full");
+    } catch (error) {
+      this.setApp({ error: `Automatic orientation could not check this Workstream. Run /skill:orient manually; your continuation draft remains available. ${error instanceof Error ? error.message : String(error)}` });
+    } finally {
+      if (this.orientationPendingSessionId === session.id) this.orientationPendingSessionId = undefined;
+    }
+  }
+
+  private selectedChatIs(sessionId: string, machineId: string): boolean {
+    return this.app.selectedSession?.id === sessionId && selectedMachineId(this.app) === machineId;
   }
 
   private get workstreamServiceContext(): WorkstreamServiceContext | undefined {
@@ -648,6 +674,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   private readonly handleSend = (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string): Promise<boolean> => {
+    if (this.orientationPendingSessionId === this.app.selectedSession?.id) this.orientationPendingSessionId = undefined;
     if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && this.auth.handleSlashCommand(text)) return Promise.resolve(true);
     return this.sessions.send(text, streamingBehavior, attachments, delivery, folder);
   };
@@ -867,6 +894,15 @@ export class WorkbenchApp extends LitElement {
     this.filesWidth = next;
   }
 
+  private openFileSearch(): void {
+    if (this.app.selectedWorkspace?.projectId === undefined || this.app.selectedWorkspace.projectId === "") return;
+    this.showFiles = true;
+    void this.updateComplete.then(async () => {
+      const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+      if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.searchFiles(); }
+    });
+  }
+
   private readonly toggleFiles = (): void => {
     if (this.showFiles && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
     if (this.showFiles) this.finishFilesResize();
@@ -881,7 +917,10 @@ export class WorkbenchApp extends LitElement {
       || request.workspaceId !== workspace.id || request.root !== workspace.path) return;
     event.preventDefault();
     this.showFiles = true;
-    void this.updateComplete.then(() => this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.openFile(request.path));
+    void this.updateComplete.then(async () => {
+      const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+      if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.openFile(request.path); }
+    });
   };
 
   private renderChat() {
@@ -896,6 +935,7 @@ export class WorkbenchApp extends LitElement {
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject?.name} · ${state.selectedWorkspace?.label}</span>
           <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("files")}</button>
+          <button type="button" class="header-action" title="Search files (⌘P)" aria-label="Search files" ?disabled=${state.selectedWorkspace?.projectId === undefined || state.selectedWorkspace.projectId === ""} @click=${() => { this.openFileSearch(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><span>Search files</span></button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}
@@ -1028,16 +1068,22 @@ export class WorkbenchApp extends LitElement {
     .error, .chat-error { color: var(--pi-danger); }
     .chat-shell { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     header { position: relative; z-index: 6; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
-    .back { flex: 0 0 auto; min-height: 32px; padding: 4px 10px; text-align: center; }
-    header workstream-context-drawer { flex: 1 1 auto; }
+    header > button { flex: 0 0 auto; min-height: 32px; border-color: transparent; background: transparent; }
+    header > button:hover:not(:disabled) { background: var(--pi-surface-hover); }
+    header > .icon-button:hover { border-color: transparent; }
+    .back { padding: 4px 10px; text-align: center; }
+    .header-action { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; }
+    .header-action svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+    header workstream-context-drawer { flex: 1 1 auto; min-width: 0; }
     header span { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    header .header-action span { color: inherit; font-size: inherit; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     .chat-and-files { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
     .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     delegate-roster, prompt-editor { flex: 0 0 auto; }
     .files-toggle { flex: 0 0 auto; }
-    .files-toggle[aria-expanded="true"] { border-color: var(--pi-accent); }
+    .files-toggle[aria-expanded="true"] { color: var(--pi-accent); background: var(--pi-selection-bg); }
     .files-divider { position: relative; z-index: 2; flex: 0 0 8px; background: var(--pi-border-muted); cursor: col-resize; touch-action: none; }
     .files-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: var(--pi-border); }
     .files-divider:hover::after, .files-divider:focus-visible::after { background: var(--pi-accent); }
@@ -1054,7 +1100,9 @@ export class WorkbenchApp extends LitElement {
       .chooser > section { padding: 16px; }
       .new-chat label { min-width: 0; }
       .new-chat select { min-width: 0; max-width: 100%; }
+      header { gap: 6px; padding-inline: 8px; }
       header span { display: none; }
+      .header-action { width: 34px; padding-inline: 0; justify-content: center; }
     }
     @media (max-width: 600px), (pointer: coarse) {
       .link { min-height: max(44px, var(--pi-control-min-size)); }

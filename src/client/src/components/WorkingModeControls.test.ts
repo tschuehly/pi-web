@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionStatus } from "../api";
-import { ACTIVITY_STATUS_KEY, WATCHER_STATUS_KEY, WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
+import { ACTIVITY_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY, WATCHER_STATUS_KEY, WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
 import { DelegateRoster } from "./DelegateRoster";
 import { WorkingModeControls } from "./WorkingModeControls";
 
@@ -55,6 +55,24 @@ describe("DelegateRoster", () => {
     expect(root(element).querySelector("section")).toBeNull();
   });
 
+  it("shows a background shell's elapsed time and output while the agent remains free", async () => {
+    const element = new DelegateRoster();
+    element.status = status({ [BACKGROUND_BASH_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, jobs: [
+      { id: "job-123", elapsedSeconds: 84, bytes: 4096 },
+    ] }) });
+    document.body.append(element);
+    await element.updateComplete;
+    const shadow = root(element);
+    expect(shadow.querySelector(".aggregate")?.textContent).toContain("1 shell");
+    const row = required(shadow.querySelector('[data-row-key="background-bash:job-123"]'));
+    expect(row.querySelector(".task")).toBeNull();
+    expect(row.querySelector(".activity")?.textContent).toBe("Running · 84s · 4096 bytes output");
+    expect(shadow.querySelector(".rows")?.getAttribute("tabindex")).toBe("0");
+    element.status = status({});
+    await element.updateComplete;
+    expect(shadow.querySelector("section")).toBeNull();
+  });
+
   it("renders a running subagent and a terminal uncollected row compactly", async () => {
     const element = new DelegateRoster();
     document.body.append(element);
@@ -70,7 +88,7 @@ describe("DelegateRoster", () => {
     expect(toggle.type).toBe("button");
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(root(element).querySelector(".section-name")?.textContent).toContain("Activity");
-    expect(root(element).querySelector(".section-count")?.textContent).toBe("2 total");
+    expect(root(element).querySelector(".section-count")).toBeNull();
     expect(root(element).querySelector(".aggregate")?.textContent).toBe("1 running delegate · 1 uncollected · 0 watchers · 0 shells");
     expect(root(element).querySelector(".aggregate")?.hasAttribute("aria-live")).toBe(false);
     expect(root(element).querySelector("#delegate-roster-rows")?.hasAttribute("hidden")).toBe(false);
@@ -80,16 +98,36 @@ describe("DelegateRoster", () => {
     expect(running.querySelector("strong")?.textContent).toBe("Roster implementation");
     expect(running.querySelector(".meta")?.textContent).toBe("implementation · gpt-5.6-sol · medium");
     expect(running.querySelector(".meta")?.getAttribute("title")).toContain("openai-codex/gpt-5.6-sol-20260921");
-    expect(running.querySelector(".task")?.textContent).toBe(longObjective);
-    expect(running.querySelector(".task")?.getAttribute("title")).toBe(longObjective);
+    expect(running.querySelector(".task")).toBeNull();
     expect(running.querySelector(".activity")?.textContent).toBe("Reported status: Wiring the roster CSS");
-    expect(running.querySelector(".activity")?.getAttribute("title")).toBe("Wiring the roster CSS");
+    expect(running.textContent).not.toContain(longObjective);
+    expect(running.textContent).not.toContain("running tests");
     expect(running.querySelector(".activity")?.hasAttribute("aria-label")).toBe(false);
-    expect(running.querySelector(".activity .visually-hidden")?.textContent).toBe("Reported status: ");
-    expect(running.querySelector(".activity")?.textContent).not.toContain("running tests");
     const terminal = required(rows[1]);
     expect(terminal.classList.contains("terminal")).toBe(true);
     expect(terminal.querySelector(".state")?.getAttribute("aria-label")).toBe("Uncollected");
+    expect(terminal.querySelector(".activity")?.textContent).toBe("No status report received");
+  });
+
+  it("keeps long identities available while dropping raw task previews and inferred tool actions", async () => {
+    const element = new DelegateRoster();
+    element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
+      { id: "one", kind: "subagent", name: "A very long implementation delegate name with /path/segments", role: "implementation", model: "provider/a-very-long-model-name", effort: "high", objective: "Implement the first clause of a long assignment ending in /deeply/nested/path…", activity: "reading /deeply/nested/path" },
+    ] }) });
+    document.body.append(element);
+    await element.updateComplete;
+    const row = required(root(element).querySelector(".row"));
+    expect(row.querySelector("strong")?.textContent).toContain("/path/segments");
+    expect(row.querySelector(".meta")?.textContent).toContain("a-very-long-model-name");
+    expect(row.querySelector(".task")).toBeNull();
+    expect(row.querySelector(".activity")?.textContent).toBe("Waiting for status report");
+    expect(row.textContent).not.toContain("reading /deeply/nested/path");
+    expect(row.textContent).not.toContain("Implement the first clause");
+    const css = DelegateRoster.styles.cssText;
+    expect(css).toMatch(/\.identity, \.task, \.activity\s*\{[^}]*overflow-wrap:\s*anywhere/);
+    expect(css).not.toMatch(/\.meta\s*\{\s*display:\s*none/);
+    expect(css).not.toMatch(/\.task\s*\{[^}]*text-overflow:\s*ellipsis/);
+    expect(css).toMatch(/\.rows\s*\{[^}]*max-height:\s*min\(28vh, 260px\);[^}]*overflow-y:\s*auto/);
   });
 
   it("stays collapsed across live updates until its keyboard-focusable button is clicked again", async () => {
@@ -124,7 +162,7 @@ describe("DelegateRoster", () => {
     toggle = required(root(element).querySelector<HTMLButtonElement>(".section-toggle"));
     expect(element.collapsed).toBe(true);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(root(element).querySelector(".section-count")?.textContent).toBe("3 total");
+    expect(root(element).querySelectorAll(".row")).toHaveLength(3);
     expect(root(element).querySelector(".aggregate")?.textContent).toBe("2 running delegates · 1 uncollected · 0 watchers · 0 shells");
     expect(root(element).querySelector<HTMLElement>("#delegate-roster-rows")?.hidden).toBe(true);
     expect(root(element).querySelectorAll(".row")).toHaveLength(3);
@@ -134,7 +172,7 @@ describe("DelegateRoster", () => {
     expect(element.collapsed).toBe(false);
     expect(root(element).querySelector<HTMLElement>("#delegate-roster-rows")?.hidden).toBe(false);
     expect(root(element).querySelectorAll(".row")).toHaveLength(3);
-    expect(DelegateRoster.styles.cssText).toMatch(/@container \(max-width: 700px\)[\s\S]*\.aggregate\s*\{[^}]*order:\s*-1/);
+    expect(DelegateRoster.styles.cssText).toMatch(/@container \(max-width: 700px\)[\s\S]*\.aggregate\s*\{[^}]*flex:\s*0 1 100%/);
   });
 
   it("merges sources across lifecycle and reconnect without stale rows or lost collapse", async () => {
@@ -157,8 +195,7 @@ describe("DelegateRoster", () => {
     expect(shadow.querySelector("section")?.getAttribute("aria-label")).toBe("Activity");
     expect([...shadow.querySelectorAll(".row")].map((row) => row.getAttribute("data-row-key"))).toEqual(["delegate:same", "delegate:done", "watcher:same", "shell:same"]);
     expect(shadow.querySelector(".aggregate")?.textContent).toBe("1 running delegate · 1 uncollected · 1 watcher · 1 shell");
-    expect(shadow.querySelector(".section-count")?.hasAttribute("aria-label")).toBe(false);
-    expect(shadow.querySelector(".section-count .visually-hidden")?.textContent).toBe(" total");
+    expect(shadow.querySelector(".section-count")).toBeNull();
     expect(shadow.querySelector('[data-row-key="watcher:same"] .kind')?.getAttribute("aria-label")).toBe("Poll watcher");
     expect(shadow.querySelector('[data-row-key="watcher:same"] .state')?.getAttribute("aria-label")).toBe("Monitor: watching");
     expect(shadow.querySelector('[data-row-key="watcher:same"] .activity')?.textContent).toBe("Monitor: watching");
@@ -200,7 +237,7 @@ describe("DelegateRoster", () => {
     await element.updateComplete;
     expect(shadow.querySelectorAll(".row")).toHaveLength(2);
     expect(shadow.querySelector('[data-row-key="delegate:done"] .state')?.getAttribute("aria-label")).toBe("Uncollected");
-    expect(shadow.querySelector(".section-count")?.textContent).toBe("2 total");
+    expect(shadow.querySelectorAll(".row")).toHaveLength(2);
     element.status = status({}); // reconnect/clear: no cached rows
     await element.updateComplete;
     expect(shadow.querySelector("section")).toBeNull();
@@ -225,7 +262,7 @@ describe("DelegateRoster", () => {
     expect(DelegateRoster.styles.cssText).toMatch(/\.state\.watcher-state\.warning\s*\{[^}]*var\(--pi-warning\)/);
     element.status = { ...status({}), activeToolExecutions: [{ id: "shell:old", kind: "shell", toolName: "shell", label: "Interactive shell" }] };
     await element.updateComplete;
-    expect(root(element).querySelector(".section-count")?.textContent).toBe("1 total");
+    expect(root(element).querySelectorAll(".row")).toHaveLength(1);
     expect(root(element).querySelector(".kind")?.getAttribute("aria-label")).toBe("Shell");
     expect(root(element).querySelector(".row")?.getAttribute("data-row-key")).toBe("shell:shell:old");
   });
@@ -298,13 +335,16 @@ describe("DelegateRoster", () => {
     const styles = DelegateRoster.styles.cssText;
     expect(styles).toMatch(/:host\s*\{[^}]*container-type:\s*inline-size/);
     const compact = required(/@container \(max-width: 700px\)\s*\{([\s\S]*)\}\s*$/.exec(styles)?.[1]);
-    // At 320px: 246px of minimum tracks + 24px gaps + 6px row padding + 12px section padding = 288px.
-    expect(compact).toMatch(/\.row\s*\{[^}]*grid-template-columns:\s*8px minmax\(70px, \.7fr\) minmax\(70px, 1fr\) minmax\(90px, 1\.2fr\) 8px/);
-    expect(compact).toMatch(/\.row\s*\{[^}]*gap:\s*6px;\s*padding-inline:\s*3px/);
-    expect(compact).toMatch(/section\s*\{[^}]*padding-inline:\s*6px/);
+    expect(compact).toMatch(/\.row\s*\{[^}]*grid-template-columns:\s*8px minmax\(0, 1fr\) 8px/);
+    expect(compact).toMatch(/\.identity\s*\{[^}]*grid-column:\s*2;\s*grid-row:\s*1/);
+    expect(compact).toMatch(/\.task\s*\{[^}]*grid-column:\s*2;\s*grid-row:\s*2/);
+    expect(compact).toMatch(/\.activity\s*\{[^}]*grid-column:\s*2;\s*grid-row:\s*3/);
+    expect(compact).toMatch(/\.delegate-status\s*\{[^}]*grid-row:\s*2/);
+    expect(styles).toMatch(/\.identity, \.task, \.activity\s*\{[^}]*overflow-wrap:\s*anywhere/);
+    expect(styles).not.toMatch(/text-overflow:\s*ellipsis;\s*white-space:\s*nowrap;[^}]*\.activity/);
   });
 
-  it("falls back to inferred activity when reportedStatus is absent", async () => {
+  it("waits explicitly for a self-report instead of guessing from tools", async () => {
     const element = new DelegateRoster();
     document.body.append(element);
     element.status = status({ [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [
@@ -313,11 +353,8 @@ describe("DelegateRoster", () => {
     await element.updateComplete;
     const row = required(root(element).querySelector(".row"));
     expect(row.querySelector(".kind")?.getAttribute("aria-label")).toBe("Worker");
-    expect(row.querySelector(".activity")?.textContent).toBe("No status report; inferred activity: · running bash");
-    expect(row.querySelector(".activity")?.getAttribute("title")).toBe("No status report · running bash");
-    expect(row.querySelector(".activity")?.hasAttribute("aria-label")).toBe(false);
-    expect(row.querySelector(".activity .visually-hidden")?.textContent).toBe("; inferred activity:");
-    expect(row.querySelector('.activity [aria-hidden="true"]')?.textContent).toBe(" ·");
+    expect(row.querySelector(".activity")?.textContent).toBe("Waiting for status report");
+    expect(row.textContent).not.toContain("running bash");
   });
 
   it("tolerates a snapshot without the reportedStatus field at all", async () => {
@@ -328,8 +365,7 @@ describe("DelegateRoster", () => {
     ] }) });
     await element.updateComplete;
     const row = required(root(element).querySelector(".row"));
-    expect(row.querySelector(".activity")?.textContent).toBe("No status report; inferred activity: · starting");
+    expect(row.querySelector(".activity")?.textContent).toBe("Waiting for status report");
     expect(row.querySelector(".activity")?.hasAttribute("aria-label")).toBe(false);
-    expect(row.querySelector(".activity .visually-hidden")?.textContent).toBe("; inferred activity:");
   });
 });

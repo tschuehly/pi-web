@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { isAbsolute, join, relative, sep, win32 } from "node:path";
 import type { FileTreeEntry, FileTreeResponse, PiWebPathAccessConfig } from "../../shared/apiTypes.js";
+import { sanitizedGitEnv } from "../git/gitEnv.js";
 import { resolveWorkspacePathAccessTarget } from "./pathAccessPolicy.js";
 
 const MAX_ENTRIES = 1000;
@@ -42,6 +43,108 @@ try:
         rows.append([entry.name, stat.S_ISDIR(info.st_mode), stat.S_ISLNK(info.st_mode), info.st_size, info.st_mtime * 1000])
         if len(rows) > ${String(MAX_ENTRIES)}: break
     print(json.dumps(rows))
+finally:
+    os.close(fd)
+`;
+
+// Cursor counts visited entries in breadth-first order: nonignored paths first,
+// then ignored paths. Empty pages are possible; each page re-traverses the tree.
+// Filesystem or ignore-rule changes between pages can shift offsets.
+// ponytail: offset paging retraverses earlier entries; use a snapshot only if late pages become too slow.
+export async function searchWorkspaceFiles(rootPath: string, query: string, cursor = "", signal?: AbortSignal): Promise<{ paths: string[]; cursor: string | null }> {
+  if (typeof query !== "string" || typeof cursor !== "string" || query.length > 256 || cursor.length > 10 || cursor !== "" && !/^[gn](?:0|[1-9]\d{0,8})$/.test(cursor)) throw new Error("Invalid file search query");
+  const { root } = await resolveWorkspacePathAccessTarget(rootPath, "");
+  if (process.platform !== "darwin" && process.platform !== "linux") throw new Error("Safe workspace search is unavailable on this platform");
+  let stdout: string;
+  try {
+    ({ stdout } = await run("python3", ["-c", searchFromDescriptor, root, "", query, cursor], { maxBuffer: 8 * 1024 * 1024, timeout: 30_000, signal, env: sanitizedGitEnv() }));
+  } catch (error) {
+    if (signal?.aborted === true) throw new Error("Workspace search cancelled", { cause: error });
+    // execFile errors include the command (and absolute root); never send them to the client.
+    throw new Error("Workspace search unavailable", { cause: error });
+  }
+  const result: unknown = JSON.parse(stdout);
+  if (typeof result === "object" && result !== null && "stale" in result && result.stale === true) throw new Error("Workspace search order changed; enter the query again.");
+  if (typeof result !== "object" || result === null || !("paths" in result) || !Array.isArray(result.paths)
+    || result.paths.length > 100 || !result.paths.every((path: unknown) => typeof path === "string")
+    || !("cursor" in result) || result.cursor !== null && typeof result.cursor !== "string") throw new Error("Invalid workspace search response");
+  return { paths: result.paths.map((path: unknown) => {
+    if (typeof path !== "string") throw new Error("Invalid workspace search path");
+    return path;
+  }), cursor: result.cursor };
+}
+
+export const searchFromDescriptor = `${openDirectoryFromDescriptor}
+import json, subprocess
+from collections import deque
+query = sys.argv[3].casefold()
+offset = int(sys.argv[4][1:] or 0)
+paths = []
+seen = scanned = 0
+normal = deque([''])
+ignored = deque()
+# Git ignore rules affect ordering only. Query once per page, not once per directory.
+def ignored_directories():
+    try:
+        result = subprocess.run(['git', '-C', sys.argv[1], 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=3)
+        if result.returncode == 0: return set(os.fsdecode(path) for path in result.stdout.split(b'\\0') if path.endswith(b'/')), 'g'
+    except (OSError, subprocess.TimeoutExpired): pass
+    return set(), 'n'
+
+def open_child_directory(prefix):
+    directory = os.dup(fd)
+    try:
+        for part in prefix.split('/'):
+            if not part: continue
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        return directory
+    except OSError:
+        os.close(directory)
+        return None
+
+try:
+    ignored_paths, mode = ignored_directories()
+    if sys.argv[4] and sys.argv[4][0] != mode:
+        print(json.dumps({'stale': True}))
+    else:
+        more = False
+        while normal or ignored:
+            in_ignored = not normal
+            prefix = (ignored if in_ignored else normal).popleft()
+            directory = open_child_directory(prefix)
+            if directory is None: continue  # disappeared, locked, or swapped for a symlink
+            try:
+                try:
+                    with os.scandir(directory) as iterator: entries = sorted(iterator, key=lambda entry: entry.name)
+                except OSError: continue
+                children = []
+                for entry in entries:
+                    path = prefix + entry.name
+                    try:
+                        is_file = entry.is_file(follow_symlinks=False)
+                        is_dir = entry.is_dir(follow_symlinks=False)
+                    except OSError: continue
+                    if seen >= offset and (scanned >= 10000 or len(paths) >= 100):
+                        more = True
+                        break
+                    seen += 1
+                    if seen > offset:
+                        scanned += 1
+                        if is_file and query in path.casefold(): paths.append(path)
+                    if is_dir: children.append(path + '/')
+                if more: break
+                for child in children:
+                    (ignored if in_ignored or child in ignored_paths or child.split('/')[-2] in ('.git', 'node_modules') else normal).append(child)
+            finally:
+                os.close(directory)
+            # Return useful nonignored results without scanning a huge ignored subtree.
+            if not in_ignored and not normal and ignored and paths and seen > offset:
+                more = True
+                break
+        print(json.dumps({'paths': paths, 'cursor': mode + str(seen) if more else None}))
 finally:
     os.close(fd)
 `;

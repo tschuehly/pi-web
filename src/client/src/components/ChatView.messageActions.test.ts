@@ -49,6 +49,38 @@ describe("chat message history shortcuts", () => {
     expect(view.onMessageAction).toHaveBeenCalledWith("entry-1", action);
   });
 
+  it("retains durable action identity and raw indexes across filter switches", async () => {
+    const view = await mount("owner-entry");
+    view.messageStart = 50;
+    view.messages = [
+      { role: "user", entryId: "owner-entry", parts: [{ type: "text", text: "Question" }] },
+      { role: "tool", parts: [{ type: "text", text: "Result" }] },
+      { role: "assistant", entryId: "answer-entry", parts: [{ type: "text", text: "Answer" }] },
+    ];
+    await view.updateComplete;
+    const root = view.shadowRoot;
+    if (!root) throw new Error("Missing transcript controls");
+    const choose = async (label: string) => {
+      root.querySelector<HTMLButtonElement>(".filter-toggle")?.click(); await view.updateComplete;
+      const option = Array.from(root.querySelectorAll<HTMLButtonElement>(".filter-options button")).find((button) => button.textContent.trim() === label);
+      if (!option) throw new Error(`Missing filter option ${label}`);
+      option.click(); await view.updateComplete;
+    };
+    const confirm = vi.fn(() => true); vi.stubGlobal("confirm", confirm);
+    await choose("Assistant only");
+    expect(root.querySelector('article.msg[data-index="52"]')).not.toBeNull();
+    expect(buttons(view).map((action) => action.getAttribute("aria-label"))).toEqual(["Copy assistant message", "Revert to here"]);
+    button(view, 1).click();
+    expect(view.onMessageAction).toHaveBeenCalledWith("answer-entry", "back");
+    await vi.waitFor(() => { expect(button(view, 1).disabled).toBe(false); });
+    await choose("Human only");
+    expect(root.querySelector('article.msg[data-index="50"]')).not.toBeNull();
+    expect(buttons(view).map((action) => action.getAttribute("aria-label"))).toEqual(["Copy user message", "Revert to here", "Edit and resend"]);
+    button(view, 2).click();
+    expect(view.onMessageAction).toHaveBeenCalledWith("owner-entry", "back");
+    expect(view.messages).toHaveLength(3);
+  });
+
   it("does not offer history shortcuts for messages without a durable entry", async () => {
     const view = await mount();
     view.messages = [{ role: "assistant", parts: [{ type: "text", text: "Streaming" }] }];

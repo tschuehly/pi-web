@@ -1,4 +1,4 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
@@ -97,6 +97,23 @@ export function chatQueuedMessageSections(clientQueued: QueuedSessionMessage[], 
     clientQueued.length === 0 ? undefined : { source: "client", heading: "Queued until session starts", detail: "Will send once the backend session is ready", messages: clientQueued },
     serverQueued.length === 0 ? undefined : { source: "server", heading: "Queued messages", detail: `${String(serverQueued.length)} pending`, messages: serverQueued },
   ].filter((section): section is QueuedMessageSection => section !== undefined);
+}
+
+export type TranscriptFilter = "everything" | "human" | "assistant" | "human-assistant";
+
+/** Project readable message content while keeping the original indices and entry IDs. */
+export function filterChatGroups(groups: ChatGroup[], filter: TranscriptFilter, messages: ChatLine[], messageStart: number): ChatGroup[] {
+  if (filter === "everything") return groups;
+  const project = (message: ChatLine, index: number): ChatGroup[] => {
+    const role = messages[index - messageStart]?.role;
+    if (role !== "user" && role !== "assistant") return [];
+    if (filter === "human" && role !== "user" || filter === "assistant" && role !== "assistant") return [];
+    const parts = message.parts.filter((part) => part.type === "text" || part.type === "image");
+    return parts.length === 0 ? [] : [{ kind: "message", message: parts.length === message.parts.length ? message : { ...message, parts }, index }];
+  };
+  return groups.flatMap((group) => group.kind === "group"
+    ? group.messages.flatMap((message, offset) => project(message, group.messageIndices?.[offset] ?? group.startIndex + offset))
+    : project(group.message, group.index));
 }
 
 export type ChatImagePart = Extract<ChatPart, { type: "image" }>;
@@ -241,6 +258,8 @@ export class ChatView extends LitElement {
   @query(".chat") private chat?: HTMLDivElement | null;
   @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement | null;
   @state() private pinnedToBottom = true;
+  @state() private transcriptFilter: TranscriptFilter = "everything";
+  @state() private filterMenuOpen = false;
   @state() private zoomedImage: { src: string; alt: string } | undefined = undefined;
   @state() private copiedMessageKey: string | undefined;
   @state() private currentConversationIndex: number | undefined;
@@ -383,24 +402,40 @@ export class ChatView extends LitElement {
   protected override willUpdate(changed: Map<string, unknown>): void {
     if (changed.has("sessionId")) {
       this.savePreviousSessionScrollPosition(changed.get("sessionId"));
+      this.transcriptFilter = "everything";
+      this.filterMenuOpen = false;
       this.prepareSessionUiState();
     } else if (changed.has("notificationInbox") && this.notificationTargetChanged(changed.get("notificationInbox"))) {
       this.pendingNotificationFocus = undefined;
       this.retainedEmptyNotificationTrayTargetKey = undefined;
+    }
+    if (changed.has("transcriptFilter") && !changed.has("sessionId")) {
+      this.pendingScrollRestoreSessionId = undefined;
+      this.pendingScrollRestorePosition = undefined;
+      if (this.restoreScrollFrame !== undefined) cancelAnimationFrame(this.restoreScrollFrame);
+      this.restoreScrollFrame = undefined;
     }
     if (changed.has("messages") || changed.has("pendingAsk") || changed.has("pendingDialogs") || changed.has("closedDialogs")) this.pinnedToBottom = this.pinnedToBottom && (this.didChatHeightChange() || this.isNearBottom());
   }
 
   protected override update(changed: Map<string, unknown>): void {
     const prependAnchor = this.isPrependingMessages(changed) ? this.capturePrependScrollAnchor() : undefined;
+    const filterAnchor = changed.has("transcriptFilter") && !changed.has("sessionId") && !this.pinnedToBottom
+      ? this.captureFilterScrollAnchor(filterChatGroups(this.groupedMessages(), this.transcriptFilter, this.messages, this.messageStart)) : undefined;
     super.update(changed);
     if (prependAnchor !== undefined) this.restorePrependScrollAnchor(prependAnchor);
+    if (filterAnchor !== undefined) this.restorePrependScrollAnchor(filterAnchor);
   }
 
   protected override updated(changed: Map<string, unknown>): void {
     if (changed.has("loadingMore") && !this.loadingMore) this.loadMoreRequested = false;
     if (changed.has("hasMore") && !this.hasMore) this.loadMoreRequested = false;
     if (changed.has("sessionId")) this.restoreScrollPosition();
+    if (changed.has("transcriptFilter") && !changed.has("sessionId")) {
+      if (this.pinnedToBottom) this.scrollToBottom();
+      if (this.transcriptFilter === "everything") this.requestLoadMoreIfNeeded();
+      this.scheduleConversationRailUpdate();
+    }
     const openedAsk = changed.has("pendingAsk") && this.isNewPendingAsk(changed.get("pendingAsk"));
     const openedDialog = changed.has("pendingDialogs") && this.isNewOpenDialog(changed.get("pendingDialogs"));
     // The form uses the transcript scroller. Start a new long form at question
@@ -457,10 +492,24 @@ export class ChatView extends LitElement {
   }
 
   override render() {
-    const exchange = currentExchangeGroups(this.messages, this.groupedMessages(), this.messageStart, this.hasMore);
+    const groups = filterChatGroups(this.groupedMessages(), this.transcriptFilter, this.messages, this.messageStart);
+    const exchange = this.transcriptFilter === "everything"
+      ? currentExchangeGroups(this.messages, groups, this.messageStart, this.hasMore)
+      : { history: [], current: groups, startsOutsideLoadedPage: false };
     return html`
       ${this.renderTopNotices()}
       ${this.renderNotificationLiveRegions()}
+      <div class="transcript-filter" @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape" && this.filterMenuOpen) { event.stopPropagation(); this.filterMenuOpen = false; this.renderRoot.querySelector<HTMLButtonElement>(".filter-toggle")?.focus(); } }} @focusout=${(event: FocusEvent) => { if (event.currentTarget instanceof HTMLElement && (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget))) this.filterMenuOpen = false; }}>
+        <button type="button" class="filter-toggle" aria-label=${`Filter transcript: ${this.filterLabel()}`} title=${`Filter transcript: ${this.filterLabel()}`} aria-expanded=${String(this.filterMenuOpen)} data-filter-active=${String(this.transcriptFilter !== "everything")} aria-controls=${this.filterMenuOpen ? "transcript-filter-options" : nothing} @click=${() => { this.filterMenuOpen = !this.filterMenuOpen; }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M7 12h10m-7 6h4"></path></svg>
+        </button>
+        ${this.filterMenuOpen ? html`<div id="transcript-filter-options" class="filter-options" role="group" aria-label="Transcript messages">
+          ${this.transcriptFilter === "everything" ? null : this.renderFilterOption("everything", "Everything")}
+          ${this.renderFilterOption("human", "Human only")}
+          ${this.renderFilterOption("assistant", "Assistant only")}
+          ${this.renderFilterOption("human-assistant", "Human + Assistant")}
+        </div>` : null}
+      </div>
       <div class="chat-wrap">
         ${this.renderConversationRail()}
         <div class="chat" @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
@@ -473,6 +522,7 @@ export class ChatView extends LitElement {
           `}
           ${exchange.startsOutsideLoadedPage ? html`<div class="exchange-boundary" role="note">Current loaded tail · the latest user message is in earlier history</div>` : null}
           ${this.renderGroups(exchange.current)}
+          ${this.transcriptFilter !== "everything" && groups.length === 0 ? html`<p class="filter-empty" role="status">No messages matching ${this.filterLabel()} in loaded history.${this.hasMore ? " Load earlier messages to continue." : ""}</p>` : null}
           ${this.renderQueuedMessages()}
           ${this.renderSessionActivity()}
           ${this.renderOpenAsk()}
@@ -487,6 +537,19 @@ export class ChatView extends LitElement {
       </div>
       ${this.renderImageZoom()}
     `;
+  }
+
+  private filterLabel(): string {
+    return this.transcriptFilter === "human" ? "Human only" : this.transcriptFilter === "assistant" ? "Assistant only" : this.transcriptFilter === "human-assistant" ? "Human + Assistant" : "Everything";
+  }
+
+  private renderFilterOption(filter: TranscriptFilter, label: string) {
+    return html`<button type="button" aria-pressed=${String(this.transcriptFilter === filter)} @click=${() => {
+      if (this.transcriptFilter === "everything") this.saveScrollPosition();
+      this.transcriptFilter = filter;
+      this.filterMenuOpen = false;
+      this.renderRoot.querySelector<HTMLButtonElement>(".filter-toggle")?.focus();
+    }}>${label}</button>`;
   }
 
   private renderGroups(groups: ChatGroup[]) {
@@ -877,7 +940,7 @@ export class ChatView extends LitElement {
     if (this.hasMore) return html`
       <div class="history-boundary">
         <button type="button" class="history-load-button" ?disabled=${this.loadMoreRequested} @click=${() => { this.requestLoadMore(); }}>Load earlier messages</button>
-        <span>Scroll up to load earlier messages</span>
+        ${this.transcriptFilter === "everything" ? html`<span>Scroll up to load earlier messages</span>` : null}
         ${range}
       </div>
     `;
@@ -1226,10 +1289,10 @@ export class ChatView extends LitElement {
   }
 
   private requestLoadMoreIfNeeded(): void {
-    if (this.loadMoreCheckFrame !== undefined) return;
+    if (this.transcriptFilter !== "everything" || this.loadMoreCheckFrame !== undefined) return;
     this.loadMoreCheckFrame = requestAnimationFrame(() => {
       this.loadMoreCheckFrame = undefined;
-      if (this.suppressLoadMoreRequests) return;
+      if (this.suppressLoadMoreRequests || this.transcriptFilter !== "everything") return;
       const chat = this.chat;
       if (!chat) return;
       if (shouldRequestEarlierMessages({
@@ -1350,7 +1413,7 @@ export class ChatView extends LitElement {
     if (this.restoreScrollFrame !== undefined) cancelAnimationFrame(this.restoreScrollFrame);
     this.restoreScrollFrame = requestAnimationFrame(() => {
       this.restoreScrollFrame = undefined;
-      if (this.sessionId !== sessionId) return;
+      if (this.sessionId !== sessionId || this.transcriptFilter !== "everything") return;
       this.withSuppressedScrollSave(() => {
         if (this.pendingAsk !== undefined && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenAskToTop()) return;
         if (this.pendingDialogs.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenDialogToTop()) return;
@@ -1364,10 +1427,10 @@ export class ChatView extends LitElement {
   private continuePendingScrollRestore(): void {
     const sessionId = this.pendingScrollRestoreSessionId;
     const position = this.pendingScrollRestorePosition;
-    if (sessionId === undefined || position === undefined || sessionId !== this.sessionId || this.restoreScrollFrame !== undefined) return;
+    if (this.transcriptFilter !== "everything" || sessionId === undefined || position === undefined || sessionId !== this.sessionId || this.restoreScrollFrame !== undefined) return;
     this.restoreScrollFrame = requestAnimationFrame(() => {
       this.restoreScrollFrame = undefined;
-      if (this.sessionId !== sessionId) return;
+      if (this.sessionId !== sessionId || this.transcriptFilter !== "everything") return;
       this.withSuppressedScrollSave(() => {
         const chat = this.chat;
         const result = this.scrollController.restoreExplicitPosition(position, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
@@ -1377,6 +1440,7 @@ export class ChatView extends LitElement {
   }
 
   private handleScrollRestoreResult(sessionId: string, result: ChatScrollRestoreResult): void {
+    if (this.transcriptFilter !== "everything") return;
     this.syncScrollMetrics();
     if (result.status !== "missing") {
       this.updatePinnedToBottomAfterRestore(result.status);
@@ -1420,6 +1484,24 @@ export class ChatView extends LitElement {
     this.suppressLoadMoreRequests = false;
   }
 
+  private captureFilterScrollAnchor(groups: ChatGroup[]): PrependScrollAnchor | undefined {
+    const chat = this.chat;
+    if (!chat) return undefined;
+    const source = this.firstVisibleArticle();
+    if (source === undefined || groups.length === 0) return this.capturePrependScrollAnchor();
+    const visibleIndex = Number(source.dataset["index"]);
+    const next = groups.findIndex((group) => (group.kind === "group" ? group.endIndex : group.index) >= visibleIndex);
+    const target = groups[next < 0 ? groups.length - 1 : next];
+    if (target === undefined) return this.capturePrependScrollAnchor();
+    const targetIndex = target.kind === "group" ? target.startIndex : target.index;
+    const offset = source.getBoundingClientRect().top - chat.getBoundingClientRect().top;
+    return {
+      distanceFromBottom: chat.scrollHeight - chat.scrollTop,
+      markerId: chatFragmentAnchorKey(groups, next < 0 ? groups.length - 1 : next),
+      markerOffset: targetIndex === visibleIndex ? offset : Math.max(0, offset),
+    };
+  }
+
   capturePrependScrollAnchor(): PrependScrollAnchor | undefined {
     const chat = this.chat;
     if (!chat) return undefined;
@@ -1456,12 +1538,14 @@ export class ChatView extends LitElement {
   }
 
   saveScrollPosition(sessionId = this.sessionId) {
+    if (this.transcriptFilter !== "everything") return;
     const chat = this.chat;
     if (!sessionId || chat == null) return;
     this.scrollController.savePosition(sessionId, chat, this.scrollAnchorElements());
   }
 
   private scheduleScrollPositionSave() {
+    if (this.transcriptFilter !== "everything") return;
     const sessionId = this.sessionId;
     this.scrollController.scheduleSave(sessionId, (scheduledSessionId) => {
       if (this.sessionId === scheduledSessionId) this.saveScrollPosition(scheduledSessionId);
@@ -1501,9 +1585,7 @@ export class ChatView extends LitElement {
 
   private firstVisibleArticle(): HTMLElement | undefined {
     const chat = this.chat;
-    if (chat == null) return undefined;
-    const primaryArticles = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("article.msg"));
-    return findFirstVisibleArticle(chat, primaryArticles) ?? findFirstVisibleArticle(chat, this.articles());
+    return chat == null ? undefined : findFirstVisibleArticle(chat, this.articles());
   }
 
   private articles(): HTMLElement[] {
@@ -1540,6 +1622,16 @@ export class ChatView extends LitElement {
   }
 
   static override styles = [chatStyles, css`
+    .transcript-filter { position: relative; display: flex; justify-content: flex-end; padding: 4px 10px; }
+    .filter-toggle, .filter-options button { border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); cursor: pointer; }
+    .filter-toggle { display: grid; place-items: center; width: 30px; height: 30px; }
+    .filter-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+    .filter-toggle[data-filter-active="true"] { color: var(--pi-accent); border-color: var(--pi-accent); background: var(--pi-selection-bg); }
+    .filter-options { position: absolute; z-index: 2; top: 100%; right: 10px; display: grid; gap: 4px; padding: 6px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 4px 12px #0003; }
+    .filter-options button { min-height: 30px; padding: 4px 10px; text-align: left; white-space: nowrap; }
+    .filter-options button[aria-pressed="true"] { border-color: var(--pi-accent); }
+    .transcript-filter button:focus-visible { outline: 2px solid var(--pi-accent); }
+    .filter-empty { margin: 12px; color: var(--pi-muted); }
     .history-summary-group { border: 1px solid var(--pi-border); border-left: 3px solid var(--pi-accent); border-radius: 8px; background: color-mix(in srgb, var(--pi-accent) 6%, var(--pi-surface)); }
     .history-summary-group > summary { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 10px; color: var(--pi-muted); list-style: none; cursor: pointer; }
     .history-summary-group > summary::-webkit-details-marker { display: none; }
