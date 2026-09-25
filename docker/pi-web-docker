@@ -214,6 +214,7 @@ dev_root() {
     *) die "PI WEB Docker development repo root must be an absolute path: $root" ;;
   esac
   [ -d "$root" ] || die "PI WEB Docker development repo root does not exist: $root"
+  root=$(absolute_existing_dir "$root") || die "could not resolve Docker development repo root"
   printf '%s\n' "$root"
 }
 

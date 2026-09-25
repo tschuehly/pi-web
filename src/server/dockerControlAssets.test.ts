@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFile, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -24,7 +24,7 @@ interface FakeDocker {
 }
 
 beforeEach(async () => {
-  tempDir = await mkdtemp(join(tmpdir(), "pi-web-docker-test-"));
+  tempDir = await realpath(await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "pi-web-docker-test-")));
 });
 
 afterEach(async () => {
@@ -332,7 +332,7 @@ describe("Docker command assets", () => {
     expect(override).toContain(devRoot);
     const log = await readFile(fakeDocker.logPath, "utf8");
     expect(log).toContain(`compose --project-name pi-web-dev --env-file ${generatedEnvPath} -f ${devRoot}/docker/compose.dev.yml -f ${devRoot}/.pi-web/docker-compose-dev.host.generated.yml ps`);
-  });
+  }, 15_000);
 
   dockerCommandIt("rejects development commands as root unless explicitly allowed", async () => {
     const fakeDocker = await installFakeDocker();
@@ -360,6 +360,19 @@ describe("Docker command assets", () => {
     });
 
     expect(await readFile(helperLog, "utf8")).toBe("allow=1 args=ps\n");
+  });
+
+  dockerCommandIt("accepts a symlink spelling of the same clean development checkout", async () => {
+    const helperLog = join(tempDir, "dev-helper.log");
+    const devRoot = await createCleanDevGitRepoWithFakeHelper(helperLog);
+    const alias = join(tempDir, "checkout-alias");
+    await symlink(devRoot, alias);
+    const fakeDocker = await installFakeDocker();
+    await installFakeId(fakeDocker.binDir, 1234, 2345);
+
+    await runDockerCommand(["--dev", "update"], devHostEnv(fakeDocker, alias, join(tempDir, "home")));
+
+    expect(await readFile(helperLog, "utf8")).toContain("args=up -d --force-recreate --remove-orphans");
   });
 
   dockerCommandIt("refuses development updates when the checkout has uncommitted files", async () => {

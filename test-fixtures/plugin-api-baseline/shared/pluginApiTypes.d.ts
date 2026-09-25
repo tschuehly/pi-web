@@ -62,6 +62,8 @@ export interface FileContentResponse {
     encoding: "utf8";
     size: number;
     modifiedAt: string;
+    /** SHA-256 of loaded bytes; absent when content is truncated. */
+    version?: string;
     content: string;
     truncated: boolean;
     binary: boolean;
@@ -69,6 +71,7 @@ export interface FileContentResponse {
 export interface WriteWorkspaceFileOptions {
     createDirs?: boolean;
     overwrite?: boolean;
+    expectedVersion?: string;
 }
 export interface WriteWorkspaceFileResponse {
     path: string;

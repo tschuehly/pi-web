@@ -10,6 +10,7 @@ export default defineConfig({
     alias: { "@jmfederico/pi-web/server-plugin-api": fileURLToPath(new URL("./src/server-plugin-api.ts", import.meta.url)) },
   },
   test: {
+    maxWorkers: 2,
     // Node 26 exposes a disabled localStorage accessor unless a backing file is provided.
     execArgv: [`--localstorage-file=${join(tmpdir(), `pi-web-vitest-${randomUUID()}.json`)}`],
     setupFiles: ["./src/test/localStorageIsolation.ts"],
