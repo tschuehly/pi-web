@@ -496,8 +496,12 @@ export const formattedTextStyles = css`
   .code-block-wrapper pre { margin: 0; padding-right: 40px; }
   pre { box-sizing: border-box; max-width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); padding: 10px; overflow-x: auto; overflow-y: hidden; white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; unicode-bidi: isolate; }
   pre code { border: 0; padding: 0; background: transparent; }
-  .code-copy-button { position: absolute; top: 6px; right: 6px; z-index: 1; display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 0; font: 14px system-ui, sans-serif; line-height: 1; cursor: pointer; }
-  .code-copy-button:hover, .code-copy-button:focus { color: var(--pi-text); border-color: var(--pi-accent); }
+  .code-copy-button, .quote-copy-button { position: absolute; top: 6px; right: 6px; z-index: 1; display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 0; font: 14px system-ui, sans-serif; line-height: 1; cursor: pointer; }
+  .code-copy-button:hover, .code-copy-button:focus, .quote-copy-button:hover, .quote-copy-button:focus { color: var(--pi-text); border-color: var(--pi-accent); }
+  .copyable-quote { position: relative; padding-right: 40px; }
+  .quote-copy-button { opacity: 0; }
+  .copyable-quote:hover > .quote-copy-button, .quote-copy-button:focus { opacity: 1; }
+  @media (hover: none) { .quote-copy-button { opacity: 1; } }
   blockquote { border-left: 3px solid var(--pi-border); padding-left: 10px; color: var(--pi-muted); }
   a { color: var(--pi-accent); }
   h1, h2, h3, h4 { margin: 14px 0 8px; line-height: 1.2; }
