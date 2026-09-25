@@ -171,6 +171,30 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("first"); });
     expect(window.location.search).toContain("session=first");
   });
+  it("routes a background Chat's global attention notification to its Chat", async () => {
+    const shown: FakeBrowserNotification[] = [];
+    class ClickNotification extends FakeBrowserNotification {
+      static override permission: NotificationPermission = "granted";
+      constructor() { super(); shown.push(this); }
+    }
+    vi.stubGlobal("Notification", ClickNotification);
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const first = session("first", "First", "First Chat");
+    const second = session("second", "Second", "Second Chat");
+    const app = await mountChooser([first, second]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    vi.spyOn(api, "sessions").mockResolvedValue([first, second]);
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "second", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    setState(app, { ...getState(app), selectedSession: first });
+    const receive: unknown = Reflect.get(app, "handleRealtimeEvent");
+    if (typeof receive !== "function") throw new Error("Global event handler unavailable");
+    Reflect.apply(receive, app, [{ type: "session.attention", sessionId: "second", cwd: workspace.path, sessionName: "Second Chat", kind: "ask", id: "ask-1", detail: "Continue?" }]);
+    expect(shown).toHaveLength(1);
+    shown[0]?.onclick?.(new Event("click"));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("second"); });
+    expect(window.location.search).toContain("session=second");
+  });
+
   it("offers notification permission through an explicit accessible gesture and hides the control after denial", async () => {
     FakeBrowserNotification.permission = "default";
     vi.stubGlobal("Notification", FakeBrowserNotification);

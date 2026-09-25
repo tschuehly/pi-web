@@ -1314,6 +1314,7 @@ export class PiSessionService implements SessionRouteService {
         },
         onCompactionEnd: (session, result, detail) => {
           this.endSessionEntryMutation(session);
+          if (result === "error" && detail !== undefined) this.publishAttention(session, "error", String(this.events.currentSeq(session.sessionId)), detail);
           this.publishActivity(session, result === "success" ? "compaction complete" : "compaction failed", result === "success" ? "idle" : "error", detail);
           this.publishStatus(session);
         },
@@ -1853,6 +1854,19 @@ export class PiSessionService implements SessionRouteService {
    * Rejected question sets throw {@link PendingAskValidationError}, which the
    * agent loop reports to the model as an error tool result.
    */
+  private publishAttention(session: PiAgentSession, kind: "ask" | "dialog" | "error", id: string, detail: string): void {
+    this.events.publishGlobal({
+      type: "session.attention", sessionId: session.sessionId, cwd: session.sessionManager.getCwd(),
+      ...(session.sessionName === undefined ? {} : { sessionName: session.sessionName.slice(0, 120) }),
+      kind, id, detail: detail.trim().split(/\r?\n/u)[0]?.slice(0, 120) ?? "",
+    });
+  }
+
+  private publishSessionError(session: PiAgentSession, message: string): void {
+    this.events.publish(session.sessionId, { type: "session.error", message });
+    this.publishAttention(session, "error", String(this.events.currentSeq(session.sessionId)), message);
+  }
+
   // eslint-disable-next-line @typescript-eslint/require-await -- async so a rejected question set becomes a rejection rather than a synchronous throw from a promise-returning method.
   async openAsk(input: AskUserInvocation): Promise<PendingAskOpenResult> {
     const result = this.pendingAskStore.open(input);
@@ -1860,6 +1874,8 @@ export class PiSessionService implements SessionRouteService {
     // that before they hear about its replacement.
     if (result.superseded !== undefined) this.publishAskClosed(input.sessionId, result.superseded);
     this.events.publish(input.sessionId, { type: "ask.opened", ask: result.ask });
+    const session = this.active.get(input.sessionId)?.runtime.session ?? this.startupSessions.get(input.sessionId);
+    if (session !== undefined) this.publishAttention(session, "ask", result.ask.askId, result.ask.questions[0]?.question ?? "Needs an answer");
     this.publishStatusForSessionId(input.sessionId);
     return result;
   }
@@ -1999,6 +2015,7 @@ export class PiSessionService implements SessionRouteService {
       runScoped: session.isStreaming,
     });
     this.events.publish(session.sessionId, { type: "dialog.opened", dialog });
+    this.publishAttention(session, "dialog", dialog.dialogId, dialog.title);
     this.publishStatus(session);
     return this.dialogWaiters.park(dialog, {
       ...(timeoutMs === undefined ? {} : { timeoutMs }),
@@ -2701,7 +2718,7 @@ export class PiSessionService implements SessionRouteService {
       this.pruneRuntimePromptProvenance(session);
       const message = error instanceof Error ? error.message : String(error);
       this.publishActivity(session, "error", "error", message);
-      this.events.publish(session.sessionId, { type: "session.error", message });
+      this.publishSessionError(session, message);
     });
     return promptPromise;
   }
@@ -2822,7 +2839,7 @@ export class PiSessionService implements SessionRouteService {
       this.endActiveToolExecution(session, executionId);
       const message = error instanceof Error ? error.message : String(error);
       this.events.publish(session.sessionId, { type: "shell.end", output: message, isError: true });
-      this.events.publish(session.sessionId, { type: "session.error", message });
+      this.publishSessionError(session, message);
       this.publishActivity(session, "bash failed", "error", message);
       this.publishStatus(session);
     });
@@ -2921,7 +2938,7 @@ export class PiSessionService implements SessionRouteService {
       const message = error instanceof Error ? error.message : String(error);
       if (this.isCurrentActiveSession(session)) {
         this.publishActivity(session, "tree navigation failed", "error", message);
-        this.events.publish(session.sessionId, { type: "session.error", message });
+        this.publishSessionError(session, message);
       }
       throw error;
     } finally {
@@ -2985,7 +3002,7 @@ export class PiSessionService implements SessionRouteService {
       const message = error instanceof Error ? error.message : String(error);
       if (this.isCurrentActiveSession(session)) {
         this.publishActivity(session, "fork failed", "error", message);
-        this.events.publish(session.sessionId, { type: "session.error", message });
+        this.publishSessionError(session, message);
         this.publishStatus(session);
       }
       throw error;
@@ -3040,7 +3057,7 @@ export class PiSessionService implements SessionRouteService {
           }
           const message = error instanceof Error ? error.message : String(error);
           this.publishActivity(session, "reload failed", "error", message);
-          this.events.publish(session.sessionId, { type: "session.error", message });
+          this.publishSessionError(session, message);
           this.publishStatus(session);
           throw error;
         }
@@ -3937,7 +3954,7 @@ export class PiSessionService implements SessionRouteService {
         onError: (error) => {
           const message = `${error.extensionPath}: ${error.error}`;
           this.publishActivity(session, "extension error", "error", message);
-          this.events.publish(session.sessionId, { type: "session.error", message });
+          this.publishSessionError(session, message);
         },
       });
     } finally {

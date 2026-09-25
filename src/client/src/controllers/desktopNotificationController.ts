@@ -1,4 +1,5 @@
 import type { AppState } from "../appState";
+import type { SessionAttentionEvent } from "../../../shared/apiTypes";
 import { machineSessionKey } from "../machineKeys";
 import type { PiWebNativeHost } from "../nativeHost";
 import { selectedMachineId } from "./types";
@@ -30,9 +31,8 @@ export class DesktopNotificationController {
   diagnostic: string | undefined;
   private armed = false;
   private streaming: boolean | undefined;
-  private readonly askIds = new Set<string>();
-  private readonly dialogIds = new Set<string>();
-  private readonly errorIds = new Set<string>();
+  private readonly seen = new Set<string>();
+  private readonly recentErrors = new Map<string, number>();
 
   constructor(
     private readonly browser: DesktopNotificationBrowser,
@@ -72,19 +72,17 @@ export class DesktopNotificationController {
     if (this.streaming === true && nextStreaming === false) {
       const reply = [...next.messages].reverse().find((line) => line.role === "assistant")?.parts
         .filter((part) => part.type === "text").map((part) => part.text).join("");
-      this.notify(next, "complete", `Finished · ${preview(reply ?? "")}`);
+      this.notifySelected(next, "complete", `Finished · ${preview(reply ?? "")}`);
     }
     this.streaming = nextStreaming;
 
     const askId = next.pendingAsk?.askId;
-    if (askId !== undefined && !this.askIds.has(askId)) {
-      this.askIds.add(askId);
-      this.notify(next, "ask", `Question · ${next.pendingAsk?.questions[0]?.question ?? "Needs an answer"}`);
+    if (askId !== undefined && this.mark(nextKey, "ask", askId)) {
+      this.notifySelected(next, "ask", `Question · ${next.pendingAsk?.questions[0]?.question ?? "Needs an answer"}`);
     }
     for (const dialog of next.pendingDialogs) {
-      if (this.dialogIds.has(dialog.dialogId)) continue;
-      this.dialogIds.add(dialog.dialogId);
-      this.notify(next, "dialog", `Dialog · ${dialog.title}`);
+      if (!this.mark(nextKey, "dialog", dialog.dialogId)) continue;
+      this.notifySelected(next, "dialog", `Dialog · ${dialog.title}`);
     }
 
     void previous;
@@ -96,8 +94,8 @@ export class DesktopNotificationController {
     if (key !== this.sessionKey) this.reset(key);
     this.armed = key !== undefined;
     this.streaming = state.status?.isStreaming;
-    if (state.pendingAsk !== undefined) this.askIds.add(state.pendingAsk.askId);
-    for (const dialog of state.pendingDialogs) this.dialogIds.add(dialog.dialogId);
+    if (key !== undefined && state.pendingAsk !== undefined) this.mark(key, "ask", state.pendingAsk.askId);
+    if (key !== undefined) for (const dialog of state.pendingDialogs) this.mark(key, "dialog", dialog.dialogId);
   }
 
   suspend(): void {
@@ -108,34 +106,57 @@ export class DesktopNotificationController {
     const key = selectedSessionKey(state);
     if (key === undefined || key !== this.sessionKey) return;
     const id = eventId === undefined ? message : String(eventId);
-    if (this.errorIds.has(id)) return;
-    this.errorIds.add(id);
-    this.notify(state, "error", `Error · ${message}`);
+    if (this.mark(key, "error", id)) this.notifySelected(state, "error", `Error · ${message}`);
+  }
+
+  attention(state: AppState, event: SessionAttentionEvent, machineId: string): void {
+    const key = machineSessionKey(machineId, event.sessionId);
+    if (key === selectedSessionKey(state) || !this.mark(key, event.kind, event.id)) return;
+    const reason = event.kind === "ask" ? "Question" : event.kind === "dialog" ? "Dialog" : "Error";
+    this.notify(machineId, event.sessionId, event.cwd, event.sessionName, event.kind, `${reason} · ${event.detail}`);
+  }
+
+  private mark(key: string, kind: SessionAttentionEvent["kind"], id: string): boolean {
+    const identity = JSON.stringify([key, kind, id]);
+    if (this.seen.has(identity)) return false;
+    // Retain recent event identities across Chat switches without unbounded growth.
+    const oldest = this.seen.values().next().value;
+    if (this.seen.size >= 2048 && oldest !== undefined) this.seen.delete(oldest);
+    this.seen.add(identity);
+    return true;
   }
 
   private reset(sessionKey: string | undefined): void {
     this.sessionKey = sessionKey;
     this.armed = false;
     this.streaming = undefined;
-    this.askIds.clear();
-    this.dialogIds.clear();
-    this.errorIds.clear();
   }
 
-  private notify(state: AppState, tag: DesktopNotificationKind, body: string): void {
-    if (this.browser.permission() !== "granted" || !this.browser.isBackground()) return;
+  private notifySelected(state: AppState, tag: DesktopNotificationKind, body: string): void {
     const session = state.selectedSession;
     if (session === undefined) return;
-    const machineId = selectedMachineId(state);
-    const title = [session.name, this.workstreamTitle(), session.cwd.split("/").filter(Boolean).at(-1), session.cwd]
+    this.notify(selectedMachineId(state), session.id, session.cwd, session.name === undefined || session.name.trim() === "" ? this.workstreamTitle() : session.name, tag, body);
+  }
+
+  private notify(machineId: string, sessionId: string, cwd: string, name: string | undefined, tag: DesktopNotificationKind, body: string): void {
+    if (this.browser.permission() !== "granted" || !this.browser.isBackground()) return;
+    const key = machineSessionKey(machineId, sessionId);
+    if (tag === "error") {
+      const now = Date.now();
+      if (now - (this.recentErrors.get(key) ?? -Infinity) < 30_000) return;
+      this.recentErrors.set(key, now);
+      const oldest = this.recentErrors.keys().next().value;
+      if (this.recentErrors.size > 2048 && oldest !== undefined) this.recentErrors.delete(oldest);
+    }
+    const title = [name, cwd.split("/").filter(Boolean).at(-1), cwd]
       .find((value) => value !== undefined && value.trim().length > 0)?.trim() ?? "Chat";
     try {
-      const shown = this.browser.show(title, { body, tag: `${this.sessionKey ?? "chat"}:${tag}`, data: { machineId, sessionId: session.id } });
+      const shown = this.browser.show(title, { body, tag: `${key}:${tag}`, data: { machineId, sessionId } });
       if (shown instanceof Promise) {
-        void shown.then((notification) => { this.bindClick(notification, machineId, session.id); }).catch((error: unknown) => { this.deliveryFailed(error); });
+        void shown.then((notification) => { this.bindClick(notification, machineId, sessionId); }).catch((error: unknown) => { this.deliveryFailed(error); });
         return;
       }
-      this.bindClick(shown, machineId, session.id);
+      this.bindClick(shown, machineId, sessionId);
     } catch (error) {
       this.deliveryFailed(error);
     }

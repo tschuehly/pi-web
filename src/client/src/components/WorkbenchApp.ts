@@ -340,6 +340,10 @@ export class WorkbenchApp extends LitElement {
   }
 
   private handleRealtimeEvent(event: BrowserRealtimeEvent): void {
+    if (event.type === "session.attention") {
+      this.desktopNotifications.attention(this.app, event, selectedMachineId(this.app));
+      return;
+    }
     if (event.type !== "sessions.unread" && event.type !== "notices.updated" && event.type !== "machine.status") this.sessions.applyGlobalEvent(event);
   }
 

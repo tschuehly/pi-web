@@ -1,5 +1,5 @@
 import { realtimeEvents, sessionEvents } from "./api";
-import { parseRealtimeStreamEvent, parseServerNoticeEvent, parseSessionAskClosedEvent, parseSessionAskOpenedEvent, parseSessionDialogClosedEvent, parseSessionDialogOpenedEvent, parseSessionNotificationInboxEvent, parseSessionStartupProgressEvent, parseSessionStreamEvent, parseSessionUnreadEvent } from "./api/parsers";
+import { parseSessionAttentionEvent, parseRealtimeStreamEvent, parseServerNoticeEvent, parseSessionAskClosedEvent, parseSessionAskOpenedEvent, parseSessionDialogClosedEvent, parseSessionDialogOpenedEvent, parseSessionNotificationInboxEvent, parseSessionStartupProgressEvent, parseSessionStreamEvent, parseSessionUnreadEvent } from "./api/parsers";
 import type { RealtimeEvent, ServerNoticeEvent, SessionRef, SessionUiEvent } from "../../shared/apiTypes";
 
 export type { GlobalSessionEvent, RealtimeEvent, SessionUiEvent } from "../../shared/apiTypes";
@@ -167,6 +167,7 @@ export function parseSessionSocketEvent(event: unknown): SessionUiEvent | undefi
 
 export function parseRealtimeSocketEvent(event: unknown): BrowserRealtimeEvent | undefined {
   const type = eventType(event);
+  if (type === "session.attention") return safelyParseValidatedEvent(() => parseSessionAttentionEvent(event));
   if (type === "sessions.unread") return safelyParseValidatedEvent(() => parseSessionUnreadEvent(event));
   if (type === "notices.updated") return safelyParseValidatedEvent((): ServerNoticeEvent => parseServerNoticeEvent(event));
   if (type === "session.startup") return safelyParseValidatedEvent(() => parseSessionStartupProgressEvent(event));

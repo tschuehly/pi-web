@@ -159,6 +159,59 @@ describe("DesktopNotificationController", () => {
     expect(test.notifications[0]?.handle.close).toHaveBeenCalledOnce();
   });
 
+  it("routes non-selected attention, suppresses selected events, and deduplicates both arrival orders", () => {
+    const test = harness();
+    const selected = state();
+    test.controller.sync(initialAppState(), selected);
+    test.controller.activate(selected);
+    const other = { type: "session.attention" as const, sessionId: "session-2", cwd: "/other", sessionName: "Other Chat", kind: "ask" as const, id: "ask-2", detail: "Which branch?" };
+    test.controller.attention(selected, other, "local");
+    test.controller.attention(selected, other, "local");
+    test.controller.attention(selected, { ...other, sessionId: session.id, cwd: session.cwd }, "local");
+    expect(test.notifications).toHaveLength(1);
+    expect(test.notifications[0]).toMatchObject({ title: "Other Chat", options: { body: "Question · Which branch?", data: { machineId: "local", sessionId: "session-2" } } });
+    test.notifications[0]?.handle.onclick?.(new Event("click"));
+    expect(test.openChat).toHaveBeenCalledWith("local", "session-2");
+
+    test.controller.attention(selected, { ...other, kind: "error", id: "42", detail: "terminal failed" , sessionId: session.id }, "local");
+    test.controller.sessionError(selected, "terminal failed", 42);
+    expect(test.notifications).toHaveLength(2);
+    test.controller.sessionError(selected, "terminal failed", 42);
+    test.controller.sync(selected, state({ pendingAsk: { ...ask, askId: "ask-2" } }));
+    test.controller.attention(selected, { ...other, kind: "ask", sessionId: session.id }, "local");
+    expect(test.notifications).toHaveLength(3);
+  });
+
+  it("shares identity across global delivery and later selected Chat state", () => {
+    const test = harness();
+    const first = state();
+    test.controller.sync(initialAppState(), first);
+    test.controller.activate(first);
+    const other = { ...session, id: "session-2", name: "Other Chat" };
+    const event = { type: "session.attention" as const, sessionId: other.id, cwd: other.cwd, kind: "ask" as const, id: "ask-2", detail: "Which branch?" };
+    test.controller.attention(first, event, "local");
+    const second = state({ selectedSession: other, pendingAsk: { ...ask, askId: "ask-2" } });
+    test.controller.sync(first, second);
+    test.controller.activate(second);
+    test.controller.sync(second, second);
+    expect(test.notifications).toHaveLength(1);
+  });
+
+  it("limits distinct errors per session to one per 30 seconds", () => {
+    vi.useFakeTimers();
+    try {
+      const test = harness();
+      const selected = state();
+      const error = { type: "session.attention" as const, sessionId: "session-2", cwd: "/other", kind: "error" as const, id: "1", detail: "first" };
+      test.controller.attention(selected, error, "local");
+      test.controller.attention(selected, { ...error, id: "2", detail: "second" }, "local");
+      expect(test.notifications).toHaveLength(1);
+      vi.advanceTimersByTime(30_000);
+      test.controller.attention(selected, { ...error, id: "3", detail: "third" }, "local");
+      expect(test.notifications).toHaveLength(2);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("requests permission only from the explicit default state", async () => {
     const test = harness();
     test.setPermission("default");

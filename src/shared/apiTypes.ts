@@ -1401,7 +1401,20 @@ export interface ModelScopeChangedEvent {
   revision: number;
 }
 
+export interface SessionAttentionEvent {
+  type: "session.attention";
+  sessionId: string;
+  cwd: string;
+  sessionName?: string;
+  kind: "ask" | "dialog" | "error";
+  /** Ask/dialog id or per-session error sequence stamp. */
+  id: string;
+  /** A short first-line preview, never a full prompt or transcript. */
+  detail: string;
+}
+
 export type GlobalSessionEvent =
+  | SessionAttentionEvent
   | Extract<SessionUiEventBody, { type: "status.update" | "activity.update" | "session.name" | "session.created" }>
   | SessionNotificationSummaryEvent
   | SessionUnreadEvent

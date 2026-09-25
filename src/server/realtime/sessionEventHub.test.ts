@@ -154,6 +154,18 @@ describe("SessionEventHub", () => {
     expect(sessionSocket.send).not.toHaveBeenCalled();
   });
 
+  it("broadcasts attention only to global sockets without leaking prompts", () => {
+    const hub = new SessionEventHub();
+    const global = new FakeSocket();
+    const session = new FakeSocket();
+    hub.addGlobal(global);
+    hub.add("s1", session);
+    const event = { type: "session.attention" as const, sessionId: "s1", cwd: "/workspace", kind: "ask" as const, id: "ask-1", detail: "Which branch?" };
+    hub.publishGlobal(event);
+    expect(global.send).toHaveBeenCalledWith(JSON.stringify(event));
+    expect(session.send).not.toHaveBeenCalled();
+  });
+
   it("publishes notification summaries only to global sockets", () => {
     const hub = new SessionEventHub();
     const globalSocket = new FakeSocket();
