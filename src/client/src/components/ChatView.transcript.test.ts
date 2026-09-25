@@ -326,6 +326,37 @@ describe("ChatView transcript density", () => {
     expect(card?.open).toBe(true);
   });
 
+  it("renders separate collapsed background bash cards with output and a copyable log path", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = normalizeMessages([0, 1].map((index) => ({ role: "custom", customType: "background-bash",
+      content: `Background bash job-${String(index)} complete (exit 0).\nFull output (available until session shutdown): /tmp/job-${String(index)}.log\nresult ${String(index)}`,
+      details: { id: `job-${String(index)}`, command: `npm test ${String(index)}`, state: "complete", exitCode: 0, elapsedSeconds: 9, bytes: 8, logPath: `/tmp/job-${String(index)}.log` },
+    })));
+    document.body.append(view);
+    await view.updateComplete;
+    const cards = view.shadowRoot?.querySelectorAll<HTMLDetailsElement>("details.background-bash-card");
+    expect(cards).toHaveLength(2);
+    expect(view.shadowRoot?.querySelectorAll("article.msg.system")).toHaveLength(0);
+    expect(cards?.[0]?.open).toBe(false);
+    expect(cards?.[0]?.querySelector("summary")?.textContent).toContain("npm test 0");
+    expect(cards?.[0]?.querySelector("summary")?.textContent).toContain("9s");
+    expect(cards?.[0]?.querySelector("summary")?.textContent).toContain("exit 0");
+    expect(cards?.[0]?.querySelector("pre")?.textContent).toBe("result 0");
+    const secure = Object.getOwnPropertyDescriptor(window, "isSecureContext");
+    Object.defineProperty(window, "isSecureContext", { value: true, configurable: true });
+    try {
+      const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+      cards?.[0]?.querySelector("summary")?.click();
+      expect(cards?.[0]?.open).toBe(true);
+      cards?.[0]?.querySelector<HTMLButtonElement>('button[aria-label="Copy log path"]')?.click();
+      await vi.waitFor(() => { expect(copy).toHaveBeenCalledWith("/tmp/job-0.log"); });
+    } finally {
+      if (secure === undefined) Reflect.deleteProperty(window, "isSecureContext");
+      else Object.defineProperty(window, "isSecureContext", secure);
+    }
+  });
+
   it("renders a Working Mode block as one collapsed card of dial values without the raw block", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";

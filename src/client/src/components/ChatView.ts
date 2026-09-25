@@ -964,10 +964,11 @@ export class ChatView extends LitElement {
     const askUserRecordOnly = this.isAskUserRecordOnlyMessage(message);
     const goalLifecycleOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "goalLifecycle");
     const subagentCompletionOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "subagentCompletion");
+    const backgroundBashOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "backgroundBash");
     const workingModeOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "workingMode");
     const skillReadOnly = this.isSkillReadOnlyMessage(message);
-    const headerless = toolOnly || askUserRecordOnly || skillReadOnly || goalLifecycleOnly || subagentCompletionOnly || workingModeOnly;
-    const shellClass = workingModeOnly ? "msg goal-lifecycle-shell" : toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : subagentCompletionOnly ? "msg subagent-completion-shell" : "msg skill-read-shell";
+    const headerless = toolOnly || askUserRecordOnly || skillReadOnly || goalLifecycleOnly || subagentCompletionOnly || backgroundBashOnly || workingModeOnly;
+    const shellClass = workingModeOnly || backgroundBashOnly ? "msg goal-lifecycle-shell" : toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : subagentCompletionOnly ? "msg subagent-completion-shell" : "msg skill-read-shell";
     return html`
       ${this.renderScrollMarker(anchorId)}
       <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${anchorId}>
@@ -1187,6 +1188,18 @@ export class ChatView extends LitElement {
       <details class="part subagent-completion">
         <summary>Subagents finished</summary>
         <div class="subagent-completion-instruction" dir="auto">${part.text}</div>
+      </details>
+    `;
+    if (part.type === "backgroundBash") return html`
+      <details class="part background-bash-card">
+        <summary><span aria-hidden="true">${part.details.state === "complete" ? "✓" : part.details.state === "cancelled" ? "○" : "✖"}</span>
+          <span>${part.details.state} · exit ${part.details.exitCode === undefined ? "unknown" : String(part.details.exitCode)} · ${String(part.details.elapsedSeconds)}s</span>
+          <code class="background-bash-command" title=${part.details.command}>${part.details.command}</code>
+        </summary>
+        <pre class="background-bash-output">${part.output}</pre>
+        <div class="background-bash-log"><code>${part.details.logPath}</code>
+          <button type="button" aria-label="Copy log path" @click=${() => { void writeClipboardText(part.details.logPath); }}>Copy</button>
+        </div>
       </details>
     `;
     if (part.type === "workingMode") return html`
@@ -1658,6 +1671,13 @@ export class ChatView extends LitElement {
     .working-mode-card p { margin: 8px 0 2px; }
     .goal-lifecycle > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .goal-lifecycle > div { margin-top: 6px; overflow-wrap: anywhere; }
+    .background-bash-card { border-left: 3px solid var(--pi-accent); padding: 6px 12px; background: var(--pi-surface); border-radius: 6px; min-width: 0; }
+    .background-bash-card > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-width: 0; }
+    .background-bash-card > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .background-bash-command { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .background-bash-output { max-height: 240px; overflow: auto; white-space: pre; font: inherit; font-family: monospace; }
+    .background-bash-log { display: flex; align-items: center; gap: 8px; }
+    .background-bash-log code { overflow-wrap: anywhere; min-width: 0; }
     .msg.subagent-completion-shell { padding: 0 2px var(--pi-message-padding); }
     .subagent-completion { color: var(--pi-muted); font-size: 12px; }
     .subagent-completion > summary { width: fit-content; cursor: pointer; }
