@@ -82,30 +82,30 @@ export function installPluginBackendChannelWebSocketPayloadLimit(server: WebSock
 export function bridgeSockets(client: WebSocket, upstream: WebSocket): void {
   const sendToClient = createBufferedSender(client);
   const sendToUpstream = createBufferedSender(upstream);
-  client.on("message", (data) => { sendToUpstream(data); });
-  upstream.on("message", (data) => { sendToClient(data); });
+  client.on("message", (data, isBinary) => { sendToUpstream(data, isBinary); });
+  upstream.on("message", (data, isBinary) => { sendToClient(data, isBinary); });
   client.on("close", () => { upstream.close(); });
   upstream.on("close", () => { client.close(); });
   upstream.on("error", () => { client.close(); });
   client.on("error", () => { upstream.close(); });
 }
 
-export function createBufferedSender(socket: WebSocket): (data: Data) => void {
-  const queue: Data[] = [];
+export function createBufferedSender(socket: WebSocket): (data: Data, isBinary: boolean) => void {
+  const queue: { data: Data; isBinary: boolean }[] = [];
   const flush = () => {
     while (socket.readyState === WebSocket.OPEN) {
-      const data = queue.shift();
-      if (data === undefined) return;
-      socket.send(data);
+      const frame = queue.shift();
+      if (frame === undefined) return;
+      socket.send(frame.data, { binary: frame.isBinary });
     }
   };
   socket.on("open", flush);
-  return (data) => {
+  return (data, isBinary) => {
     if (socket.readyState === WebSocket.OPEN) {
-      socket.send(data);
+      socket.send(data, { binary: isBinary });
       return;
     }
-    if (socket.readyState === WebSocket.CONNECTING) queue.push(data);
+    if (socket.readyState === WebSocket.CONNECTING) queue.push({ data, isBinary });
   };
 }
 

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionEventHub, type RealtimeSocket } from "./sessionEventHub.js";
 
 class FakeSocket extends EventEmitter implements RealtimeSocket {
@@ -10,6 +10,41 @@ class FakeSocket extends EventEmitter implements RealtimeSocket {
 }
 
 describe("SessionEventHub", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("coalesces only global status/activity per session, flushes trailing and terminal states, and preserves ordering", () => {
+    vi.useFakeTimers();
+    const hub = new SessionEventHub();
+    const global = new FakeSocket();
+    const session = new FakeSocket();
+    hub.addGlobal(global);
+    hub.add("s1", session);
+    const status = { sessionId: "s1", isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    hub.publishGlobal({ type: "status.update", status });
+    for (let cost = 1; cost <= 12; cost++) {
+      hub.publishGlobal({ type: "status.update", status: { ...status, cost } });
+      hub.publish("s1", { type: "assistant.delta", text: String(cost) });
+    }
+    expect(global.send).toHaveBeenCalledTimes(1);
+    expect(session.send).toHaveBeenCalledTimes(12);
+    vi.advanceTimersByTime(500);
+    expect(global.send).toHaveBeenCalledTimes(2);
+    expect(global.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "status.update", status: { ...status, cost: 12 } }));
+    hub.publishGlobal({ type: "status.update", status: { ...status, cost: 12 } });
+    expect(global.send).toHaveBeenCalledTimes(2);
+    hub.publishGlobal({ type: "status.update", status: { ...status, cost: 13 } });
+    hub.publishGlobal({ type: "session.name", sessionId: "s1", name: "Done" });
+    expect(global.send.mock.calls.slice(-2)).toEqual([
+      [JSON.stringify({ type: "status.update", status: { ...status, cost: 13 } })],
+      [JSON.stringify({ type: "session.name", sessionId: "s1", name: "Done" })],
+    ]);
+    hub.publishGlobal({ type: "status.update", status: { ...status, isStreaming: false, cost: 14 } });
+    expect(global.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "status.update", status: { ...status, isStreaming: false, cost: 14 } }));
+    hub.publishGlobal({ type: "activity.update", activity: { sessionId: "s1", phase: "active", label: "running", at: "1" } });
+    hub.publishGlobal({ type: "activity.update", activity: { sessionId: "s1", phase: "active", label: "running", at: "2" } });
+    hub.publishGlobal({ type: "activity.update", activity: { sessionId: "s1", phase: "idle", label: "idle", at: "3" } });
+    expect(global.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "activity.update", activity: { sessionId: "s1", phase: "idle", label: "idle", at: "3" } }));
+  });
   it("publishes session events only to sockets for that session", () => {
     const hub = new SessionEventHub();
     const sessionSocket = new FakeSocket();

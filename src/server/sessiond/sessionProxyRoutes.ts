@@ -70,16 +70,16 @@ function requestFailed(reply: FastifyReply, error: unknown): void {
 }
 
 function bridgeSockets(client: WebSocket, upstream: WebSocket): void {
-  client.on("message", (data) => { sendIfOpen(upstream, data); });
-  upstream.on("message", (data) => { sendIfOpen(client, data); });
+  client.on("message", (data, isBinary) => { sendIfOpen(upstream, data, isBinary); });
+  upstream.on("message", (data, isBinary) => { sendIfOpen(client, data, isBinary); });
   client.on("close", () => { upstream.close(); });
   upstream.on("close", () => { client.close(); });
   upstream.on("error", () => { client.close(); });
   client.on("error", () => { upstream.close(); });
 }
 
-function sendIfOpen(socket: WebSocket, data: RawData): void {
+function sendIfOpen(socket: WebSocket, data: RawData, isBinary: boolean): void {
   if (socket.readyState === WebSocket.OPEN) {
-    socket.send(data);
+    socket.send(data, { binary: isBinary });
   }
 }

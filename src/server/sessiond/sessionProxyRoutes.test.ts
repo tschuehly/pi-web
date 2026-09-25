@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import { WebSocket, WebSocketServer } from "ws";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerSessionProxyRoutes } from "./sessionProxyRoutes";
 
 let app: FastifyInstance;
@@ -141,6 +141,24 @@ describe("machine-scoped session proxy routes", () => {
     expect(daemon.requests).toEqual([{ method: "GET", path: "/sessions", body: undefined }]);
   });
 
+  it("preserves text and binary frames from the daemon", async () => {
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const socket = new WebSocket(`${serverUrl(app)}/api/machines/local/events`);
+    const frames: { text: string; binary: boolean }[] = [];
+    socket.on("message", (data, binary) => { frames.push({ text: new TextDecoder().decode(data instanceof ArrayBuffer ? new Uint8Array(data) : Array.isArray(data) ? Buffer.concat(data) : data), binary }); });
+    try {
+      await waitForOpen(socket);
+      await vi.waitFor(() => { expect(daemon.connectedSockets().length).toBe(1); });
+      const upstream = daemon.connectedSockets().at(0);
+      if (!upstream) throw new Error("Daemon WebSocket did not connect");
+      upstream.send("text");
+      upstream.send(Buffer.from("binary"));
+      await vi.waitFor(() => { expect(frames).toEqual([{ text: "text", binary: false }, { text: "binary", binary: true }]); });
+    } finally {
+      socket.close();
+    }
+  });
+
   it("preserves cwd query context when forwarding session event websockets", async () => {
     await app.listen({ host: "127.0.0.1", port: 0 });
     const socket = new WebSocket(`${serverUrl(app)}/api/machines/local/sessions/session-1/events?cwd=${encodeURIComponent("/repo")}`);
@@ -193,6 +211,8 @@ class FakeSessionDaemon {
     if (queuedResponse instanceof Error) return Promise.reject(queuedResponse);
     return Promise.resolve(queuedResponse ?? { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify({ ok: true }) });
   }
+
+  connectedSockets(): WebSocket[] { return [...this.sockets]; }
 
   connectWebSocket(path: string): WebSocket {
     this.websocketPaths.push(path);
