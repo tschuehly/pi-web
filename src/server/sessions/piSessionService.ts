@@ -3984,6 +3984,7 @@ export class PiSessionService implements SessionRouteService {
         });
         return;
       }
+      if (type !== "warning" && type !== "error") return;
       const added = this.notificationStore.addNotification(generation, message, type);
       this.publishNotificationMutations(added.mutations);
     };
