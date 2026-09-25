@@ -96,7 +96,7 @@ export class DelegateRoster extends LitElement {
 
   static override styles = css`
     :host { display: block; flex: 0 0 auto; container-type: inline-size; background: var(--pi-surface); }
-    section { display: grid; gap: 2px; padding: 5px 12px 3px; border-top: 1px solid var(--pi-border-muted); }
+    section { display: grid; gap: 1px; padding: 3px 10px 2px; border-top: 1px solid var(--pi-border-muted); }
     .section-toggle { width: 100%; min-height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 5px; border: 0; background: transparent; color: var(--pi-text); font: inherit; text-align: left; cursor: pointer; }
     .section-toggle:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
     .section-title { min-width: 0; flex: 1 1 auto; display: flex; align-items: baseline; gap: 8px; }
@@ -104,10 +104,10 @@ export class DelegateRoster extends LitElement {
     .chevron { display: inline-block; width: 1em; color: var(--pi-muted); }
     .aggregate { min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
     .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-    .rows { display: grid; gap: 2px; max-height: min(28vh, 260px); overflow-y: auto; overscroll-behavior: contain; }
+    .rows { display: grid; gap: 1px; max-height: min(22vh, 180px); overflow-y: auto; overscroll-behavior: contain; }
     .rows[hidden] { display: none; }
     .rows:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
-    .row { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr) minmax(0, 2fr) 8px; grid-template-rows: auto auto; align-items: start; column-gap: 8px; row-gap: 2px; padding: 5px; border-radius: 5px; color: var(--pi-text); font-size: 11px; }
+    .row { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr) minmax(0, 2fr) 8px; grid-template-rows: auto auto; align-items: start; column-gap: 6px; row-gap: 1px; padding: 3px 5px; border-radius: 5px; color: var(--pi-text); font-size: 11px; }
     .row:nth-child(odd) { background: color-mix(in srgb, var(--pi-surface-hover) 45%, transparent); }
     .terminal { opacity: .72; }
     .kind, .state { width: 7px; height: 7px; justify-self: center; margin-top: 5px; border-radius: 50%; background: var(--pi-muted); }

@@ -49,13 +49,13 @@ export class WorkingModeControls extends LitElement {
 
   static override styles = css`
     :host { display: block; flex: 0 0 auto; padding: 5px 12px; border-top: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
-    :host([compact]) { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; padding: 0; border-top: 0; background: transparent; }
-    :host([compact]) section { gap: 6px; }
+    :host([compact]) { flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 0; border-top: 0; background: transparent; }
+    :host([compact]) section { flex-wrap: wrap; gap: 4px; overflow: visible; }
     :host([compact]) label > span { display: none; }
     section { display: flex; align-items: center; gap: 12px; overflow-x: auto; }
     label { display: inline-flex; align-items: center; white-space: nowrap; }
     label > span { margin-right: 6px; color: var(--pi-muted); font-size: 11px; font-weight: 650; }
-    select { min-height: 26px; padding: 2px 6px; border: 1px solid var(--pi-border); border-radius: 6px; background: transparent; color: var(--pi-text); font: 12px system-ui, sans-serif; cursor: pointer; }
+    select { min-height: 26px; padding: 2px 4px; border: 1px solid var(--pi-border); border-radius: 6px; background: transparent; color: var(--pi-text); font: 12px system-ui, sans-serif; cursor: pointer; }
     select:disabled { color: var(--pi-muted); cursor: default; }
     select:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
     @media (max-width: 430px) {
