@@ -326,6 +326,35 @@ describe("ChatView transcript density", () => {
     expect(card?.open).toBe(true);
   });
 
+  it("renders a Working Mode block as one collapsed card of dial values without the raw block", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = normalizeMessages([{ role: "custom", customType: "working-mode", content: `<working-mode seq="1">\nThomas selected Working Mode Alignment: Align · Attention: Switching · Checking: Default · Orchestration: Workers.
+This is behavior guidance, not permission; explicit owner direction and repository instructions still apply.
+
+Alignment — Align: Check shared understanding.
+
+Attention — Switching: Batch questions.
+
+Orchestration — Workers: Use a scope-owning worker.
+
+This block replaces every earlier <working-mode> block.
+</working-mode>`, details: { schemaVersion: 2, seq: 1, selection: { alignment: "Align", attention: "Switching", checking: "Default", orchestration: "Workers" } } }]);
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const card = root.querySelector<HTMLDetailsElement>("details.working-mode-card");
+    expect(card?.open).toBe(false);
+    expect([...(card?.querySelectorAll("summary .working-mode-value") ?? [])].map((chip) => [chip.textContent, chip.classList.contains("changed")])).toEqual([
+      ["Align", true], ["Switching", true], ["Default", false], ["Workers", true],
+    ]);
+    expect(card?.querySelectorAll("dt")).toHaveLength(3);
+    expect(card?.textContent).toContain("Batch questions.");
+    expect(root.textContent).not.toContain("<working-mode");
+    expect(root.querySelector("article.msg.system")).toBeNull();
+  });
+
   it("renders a validated Goal lifecycle as one collapsed accessible card without model-only text", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";

@@ -81,6 +81,27 @@ describe("chat message normalization", () => {
     expect(groupChatMessages(normalized)).toEqual([{ kind: "message", index: 0, message: recordLine }]);
   });
 
+  it("projects a Working Mode block into dials with guidance only for changed values", () => {
+    const message = { role: "custom", customType: "working-mode", content: `<working-mode seq="1">\nThomas selected Working Mode Alignment: Align · Attention: Switching · Checking: Default · Orchestration: Workers.
+This is behavior guidance, not permission; explicit owner direction and repository instructions still apply.
+
+Alignment — Align: Check shared understanding.
+
+Attention — Switching: Batch questions.
+
+Orchestration — Workers: Use a scope-owning worker.
+
+This block replaces every earlier <working-mode> block.
+</working-mode>`, details: { schemaVersion: 2, seq: 1, selection: { alignment: "Align", attention: "Switching", checking: "Default", orchestration: "Workers" } } };
+    expect(normalizeMessage(message)).toEqual([{ role: "system", parts: [{ type: "workingMode", dials: [
+      { label: "Alignment", value: "Align", guidance: "Check shared understanding." },
+      { label: "Attention", value: "Switching", guidance: "Batch questions." },
+      { label: "Checking", value: "Default" },
+      { label: "Orchestration", value: "Workers", guidance: "Use a scope-owning worker." },
+    ] }] }]);
+    expect(normalizeMessage({ ...message, details: { selection: { alignment: "Align" } } })[0]?.parts[0]?.type).not.toBe("workingMode");
+  });
+
   it("projects the upstream Goal lifecycle schema instead of its model-facing fallback text", () => {
     const details = { schemaVersion: 1, goalId: "goal-1", transition: "block", state: "blocked", reason: "Owner approval required", summary: "Checked twice" };
     const message = { role: "custom", customType: "pi-goal.lifecycle", content: "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.", details, entryId: "entry-1" };

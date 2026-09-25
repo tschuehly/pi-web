@@ -1,6 +1,6 @@
 import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes";
 import { parseAskUserOutcome } from "./api/parsers";
-import type { ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview } from "./components/shared";
+import type { ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview, WorkingModeDial } from "./components/shared";
 import { validGoalId } from "./extensionStatusSnapshots";
 
 export function normalizeMessages(messages: unknown[]): ChatLine[] {
@@ -54,6 +54,8 @@ export function normalizeMessage(message: unknown): ChatLine[] {
   if (isChatLine(message)) return [message];
   const lifecycle = goalLifecycleDetails(message);
   if (lifecycle !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "goalLifecycle", details: lifecycle }] }, message)];
+  const dials = workingModeDials(message);
+  if (dials !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "workingMode", dials }] }, message)];
   const completion = subagentCompletionText(message);
   if (completion !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "subagentCompletion", text: completion }] }, message)];
   if (getString(message, "role") === "bashExecution") return [withMessageMeta(normalizeBashExecution(message), message)];
@@ -222,6 +224,23 @@ function normalizeContent(content: unknown, message: unknown): ChatPart[] {
   }).map((part) => part.type === "text" && getString(message, "role") === "toolResult"
     ? toolResultPartFromText(part.text, message)
     : part);
+}
+
+const WORKING_MODE_AXES = [["alignment", "Alignment"], ["attention", "Attention"], ["checking", "Checking"], ["orchestration", "Orchestration"]] as const;
+
+/** Pi Workbench Working Mode block: values from details, per-dial guidance from the model-facing text. */
+function workingModeDials(message: unknown): WorkingModeDial[] | undefined {
+  if (getString(message, "role") !== "custom" || getString(message, "customType") !== "working-mode") return undefined;
+  const selection = getProperty(getProperty(message, "details"), "selection");
+  if (!WORKING_MODE_AXES.every(([key]) => typeof getProperty(selection, key) === "string")) return undefined;
+  const content = getProperty(message, "content");
+  const text = typeof content === "string" ? content
+    : Array.isArray(content) ? content.map((part) => getString(part, "text") ?? "").join("\n") : "";
+  return WORKING_MODE_AXES.map(([key, label]) => {
+    const value = getString(selection, key) ?? "";
+    const guidance = text.split("\n").find((line) => line.startsWith(`${label} — ${value}: `))?.slice(`${label} — ${value}: `.length).trim();
+    return guidance !== undefined && guidance !== "" ? { label, value, guidance } : { label, value };
+  });
 }
 
 const GOAL_LIFECYCLE_STATES = {

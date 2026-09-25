@@ -61,6 +61,9 @@ export interface GoalLifecycleDetails {
   summary?: string;
 }
 
+/** One Working Mode dial; guidance is present only when the dial differs from its starting value. */
+export interface WorkingModeDial { label: string; value: string; guidance?: string }
+
 export type ChatPart =
   | { type: "text"; text: string }
   | { type: "image"; mimeType: string; data: string }
@@ -70,6 +73,7 @@ export type ChatPart =
   | { type: "askUserRecord"; outcome: AskUserOutcome }
   | { type: "goalLifecycle"; details: GoalLifecycleDetails }
   | { type: "subagentCompletion"; text: string }
+  | { type: "workingMode"; dials: WorkingModeDial[] }
   | { type: "toolCall"; toolCallId?: string; toolName: string; summary: string; args?: unknown }
   | ToolExecutionPart
   | { type: "toolResult"; toolCallId?: string; toolName: string; text: string; isError: boolean; content?: unknown; details?: unknown }

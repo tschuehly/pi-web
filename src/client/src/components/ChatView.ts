@@ -964,9 +964,10 @@ export class ChatView extends LitElement {
     const askUserRecordOnly = this.isAskUserRecordOnlyMessage(message);
     const goalLifecycleOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "goalLifecycle");
     const subagentCompletionOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "subagentCompletion");
+    const workingModeOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "workingMode");
     const skillReadOnly = this.isSkillReadOnlyMessage(message);
-    const headerless = toolOnly || askUserRecordOnly || skillReadOnly || goalLifecycleOnly || subagentCompletionOnly;
-    const shellClass = toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : subagentCompletionOnly ? "msg subagent-completion-shell" : "msg skill-read-shell";
+    const headerless = toolOnly || askUserRecordOnly || skillReadOnly || goalLifecycleOnly || subagentCompletionOnly || workingModeOnly;
+    const shellClass = workingModeOnly ? "msg goal-lifecycle-shell" : toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : subagentCompletionOnly ? "msg subagent-completion-shell" : "msg skill-read-shell";
     return html`
       ${this.renderScrollMarker(anchorId)}
       <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${anchorId}>
@@ -1186,6 +1187,14 @@ export class ChatView extends LitElement {
       <details class="part subagent-completion">
         <summary>Subagents finished</summary>
         <div class="subagent-completion-instruction" dir="auto">${part.text}</div>
+      </details>
+    `;
+    if (part.type === "workingMode") return html`
+      <details class="part working-mode-card">
+        <summary><span class="working-mode-title">Working Mode</span>${part.dials.map((dial) => html`<span class=${dial.guidance === undefined ? "working-mode-value" : "working-mode-value changed"} title=${dial.label}>${dial.value}</span>`)}</summary>
+        ${part.dials.some((dial) => dial.guidance !== undefined)
+          ? html`<dl>${part.dials.filter((dial) => dial.guidance !== undefined).map((dial) => html`<dt>${dial.label} — ${dial.value}</dt><dd>${dial.guidance}</dd>`)}</dl>`
+          : html`<p>Every dial is at its starting setting; no extra guidance applies.</p>`}
       </details>
     `;
     if (part.type === "goalLifecycle") return html`
@@ -1637,6 +1646,16 @@ export class ChatView extends LitElement {
     .msg.goal-lifecycle-shell { padding: 0 2px var(--pi-message-padding); }
     .goal-lifecycle { border-left: 3px solid var(--pi-accent); padding: 6px 12px; color: var(--pi-text); background: var(--pi-surface); border-radius: 6px; }
     .goal-lifecycle > summary { cursor: pointer; font-weight: 600; }
+    .working-mode-card { border-left: 3px solid var(--pi-accent); padding: 6px 12px; color: var(--pi-text); background: var(--pi-surface); border-radius: 6px; }
+    .working-mode-card > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .working-mode-card > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .working-mode-title { font-weight: 600; margin-right: 4px; }
+    .working-mode-value { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--pi-border); color: var(--pi-muted); font-size: 0.9em; }
+    .working-mode-value.changed { border-color: var(--pi-accent); color: var(--pi-text); font-weight: 600; }
+    .working-mode-card dl { margin: 8px 0 2px; }
+    .working-mode-card dt { font-weight: 600; margin-top: 6px; }
+    .working-mode-card dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+    .working-mode-card p { margin: 8px 0 2px; }
     .goal-lifecycle > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .goal-lifecycle > div { margin-top: 6px; overflow-wrap: anywhere; }
     .msg.subagent-completion-shell { padding: 0 2px var(--pi-message-padding); }
