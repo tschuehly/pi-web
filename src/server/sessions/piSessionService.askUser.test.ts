@@ -120,6 +120,15 @@ describe("PiSessionService.openAsk", () => {
     await service.dispose();
   });
 
+  it("publishes a bounded global ask preview with session metadata", async () => {
+    const { service, events, fake } = askService({ withActiveSession: true });
+    await service.status(sessionRef(ACTIVE_SESSION_ID));
+    fake.session.sessionName = "Build Chat";
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, questions: [{ id: "q", question: "x".repeat(150), options: [] }] });
+    expect(events.globalEvents).toContainEqual({ type: "session.attention", sessionId: ACTIVE_SESSION_ID, cwd: "/workspace", sessionName: "Build Chat", kind: "ask", id: "ask-1", detail: "x".repeat(120) });
+    await service.dispose();
+  });
+
   it("publishes the supersede as a close before the replacement opens", async () => {
     const { service, events } = askService();
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, questions });

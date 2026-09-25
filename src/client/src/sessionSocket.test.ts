@@ -90,6 +90,15 @@ describe("notification socket guards", () => {
     })).toBeUndefined();
   });
 
+  it("accepts only bounded, validated global attention frames", () => {
+    const event = { type: "session.attention", sessionId: "session-2", cwd: "/repo", sessionName: "Other Chat", kind: "dialog", id: "dialog-1", detail: "Continue?" };
+    expect(parseRealtimeSocketEvent(event)).toEqual(event);
+    expect(parseSessionSocketEvent(event)).toBeUndefined();
+    for (const invalid of [{ ...event, kind: "complete" }, { ...event, id: "" }, { ...event, detail: "x".repeat(121) }, { ...event, sessionName: 1 }, { ...event, cwd: "" }]) {
+      expect(parseRealtimeSocketEvent(invalid)).toBeUndefined();
+    }
+  });
+
   it("carries the startup marker through the socket boundary, marker and all", () => {
     const activity = { sessionId: "session-1", phase: "active", label: "Opening session", detail: "Starting the Pi session", at: "2026-07-20T00:00:01.000Z", startup: true };
 

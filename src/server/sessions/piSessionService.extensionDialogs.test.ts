@@ -81,6 +81,7 @@ describe("PiSessionService extension dialog UI context", () => {
     expect(dialogEvents(events)).toEqual([
       { sessionId: ACTIVE_SESSION_ID, event: { type: "dialog.opened", dialog: openDialog(events) } },
     ]);
+    expect(events.globalEvents).toContainEqual({ type: "session.attention", sessionId: ACTIVE_SESSION_ID, cwd: "/workspace", kind: "dialog", id: "dialog-1", detail: "Proceed?" });
     await expect(settledValue(parked)).resolves.toEqual({ settled: false });
     await service.dispose();
   });

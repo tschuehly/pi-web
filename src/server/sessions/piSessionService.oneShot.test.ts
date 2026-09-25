@@ -193,6 +193,7 @@ describe("PiSessionService host-owned one-shot runs", () => {
       sessionId: run.id,
       event: { type: "session.error", message: "model unavailable" },
     });
+    expect(hub.globalEvents).toContainEqual({ type: "session.attention", sessionId: run.id, cwd: "/workspace", kind: "error", id: String(hub.currentSeq(run.id)), detail: "model unavailable" });
     await service.stop(sessionRef(run.id));
     await service.dispose();
   });
