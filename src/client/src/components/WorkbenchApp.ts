@@ -1067,7 +1067,7 @@ export class WorkbenchApp extends LitElement {
     .session small { color: var(--pi-muted); }
     .error, .chat-error { color: var(--pi-danger); }
     .chat-shell { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-    header { position: relative; z-index: 6; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
+    header { position: relative; z-index: 6; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
     header > button { flex: 0 0 auto; min-height: 32px; border-color: transparent; background: transparent; }
     header > button:hover:not(:disabled) { background: var(--pi-surface-hover); }
     header > .icon-button:hover { border-color: transparent; }

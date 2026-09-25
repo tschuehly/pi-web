@@ -659,6 +659,9 @@ This block replaces every earlier <working-mode> block.
     const toggle = root.querySelector<HTMLButtonElement>(".filter-toggle");
     expect(toggle?.getAttribute("aria-label")).toBe("Filter transcript: Everything");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle?.closest(".chat-wrap")).toBe(root.querySelector(".chat-wrap"));
+    expect(styleText(ChatView.styles)).toMatch(/\.transcript-filter\s*\{[^}]*position:\s*absolute;[^}]*top:\s*8px/);
+    expect(chatStyles.cssText).toMatch(/\.chat\s*\{[^}]*padding:[^}]*calc\(var\(--pi-panel-padding\) \+ 36px\)/);
     expect(root.querySelector(".filter-options")).toBeNull();
     expect(root.querySelector("tool-execution-view")).not.toBeNull();
     await selectFilter(view, "Human only");

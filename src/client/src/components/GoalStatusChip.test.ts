@@ -179,7 +179,7 @@ describe("GoalStatusChip", () => {
     expect(promptEditorStyles.cssText).toMatch(/:host\s*\{[^}]*z-index:\s*5/);
     expect(autocompleteStyles.cssText).toMatch(/\.menu\s*\{[^}]*z-index:\s*10/);
     expect(GoalStatusChip.styles.cssText).toMatch(/:host\s*\{[^}]*margin:\s*0 12px 10px/);
-    expect(promptEditorStyles.cssText).toMatch(/\.editor-resize-handle\s*\{[^}]*top:\s*0/);
+    expect(promptEditorStyles.cssText).toMatch(/\.editor-resize-handle\s*\{[^}]*top:\s*-4px/);
     expect(GoalStatusChip.styles.cssText).toMatch(/\.sheet\s*\{[^}]*max-height:\s*var\(--goal-sheet-max-height, 0px\)[^}]*overflow:\s*auto[^}]*border-bottom:\s*3px solid var\(--goal-color\)[^}]*border-radius:\s*9px 9px 0 0/);
   });
 

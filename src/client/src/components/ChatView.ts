@@ -499,7 +499,8 @@ export class ChatView extends LitElement {
     return html`
       ${this.renderTopNotices()}
       ${this.renderNotificationLiveRegions()}
-      <div class="transcript-filter" @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape" && this.filterMenuOpen) { event.stopPropagation(); this.filterMenuOpen = false; this.renderRoot.querySelector<HTMLButtonElement>(".filter-toggle")?.focus(); } }} @focusout=${(event: FocusEvent) => { if (event.currentTarget instanceof HTMLElement && (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget))) this.filterMenuOpen = false; }}>
+      <div class="chat-wrap">
+        <div class="transcript-filter" @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape" && this.filterMenuOpen) { event.stopPropagation(); this.filterMenuOpen = false; this.renderRoot.querySelector<HTMLButtonElement>(".filter-toggle")?.focus(); } }} @focusout=${(event: FocusEvent) => { if (event.currentTarget instanceof HTMLElement && (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget))) this.filterMenuOpen = false; }}>
         <button type="button" class="filter-toggle" aria-label=${`Filter transcript: ${this.filterLabel()}`} title=${`Filter transcript: ${this.filterLabel()}`} aria-expanded=${String(this.filterMenuOpen)} data-filter-active=${String(this.transcriptFilter !== "everything")} aria-controls=${this.filterMenuOpen ? "transcript-filter-options" : nothing} @click=${() => { this.filterMenuOpen = !this.filterMenuOpen; }}>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M7 12h10m-7 6h4"></path></svg>
         </button>
@@ -509,8 +510,7 @@ export class ChatView extends LitElement {
           ${this.renderFilterOption("assistant", "Assistant only")}
           ${this.renderFilterOption("human-assistant", "Human + Assistant")}
         </div>` : null}
-      </div>
-      <div class="chat-wrap">
+        </div>
         ${this.renderConversationRail()}
         <div class="chat" @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
           ${this.renderHistoryBoundary()}
@@ -1639,15 +1639,19 @@ export class ChatView extends LitElement {
   }
 
   static override styles = [chatStyles, css`
-    .transcript-filter { position: relative; display: flex; justify-content: flex-end; padding: 4px 10px; }
+    .transcript-filter { position: absolute; z-index: 22; top: 8px; right: 8px; }
     .filter-toggle, .filter-options button { border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); cursor: pointer; }
-    .filter-toggle { display: grid; place-items: center; width: 30px; height: 30px; }
+    .filter-toggle { display: grid; place-items: center; width: 28px; height: 28px; box-shadow: 0 2px 8px var(--pi-shadow); }
     .filter-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
     .filter-toggle[data-filter-active="true"] { color: var(--pi-accent); border-color: var(--pi-accent); background: var(--pi-selection-bg); }
-    .filter-options { position: absolute; z-index: 2; top: 100%; right: 10px; display: grid; gap: 4px; padding: 6px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 4px 12px #0003; }
+    .filter-options { position: absolute; top: calc(100% + 4px); right: 0; display: grid; gap: 4px; padding: 6px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 4px 12px #0003; }
     .filter-options button { min-height: 30px; padding: 4px 10px; text-align: left; white-space: nowrap; }
     .filter-options button[aria-pressed="true"] { border-color: var(--pi-accent); }
     .transcript-filter button:focus-visible { outline: 2px solid var(--pi-accent); }
+    @media (forced-colors: active) {
+      .filter-toggle[data-filter-active="true"], .filter-options button[aria-pressed="true"] { color: Highlight; border-color: Highlight; }
+      .transcript-filter button:focus-visible { outline-color: Highlight; }
+    }
     .filter-empty { margin: 12px; color: var(--pi-muted); }
     .history-summary-group { border: 1px solid var(--pi-border); border-left: 3px solid var(--pi-accent); border-radius: 8px; background: color-mix(in srgb, var(--pi-accent) 6%, var(--pi-surface)); }
     .history-summary-group > summary { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 10px; color: var(--pi-muted); list-style: none; cursor: pointer; }

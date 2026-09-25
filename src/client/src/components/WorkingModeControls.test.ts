@@ -137,7 +137,7 @@ describe("DelegateRoster", () => {
     expect(css).toMatch(/\.identity, \.task, \.activity\s*\{[^}]*overflow-wrap:\s*anywhere/);
     expect(css).not.toMatch(/\.meta\s*\{\s*display:\s*none/);
     expect(css).not.toMatch(/\.task\s*\{[^}]*text-overflow:\s*ellipsis/);
-    expect(css).toMatch(/\.rows\s*\{[^}]*max-height:\s*min\(28vh, 260px\);[^}]*overflow-y:\s*auto/);
+    expect(css).toMatch(/\.rows\s*\{[^}]*max-height:\s*min\(22vh, 180px\);[^}]*overflow-y:\s*auto/);
   });
 
   it("stays collapsed across live updates until its keyboard-focusable button is clicked again", async () => {
