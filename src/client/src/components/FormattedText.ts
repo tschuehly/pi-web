@@ -17,6 +17,7 @@ export class FormattedText extends LitElement {
 
   override updated(): void {
     this.enhanceCodeBlocks();
+    this.enhanceQuotes();
   }
 
   private enhanceCodeBlocks(): void {
@@ -26,18 +27,31 @@ export class FormattedText extends LitElement {
       if (!(code instanceof HTMLElement)) return;
       const wrapper = document.createElement("div");
       wrapper.className = "code-block-wrapper";
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "code-copy-button";
-      button.title = "Copy code block";
-      button.setAttribute("aria-label", "Copy code block");
-      const icon = document.createElement("span");
-      icon.setAttribute("aria-hidden", "true");
-      icon.textContent = "⧉";
-      button.append(icon);
+      const button = this.createCopyButton("code block");
       element.before(wrapper);
       wrapper.append(element, button);
     });
+  }
+
+  private enhanceQuotes(): void {
+    this.renderRoot.querySelectorAll("blockquote").forEach((quote) => {
+      if (quote.parentElement?.closest("blockquote") || quote.querySelector(":scope > .quote-copy-button")) return;
+      quote.classList.add("copyable-quote");
+      quote.append(this.createCopyButton("quote"));
+    });
+  }
+
+  private createCopyButton(kind: "code block" | "quote"): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = kind === "quote" ? "quote-copy-button" : "code-copy-button";
+    button.title = `Copy ${kind}`;
+    button.setAttribute("aria-label", `Copy ${kind}`);
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "⧉";
+    button.append(icon);
+    return button;
   }
 
   private readonly onFormattedClick = (event: MouseEvent): void => {
@@ -55,27 +69,31 @@ export class FormattedText extends LitElement {
       }
       return;
     }
-    const button = event.target.closest(".code-copy-button");
+    const button = event.target.closest(".code-copy-button, .quote-copy-button");
     if (!(button instanceof HTMLButtonElement)) return;
-    const wrapper = button.closest(".code-block-wrapper");
-    if (!(wrapper instanceof HTMLElement)) return;
-    const code = wrapper.querySelector("pre code");
+    if (button.classList.contains("quote-copy-button")) {
+      const quote = button.closest<HTMLElement>("blockquote");
+      if (quote === null) return;
+      void this.copyText(quote.getAttribute("data-quote-source") ?? quote.innerText, button, "quote");
+      return;
+    }
+    const code = button.closest(".code-block-wrapper")?.querySelector("pre code");
     if (!(code instanceof HTMLElement)) return;
-    void this.copyCode(code.textContent, button);
+    void this.copyText(code.textContent, button, "code block");
   };
 
-  private async copyCode(text: string, button: HTMLButtonElement): Promise<void> {
+  private async copyText(text: string, button: HTMLButtonElement, kind: "code block" | "quote"): Promise<void> {
     const copied = await writeClipboardText(text);
-    this.setCopyButtonState(button, copied ? "copied" : "failed");
+    this.setCopyButtonState(button, copied ? "copied" : "failed", kind);
     window.setTimeout(() => {
-      this.setCopyButtonState(button, "idle");
+      this.setCopyButtonState(button, "idle", kind);
     }, 1200);
   }
 
-  private setCopyButtonState(button: HTMLButtonElement, state: "idle" | "copied" | "failed"): void {
+  private setCopyButtonState(button: HTMLButtonElement, state: "idle" | "copied" | "failed", kind: "code block" | "quote"): void {
     const icon = button.querySelector("span");
     if (icon !== null) icon.textContent = state === "copied" ? "✓" : "⧉";
-    const label = state === "copied" ? "Copied code block" : state === "failed" ? "Failed to copy code block" : "Copy code block";
+    const label = state === "copied" ? `Copied ${kind}` : state === "failed" ? `Failed to copy ${kind}` : `Copy ${kind}`;
     button.title = label;
     button.setAttribute("aria-label", label);
   }

@@ -5,6 +5,10 @@ import { workspaceMarkdownFilePath, type MarkdownWorkspaceContext } from "./work
 
 const renderer = new marked.Renderer();
 renderer.html = ({ text }) => escapeHtml(text);
+renderer.blockquote = function ({ text, tokens }) {
+  // Marked's text removes only the outer quote markers, retaining Markdown syntax and blank lines.
+  return `<blockquote data-quote-source="${escapeHtml(text).replaceAll('"', "&quot;")}">\n${this.parser.parse(tokens)}</blockquote>\n`;
+};
 
 const MAX_MARKDOWN_CACHE_ENTRIES = 300;
 const markdownHtmlCache = new Map<string, string>();
