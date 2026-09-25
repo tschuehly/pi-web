@@ -12,11 +12,6 @@ const STATE_LABELS: Record<GoalStatusState, string> = {
   budget_limited: "Budget limited",
 };
 
-function shortGoalId(goalId: string): string {
-  const characters = Array.from(goalId);
-  return characters.length <= 8 ? goalId : `${characters.slice(0, 8).join("")}…`;
-}
-
 export function goalSheetMaximumHeight(headerBottom: number, summaryTop: number, interfaceScale: number): number {
   if (!Number.isFinite(headerBottom) || !Number.isFinite(summaryTop)) return 0;
   const scale = Number.isFinite(interfaceScale) && interfaceScale > 0 ? interfaceScale : 1;
@@ -80,10 +75,11 @@ export class GoalStatusChip extends LitElement {
     const state = STATE_LABELS[goal.state];
     return html`
       <details data-state=${goal.state} @toggle=${this.onDetailsToggle}>
-        <summary>
+        <summary tabindex="0">
+          <span class="chevron" aria-hidden="true">▸</span>
           <span class="identity">Goal</span>
           <span class="state">${state}</span>
-          <code class="short-id" title=${goal.goalId}>#${shortGoalId(goal.goalId)}</code>
+          <span class="separator" aria-hidden="true">·</span>
           <span class="objective" title=${goal.objective}>${goal.objective}</span>
         </summary>
         <div class="sheet">
@@ -103,7 +99,8 @@ export class GoalStatusChip extends LitElement {
     if (legacy === undefined) return null;
     return html`
       <details data-legacy @toggle=${this.onDetailsToggle}>
-        <summary>
+        <summary tabindex="0">
+          <span class="chevron" aria-hidden="true">▸</span>
           <span class="identity">Goal</span>
           <span class="objective" title=${legacy}>${legacy}</span>
         </summary>
@@ -151,7 +148,7 @@ export class GoalStatusChip extends LitElement {
   }
 
   static override styles = css`
-    :host { position: relative; display: block; flex: 0 0 auto; width: min(560px, calc(100% - 24px)); min-width: 0; margin: 0 12px 10px; color: var(--pi-text); }
+    :host { position: relative; display: block; flex: 0 0 auto; min-width: 0; padding: 3px 8px 2px; border-top: 1px solid var(--pi-border-muted); background: var(--pi-surface); color: var(--pi-text); }
     :host([hidden]) { display: none; }
     * { box-sizing: border-box; min-width: 0; }
     details { --goal-color: var(--pi-muted); position: relative; }
@@ -162,28 +159,30 @@ export class GoalStatusChip extends LitElement {
     details[data-state="blocked"] { --goal-color: var(--pi-text); }
     details[data-state="usage_limited"] { --goal-color: var(--pi-accent); }
     details[data-state="budget_limited"] { --goal-color: color-mix(in srgb, var(--pi-accent) 55%, var(--pi-purple)); }
-    summary { min-height: 32px; display: flex; align-items: center; gap: 6px; overflow: hidden; padding: 0 9px; border: 1px solid var(--pi-border); border-left: 3px solid var(--goal-color); border-radius: 8px; background: var(--pi-bg); list-style: none; cursor: pointer; white-space: nowrap; }
+    summary { min-height: 24px; display: flex; align-items: center; gap: 6px; overflow: hidden; padding: 0 5px; border-radius: 5px; list-style: none; cursor: pointer; white-space: nowrap; }
     summary:hover, details[open] summary { background: var(--pi-surface-hover); }
-    summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
     summary::-webkit-details-marker { display: none; }
-    summary::after { content: "↓"; flex: 0 0 auto; color: var(--pi-muted); }
-    details[open] summary::after { content: "↑"; }
-    .identity, .state, .short-id { flex: 0 0 auto; }
-    .identity { color: var(--pi-muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-    .state { padding: 2px 5px; border-radius: 5px; background: color-mix(in srgb, var(--goal-color) 14%, transparent); color: var(--goal-color); font-size: 11px; font-weight: 750; }
+    .identity, .state, .chevron { flex: 0 0 auto; }
+    .identity { color: var(--pi-text); font-size: 11px; font-weight: 700; }
+    .state { color: var(--goal-color); font-size: 11px; font-weight: 650; }
+    .separator { color: var(--pi-muted); }
+    .objective { flex: 1 1 auto; overflow: hidden; color: var(--pi-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .chevron { width: 1em; color: var(--pi-muted); font-size: 11px; }
+    details[open] .chevron { transform: rotate(90deg); }
     code { font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
-    .short-id { color: var(--pi-muted); }
-    .objective { flex: 1 1 auto; overflow: hidden; color: var(--pi-text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-    .sheet { position: absolute; right: 0; bottom: 100%; width: min(440px, 100%); max-height: var(--goal-sheet-max-height, 0px); overflow: auto; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 14px; padding: 14px; border: 1px solid var(--pi-border); border-bottom: 3px solid var(--goal-color); border-radius: 9px 9px 0 0; background: var(--pi-surface); box-shadow: 0 14px 36px var(--pi-shadow); }
+    .sheet { position: absolute; right: 0; bottom: 100%; width: min(440px, 100%); max-height: var(--goal-sheet-max-height, 0px); overflow: auto; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 14px; padding: 14px; border: 1px solid var(--pi-border); border-radius: 9px 9px 0 0; background: var(--pi-surface); box-shadow: 0 14px 36px var(--pi-shadow); }
     .label { color: var(--pi-muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
     p { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
     .full-id { overflow-wrap: anywhere; }
-    @media (forced-colors: active) {
-      summary, .sheet { border-color: ButtonText; background: Canvas; }
-      .state { border: 1px solid ButtonText; background: Canvas; color: CanvasText; }
-    }
     @media (max-width: 700px) {
-      .short-id { display: none; }
+      :host { padding-inline: 4px; }
+    }
+    @media (forced-colors: active) {
+      :host { border-color: ButtonText; background: Canvas; }
+      .sheet { border-color: ButtonText; background: Canvas; }
+      .state { color: CanvasText; }
+      summary:focus-visible { outline-color: Highlight; }
     }
   `;
 }
