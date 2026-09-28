@@ -97,6 +97,10 @@ When using this escape hatch:
 
 Existing extraction tests are acceptable as-is. Convert them to a pure seam or the happy-dom harness opportunistically when the file is touched for other reasons; do not run a big-bang migration.
 
+## End-to-end browser checks
+
+`npm run test:e2e` runs the Playwright specs in `e2e/` in WebKit, the engine of the macOS app's WKWebView. `e2e/isolatedPiWeb.ts` builds the bundled plugins and client, then starts a throwaway session daemon and web/API server. They get their own temp data dir, socket, port and Pi agent dir, and every inherited `PI_*` variable is dropped. The server is seeded with a fixture project and a finished Chat, so no model call is needed, and it is torn down afterwards. Reserve e2e specs for flows that need a real browser and a real server together. They stay out of Vitest's include globs.
+
 ## Checks to run
 
 Run the narrowest meaningful check first:
