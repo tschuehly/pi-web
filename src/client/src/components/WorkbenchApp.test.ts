@@ -10,7 +10,9 @@ import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { readStoredThemePreference } from "../theme";
+import type { ChatView } from "./ChatView";
 import { DelegateRoster } from "./DelegateRoster";
+import type { FormattedText } from "./FormattedText";
 import { GoalStatusChip } from "./GoalStatusChip";
 import { PromptEditor } from "./PromptEditor";
 import { WorkbenchApp, rootProjectOf, rootProjects } from "./WorkbenchApp";
@@ -372,6 +374,36 @@ describe("Workbench Chat chooser", () => {
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
     expect(app.shadowRoot?.querySelector("workbench-files-pane")).toBeNull();
+  });
+
+  it("opens Chat Markdown file links in the Files pane and respects unsaved edits", async () => {
+    const current = session("human", "Edit notes");
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current, messages: [{ role: "assistant", parts: [{ type: "text", text: "See [notes](docs/notes.md), [ledger](/repo/.scratch/LEDGER.md), [outside](/elsewhere/x.md) and [site](https://example.com)." }] }] });
+    await app.updateComplete;
+    const read = vi.spyOn(api, "workspaceFile").mockImplementation((_project, _workspace, path) => Promise.resolve({ path, encoding: "utf8", size: 5, modifiedAt: "now", version: "v1", content: `body of ${path}`, truncated: false, binary: false }));
+    const anchors = await chatAnchors(app);
+    expect(anchors.map((anchor) => anchor.getAttribute("data-workspace-file"))).toEqual(["docs/notes.md", ".scratch/LEDGER.md", null, null]);
+    expect(anchors[3]?.getAttribute("href")).toBe("https://example.com");
+    const click = (anchor: HTMLAnchorElement | undefined) => {
+      const event = new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, button: 0 });
+      anchor?.dispatchEvent(event);
+      return event;
+    };
+    expect(click(anchors[0]).defaultPrevented).toBe(true);
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector("workbench-files-pane")?.shadowRoot?.querySelector("textarea")?.value).toBe("body of docs/notes.md"); });
+    expect(read).toHaveBeenCalledWith(project.id, workspace.id, "docs/notes.md", machine.id);
+    const pane = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+    if (pane === undefined || pane === null) throw new Error("Files pane was not mounted");
+    const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
+    click(anchors[1]);
+    await vi.waitFor(() => { expect(canClose).toHaveBeenCalled(); });
+    expect(read).toHaveBeenCalledTimes(1);
+    canClose.mockReturnValue(true);
+    click(anchors[1]);
+    await vi.waitFor(() => { expect(pane.shadowRoot?.querySelector("textarea")?.value).toBe("body of .scratch/LEDGER.md"); });
+    expect(click(anchors[2]).defaultPrevented).toBe(false);
+    expect(read).toHaveBeenCalledTimes(2);
   });
 
   it("opens workspace file search with Cmd+P or the button without remounting Chat", async () => {
@@ -1102,6 +1134,15 @@ async function mountChooser(sessions: SessionInfo[]): Promise<WorkbenchApp> {
   });
   await app.updateComplete;
   return app;
+}
+
+async function chatAnchors(app: WorkbenchApp): Promise<HTMLAnchorElement[]> {
+  const chat = app.shadowRoot?.querySelector<ChatView>("chat-view");
+  if (chat === null || chat === undefined) throw new Error("Chat was not rendered");
+  await chat.updateComplete;
+  const texts = [...chat.renderRoot.querySelectorAll<FormattedText>("formatted-text")];
+  await Promise.all(texts.map((text) => text.updateComplete));
+  return texts.flatMap((text) => [...text.renderRoot.querySelectorAll("a")]);
 }
 
 function setState(app: WorkbenchApp, state: AppState): void {
