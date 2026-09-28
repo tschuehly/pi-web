@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PiWebConfigValues, TerminalCommandRun, Workspace } from "../../../shared/apiTypes";
 import { configApi, filesApi, machinesApi, noticesApi, piPackagesApi, piWebApi, pluginsApi, SessionTreeForkUnavailableError, sessionsApi, workspacesApi } from "./clients";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { searchWorkspaceFiles } from "../../../server/workspaces/fileTreeService";
 
 const workspace: Workspace = {
   id: "w/1",
@@ -552,9 +556,37 @@ describe("machine-scoped workspace removal API", () => {
 
 describe("workspace file read API", () => {
   it("queries scoped paginated file search on the selected machine", async () => {
-    const fetchMock = stubJsonFetch({ paths: ["untracked a.txt"], cursor: "101" });
-    expect(await workspacesApi.searchWorkspaceFiles("p 1", "w/1", "a b", "100", "remote a")).toEqual({ paths: ["untracked a.txt"], cursor: "101" });
-    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/projects/p%201/workspaces/w%2F1/search?q=a+b&cursor=100");
+    const fetchMock = stubJsonFetch({ paths: ["untracked a.txt"], cursor: "g519" });
+    expect(await workspacesApi.searchWorkspaceFiles("p 1", "w/1", "a b", "n100", "remote a")).toEqual({ paths: ["untracked a.txt"], cursor: "g519" });
+    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/projects/p%201/workspaces/w%2F1/search?q=a+b&cursor=n100");
+  });
+
+  it("rejects search cursors the server would not accept back", async () => {
+    for (const cursor of ["101", "x1", "g01", "g", 5]) {
+      stubJsonFetch({ paths: [], cursor });
+      await expect(workspacesApi.searchWorkspaceFiles("p", "w", "q")).rejects.toThrow("Invalid workspace search response");
+    }
+  });
+
+  it("accepts every page the real server search produces and round-trips its cursor", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-web-search-contract-"));
+    try {
+      for (let i = 0; i < 150; i += 1) await writeFile(join(root, `match-${String(i).padStart(3, "0")}.txt`), "");
+      const pages: string[][] = [];
+      let cursor = "";
+      do {
+        const served = await searchWorkspaceFiles(root, "match", cursor);
+        stubJsonFetch(served);
+        const parsed = await workspacesApi.searchWorkspaceFiles("p", "w", "match", cursor);
+        expect(parsed).toEqual(served);
+        pages.push(parsed.paths);
+        cursor = parsed.cursor ?? "";
+      } while (cursor !== "");
+      expect(pages.length).toBeGreaterThan(1);
+      expect(new Set(pages.flat()).size).toBe(150);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("forwards caller cancellation through selected-machine tree and file requests", async () => {

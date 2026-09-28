@@ -54,3 +54,6 @@ export function workspaceFileName(path: string): string {
   const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return path.slice(separatorIndex + 1);
 }
+
+/** Workspace search paging cursor: ignore-rule mode (`g` git, `n` none) plus the visited-entry offset. */
+export const WORKSPACE_SEARCH_CURSOR = /^[gn](?:0|[1-9]\d{0,8})$/;
