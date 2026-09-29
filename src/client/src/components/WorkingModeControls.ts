@@ -1,4 +1,4 @@
-import { LitElement, css, html, svg, type TemplateResult } from "lit";
+import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { SessionStatus } from "../api";
 import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_AXIS_NAMES, WORKING_MODE_STATUS_KEY, type WorkingModeAxis } from "../extensionStatusSnapshots";
@@ -82,7 +82,9 @@ export class WorkingModeControls extends LitElement {
             <div class=${`values ${axis}`} role="radiogroup" aria-labelledby=${`axis-${axis}`}>
               ${WORKING_MODE_AXES[axis].map((value: string) => {
                 const checked = value === selected[axis];
-                return html`<button type="button" role="radio" aria-checked=${checked ? "true" : "false"} tabindex=${checked ? "0" : "-1"} data-value=${value} @click=${() => { this.choose(axis, value); }} @keydown=${(event: KeyboardEvent) => { this.handleRadioKey(event, axis); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>${value}</button>`;
+                // The axis default (Default, or Main) is icon-only; its name stays in the accessible label and tooltip.
+                const iconOnly = value === WORKING_MODE_AXES[axis][0];
+                return html`<button class=${iconOnly ? "icon-only" : ""} type="button" role="radio" aria-checked=${checked ? "true" : "false"} tabindex=${checked ? "0" : "-1"} data-value=${value} aria-label=${iconOnly ? value : nothing} title=${iconOnly ? value : nothing} @click=${() => { this.choose(axis, value); }} @keydown=${(event: KeyboardEvent) => { this.handleRadioKey(event, axis); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>${iconOnly ? null : value}</button>`;
               })}
             </div>
           `)}
@@ -156,7 +158,10 @@ export class WorkingModeControls extends LitElement {
     .pane { position: absolute; z-index: 20; right: 10px; bottom: calc(100% + 4px); display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 12px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
     .axis-name { color: var(--pi-muted); }
     .values { display: flex; flex-wrap: wrap; gap: 2px; }
-    .values > button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--pi-text); white-space: nowrap; }
+    /* Every row's values fill the shared value column, so all rows span the widest row's width. */
+    .values > button { flex: 1 1 auto; justify-content: center; display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--pi-text); white-space: nowrap; }
+    /* The icon-only default keeps its natural width; the named values share the slack. */
+    .values > button.icon-only { flex: 0 0 auto; }
     .values > button svg { color: var(--axis-color); }
     .values > button:hover { background: var(--pi-surface-hover); }
     .values > button[aria-checked="true"] { border-color: var(--axis-color); background: color-mix(in srgb, var(--axis-color) 14%, transparent); font-weight: 600; }
