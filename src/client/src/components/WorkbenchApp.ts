@@ -74,7 +74,6 @@ export class WorkbenchApp extends LitElement {
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
   private loadSequence = 0;
-  private modelDialogInstanceId = 0;
   private workstreamLoadSequence = 0;
   private workstreamWatchSequence: number | undefined;
   private workstreamWatchDelay = 2_000;
@@ -723,43 +722,9 @@ export class WorkbenchApp extends LitElement {
     return this.sessions.send(text, streamingBehavior, attachments, delivery, folder);
   };
 
-  private async openModelDialog(): Promise<void> {
-    const session = this.app.selectedSession;
-    if (session === undefined) return;
-    const [models, catalog] = await Promise.all([this.sessions.listModels(), this.sessions.listModelCatalog()]);
-    const current = this.app.status?.model;
-    this.setApp({
-      modelDialog: {
-        instanceId: ++this.modelDialogInstanceId,
-        origin: { machineId: selectedMachineId(this.app), sessionId: session.id, cwd: session.cwd },
-        title: "Select Model",
-        ...(current?.provider !== undefined && current.id !== undefined ? { selectedValue: `${current.provider}/${current.id}` } : {}),
-        options: models.map((model) => ({
-          value: `${model.provider ?? ""}/${model.id ?? ""}`,
-          label: `${model.id ?? ""}${model.provider === current?.provider && model.id === current?.id ? " ✓ current" : ""}`,
-          description: model.provider ?? "",
-        })),
-        catalog,
-      },
-    });
-  }
-
-  private async pickModel(value: string): Promise<void> {
-    this.setApp({ modelDialog: undefined });
-    const slash = value.indexOf("/");
-    if (slash > 0) await this.sessions.setModel(value.slice(0, slash), value.slice(slash + 1));
-  }
-
-  private async openThinkingDialog(): Promise<void> {
-    const levels = await this.sessions.listThinkingLevels();
-    const current = this.app.status?.thinkingLevel ?? "off";
-    this.setApp({ thinkingDialog: { title: "Select Thinking Level", selectedValue: current, options: levels.map((level) => ({ value: level, label: `${level}${level === current ? " ✓ current" : ""}` })) } });
-  }
-
-  private async pickThinking(value: string): Promise<void> {
-    this.setApp({ thinkingDialog: undefined });
-    if (value !== "") await this.sessions.setThinkingLevel(value);
-  }
+  private readonly loadModels = () => this.sessions.listModels();
+  private readonly setModel = (provider: string, modelId: string) => this.sessions.setModel(provider, modelId);
+  private readonly setThinkingLevel = (level: string) => this.sessions.setThinkingLevel(level);
 
   private async focusChatComposer(): Promise<void> {
     await this.updateComplete;
@@ -1080,8 +1045,10 @@ export class WorkbenchApp extends LitElement {
           .sending=${state.sendingPrompts[session.id] === true}
           .onSend=${this.handleSend}
           .onStop=${() => { void this.sessions.stopActiveWork(); }}
-          .onSelectModel=${() => { void this.openModelDialog(); }}
-          .onSelectThinking=${() => { void this.openThinkingDialog(); }}
+          .thinkingLevels=${state.availableThinkingLevels}
+          .loadModels=${this.loadModels}
+          .onSetModel=${this.setModel}
+          .onSetThinkingLevel=${this.setThinkingLevel}
           .onRunCommand=${(command: string) => this.sessions.runCommand(command)}
         ></prompt-editor>
           </div>
@@ -1091,8 +1058,6 @@ export class WorkbenchApp extends LitElement {
             <workbench-files-pane id="workbench-files" .workspace=${this.filesWorkspace()} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
         </div>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
-        ${state.modelDialog === undefined ? null : html`<command-picker .title=${state.modelDialog.title} .searchable=${true} .options=${state.modelDialog.options} .selectedValue=${state.modelDialog.selectedValue} .onPick=${(value: string) => { void this.pickModel(value); }} .onCancel=${() => { this.setApp({ modelDialog: undefined }); }}></command-picker>`}
-        ${state.thinkingDialog === undefined ? null : html`<command-picker .title=${state.thinkingDialog.title} .options=${state.thinkingDialog.options} .selectedValue=${state.thinkingDialog.selectedValue} .onPick=${(value: string) => { void this.pickThinking(value); }} .onCancel=${() => { this.setApp({ thinkingDialog: undefined }); }}></command-picker>`}
         ${this.renderSessionTreeNavigator(state)}
         ${state.authDialog === undefined ? null : html`
           <auth-dialog

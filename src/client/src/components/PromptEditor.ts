@@ -23,7 +23,7 @@ import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { renderAttachIcon, renderContextRing, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
 import "./WorkingModeControls";
-import { thinkingLevelLabel } from "../../../shared/thinkingLevels";
+import "./ModelEffortPicker";
 import { formatCost, formatTokenCount } from "../utils/format";
 import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import "./AutocompleteMenu";
@@ -67,8 +67,11 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean }) sending = false;
   @property({ attribute: false }) onSend?: (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string) => unknown;
   @property({ attribute: false }) onStop?: () => void;
-  @property({ attribute: false }) onSelectModel?: () => void;
-  @property({ attribute: false }) onSelectThinking?: () => void;
+  /** Thinking levels the current model supports, for the model and effort popover. */
+  @property({ attribute: false }) thinkingLevels: readonly string[] = [];
+  @property({ attribute: false }) loadModels?: () => Promise<readonly SessionModel[]>;
+  @property({ attribute: false }) onSetModel?: (provider: string, modelId: string) => unknown;
+  @property({ attribute: false }) onSetThinkingLevel?: (level: string) => unknown;
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
   @query("footer") private footer?: HTMLElement;
   @query(".editor-resize-handle") private editorResizeHandle?: HTMLElement;
@@ -264,17 +267,8 @@ export class PromptEditor extends LitElement {
   }
 
   private renderCompactStatus() {
-    const status = this.status;
-    if (status === undefined) return null;
-    const model = status.model?.id ?? "no model";
-    const provider = status.model?.provider !== undefined && status.model.provider !== "" ? `${status.model.provider}/` : "";
-    const thinking = thinkingLevelLabel(status.thinkingLevel);
-    return html`
-      <div class="compact-status" aria-label="Session status">
-        <button class="select-model" title=${`Select model (${provider}${model})`} aria-label=${`Model: ${provider}${model}. Select model`} @click=${() => this.onSelectModel?.()}><span class="model-provider">${provider}</span>${model}</button>
-        <button class="select-thinking" title=${`Thinking level: ${thinking}. Select thinking level`} aria-label=${`Thinking level: ${thinking}`} @click=${() => this.onSelectThinking?.()}>${thinking}</button>
-      </div>
-    `;
+    if (this.status === undefined) return null;
+    return html`<model-effort-picker .status=${this.status} .thinkingLevels=${this.thinkingLevels} .loadModels=${this.loadModels} .onSetModel=${this.onSetModel} .onSetThinkingLevel=${this.onSetThinkingLevel}></model-effort-picker>`;
   }
 
   private renderUsage() {

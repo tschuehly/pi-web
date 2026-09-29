@@ -555,14 +555,8 @@ export const promptEditorStyles = css`
   .editor-wrap { position: relative; min-width: 0; }
   /* Negative inline margin puts ghost-control text on the editor's text edge. */
   .actions { display: flex; gap: 2px 12px; align-items: center; justify-content: flex-start; flex-wrap: wrap; margin-inline: -4px; white-space: nowrap; color: var(--pi-muted); font-size: 12px; }
-  .compact-status { display: flex; min-width: 0; align-items: center; gap: 0; flex: 0 1 auto; }
-  .compact-status > button, .composer-actions > button { border-color: transparent; background: transparent; }
-  .compact-status > button { flex: 0 1 auto; min-width: 0; min-height: var(--composer-control-size); padding: 0 4px; overflow: hidden; color: var(--pi-text-secondary, var(--pi-text)); font: inherit; text-overflow: ellipsis; }
-  .compact-status > button:hover, .composer-actions > button:hover:not(:disabled) { background: var(--pi-surface-hover); color: var(--pi-text); }
-  .select-model { max-width: min(42vw, 320px); }
-  .model-provider { color: var(--pi-muted); }
-  .select-thinking { flex: 0 0 auto; }
-  .select-thinking::before { content: "·"; margin-right: 6px; color: var(--pi-dim); }
+  .composer-actions > button { border-color: transparent; background: transparent; }
+  .composer-actions > button:hover:not(:disabled) { background: var(--pi-surface-hover); color: var(--pi-text); }
   .usage { display: flex; flex: 0 1 auto; min-width: 0; align-items: center; gap: 10px; margin: 0; padding: 0 4px; list-style: none; font-variant-numeric: tabular-nums; }
   .usage > li { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .context-meter { display: inline-flex; align-items: center; gap: 5px; }
@@ -616,10 +610,6 @@ export const promptEditorStyles = css`
   button { min-height: 28px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); padding: 3px 6px; cursor: pointer; }
   button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
   button:disabled, textarea:disabled, .markdown-editor-disabled .cm-editor { opacity: .5; cursor: not-allowed; }
-  @container composer (max-width: 560px) {
-    .model-provider { display: none; }
-    .select-model { max-width: 40cqi; }
-  }
   @media (pointer: coarse) {
     footer { --composer-control-size: 34px; }
     .editor-resize-handle { top: -8px; height: 16px; }
