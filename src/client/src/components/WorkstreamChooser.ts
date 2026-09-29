@@ -17,7 +17,8 @@ export interface WorkstreamCheckpoint {
   /** Who the Workstream waits on after this checkpoint; the newest checkpoint's value is current. */
   waitingOn?: WorkstreamWaitingOn | null;
   /** Legacy continuation prompt; new checkpoints project null and PI WEB never preloads it. */
-  nextSessionPrompt?: string | null;
+  nextSessionPrompt?: string | null;  /** Title (≤ 80 chars) for the checkpointing Chat; PI WEB applies it unless the owner named that Chat. */
+  sessionTitle?: string | null;
 }
 export interface WorkstreamSession { id: string; status: string; machineId?: string; projectId?: string; workspaceId?: string; latestCheckpoint: WorkstreamCheckpoint | null }
 export interface WorkstreamOverview { goal: string; doneWhen: string; description: string; history: string[]; recordedAt: string }
@@ -26,7 +27,7 @@ type HumanTaskAnswer = { kind: "yes-no" | "choice"; optionId: string } | { kind:
 export type WorkstreamSessionAnchor = { machineId: string; projectId: string; workspaceId: string } | { machineId?: never; projectId?: never; workspaceId?: never };
 export type WorkstreamAppendRecord =
   | { type: "title.set"; producer: "owner"; sourceSessionId?: string; payload: { title: string } }
-  | { type: "checkpoint.replaced"; producer: "owner"; sourceSessionId: string; payload: { sessionId: string; checkpoint: { id: string; whatChanged: string; remains: string; next: string; waitingOn?: WorkstreamWaitingOn; references?: string[] } } }
+  | { type: "checkpoint.replaced"; producer: "owner"; sourceSessionId: string; payload: { sessionId: string; checkpoint: { id: string; whatChanged: string; remains: string; next: string; waitingOn?: WorkstreamWaitingOn; references?: string[]; sessionTitle?: string } } }
   | { type: "human-task.answered"; producer: "owner"; sourceSessionId?: string; payload: { taskId: string; answerId: string; answer: HumanTaskAnswer } }
   | { type: "session.pending"; producer: "pi-web"; sourceSessionId?: string; payload: { associationKey: string; derivationKind?: "checkpoint" } & WorkstreamSessionAnchor }
   | { type: "session.confirmed"; producer: "pi-web"; sourceSessionId: string; payload: { sessionId: string; associationKey: string } & WorkstreamSessionAnchor };

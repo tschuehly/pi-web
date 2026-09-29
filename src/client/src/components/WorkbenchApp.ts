@@ -16,6 +16,7 @@ import { nativeDirectoryPicker } from "../nativeHost";
 import { PluginRegistry } from "../plugins/registry";
 import { themePackPlugin } from "../plugins/themes";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile } from "../presentationProfiles";
+import { applyCheckpointSessionTitle } from "../workstreamCheckpointTitle";
 import { workstreamOrientationDepth } from "../workstreamOrientation";
 import { hasRenderedModal } from "./modalLayerRegistry";
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
@@ -75,6 +76,7 @@ export class WorkbenchApp extends LitElement {
   private workstreamWatchSequence: number | undefined;
   private workstreamWatchDelay = 2_000;
   private readonly workstreamContexts = new Map<string, WorkstreamServiceContext | undefined>();
+  private readonly attemptedCheckpointTitles = new Set<string>();
   private readonly pendingWorkstreamContexts = new Map<string, Promise<WorkstreamServiceContext | undefined>>();
   private orientationPendingSessionId: string | undefined;
   private workstreamWatchTimer: number | undefined;
@@ -616,6 +618,8 @@ export class WorkbenchApp extends LitElement {
       if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) {
         this.currentWorkstream = snapshot;
         this.currentWorkstreamError = "";
+        // ponytail: only the selected Chat takes its checkpoint title, when a client loads its Workstream; server-side watching would cover unopened Chats.
+        if (snapshot !== null) void applyCheckpointSessionTitle(snapshot, this.app.selectedSession, selectedMachineId(this.app), this.attemptedCheckpointTitles).catch(() => undefined);
       }
     } catch (error) {
       if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) {
