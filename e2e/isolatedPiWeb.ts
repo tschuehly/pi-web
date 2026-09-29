@@ -19,6 +19,8 @@ export const E2E_PROJECT_ID = "e2e-project";
 export const E2E_SESSION_ID = "019ef4c0-0000-7000-8000-00000000e2e1";
 export const E2E_SEARCH_MATCHES = 150;
 export const E2E_NOTES_BODY = "Seeded notes body for the file-link check.";
+export const E2E_ADHOC_SESSION_ID = "019ef4c0-0000-7000-8000-00000000e2e2";
+export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const root = await realpath(await mkdtemp(join(tmpdir(), "pi-web-e2e-")));
@@ -31,15 +33,20 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const dataDir = join(root, "data");
     const sessionDir = join(root, "agent", "sessions");
     const project = join(root, "project");
+    // An unregistered Chat folder shaped like the live failure: a long path through a dot directory.
+    const adHocFolder = join(root, "embabel", "me-openapi-human-acceptance", ".scratch", "openapi-pr-delivery");
+    if (encodeURIComponent(`folder:${adHocFolder}`).length <= 100) throw new Error("Ad-hoc fixture folder id must exceed 100 characters");
     const clientDist = join(root, "client");
     const socket = join(dataDir, "sessiond.sock");
     const port = await freePort();
     if (port === LIVE_PORT) throw new Error("Refusing to use the live PI WEB port");
-    await Promise.all([mkdir(sessionDir, { recursive: true }), mkdir(join(project, "docs"), { recursive: true }), mkdir(join(project, "entries"), { recursive: true })]);
+    await Promise.all([mkdir(sessionDir, { recursive: true }), mkdir(join(project, "docs"), { recursive: true }), mkdir(join(project, "entries"), { recursive: true }), mkdir(adHocFolder, { recursive: true })]);
     await seedProject(project);
     await writeJson(join(dataDir, "projects.json"), { projects: [{ id: E2E_PROJECT_ID, name: "e2e", path: project, createdAt: new Date().toISOString() }] });
     await writeJson(join(root, "config.json"), { host: "127.0.0.1", allowedHosts: true });
-    await seedChat(sessionDir, project);
+    await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md).");
+    await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
+    await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_") && !key.startsWith("GIT_")));
     Object.assign(env, {
@@ -69,6 +76,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const listing: unknown = await (await fetch(`${baseUrl}api/projects/${E2E_PROJECT_ID}/workspaces`)).json();
     const workspaceId = mainWorkspaceId(listing);
     process.env["PI_WEB_E2E_CHAT_URL"] = `${baseUrl}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId, session: E2E_SESSION_ID, view: "chat" }).toString()}`;
+    process.env["PI_WEB_E2E_ADHOC_CHAT_URL"] = `${baseUrl}?${new URLSearchParams({ session: E2E_ADHOC_SESSION_ID, view: "chat" }).toString()}`;
     return teardown;
   } catch (error) {
     const logs = await Promise.all(["sessiond", "web"].map(async (name) => `--- ${name} ---\n${await readFile(join(root, `${name}.log`), "utf8").catch(() => "")}`));
@@ -91,19 +99,19 @@ async function seedProject(project: string): Promise<void> {
   git("commit", "-q", "-m", "fixture");
 }
 
-async function seedChat(sessionDir: string, cwd: string): Promise<void> {
+async function seedChat(sessionDir: string, cwd: string, sessionId: string, answer: string): Promise<void> {
   const ms = Date.now();
   const at = (offset: number) => new Date(ms + offset).toISOString();
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
   const entries = [
-    { type: "session", version: 3, id: E2E_SESSION_ID, timestamp: at(0), cwd },
+    { type: "session", version: 3, id: sessionId, timestamp: at(0), cwd },
     { type: "message", id: "e2e00001", parentId: null, timestamp: at(1000), message: { role: "user", content: [{ type: "text", text: "Where are the notes?" }], timestamp: ms + 1000 } },
     {
       type: "message", id: "e2e00002", parentId: "e2e00001", timestamp: at(2000),
-      message: { role: "assistant", content: [{ type: "text", text: "They are in [the notes](docs/notes.md)." }], api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason: "stop", timestamp: ms + 2000 },
+      message: { role: "assistant", content: [{ type: "text", text: answer }], api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason: "stop", timestamp: ms + 2000 },
     },
   ];
-  await writeFile(join(sessionDir, `${at(0).replaceAll(":", "-")}_${E2E_SESSION_ID}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+  await writeFile(join(sessionDir, `${at(0).replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 }
 
 function mainWorkspaceId(listing: unknown): string {

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { E2E_NOTES_BODY, E2E_SEARCH_MATCHES } from "./isolatedPiWeb";
+import { E2E_NOTES_BODY, E2E_REPORT_BODY, E2E_SEARCH_MATCHES } from "./isolatedPiWeb";
 
 async function openChat(page: Page): Promise<void> {
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
@@ -29,4 +29,16 @@ test("a Markdown file link in Chat opens that file in the Files pane", async ({ 
   await expect(pane.getByTitle("docs/notes.md")).toBeVisible();
   await expect(pane.getByText(E2E_NOTES_BODY)).toBeVisible();
   expect(page.url()).toBe(process.env["PI_WEB_E2E_CHAT_URL"]);
+});
+
+test("a file link in a Chat outside every registered project opens in the Files pane", async ({ page }) => {
+  const url = process.env["PI_WEB_E2E_ADHOC_CHAT_URL"];
+  if (url === undefined) throw new Error("Isolated PI WEB was not started");
+  await page.goto(url);
+  await page.getByRole("link", { name: "the report" }).click();
+  const pane = page.locator("workbench-files-pane");
+  await expect(pane.getByTitle("report.md")).toBeVisible();
+  await expect(pane.getByText(E2E_REPORT_BODY)).toBeVisible();
+  await expect(pane.getByText("registered workspaces")).toHaveCount(0);
+  expect(page.url()).toBe(url);
 });
