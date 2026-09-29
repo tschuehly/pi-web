@@ -17,11 +17,6 @@ describe("Workstream identity presentation contracts", () => {
     for (const theme of themes) {
       const foreground = hexRgb(theme.tokens["--pi-text"]);
       const surfaces = [
-        ["row", "--pi-bg", WORKSTREAM_TINT_PERCENTAGES.row],
-        ["row hover", "--pi-surface-hover", WORKSTREAM_TINT_PERCENTAGES.rowHover],
-        ["selected row", "--pi-surface", WORKSTREAM_TINT_PERCENTAGES.rowSelected],
-        ["selected row hover", "--pi-surface-hover", WORKSTREAM_TINT_PERCENTAGES.rowSelectedHover],
-        ["card", "--pi-surface", WORKSTREAM_TINT_PERCENTAGES.card],
         ["drawer", "--pi-surface", WORKSTREAM_TINT_PERCENTAGES.drawer],
         ["drawer active", "--pi-surface-hover", WORKSTREAM_TINT_PERCENTAGES.drawerActive],
         ["identity mark", "--pi-surface", WORKSTREAM_TINT_PERCENTAGES.mark],
@@ -42,15 +37,15 @@ describe("Workstream identity presentation contracts", () => {
 
     // Recolored label text must declare --pi-text foreground for consistent visibility
     const labels: [string, string][] = [
-      [".row small", chooser],
-      [".goal small", chooser],
+      [".age", chooser],
       [".next", chooser],
-      [".next small", chooser],
-      [".kicker", chooser],
-      [".who", chooser],
-      [".peek", chooser],
+      ["h4", chooser],
+      [".done", chooser],
+      [".kind", chooser],
       [".session-meta", chooser],
-      [".task small", chooser],
+      ["summary", chooser],
+      [".date", chooser],
+      [".workstream .missing", chooser],
       [".about p", drawer],
     ];
 
@@ -58,16 +53,13 @@ describe("Workstream identity presentation contracts", () => {
       const ruleText = rule(source, selector);
       expect(ruleText, `${selector} must declare --pi-text foreground`).toContain("var(--pi-text)");
     }
-
-    // .task p inherits --pi-text via combined selector with .task small
-    expect(chooser).toContain(".task p, .task small { color: var(--pi-text);");
   });
 
   it("preserves selected-hover, forced-color, narrow-title, focus, zoom, and status-indicator contrast", () => {
     const chooser = styleText(WorkstreamChooser.styles);
     const drawer = styleText(WorkstreamContextDrawer.styles);
 
-    expect(rule(chooser, '.row[aria-pressed="true"]:hover')).toContain(`${String(WORKSTREAM_TINT_PERCENTAGES.rowSelectedHover)}%`);
+    expect(rule(chooser, ".workstream")).toContain("border-left: 3px solid var(--workstream-color");
     expect(chooser).toContain(".identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }");
     expect(rule(drawer, "summary")).toContain("border-left: 4px solid var(--workstream-color)");
     expect(drawer).toContain("summary { border-color: ButtonText; border-left-color: LinkText; background: Canvas; }");
