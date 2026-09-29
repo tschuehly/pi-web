@@ -20,7 +20,7 @@ function edit(pane: WorkbenchFilesPane, content: string): void {
 
 describe("Workbench workspace file search", () => {
   it("queries only the selected workspace and continues through untracked non-Markdown results", async () => {
-    const search = vi.spyOn(api, "searchWorkspaceFiles").mockResolvedValueOnce({ paths: ["docs/a.txt", "ignored.png"], cursor: "ignored.png" }).mockResolvedValueOnce({ paths: ["new.bin"], cursor: null });
+    const search = vi.spyOn(api, "searchWorkspaceFiles").mockResolvedValueOnce({ paths: ["docs/a.txt", "ignored.png"], cursor: "g519" }).mockResolvedValueOnce({ paths: ["new.bin"], cursor: null });
     const pane = await mount();
     expect(search).not.toHaveBeenCalled();
     await pane.searchFiles(); await pane.updateComplete;
@@ -30,14 +30,14 @@ describe("Workbench workspace file search", () => {
     expect(pane.shadowRoot?.textContent).toContain("ignored.png");
     const loadMore = pane.shadowRoot?.querySelector<HTMLButtonElement>(".picker-content > button");
     loadMore?.focus(); loadMore?.click();
-    await vi.waitFor(() => { expect(search.mock.calls[1]?.slice(0, 5)).toEqual(["p", "w", "", "ignored.png", "local"]); });
+    await vi.waitFor(() => { expect(search.mock.calls[1]?.slice(0, 5)).toEqual(["p", "w", "", "g519", "local"]); });
     await vi.waitFor(() => { expect(pane.shadowRoot?.textContent).toContain("new.bin"); });
     expect(pane.shadowRoot?.textContent).toContain("All matching files shown");
     await vi.waitFor(() => { expect(pane.shadowRoot?.activeElement).toBe(pane.shadowRoot?.querySelector('input[aria-label="Search files"]')); });
   });
 
   it("searches a typed query rather than filtering only the first page", async () => {
-    const search = vi.spyOn(api, "searchWorkspaceFiles").mockResolvedValueOnce({ paths: ["a.md"], cursor: "a.md" })
+    const search = vi.spyOn(api, "searchWorkspaceFiles").mockResolvedValueOnce({ paths: ["a.md"], cursor: "n1" })
       .mockResolvedValueOnce({ paths: ["nested/untracked.ts"], cursor: null });
     const pane = await mount(); await pane.searchFiles(); await pane.updateComplete;
     const input = pane.shadowRoot?.querySelector<HTMLInputElement>('input[aria-label="Search files"]');

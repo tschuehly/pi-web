@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { isAbsolute, join, relative, sep, win32 } from "node:path";
 import type { FileTreeEntry, FileTreeResponse, PiWebPathAccessConfig } from "../../shared/apiTypes.js";
+import { WORKSPACE_SEARCH_CURSOR } from "../../shared/workspaceFiles.js";
 import { sanitizedGitEnv } from "../git/gitEnv.js";
 import { resolveWorkspacePathAccessTarget } from "./pathAccessPolicy.js";
 
@@ -52,7 +53,7 @@ finally:
 // Filesystem or ignore-rule changes between pages can shift offsets.
 // ponytail: offset paging retraverses earlier entries; use a snapshot only if late pages become too slow.
 export async function searchWorkspaceFiles(rootPath: string, query: string, cursor = "", signal?: AbortSignal): Promise<{ paths: string[]; cursor: string | null }> {
-  if (typeof query !== "string" || typeof cursor !== "string" || query.length > 256 || cursor.length > 10 || cursor !== "" && !/^[gn](?:0|[1-9]\d{0,8})$/.test(cursor)) throw new Error("Invalid file search query");
+  if (typeof query !== "string" || typeof cursor !== "string" || query.length > 256 || cursor.length > 10 || cursor !== "" && !WORKSPACE_SEARCH_CURSOR.test(cursor)) throw new Error("Invalid file search query");
   const { root } = await resolveWorkspacePathAccessTarget(rootPath, "");
   if (process.platform !== "darwin" && process.platform !== "linux") throw new Error("Safe workspace search is unavailable on this platform");
   let stdout: string;

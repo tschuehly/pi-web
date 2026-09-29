@@ -1,6 +1,7 @@
 import { parseSessionDefaults } from "../../../shared/sessionDefaults";
 import type { SessionDefaultsUpdate } from "../../../shared/apiTypes";
 import type { AskUserSubmission, DeleteWorkspaceFileResponse, ExtensionDialogAnswer, FileSuggestion, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, QueuedSessionMessage, ServerNoticeDismissRequest, SessionBulkMutationRef, SessionCleanupRequest, SessionModelScopeMode, SessionNotificationDismissThrough, SessionRef, SessionTreeForkRequest, SessionTreeForkResult, SessionTreeNavigateRequest, SessionUnreadAcknowledgeRequest, WorkspaceRemovalRequest, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
+import { WORKSPACE_SEARCH_CURSOR } from "../../../shared/workspaceFiles";
 import { resolveAppUrl } from "../appUrl";
 import { request } from "./http";
 import {
@@ -195,7 +196,7 @@ export const workspacesApi = {
     (value): { paths: string[]; cursor: string | null } => {
       if (typeof value !== "object" || value === null || !("paths" in value) || !Array.isArray(value.paths)
         || !value.paths.every((path: unknown) => typeof path === "string") || !("cursor" in value)
-        || value.cursor !== null && (typeof value.cursor !== "string" || !/^(?:0|[1-9]\d{0,8})$/.test(value.cursor))) throw new Error("Invalid workspace search response");
+        || value.cursor !== null && (typeof value.cursor !== "string" || !WORKSPACE_SEARCH_CURSOR.test(value.cursor))) throw new Error("Invalid workspace search response");
       return { paths: value.paths.map((path: unknown) => {
         if (typeof path !== "string") throw new Error("Invalid workspace search path");
         return path;

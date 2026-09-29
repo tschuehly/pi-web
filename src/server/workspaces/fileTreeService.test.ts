@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sanitizedGitEnv } from "../git/gitEnv.js";
 import { listFromDescriptor, listWorkspaceTree, searchFromDescriptor, searchWorkspaceFiles } from "./fileTreeService.js";
 
 const race = vi.hoisted(() => ({ afterResolve: () => Promise.resolve() }));
@@ -94,7 +95,7 @@ describe("searchWorkspaceFiles", () => {
   it("prioritizes paths outside custom Git ignored directories without excluding them", async () => {
     const root = await tempWorkspace();
     await writeFile(join(root, ".gitignore"), "generated/\n");
-    await promisify(execFile)("git", ["init", "-q", root]);
+    await promisify(execFile)("git", ["init", "-q", root], { env: sanitizedGitEnv() });
     await mkdir(join(root, "generated"));
     await mkdir(join(root, "src"));
     await writeFile(join(root, "generated", "App.ts"), "");
@@ -107,7 +108,7 @@ describe("searchWorkspaceFiles", () => {
 
   it("rejects a later page when Git ordering becomes unavailable", async () => {
     const root = await tempWorkspace();
-    await promisify(execFile)("git", ["init", "-q", root]);
+    await promisify(execFile)("git", ["init", "-q", root], { env: sanitizedGitEnv() });
     await Promise.all(Array.from({ length: 101 }, (_, index) => writeFile(join(root, `file-${String(index).padStart(3, "0")}.txt`), "")));
     const first = await searchWorkspaceFiles(root, "txt");
     expect(first.cursor).toMatch(/^g\d+$/u);

@@ -17,3 +17,6 @@ dist/
 
 # Dev docs site staging output (scripts/build-docs-dev.mjs).
 /docs/.deploy/
+
+# Playwright end-to-end output.
+/test-results/
