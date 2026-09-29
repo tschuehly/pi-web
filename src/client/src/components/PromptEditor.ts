@@ -11,7 +11,7 @@ import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePr
 import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
-import { WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
+import { WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
@@ -62,6 +62,7 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean }) isCompacting = false;
   @property({ type: Boolean }) canStop = false;
   @property({ attribute: false }) status?: SessionStatus;
+  @property({ attribute: false }) workingModeTranscriptSelection?: WorkingModeState;
   @property({ type: Boolean, reflect: true, attribute: "show-usage" }) showUsage = false;
   @property({ type: Number }) warningCount = 0;
   @property({ type: Boolean }) sending = false;
@@ -219,7 +220,7 @@ export class PromptEditor extends LitElement {
         <div class="actions">
           ${this.renderCompactStatus()}
           ${this.showUsage ? this.renderUsage() : null}
-          <working-mode-controls .status=${this.status} .onRunCommand=${this.onRunCommand}></working-mode-controls>
+          <working-mode-controls .status=${this.status} .transcriptSelection=${this.workingModeTranscriptSelection} .onRunCommand=${this.onRunCommand}></working-mode-controls>
           <div class="composer-actions">
             <button class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
             <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>

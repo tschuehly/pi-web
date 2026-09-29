@@ -29,6 +29,7 @@ export const WORKING_MODE_AXES = {
 export type WorkingModeAxis = keyof typeof WORKING_MODE_AXES;
 export const WORKING_MODE_AXIS_NAMES: readonly WorkingModeAxis[] = ["alignment", "attention", "checking", "orchestration"];
 export type WorkingModeState = { [A in WorkingModeAxis]: typeof WORKING_MODE_AXES[A][number] };
+const WORKING_MODE_DEFAULTS: WorkingModeState = { alignment: "Default", attention: "Default", checking: "Default", orchestration: "Main" };
 export interface WorkingModeSnapshot {
   schemaVersion: 2;
   phase: "selected" | "applied";
@@ -179,7 +180,7 @@ function normalizeGoalText(value: string): string {
   return value.replace(INVISIBLE_SPOOF_GLOBAL, "").replace(CONTROL, " ").replace(/\s+/gu, " ").trim();
 }
 
-function workingModeState(value: unknown): WorkingModeState | undefined {
+export function workingModeState(value: unknown): WorkingModeState | undefined {
   if (!record(value)) return undefined;
   const alignment = WORKING_MODE_AXES.alignment.find((candidate) => candidate === value["alignment"]);
   const attention = WORKING_MODE_AXES.attention.find((candidate) => candidate === value["attention"]);
@@ -196,6 +197,16 @@ export function parseWorkingModeSnapshot(text: string | undefined): WorkingModeS
   const applied = value["applied"] === null ? null : workingModeState(value["applied"]);
   if (selected === undefined || applied === undefined) return undefined;
   return { schemaVersion: 2, phase: value["phase"], selected, applied };
+}
+
+/**
+ * A selection is pending until the model has it. `applied` is authoritative once set; it is null until the
+ * first turn (or `/mode send`) after session start, when the extension's selection began as the latest
+ * transcript block (or the defaults), so that block is the baseline then.
+ */
+export function workingModePending(snapshot: WorkingModeSnapshot, transcriptSelection: WorkingModeState | undefined): boolean {
+  const baseline = snapshot.applied ?? transcriptSelection ?? WORKING_MODE_DEFAULTS;
+  return WORKING_MODE_AXIS_NAMES.some((axis) => snapshot.selected[axis] !== baseline[axis]);
 }
 
 function optionalText(value: unknown): string | undefined {

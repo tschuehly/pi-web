@@ -27,6 +27,39 @@ function required<T>(value: T | null | undefined): T {
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
 
 describe("WorkingModeControls", () => {
+  it("marks an unsent selection and sends it from the pane with /mode send", async () => {
+    const run = vi.fn();
+    const element = new WorkingModeControls();
+    const defaults = { alignment: "Default", attention: "Default", checking: "Default", orchestration: "Main" } as const;
+    const snapshot = (applied: unknown) => status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { ...defaults, attention: "Focused" }, applied }) });
+    element.status = snapshot({ ...defaults, attention: "Focused" });
+    element.onRunCommand = run;
+    document.body.append(element);
+    await element.updateComplete;
+    const trigger = required(root(element).querySelector<HTMLButtonElement>(".trigger"));
+    expect(root(element).querySelector(".pending-dot")).toBeNull();
+    trigger.click();
+    await element.updateComplete;
+    const send = () => required(root(element).querySelector<HTMLButtonElement>(".pane .send"));
+    expect(send().disabled).toBe(true);
+    send().click();
+    expect(run).not.toHaveBeenCalled();
+
+    // Before the first turn `applied` is null: the latest transcript block is the baseline.
+    element.status = snapshot(null);
+    element.transcriptSelection = defaults;
+    await element.updateComplete;
+    expect(root(element).querySelector(".pending-dot")?.getAttribute("title")).toBe("Working Mode change not sent yet");
+    expect(trigger.getAttribute("aria-label")).toContain("Working Mode change not sent yet");
+    expect(send().disabled).toBe(false);
+    expect(send().textContent.trim()).toBe("Send");
+    send().click();
+    await element.updateComplete;
+    expect(run).toHaveBeenCalledExactlyOnceWith("/mode send");
+    expect(root(element).querySelector(".pane")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("lists every axis value in the pane and waits for status before changing state", async () => {
     const run = vi.fn();
     const element = new WorkingModeControls();

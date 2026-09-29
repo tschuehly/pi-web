@@ -17,7 +17,7 @@ function status(): SessionStatus {
     sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false,
     pendingMessageCount: 0, queuedMessages: [],
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
-    extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" }, applied: null }) },
+    extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" }, applied: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" } }) },
   };
 }
 
