@@ -145,6 +145,14 @@ export function latestCheckpoints(snapshot: WorkstreamSnapshot): (WorkstreamSess
     .filter((session): session is WorkstreamSession & { latestCheckpoint: WorkstreamCheckpoint } => session.latestCheckpoint !== null)
     .sort((a, b) => b.latestCheckpoint.recordedAt.localeCompare(a.latestCheckpoint.recordedAt));
 }
+/** Latest known activity: the newer of the checkpoint time and the session's UUIDv7 creation time. */
+export function sessionActivityTime(session: WorkstreamSession): number {
+  const hex = session.id.replace(/-/g, "");
+  const created = /^[0-9a-f]{12}7/i.test(hex) ? parseInt(hex.slice(0, 12), 16) : 0;
+  const checkpoint = session.latestCheckpoint === null ? 0 : new Date(session.latestCheckpoint.recordedAt).getTime();
+  return Math.max(created, Number.isNaN(checkpoint) ? 0 : checkpoint);
+}
+export const sessionsByActivity = (sessions: WorkstreamSession[]): WorkstreamSession[] => [...sessions].sort((a, b) => sessionActivityTime(b) - sessionActivityTime(a));
 export const conflicting = (a: WorkstreamCheckpoint, b: WorkstreamCheckpoint): boolean => Math.abs(new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()) < 36 * 36e5;
 
 const abbreviation = /(?:\b(?:e\.g|i\.e|mr|mrs|ms|dr|prof|vs|etc)|\b[A-Z])\.$/i;
@@ -360,7 +368,7 @@ export class WorkstreamChooser extends LitElement {
       <button class="session-row ${live ? "live" : ""}" data-session-id=${session.id} @click=${() => { this.open(snapshot, session); }}>
         <span class="session-meta">
           ${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}
-          <span>${session.latestCheckpoint === null ? "no checkpoint" : ago(session.latestCheckpoint.recordedAt)}</span>
+          <span>${session.latestCheckpoint === null ? `started ${ago(new Date(sessionActivityTime(session)).toISOString())}, no checkpoint` : ago(session.latestCheckpoint.recordedAt)}</span>
           ${session.status === "active" ? nothing : html`<span class="status">${session.status}</span>`}
         </span>
         <span class="session-summary">${doing ?? (session.latestCheckpoint === null ? session.id.slice(-8) : firstClause(session.latestCheckpoint.whatChanged, 90))}</span>
@@ -437,7 +445,7 @@ export class WorkstreamChooser extends LitElement {
     const bulletList = (text: string) => html`<ul>${sentences(text).map((sentence) => html`<li>${withAnchors(sentence)}</li>`)}</ul>`;
     const cp = latest?.latestCheckpoint;
     const directories = directoriesOf(cp);
-    const sessions = [...latestCheckpoints(snapshot), ...snapshot.sessions.filter((session) => session.latestCheckpoint === null)];
+    const sessions = sessionsByActivity(snapshot.sessions);
     const blocksFirstChat = snapshot.sessions.some((session) => session.status !== "failed");
     return html`
       <article class="card" tabindex="-1" style=${`--workstream-color:${workstreamAccentColor(snapshot.id)}`} aria-label=${`Re-entry card for ${snapshot.title}`}>

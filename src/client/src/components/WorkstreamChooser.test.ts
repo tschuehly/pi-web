@@ -2,7 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkstreamChooser, WorkstreamServiceError, actor, ago, nextActor, appendWorkstream, conflicting, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, sentences, watchWorkstreams, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { WorkstreamChooser, WorkstreamServiceError, actor, ago, nextActor, appendWorkstream, conflicting, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, sentences, sessionsByActivity, watchWorkstreams, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { workstreamAccentColor } from "../workstreamColor";
 import { pluginsApi } from "../api/clients";
 
@@ -543,5 +543,18 @@ describe("re-entry helpers", () => {
     expect(actor("Run the tests")).toBe("Pia");
     expect(firstClause("First sentence. Second sentence.")).toBe("First sentence.…");
     expect(firstClause("short")).toBe("short");
+  });
+});
+
+describe("sessionsByActivity (ISSUE-054)", () => {
+  it("puts a new checkpoint-less Chat above older checkpointed ones", () => {
+    const cp = (recordedAt: string) => ({ id: "c", whatChanged: "x", remains: "y", next: "z", nextSessionPrompt: null, recordedAt });
+    const sessions = [
+      { id: "01a0eae1-b651-73f2-bee6-8d5d0b9078eb", status: "active", latestCheckpoint: cp("2026-09-29T02:25:28.538Z") },
+      { id: "01a0ebf7-5621-772a-ad93-76f3bcc1e384", status: "active", latestCheckpoint: null },
+      { id: "legacy-id", status: "active", latestCheckpoint: null },
+      { id: "01a0e8ee-f5ca-73f2-bee6-8d3752cb1a96", status: "active", latestCheckpoint: cp("2026-09-29T05:00:00.000Z") },
+    ];
+    expect(sessionsByActivity(sessions).map((session) => session.id.slice(0, 8))).toEqual(["01a0ebf7", "01a0e8ee", "01a0eae1", "legacy-i"]);
   });
 });
