@@ -35,6 +35,7 @@ const ICONS: { [A in WorkingModeAxis]: Record<typeof WORKING_MODE_AXES[A][number
 
 const PENDING_LABEL = "Working Mode change not sent yet";
 const ALIGNED_LABEL = "Aligned: Thomas confirmed the agreement";
+const NOT_ALIGNED_LABEL = "Not aligned: AFK waits until Thomas confirms the agreement";
 
 function icon(axis: WorkingModeAxis, value: string | undefined): TemplateResult {
   const icons: Record<string, TemplateResult> = ICONS[axis];
@@ -48,7 +49,8 @@ function icon(axis: WorkingModeAxis, value: string | undefined): TemplateResult 
  * The icon row is one trigger for a pane with every axis, so several modes can change in one visit:
  * each value applies immediately and the pane stays open until Esc, an outside click, or the trigger.
  * A selection the model has not received yet marks the trigger with a dot and enables Send (`/mode send`).
- * Once the agent records alignment (`alignment_reached`) under a non-default Alignment, an "Aligned" chip follows its icon.
+ * Once the agent records alignment (`alignment_reached`) under a non-default Alignment, an "Aligned" chip follows its icon;
+ * while AFK waits for that confirmation, a muted "Not aligned" chip does.
  */
 @customElement("working-mode-controls")
 export class WorkingModeControls extends LitElement {
@@ -75,8 +77,11 @@ export class WorkingModeControls extends LitElement {
     const snapshot = this.snapshot;
     const selected = snapshot?.selected;
     const pending = snapshot !== undefined && workingModePending(snapshot, this.transcriptSelection);
-    const aligned = snapshot?.aligned === true && selected?.alignment !== WORKING_MODE_AXES.alignment[0];
-    const summary = WORKING_MODE_AXIS_NAMES.map((axis) => `${LABELS[axis]}: ${selected?.[axis] ?? "unavailable"}${axis === "alignment" && aligned ? " (aligned)" : ""}`).join(", ") + (pending ? `. ${PENDING_LABEL}` : "");
+    const gated = selected !== undefined && selected.alignment !== WORKING_MODE_AXES.alignment[0];
+    const aligned = gated && snapshot?.aligned === true;
+    const waiting = gated && !aligned && selected.attention === "AFK";
+    const alignmentNote = aligned ? " (aligned)" : waiting ? " (not aligned)" : "";
+    const summary = WORKING_MODE_AXIS_NAMES.map((axis) => `${LABELS[axis]}: ${selected?.[axis] ?? "unavailable"}${axis === "alignment" ? alignmentNote : ""}`).join(", ") + (pending ? `. ${PENDING_LABEL}` : "");
     return html`
       <button class="trigger" type="button" title=${summary} aria-label=${`Working Mode — ${summary}`} aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"} ?disabled=${selected === undefined} @click=${() => { this.setOpen(!this.open); }}>
         ${WORKING_MODE_AXIS_NAMES.map((axis) => {
@@ -85,7 +90,10 @@ export class WorkingModeControls extends LitElement {
           return html`<span class=${`axis ${axis}${changed ? " changed" : ""}`} data-axis=${axis}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>${changed ? html`<span class="value">${value}</span>` : null}</span>${axis === "alignment" && aligned
             // Lucide circle-check
             ? html`<span class="aligned-chip alignment" title=${ALIGNED_LABEL}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><path d="m9 12 2 2 4-4"></path></svg><span class="value">Aligned</span></span>`
-            : null}`;
+            : axis === "alignment" && waiting
+              // Lucide circle-dashed
+              ? html`<span class="aligned-chip waiting" title=${NOT_ALIGNED_LABEL}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.1 2.182a10 10 0 0 1 3.8 0"></path><path d="M13.9 21.818a10 10 0 0 1-3.8 0"></path><path d="M17.609 3.721a10 10 0 0 1 2.69 2.7"></path><path d="M2.182 13.9a10 10 0 0 1 0-3.8"></path><path d="M20.279 17.609a10 10 0 0 1-2.7 2.69"></path><path d="M21.818 10.1a10 10 0 0 1 0 3.8"></path><path d="M3.721 6.391a10 10 0 0 1 2.7-2.69"></path><path d="M6.391 20.279a10 10 0 0 1-2.69-2.7"></path></svg><span class="value">Not aligned</span></span>`
+              : null}`;
         })}
         ${pending ? html`<span class="pending-dot" title=${PENDING_LABEL}></span>` : null}
       </button>
@@ -181,6 +189,7 @@ export class WorkingModeControls extends LitElement {
     .axis.changed, .trigger:hover:not(:disabled) .axis.changed { color: var(--axis-color); }
     .aligned-chip { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 6px 0 4px; border: 1px solid var(--axis-color); border-radius: 9px; color: var(--axis-color); font-size: 11px; font-weight: 600; white-space: nowrap; }
     .aligned-chip svg { width: 12px; height: 12px; }
+    .aligned-chip.waiting { border-style: dashed; border-color: var(--pi-muted); color: var(--pi-muted); font-weight: 400; }
     /* Anchored to the composer footer (the nearest positioned ancestor), right-aligned above it. */
     .pane { position: absolute; z-index: 20; right: 10px; bottom: calc(100% + 4px); display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 12px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
     .axis-name { color: var(--pi-muted); }

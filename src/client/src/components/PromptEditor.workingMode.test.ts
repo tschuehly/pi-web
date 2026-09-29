@@ -141,6 +141,18 @@ describe("PromptEditor Working Mode controls", () => {
     expect(chip.previousElementSibling).toBe(axisIcon(controls, "alignment"));
     expect(trigger(controls).title).toContain("Alignment: Align (aligned)");
 
+    // Before confirmation, AFK waits and a muted chip says so; without AFK there is nothing to wait for.
+    editor.status = withModes({ alignment: "Align", attention: "AFK", checking: "Default", orchestration: "Main" });
+    await editor.updateComplete;
+    await controls.updateComplete;
+    const waiting = required(controls.shadowRoot?.querySelector<HTMLElement>(".aligned-chip.waiting"));
+    expect(waiting.textContent).toBe("Not aligned");
+    expect(trigger(controls).title).toContain("Alignment: Align (not aligned)");
+    editor.status = withModes({ alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" });
+    await editor.updateComplete;
+    await controls.updateComplete;
+    expect(controls.shadowRoot?.querySelector(".aligned-chip")).toBeNull();
+
     // Default Alignment needs no agreement, so a stale aligned flag shows nothing.
     editor.status = withModes({ alignment: "Default", attention: "AFK", checking: "Default", orchestration: "Main" }, true);
     await editor.updateComplete;
