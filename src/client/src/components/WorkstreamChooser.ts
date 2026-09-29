@@ -1,9 +1,9 @@
-import { LitElement, css, html, nothing, type TemplateResult } from "lit";
+import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { pluginsApi } from "../api/clients";
+import { pluginsApi, sessionsApi } from "../api/clients";
 import { requestPairedPluginBackend } from "../api/pluginBackends";
 import { parseBoundedPluginBackendJson } from "../../../shared/pluginBackendProtocol";
-import type { SessionActivity, SessionStatus } from "../api";
+import type { SessionActivity, SessionInfo, SessionStatus } from "../api";
 import { isSessionActive, sessionActivityText } from "../../../shared/activity";
 import { renderActivityIndicator } from "./activityBadge";
 import { listStyles } from "./shared";
@@ -45,7 +45,11 @@ export interface WorkstreamSnapshot {
   links: { id: string; kind: string; reference: string; label?: string }[];
   overview: WorkstreamOverview | null;
 }
-export interface WorkstreamSummary { id: string; title: string; group: string | null; createdAt: string; updatedAt: string; lastCheckpointAt: string | null; unresolvedHumanTaskCount: number }
+export interface WorkstreamSummary {
+  id: string; title: string; group: string | null; createdAt: string; updatedAt: string; lastCheckpointAt: string | null; unresolvedHumanTaskCount: number;
+  /** Newest checkpoint's next move and waiting actor; absent from older Workbench services. */
+  next?: string | null; waitingOn?: WorkstreamWaitingOn | null;
+}
 export interface WorkstreamListQuery { includeClosed?: boolean; sessionId?: string }
 
 export interface OpenWorkstreamSessionDetail {
@@ -115,13 +119,6 @@ export async function workstreamForSession(context: WorkstreamServiceContext, se
   const match = matches[0];
   return match === undefined ? null : inspectWorkstream(context, match.id);
 }
-const newId = (prefix: string): string => {
-  const crypto: unknown = Reflect.get(globalThis, "crypto");
-  const randomUUID: unknown = isRecord(crypto) ? Reflect.get(crypto, "randomUUID") : undefined;
-  const value = typeof randomUUID === "function" ? String(Reflect.apply(randomUUID, crypto, [])) : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  return `${prefix}-${value}`;
-};
-
 const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 export const groupMatchesProject = (group: string, project: string | undefined): boolean => project === undefined || normalize(group) === normalize(project);
 export const ago = (value: string, now = Date.now()): string => {
@@ -129,10 +126,17 @@ export const ago = (value: string, now = Date.now()): string => {
   return hours < 1 ? "just now" : hours < 24 ? `${String(hours)} h ago` : `${String(Math.round(hours / 24))} d ago`;
 };
 export const actor = (text: string): string => (/^\s*(Thomas|Rod|Pia)\b/.exec(text) ?? [])[1] ?? (/\bThomas\b/.test(text) ? "Thomas" : "Pia");
-const waitingLabels: Record<WorkstreamWaitingOn, string> = { owner: "Waiting on you", agent: "Agent can continue", external: "Waiting on someone else" };
-/** Recorded waitingOn wins; checkpoints without it fall back to naming the actor from the next-action text. */
-export const nextActor = (text: string, waitingOn: WorkstreamWaitingOn | null | undefined): string =>
-  waitingOn !== undefined && waitingOn !== null && Object.hasOwn(waitingLabels, waitingOn) ? waitingLabels[waitingOn] : actor(text);
+export type WorkstreamAttention = WorkstreamWaitingOn | "dormant";
+const attentionLabels: Record<WorkstreamAttention, string> = { owner: "Waiting on you", agent: "Agent can continue", external: "Waiting on someone else", dormant: "Dormant" };
+const DORMANT_MS = 7 * 864e5;
+/** Dormant after 7 idle days; otherwise the recorded waitingOn, or the actor named by a legacy next move. */
+export function attentionOf(summary: WorkstreamSummary, now = Date.now()): WorkstreamAttention | undefined {
+  if (now - new Date(summary.lastCheckpointAt ?? summary.createdAt).getTime() > DORMANT_MS) return "dormant";
+  if (summary.waitingOn !== undefined && summary.waitingOn !== null && Object.hasOwn(attentionLabels, summary.waitingOn)) return summary.waitingOn;
+  if (summary.next === undefined || summary.next === null) return undefined;
+  const who = actor(summary.next);
+  return who === "Thomas" ? "owner" : who === "Rod" ? "external" : "agent";
+}
 export const firstClause = (text: string, max = 110): string => {
   const clean = text.replace(/\s+/g, " ").trim();
   const match = new RegExp(`^(.{1,${String(max)}}?[.;:])(\\s|$)`).exec(clean);
@@ -154,42 +158,29 @@ export function sessionActivityTime(session: WorkstreamSession): number {
   return Math.max(created, Number.isNaN(checkpoint) ? 0 : checkpoint);
 }
 export const sessionsByActivity = (sessions: WorkstreamSession[]): WorkstreamSession[] => [...sessions].sort((a, b) => sessionActivityTime(b) - sessionActivityTime(a));
-export const conflicting = (a: WorkstreamCheckpoint, b: WorkstreamCheckpoint): boolean => Math.abs(new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()) < 36 * 36e5;
-
-const abbreviation = /(?:\b(?:e\.g|i\.e|mr|mrs|ms|dr|prof|vs|etc)|\b[A-Z])\.$/i;
-export function sentences(text: string): string[] {
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (clean === "") return [];
-  const result: string[] = [];
-  const append = (sentence: string): void => {
-    if (sentence.length >= 3) { result.push(sentence); return; }
-    const previous = result.pop();
-    result.push(previous === undefined ? sentence : `${previous} ${sentence}`);
-  };
-  let start = 0;
-  for (const match of clean.matchAll(/[.;!?](?:\s+|$)/g)) {
-    const end = match.index + 1;
-    const sentence = clean.slice(start, end).trim();
-    if (match[0].startsWith(".") && abbreviation.test(sentence)) continue;
-    append(sentence);
-    start = match.index + match[0].length;
+const githubUrl = /https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/(pull|issues)\/(\d+)/g;
+const shortReference = /(?<![\w/.@-])([a-z][\w.-]*)#(\d+)\b/g;
+export interface WorkstreamReference { key: string; url: string; kind: "PR" | "Issue" | "PR or issue" }
+/** GitHub PRs and issues named by checkpoints and links; `repo#N` resolves its owner from a full URL for the same repo. */
+export function referencesOf(snapshot: WorkstreamSnapshot): WorkstreamReference[] {
+  const text = [
+    ...latestCheckpoints(snapshot).flatMap(({ latestCheckpoint: cp }) => [cp.whatChanged, cp.remains, cp.next, ...(cp.references ?? [])]),
+    ...snapshot.links.flatMap((link) => [link.reference, link.label ?? ""]),
+  ].join("\n");
+  const owners = new Map<string, string>();
+  const found = new Map<string, WorkstreamReference>();
+  for (const [, owner = "", repo = "", kind, number = ""] of text.matchAll(githubUrl)) {
+    owners.set(repo, owner);
+    const key = `${repo}#${number}`;
+    if (!found.has(key)) found.set(key, { key, url: `https://github.com/${owner}/${repo}/${kind ?? "issues"}/${number}`, kind: kind === "pull" ? "PR" : "Issue" });
   }
-  const tail = clean.slice(start).trim();
-  if (tail !== "") append(tail);
-  return result;
-}
-
-const anchor = /https?:\/\/[^\s,;!?()[\]{}]*[^\s,.;!?()[\]{}]|[\w.-]+\/[\w.-]+#\d+|~?\/[^\s,;!?()[\]{}]*[^\s,.;!?()[\]{}]|\b[a-f\d]{7,40}\b|#\d+/gi;
-export function withAnchors(text: string): TemplateResult {
-  const parts: (string | TemplateResult)[] = [];
-  let start = 0;
-  for (const match of text.matchAll(anchor)) {
-    const index = match.index;
-    parts.push(text.slice(start, index), html`<code>${match[0]}</code>`);
-    start = index + match[0].length;
+  for (const [, repo = "", number = ""] of text.replace(githubUrl, "").matchAll(shortReference)) {
+    const key = `${repo}#${number}`;
+    const owner = owners.get(repo);
+    // GitHub redirects /issues/N to /pull/N, so one URL serves both kinds.
+    if (!found.has(key)) found.set(key, { key, url: owner === undefined ? `https://github.com/search?type=issues&q=${encodeURIComponent(key)}` : `https://github.com/${owner}/${repo}/issues/${number}`, kind: "PR or issue" });
   }
-  parts.push(text.slice(start));
-  return html`${parts}`;
+  return [...found.values()];
 }
 
 export function isTemporaryDirectory(value: string): boolean {
@@ -224,9 +215,14 @@ export class WorkstreamChooser extends LitElement {
   @state() private selected: WorkstreamSnapshot | undefined;
   @state() private error = "";
   @state() private notice = "";
-  @state() private answering = "";
   @state() private loading = true;
   @state() private liveWorkstreamIds = new Set<string>();
+  /** PI WEB session metadata keyed by id, for Chat titles. */
+  @state() private chatInfo = new Map<string, SessionInfo>();
+  /** Workstream whose Chat lookup has finished; until then unnamed Chats show as loading. */
+  @state() private chatsResolvedFor = "";
+  private recentChats: Promise<void> | undefined;
+  private readonly listedCwds = new Set<string>();
   private liveSessionKey = "";
   private readonly workstreamBySession = new Map<string, Promise<string | undefined>>();
 
@@ -286,6 +282,7 @@ export class WorkstreamChooser extends LitElement {
       if (context === undefined) throw new Error("Choose a workspace before opening a Workstream.");
       this.selected = await inspectWorkstream(context, id);
       this.error = "";
+      void this.loadChatNames(this.selected);
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
     }
@@ -295,84 +292,53 @@ export class WorkstreamChooser extends LitElement {
     return [...list].sort((a, b) => (b.lastCheckpointAt ?? b.createdAt).localeCompare(a.lastCheckpointAt ?? a.createdAt));
   }
 
-  private async answer(snapshot: WorkstreamSnapshot, task: WorkstreamHumanTask, answer: HumanTaskAnswer): Promise<void> {
-    if (this.answering !== "") return;
-    this.answering = task.id;
-    this.notice = "";
-    const context = this.serviceContext;
-    if (context === undefined) {
-      this.error = "Choose a workspace before answering a Workstream task.";
-      this.answering = "";
-      return;
-    }
-    try {
-      const idempotencyKey = newId("task-answer");
-      const answerId = newId("answer");
-      await appendWorkstream(context, {
-        workstreamId: snapshot.id,
-        expectedRevision: snapshot.revision,
-        idempotencyKey,
-        records: [{
-          type: "human-task.answered",
-          producer: "owner",
-          ...(task.sourceSessionId === null ? {} : { sourceSessionId: task.sourceSessionId }),
-          payload: { taskId: task.id, answerId, answer },
-        }],
-      });
-    } catch (error) {
-      this.error = `The answer may not have been saved. Close and reopen the card before choosing again. ${error instanceof Error ? error.message : String(error)}`;
-      this.answering = "";
-      return;
-    }
-    try {
-      const [selected, list] = await Promise.all([
-        inspectWorkstream(context, snapshot.id),
-        listWorkstreams(context),
-      ]);
-      if (this.selected?.id === snapshot.id) {
-        this.selected = selected;
-        this.error = "";
-        this.notice = "Answer recorded.";
-        await this.updateComplete;
-        this.shadowRoot?.querySelector<HTMLElement>(".card")?.focus();
-      }
-      this.summaries = this.sortedSummaries(list);
-    } catch (error) {
-      if (this.selected?.id === snapshot.id) this.error = `Answer was saved, but the Workstream could not be refreshed. Close and reopen the card. ${error instanceof Error ? error.message : String(error)}`;
-    } finally {
-      this.answering = "";
-    }
+  private addChats(rows: SessionInfo[]): void {
+    const next = new Map(this.chatInfo);
+    for (const row of rows) next.set(row.id, row);
+    this.chatInfo = next;
   }
 
-  private submitText(event: SubmitEvent, snapshot: WorkstreamSnapshot, task: WorkstreamHumanTask): void {
-    event.preventDefault();
-    if (!(event.currentTarget instanceof HTMLFormElement)) return;
-    const input = event.currentTarget.querySelector("input");
-    if (input === null || input.value.trim() === "") {
-      input?.setCustomValidity("Enter an answer before submitting.");
-      input?.reportValidity();
-      return;
+  /** Recent sessions first; a Chat outside them is found through its working directory. Failures leave checkpoint fallbacks. */
+  private async loadChatNames(snapshot: WorkstreamSnapshot): Promise<void> {
+    const machineId = this.serviceMachineId;
+    try {
+      this.recentChats ??= sessionsApi.recent(500, machineId).then((rows) => { this.addChats(rows); });
+      await this.recentChats;
+    } catch {
+      this.recentChats = undefined;
     }
-    input.setCustomValidity("");
-    void this.answer(snapshot, task, { kind: "free-text", text: input.value });
+    const missing = snapshot.sessions.filter((session) => session.status === "active" && !this.chatInfo.has(session.id));
+    const cwds = await Promise.all(missing.map((session) => sessionsApi.locate(session.id, machineId).then((located) => located.cwd, () => undefined)));
+    for (const cwd of new Set(cwds)) {
+      if (cwd === undefined || this.listedCwds.has(cwd)) continue;
+      this.listedCwds.add(cwd);
+      await sessionsApi.sessions(cwd, machineId).then((rows) => { this.addChats(rows); }, () => { this.listedCwds.delete(cwd); });
+    }
+    this.chatsResolvedFor = snapshot.id;
   }
 
-  private answerOption(snapshot: WorkstreamSnapshot, task: WorkstreamHumanTask, optionId: string): void {
-    if (task.answerKind !== "yes-no" && task.answerKind !== "choice") return;
-    void this.answer(snapshot, task, { kind: task.answerKind, optionId });
+  private chatTitle(snapshot: WorkstreamSnapshot, session: WorkstreamSession): string {
+    const info = this.chatInfo.get(session.id);
+    const cp = session.latestCheckpoint;
+    const named = [info?.name, cp?.sessionTitle, info?.firstMessage].map((value) => value?.trim() ?? "").find((value) => value !== "");
+    if (named !== undefined) return named;
+    if (cp !== null) return firstClause(cp.whatChanged, 80);
+    return this.chatsResolvedFor === snapshot.id ? "Chat not found in PI WEB" : "Loading title…";
   }
 
   private renderSessionRow(snapshot: WorkstreamSnapshot, session: WorkstreamSession) {
     const live = isSessionActive(this.sessionStatuses[session.id], this.sessionActivities[session.id]);
     const doing = live ? sessionActivityText(this.sessionActivities[session.id]) : undefined;
+    const modified = this.chatInfo.get(session.id)?.modified;
+    const when = Math.max(sessionActivityTime(session), modified === undefined ? 0 : new Date(modified).getTime() || 0);
     return html`
       <button class="session-row ${live ? "live" : ""}" data-session-id=${session.id} @click=${() => { this.open(snapshot, session); }}>
+        <span class="session-title">${this.chatTitle(snapshot, session)}</span>
         <span class="session-meta">
           ${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}
-          <span>${session.latestCheckpoint === null ? `started ${ago(new Date(sessionActivityTime(session)).toISOString())}, no checkpoint` : ago(session.latestCheckpoint.recordedAt)}</span>
           ${session.status === "active" ? nothing : html`<span class="status">${session.status}</span>`}
+          <span>${doing ?? (when === 0 ? "" : ago(new Date(when).toISOString()))}</span>
         </span>
-        <span class="session-summary">${doing ?? (session.latestCheckpoint === null ? session.id.slice(-8) : firstClause(session.latestCheckpoint.whatChanged, 90))}</span>
       </button>
     `;
   }
@@ -419,13 +385,7 @@ export class WorkstreamChooser extends LitElement {
       <section class="group" aria-label=${group}>
         <h3>${group} <small>${String(items.length)}</small></h3>
         <div class="list" role="list">
-          ${items.map((item) => html`
-            <button role="listitem" class="row" style=${`--workstream-color:${workstreamAccentColor(item.id)}`} aria-pressed=${this.selected?.id === item.id} @click=${() => { void this.select(item.id); }}>
-              <span class="row-title"><span class="identity-mark" aria-hidden="true">${workstreamMonogram(item.title)}</span><strong>${item.title}</strong>${this.liveWorkstreamIds.has(item.id) ? renderActivityIndicator("session", "Session active") : nothing}</span>
-              <small>${item.lastCheckpointAt === null ? "no checkpoint yet" : `worked on ${ago(item.lastCheckpointAt)}`} · started ${ago(item.createdAt)}${item.unresolvedHumanTaskCount > 0 ? html` · <b>${String(item.unresolvedHumanTaskCount)} open question${item.unresolvedHumanTaskCount > 1 ? "s" : ""}</b>` : nothing}</small>
-            </button>
-            ${this.selected?.id === item.id ? this.renderCard(this.selected) : nothing}
-          `)}
+          ${items.map((item) => this.renderWorkstream(item))}
         </div>
       </section>`;
     return html`
@@ -436,62 +396,53 @@ export class WorkstreamChooser extends LitElement {
     `;
   }
 
+  private renderWorkstream(item: WorkstreamSummary) {
+    const open = this.selected?.id === item.id;
+    const attention = attentionOf(item);
+    return html`
+      <div role="listitem" class="workstream ${open ? "open" : ""} ${attention ?? ""}" style=${`--workstream-color:${workstreamAccentColor(item.id)}`}>
+        <button class="row" aria-expanded=${open} @click=${() => { void this.select(item.id); }}>
+          <span class="row-title"><span class="identity-mark" aria-hidden="true">${workstreamMonogram(item.title)}</span><strong>${item.title}</strong>${this.liveWorkstreamIds.has(item.id) ? renderActivityIndicator("session", "Session active") : nothing}<span class="age">${item.lastCheckpointAt === null ? `started ${ago(item.createdAt)}` : ago(item.lastCheckpointAt)}</span></span>
+          <span class="next">${attention === undefined ? nothing : html`<span class="badge ${attention}">${attentionLabels[attention]}</span>`}${item.next ?? (item.lastCheckpointAt === null ? "No checkpoint yet." : "")}</span>
+        </button>
+        ${open && this.selected !== undefined ? this.renderCard(this.selected) : nothing}
+      </div>
+    `;
+  }
+
   private renderCard(snapshot: WorkstreamSnapshot) {
     const overview = snapshot.overview;
-    const [latest, rival] = latestCheckpoints(snapshot);
-    const conflict = latest !== undefined && rival !== undefined && conflicting(latest.latestCheckpoint, rival.latestCheckpoint);
-    const pending = snapshot.humanTasks.filter((task) => task.status === "pending");
-    const nextText = latest?.latestCheckpoint.next ?? pending[0]?.title ?? "No next move recorded.";
-    const section = (label: string, peek: string, body: unknown) => html`<details><summary>${label}<span class="peek">${peek}</span></summary><div>${body}</div></details>`;
-    const bulletList = (text: string) => html`<ul>${sentences(text).map((sentence) => html`<li>${withAnchors(sentence)}</li>`)}</ul>`;
+    const checkpoints = latestCheckpoints(snapshot);
+    const latest = checkpoints[0];
     const cp = latest?.latestCheckpoint;
     const directories = directoriesOf(cp);
     const sessions = sessionsByActivity(snapshot.sessions);
+    const references = referencesOf(snapshot);
     const blocksFirstChat = snapshot.sessions.some((session) => session.status !== "failed");
+    const day = (value: string) => new Date(value).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    const historyParts = [overview === null ? "" : "overview", checkpoints.length === 0 ? "" : `${String(checkpoints.length)} checkpoint${checkpoints.length > 1 ? "s" : ""}`].filter((part) => part !== "");
+    const olderChats = sessions.length - 5;
     return html`
-      <article class="card" tabindex="-1" style=${`--workstream-color:${workstreamAccentColor(snapshot.id)}`} aria-label=${`Re-entry card for ${snapshot.title}`}>
-        <div class="card-heading"><span class="identity-mark" aria-hidden="true">${workstreamMonogram(snapshot.title)}</span><strong class="card-title">${snapshot.title}</strong></div>
+      <div class="card" aria-label=${`Re-entry card for ${snapshot.title}`}>
+        <h4>Goal</h4>
         ${overview === null
           ? html`<p class="missing">No overview stored yet. Ask Pi: “write the overview for ${snapshot.id}”.</p>`
-          : html`<p class="goal">${overview.goal}<small>Done when: ${overview.doneWhen}</small></p>`}
-        <div class="next"><span class="kicker">Do next</span><p><span class="who">${nextActor(nextText, cp?.waitingOn)}</span>${nextText}</p>${cp === undefined ? nothing : html`<small>Last touched ${ago(cp.recordedAt)}</small>`}</div>
-        ${conflict ? html`<p class="warn"><b>Two sessions disagree.</b> ${firstClause(latest.latestCheckpoint.whatChanged)} <i>vs.</i> ${firstClause(rival.latestCheckpoint.whatChanged)}</p>` : nothing}
-        ${pending.length > 0 ? html`<p class="warn"><b>${pending.length} open question${pending.length > 1 ? "s" : ""} for Thomas:</b> ${pending.map((task) => task.title).join(" · ")}</p>` : nothing}
-        ${pending.length === 0 ? nothing : section("Questions", `${String(pending.length)} awaiting an answer`, html`
-          <div class="task-list">
-            ${pending.map((task) => html`
-              <article class="task" data-task-id=${task.id}>
-                <b>${task.title}</b>
-                ${task.detail === undefined ? nothing : html`<p>${task.detail}</p>`}
-                ${task.answerKind === "free-text" ? html`
-                  <form @submit=${(event: SubmitEvent) => { this.submitText(event, snapshot, task); }}>
-                    <input aria-label=${`Answer ${task.title}`} ?disabled=${snapshot.closed || this.answering !== ""} @input=${(event: InputEvent) => { if (event.currentTarget instanceof HTMLInputElement) event.currentTarget.setCustomValidity(""); }}>
-                    <button type="submit" ?disabled=${snapshot.closed || this.answering !== ""}>Answer</button>
-                  </form>
-                ` : task.answerKind === "yes-no" || task.answerKind === "choice" ? html`
-                  <div class="task-options" role="group" aria-label=${task.title}>
-                    ${task.options.map((option) => html`<button ?disabled=${snapshot.closed || this.answering !== ""} @click=${() => { this.answerOption(snapshot, task, option.id); }}>${option.label}</button>`)}
-                  </div>
-                ` : html`<small>This legacy task cannot be answered here.</small>`}
-              </article>
-            `)}
-          </div>
-        `)}
-        ${cp === undefined ? nothing : section("Now", firstClause(cp.whatChanged), html`
-          ${bulletList(cp.whatChanged)}
-          <div class="now-block"><b>Still open:</b>${bulletList(cp.remains)}</div>
-          ${conflict ? html`<div class="now-block"><b>Other session:</b>${bulletList(rival.latestCheckpoint.whatChanged)}</div>` : nothing}
-        `)}
-        ${overview === null ? nothing : section("So far", `${String(overview.history.length)} steps · ${firstClause(overview.history.at(-1) ?? "", 70)}`, html`<ol>${overview.history.map((event) => html`<li>${event}</li>`)}</ol>`)}
-        ${overview === null ? nothing : section("About", firstClause(overview.description, 90), html`<p>${overview.description}</p>`)}
-        ${cp === undefined ? nothing : section("Continue", directories[0]?.replace(/^\/Users\/[^/]+/, "~") ?? "no directory recorded", html`
-          ${directories.map((directory) => html`<code>${directory}</code>`)}
-        `)}
-        ${section("Sessions", `${String(sessions.length)} sessions · newest ${cp === undefined ? "no checkpoint" : ago(cp.recordedAt)}`, html`
-          <div class="session-list">
-            ${sessions.map((session) => this.renderSessionRow(snapshot, session))}
-          </div>
-        `)}
+          : html`<p class="goal">${overview.goal}</p><p class="done"><b>Done when</b> ${overview.doneWhen}</p>`}
+        ${references.length === 0 ? nothing : html`
+          <h4>PRs and issues</h4>
+          <ul class="refs">${references.map((ref) => html`<li><span class="kind">${ref.kind}</span><a href=${ref.url} target="_blank" rel="noreferrer">${ref.key}</a></li>`)}</ul>
+        `}
+        <h4>Chats</h4>
+        ${sessions.length === 0 ? html`<p class="missing">No Chats yet.</p>` : html`
+          <div class="session-list">${sessions.slice(0, 5).map((session) => this.renderSessionRow(snapshot, session))}</div>
+          ${olderChats > 0 ? html`<details class="older"><summary>${String(olderChats)} older Chat${olderChats > 1 ? "s" : ""}</summary><div class="session-list">${sessions.slice(5).map((session) => this.renderSessionRow(snapshot, session))}</div></details>` : nothing}
+        `}
+        ${historyParts.length === 0 ? nothing : html`
+          <details class="history"><summary>History · ${historyParts.join(" and ")}</summary><div>
+            ${overview === null ? nothing : html`<p>${overview.description}</p>${overview.history.length === 0 ? nothing : html`<ol>${overview.history.map((event) => html`<li>${event}</li>`)}</ol>`}`}
+            ${checkpoints.map(({ latestCheckpoint }) => html`<p><span class="date">${day(latestCheckpoint.recordedAt)}</span> ${latestCheckpoint.whatChanged}</p>`)}
+          </div></details>
+        `}
         <div class="actions">
           ${latest !== undefined
             ? html`<button class="primary" @click=${() => { this.open(snapshot, latest); }}>Open session</button>`
@@ -507,74 +458,81 @@ export class WorkstreamChooser extends LitElement {
             ${cp?.references?.some(isTemporaryDirectory) === true ? html`<button ?disabled=${!this.canStartEmpty} title="Choose a persistent workspace first" @click=${() => { this.start(snapshot, latest, true); }}>New session in selected workspace</button>` : nothing}
           `}
         </div>
-      </article>
+      </div>
     `;
   }
 
   static override styles = [listStyles, css`
     :host { display: grid; gap: 10px; min-width: 0; max-width: 100%; }
     * { box-sizing: border-box; min-width: 0; }
-    .card p, .card li, .goal, .next p, .warn { overflow-wrap: anywhere; }
-    .card p, .card ul, .card ol { max-width: 65ch; }
-    h2 { margin: 0; font-size: 16px; }
+    .card p, .card li { overflow-wrap: anywhere; }
+    .card p, .card ol { max-width: 75ch; }
     .group { display: grid; gap: 6px; }
     h3 { margin: 6px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--pi-muted); }
     h3 small { font-weight: 500; }
+    h4 { margin: 10px 0 2px; font-size: 12px; font-weight: 700; color: var(--pi-text); }
+    h4:first-child { margin-top: 2px; }
     p { margin: 0; line-height: 1.45; }
-    .list { display: grid; gap: 6px; }
+    .list { display: grid; gap: 8px; }
     button { box-sizing: border-box; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 12px; font: inherit; text-align: left; cursor: pointer; }
     button:hover { background: var(--pi-surface-hover); }
-    button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .row { width: 100%; display: grid; gap: 2px; border-left: 3px solid var(--workstream-color, transparent); background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.row}%, var(--pi-bg)); }
-    .row:hover { background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.rowHover}%, var(--pi-surface-hover)); }
-    .row-title, .card-heading { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
-    .row-title strong, .card-title { flex: 1 1 auto; }
-    .row[aria-pressed="true"] { border-color: var(--pi-accent); border-left-color: var(--workstream-color, var(--pi-accent)); background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.rowSelected}%, var(--pi-surface)); }
-    .row[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.rowSelectedHover}%, var(--pi-surface-hover)); }
-    .row small { color: var(--pi-text); }
-    .row small b { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+    button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    a { color: var(--pi-text); text-decoration: underline; text-underline-offset: 2px; font-weight: 600; }
+    .workstream { border: 1px solid var(--pi-border-muted); border-left: 3px solid var(--workstream-color, var(--pi-border)); border-radius: 10px; background: var(--pi-surface); }
+    .workstream:hover, .workstream.open { border-color: var(--pi-border); border-left-color: var(--workstream-color, var(--pi-border)); }
+    .row { width: 100%; display: grid; gap: 4px; padding: 10px 14px; border: 0; border-radius: 9px; background: transparent; }
+    .row:hover { background: var(--pi-surface-hover); }
+    .row-title { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+    .row-title::after { content: "▸"; flex: none; width: 10px; color: var(--pi-text); }
+    .open .row-title::after { content: "▾"; }
+    .row-title strong { flex: 1 1 0; min-width: 0; font-size: 15px; line-height: 1.3; }
+    .dormant .row-title strong { font-weight: 500; }
+    .age { flex: none; color: var(--pi-text); font-size: 12px; white-space: nowrap; }
+    .next { margin-left: 36px; max-width: 75ch; color: var(--pi-text); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 1.45; }
+    .open .next { display: block; }
+    .dormant:not(.open) .next { -webkit-line-clamp: 1; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; margin-right: 6px; padding: 0 8px 0 7px; border: 1px solid var(--pi-border-muted); border-radius: 999px; background: var(--pi-bg); color: var(--pi-text); font-size: 12px; font-weight: 700; line-height: 18px; vertical-align: 1px; white-space: nowrap; }
+    .badge::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .badge.owner { border-color: var(--pi-accent); background: var(--pi-accent); color: #fff; }
+    .badge.agent::before { background: var(--pi-success); }
+    .badge.external { border-color: var(--pi-warning-border); background: var(--pi-warning-surface); }
+    .badge.external::before { background: var(--pi-warning); }
+    .badge.dormant { background: transparent; color: var(--pi-text); font-weight: 600; }
+    .badge.dormant::before { background: none; box-shadow: inset 0 0 0 1.5px var(--pi-dim); }
     .identity-mark { flex: 0 0 auto; display: inline-grid; place-items: center; width: 28px; height: 24px; border: 2px solid var(--pi-text); border-radius: 7px 7px 3px 7px; background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.mark}%, var(--pi-surface)); color: var(--pi-text); font-size: 10px; font-weight: 850; letter-spacing: .03em; line-height: 1; }
     .row .activity-indicator, .session-row .activity-indicator { box-shadow: 0 0 0 1px var(--pi-text); }
-    .card { display: grid; gap: 8px; margin: 2px 0 8px; padding: 12px; border: 1px solid var(--pi-border); border-left: 3px solid var(--workstream-color, var(--pi-border)); border-radius: 10px; background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.card}%, var(--pi-surface)); }
-    .card-title { font-size: 14px; }
-    .goal { font-weight: 700; font-size: 15px; }
-    .goal small { display: block; margin-top: 2px; font-weight: 500; color: var(--pi-text); font-size: 12px; }
-    .next { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--pi-accent); border-radius: 10px; background: var(--pi-surface-hover); color: var(--pi-text); }
-    .kicker { color: var(--pi-text); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
-    .who { display: inline-block; margin-right: 8px; padding: 1px 8px; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-surface); color: var(--pi-text); font-size: 11px; font-weight: 800; }
-    .next p { font-size: 15px; }
-    .next small { color: var(--pi-text); font-size: 11px; }
-    .warn { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--pi-purple-border); background: var(--pi-purple-surface); font-size: 13px; }
-    details { border: 1px solid var(--pi-border); border-radius: 8px; }
-    summary { display: flex; gap: 8px; align-items: baseline; padding: 8px 12px; font-weight: 700; font-size: 13px; cursor: pointer; list-style: none; }
-    summary::-webkit-details-marker { display: none; }
-    summary::before { content: "▸"; color: var(--pi-muted); }
-    details[open] summary::before { content: "▾"; }
-    .peek { flex: 1; min-width: 0; font-weight: 500; color: var(--pi-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    details > div { display: grid; gap: 10px; padding: 0 12px 10px 28px; font-size: 14px; line-height: 1.55; }
-    details ol, details ul { margin: 0; padding-left: 18px; }
-    details li + li { margin-top: 6px; }
-    .now-block, .task-list, .task { display: grid; gap: 6px; }
-    .task + .task { border-top: 1px solid var(--pi-border); padding-top: 10px; }
-    .task p, .task small { color: var(--pi-text); }
-    .task form, .task-options { display: flex; gap: 6px; flex-wrap: wrap; }
-    .task input { flex: 1 1 220px; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 10px; font: inherit; }
-    code { font-size: 12px; overflow-wrap: anywhere; }
-    .session-list { display: grid; gap: 4px; }
-    .session-row { width: 100%; min-width: 0; display: grid; gap: 4px; padding: 6px 8px; font-size: 13px; }
+    .card { display: grid; padding: 0 14px 12px 50px; font-size: 14px; }
+    .done { margin-top: 2px; color: var(--pi-text); font-size: 13px; }
+    .done b { font-weight: 700; }
+    .refs { margin: 0; padding: 0; list-style: none; }
+    .refs li { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+    .kind { font-size: 11px; color: var(--pi-text); border: 1px solid var(--pi-border-muted); border-radius: 4px; padding: 0 4px; white-space: nowrap; }
+    .session-list { display: grid; }
+    .session-row { width: 100%; min-height: 0; display: flex; align-items: baseline; gap: 8px; padding: 5px 4px; font-size: 13px; border: 0; border-top: 1px solid var(--pi-border-muted); border-radius: 0; background: transparent; }
+    .session-row:first-child { border-top: 0; }
     .session-row.live { border-color: var(--pi-success-border); background: var(--pi-success-bg); }
-    .session-meta { display: flex; align-items: center; gap: 4px; color: var(--pi-text); font-size: 11px; }
+    .session-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .session-meta { flex: none; display: flex; align-items: center; gap: 4px; max-width: 45%; color: var(--pi-text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .status { padding: 0 5px; border: 1px solid var(--pi-border); border-radius: 999px; }
-    .session-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    details { margin-top: 6px; }
+    summary { display: inline-flex; gap: 6px; padding: 2px 4px 2px 0; border-radius: 4px; color: var(--pi-text); font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
+    summary:hover { text-decoration: underline; }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: "▸"; }
+    details[open] > summary::before { content: "▾"; }
+    details > div { display: grid; gap: 6px; margin: 6px 0 0 14px; }
+    .history ol { margin: 0; padding-left: 18px; }
+    .history li + li { margin-top: 3px; }
+    .date { color: var(--pi-text); font-weight: 600; font-size: 12px; margin-right: 4px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .primary { border-color: var(--pi-success-border); background: var(--pi-success-bg); font-weight: 700; }
     .missing, .error { color: var(--pi-muted); font-size: 13px; }
-    .card .missing { color: var(--pi-text); }
+    .workstream .missing { color: var(--pi-text); }
     .error { color: var(--pi-danger); }
+    @media (max-width: 560px) { .next { margin-left: 0; } .card { padding-left: 14px; } }
     @media (forced-colors: active) {
-      .row { border-left-color: LinkText; }
-      .row[aria-pressed="true"] { border-color: Highlight; border-left-color: LinkText; }
-      .card { border-left-color: LinkText; }
+      .workstream { border-left-color: LinkText; }
+      .badge.owner { forced-color-adjust: none; border-color: Highlight; background: Highlight; color: HighlightText; }
       .identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }
       .row .activity-indicator, .session-row .activity-indicator { border: 1px solid CanvasText; background: Highlight; box-shadow: none; }
     }

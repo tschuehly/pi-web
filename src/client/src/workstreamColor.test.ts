@@ -41,6 +41,6 @@ describe("workstreamAccentColor", () => {
   });
 
   it("keeps full-surface identity tint strengths explicit", () => {
-    expect(WORKSTREAM_TINT_PERCENTAGES).toEqual({ row: 12, rowHover: 18, rowSelected: 22, rowSelectedHover: 28, card: 9, mark: 30, drawer: 12, drawerActive: 18 });
+    expect(WORKSTREAM_TINT_PERCENTAGES).toEqual({ mark: 30, drawer: 12, drawerActive: 18 });
   });
 });

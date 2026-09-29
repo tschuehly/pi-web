@@ -1,9 +1,4 @@
 export const WORKSTREAM_TINT_PERCENTAGES = {
-  row: 12,
-  rowHover: 18,
-  rowSelected: 22,
-  rowSelectedHover: 28,
-  card: 9,
   mark: 30,
   drawer: 12,
   drawerActive: 18,

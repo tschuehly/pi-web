@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
 
-import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkstreamChooser, WorkstreamServiceError, actor, ago, nextActor, appendWorkstream, conflicting, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, sentences, sessionsByActivity, watchWorkstreams, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { WorkstreamChooser, WorkstreamServiceError, actor, appendWorkstream, attentionOf, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, referencesOf, sessionsByActivity, watchWorkstreams, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { workstreamAccentColor } from "../workstreamColor";
 import { pluginsApi } from "../api/clients";
 
@@ -25,7 +24,17 @@ const snapshot: WorkstreamSnapshot = {
   overview: { goal: "Teach Me the PhotoQuest API.", doneWhen: "Five questions answered.", description: "Why and scope.", history: ["2026-09-08: slice 1 merged.", "PR #1283 ready."], recordedAt: "2026-09-20T09:00:00.000Z" },
 };
 
-const summaries = [{ id: "ws-2", title: "Older", group: null, createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-09-20T00:00:00.000Z", lastCheckpointAt: "2026-09-01T00:00:00.000Z", unresolvedHumanTaskCount: 0 }, { id: "ws-1", title: snapshot.title, group: "Embabel", createdAt: "2026-08-28T00:00:00.000Z", updatedAt: snapshot.updatedAt, lastCheckpointAt: "2026-09-18T10:31:02.522Z", unresolvedHumanTaskCount: 1 }];
+const summaries = [{ id: "ws-2", title: "Older", group: null, createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-09-20T00:00:00.000Z", lastCheckpointAt: "2026-09-01T00:00:00.000Z", unresolvedHumanTaskCount: 0, next: "Pia does old thing", waitingOn: "agent" as const }, { id: "ws-1", title: snapshot.title, group: "Embabel", createdAt: "2026-08-28T00:00:00.000Z", updatedAt: snapshot.updatedAt, lastCheckpointAt: new Date().toISOString(), unresolvedHumanTaskCount: 1, next: "Thomas logs in and asks the five questions.", waitingOn: "owner" as const }];
+
+// PI WEB session metadata: s-b is recent, s-a is found through its working directory, s-old and s-none are unknown.
+const chat = (id: string, name: string | undefined, modified: string) => ({ id, path: `/sessions/${id}.jsonl`, cwd: "/repo/me", ...(name === undefined ? {} : { name }), created: modified, modified, messageCount: 3, firstMessage: "" });
+function chatsResponse(url: string): Response | undefined {
+  if (url.includes("/sessions/recent")) return Response.json([chat("s-b", "Trial login", "2026-09-18T10:40:00.000Z")]);
+  if (url.includes("/sessions/locate/s-a")) return Response.json({ cwd: "/repo/me" });
+  if (url.includes("/sessions/locate/")) return new Response("not found", { status: 404 });
+  if (url.includes("/sessions?cwd=")) return Response.json([chat("s-a", "Stack review", "2026-09-18T07:30:00.000Z")]);
+  return undefined;
+}
 
 function requestBody(url: string, init?: RequestInit): { operation: string; input: unknown } {
   if (typeof init?.body !== "string") throw new Error("JSON request body missing");
@@ -39,6 +48,8 @@ function sessionIdOf(input: unknown): string | undefined {
 
 function stubService(list: unknown = summaries, inspect: unknown = snapshot, associations: Record<string, unknown> = {}): void {
   vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+    const chats = chatsResponse(url);
+    if (chats !== undefined) return Promise.resolve(chats);
     const body = requestBody(url, init);
     const sessionId = sessionIdOf(body.input);
     const value = body.operation === "list" ? sessionId === undefined ? list : associations[sessionId] ?? [] : inspect;
@@ -100,8 +111,9 @@ describe("WorkstreamChooser", () => {
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelectorAll(".row").length).toBe(2); });
     const rows = [...shadow(element).querySelectorAll<HTMLButtonElement>(".row")];
     expect(rows.map((row) => row.querySelector("strong")?.textContent)).toEqual([snapshot.title, "Older"]);
-    expect(rows[0]?.textContent).toContain("1 open question");
-    expect(rows[0]?.textContent).toMatch(/worked on .* · started /);
+    expect(rows[0]?.querySelector(".next")?.textContent).toBe("Waiting on youThomas logs in and asks the five questions.");
+    expect(rows[1]?.querySelector(".badge")?.textContent).toBe("Dormant");
+    expect(rows[0]?.textContent).not.toContain("open question");
     expect([...shadow(element).querySelectorAll("h3")].map((heading) => heading.textContent.trim())).toEqual(["Embabel 1", "Ungrouped 1"]);
     element.project = "embabel";
     await element.updateComplete;
@@ -117,21 +129,17 @@ describe("WorkstreamChooser", () => {
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".card")).not.toBeNull(); });
     const card = shadow(element).querySelector(".card");
     if (card === null) throw new Error("card missing");
-    expect(card.querySelector(".goal")?.textContent).toContain("Teach Me the PhotoQuest API.");
-    expect(card.querySelector(".next")?.textContent).toContain("Thomas logs in and asks the five questions.");
-    expect(card.querySelector(".next .who")?.textContent).toBe("Thomas");
-    expect(card.textContent).toContain("Two sessions disagree.");
-    expect(card.textContent).toContain("1 open question for Thomas: Merge order?");
-    expect([...card.querySelectorAll("summary")].map((summary) => summary.textContent.replace(summary.querySelector(".peek")?.textContent ?? "", "").trim())).toEqual(["Questions", "Now", "So far", "About", "Continue", "Sessions"]);
-    expect(card.querySelector('[data-task-id="t1"]')?.textContent).toContain("cannot be answered here");
-    expect(card.querySelector('[data-task-id="t1"] button')).toBeNull();
-    const sessionDetails = [...card.querySelectorAll("details")].find((details) => details.querySelector("summary")?.textContent.startsWith("Sessions") === true);
-    if (sessionDetails === undefined) throw new Error("sessions missing");
-    expect(sessionDetails.querySelector(".peek")?.textContent).toBe(`4 sessions · newest ${ago("2026-09-18T10:31:02.522Z")}`);
-    expect([...sessionDetails.querySelectorAll(".session-row")].map((row) => row.getAttribute("data-session-id"))).toEqual(["s-b", "s-a", "s-old", "s-none"]);
+    expect([...card.querySelectorAll("h4")].map((heading) => heading.textContent)).toEqual(["Goal", "Chats"]);
+    expect(card.querySelector(".goal")?.textContent).toBe("Teach Me the PhotoQuest API.");
+    expect(card.querySelector(".done")?.textContent).toBe("Done when Five questions answered.");
+    expect(card.querySelector("[data-task-id]")).toBeNull();
+    expect(card.textContent).not.toContain("Two sessions disagree");
+    expect([...card.querySelectorAll("summary")].map((summary) => summary.textContent)).toEqual(["History · overview and 3 checkpoints"]);
+    expect([...card.querySelectorAll(".session-row")].map((row) => row.getAttribute("data-session-id"))).toEqual(["s-b", "s-a", "s-old", "s-none"]);
+    await vi.waitFor(() => { expect([...card.querySelectorAll(".session-title")].map((title) => title.textContent)).toEqual(["Trial login", "Stack review", "cp-old changed.…", "Chat not found in PI WEB"]); });
 
     const selected = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }, { once: true }); });
-    sessionDetails.querySelector<HTMLButtonElement>('[data-session-id="s-a"]')?.click();
+    card.querySelector<HTMLButtonElement>('[data-session-id="s-a"]')?.click();
     expect(await selected).toMatchObject({ sessionId: "s-a", directories: ["/repo/me"] });
 
     const opened = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }, { once: true }); });
@@ -145,6 +153,21 @@ describe("WorkstreamChooser", () => {
     expect(started).toEqual({ workstreamId: "ws-1", directories: ["/repo/me-trial"], sessionId: "s-b" });
     expect(card.textContent).not.toContain("Copy prompt");
     expect(card.textContent).not.toContain("Continue cp-b");
+  });
+
+  it("shows the five newest Chats and folds the older ones", async () => {
+    const many: WorkstreamSnapshot = { ...snapshot, sessions: Array.from({ length: 7 }, (_, index) => ({ id: `s-${String(index)}`, status: "active", latestCheckpoint: checkpoint(`cp-${String(index)}`, `2026-09-1${String(index)}T10:00:00.000Z`, "Next") })) };
+    stubService(summaries, many);
+    const element = newChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
+    const card = shadow(element).querySelector(".card");
+    expect([...card?.querySelectorAll(":scope > .session-list > .session-row") ?? []].map((row) => row.getAttribute("data-session-id"))).toEqual(["s-6", "s-5", "s-4", "s-3", "s-2"]);
+    const older = card?.querySelector("details.older");
+    expect(older?.querySelector("summary")?.textContent).toBe("2 older Chats");
+    expect([...older?.querySelectorAll(".session-row") ?? []].map((row) => row.getAttribute("data-session-id"))).toEqual(["s-1", "s-0"]);
   });
 
   it("offers a selected-workspace continuation for a temporary checkpoint", async () => {
@@ -188,27 +211,6 @@ describe("WorkstreamChooser", () => {
     element.addEventListener("start-workstream-session", (event) => { if (event instanceof CustomEvent) started = event.detail; });
     start?.click();
     expect(started).toEqual({ workstreamId: empty.id, directories: [] });
-  });
-
-  it.each([
-    { waitingOn: "owner" as const, label: "Waiting on you" },
-    { waitingOn: "agent" as const, label: "Agent can continue" },
-    { waitingOn: "external" as const, label: "Waiting on someone else" },
-    { waitingOn: null, label: "Thomas" },
-  ])("labels Do next from the newest checkpoint's waitingOn ($waitingOn) and starts without a prompt", async ({ waitingOn, label }) => {
-    const current = { ...checkpoint("cp-new", "2026-09-22T10:00:00Z", "Thomas reviews the plan.", ["/repo/me"]), nextSessionPrompt: null, waitingOn };
-    const older = { ...checkpoint("cp-older", "2026-09-01T10:00:00Z", "Pia runs checks."), waitingOn: "agent" as const };
-    stubService(summaries, { ...snapshot, sessions: [{ id: "s-older", status: "active", latestCheckpoint: older }, { id: "s-new", status: "active", latestCheckpoint: current }], humanTasks: [] });
-    const element = newChooser();
-    document.body.append(element);
-    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
-    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
-    await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
-    expect(shadow(element).querySelector(".next .who")?.textContent).toBe(label);
-    let started: unknown;
-    element.addEventListener("start-workstream-session", (event) => { if (event instanceof CustomEvent) started = event.detail; });
-    [...shadow(element).querySelectorAll<HTMLButtonElement>(".card button")].find((button) => button.textContent === "New session")?.click();
-    expect(started).toEqual({ workstreamId: "ws-1", directories: ["/repo/me"], sessionId: "s-new" });
   });
 
   it("does not offer a second Chat when sessions exist but none has checkpointed", async () => {
@@ -325,154 +327,21 @@ describe("WorkstreamChooser", () => {
     document.body.append(element);
     await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
     const row = shadow(element).querySelector<HTMLElement>(".row");
-    expect(row?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor("ws-1"));
-    expect(row?.getAttribute("aria-pressed")).toBe("false");
+    expect(shadow(element).querySelector<HTMLElement>(".workstream")?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor("ws-1"));
+    expect(row?.getAttribute("aria-expanded")).toBe("false");
     expect(row?.querySelector("strong")?.textContent).toBe(snapshot.title);
     expect(row?.querySelector(".identity-mark")?.textContent).toBe("IL");
     expect(row?.querySelector(".identity-mark")?.getAttribute("aria-hidden")).toBe("true");
 
     row?.click();
     await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
-    expect(row?.getAttribute("aria-pressed")).toBe("true");
-    const card = shadow(element).querySelector<HTMLElement>(".card");
-    expect(card?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor("ws-1"));
-    expect(card?.getAttribute("aria-label")).toBe(`Re-entry card for ${snapshot.title}`);
-    expect(card?.querySelector(".identity-mark")?.textContent).toBe("IL");
-    expect(card?.querySelector(".card-title")?.textContent).toBe(snapshot.title);
+    expect(row?.getAttribute("aria-expanded")).toBe("true");
+    expect(shadow(element).querySelector(".card")?.getAttribute("aria-label")).toBe(`Re-entry card for ${snapshot.title}`);
     const liveRow = shadow(element).querySelector('[data-session-id="s-a"]');
     const idleRow = shadow(element).querySelector('[data-session-id="s-old"]');
     expect(liveRow?.querySelector(".activity-indicator.session")).not.toBeNull();
     expect(liveRow?.textContent).toContain("Running bash");
     expect(idleRow?.querySelector(".activity-indicator.session")).toBeNull();
-  });
-
-  it("answers a typed choice with the inspected revision, then refreshes the card and summary", async () => {
-    const typed = {
-      ...snapshot,
-      humanTasks: [
-        { id: "yes-no", title: "Proceed?", detail: "Review the consequence.", status: "pending" as const, answerKind: "yes-no" as const, options: [{ id: "yes", label: "Yes" }, { id: "no", label: "No" }], sourceSessionId: "session-owner" },
-        { id: "choice", title: "Choose", status: "pending" as const, answerKind: "choice" as const, options: [{ id: "a", label: "Option A" }], sourceSessionId: null },
-        { id: "legacy", title: "Old task", status: "pending" as const, answerKind: null, options: [], sourceSessionId: null },
-      ],
-    };
-    const refreshed = { ...typed, revision: 71, humanTasks: typed.humanTasks.map((task) => task.id === "choice" ? { ...task, status: "answered" as const } : task) };
-    const refreshedSummaries = summaries.map((item) => item.id === typed.id ? { ...item, unresolvedHumanTaskCount: 2 } : item);
-    const calls: { operation: string; input: unknown }[] = [];
-    let listCalls = 0;
-    let inspectCalls = 0;
-    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
-      const body = requestBody(url, init);
-      calls.push(body);
-      if (body.operation === "append") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: { acceptedRevision: 71 } }), { status: 200 }));
-      if (body.operation === "list") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: listCalls++ === 0 ? summaries : refreshedSummaries }), { status: 200 }));
-      return Promise.resolve(new Response(JSON.stringify({ ok: true, value: inspectCalls++ === 0 ? typed : refreshed }), { status: 200 }));
-    }));
-    vi.spyOn(globalThis.crypto, "randomUUID")
-      .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
-      .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
-
-    const element = newChooser();
-    document.body.append(element);
-    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
-    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
-    await vi.waitFor(() => { expect(shadow(element).querySelector('[data-task-id="choice"]')).not.toBeNull(); });
-    const card = shadow(element).querySelector(".card");
-    expect(card?.textContent).toContain("Review the consequence.");
-    expect([...card?.querySelectorAll<HTMLButtonElement>('[data-task-id="yes-no"] button') ?? []].map((button) => button.textContent)).toEqual(["Yes", "No"]);
-    expect(card?.querySelector('[data-task-id="yes-no"] [role="group"]')?.getAttribute("aria-label")).toBe("Proceed?");
-    expect(card?.querySelector('[data-task-id="legacy"] button')).toBeNull();
-    card?.querySelector<HTMLButtonElement>('[data-task-id="choice"] button')?.click();
-
-    await vi.waitFor(() => { expect(shadow(element).querySelector('[data-task-id="choice"]')).toBeNull(); });
-    expect(shadow(element).querySelector('[role="status"]')?.textContent).toBe("Answer recorded.");
-    expect(shadow(element).activeElement).toBe(shadow(element).querySelector(".card"));
-    expect(calls.find((call) => call.operation === "append")).toEqual({
-      operation: "append",
-      input: {
-        workstreamId: "ws-1",
-        expectedRevision: 70,
-        idempotencyKey: "task-answer-00000000-0000-4000-8000-000000000001",
-        records: [{
-          type: "human-task.answered",
-          producer: "owner",
-          payload: { taskId: "choice", answerId: "answer-00000000-0000-4000-8000-000000000002", answer: { kind: "choice", optionId: "a" } },
-        }],
-      },
-    });
-    expect(inspectCalls).toBe(2);
-    expect(listCalls).toBe(2);
-    expect(shadow(element).querySelector(".row")?.textContent).toContain("2 open questions");
-  });
-
-  it("surfaces a stale revision without retrying the answer", async () => {
-    const typed = {
-      ...snapshot,
-      humanTasks: [{ id: "choice", title: "Choose", status: "pending" as const, answerKind: "choice" as const, options: [{ id: "a", label: "Option A" }], sourceSessionId: null }],
-    };
-    const calls: { operation: string; input: unknown }[] = [];
-    vi.stubGlobal("crypto", {});
-    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
-      const body = requestBody(url, init);
-      calls.push(body);
-      const response = body.operation === "list"
-        ? { ok: true, value: summaries }
-        : body.operation === "inspect"
-          ? { ok: true, value: typed }
-          : { ok: false, error: { code: "STALE_REVISION", message: "expected revision 70 but current revision is 71" } };
-      return Promise.resolve(new Response(JSON.stringify(response), { status: 200 }));
-    }));
-
-    const element = newChooser();
-    document.body.append(element);
-    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
-    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
-    await vi.waitFor(() => { expect(shadow(element).querySelector('[data-task-id="choice"]')).not.toBeNull(); });
-    shadow(element).querySelector<HTMLButtonElement>('[data-task-id="choice"] button')?.click();
-
-    await vi.waitFor(() => { expect(shadow(element).querySelector(".error")?.textContent).toContain("current revision is 71"); });
-    expect(calls.filter((call) => call.operation === "append")).toHaveLength(1);
-    expect(shadow(element).querySelector<HTMLButtonElement>('[data-task-id="choice"] button')?.disabled).toBe(false);
-  });
-
-  it("rejects blank free text and preserves the exact typed answer", async () => {
-    const textSnapshot = {
-      ...snapshot,
-      humanTasks: [{ id: "text", title: "Explain", status: "pending" as const, answerKind: "free-text" as const, options: [], sourceSessionId: "session-text" }],
-    };
-    const calls: { operation: string; input: unknown }[] = [];
-    let inspectCalls = 0;
-    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
-      const body = requestBody(url, init);
-      calls.push(body);
-      if (body.operation === "append") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: { acceptedRevision: 71 } }), { status: 200 }));
-      if (body.operation === "list") return Promise.resolve(new Response(JSON.stringify({ ok: true, value: summaries }), { status: 200 }));
-      return Promise.resolve(new Response(JSON.stringify({ ok: true, value: inspectCalls++ === 0 ? textSnapshot : { ...textSnapshot, revision: 71, humanTasks: [] } }), { status: 200 }));
-    }));
-
-    const element = newChooser();
-    document.body.append(element);
-    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
-    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
-    await vi.waitFor(() => { expect(shadow(element).querySelector<HTMLInputElement>('input[aria-label="Answer Explain"]')).not.toBeNull(); });
-    const input = shadow(element).querySelector<HTMLInputElement>('input[aria-label="Answer Explain"]');
-    if (input === null) throw new Error("free-text input missing");
-    const form = input.closest("form");
-    if (form === null) throw new Error("free-text form missing");
-    input.value = "   ";
-    form.requestSubmit();
-    expect(input.validationMessage).toBe("Enter an answer before submitting.");
-    expect(calls.some((call) => call.operation === "append")).toBe(false);
-
-    input.value = "  exact typed answer  ";
-    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    form.requestSubmit();
-    await vi.waitFor(() => { expect(calls.some((call) => call.operation === "append")).toBe(true); });
-    expect(calls.find((call) => call.operation === "append")).toMatchObject({
-      input: {
-        expectedRevision: 70,
-        records: [{ producer: "owner", sourceSessionId: "session-text", payload: { taskId: "text", answer: { kind: "free-text", text: "  exact typed answer  " } } }],
-      },
-    });
   });
 
   it("shows the missing-overview hint instead of inventing a goal", async () => {
@@ -493,10 +362,8 @@ describe("re-entry helpers", () => {
     expect(directoriesOf(checkpoint("old", "", "", ["/private/tmp/pi-context-views-20260909"]))).toEqual([]);
   });
 
-  it("orders sessions by newest checkpoint, detects near-simultaneous conflicts, and extracts directories", () => {
+  it("orders sessions by newest checkpoint and extracts directories", () => {
     expect(latestCheckpoints(snapshot).map((session) => session.id)).toEqual(["s-b", "s-a", "s-old"]);
-    expect(conflicting(checkpoint("a", "2026-09-18T07:00:00Z", ""), checkpoint("b", "2026-09-18T10:00:00Z", ""))).toBe(true);
-    expect(conflicting(checkpoint("a", "2026-09-10T07:00:00Z", ""), checkpoint("b", "2026-09-18T10:00:00Z", ""))).toBe(false);
     expect(directoriesOf(checkpoint("a", "", "", ["/repo/me", "/repo/me/plan.md", "docs/x", "/repo/me"]))).toEqual(["/repo/me"]);
     expect(directoriesOf(checkpoint("a", "", "", ["branch:main", "/repo/me/plan.md", "/repo/me/notes.txt", "docs/x", "/other/todo.md"]))).toEqual(["/repo/me", "/other"]);
     expect(directoriesOf(undefined)).toEqual([]);
@@ -506,19 +373,24 @@ describe("re-entry helpers", () => {
     expect(directoriesOf(checkpoint("a", "", "", ["/private/tmp/deleted-worktree", "/repo/me"]))).toEqual(["/repo/me"]);
   });
 
-  it("splits prose into readable sentences without breaking common abbreviations", () => {
-    expect(sentences("Done. Use e.g. the sample; A; Then test! OK?"))
-      .toEqual(["Done.", "Use e.g. the sample; A;", "Then test!", "OK?"]);
-    expect(sentences("  One sentence without punctuation  ")).toEqual(["One sentence without punctuation"]);
+  it("collects GitHub PRs and issues once, resolving repo#N owners from full URLs", () => {
+    const cp = { ...checkpoint("c", "2026-09-18T00:00:00Z", "Merge me#1587 then pi-web#3."), whatChanged: "Opened https://github.com/embabel/me/pull/1587 and https://github.com/x/y/issues/9." };
+    expect(referencesOf({ ...snapshot, sessions: [{ id: "s", status: "active", latestCheckpoint: cp }], links: [{ id: "l", kind: "pr", reference: "me#1587" }], overview: null })).toEqual([
+      { key: "me#1587", url: "https://github.com/embabel/me/pull/1587", kind: "PR" },
+      { key: "y#9", url: "https://github.com/x/y/issues/9", kind: "Issue" },
+      { key: "pi-web#3", url: "https://github.com/search?type=issues&q=pi-web%233", kind: "PR or issue" },
+    ]);
   });
 
-  it("wraps durable references as code", () => {
-    const host = document.createElement("div");
-    render(withAnchors("See https://example.com/x, owner/repo#123, #42, abcdef1, /repo/docs/plan.md and ~/notes."), host);
-    expect([...host.querySelectorAll("code")].map((code) => code.textContent)).toEqual([
-      "https://example.com/x", "owner/repo#123", "#42", "abcdef1", "/repo/docs/plan.md", "~/notes",
-    ]);
-    expect(host.textContent).toContain("and ~/notes.");
+  it("derives attention: dormant after 7 days, then recorded waitingOn, then the legacy actor", () => {
+    const now = new Date("2026-09-20T00:00:00Z").getTime();
+    const base = { id: "w", title: "t", group: null, createdAt: "2026-09-01T00:00:00Z", updatedAt: "", lastCheckpointAt: "2026-09-19T00:00:00Z", unresolvedHumanTaskCount: 0 };
+    expect(attentionOf({ ...base, lastCheckpointAt: "2026-09-12T00:00:00Z", waitingOn: "owner" }, now)).toBe("dormant");
+    expect(attentionOf({ ...base, next: "Thomas reviews", waitingOn: "agent" }, now)).toBe("agent");
+    expect(attentionOf({ ...base, next: "Thomas reviews", waitingOn: null }, now)).toBe("owner");
+    expect(attentionOf({ ...base, next: "Rod must review" }, now)).toBe("external");
+    expect(attentionOf({ ...base, next: "Run the tests" }, now)).toBe("agent");
+    expect(attentionOf({ ...base, lastCheckpointAt: null, createdAt: "2026-09-19T00:00:00Z" }, now)).toBeUndefined();
   });
 
   it("matches Workstream groups to project names loosely", () => {
@@ -526,14 +398,6 @@ describe("re-entry helpers", () => {
     expect(groupMatchesProject("Personal", "OneDrive-Personal")).toBe(false);
     expect(groupMatchesProject("Embabel", "Me")).toBe(false);
     expect(groupMatchesProject("Anything", undefined)).toBe(true);
-  });
-
-  it("prefers a recorded waitingOn over the actor heuristic", () => {
-    expect(nextActor("Pia runs the tests", "owner")).toBe("Waiting on you");
-    expect(nextActor("Thomas reviews", "agent")).toBe("Agent can continue");
-    expect(nextActor("Thomas reviews", "external")).toBe("Waiting on someone else");
-    expect(nextActor("Thomas reviews", null)).toBe("Thomas");
-    expect(nextActor("Run the tests", undefined)).toBe("Pia");
   });
 
   it("names the actor and cuts to the first clause", () => {
