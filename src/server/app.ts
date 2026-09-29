@@ -41,6 +41,7 @@ import { registerPluginBackendChannelProxyRoutes } from "./plugins/pluginBackend
 import { installPluginBackendChannelWebSocketPayloadLimit } from "./webSocketBridge.js";
 import { registerPairedPluginBackendProxyRoutes } from "./plugins/pluginBackendProxyRoutes.js";
 import { proxyMachinePluginAsset, registerMachinePluginProxyRoutes } from "./machines/machinePluginProxyRoutes.js";
+import { registerRequestSourceGuard, type RequestSourcePolicy } from "./requestSourceGuard.js";
 import type { Project, WorkspaceEffectiveConfig, WorkspaceProviderResolution } from "./types.js";
 
 export interface AppDependencies {
@@ -59,6 +60,8 @@ export interface AppDependencies {
   logger?: FastifyServerOptions["logger"];
   /** Maximum accepted HTTP request body size in bytes. */
   bodyLimit?: number;
+  /** Host names the server answers besides loopback and IP literals; defaults to none. */
+  requestSource?: RequestSourcePolicy;
 }
 
 interface LocalProjectRouteOptions {
@@ -186,6 +189,8 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
     threshold: 1024,
   });
   await app.register(fastifyWebsocket);
+  // After the WebSocket plugin, whose onRequest hook marks upgrades so a refused upgrade socket is destroyed.
+  registerRequestSourceGuard(app, deps.requestSource);
   installPluginBackendChannelWebSocketPayloadLimit(app.websocketServer);
 
   const projects = deps.projects ?? new ProjectService(new ProjectStore());

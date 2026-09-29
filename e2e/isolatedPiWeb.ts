@@ -43,7 +43,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await Promise.all([mkdir(sessionDir, { recursive: true }), mkdir(join(project, "docs"), { recursive: true }), mkdir(join(project, "entries"), { recursive: true }), mkdir(adHocFolder, { recursive: true })]);
     await seedProject(project);
     await writeJson(join(dataDir, "projects.json"), { projects: [{ id: E2E_PROJECT_ID, name: "e2e", path: project, createdAt: new Date().toISOString() }] });
-    await writeJson(join(root, "config.json"), { host: "127.0.0.1", allowedHosts: true });
+    await writeJson(join(root, "config.json"), { host: "127.0.0.1" });
     await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md).");
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
@@ -55,7 +55,6 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       PI_WEB_SESSIOND_SOCKET: socket,
       PI_WEB_HOST: "127.0.0.1",
       PI_WEB_PORT: String(port),
-      PI_WEB_ALLOWED_HOSTS: "true",
       PI_WEB_CLIENT_DIST: clientDist,
       PI_WEB_SKIP_VERSION_CHECK: "1",
       PI_CODING_AGENT_DIR: join(root, "agent"),
