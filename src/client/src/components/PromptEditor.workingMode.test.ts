@@ -51,9 +51,9 @@ describe("PromptEditor Working Mode controls", () => {
     // Axes at their default show only an icon; a changed axis also writes out its value;
     // a wide composer expands every axis to its name and value.
     expect(axisLabel(controls, "Alignment").title).toBe("Alignment: Align");
-    expect(axisLabel(controls, "Alignment").className).toBe("changed");
+    expect(axisLabel(controls, "Alignment").className).toBe("alignment changed");
     expect(axisLabel(controls, "Alignment").querySelector(".value")?.textContent).toBe("Align");
-    expect(axisLabel(controls, "Attention").className).toBe("");
+    expect(axisLabel(controls, "Attention").className).toBe("attention");
     expect(axisLabel(controls, "Attention").querySelector(".name")?.textContent).toBe("Attention");
     expect(axisLabel(controls, "Attention").querySelector(".value")?.textContent).toBe("Default");
     const styles = WorkingModeControls.styles.cssText;
