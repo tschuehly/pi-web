@@ -370,6 +370,13 @@ describe("Workbench Chat chooser", () => {
     expect(window.location.search).toContain("session=human");
     expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
     canClose.mockReturnValue(true);
+    const close = app.shadowRoot?.querySelector<HTMLButtonElement>(".files-close");
+    expect(close?.getAttribute("aria-label")).toBe("Close Files");
+    close?.click();
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector("workbench-files-pane")).toBeNull();
+    toggle?.click();
+    await app.updateComplete;
     toggle?.click();
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
