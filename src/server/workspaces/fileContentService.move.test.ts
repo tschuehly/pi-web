@@ -1,4 +1,4 @@
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { moveWorkspaceFile, readWorkspaceFile } from "./fileContentService.js";
@@ -112,6 +112,17 @@ describe("moveWorkspaceFile", () => {
     const source = await readWorkspaceFile(root, "subdir/file.txt");
     expect(source.content).toBe("data");
     await expect(readFile(join(outsideDir, "evil.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("creates no directory outside the workspace when the destination runs through an escaping symlink", async () => {
+    const root = await createTempWorkspace();
+    await writeFile(join(root, "file.txt"), "data");
+    const outsideDir = await createTempWorkspace("pi-web-move-mkdir-outside-");
+    await symlink(outsideDir, join(root, "escape"), "junction");
+
+    await expect(moveWorkspaceFile(root, "file.txt", "escape/created/out.txt")).rejects.toThrow("Path escapes workspace");
+    await expect(stat(join(outsideDir, "created"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(root, "file.txt"), "utf8")).resolves.toBe("data");
   });
 
   it("prevents moving a source symlink that escapes the workspace", async () => {
