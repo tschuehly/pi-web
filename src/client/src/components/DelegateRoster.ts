@@ -84,9 +84,9 @@ export class DelegateRoster extends LitElement {
               <strong>${item.name ?? "Unnamed"}</strong>
               ${metadata ? html`<span class="meta" title=${metadataTitle}>${metadata}</span>` : null}
             </span>
-            <span class="activity delegate-status">${item.reportedStatus === undefined
-              ? terminal ? "No status report received" : "Waiting for status report"
-              : html`<span class="field-label">Reported status:</span> ${item.reportedStatus}`}</span>
+            ${item.reportedStatus === undefined
+              ? html`<span class="activity delegate-status fallback">${terminal ? "No status report received" : "Waiting for status report"}</span>`
+              : html`<span class="activity delegate-status"><span class="visually-hidden">Self-report: </span>${item.reportedStatus}</span>`}
             <span class="state ${terminal ? "uncollected" : "running"}" role="img" aria-label=${stateLabel} title=${stateLabel}></span>
           </div>`;
         })}</div>
@@ -104,13 +104,14 @@ export class DelegateRoster extends LitElement {
     .chevron { display: inline-block; width: 1em; color: var(--pi-muted); }
     .aggregate { min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
     .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-    .rows { display: grid; gap: 1px; max-height: min(22vh, 180px); overflow-y: auto; overscroll-behavior: contain; }
+    /* Rows share one column grid so every status starts right after the widest name. */
+    .rows { display: grid; grid-template-columns: 8px fit-content(35%) minmax(0, 1fr) 8px; gap: 1px 12px; max-height: min(22vh, 180px); overflow-y: auto; overscroll-behavior: contain; }
     .rows[hidden] { display: none; }
     .rows:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
-    .row { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr) minmax(0, 2fr) 8px; grid-template-rows: auto auto; align-items: start; column-gap: 6px; row-gap: 1px; padding: 3px 5px; border-radius: 5px; color: var(--pi-text); font-size: 11px; }
+    .row { min-width: 0; grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; grid-template-rows: auto auto; align-items: start; row-gap: 0; padding: 1px 5px; border-radius: 5px; color: var(--pi-text); font-size: 11px; }
     .row:nth-child(odd) { background: color-mix(in srgb, var(--pi-surface-hover) 45%, transparent); }
     .terminal { opacity: .72; }
-    .kind, .state { width: 7px; height: 7px; justify-self: center; margin-top: 5px; border-radius: 50%; background: var(--pi-muted); }
+    .kind, .state { width: 7px; height: 7px; justify-self: center; margin-top: 3px; border-radius: 50%; background: var(--pi-muted); }
     .kind { grid-column: 1; grid-row: 1; }
     .state { grid-column: 4; grid-row: 1; }
     .kind.worker { border-radius: 1px; }
@@ -121,18 +122,19 @@ export class DelegateRoster extends LitElement {
     .state.running { background: var(--pi-success); }
     .state.uncollected { background: var(--pi-warning); }
     .identity, .task, .activity { min-width: 0; overflow-wrap: anywhere; }
-    .identity { grid-column: 2; grid-row: 1 / 3; display: grid; align-content: start; gap: 2px; }
+    .identity { grid-column: 2; grid-row: 1 / 3; display: grid; align-content: start; gap: 0; }
     .meta { color: var(--pi-muted); }
     .task { grid-column: 3; grid-row: 1; }
     .activity { grid-column: 3; grid-row: 2; color: var(--pi-muted); }
-    .delegate-status { grid-row: 1 / 3; align-self: center; color: var(--pi-text); }
-    .field-label { color: var(--pi-muted); font-size: 10px; }
+    .delegate-status { grid-row: 1 / 3; color: var(--pi-text); }
+    .delegate-status.fallback { color: var(--pi-muted); font-style: italic; }
     @container (max-width: 700px) {
       section { padding-inline: 6px; }
       .section-title { flex-wrap: wrap; }
       .aggregate { flex: 0 1 100%; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
       .section-name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .row { grid-template-columns: 8px minmax(0, 1fr) 8px; column-gap: 6px; padding-inline: 3px; }
+      .rows { grid-template-columns: 8px minmax(0, 1fr) 8px; column-gap: 6px; }
+      .row { padding-inline: 3px; }
       .identity { grid-column: 2; grid-row: 1; }
       .task { grid-column: 2; grid-row: 2; }
       .activity { grid-column: 2; grid-row: 3; }

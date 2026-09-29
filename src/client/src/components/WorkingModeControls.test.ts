@@ -109,7 +109,7 @@ describe("DelegateRoster", () => {
     expect(running.querySelector(".meta")?.textContent).toBe("implementation · gpt-5.6-sol · medium");
     expect(running.querySelector(".meta")?.getAttribute("title")).toContain("openai-codex/gpt-5.6-sol-20260921");
     expect(running.querySelector(".task")).toBeNull();
-    expect(running.querySelector(".activity")?.textContent).toBe("Reported status: Wiring the roster CSS");
+    expect(running.querySelector(".activity")?.textContent).toBe("Self-report: Wiring the roster CSS");
     expect(running.textContent).not.toContain(longObjective);
     expect(running.textContent).not.toContain("running tests");
     expect(running.querySelector(".activity")?.hasAttribute("aria-label")).toBe(false);
@@ -345,7 +345,7 @@ describe("DelegateRoster", () => {
     const styles = DelegateRoster.styles.cssText;
     expect(styles).toMatch(/:host\s*\{[^}]*container-type:\s*inline-size/);
     const compact = required(/@container \(max-width: 700px\)\s*\{([\s\S]*)\}\s*$/.exec(styles)?.[1]);
-    expect(compact).toMatch(/\.row\s*\{[^}]*grid-template-columns:\s*8px minmax\(0, 1fr\) 8px/);
+    expect(compact).toMatch(/\.rows\s*\{[^}]*grid-template-columns:\s*8px minmax\(0, 1fr\) 8px/);
     expect(compact).toMatch(/\.identity\s*\{[^}]*grid-column:\s*2;\s*grid-row:\s*1/);
     expect(compact).toMatch(/\.task\s*\{[^}]*grid-column:\s*2;\s*grid-row:\s*2/);
     expect(compact).toMatch(/\.activity\s*\{[^}]*grid-column:\s*2;\s*grid-row:\s*3/);
