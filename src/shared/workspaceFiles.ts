@@ -4,6 +4,23 @@ export const MAX_INLINE_PREVIEW_BYTES = 10 * 1024 * 1024;
 export const MAX_INLINE_PREVIEW_LABEL = "10 MB";
 export const MAX_WORKSPACE_FILE_CONTENT_BYTES = 512 * 1024;
 
+/**
+ * Project route segment for a Chat folder outside every registered project. Its
+ * workspace id is `folder:<absolute path>`; the server grants it only while the
+ * folder is the working directory of an existing Pi session.
+ */
+export const AD_HOC_FOLDER_PROJECT_ID = "folder";
+/** Fastify route parameter limit for path-bearing ids; Node's 16 KiB header limit bounds URLs anyway. */
+export const MAX_ROUTE_PARAM_LENGTH = 16 * 1024;
+const AD_HOC_FOLDER_WORKSPACE_PREFIX = "folder:";
+
+export const adHocFolderWorkspaceId = (path: string): string => `${AD_HOC_FOLDER_WORKSPACE_PREFIX}${path}`;
+
+/** The requested folder path, or undefined when the id is not an ad-hoc folder id. */
+export function adHocFolderPath(workspaceId: string): string | undefined {
+  return workspaceId.startsWith(AD_HOC_FOLDER_WORKSPACE_PREFIX) ? workspaceId.slice(AD_HOC_FOLDER_WORKSPACE_PREFIX.length) : undefined;
+}
+
 type WorkspaceFileClassificationDetails =
   | { readonly mediaType: "image"; readonly source: "stream" | "text"; readonly previewMimeType: string }
   | { readonly mediaType: "html"; readonly source: "text"; readonly previewMimeType: "text/html; charset=utf-8" }

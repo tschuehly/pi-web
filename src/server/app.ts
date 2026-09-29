@@ -10,6 +10,7 @@ import { ProjectService } from "./projects/projectService.js";
 import type { WorkspaceCatalog } from "./workspaces/workspaceCatalog.js";
 import { SessionDaemonWorkspaceCatalog } from "./workspaces/sessionDaemonWorkspaceCatalog.js";
 import { sendWorkspaceRequestError } from "./workspaces/workspaceRouteErrors.js";
+import { MAX_ROUTE_PARAM_LENGTH } from "../shared/workspaceFiles.js";
 import { loadEffectiveProjectAttachmentsConfig, loadEffectiveProjectUploadsConfig } from "./workspaces/projectPiWebConfig.js";
 import { listDirectorySuggestions } from "./projects/directorySuggestions.js";
 import { SessionDaemonClient } from "../sessiond/sessionDaemonClient.js";
@@ -171,7 +172,12 @@ async function withProfileDependency<T>(reply: FastifyReply, operation: () => Pr
 }
 
 export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: deps.logger ?? true, ...(deps.bodyLimit === undefined ? {} : { bodyLimit: deps.bodyLimit }) });
+  const app = Fastify({
+    logger: deps.logger ?? true,
+    // Workspace ids embed absolute paths (ad-hoc folders, worktrees) that exceed the 100-character default.
+    routerOptions: { maxParamLength: MAX_ROUTE_PARAM_LENGTH },
+    ...(deps.bodyLimit === undefined ? {} : { bodyLimit: deps.bodyLimit }),
+  });
   // Vite proxies development API requests here, while production and machine-scoped
   // API requests already terminate here, so this is the shared browser HTTP edge.
   await app.register(fastifyCompress, {
@@ -255,8 +261,9 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   registerSessionProxyRoutes(app, sessionDaemon, "/api/machines/local");
   registerPairedPluginBackendProxyRoutes(app, sessionDaemon);
   registerPluginBackendChannelProxyRoutes(app, sessionDaemon);
-  registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api", { config: configService });
-  registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api/machines/local", { config: configService });
+  const explorerOptions = { config: configService, sessionCwds: (cwd: string) => daemonWorkspaces.sessionCwds(cwd) };
+  registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api", explorerOptions);
+  registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api/machines/local", explorerOptions);
   const projectTrustDeps = {
     agentDir: async () => (await requireActiveAgentProfile(agentProfileProvider)).dir,
   };
