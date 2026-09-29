@@ -4,7 +4,7 @@ import { api, type FileContentResponse, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
 import { markdownWorkspaceContext } from "../formatting/workspaceLinks";
 import { workspaceFilePreviewUrl } from "../api/urls";
-import { MAX_INLINE_PREVIEW_BYTES } from "../../../shared/workspaceFiles";
+import { MAX_INLINE_PREVIEW_BYTES, MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../../shared/workspaceFiles";
 import "./ModalSurface";
 import "./FormattedText";
 
@@ -247,8 +247,9 @@ export class WorkbenchFilesPane extends LitElement {
             <div class="preview" ?hidden=${this.mode !== "preview"}>
               ${(file.mediaType === "image" || file.mediaType === "pdf") && file.size > MAX_INLINE_PREVIEW_BYTES ? html`<p>File too large to preview. Use Download file.</p>` : file.mediaType === "image" ? html`<img alt=${`Preview of ${file.path}`} src=${workspaceFilePreviewUrl(workspace?.projectId ?? "", workspace?.id ?? "", file.path, { machineId: this.machineId, modifiedAt: file.modifiedAt })}>` :
                 file.mediaType === "pdf" ? html`<p>Inline PDF support varies. Use Open or Download if it does not display.</p><iframe title=${`Preview of ${file.path}`} src=${workspaceFilePreviewUrl(workspace?.projectId ?? "", workspace?.id ?? "", file.path, { machineId: this.machineId, modifiedAt: file.modifiedAt })} allow="" referrerpolicy="no-referrer"></iframe>` :
-                file.binary || file.truncated ? html`<p>Preview unavailable: this file is binary or too large to edit.</p>` :
-                  isMarkdown(file.path) ? html`<formatted-text .text=${this.buffer} .workspaceContext=${context} @workspace-file-open=${(event: CustomEvent<{ path: string }>) => { event.preventDefault(); void this.openFile(event.detail.path); }}></formatted-text>` : html`<pre>${this.buffer}</pre>`}
+                file.binary ? html`<p>Preview unavailable: this file is binary.</p>` : html`
+                  ${file.truncated ? html`<p role="note">Showing the first ${formatBytes(MAX_WORKSPACE_FILE_CONTENT_BYTES)} of ${formatBytes(file.size)}. The file is too large to edit here; use Download file for all of it.</p>` : null}
+                  ${isMarkdown(file.path) ? html`<formatted-text .text=${file.truncated ? file.content : this.buffer} .workspaceContext=${context} @workspace-file-open=${(event: CustomEvent<{ path: string }>) => { event.preventDefault(); void this.openFile(event.detail.path); }}></formatted-text>` : html`<pre>${file.truncated ? file.content : this.buffer}</pre>`}`}
             </div>
             ${file.binary || file.truncated ? html`<a href=${workspaceFilePreviewUrl(workspace?.projectId ?? "", workspace?.id ?? "", file.path, { machineId: this.machineId, download: true })} download>Download file</a>` : html`<textarea ?hidden=${this.mode !== "edit"} ?disabled=${this.saving || this.loading} aria-label="File source" .value=${this.buffer} @input=${(event: Event) => { if (event.target instanceof HTMLTextAreaElement) this.buffer = event.target.value; }}></textarea>`}
           `}
@@ -294,4 +295,8 @@ export class WorkbenchFilesPane extends LitElement {
     button:disabled { opacity: .55; cursor: not-allowed; }
     .error { color: var(--pi-danger); overflow-wrap: anywhere; }
   `;
+}
+
+function formatBytes(bytes: number): string {
+  return bytes < 1024 * 1024 ? `${String(Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

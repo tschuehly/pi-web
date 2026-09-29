@@ -105,11 +105,22 @@ describe("Workbench workspace file search", () => {
     const write = vi.spyOn(api, "writeWorkspaceFile");
     const pane = await mount();
     expect(await pane.openFile("large.txt")).toBe(true); await pane.updateComplete;
-    expect(pane.shadowRoot?.textContent).toContain("Preview unavailable");
+    expect(pane.shadowRoot?.querySelector(".preview pre")?.textContent).toBe("partial");
+    expect(pane.shadowRoot?.textContent).toContain("too large to edit here");
     expect(pane.shadowRoot?.textContent).toContain("Read-only");
     expect(pane.shadowRoot?.querySelector("textarea")).toBeNull();
     expect(pane.canClose()).toBe(true);
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it("previews the loaded part of a truncated Markdown file", async () => {
+    vi.spyOn(api, "workspaceFile").mockResolvedValue({ ...file("docs/index.md", "# Index\n\npartial"), truncated: true, size: 1136051 });
+    const pane = await mount();
+    expect(await pane.openFile("docs/index.md")).toBe(true); await pane.updateComplete;
+    const view = pane.shadowRoot?.querySelector("formatted-text");
+    expect(view ? Reflect.get(view, "text") : undefined).toContain("# Index");
+    expect(pane.shadowRoot?.textContent).toContain("first 512 KB of 1.1 MB");
+    expect(pane.shadowRoot?.textContent).not.toContain("Preview unavailable");
   });
 
   it("keeps missing-version edits but refuses unsafe save", async () => {
