@@ -100,6 +100,35 @@ describe("Workbench workspace file search", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it("pinch-zooms an image from fit-to-pane up to 8x and resets on the next file", async () => {
+    vi.spyOn(api, "workspaceFile").mockImplementation((_p, _w, path) => Promise.resolve({ ...file(path, "", "v1"), mediaType: "image" as const, binary: true, size: 42 }));
+    const pane = await mount();
+    await pane.openFile("a.png"); await pane.updateComplete;
+    const image = pane.shadowRoot?.querySelector<HTMLImageElement>(".preview img");
+    if (!image) throw new Error("Missing image");
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue(DOMRect.fromRect({ x: 0, y: 0, width: 200, height: 100 }));
+    const gesture = (type: string, scale: number) => { const event = new Event(type, { cancelable: true }); Object.assign(event, { scale, clientX: 0, clientY: 0 }); image.dispatchEvent(event); return event; };
+    expect(gesture("gesturestart", 1).defaultPrevented).toBe(true);
+    gesture("gesturechange", 2);
+    expect(image.style.width).toBe("400px");
+    expect(image.style.maxWidth).toBe("none");
+    gesture("gesturechange", 20);
+    expect(image.style.width).toBe("1600px");
+    gesture("gestureend", 20);
+    // happy-dom's WheelEvent drops ctrlKey, which browsers set for a pinch.
+    const pinchWheel = (deltaY: number) => { const event = new WheelEvent("wheel", { deltaY, cancelable: true }); Object.defineProperty(event, "ctrlKey", { value: true }); image.dispatchEvent(event); return event; };
+    const wheel = pinchWheel(1000);
+    expect(wheel.defaultPrevented).toBe(true);
+    expect(image.style.width).toBe("");
+    pinchWheel(-100 * Math.log(2));
+    expect(image.style.width).toBe("400px");
+    const scroll = new WheelEvent("wheel", { deltaY: 50, cancelable: true });
+    image.dispatchEvent(scroll);
+    expect(scroll.defaultPrevented).toBe(false);
+    await pane.openFile("b.png"); await pane.updateComplete;
+    expect(pane.shadowRoot?.querySelector<HTMLImageElement>(".preview img")?.style.width).toBe("");
+  });
+
   it("keeps a truncated text read view-only without a false dirty state", async () => {
     vi.spyOn(api, "workspaceFile").mockResolvedValue({ ...file("large.txt", "partial", "v1"), truncated: true, size: 900000 });
     const write = vi.spyOn(api, "writeWorkspaceFile");

@@ -62,19 +62,22 @@ export class FormattedText extends LitElement {
       && (!anchor.target || anchor.target === "_self")) {
       const path = anchor.getAttribute("data-workspace-file");
       const outside = anchor.getAttribute("data-outside-file");
-      // HTML pages need their scripts and neighbouring assets, so the macOS app opens local ones in the browser.
+      // The macOS app opens local HTML pages in the browser (their scripts and assets work there) and folders in Finder.
       const absolute = outside ?? (path === null ? null : `${this.workspaceContext.root.replace(/\/+$/, "")}/${path}`);
       const openLocalFile = this.workspaceContext.machineId === "local" ? window.piWebNative?.openLocalFile : undefined;
-      if (absolute !== null && openLocalFile !== undefined && /\.html?$/i.test(absolute)) {
+      const html = absolute !== null && /\.html?$/i.test(absolute);
+      // ponytail: a last segment without a dot is taken for a folder; the app refuses files like Makefile, which then open in the pane.
+      const folder = absolute !== null && !/\.[^/]+\/*$/.test(absolute.slice(absolute.replace(/\/+$/, "").lastIndexOf("/")));
+      if (absolute !== null && openLocalFile !== undefined && (html || folder)) {
         event.preventDefault();
-        void openLocalFile(absolute).catch((error: unknown) => { console.warn("Could not open HTML file in the browser", error); });
+        const context = this.workspaceContext;
+        void openLocalFile(absolute).catch((error: unknown) => {
+          if (html) { console.warn("Could not open HTML file in the browser", error); return; }
+          this.requestFileOpen(context, path, outside);
+        });
         return;
       }
-      const request = path !== null
-        ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...this.workspaceContext, path }, bubbles: true, composed: true, cancelable: true })
-        : outside === null ? undefined
-        : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: this.workspaceContext.machineId, path: outside }, bubbles: true, composed: true, cancelable: true });
-      if (request !== undefined && !this.dispatchEvent(request)) event.preventDefault();
+      if (this.requestFileOpen(this.workspaceContext, path, outside)) event.preventDefault();
       return;
     }
     const button = event.target.closest(".code-copy-button, .quote-copy-button");
@@ -89,6 +92,15 @@ export class FormattedText extends LitElement {
     if (!(code instanceof HTMLElement)) return;
     void this.copyText(code.textContent, button, "code block");
   };
+
+  /** Asks the host to open a Chat file link; true when a host handled (cancelled) the request. */
+  private requestFileOpen(context: NonNullable<FormattedText["workspaceContext"]>, path: string | null, outside: string | null): boolean {
+    const request = path !== null
+      ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...context, path }, bubbles: true, composed: true, cancelable: true })
+      : outside === null ? undefined
+      : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: context.machineId, path: outside }, bubbles: true, composed: true, cancelable: true });
+    return request !== undefined && !this.dispatchEvent(request);
+  }
 
   private async copyText(text: string, button: HTMLButtonElement, kind: "code block" | "quote"): Promise<void> {
     const copied = await writeClipboardText(text);

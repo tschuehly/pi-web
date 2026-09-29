@@ -105,6 +105,34 @@ it.each([["page.html", "/work/page.html"], ["../atelier/index.HTM", "/atelier/in
   }
 });
 
+it("asks the macOS app to open a local folder in Finder, falling back to the Files pane when it is not one", async () => {
+  const openLocalFile = vi.fn((path: string) => path.endsWith("Makefile") ? Promise.reject(new Error("not a folder")) : Promise.resolve(true));
+  Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile } });
+  try {
+    const listener = vi.fn((event: Event) => { event.preventDefault(); });
+    const folder = await setup("/Users/me/shots", "local");
+    folder.view.addEventListener("outside-file-open", listener);
+    expect(dispatchClick(folder.view, folder.anchor)).toBe(true);
+    expect(openLocalFile).toHaveBeenCalledWith("/Users/me/shots");
+    await Promise.resolve();
+    expect(listener).not.toHaveBeenCalled();
+
+    const file = await setup("src/Makefile", "local");
+    file.view.addEventListener("workspace-file-open", listener);
+    expect(dispatchClick(file.view, file.anchor)).toBe(true);
+    expect(openLocalFile).toHaveBeenLastCalledWith("/work/src/Makefile");
+    await vi.waitFor(() => { expect(listener).toHaveBeenCalledOnce(); });
+    expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { path: "src/Makefile" } });
+
+    const text = await setup("notes.md", "local");
+    text.view.addEventListener("workspace-file-open", listener);
+    dispatchClick(text.view, text.anchor);
+    expect(openLocalFile).toHaveBeenCalledTimes(2);
+  } finally {
+    Reflect.deleteProperty(window, "piWebNative");
+  }
+});
+
 it("keeps local HTML in the Files pane outside the macOS app", async () => {
   const { view, anchor } = await setup("page.html", "local");
   const listener = vi.fn((event: Event) => { event.preventDefault(); });
