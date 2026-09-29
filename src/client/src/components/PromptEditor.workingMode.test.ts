@@ -48,17 +48,15 @@ describe("PromptEditor Working Mode controls", () => {
     const alignment = required(select(controls, "Alignment"));
     expect(alignment.value).toBe("Align");
     expect(alignment.selectedOptions[0]?.textContent).toBe("Alignment: Align");
-    // Axes at their default show only an icon; a changed axis also writes out its value;
-    // a wide composer expands every axis to its name and value.
+    // Axes at their default show only an icon; a changed axis also writes out its value at every
+    // width except a narrow composer, which keeps icons only.
     expect(axisLabel(controls, "Alignment").title).toBe("Alignment: Align");
     expect(axisLabel(controls, "Alignment").className).toBe("alignment changed");
-    expect(axisLabel(controls, "Alignment").querySelector(".value")?.textContent).toBe("Align");
+    expect(axisLabel(controls, "Alignment").querySelector("span")?.textContent).toBe("Align");
     expect(axisLabel(controls, "Attention").className).toBe("attention");
-    expect(axisLabel(controls, "Attention").querySelector(".name")?.textContent).toBe("Attention");
-    expect(axisLabel(controls, "Attention").querySelector(".value")?.textContent).toBe("Default");
+    expect(axisLabel(controls, "Attention").querySelector("span")).toBeNull();
     const styles = WorkingModeControls.styles.cssText;
-    expect(styles).toMatch(/label:not\(\.changed\) > \.value\s*\{\s*display:\s*none/);
-    expect(styles).toMatch(/@container composer \(min-width: 1240px\)\s*\{\s*label > \.name, label:not\(\.changed\) > \.value\s*\{\s*display:\s*inline/);
+    expect(styles).not.toMatch(/min-width: 1240px/);
     expect(styles).toMatch(/@container composer \(max-width: 560px\)\s*\{\s*label > span\s*\{\s*display:\s*none/);
     expect(axisLabel(controls, "Orchestration").title).toBe("Orchestration: Main");
     alignment.value = "Plan";

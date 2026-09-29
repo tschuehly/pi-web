@@ -41,7 +41,7 @@ function icon(axis: WorkingModeAxis, value: string | undefined): TemplateResult 
 /**
  * One icon per Working Mode value. An axis at its default (the first value) shows a muted icon;
  * any other value takes the axis colour and is also written out, so a changed mode is visible at a glance.
- * A wide composer expands every axis to "icon Name · Value"; a narrow one shows icons only.
+ * A narrow composer shows icons only.
  * The native select stays on top (transparent) and owns keyboard, picker, and accessibility.
  */
 @customElement("working-mode-controls")
@@ -63,8 +63,7 @@ export class WorkingModeControls extends LitElement {
           return html`
             <label class=${`${axis}${changed ? " changed" : ""}`} title=${`${LABELS[axis]}: ${value ?? "unavailable"}`}>
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>
-              <span class="name" aria-hidden="true">${LABELS[axis]}</span>
-              <span class="value" aria-hidden="true">${value ?? "\u2013"}</span>
+              ${changed ? html`<span aria-hidden="true">${value}</span>` : null}
               <select name=${axis} aria-label=${LABELS[axis]} ?disabled=${selected === undefined} @change=${(event: Event) => { this.change(axis, event); }}>
                 ${selected === undefined ? html`<option value="">${LABELS[axis]}: –</option>` : null}
                 ${WORKING_MODE_AXES[axis].map((option) => html`<option value=${option}>${LABELS[axis]}: ${option}</option>`)}
@@ -108,13 +107,6 @@ export class WorkingModeControls extends LitElement {
     svg { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; font: inherit; cursor: pointer; }
     select:disabled { cursor: default; }
-    .name { display: none; color: var(--pi-muted); }
-    .name::after { content: "·"; margin-left: 4px; color: var(--pi-dim); }
-    label:not(.changed) > .value { display: none; }
-    /* Wide composer: room for every axis name and value beside model, usage, and actions on one row. */
-    @container composer (min-width: 1240px) {
-      label > .name, label:not(.changed) > .value { display: inline; }
-    }
     /* Narrow composer: changed axes keep only their accent icon; the value stays in the tooltip and select. */
     @container composer (max-width: 560px) {
       label > span { display: none; }
