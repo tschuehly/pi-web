@@ -2,6 +2,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
+import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { AuthController } from "../controllers/authController";
@@ -43,7 +44,7 @@ import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, watchWorkstr
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
-export const adHocWorkspace = (path: string): Workspace => ({ id: `folder:${path}`, projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
+export const adHocWorkspace = (path: string): Workspace => ({ id: adHocFolderWorkspaceId(path), projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
 
 /** A project whose path lies inside another registered project belongs to that project's tab. */
 export function rootProjectOf(project: Project, projects: readonly Project[]): Project {
@@ -159,7 +160,7 @@ export class WorkbenchApp extends LitElement {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!(event.metaKey || event.ctrlKey)) return;
     if (event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "p" && !event.altKey && !event.shiftKey && this.app.selectedSession !== undefined
-      && this.app.selectedWorkspace?.projectId !== undefined && this.app.selectedWorkspace.projectId !== ""
+      && this.app.selectedWorkspace !== undefined
       && !hasRenderedModal(this.ownerDocument)) {
       event.preventDefault();
       this.openFileSearch();
@@ -938,7 +939,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   private openFileSearch(): void {
-    if (this.app.selectedWorkspace?.projectId === undefined || this.app.selectedWorkspace.projectId === "") return;
+    if (this.app.selectedWorkspace === undefined) return;
     this.showFiles = true;
     void this.updateComplete.then(async () => {
       const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
@@ -955,7 +956,7 @@ export class WorkbenchApp extends LitElement {
   private readonly openWorkspaceFile = (event: CustomEvent<WorkspaceFileOpenRequest>): void => {
     const workspace = this.app.selectedWorkspace;
     const request = event.detail;
-    if (event.defaultPrevented || workspace?.projectId === undefined || workspace.projectId === ""
+    if (event.defaultPrevented || workspace === undefined
       || request.machineId !== selectedMachineId(this.app) || request.projectId !== workspace.projectId
       || request.workspaceId !== workspace.id || request.root !== workspace.path) return;
     event.preventDefault();
@@ -978,7 +979,7 @@ export class WorkbenchApp extends LitElement {
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${state.selectedWorkspace?.label}</span>
           <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("files")}</button>
-          <button type="button" class="header-action" title="Search files (⌘P)" aria-label="Search files" ?disabled=${state.selectedWorkspace?.projectId === undefined || state.selectedWorkspace.projectId === ""} @click=${() => { this.openFileSearch(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><span>Search files</span></button>
+          <button type="button" class="header-action" title="Search files (⌘P)" aria-label="Search files" ?disabled=${state.selectedWorkspace === undefined} @click=${() => { this.openFileSearch(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><span>Search files</span></button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}

@@ -131,6 +131,16 @@ describe("workspace Markdown downloads", () => {
     expect(link("[bad](bad%ZZ.zip)", workspace).hasAttribute("href")).toBe(false);
   });
 
+  it("routes ad-hoc folder links through the folder project segment", () => {
+    const folder = "/srv/adhoc/.scratch/delivery";
+    const adHoc = { id: `folder:${folder}`, projectId: "", path: folder, label: "delivery", isMain: false, effectiveConfig: { uploads: {}, attachments: {} } };
+    const context = markdownWorkspaceContext("local", adHoc, { id: "s", cwd: folder });
+    if (context === undefined) throw new Error("Expected ad-hoc context");
+    const anchor = link(`[report](${folder}/report.md)`, context);
+    expect(anchor.getAttribute("data-workspace-file")).toBe("report.md");
+    expect(new URL(anchor.href).pathname).toBe(`/api/machines/local/projects/folder/workspaces/${encodeURIComponent(`folder:${folder}`)}/file/preview`);
+  });
+
   it("only assigns context for the session's workspace", () => {
     const selected = { id: "w", projectId: "p", path: "/srv/work/", label: "work", isMain: true, effectiveConfig: { uploads: {}, attachments: {} } };
     // Only identity and path participate in context selection.
