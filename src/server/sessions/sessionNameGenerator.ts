@@ -6,6 +6,9 @@ const SESSION_NAME_TIMEOUT_MS = 10_000;
 const SESSION_NAME_MAX_INPUT_CHARS = 4_000;
 const SESSION_NAME_MAX_LENGTH = 60;
 const FALLBACK_SESSION_NAME_MAX_WORDS = 6;
+const SESSION_GOAL_PART_MAX_CHARS = 700;
+const SKILL_INVOCATION = /^\s*(?:\/skill:\S+|<skill name="[^"]+" location="[^"]+">[\s\S]*?<\/skill>)/;
+const SKILL_ONLY_MAX_ARGUMENT_WORDS = 3;
 const RELAY_HANDOFF_FIRST_LINE = /^Relay\s+"([^"\n]+)"\s+leg\s+(\S+)\s+begins now\.?\s*(?:\n|$)/;
 
 export function deterministicSessionName(firstMessage: unknown): string | undefined {
@@ -14,14 +17,36 @@ export function deterministicSessionName(firstMessage: unknown): string | undefi
   return relayHandoffSessionName(firstMessage.trimStart());
 }
 
-export async function generateShortSessionName<TApi extends Api>(streamFn: StreamFn, model: Model<TApi>, firstMessage: string): Promise<string | undefined> {
+/**
+ * Owner text a title may use: the prompt without a leading skill invocation, or
+ * undefined when the prompt is only a skill invocation with at most a short argument.
+ */
+export function sessionTitleInput(prompt: string): string | undefined {
+  const skill = SKILL_INVOCATION.exec(prompt);
+  if (skill === null) return prompt.trim() === "" ? undefined : prompt;
+  const argument = prompt.slice(skill[0].length).trim();
+  return argument.split(/\s+/).filter(Boolean).length <= SKILL_ONLY_MAX_ARGUMENT_WORDS ? undefined : argument;
+}
+
+export function generateShortSessionName<TApi extends Api>(streamFn: StreamFn, model: Model<TApi>, firstMessage: string): Promise<string | undefined> {
+  return requestSessionTitle(streamFn, model, `Create a 2-6 word title for this request:\n\n${truncateInput(firstMessage)}`);
+}
+
+/** Regenerate a title naming the session's goal from its owner prompts and, when known, the first answer. */
+export function generateSessionGoalTitle<TApi extends Api>(streamFn: StreamFn, model: Model<TApi>, prompts: readonly string[], firstAnswer?: string): Promise<string | undefined> {
+  const parts = prompts.map((prompt, index) => `Prompt ${String(index + 1)}:\n${truncateInput(prompt, SESSION_GOAL_PART_MAX_CHARS)}`);
+  if (firstAnswer !== undefined && firstAnswer.trim() !== "") parts.push(`First answer:\n${truncateInput(firstAnswer, SESSION_GOAL_PART_MAX_CHARS)}`);
+  return requestSessionTitle(streamFn, model, truncateInput(`Create a 2-6 word title naming the goal of this chat session:\n\n${parts.join("\n\n")}`));
+}
+
+async function requestSessionTitle<TApi extends Api>(streamFn: StreamFn, model: Model<TApi>, content: string): Promise<string | undefined> {
   const stream = await streamFn(
     model,
     normalizeContext({
       systemPrompt: "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.",
       messages: [{
         role: "user",
-        content: `Create a 2-6 word title for this request:\n\n${truncateInput(firstMessage)}`,
+        content,
         timestamp: Date.now(),
       }],
     }),
@@ -99,6 +124,6 @@ function textFromAssistant(message: AssistantMessage): string {
     .join("");
 }
 
-function truncateInput(value: string): string {
-  return value.length <= SESSION_NAME_MAX_INPUT_CHARS ? value : `${value.slice(0, SESSION_NAME_MAX_INPUT_CHARS)}…`;
+function truncateInput(value: string, maxChars = SESSION_NAME_MAX_INPUT_CHARS): string {
+  return value.length <= maxChars ? value : `${value.slice(0, maxChars)}…`;
 }

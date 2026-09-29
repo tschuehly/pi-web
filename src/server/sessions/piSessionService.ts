@@ -42,7 +42,7 @@ import { findArchiveCandidateByIdOrPrefix, planSessionArchiveTree, type SessionA
 import type { ActiveSession } from "./sessionRuntimeStore.js";
 import type { PiWebHostPiSessionConnection } from "../../server-plugin-api.js";
 import { PiSessionEventConnections } from "./piSessionEventConnections.js";
-import { deterministicSessionName, fallbackSessionName, generateShortSessionName } from "./sessionNameGenerator.js";
+import { deterministicSessionName, fallbackSessionName, generateSessionGoalTitle, generateShortSessionName, sessionTitleInput } from "./sessionNameGenerator.js";
 import { computeEditPreview, type EditPreviewResult } from "./editPreview.js";
 import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
@@ -1202,7 +1202,9 @@ export class PiSessionService implements SessionRouteService {
   private readonly treeExclusiveRuntimeOperationCounts = new WeakMap<PiSessionRuntime, number>();
   private readonly treeExclusiveSessionOperationCounts = new Map<string, number>();
   private readonly deferredSubsessionNotifications = new WeakMap<PiAgentSession, DeferredSubsessionNotification[]>();
-  private readonly deferredGeneratedSessionNames = new WeakMap<PiAgentSession, string>();
+  private readonly deferredGeneratedSessionNames = new WeakMap<PiAgentSession, GeneratedSessionName>();
+  /** Sessions with a title request in flight or a failed goal-title attempt; one request at a time, one goal attempt per process. */
+  private readonly sessionTitleRequests = new WeakSet<PiAgentSession>();
   private readonly compactionPromptQueues = new Map<string, QueuedPrompt[]>();
   private readonly runtimePromptProvenance = new Map<PiAgentSession, QueuedPrompt[]>();
   private readonly compactionDrainTimers = new Map<string, NodeJS.Timeout>();
@@ -2848,6 +2850,11 @@ export class PiSessionService implements SessionRouteService {
   async runCommand(ref: PiSessionRef, text: string): Promise<ClientCommandResult> {
     await this.assertWritable(ref);
     const active = await this.getActive(ref);
+    const checkpointTitle = CHECKPOINT_TITLE_COMMAND.exec(text.trim())?.[1];
+    if (checkpointTitle !== undefined) {
+      this.applyCheckpointTitle(active.runtime.session, checkpointTitle);
+      return { type: "done" };
+    }
     return this.commandService.run(active.runtime.session.sessionId, text);
   }
 
@@ -4337,32 +4344,68 @@ export class PiSessionService implements SessionRouteService {
     this.compactionDrainTimers.clear();
   }
 
-  private maybeGenerateSessionName(session: PiAgentSession, firstMessage: string): void {
-    if (session.sessionName !== undefined || session.messages.length !== 0 || session.isStreaming || session.isCompacting) return;
-
-    const deterministicName = deterministicSessionName(firstMessage);
-    if (deterministicName !== undefined) {
-      this.applyGeneratedSessionName(session, deterministicName);
+  /**
+   * Title rules, strongest first: manual > checkpoint > goal title after five
+   * owner prompts > first-prompt title. Skill-only prompts count as prompts but
+   * never supply title text.
+   */
+  private maybeGenerateSessionName(session: PiAgentSession, promptText: string): void {
+    if (this.sessionTitleRequests.has(session)) return;
+    const branch = session.sessionManager.getBranch();
+    const prompts = [...userMessageTexts(branch), promptText];
+    const model = session.model;
+    if (session.sessionName === undefined) {
+      const titleText = sessionTitleInput(promptText);
+      if (titleText === undefined || prompts.slice(0, -1).some((prompt) => sessionTitleInput(prompt) !== undefined)) return;
+      const deterministicName = deterministicSessionName(titleText);
+      if (deterministicName !== undefined) {
+        this.applyGeneratedSessionName(session, { name: deterministicName, source: "auto-final", expectedName: undefined });
+        return;
+      }
+      if (model === undefined) return;
+      this.requestSessionTitle(session, "auto", undefined, generateShortSessionName(session.agent.streamFunction, model, titleText), fallbackSessionName(titleText));
       return;
     }
+    if (prompts.length < SESSION_GOAL_TITLE_PROMPT_COUNT || model === undefined || this.sessionNameSource(session) !== "auto") return;
+    const titleTexts = prompts.flatMap((prompt) => sessionTitleInput(prompt) ?? []);
+    const request = generateSessionGoalTitle(session.agent.streamFunction, model, titleTexts, firstAssistantText(branch));
+    this.requestSessionTitle(session, "auto-final", session.sessionName, request, undefined, true);
+  }
 
-    const model = session.model;
-    if (model === undefined) return;
-
-    void generateShortSessionName(session.agent.streamFunction, model, firstMessage).then((name) => {
-      this.applyGeneratedSessionName(session, name ?? fallbackSessionName(firstMessage));
-    }).catch(() => {
-      this.applyGeneratedSessionName(session, fallbackSessionName(firstMessage));
+  private requestSessionTitle(session: PiAgentSession, source: GeneratedSessionNameSource, expectedName: string | undefined, request: Promise<string | undefined>, fallback: string | undefined, onceOnly = false): void {
+    this.sessionTitleRequests.add(session);
+    void request.catch(() => undefined).then((name) => {
+      if (!onceOnly || name !== undefined) this.sessionTitleRequests.delete(session);
+      this.applyGeneratedSessionName(session, { name: name ?? fallback, source, expectedName });
+    }).catch((error: unknown) => {
+      this.logger.info({ sessionId: session.sessionId, error: errorMessage(error) }, "failed to apply generated session name");
     });
   }
 
-  private applyGeneratedSessionName(session: PiAgentSession, name: string | undefined): void {
-    if (name === undefined || session.sessionName !== undefined) return;
+  /** Apply a checkpoint's session title unless the owner named the session. */
+  private applyCheckpointTitle(session: PiAgentSession, title: string): void {
+    const name = title.replace(/\s+/g, " ").trim().slice(0, CHECKPOINT_SESSION_TITLE_MAX_LENGTH).trim();
+    if (name === "" || name === session.sessionName) return;
+    this.applyGeneratedSessionName(session, { name, source: "checkpoint", expectedName: session.sessionName });
+  }
+
+  /** Provenance of the current name; names without a PI WEB marker are the owner's. */
+  private sessionNameSource(session: PiAgentSession): SessionNameSource | undefined {
+    const manager = session.sessionManager;
+    return sessionNameSource(manager.getEntries?.() ?? manager.getBranch());
+  }
+
+  private applyGeneratedSessionName(session: PiAgentSession, generated: { name: string | undefined; source: GeneratedSessionNameSource; expectedName: string | undefined }): void {
+    const { name, source, expectedName } = generated;
+    if (name === undefined || session.sessionName !== expectedName) return;
+    if (expectedName !== undefined && this.sessionNameSource(session) === "manual") return;
     if (this.treeNavigations.has(session)) {
-      this.deferredGeneratedSessionNames.set(session, name);
+      this.deferredGeneratedSessionNames.set(session, { name, source, expectedName });
       return;
     }
     session.setSessionName(name);
+    // Pi records no name provenance; this marker lets later rules tell PI WEB names from the owner's.
+    session.sessionManager.appendCustomEntry?.(SESSION_NAME_CUSTOM_TYPE, { source, name: session.sessionName });
     this.publishSessionName(session);
   }
 
@@ -5316,6 +5359,64 @@ function setSessionTreeLeaf(manager: PiSessionManager, leafId: string | null): v
 
 function transcriptBranchIncludesEntry(entries: readonly unknown[], entryId: string): boolean {
   return entries.some((entry) => isRecord(entry) && entry["id"] === entryId);
+}
+
+/** custom entry type recording which PI WEB rule set the session name that precedes it. */
+const SESSION_NAME_CUSTOM_TYPE = "pi-web.session-name";
+/** Owner prompt count at which an automatic first-prompt title is regenerated once from the session's goal. */
+const SESSION_GOAL_TITLE_PROMPT_COUNT = 5;
+const CHECKPOINT_SESSION_TITLE_MAX_LENGTH = 80;
+/** Internal command the Workbench client sends when a Workstream checkpoint carries a sessionTitle. */
+const CHECKPOINT_TITLE_COMMAND = /^\/workstream-checkpoint-title\s+([\s\S]+)$/;
+
+/** "auto" is a first-prompt title; "auto-final" is a title no automatic rule replaces. */
+type GeneratedSessionNameSource = "auto" | "auto-final" | "checkpoint";
+export type SessionNameSource = GeneratedSessionNameSource | "manual";
+interface GeneratedSessionName { name: string; source: GeneratedSessionNameSource; expectedName: string | undefined }
+
+/**
+ * Provenance of the latest session name in session-file entry order. PI WEB
+ * appends a marker right after each name it sets; any name not followed by a
+ * matching marker was set by the owner (rename, /name) or another tool.
+ */
+export function sessionNameSource(entries: readonly unknown[]): SessionNameSource | undefined {
+  let name: string | undefined;
+  let source: SessionNameSource | undefined;
+  for (const entry of entries) {
+    if (!isRecord(entry)) continue;
+    if (entry["type"] === "session_info") {
+      const value = entry["name"];
+      name = typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+      source = name === undefined ? undefined : "manual";
+    } else if (name !== undefined && entry["type"] === "custom" && entry["customType"] === SESSION_NAME_CUSTOM_TYPE && isRecord(entry["data"])) {
+      const { source: marked, name: markedName } = entry["data"];
+      if (markedName === name && (marked === "auto" || marked === "auto-final" || marked === "checkpoint")) source = marked;
+    }
+  }
+  return source;
+}
+
+function userMessageTexts(entries: readonly unknown[]): string[] {
+  return entries.flatMap((entry) => isRecord(entry) && entry["type"] === "message" && isRecord(entry["message"]) && entry["message"]["role"] === "user"
+    ? [messageText(entry["message"])]
+    : []);
+}
+
+function firstAssistantText(entries: readonly unknown[]): string | undefined {
+  for (const entry of entries) {
+    if (isRecord(entry) && entry["type"] === "message" && isRecord(entry["message"]) && entry["message"]["role"] === "assistant") {
+      const text = messageText(entry["message"]);
+      if (text !== "") return text;
+    }
+  }
+  return undefined;
+}
+
+function messageText(message: Record<string, unknown>): string {
+  const content = message["content"];
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.flatMap((part) => isRecord(part) && part["type"] === "text" && typeof part["text"] === "string" ? [part["text"]] : []).join("\n").trim();
 }
 
 /** custom entry type used to persist parent -> child subsession links outside LLM context. */

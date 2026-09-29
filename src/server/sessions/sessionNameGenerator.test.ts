@@ -2,7 +2,7 @@ import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { describe, expect, it } from "vitest";
-import { cleanSessionName, deterministicSessionName, fallbackSessionName, generateShortSessionName } from "./sessionNameGenerator.js";
+import { cleanSessionName, deterministicSessionName, fallbackSessionName, generateShortSessionName, sessionTitleInput } from "./sessionNameGenerator.js";
 
 function fakeModel(): Model<Api> {
   return { id: "fake-model", name: "Fake Model", api: "anthropic-messages", provider: "anthropic", baseUrl: "https://example.test", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000, maxTokens: 100 };
@@ -43,6 +43,15 @@ function streamThatErrors(): StreamFn {
 }
 
 describe("sessionNameGenerator", () => {
+  it("treats a skill invocation with at most a short argument as having no title text", () => {
+    expect(sessionTitleInput("/skill:orient")).toBeUndefined();
+    expect(sessionTitleInput("  /skill:orient brief")).toBeUndefined();
+    expect(sessionTitleInput("<skill name=\"orient\" location=\"/s/SKILL.md\">\nbody\n</skill>\n\nfull")).toBeUndefined();
+    expect(sessionTitleInput("/skill:tdd add refresh token rotation")).toBe("add refresh token rotation");
+    expect(sessionTitleInput("<skill name=\"tdd\" location=\"/s/SKILL.md\">\nbody\n</skill>\n\nadd refresh token rotation")).toBe("add refresh token rotation");
+    expect(sessionTitleInput("Fix the login bug")).toBe("Fix the login bug");
+  });
+
   it("generates a session name by calling the injected streamFn", async () => {
     const calls: unknown[] = [];
     const stream = streamThatCompletes('Title: "Fix the bug"');
