@@ -87,7 +87,7 @@ export class WorkbenchFilesPane extends LitElement {
   }
 
   async searchFiles(): Promise<void> {
-    if (this.workspace?.projectId === undefined || this.workspace.projectId === "") return;
+    if (this.workspace === undefined) return;
     if (!this.pickerOpen) { this.query = ""; this.entries = []; this.selectedIndex = 0; }
     this.pickerOpen = true;
     await this.loadSearch("");
@@ -108,7 +108,7 @@ export class WorkbenchFilesPane extends LitElement {
 
   private async loadSearch(cursor: string): Promise<void> {
     const workspace = this.workspace;
-    if (workspace?.projectId === undefined || workspace.projectId === "") return;
+    if (workspace === undefined) return;
     const sequence = ++this.treeSequence;
     this.searchController?.abort();
     const controller = new AbortController();
@@ -167,7 +167,7 @@ export class WorkbenchFilesPane extends LitElement {
     if (this.saving || !this.canClose()) return false;
     if (!force && path === this.selectedPath) return true;
     const workspace = this.workspace;
-    if (workspace?.projectId === undefined || workspace.projectId === "") return false;
+    if (workspace === undefined) return false;
     const sequence = ++this.readSequence;
     this.loading = true;
     this.error = "";
@@ -199,7 +199,7 @@ export class WorkbenchFilesPane extends LitElement {
   private async save(overwrite = false): Promise<void> {
     const file = this.loaded;
     const workspace = this.workspace;
-    if (file === undefined || file.binary || file.truncated || workspace?.projectId === undefined || workspace.projectId === "" || !this.dirty || this.saving || this.loading) return;
+    if (file === undefined || file.binary || file.truncated || workspace === undefined || !this.dirty || this.saving || this.loading) return;
     if (!overwrite && file.version === undefined) {
       this.error = "Cannot save safely: this file was loaded without a version. Reload after updating the server; your edits are preserved.";
       return;
@@ -232,8 +232,7 @@ export class WorkbenchFilesPane extends LitElement {
     const context = baseContext === undefined ? undefined : { ...baseContext, sourcePath: file?.path };
     return html`
       <section class="pane" aria-label="Workspace files">
-        <div class="toolbar"><strong>Files</strong><button type="button" ?disabled=${workspace?.projectId === undefined || workspace.projectId === ""} @click=${() => { void this.searchFiles(); }}>Search files</button></div>
-        ${workspace?.projectId === undefined || workspace.projectId === "" ? html`<p role="status">Files are available in registered workspaces. Add this folder as a project to browse it.</p>` : null}
+        <div class="toolbar"><strong>Files</strong><button type="button" ?disabled=${workspace === undefined} @click=${() => { void this.searchFiles(); }}>Search files</button></div>
         <section class="surface" aria-label="File preview and editor">
           ${file === undefined ? html`<p>${this.loading ? "Opening…" : "Search files to open a workspace file."}</p>` : html`
             <div class="toolbar"><strong title=${this.selectedPath}>${this.selectedPath}</strong><span>${file.binary || file.truncated ? "Read-only" : this.dirty ? "Unsaved changes" : "Saved"}</span></div>

@@ -2,6 +2,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
+import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { AuthController } from "../controllers/authController";
@@ -10,7 +11,7 @@ import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
 import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale, stepInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
-import { markdownWorkspaceContext, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
+import { markdownWorkspaceContext, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { machineSessionKey } from "../machineKeys";
 import { nativeDirectoryPicker } from "../nativeHost";
 import { PluginRegistry } from "../plugins/registry";
@@ -43,7 +44,7 @@ import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, watchWorkstr
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
-export const adHocWorkspace = (path: string): Workspace => ({ id: `folder:${path}`, projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
+export const adHocWorkspace = (path: string): Workspace => ({ id: adHocFolderWorkspaceId(path), projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
 
 /** A project whose path lies inside another registered project belongs to that project's tab. */
 export function rootProjectOf(project: Project, projects: readonly Project[]): Project {
@@ -64,6 +65,8 @@ export class WorkbenchApp extends LitElement {
   @state() private currentWorkstreamError = "";
   @state() private delegateRosterCollapsed = false;
   @state() private showFiles = false;
+  /** A workspace the Files pane shows instead of the Chat's, after a link to a file outside the Chat's folder. */
+  @state() private filesTarget: { sessionId: string; workspace: Workspace } | undefined;
   @state() private filesWidth = 400;
   private filesResize: { pointerId: number; startX: number; startWidth: number; handle: HTMLElement } | undefined;
   @query("chat-view") private chatView?: ChatView;
@@ -159,7 +162,7 @@ export class WorkbenchApp extends LitElement {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!(event.metaKey || event.ctrlKey)) return;
     if (event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "p" && !event.altKey && !event.shiftKey && this.app.selectedSession !== undefined
-      && this.app.selectedWorkspace?.projectId !== undefined && this.app.selectedWorkspace.projectId !== ""
+      && this.app.selectedWorkspace !== undefined
       && !hasRenderedModal(this.ownerDocument)) {
       event.preventDefault();
       this.openFileSearch();
@@ -938,7 +941,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   private openFileSearch(): void {
-    if (this.app.selectedWorkspace?.projectId === undefined || this.app.selectedWorkspace.projectId === "") return;
+    if (this.app.selectedWorkspace === undefined) return;
     this.showFiles = true;
     void this.updateComplete.then(async () => {
       const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
@@ -948,23 +951,62 @@ export class WorkbenchApp extends LitElement {
 
   private readonly toggleFiles = (): void => {
     if (this.showFiles && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
-    if (this.showFiles) this.finishFilesResize();
+    if (this.showFiles) { this.finishFilesResize(); this.filesTarget = undefined; }
     this.showFiles = !this.showFiles;
   };
+
+  private filesWorkspace(): Workspace | undefined {
+    const target = this.filesTarget;
+    return target !== undefined && target.sessionId === this.app.selectedSession?.id ? target.workspace : this.app.selectedWorkspace;
+  }
+
+  /** Show `path` in the Files pane, in `workspace` or else the Chat's own workspace. */
+  private openInFiles(workspace: Workspace | undefined, path: string): void {
+    const current = this.filesWorkspace();
+    const next = workspace ?? this.app.selectedWorkspace;
+    const switching = current !== undefined && (next?.projectId !== current.projectId || next.id !== current.id);
+    if (switching && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
+    const session = this.app.selectedSession;
+    this.filesTarget = workspace === undefined || session === undefined ? undefined : { sessionId: session.id, workspace };
+    this.showFiles = true;
+    void this.updateComplete.then(async () => {
+      const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+      if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.openFile(path); }
+    });
+  }
 
   private readonly openWorkspaceFile = (event: CustomEvent<WorkspaceFileOpenRequest>): void => {
     const workspace = this.app.selectedWorkspace;
     const request = event.detail;
-    if (event.defaultPrevented || workspace?.projectId === undefined || workspace.projectId === ""
+    if (event.defaultPrevented || workspace === undefined
       || request.machineId !== selectedMachineId(this.app) || request.projectId !== workspace.projectId
       || request.workspaceId !== workspace.id || request.root !== workspace.path) return;
     event.preventDefault();
-    this.showFiles = true;
-    void this.updateComplete.then(async () => {
-      const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
-      if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.openFile(request.path); }
-    });
+    this.openInFiles(undefined, request.path);
   };
+
+  private readonly openOutsideFile = (event: CustomEvent<OutsideFileOpenRequest>): void => {
+    const { machineId, path } = event.detail;
+    if (event.defaultPrevented || machineId !== selectedMachineId(this.app)) return;
+    event.preventDefault();
+    void this.workspaceForFile(path, machineId).then(
+      (target) => { this.openInFiles(target.workspace, target.path); },
+      (error: unknown) => { this.setApp({ error: error instanceof Error ? error.message : String(error) }); },
+    );
+  };
+
+  /** The deepest registered workspace containing `file`, else its directory as a folder workspace. */
+  private async workspaceForFile(file: string, machineId: string): Promise<{ workspace: Workspace; path: string }> {
+    const listed = await Promise.all(this.app.projects.map((project) => api.workspaces(project.id, machineId).catch((): Workspace[] => [])));
+    const root = (workspace: Workspace) => workspace.path.replace(/\/+$/, "");
+    const containing = [...this.app.workspaces, ...listed.flat()]
+      .filter((workspace) => file.startsWith(`${root(workspace)}/`))
+      .sort((a, b) => root(b).length - root(a).length)[0];
+    if (containing !== undefined) return { workspace: containing, path: file.slice(root(containing).length + 1) };
+    // ponytail: no Git worktree-root lookup for unregistered files; the file's directory is the folder.
+    const slash = file.lastIndexOf("/");
+    return { workspace: adHocWorkspace(file.slice(0, slash) || "/"), path: file.slice(slash + 1) };
+  }
 
   private renderChat() {
     const state = this.app;
@@ -978,7 +1020,7 @@ export class WorkbenchApp extends LitElement {
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${state.selectedWorkspace?.label}</span>
           <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("files")}</button>
-          <button type="button" class="header-action" title="Search files (⌘P)" aria-label="Search files" ?disabled=${state.selectedWorkspace?.projectId === undefined || state.selectedWorkspace.projectId === ""} @click=${() => { this.openFileSearch(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><span>Search files</span></button>
+          <button type="button" class="header-action" title="Search files (⌘P)" aria-label="Search files" ?disabled=${state.selectedWorkspace === undefined} @click=${() => { this.openFileSearch(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><span>Search files</span></button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}
@@ -989,6 +1031,7 @@ export class WorkbenchApp extends LitElement {
           <div class="chat-column">
         <chat-view
           @workspace-file-open=${this.openWorkspaceFile}
+          @outside-file-open=${this.openOutsideFile}
           .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)}
           .sessionId=${session.id}
           .messages=${state.messages}
@@ -1048,7 +1091,7 @@ export class WorkbenchApp extends LitElement {
           ${this.showFiles ? html`
             <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
               @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
-            <workbench-files-pane id="workbench-files" .workspace=${state.selectedWorkspace} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
+            <workbench-files-pane id="workbench-files" .workspace=${this.filesWorkspace()} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
         </div>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
         ${state.modelDialog === undefined ? null : html`<command-picker .title=${state.modelDialog.title} .searchable=${true} .options=${state.modelDialog.options} .selectedValue=${state.modelDialog.selectedValue} .onPick=${(value: string) => { void this.pickModel(value); }} .onCancel=${() => { this.setApp({ modelDialog: undefined }); }}></command-picker>`}

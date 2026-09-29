@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workspaceMarkdownFilePath } from "./workspaceLinks";
+import { outsideChatFilePath, workspaceMarkdownFilePath } from "./workspaceLinks";
 
 const workspace = { machineId: "local", projectId: "p", workspaceId: "w", root: "/work" };
 
@@ -8,8 +8,29 @@ describe("workspace Markdown path normalization", () => {
     expect(workspaceMarkdownFilePath(href, workspace)).toBeUndefined();
   });
 
-  it.each(["../secret", "./dir/../secret", "dir/%2E%2E/secret", "/work/dir/../secret"])("preserves traversal in %s for server rejection", (href) => {
-    expect(workspaceMarkdownFilePath(href, workspace)?.split("/")).toContain("..");
+  it.each(["./dir/../secret", "dir/%2E%2E/secret", "/work/dir/../secret"])("resolves traversal that stays inside the Chat folder in %s", (href) => {
+    expect(workspaceMarkdownFilePath(href, workspace)).toBe("secret");
+    expect(outsideChatFilePath(href, workspace)).toBeUndefined();
+  });
+
+  it.each([
+    ["../secret", "/secret"],
+    ["../pi-web.installed/src/a.ts", "/pi-web.installed/src/a.ts"],
+    ["dir/../../x/./y.md", "/x/y.md"],
+    ["/elsewhere/./file", "/elsewhere/file"],
+    ["/work-other/file", "/work-other/file"],
+    ["/work/../secret", "/secret"],
+  ])("resolves Chat link %s outside the Chat folder to %s", (href, absolute) => {
+    expect(workspaceMarkdownFilePath(href, workspace)).toBeUndefined();
+    expect(outsideChatFilePath(href, workspace)).toBe(absolute);
+  });
+
+  it("never treats links inside the folder, the folder itself, URLs or nested-file links as outside files", () => {
+    for (const href of ["docs/a.md", "/work/docs/a.md", ".", "/work", "https://example.com/x", "#top", "..%2F..%2Fx%00"]) {
+      expect(outsideChatFilePath(href, workspace), href).toBeUndefined();
+    }
+    expect(outsideChatFilePath("../x.md", { ...workspace, sourcePath: "notes.md" })).toBeUndefined();
+    expect(outsideChatFilePath("..", { ...workspace, root: "/work/sub" })).toBe("/work");
   });
 
   it.each(["https://example.com/./file", "//example.com/./file", "mailto:a@example.com", "javascript:alert(1)", "#section", "?query", "/elsewhere/./file", "/work-other/file", "bad%ZZ", "dir%5Cfile", "file%00.txt"])("does not normalize excluded reference %s into a workspace file", (href) => {

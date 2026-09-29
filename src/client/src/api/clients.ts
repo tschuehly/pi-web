@@ -59,7 +59,7 @@ import {
   parseWorkspaceTrustResponse,
   requireMachineStatusSnapshot,
 } from "./parsers";
-import { messagePath } from "./urls";
+import { messagePath, workspaceFilesPath } from "./urls";
 
 const machinePrefix = (machineId = "local") => `api/machines/${encodeURIComponent(machineId)}`;
 
@@ -192,7 +192,7 @@ export const workspacesApi = {
     );
   },
   searchWorkspaceFiles: (projectId: string, workspaceId: string, query: string, cursor = "", machineId = "local", options?: { signal?: AbortSignal }) => request(
-    `${machinePrefix(machineId)}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/search?${new URLSearchParams({ q: query, cursor })}`,
+    `${workspaceFilesPath(machineId, projectId, workspaceId)}/search?${new URLSearchParams({ q: query, cursor })}`,
     (value): { paths: string[]; cursor: string | null } => {
       if (typeof value !== "object" || value === null || !("paths" in value) || !Array.isArray(value.paths)
         || !value.paths.every((path: unknown) => typeof path === "string") || !("cursor" in value)
@@ -205,12 +205,12 @@ export const workspacesApi = {
     options?.signal === undefined ? undefined : { signal: options.signal },
   ),
   workspaceTree: (projectId: string, workspaceId: string, path = "", machineId = "local", options?: { signal?: AbortSignal }) => request(
-    `${machinePrefix(machineId)}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/tree?path=${encodeURIComponent(path)}`,
+    `${workspaceFilesPath(machineId, projectId, workspaceId)}/tree?path=${encodeURIComponent(path)}`,
     parseFileTreeResponse,
     options?.signal === undefined ? undefined : { signal: options.signal },
   ),
   workspaceFile: (projectId: string, workspaceId: string, path: string, machineId = "local", options?: { signal?: AbortSignal }) => request(
-    `${machinePrefix(machineId)}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/file?path=${encodeURIComponent(path)}`,
+    `${workspaceFilesPath(machineId, projectId, workspaceId)}/file?path=${encodeURIComponent(path)}`,
     parseFileContentResponse,
     options?.signal === undefined ? undefined : { signal: options.signal },
   ),
@@ -222,21 +222,21 @@ export const workspacesApi = {
     const isBinary = content instanceof Uint8Array;
     const body: BodyInit = isBinary ? new Uint8Array(content) : new TextEncoder().encode(content);
     return request(
-      `${machinePrefix(machineId)}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/file?${params.toString()}`,
+      `${workspaceFilesPath(machineId, projectId, workspaceId)}/file?${params.toString()}`,
       parseWriteWorkspaceFileResponse,
       { method: "PUT", body, headers: { "Content-Type": isBinary ? "application/octet-stream" : "text/plain" } },
     );
   },
   deleteWorkspaceFile: (projectId: string, workspaceId: string, path: string, machineId = "local"): Promise<DeleteWorkspaceFileResponse> => {
     const params = new URLSearchParams({ path });
-    return request(`${machinePrefix(machineId)}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/file?${params.toString()}`, parseDeleteWorkspaceFileResponse, { method: "DELETE" });
+    return request(`${workspaceFilesPath(machineId, projectId, workspaceId)}/file?${params.toString()}`, parseDeleteWorkspaceFileResponse, { method: "DELETE" });
   },
   moveWorkspaceFile: (projectId: string, workspaceId: string, fromPath: string, toPath: string, options?: MoveWorkspaceFileOptions, machineId = "local") => {
     const params = new URLSearchParams({ fromPath, toPath });
     if (options?.createDirs === false) params.set("createDirs", "false");
     if (options?.overwrite === true) params.set("overwrite", "true");
     return request(
-      `${machinePrefix(machineId)}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/file/move?${params.toString()}`,
+      `${workspaceFilesPath(machineId, projectId, workspaceId)}/file/move?${params.toString()}`,
       parseMoveWorkspaceFileResponse,
       { method: "POST" },
     );
@@ -376,7 +376,7 @@ export const filesApi = {
     if (options.kind !== undefined) params.set("kind", options.kind);
     if (options.mode !== undefined) params.set("mode", options.mode);
     if (options.scope !== undefined) params.set("scope", options.scope);
-    return request(`${machinePrefix(options.machineId)}/projects/${encodeURIComponent(options.projectId)}/workspaces/${encodeURIComponent(options.workspaceId)}/files?${params.toString()}`, arrayOf(parseFileSuggestion));
+    return request(`${workspaceFilesPath(options.machineId ?? "local", options.projectId, options.workspaceId)}/files?${params.toString()}`, arrayOf(parseFileSuggestion));
   },
 };
 

@@ -4,7 +4,7 @@ import type { WorkspaceContext } from "./workspaceContext.js";
 import { loadEffectiveProjectPathAccess } from "./projectPiWebConfig.js";
 
 export async function pathAccessForWorkspaceContext(context: WorkspaceContext, config: Pick<PiWebConfigService, "read"> | undefined): Promise<PiWebPathAccessConfig | undefined> {
-  if (config === undefined) return undefined;
+  if (config === undefined || context.project === undefined) return undefined;
   const response = await config.read();
   return loadEffectiveProjectPathAccess(context.project.path, response.effectiveConfig);
 }

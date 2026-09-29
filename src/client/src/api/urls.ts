@@ -1,4 +1,5 @@
 import type { SessionRef } from "../../../shared/apiTypes";
+import { AD_HOC_FOLDER_PROJECT_ID } from "../../../shared/workspaceFiles";
 import { resolveAppUrl } from "../appUrl";
 
 type SessionLookup = SessionRef | string;
@@ -21,12 +22,16 @@ export function messagePath(session: SessionLookup, options?: { limit?: number; 
   return `api/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId(session))}/messages${query === "" ? "" : `?${query}`}`;
 }
 
+/** Base of the workspace file routes; an ad-hoc folder (empty project id) uses the server's folder project segment. */
+export function workspaceFilesPath(machineId: string, projectId: string, workspaceId: string): string {
+  return `api/machines/${encodeURIComponent(machineId)}/projects/${encodeURIComponent(projectId === "" ? AD_HOC_FOLDER_PROJECT_ID : projectId)}/workspaces/${encodeURIComponent(workspaceId)}`;
+}
+
 export function workspaceFileWriteUrl(projectId: string, workspaceId: string, path: string, options?: { createDirs?: boolean; overwrite?: boolean; machineId?: string }): string {
   const params = new URLSearchParams({ path });
   if (options?.createDirs === false) params.set("createDirs", "false");
   if (options?.overwrite === false) params.set("overwrite", "false");
-  const prefix = `api/machines/${encodeURIComponent(options?.machineId ?? "local")}`;
-  return resolveAppUrl(`${prefix}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/file?${params.toString()}`);
+  return resolveAppUrl(`${workspaceFilesPath(options?.machineId ?? "local", projectId, workspaceId)}/file?${params.toString()}`);
 }
 
 export interface WorkspaceFilePreviewUrlOptions {
@@ -40,8 +45,7 @@ export function workspaceFilePreviewPath(projectId: string, workspaceId: string,
   params.set("path", path);
   if (options?.modifiedAt !== undefined) params.set("v", options.modifiedAt);
   if (options?.download === true) params.set("download", "1");
-  const prefix = `api/machines/${encodeURIComponent(options?.machineId ?? "local")}`;
-  return `${prefix}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/file/preview?${params.toString()}`;
+  return `${workspaceFilesPath(options?.machineId ?? "local", projectId, workspaceId)}/file/preview?${params.toString()}`;
 }
 
 export function workspaceFilePreviewUrl(projectId: string, workspaceId: string, path: string, options?: WorkspaceFilePreviewUrlOptions): string {
