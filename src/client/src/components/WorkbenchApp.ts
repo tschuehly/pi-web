@@ -16,7 +16,7 @@ import { nativeDirectoryPicker } from "../nativeHost";
 import { PluginRegistry } from "../plugins/registry";
 import { themePackPlugin } from "../plugins/themes";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile } from "../presentationProfiles";
-import { shouldAutoOrientWorkstream } from "../workstreamOrientation";
+import { workstreamOrientationDepth } from "../workstreamOrientation";
 import { hasRenderedModal } from "./modalLayerRegistry";
 import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
 import { sessionTitle } from "../sessionLabels";
@@ -447,7 +447,7 @@ export class WorkbenchApp extends LitElement {
       this.setApp({ selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] });
       await this.openSession(session);
     } catch (error) {
-      this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Start a new session with the checkpoint prompt instead.` });
+      this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Start a new session for this Workstream instead.` });
     }
   }
 
@@ -520,7 +520,8 @@ export class WorkbenchApp extends LitElement {
 
     this.orientationPendingSessionId = session.id;
     this.updateUrl();
-    await this.preloadWorkstreamPrompt(detail.prompt, machineId, session.id);
+    await this.updateComplete;
+    if (this.selectedChatIs(session.id, machineId)) this.promptEditor?.focusInput();
     try {
       const confirmationContext = this.workstreamServiceContext ?? workstreamContext;
       const snapshot = await inspectWorkstream(confirmationContext, detail.workstreamId);
@@ -539,12 +540,15 @@ export class WorkbenchApp extends LitElement {
     }
     if (!this.selectedChatIs(session.id, machineId)) return;
     try {
-      const confirmed = await inspectWorkstream(this.workstreamServiceContext ?? workstreamContext, detail.workstreamId);
-      if (await shouldAutoOrientWorkstream(confirmed, session.id, machineId)
-        && this.orientationPendingSessionId === session.id && this.selectedChatIs(session.id, machineId)
-        && !this.app.messages.some((message) => message.role === "user")) await this.sessions.runCommand("/skill:orient full");
+      let depth: "brief" | "full" = "full"; // Unknown recency gets the complete re-entry story.
+      try {
+        const confirmed = await inspectWorkstream(this.workstreamServiceContext ?? workstreamContext, detail.workstreamId);
+        depth = await workstreamOrientationDepth(confirmed, session.id, machineId);
+      } catch { /* Keep full orientation. */ }
+      if (this.orientationPendingSessionId === session.id && this.selectedChatIs(session.id, machineId)
+        && !this.app.messages.some((message) => message.role === "user")) await this.sessions.runCommand(`/skill:orient ${depth}`);
     } catch (error) {
-      this.setApp({ error: `Automatic orientation could not check this Workstream. Run /skill:orient manually; your continuation draft remains available. ${error instanceof Error ? error.message : String(error)}` });
+      this.setApp({ error: `Automatic orientation could not start. Run /skill:orient in this Chat. ${error instanceof Error ? error.message : String(error)}` });
     } finally {
       if (this.orientationPendingSessionId === session.id) this.orientationPendingSessionId = undefined;
     }
@@ -650,16 +654,6 @@ export class WorkbenchApp extends LitElement {
         if (sequence === this.workstreamLoadSequence && this.isConnected) this.scheduleWorkstreamWatch(context, sessionId);
       })();
     }, this.workstreamWatchDelay);
-  }
-
-  private async preloadWorkstreamPrompt(prompt: string, machineId: string, sessionId: string): Promise<void> {
-    await this.updateComplete;
-    const editor = this.promptEditor;
-    if (editor === undefined) return;
-    await editor.updateComplete;
-    if (selectedMachineId(this.app) !== machineId || this.app.selectedSession?.id !== sessionId || editor.sessionId !== sessionId) return;
-    editor.replaceText(prompt);
-    editor.focusInput();
   }
 
   private async startSession(): Promise<void> {

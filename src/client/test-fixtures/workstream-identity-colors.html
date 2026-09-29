@@ -91,7 +91,7 @@
     const drawer = document.querySelector("workstream-context-drawer");
     drawer.snapshot = {
       id: "workstream-opacity-check", title: "Opaque Workstream drawer", revision: 1, updatedAt: "2026-09-22T00:00:00.000Z", closed: false,
-      sessions: [{ id: "session-1", status: "active", latestCheckpoint: { id: "checkpoint-1", whatChanged: "Added opacity coverage", remains: "Verify themes", next: "Read the Goal and dense details without transcript bleed-through.", nextSessionPrompt: "Continue", recordedAt: "2026-09-22T00:00:00.000Z" } }],
+      sessions: [{ id: "session-1", status: "active", latestCheckpoint: { id: "checkpoint-1", whatChanged: "Added opacity coverage", remains: "Verify themes", next: "Read the Goal and dense details without transcript bleed-through.", nextSessionPrompt: null, waitingOn: "agent", recordedAt: "2026-09-22T00:00:00.000Z" } }],
       humanTasks: [], links: [], overview: { goal: "Keep the floating Workstream surface opaque over dense transcript text.", description: "Readable overlay text must retain the Workstream tint without leaking transcript glyphs.", doneWhen: "Every theme computes an alpha-one sheet and label.", history: [], recordedAt: "2026-09-22T00:00:00.000Z" },
     };
     await drawer.updateComplete;

@@ -1,15 +1,15 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { appendWorkstream, inspectWorkstream, WorkstreamServiceError, type WorkstreamAppendInput, type WorkstreamServiceContext, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { appendWorkstream, inspectWorkstream, WorkstreamServiceError, type WorkstreamAppendInput, type WorkstreamServiceContext, type WorkstreamSnapshot, type WorkstreamWaitingOn } from "./WorkstreamChooser";
 import { PluginBackendRequestUnavailableError } from "../api/pluginBackends";
 import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor } from "../workstreamColor";
 
-const checkpointFields: { name: "whatChanged" | "remains" | "next" | "nextSessionPrompt"; label: string; max: number }[] = [
+const checkpointFields: { name: "whatChanged" | "remains" | "next"; label: string; max: number }[] = [
   { name: "whatChanged", label: "What changed", max: 4000 },
   { name: "remains", label: "What remains", max: 4000 },
   { name: "next", label: "Next action", max: 4000 },
-  { name: "nextSessionPrompt", label: "Next session prompt", max: 2000 },
 ];
+const isWaitingOn = (value: string): value is WorkstreamWaitingOn | "" => ["", "owner", "agent", "external"].includes(value);
 
 @customElement("workstream-context-drawer")
 export class WorkstreamContextDrawer extends LitElement {
@@ -22,7 +22,7 @@ export class WorkstreamContextDrawer extends LitElement {
   @state() private saving = false;
   @state() private message = "";
   @state() private conflict = false;
-  private draft: { title: string; whatChanged: string; remains: string; next: string; nextSessionPrompt: string } | undefined;
+  private draft: { title: string; whatChanged: string; remains: string; next: string; waitingOn: WorkstreamWaitingOn | "" } | undefined;
   private base: WorkstreamSnapshot | undefined;
   private pending: WorkstreamAppendInput | undefined;
 
@@ -43,7 +43,7 @@ export class WorkstreamContextDrawer extends LitElement {
     if (!this.snapshot || this.snapshot.closed) return;
     this.base = this.snapshot;
     const checkpoint = this.checkpoint(this.snapshot);
-    this.draft = { title: this.snapshot.title, whatChanged: checkpoint?.whatChanged ?? "", remains: checkpoint?.remains ?? "", next: checkpoint?.next ?? "", nextSessionPrompt: checkpoint?.nextSessionPrompt ?? "" };
+    this.draft = { title: this.snapshot.title, whatChanged: checkpoint?.whatChanged ?? "", remains: checkpoint?.remains ?? "", next: checkpoint?.next ?? "", waitingOn: checkpoint?.waitingOn ?? "" };
     this.editing = true;
     this.conflict = false;
     this.pending = undefined;
@@ -60,16 +60,22 @@ export class WorkstreamContextDrawer extends LitElement {
   }
 
   private get dirty(): boolean {
-    const cp = this.checkpoint(this.base);
     const d = this.draft;
-    return !!d && !!this.base && (d.title !== this.base.title || d.whatChanged !== (cp?.whatChanged ?? "") || d.remains !== (cp?.remains ?? "") || d.next !== (cp?.next ?? "") || d.nextSessionPrompt !== (cp?.nextSessionPrompt ?? ""));
+    return !!d && !!this.base && (d.title !== this.base.title || this.checkpointChanged);
+  }
+
+  private get checkpointChanged(): boolean {
+    const d = this.draft;
+    const old = this.checkpoint(this.base);
+    return !!d && (checkpointFields.some(({ name }) => d[name] !== (old?.[name] ?? "")) || d.waitingOn !== (old?.waitingOn ?? ""));
   }
 
   private change(event: Event): void {
     const input = event.target;
-    if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) || !this.draft) return;
+    if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement || input instanceof HTMLSelectElement) || !this.draft) return;
     const name = input.name;
-    if (name === "title" || checkpointFields.some((field) => field.name === name)) this.draft = { ...this.draft, [name]: input.value };
+    if (name === "waitingOn") { if (isWaitingOn(input.value)) this.draft = { ...this.draft, waitingOn: input.value }; }
+    else if (name === "title" || checkpointFields.some((field) => field.name === name)) this.draft = { ...this.draft, [name]: input.value };
     // A changed draft is a new operation; the old operation remains available only for an exact retry.
     this.pending = undefined;
     this.requestUpdate();
@@ -78,9 +84,7 @@ export class WorkstreamContextDrawer extends LitElement {
   private get invalidCheckpoint(): boolean {
     const draft = this.draft;
     if (!draft) return false;
-    const old = this.checkpoint(this.base);
-    const changed = checkpointFields.some(({ name }) => draft[name] !== (old?.[name] ?? ""));
-    return changed && checkpointFields.some(({ name, max }) => draft[name].trim() === "" || draft[name].length > max);
+    return this.checkpointChanged && checkpointFields.some(({ name, max }) => draft[name].trim() === "" || draft[name].length > max);
   }
 
   private async reload(): Promise<void> {
@@ -106,10 +110,9 @@ export class WorkstreamContextDrawer extends LitElement {
     if (this.saving || !this.base || !this.draft || !this.serviceContext || !this.dirty || this.conflict) return;
     const d = this.draft;
     const titleError = d.title.trim() === "" ? "Enter a title." : d.title.length > 200 ? "Title must be at most 200 characters." : "";
-    const fields = [d.whatChanged, d.remains, d.next, d.nextSessionPrompt];
     const old = this.checkpoint(this.base);
-    const checkpointChanged = d.whatChanged !== (old?.whatChanged ?? "") || d.remains !== (old?.remains ?? "") || d.next !== (old?.next ?? "") || d.nextSessionPrompt !== (old?.nextSessionPrompt ?? "");
-    if (titleError || (checkpointChanged && (fields.some((value) => !value.trim()) || fields.slice(0, 3).some((value) => value.length > 4000) || d.nextSessionPrompt.length > 2000))) { this.message = titleError || "Complete all checkpoint fields (4,000 characters each; prompt 2,000)."; return; }
+    const checkpointChanged = this.checkpointChanged;
+    if (titleError || this.invalidCheckpoint) { this.message = titleError || "Complete all three checkpoint fields (4,000 characters each)."; return; }
     const source = this.base.sessions.find((session) => session.id === this.sessionId && session.status === "active");
     if (checkpointChanged && !source) { this.message = "The selected Chat must be an active Workstream session to replace its checkpoint."; return; }
     this.saving = true;
@@ -121,7 +124,7 @@ export class WorkstreamContextDrawer extends LitElement {
       if (current.revision !== this.base.revision) { this.conflict = true; this.message = "Workstream changed elsewhere. Reload to review the latest version; your draft is preserved."; return; }
       const records: WorkstreamAppendInput["records"] = [];
       if (d.title !== this.base.title) records.push({ type: "title.set", producer: "owner", ...(this.sessionId ? { sourceSessionId: this.sessionId } : {}), payload: { title: d.title } });
-      if (checkpointChanged && source) records.push({ type: "checkpoint.replaced", producer: "owner", sourceSessionId: source.id, payload: { sessionId: source.id, checkpoint: { id: crypto.randomUUID(), whatChanged: d.whatChanged, remains: d.remains, next: d.next, nextSessionPrompt: d.nextSessionPrompt, ...(old?.references ? { references: old.references } : {}) } } });
+      if (checkpointChanged && source) records.push({ type: "checkpoint.replaced", producer: "owner", sourceSessionId: source.id, payload: { sessionId: source.id, checkpoint: { id: crypto.randomUUID(), whatChanged: d.whatChanged, remains: d.remains, next: d.next, ...(d.waitingOn === "" ? {} : { waitingOn: d.waitingOn }), ...(old?.references ? { references: old.references } : {}) } } });
       this.pending ??= { workstreamId: this.base.id, expectedRevision: this.base.revision, idempotencyKey: crypto.randomUUID(), records };
       await appendWorkstream(this.serviceContext, this.pending);
       appended = true;
@@ -183,7 +186,14 @@ export class WorkstreamContextDrawer extends LitElement {
               ${checkpointFields.map(({ name, label, max }) => html`
                 <label for=${name}>${label}</label><textarea id=${name} name=${name} maxlength=${max} .value=${this.draft?.[name] ?? ""} ?disabled=${this.saving}></textarea>
               `)}
-              ${this.invalidCheckpoint ? html`<small class="error" role="alert">Complete all four checkpoint fields (4,000 characters; prompt 2,000).</small>` : nothing}
+              <label for="waitingOn">Waiting on</label>
+              <select id="waitingOn" name="waitingOn" ?disabled=${this.saving}>
+                <option value="" ?selected=${this.draft.waitingOn === ""}>Not recorded</option>
+                <option value="owner" ?selected=${this.draft.waitingOn === "owner"}>Owner</option>
+                <option value="agent" ?selected=${this.draft.waitingOn === "agent"}>Agent</option>
+                <option value="external" ?selected=${this.draft.waitingOn === "external"}>Someone else</option>
+              </select>
+              ${this.invalidCheckpoint ? html`<small class="error" role="alert">Complete all three checkpoint fields (4,000 characters each).</small>` : nothing}
               ${this.conflict || (this.pending !== undefined && this.message !== "") ? html`<button type="button" @click=${() => { void this.reload(); }}>Reload & keep local draft</button>` : nothing}
               <div class="actions"><button type="submit" ?disabled=${this.saving || this.conflict || !this.dirty || !this.draft.title.trim() || this.draft.title.length > 200 || this.invalidCheckpoint}>${this.saving ? "Saving…" : "Save"}</button><button type="button" @click=${() => { this.cancel(); }}>Cancel</button></div>
             </form>
@@ -211,9 +221,9 @@ export class WorkstreamContextDrawer extends LitElement {
     .tab { overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
     .fallback-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sheet { --sheet-tint: color-mix(in srgb, var(--pi-purple-surface) 36%, transparent); --sheet-paint: linear-gradient(var(--sheet-tint), var(--sheet-tint)); position: absolute; top: 100%; left: 0; right: 0; max-height: calc(var(--pi-workbench-viewport-height, 100vh) - 56px); overflow: auto; display: grid; padding: 20px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: var(--sheet-paint) var(--pi-surface); box-shadow: 0 18px 48px var(--pi-shadow); }
-    button, input, textarea { font: inherit; color: var(--pi-text); background: var(--pi-surface); border: 1px solid var(--pi-border); border-radius: 6px; padding: 8px; }
+    button, input, select, textarea { font: inherit; color: var(--pi-text); background: var(--pi-surface); border: 1px solid var(--pi-border); border-radius: 6px; padding: 8px; }
     button { cursor: pointer; }
-    :is(button, input, textarea):focus-visible { outline: 2px solid var(--pi-accent); }
+    :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--pi-accent); }
     form { display: grid; gap: 8px; padding: 16px 0; }
     form label { font-weight: 700; }
     textarea { width: 100%; min-height: 64px; resize: vertical; }

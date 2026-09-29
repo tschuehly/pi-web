@@ -2,10 +2,11 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkstreamChooser, WorkstreamServiceError, actor, ago, appendWorkstream, conflicting, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, sentences, watchWorkstreams, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import { WorkstreamChooser, WorkstreamServiceError, actor, ago, nextActor, appendWorkstream, conflicting, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, sentences, watchWorkstreams, withAnchors, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { workstreamAccentColor } from "../workstreamColor";
 import { pluginsApi } from "../api/clients";
 
+// Legacy checkpoints still carry a continuation prompt; PI WEB must neither show nor preload it.
 const checkpoint = (id: string, recordedAt: string, next: string, references: string[] = []) => ({ id, whatChanged: `${id} changed. More detail.`, remains: "Review", next, nextSessionPrompt: `Continue ${id}`, references, recordedAt });
 
 const snapshot: WorkstreamSnapshot = {
@@ -135,14 +136,15 @@ describe("WorkstreamChooser", () => {
 
     const opened = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }, { once: true }); });
     card.querySelector<HTMLButtonElement>("button.primary")?.click();
-    expect(await opened).toEqual({ workstreamId: "ws-1", sessionId: "s-b", projectId: "p1", workspaceId: "w1", directories: ["/repo/me-trial"], prompt: "Continue cp-b" });
+    expect(await opened).toEqual({ workstreamId: "ws-1", sessionId: "s-b", projectId: "p1", workspaceId: "w1", directories: ["/repo/me-trial"] });
 
     let started: unknown;
     element.addEventListener("start-workstream-session", (event) => { if (event instanceof CustomEvent) started = event.detail; });
-    const start = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "New session with prompt");
+    const start = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "New session");
     start?.click();
-    expect(started).toEqual({ workstreamId: "ws-1", prompt: "Continue cp-b", directories: ["/repo/me-trial"], sessionId: "s-b" });
+    expect(started).toEqual({ workstreamId: "ws-1", directories: ["/repo/me-trial"], sessionId: "s-b" });
     expect(card.textContent).not.toContain("Copy prompt");
+    expect(card.textContent).not.toContain("Continue cp-b");
   });
 
   it("offers a selected-workspace continuation for a temporary checkpoint", async () => {
@@ -156,9 +158,9 @@ describe("WorkstreamChooser", () => {
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".card")).not.toBeNull(); });
     let started: unknown;
     element.addEventListener("start-workstream-session", (event) => { if (event instanceof CustomEvent) started = event.detail; });
-    [...shadow(element).querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "New session in selected workspace with prompt")?.click();
-    expect(started).toEqual({ workstreamId: "ws-1", prompt: "Continue old", directories: [], sessionId: "old", useSelectedWorkspace: true });
-    expect(shadow(element).textContent).not.toContain("New session with prompt");
+    [...shadow(element).querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "New session in selected workspace")?.click();
+    expect(started).toEqual({ workstreamId: "ws-1", directories: [], sessionId: "old", useSelectedWorkspace: true });
+    expect([...shadow(element).querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "New session")).toBe(false);
   });
 
   it("starts an empty Workstream from its project workspace", async () => {
@@ -185,11 +187,28 @@ describe("WorkstreamChooser", () => {
     let started: unknown;
     element.addEventListener("start-workstream-session", (event) => { if (event instanceof CustomEvent) started = event.detail; });
     start?.click();
-    expect(started).toEqual({
-      workstreamId: empty.id,
-      directories: [],
-      prompt: "Goal: Port the shipped Workbench shell.\n\nStart Workstream ws-empty (“Port Workbench Chat”). Done when: Current upstream passes acceptance.",
-    });
+    expect(started).toEqual({ workstreamId: empty.id, directories: [] });
+  });
+
+  it.each([
+    { waitingOn: "owner" as const, label: "Waiting on you" },
+    { waitingOn: "agent" as const, label: "Agent can continue" },
+    { waitingOn: "external" as const, label: "Waiting on someone else" },
+    { waitingOn: null, label: "Thomas" },
+  ])("labels Do next from the newest checkpoint's waitingOn ($waitingOn) and starts without a prompt", async ({ waitingOn, label }) => {
+    const current = { ...checkpoint("cp-new", "2026-09-22T10:00:00Z", "Thomas reviews the plan.", ["/repo/me"]), nextSessionPrompt: null, waitingOn };
+    const older = { ...checkpoint("cp-older", "2026-09-01T10:00:00Z", "Pia runs checks."), waitingOn: "agent" as const };
+    stubService(summaries, { ...snapshot, sessions: [{ id: "s-older", status: "active", latestCheckpoint: older }, { id: "s-new", status: "active", latestCheckpoint: current }], humanTasks: [] });
+    const element = newChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(shadow(element).querySelector(".card")).not.toBeNull(); });
+    expect(shadow(element).querySelector(".next .who")?.textContent).toBe(label);
+    let started: unknown;
+    element.addEventListener("start-workstream-session", (event) => { if (event instanceof CustomEvent) started = event.detail; });
+    [...shadow(element).querySelectorAll<HTMLButtonElement>(".card button")].find((button) => button.textContent === "New session")?.click();
+    expect(started).toEqual({ workstreamId: "ws-1", directories: ["/repo/me"], sessionId: "s-new" });
   });
 
   it("does not offer a second Chat when sessions exist but none has checkpointed", async () => {
@@ -507,6 +526,14 @@ describe("re-entry helpers", () => {
     expect(groupMatchesProject("Personal", "OneDrive-Personal")).toBe(false);
     expect(groupMatchesProject("Embabel", "Me")).toBe(false);
     expect(groupMatchesProject("Anything", undefined)).toBe(true);
+  });
+
+  it("prefers a recorded waitingOn over the actor heuristic", () => {
+    expect(nextActor("Pia runs the tests", "owner")).toBe("Waiting on you");
+    expect(nextActor("Thomas reviews", "agent")).toBe("Agent can continue");
+    expect(nextActor("Thomas reviews", "external")).toBe("Waiting on someone else");
+    expect(nextActor("Thomas reviews", null)).toBe("Thomas");
+    expect(nextActor("Run the tests", undefined)).toBe("Pia");
   });
 
   it("names the actor and cuts to the first clause", () => {

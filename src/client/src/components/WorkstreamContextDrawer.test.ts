@@ -124,6 +124,31 @@ describe("WorkstreamContextDrawer", () => {
     ] });
     expect(request).toHaveProperty("idempotencyKey", expect.any(String));
     expect(request).toHaveProperty("records.1.sourceSessionId", "session-current");
+    expect(request).not.toHaveProperty("records.1.payload.checkpoint.nextSessionPrompt");
+    expect(request).not.toHaveProperty("records.1.payload.checkpoint.waitingOn");
+  });
+
+  it("saves waitingOn alone without a prompt field, prefilled from the checkpoint", async () => {
+    const current = snapshot.sessions[0]?.latestCheckpoint;
+    if (current === undefined || current === null) throw new Error("Missing fixture checkpoint");
+    const promptless = { ...snapshot, sessions: [{ id: "session-current", status: "active", latestCheckpoint: { ...current, nextSessionPrompt: null, waitingOn: "agent" as const, references: ["/repo/drawer"] } }] };
+    const calls: unknown[] = [];
+    const element = await editor((operation, input) => { if (operation === "inspect") return promptless; calls.push(input); return { acceptedRevision: 5 }; }, promptless);
+    const root = required(element.shadowRoot);
+    expect(root.querySelector("#nextSessionPrompt")).toBeNull();
+    expect(root.textContent).not.toContain("Next session prompt");
+    const waiting = required(root.querySelector<HTMLSelectElement>("#waitingOn"));
+    expect(waiting.value).toBe("agent");
+    expect(root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+    waiting.value = "owner"; waiting.dispatchEvent(new Event("input", { bubbles: true }));
+    await element.updateComplete;
+    expect(root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
+    root.querySelector<HTMLFormElement>("form")?.requestSubmit();
+    await vi.waitFor(() => { expect(calls).toHaveLength(1); });
+    expect(calls[0]).toMatchObject({ records: [{ type: "checkpoint.replaced", payload: { checkpoint: {
+      whatChanged: current.whatChanged, remains: current.remains, next: current.next, waitingOn: "owner", references: ["/repo/drawer"],
+    } } }] });
+    expect(calls[0]).not.toHaveProperty("records.0.payload.checkpoint.nextSessionPrompt");
   });
 
   it("retries an uncertain save with the same operation and checkpoint id", async () => {

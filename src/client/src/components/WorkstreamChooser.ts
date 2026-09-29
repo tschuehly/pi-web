@@ -11,7 +11,14 @@ import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor, workstreamMonogram 
 
 // Workstream re-entry view backed by the user-local Workbench plugin service.
 
-export interface WorkstreamCheckpoint { id: string; whatChanged: string; remains: string; next: string; nextSessionPrompt: string | null; references?: string[]; recordedAt: string }
+export type WorkstreamWaitingOn = "owner" | "agent" | "external";
+export interface WorkstreamCheckpoint {
+  id: string; whatChanged: string; remains: string; next: string; references?: string[]; recordedAt: string;
+  /** Who the Workstream waits on after this checkpoint; the newest checkpoint's value is current. */
+  waitingOn?: WorkstreamWaitingOn | null;
+  /** Legacy continuation prompt; new checkpoints project null and PI WEB never preloads it. */
+  nextSessionPrompt?: string | null;
+}
 export interface WorkstreamSession { id: string; status: string; machineId?: string; projectId?: string; workspaceId?: string; latestCheckpoint: WorkstreamCheckpoint | null }
 export interface WorkstreamOverview { goal: string; doneWhen: string; description: string; history: string[]; recordedAt: string }
 type HumanTaskAnswerKind = "yes-no" | "choice" | "free-text";
@@ -19,7 +26,7 @@ type HumanTaskAnswer = { kind: "yes-no" | "choice"; optionId: string } | { kind:
 export type WorkstreamSessionAnchor = { machineId: string; projectId: string; workspaceId: string } | { machineId?: never; projectId?: never; workspaceId?: never };
 export type WorkstreamAppendRecord =
   | { type: "title.set"; producer: "owner"; sourceSessionId?: string; payload: { title: string } }
-  | { type: "checkpoint.replaced"; producer: "owner"; sourceSessionId: string; payload: { sessionId: string; checkpoint: { id: string; whatChanged: string; remains: string; next: string; nextSessionPrompt: string; references?: string[] } } }
+  | { type: "checkpoint.replaced"; producer: "owner"; sourceSessionId: string; payload: { sessionId: string; checkpoint: { id: string; whatChanged: string; remains: string; next: string; waitingOn?: WorkstreamWaitingOn; references?: string[] } } }
   | { type: "human-task.answered"; producer: "owner"; sourceSessionId?: string; payload: { taskId: string; answerId: string; answer: HumanTaskAnswer } }
   | { type: "session.pending"; producer: "pi-web"; sourceSessionId?: string; payload: { associationKey: string; derivationKind?: "checkpoint" } & WorkstreamSessionAnchor }
   | { type: "session.confirmed"; producer: "pi-web"; sourceSessionId: string; payload: { sessionId: string; associationKey: string } & WorkstreamSessionAnchor };
@@ -47,12 +54,10 @@ export interface OpenWorkstreamSessionDetail {
   workspaceId?: string | undefined;
   /** Absolute directories from the newest checkpoint, most likely first. */
   directories: string[];
-  prompt: string | null;
 }
 
 export interface StartWorkstreamSessionDetail {
   workstreamId: string;
-  prompt: string;
   directories: string[];
   sessionId?: string;
   useSelectedWorkspace?: boolean;
@@ -123,6 +128,10 @@ export const ago = (value: string, now = Date.now()): string => {
   return hours < 1 ? "just now" : hours < 24 ? `${String(hours)} h ago` : `${String(Math.round(hours / 24))} d ago`;
 };
 export const actor = (text: string): string => (/^\s*(Thomas|Rod|Pia)\b/.exec(text) ?? [])[1] ?? (/\bThomas\b/.test(text) ? "Thomas" : "Pia");
+const waitingLabels: Record<WorkstreamWaitingOn, string> = { owner: "Waiting on you", agent: "Agent can continue", external: "Waiting on someone else" };
+/** Recorded waitingOn wins; checkpoints without it fall back to naming the actor from the next-action text. */
+export const nextActor = (text: string, waitingOn: WorkstreamWaitingOn | null | undefined): string =>
+  waitingOn !== undefined && waitingOn !== null && Object.hasOwn(waitingLabels, waitingOn) ? waitingLabels[waitingOn] : actor(text);
 export const firstClause = (text: string, max = 110): string => {
   const clean = text.replace(/\s+/g, " ").trim();
   const match = new RegExp(`^(.{1,${String(max)}}?[.;:])(\\s|$)`).exec(clean);
@@ -366,15 +375,13 @@ export class WorkstreamChooser extends LitElement {
       projectId: session.projectId,
       workspaceId: session.workspaceId,
       directories: session.latestCheckpoint === null ? [] : directoriesOf(session.latestCheckpoint),
-      prompt: session.latestCheckpoint?.nextSessionPrompt ?? null,
     };
     this.dispatchEvent(new CustomEvent<OpenWorkstreamSessionDetail>("open-workstream-session", { detail, bubbles: true, composed: true }));
   }
 
-  private start(snapshot: WorkstreamSnapshot, session: WorkstreamSession & { latestCheckpoint: WorkstreamCheckpoint }, prompt: string, useSelectedWorkspace = false): void {
+  private start(snapshot: WorkstreamSnapshot, session: WorkstreamSession & { latestCheckpoint: WorkstreamCheckpoint }, useSelectedWorkspace = false): void {
     this.dispatchStart({
       workstreamId: snapshot.id,
-      prompt,
       directories: useSelectedWorkspace ? [] : directoriesOf(session.latestCheckpoint),
       sessionId: session.id,
       ...(useSelectedWorkspace ? { useSelectedWorkspace: true } : {}),
@@ -382,13 +389,7 @@ export class WorkstreamChooser extends LitElement {
   }
 
   private startEmpty(snapshot: WorkstreamSnapshot): void {
-    const goal = snapshot.overview?.goal ?? snapshot.title;
-    const doneWhen = snapshot.overview?.doneWhen;
-    this.dispatchStart({
-      workstreamId: snapshot.id,
-      prompt: `Goal: ${goal}\n\nStart Workstream ${snapshot.id} (“${snapshot.title}”).${doneWhen === undefined ? "" : ` Done when: ${doneWhen}`}`,
-      directories: [],
-    });
+    this.dispatchStart({ workstreamId: snapshot.id, directories: [] });
   }
 
   private dispatchStart(detail: StartWorkstreamSessionDetail): void {
@@ -435,7 +436,6 @@ export class WorkstreamChooser extends LitElement {
     const section = (label: string, peek: string, body: unknown) => html`<details><summary>${label}<span class="peek">${peek}</span></summary><div>${body}</div></details>`;
     const bulletList = (text: string) => html`<ul>${sentences(text).map((sentence) => html`<li>${withAnchors(sentence)}</li>`)}</ul>`;
     const cp = latest?.latestCheckpoint;
-    const prompt = cp?.nextSessionPrompt;
     const directories = directoriesOf(cp);
     const sessions = [...latestCheckpoints(snapshot), ...snapshot.sessions.filter((session) => session.latestCheckpoint === null)];
     const blocksFirstChat = snapshot.sessions.some((session) => session.status !== "failed");
@@ -445,7 +445,7 @@ export class WorkstreamChooser extends LitElement {
         ${overview === null
           ? html`<p class="missing">No overview stored yet. Ask Pi: “write the overview for ${snapshot.id}”.</p>`
           : html`<p class="goal">${overview.goal}<small>Done when: ${overview.doneWhen}</small></p>`}
-        <div class="next"><span class="kicker">Do next</span><p><span class="who">${actor(nextText)}</span>${nextText}</p>${cp === undefined ? nothing : html`<small>Last touched ${ago(cp.recordedAt)}</small>`}</div>
+        <div class="next"><span class="kicker">Do next</span><p><span class="who">${nextActor(nextText, cp?.waitingOn)}</span>${nextText}</p>${cp === undefined ? nothing : html`<small>Last touched ${ago(cp.recordedAt)}</small>`}</div>
         ${conflict ? html`<p class="warn"><b>Two sessions disagree.</b> ${firstClause(latest.latestCheckpoint.whatChanged)} <i>vs.</i> ${firstClause(rival.latestCheckpoint.whatChanged)}</p>` : nothing}
         ${pending.length > 0 ? html`<p class="warn"><b>${pending.length} open question${pending.length > 1 ? "s" : ""} for Thomas:</b> ${pending.map((task) => task.title).join(" · ")}</p>` : nothing}
         ${pending.length === 0 ? nothing : section("Questions", `${String(pending.length)} awaiting an answer`, html`
@@ -477,7 +477,6 @@ export class WorkstreamChooser extends LitElement {
         ${overview === null ? nothing : section("About", firstClause(overview.description, 90), html`<p>${overview.description}</p>`)}
         ${cp === undefined ? nothing : section("Continue", directories[0]?.replace(/^\/Users\/[^/]+/, "~") ?? "no directory recorded", html`
           ${directories.map((directory) => html`<code>${directory}</code>`)}
-          ${cp.nextSessionPrompt === null ? nothing : html`<p class="prompt">${cp.nextSessionPrompt}</p>`}
         `)}
         ${section("Sessions", `${String(sessions.length)} sessions · newest ${cp === undefined ? "no checkpoint" : ago(cp.recordedAt)}`, html`
           <div class="session-list">
@@ -494,9 +493,9 @@ export class WorkstreamChooser extends LitElement {
               : this.project === undefined
                 ? html`<p class="missing">This Workstream has no matching PI WEB project tab. Set its group to a registered project before starting it.</p>`
                 : html`<button class="primary" title=${this.canStartEmpty ? "Start Workstream Chat" : "Choose a workspace first"} ?disabled=${!this.canStartEmpty} @click=${() => { this.startEmpty(snapshot); }}>Start Workstream Chat</button>`}
-          ${latest === undefined || prompt === undefined || prompt === null ? nothing : html`
-            ${directories.length > 0 || cp?.references?.some(isTemporaryDirectory) !== true ? html`<button @click=${() => { this.start(snapshot, latest, prompt); }}>New session with prompt</button>` : nothing}
-            ${cp?.references?.some(isTemporaryDirectory) === true ? html`<button ?disabled=${!this.canStartEmpty} title="Choose a persistent workspace first" @click=${() => { this.start(snapshot, latest, prompt, true); }}>New session in selected workspace with prompt</button>` : nothing}
+          ${latest === undefined ? nothing : html`
+            ${directories.length > 0 || cp?.references?.some(isTemporaryDirectory) !== true ? html`<button @click=${() => { this.start(snapshot, latest); }}>New session</button>` : nothing}
+            ${cp?.references?.some(isTemporaryDirectory) === true ? html`<button ?disabled=${!this.canStartEmpty} title="Choose a persistent workspace first" @click=${() => { this.start(snapshot, latest, true); }}>New session in selected workspace</button>` : nothing}
           `}
         </div>
       </article>
@@ -552,7 +551,6 @@ export class WorkstreamChooser extends LitElement {
     .task form, .task-options { display: flex; gap: 6px; flex-wrap: wrap; }
     .task input { flex: 1 1 220px; min-height: var(--pi-control-min-size); border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 10px; font: inherit; }
     code { font-size: 12px; overflow-wrap: anywhere; }
-    .prompt { padding: 8px 10px; border: 1px dashed var(--pi-border); border-radius: 6px; color: var(--pi-text); font-size: 12px; }
     .session-list { display: grid; gap: 4px; }
     .session-row { width: 100%; min-width: 0; display: grid; gap: 4px; padding: 6px 8px; font-size: 13px; }
     .session-row.live { border-color: var(--pi-success-border); background: var(--pi-success-bg); }
