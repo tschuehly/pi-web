@@ -35,6 +35,8 @@ export interface WorkingModeSnapshot {
   phase: "selected" | "applied";
   selected: WorkingModeState;
   applied: WorkingModeState | null;
+  /** Thomas confirmed the agreement the Alignment value asks for (the extension's `alignment_reached`). */
+  aligned: boolean;
 }
 
 export interface WatcherStatusItem {
@@ -196,7 +198,7 @@ export function parseWorkingModeSnapshot(text: string | undefined): WorkingModeS
   const selected = workingModeState(value["selected"]);
   const applied = value["applied"] === null ? null : workingModeState(value["applied"]);
   if (selected === undefined || applied === undefined) return undefined;
-  return { schemaVersion: 2, phase: value["phase"], selected, applied };
+  return { schemaVersion: 2, phase: value["phase"], selected, applied, aligned: value["aligned"] === true };
 }
 
 /**

@@ -50,7 +50,7 @@ describe("PromptEditor Working Mode controls", () => {
     expect(axisIcon(controls, "attention").className).toBe("axis attention");
     expect(axisIcon(controls, "attention").textContent).toBe("");
     expect(trigger(controls).title).toBe("Alignment: Align, Attention: Default, Checking: Test, Orchestration: Main");
-    expect(WorkingModeControls.styles.cssText).toMatch(/@container composer \(max-width: 560px\)\s*\{\s*\.axis > \.value\s*\{\s*display:\s*none/);
+    expect(WorkingModeControls.styles.cssText).toMatch(/@container composer \(max-width: 560px\)\s*\{\s*\.axis > \.value, \.aligned-chip > \.value\s*\{\s*display:\s*none/);
   });
 
   it("opens one Working Mode pane that applies several changes and stays open", async () => {
@@ -124,6 +124,28 @@ describe("PromptEditor Working Mode controls", () => {
     document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
     await controls.updateComplete;
     expect(pane(controls)).toBeNull();
+  });
+
+  it("shows an Aligned chip after the Alignment icon once alignment is reached", async () => {
+    const editor = new PromptEditor();
+    editor.status = status();
+    document.body.append(editor);
+    const controls = await workingMode(editor);
+    expect(controls.shadowRoot?.querySelector(".aligned-chip")).toBeNull();
+
+    editor.status = withModes({ alignment: "Align", attention: "AFK", checking: "Default", orchestration: "Main" }, true);
+    await editor.updateComplete;
+    await controls.updateComplete;
+    const chip = required(controls.shadowRoot?.querySelector<HTMLElement>(".aligned-chip"));
+    expect(chip.textContent).toBe("Aligned");
+    expect(chip.previousElementSibling).toBe(axisIcon(controls, "alignment"));
+    expect(trigger(controls).title).toContain("Alignment: Align (aligned)");
+
+    // Default Alignment needs no agreement, so a stale aligned flag shows nothing.
+    editor.status = withModes({ alignment: "Default", attention: "AFK", checking: "Default", orchestration: "Main" }, true);
+    await editor.updateComplete;
+    await controls.updateComplete;
+    expect(controls.shadowRoot?.querySelector(".aligned-chip")).toBeNull();
   });
 
   it("rerenders the Working Mode trigger when only its extension status changes", async () => {
@@ -311,8 +333,8 @@ function search(picker: ModelEffortPicker): HTMLInputElement {
   return required(picker.shadowRoot?.querySelector<HTMLInputElement>(".search"));
 }
 
-function withModes(selected: Record<WorkingModeAxis, string>): SessionStatus {
-  return { ...status(), extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected, applied: null }) } };
+function withModes(selected: Record<WorkingModeAxis, string>, aligned = false): SessionStatus {
+  return { ...status(), extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected, applied: null, aligned }) } };
 }
 
 async function workingMode(editor: PromptEditor): Promise<WorkingModeControls> {
