@@ -1035,12 +1035,25 @@ export class ChatView extends LitElement {
               return html`<formatted-text .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>`;
             }
             if (segment.kind === "skill") return this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset);
-            return this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset);
+            return this.renderToolFold(segment.messages, this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset));
           })}
         </details>
       `;
     }
     return html`${marker}<div class="event-group" data-index=${startIndex} data-scroll-anchor-id=${anchorId}>${this.renderMessageGroupBody(messages, startIndex, groups, groupIndex)}</div>`;
+  }
+
+  /** Routine tool calls between thinking fold to one line that still says when one is running; failed calls are never grouped (chatGroups), so they stay visible. */
+  private renderToolFold(messages: ChatLine[], body: unknown) {
+    const parts = messages.flatMap((message) => message.parts);
+    const count = this.activityStepCount(messages);
+    const running = parts.some((part) => part.type === "toolExecution" && (part.status === "running" || part.status === "pending"));
+    return html`
+      <details class="tool-fold">
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span>${count} tool ${count === 1 ? "call" : "calls"}${running ? html` · <span class="running">running</span>` : null}</summary>
+        <div class="group-body">${body}</div>
+      </details>
+    `;
   }
 
   private activityStepCount(messages: ChatLine[]): number {
