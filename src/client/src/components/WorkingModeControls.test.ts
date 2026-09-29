@@ -39,12 +39,19 @@ describe("WorkingModeControls", () => {
     await element.updateComplete;
     const groups = [...root(element).querySelectorAll('[role="radiogroup"]')];
     expect(groups.map((group) => [...group.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent))).toEqual([
-      ["Default", "Align", "Plan", "Spec"],
-      ["Default", "Focused", "Switching", "Phone", "AFK"],
-      ["Default", "Exercise", "Test", "Challenge"],
-      ["Main", "Subagents", "Workers"],
+      ["", "Align", "Plan", "Spec"],
+      ["", "Focused", "Switching", "Phone", "AFK"],
+      ["", "Exercise", "Test", "Challenge"],
+      ["", "Subagents", "Workers"],
     ]);
-    expect([...root(element).querySelectorAll('[aria-checked="true"]')].map((radio) => radio.textContent)).toEqual(["Align", "Default", "Test", "Main"]);
+    // Each axis default shows only its icon; its name stays as the accessible name and tooltip.
+    expect(groups.map((group) => { const radio = required(group.querySelector('[role="radio"]')); return [radio.getAttribute("aria-label"), radio.getAttribute("title"), radio.querySelector("svg")?.getAttribute("aria-hidden")]; })).toEqual([
+      ["Default", "Default", "true"], ["Default", "Default", "true"], ["Default", "Default", "true"], ["Main", "Main", "true"],
+    ]);
+    expect(root(element).querySelector('[data-value="Subagents"]')?.hasAttribute("aria-label")).toBe(false);
+    expect([...root(element).querySelectorAll('[aria-checked="true"]')].map((radio) => radio.getAttribute("data-value"))).toEqual(["Align", "Default", "Test", "Main"]);
+    expect(WorkingModeControls.styles.cssText).toMatch(/\.values > button\s*\{\s*flex:\s*1 1 auto/);
+    expect(WorkingModeControls.styles.cssText).toMatch(/\.values > button\.icon-only\s*\{\s*flex:\s*0 0 auto/);
     required(root(element).querySelector<HTMLButtonElement>('.alignment [data-value="Plan"]')).click();
     await element.updateComplete;
     expect(run).toHaveBeenCalledWith("/mode alignment plan");
