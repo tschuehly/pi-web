@@ -54,6 +54,31 @@ describe("WorkingModeControls", () => {
     await element.updateComplete;
     expect([...root(element).querySelectorAll("select")].every((select) => select.disabled)).toBe(true);
   });
+
+  it("shows each value's icon, colouring only changed axes, and the default icon when unavailable", async () => {
+    const element = new WorkingModeControls();
+    element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Plan", attention: "Default", checking: "Challenge", orchestration: "Workers" }, applied: null }) });
+    document.body.append(element);
+    await element.updateComplete;
+    const labels = () => [...root(element).querySelectorAll("label")];
+    const icons = () => labels().map((label) => label.querySelector("svg")?.innerHTML.replace(/<!--.*?-->/g, "") ?? "");
+    const selectedIcons = icons();
+    expect(labels().map((label) => label.className)).toEqual(["alignment changed", "attention", "checking changed", "orchestration changed"]);
+    expect(selectedIcons[0]).toContain("M13 5h8"); // list-checks
+    expect(selectedIcons[1]).toContain("M2.062 12.348"); // eye
+    expect(selectedIcons[2]).toContain("m13 19 6-6"); // swords
+    expect(selectedIcons[3]).toContain("M16 3.128"); // users
+
+    element.status = status({});
+    await element.updateComplete;
+    const defaultIcons = icons();
+    expect(labels().every((label) => !label.classList.contains("changed"))).toBe(true);
+    expect(defaultIcons[0]).toContain("<line"); // crosshair
+    expect(defaultIcons[1]).toBe(selectedIcons[1]);
+    expect(defaultIcons[2]).toContain("M20 13c0 5"); // shield
+    expect(defaultIcons[3]).toContain("M19 21v-2"); // user
+    expect(WorkingModeControls.styles.cssText).toMatch(/label\.changed\s*\{\s*color:\s*var\(--axis-color\)/);
+  });
 });
 
 describe("DelegateRoster", () => {

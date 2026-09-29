@@ -21,14 +21,14 @@ import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUs
 import { composerKeyboardSubmissionEnabled, composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
-import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge } from "./promptEditorIcons";
+import { renderAttachIcon, renderContextRing, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
 import "./WorkingModeControls";
-import { thinkingGauge, thinkingLevelLabel } from "../../../shared/thinkingLevels";
+import { thinkingLevelLabel } from "../../../shared/thinkingLevels";
 import { formatCost, formatTokenCount } from "../utils/format";
 import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import "./AutocompleteMenu";
 
-export const PROMPT_EDITOR_MIN_HEIGHT = 54;
+export const PROMPT_EDITOR_MIN_HEIGHT = 44;
 export const PROMPT_EDITOR_MAX_HEIGHT = 640;
 const EDITOR_RESIZE_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End", "Enter"]);
 
@@ -70,7 +70,6 @@ export class PromptEditor extends LitElement {
   @property({ attribute: false }) onSelectModel?: () => void;
   @property({ attribute: false }) onSelectThinking?: () => void;
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
-  @property({ attribute: false }) availableThinkingLevels: readonly string[] = [];
   @query("footer") private footer?: HTMLElement;
   @query(".editor-resize-handle") private editorResizeHandle?: HTMLElement;
   @query(".markdown-editor") private editorHost?: HTMLDivElement;
@@ -209,7 +208,6 @@ export class PromptEditor extends LitElement {
         <div class="editor-wrap">
           <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${editorHeightStyle} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
-          <button class="editor-attach icon-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
           ${this.renderAttachments()}
@@ -218,8 +216,9 @@ export class PromptEditor extends LitElement {
         <div class="actions">
           ${this.renderCompactStatus()}
           ${this.showUsage ? this.renderUsage() : null}
-          <working-mode-controls compact .status=${this.status} .onRunCommand=${this.onRunCommand}></working-mode-controls>
+          <working-mode-controls .status=${this.status} .onRunCommand=${this.onRunCommand}></working-mode-controls>
           <div class="composer-actions">
+            <button class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
             <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
             ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
             <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
@@ -269,10 +268,11 @@ export class PromptEditor extends LitElement {
     if (status === undefined) return null;
     const model = status.model?.id ?? "no model";
     const provider = status.model?.provider !== undefined && status.model.provider !== "" ? `${status.model.provider}/` : "";
+    const thinking = thinkingLevelLabel(status.thinkingLevel);
     return html`
       <div class="compact-status" aria-label="Session status">
-        <button class="select-model" title="Select model" @click=${() => this.onSelectModel?.()}>${provider}${model}</button>
-        <button class="select-thinking icon-button" title=${`Thinking level: ${thinkingLevelLabel(status.thinkingLevel)}`} aria-label=${`Thinking level: ${thinkingLevelLabel(status.thinkingLevel)}`} @click=${() => this.onSelectThinking?.()}>${renderThinkingGauge(thinkingGauge(status.thinkingLevel, this.availableThinkingLevels))}</button>
+        <button class="select-model" title=${`Select model (${provider}${model})`} aria-label=${`Model: ${provider}${model}. Select model`} @click=${() => this.onSelectModel?.()}><span class="model-provider">${provider}</span>${model}</button>
+        <button class="select-thinking" title=${`Thinking level: ${thinking}. Select thinking level`} aria-label=${`Thinking level: ${thinking}`} @click=${() => this.onSelectThinking?.()}>${thinking}</button>
       </div>
     `;
   }
@@ -282,24 +282,27 @@ export class PromptEditor extends LitElement {
     if (status === undefined) return null;
     const context = status.contextUsage;
     const exactContextPercent = context?.percent === null || context?.percent === undefined ? undefined : String(context.percent);
-    const visibleContextPercent = context?.percent?.toFixed(1);
+    const percent = context === undefined ? undefined : context.percent ?? (context.tokens === null || context.contextWindow <= 0 ? undefined : (context.tokens / context.contextWindow) * 100);
     const contextText = context === undefined
       ? "Context unknown"
-      : visibleContextPercent === undefined
-        ? context.tokens === null ? `Context window ${formatTokenCount(context.contextWindow)}` : `Context ${formatTokenCount(context.tokens)}/${formatTokenCount(context.contextWindow)}`
-        : `Context ${visibleContextPercent}%`;
+      : `${context.tokens === null ? "?" : formatTokenCount(context.tokens)} / ${formatTokenCount(context.contextWindow)}`;
     const contextLabel = context === undefined
       ? "Context usage unavailable"
       : context.tokens === null
         ? `Context used tokens unavailable; window: ${String(context.contextWindow)} tokens`
         : `Context: ${String(context.tokens)} of ${String(context.contextWindow)} tokens used${exactContextPercent === undefined ? "" : ` (${exactContextPercent}%)`}`;
-    const metric = (name: string, visible: string, exact: string) => html`<li data-usage=${name} title=${exact}><span aria-hidden="true">${visible}</span><span class="visually-hidden">${exact}</span></li>`;
+    const inputLabel = `Input tokens: ${String(status.tokens.input)}`;
+    const outputLabel = `Output tokens: ${String(status.tokens.output)}`;
+    const level = percent === undefined ? "" : percent >= 90 ? " context-danger" : percent >= 70 ? " context-warning" : "";
+    const metric = (name: string, visible: unknown, exact: string, title = exact) => html`<li data-usage=${name} title=${title}><span aria-hidden="true">${visible}</span><span class="visually-hidden">${exact}</span></li>`;
+    // Input and output are cumulative session counters with little per-turn decision value: they stay
+    // exact in the context meter's tooltip and in screen-reader text instead of taking row width.
     return html`
       <ul class="usage" aria-label="Session usage">
-        ${metric("input", `Input ${formatTokenCount(status.tokens.input)}`, `Input tokens: ${String(status.tokens.input)}`)}
-        ${metric("output", `Output ${formatTokenCount(status.tokens.output)}`, `Output tokens: ${String(status.tokens.output)}`)}
-        ${metric("context", contextText, contextLabel)}
-        ${metric("cost", `Cost ${formatCost(status.cost)}`, `Session cost: $${String(status.cost)}`)}
+        <li data-usage="input" class="visually-hidden">${inputLabel}</li>
+        <li data-usage="output" class="visually-hidden">${outputLabel}</li>
+        ${metric("context", html`<span class=${`context-meter${level}`}>${renderContextRing(percent)}${contextText}</span>`, contextLabel, `${contextLabel}\n${inputLabel}\n${outputLabel}`)}
+        ${metric("cost", formatCost(status.cost), `Session cost: $${String(status.cost)}`)}
         ${this.warningCount > 0 ? metric("warnings", `Warnings ${String(this.warningCount)}`, `Session warnings: ${String(this.warningCount)}`) : null}
         ${status.pendingMessageCount > 0 ? metric("queued", `Queued ${String(status.pendingMessageCount)}`, `Queued messages: ${String(status.pendingMessageCount)}`) : null}
       </ul>

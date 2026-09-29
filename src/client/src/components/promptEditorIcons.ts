@@ -1,5 +1,4 @@
 import { svg, type TemplateResult } from "lit";
-import type { ThinkingGauge } from "../../../shared/thinkingLevels";
 
 // Hand-rolled inline icons matching the project's stroke style
 // (viewBox 0 0 24 24, fill none, stroke currentColor, round caps/joins).
@@ -51,28 +50,13 @@ export function renderStopIcon(): TemplateResult {
   `;
 }
 
-/**
- * A gauge whose bar count comes from the available thinking levels (the non-"off"
- * levels) and whose fill reflects the current level's rank. Bars are laid out to
- * fill the 24x24 box regardless of count, so it adapts if pi changes the set.
- */
-export function renderThinkingGauge(gauge: ThinkingGauge): TemplateResult {
-  const total = Math.max(gauge.total, 1);
-  const gap = total > 1 ? 1.2 : 0;
-  const left = 3;
-  const right = 21;
-  const span = right - left;
-  const barWidth = (span - gap * (total - 1)) / total;
-  const bars = Array.from({ length: total }, (_unused, i) => {
-    const x = left + i * (barWidth + gap);
-    const height = 4 + ((i + 1) / total) * 12;
-    const y = 20 - height;
-    const active = i < gauge.filled;
-    return svg`<rect class=${active ? "gauge-bar gauge-bar-active" : "gauge-bar"} x=${x} y=${y} width=${barWidth} height=${height} rx="1"></rect>`;
-  });
+/** Context-window fill as a ring: a full track plus an arc for the used share (undefined = empty). */
+export function renderContextRing(percent: number | undefined): TemplateResult {
+  const used = percent === undefined || !Number.isFinite(percent) ? 0 : Math.min(100, Math.max(0, percent));
   return svg`
-    <svg class="prompt-thinking-gauge" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      ${bars}
+    <svg class="context-ring" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle class="context-ring-track" cx="8" cy="8" r="6"></circle>
+      <circle class="context-ring-used" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray=${`${String(used)} 100`} transform="rotate(-90 8 8)"></circle>
     </svg>
   `;
 }

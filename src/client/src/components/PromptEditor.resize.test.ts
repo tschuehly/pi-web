@@ -18,26 +18,26 @@ describe("PromptEditor resize handle", () => {
 
     expect(handle.getAttribute("role")).toBe("separator");
     expect(handle.getAttribute("aria-orientation")).toBe("horizontal");
-    expect(handle.getAttribute("aria-valuemin")).toBe("54");
-    expect(handle.getAttribute("aria-valuenow")).toBe("54");
-    expect(handle.getAttribute("aria-valuetext")).toBe("54 pixels, automatic height");
+    expect(handle.getAttribute("aria-valuemin")).toBe("44");
+    expect(handle.getAttribute("aria-valuenow")).toBe("44");
+    expect(handle.getAttribute("aria-valuetext")).toBe("44 pixels, automatic height");
     expect(handle.getAttribute("aria-label")).toContain("temporarily");
     expect(handle.getAttribute("aria-label")).toContain("Enter resets");
     expect(handle.getAttribute("title")).toContain("until Chat closes or reloads");
 
     key(handle, "ArrowUp");
     await editor.updateComplete;
-    expect(handle.getAttribute("aria-valuenow")).toBe("78");
-    expect(handle.getAttribute("aria-valuetext")).toBe("78 pixels, manual height");
-    expect(editor.shadowRoot?.querySelector(".markdown-editor")?.getAttribute("style")).toContain("78px");
+    expect(handle.getAttribute("aria-valuenow")).toBe("68");
+    expect(handle.getAttribute("aria-valuetext")).toBe("68 pixels, manual height");
+    expect(editor.shadowRoot?.querySelector(".markdown-editor")?.getAttribute("style")).toContain("68px");
 
     key(handle, "ArrowUp", true);
     await editor.updateComplete;
-    expect(handle.getAttribute("aria-valuenow")).toBe("150");
+    expect(handle.getAttribute("aria-valuenow")).toBe("140");
 
     key(handle, "Home");
     await editor.updateComplete;
-    expect(handle.getAttribute("aria-valuenow")).toBe("54");
+    expect(handle.getAttribute("aria-valuenow")).toBe("44");
 
     key(handle, "End");
     await editor.updateComplete;
@@ -93,7 +93,7 @@ describe("PromptEditor resize handle", () => {
     pointer(handle, "pointermove", 240, 1, "mouse");
     pointer(handle, "pointerup", 240, 1, "mouse");
     await editor.updateComplete;
-    expect(handle.getAttribute("aria-valuenow")).toBe("94");
+    expect(handle.getAttribute("aria-valuenow")).toBe("84");
 
     handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     await editor.updateComplete;
@@ -146,22 +146,22 @@ describe("PromptEditor resize handle", () => {
 
     editor.sessionId = "next-session";
     await editor.updateComplete;
-    expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe("78");
+    expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe("68");
 
     Reflect.set(editor, "draft", "send this");
     editor.onSend = vi.fn();
     editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.click();
     await editor.updateComplete;
-    expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe("78");
+    expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe("68");
 
     editor.remove();
     document.body.append(editor);
     await vi.waitFor(() => { expect(Reflect.get(editor, "editor")).toBeDefined(); });
-    expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe("54");
+    expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe("44");
 
     editor.remove();
     const reloaded = await mountEditor();
-    expect(resizeHandle(reloaded).getAttribute("aria-valuenow")).toBe("54");
+    expect(resizeHandle(reloaded).getAttribute("aria-valuenow")).toBe("44");
   });
 
   it("updates resize geometry without requesting Lit renders", async () => {
@@ -179,7 +179,7 @@ describe("PromptEditor resize handle", () => {
       observer.notify(editor);
       window.dispatchEvent(new Event("resize"));
 
-      expect(handle.getAttribute("aria-valuenow")).toBe("118");
+      expect(handle.getAttribute("aria-valuenow")).toBe("108");
       expect(requestUpdate).not.toHaveBeenCalled();
     } finally {
       observer.restore();
@@ -198,16 +198,16 @@ describe("PromptEditor resize handle", () => {
       const codeMirror = editor.shadowRoot?.querySelector<HTMLElement>(".cm-editor");
       if (footer === null || footer === undefined || codeMirror === null || codeMirror === undefined) throw new Error("Prompt editor geometry was not rendered");
       vi.spyOn(footer, "offsetHeight", "get").mockReturnValue(220);
-      vi.spyOn(codeMirror, "offsetHeight", "get").mockReturnValue(54);
+      vi.spyOn(codeMirror, "offsetHeight", "get").mockReturnValue(44);
 
       observer.notify(editor);
       await editor.updateComplete;
-      const expectedInitialMax = Math.round(promptEditorMaximumHeight(window.innerHeight, 1, 166));
+      const expectedInitialMax = Math.round(promptEditorMaximumHeight(window.innerHeight, 1, 176));
       const automaticHandle = resizeHandle(editor);
       const markdownEditor = editor.shadowRoot?.querySelector<HTMLElement>(".markdown-editor");
       expect(markdownEditor?.style.getPropertyValue("--prompt-editor-maximum-height")).toBe(`${String(expectedInitialMax)}px`);
       expect(promptEditorStyles.cssText).toMatch(/max-height:\s*min\(220px, var\(--prompt-editor-maximum-height, 220px\)\)/);
-      expect(automaticHandle.getAttribute("aria-valuenow")).toBe("54");
+      expect(automaticHandle.getAttribute("aria-valuenow")).toBe("44");
       expect(automaticHandle.getAttribute("aria-valuemax")).toBe(String(expectedInitialMax));
 
       key(automaticHandle, "End");
@@ -218,8 +218,8 @@ describe("PromptEditor resize handle", () => {
       observer.notify(editor);
       await editor.updateComplete;
       const handle = resizeHandle(editor);
-      expect(handle.getAttribute("aria-valuemax")).toBe("54");
-      expect(handle.getAttribute("aria-valuenow")).toBe("54");
+      expect(handle.getAttribute("aria-valuemax")).toBe("44");
+      expect(handle.getAttribute("aria-valuenow")).toBe("44");
       expect(Number(handle.getAttribute("aria-valuenow"))).toBeLessThanOrEqual(Number(handle.getAttribute("aria-valuemax")));
     } finally {
       observer.restore();
@@ -228,7 +228,7 @@ describe("PromptEditor resize handle", () => {
 
   it("puts the invisible pointer target on the top border while retaining a visible keyboard focus indicator", () => {
     const promptCss = promptEditorStyles.cssText;
-    expect(promptCss).toMatch(/footer\s*\{[^}]*padding:\s*7px 10px 8px/);
+    expect(promptCss).toMatch(/footer\s*\{[^}]*padding:\s*2px 10px 6px/);
     expect(promptCss).toMatch(/\.editor-resize-handle\s*\{[^}]*top:\s*-4px;[^}]*height:\s*8px;[^}]*cursor:\s*ns-resize/);
     expect(promptCss).not.toMatch(/\.editor-resize-handle::after/);
     expect(promptCss).toMatch(/\.editor-resize-handle:focus-visible\s*\{[^}]*outline:/);

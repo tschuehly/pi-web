@@ -31,6 +31,10 @@ Use that skill whenever writing, modifying, reviewing, or planning tests, closin
 
 Never report failed, incomplete, or skipped verification as passing. Identify any expected check that was not run and why, and do not mask a non-zero result. If a command intentionally probes a failure path or captures an exit for inspection, state that purpose and interpret the result.
 
+## UI icons
+
+UI icons are [Lucide](https://lucide.dev) shapes copied as inline SVG (24 viewBox, stroke 2, round caps and joins). Never use emoji or hand-drawn glyphs. One concept keeps one icon everywhere.
+
 ## Client application URL convention
 
 - Build PI WEB-owned browser paths as application-relative references without a leading slash, for example `api/...` and `pi-web-plugins/...`.
