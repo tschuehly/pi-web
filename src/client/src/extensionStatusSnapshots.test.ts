@@ -106,8 +106,9 @@ describe("extension status snapshots", () => {
     const selected = { alignment: "Plan", attention: "Phone", checking: "Test", orchestration: "Workers" };
     const applied = { alignment: "Align", attention: "Default", checking: "Exercise", orchestration: "Main" };
     expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { ...selected, extra: 1 }, applied }))).toEqual({
-      schemaVersion: 2, phase: "selected", selected, applied,
+      schemaVersion: 2, phase: "selected", selected, applied, aligned: false,
     });
+    expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 2, phase: "applied", selected, applied, aligned: true }))?.aligned).toBe(true);
     expect(parseWorkingModeSnapshot("not json")).toBeUndefined();
     expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Plan", checking: "tests" }, applied: null }))).toBeUndefined();
     expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { ...selected, attention: "Away" }, applied: null }))).toBeUndefined();
@@ -116,7 +117,7 @@ describe("extension status snapshots", () => {
   it("treats a selection as pending until applied, using the transcript block and then the defaults before the first turn", () => {
     const defaults: WorkingModeState = { alignment: "Default", attention: "Default", checking: "Default", orchestration: "Main" };
     const focused: WorkingModeState = { ...defaults, attention: "Focused" };
-    const snapshot = (selected: WorkingModeState, applied: WorkingModeState | null) => ({ schemaVersion: 2 as const, phase: "selected" as const, selected, applied });
+    const snapshot = (selected: WorkingModeState, applied: WorkingModeState | null) => ({ schemaVersion: 2 as const, phase: "selected" as const, selected, applied, aligned: false });
     expect(workingModePending(snapshot(focused, focused), defaults)).toBe(false);
     expect(workingModePending(snapshot(focused, defaults), focused)).toBe(true);
     expect(workingModePending(snapshot(focused, null), focused)).toBe(false);
