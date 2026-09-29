@@ -4,6 +4,8 @@ export interface PiWebNativeHost {
   notify?: (title: string, body: string, target: { machineId: string; sessionId: string }) => Promise<void>;
   getSleepDisabled?: () => Promise<boolean>;
   setSleepDisabled?: (disabled: boolean) => Promise<boolean>;
+  /** macOS app only: opens an existing local HTML file in the default browser. */
+  openLocalFile?: (path: string) => Promise<boolean>;
 }
 
 declare global {
