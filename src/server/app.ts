@@ -10,6 +10,7 @@ import { ProjectService } from "./projects/projectService.js";
 import type { WorkspaceCatalog } from "./workspaces/workspaceCatalog.js";
 import { SessionDaemonWorkspaceCatalog } from "./workspaces/sessionDaemonWorkspaceCatalog.js";
 import { sendWorkspaceRequestError } from "./workspaces/workspaceRouteErrors.js";
+import { MAX_ROUTE_PARAM_LENGTH } from "../shared/workspaceFiles.js";
 import { loadEffectiveProjectAttachmentsConfig, loadEffectiveProjectUploadsConfig } from "./workspaces/projectPiWebConfig.js";
 import { listDirectorySuggestions } from "./projects/directorySuggestions.js";
 import { SessionDaemonClient } from "../sessiond/sessionDaemonClient.js";
@@ -40,6 +41,7 @@ import { registerPluginBackendChannelProxyRoutes } from "./plugins/pluginBackend
 import { installPluginBackendChannelWebSocketPayloadLimit } from "./webSocketBridge.js";
 import { registerPairedPluginBackendProxyRoutes } from "./plugins/pluginBackendProxyRoutes.js";
 import { proxyMachinePluginAsset, registerMachinePluginProxyRoutes } from "./machines/machinePluginProxyRoutes.js";
+import { registerRequestSourceGuard, type RequestSourcePolicy } from "./requestSourceGuard.js";
 import type { Project, WorkspaceEffectiveConfig, WorkspaceProviderResolution } from "./types.js";
 
 export interface AppDependencies {
@@ -58,6 +60,8 @@ export interface AppDependencies {
   logger?: FastifyServerOptions["logger"];
   /** Maximum accepted HTTP request body size in bytes. */
   bodyLimit?: number;
+  /** Host names the server answers besides loopback and IP literals; defaults to none. */
+  requestSource?: RequestSourcePolicy;
 }
 
 interface LocalProjectRouteOptions {
@@ -171,7 +175,12 @@ async function withProfileDependency<T>(reply: FastifyReply, operation: () => Pr
 }
 
 export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: deps.logger ?? true, ...(deps.bodyLimit === undefined ? {} : { bodyLimit: deps.bodyLimit }) });
+  const app = Fastify({
+    logger: deps.logger ?? true,
+    // Workspace ids embed absolute paths (ad-hoc folders, worktrees) that exceed the 100-character default.
+    routerOptions: { maxParamLength: MAX_ROUTE_PARAM_LENGTH },
+    ...(deps.bodyLimit === undefined ? {} : { bodyLimit: deps.bodyLimit }),
+  });
   // Vite proxies development API requests here, while production and machine-scoped
   // API requests already terminate here, so this is the shared browser HTTP edge.
   await app.register(fastifyCompress, {
@@ -180,6 +189,8 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
     threshold: 1024,
   });
   await app.register(fastifyWebsocket);
+  // After the WebSocket plugin, whose onRequest hook marks upgrades so a refused upgrade socket is destroyed.
+  registerRequestSourceGuard(app, deps.requestSource);
   installPluginBackendChannelWebSocketPayloadLimit(app.websocketServer);
 
   const projects = deps.projects ?? new ProjectService(new ProjectStore());

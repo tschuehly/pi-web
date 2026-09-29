@@ -15,9 +15,9 @@ function dispatchClick(view: FormattedText, anchor: HTMLAnchorElement, options: 
   return intercepted;
 }
 
-async function setup(destination = "report.txt") {
+async function setup(destination = "report.txt", machineId = "remote") {
   const view = new FormattedText();
-  view.workspaceContext = { machineId: "remote", projectId: "p", workspaceId: "w", root: "/work" };
+  view.workspaceContext = { machineId, projectId: "p", workspaceId: "w", root: "/work" };
   view.text = `[**file**](${destination})`;
   document.body.append(view);
   await view.updateComplete;
@@ -71,4 +71,44 @@ it("leaves explicit new-tab links native", async () => {
   view.addEventListener("workspace-file-open", listener);
   expect(dispatchClick(view, anchor)).toBe(false);
   expect(listener).not.toHaveBeenCalled();
+});
+
+it("asks the host to open a link outside the Chat folder by its absolute path", async () => {
+  const { view, anchor } = await setup("../sibling/src/a.ts");
+  const inside = vi.fn();
+  const outside = vi.fn((event: Event) => { event.preventDefault(); });
+  view.addEventListener("workspace-file-open", inside);
+  view.addEventListener("outside-file-open", outside);
+  expect(dispatchClick(view, anchor)).toBe(true);
+  expect(inside).not.toHaveBeenCalled();
+  expect(outside.mock.calls[0]?.[0]).toMatchObject({ detail: { machineId: "remote", path: "/sibling/src/a.ts" } });
+});
+
+it.each([["page.html", "/work/page.html"], ["../atelier/index.HTM", "/atelier/index.HTM"]])("asks the macOS app to open local HTML %s in the browser", async (destination, absolute) => {
+  const openLocalFile = vi.fn(() => Promise.resolve(true));
+  Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile } });
+  try {
+    const listener = vi.fn();
+    const local = await setup(destination, "local");
+    local.view.addEventListener("workspace-file-open", listener);
+    local.view.addEventListener("outside-file-open", listener);
+    expect(dispatchClick(local.view, local.anchor)).toBe(true);
+    expect(openLocalFile).toHaveBeenCalledWith(absolute);
+    expect(listener).not.toHaveBeenCalled();
+    const remote = await setup(destination);
+    remote.view.addEventListener("workspace-file-open", listener);
+    remote.view.addEventListener("outside-file-open", listener);
+    dispatchClick(remote.view, remote.anchor);
+    expect(openLocalFile).toHaveBeenCalledTimes(1);
+  } finally {
+    Reflect.deleteProperty(window, "piWebNative");
+  }
+});
+
+it("keeps local HTML in the Files pane outside the macOS app", async () => {
+  const { view, anchor } = await setup("page.html", "local");
+  const listener = vi.fn((event: Event) => { event.preventDefault(); });
+  view.addEventListener("workspace-file-open", listener);
+  expect(dispatchClick(view, anchor)).toBe(true);
+  expect(listener).toHaveBeenCalledOnce();
 });

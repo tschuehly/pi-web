@@ -18,8 +18,49 @@ export interface WorkspaceFileOpenRequest extends MarkdownWorkspaceContext {
   path: string;
 }
 
+/** A Chat file link that leaves the Chat's folder; `path` is absolute on `machineId`. */
+export interface OutsideFileOpenRequest {
+  machineId: string;
+  path: string;
+}
+
 /** Classification only: filesystem containment and symlink checks belong to the server. */
 export function workspaceMarkdownFilePath(href: string, context: MarkdownWorkspaceContext): string | undefined {
+  const decoded = decodedFileReference(href);
+  if (decoded === undefined) return undefined;
+  let path = decoded;
+  const absolute = path.startsWith("/");
+  if (context.sourcePath === undefined) {
+    const target = chatLinkTarget(path, context.root);
+    return target?.startsWith("/") === true ? undefined : target;
+  }
+  if (absolute) {
+    const prefix = `${trimTrailingSlashes(context.root)}/`;
+    if (!path.startsWith(prefix)) return undefined;
+    path = path.slice(prefix.length);
+    if (path === "") return undefined;
+  }
+  const parts = absolute ? [] : context.sourcePath.split("/").slice(0, -1);
+  for (const part of path.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (parts.length === 0) return undefined;
+      parts.pop();
+    } else parts.push(part);
+  }
+  return parts.length === 0 ? undefined : parts.join("/");
+}
+
+/** The absolute path of a Chat file link that leaves the Chat's folder (`../x` or `/elsewhere/x`). */
+export function outsideChatFilePath(href: string, context: MarkdownWorkspaceContext): string | undefined {
+  if (context.sourcePath !== undefined) return undefined;
+  const path = decodedFileReference(href);
+  const target = path === undefined ? undefined : chatLinkTarget(path, context.root);
+  return target?.startsWith("/") === true ? target : undefined;
+}
+
+/** A Markdown destination decoded once to a file path, or undefined for URLs, fragments and unsafe characters. */
+function decodedFileReference(href: string): string | undefined {
   const reference = href.trim();
   if (reference === "" || /^[#?]/.test(reference) || reference.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(reference)) return undefined;
   // Markdown destinations are URL references. Decode the path once, after removing URL suffixes.
@@ -31,28 +72,21 @@ export function workspaceMarkdownFilePath(href: string, context: MarkdownWorkspa
   }
   // Reject URL paths containing control characters or platform-specific separators.
   // eslint-disable-next-line no-control-regex -- Explicitly reject control characters in file references.
-  if (path === "" || /[\\\u0000-\u001f\u007f]/.test(path)) return undefined;
-  const absolute = path.startsWith("/");
-  if (absolute) {
-    const prefix = `${trimTrailingSlashes(context.root)}/`;
-    if (!path.startsWith(prefix)) return undefined;
-    path = path.slice(prefix.length);
-    if (path === "") return undefined;
+  return path === "" || /[\\\u0000-\u001f\u007f]/.test(path) ? undefined : path;
+}
+
+/** Relative path for a Chat link inside `root`, the normalized absolute path for one outside it, undefined for `root` itself. */
+function chatLinkTarget(path: string, root: string): string | undefined {
+  const base = trimTrailingSlashes(root);
+  const parts = path.startsWith("/") ? [] : base.split("/").filter((part) => part !== "");
+  for (const part of path.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
   }
-  if (context.sourcePath !== undefined) {
-    const parts = absolute ? [] : context.sourcePath.split("/").slice(0, -1);
-    for (const part of path.split("/")) {
-      if (part === "" || part === ".") continue;
-      if (part === "..") {
-        if (parts.length === 0) return undefined;
-        parts.pop();
-      } else parts.push(part);
-    }
-    return parts.length === 0 ? undefined : parts.join("/");
-  }
-  // Chat links retain their existing server-validated traversal behavior.
-  const normalized = path.split("/").filter((part) => part !== "" && part !== ".").join("/");
-  return normalized === "" ? undefined : normalized;
+  const absolute = `/${parts.join("/")}`;
+  if (absolute === (base === "" ? "/" : base)) return undefined;
+  return absolute.startsWith(`${base}/`) ? absolute.slice(base.length + 1) : absolute;
 }
 
 function trimTrailingSlashes(path: string): string {

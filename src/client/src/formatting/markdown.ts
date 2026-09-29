@@ -1,7 +1,8 @@
 import { marked } from "marked";
 import { workspaceFilePreviewUrl } from "../api/urls";
 import { resolveAppUrl } from "../appUrl";
-import { workspaceMarkdownFilePath, type MarkdownWorkspaceContext } from "./workspaceLinks";
+import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
+import { outsideChatFilePath, workspaceMarkdownFilePath, type MarkdownWorkspaceContext } from "./workspaceLinks";
 
 const renderer = new marked.Renderer();
 renderer.html = ({ text }) => escapeHtml(text);
@@ -47,9 +48,15 @@ function sanitizeHtml(html: string, workspace?: MarkdownWorkspaceContext): strin
     const href = element.tagName === "A" ? element.getAttribute("href") : null;
     if (href !== null && workspace !== undefined) {
       const path = workspaceMarkdownFilePath(href, workspace);
+      const outside = path === undefined ? outsideChatFilePath(href, workspace) : undefined;
       if (path !== undefined) {
         element.setAttribute("href", workspaceFilePreviewUrl(workspace.projectId, workspace.workspaceId, path, { machineId: workspace.machineId, download: true }));
         element.setAttribute("data-workspace-file", path);
+      } else if (outside !== undefined) {
+        // Opened through the file's own folder; the Workbench may pick a registered workspace instead.
+        const slash = outside.lastIndexOf("/");
+        element.setAttribute("href", workspaceFilePreviewUrl("", adHocFolderWorkspaceId(outside.slice(0, slash) || "/"), outside.slice(slash + 1), { machineId: workspace.machineId, download: true }));
+        element.setAttribute("data-outside-file", outside);
       } else if (workspace.sourcePath !== undefined && !/^(?:[#?]|\/\/|[a-z][a-z\d+.-]*:)/i.test(href.trim())) {
         element.removeAttribute("href");
       }
@@ -60,7 +67,7 @@ function sanitizeHtml(html: string, workspace?: MarkdownWorkspaceContext): strin
       if ((name === "href" || name === "src") && !isSafeUrl(attribute.value)) element.removeAttribute(attribute.name);
     }
     if (element.tagName === "A") {
-      element.setAttribute("target", element.hasAttribute("data-workspace-file") ? "_self" : "_blank");
+      element.setAttribute("target", element.hasAttribute("data-workspace-file") || element.hasAttribute("data-outside-file") ? "_self" : "_blank");
       element.setAttribute("rel", "noreferrer noopener");
     }
   });

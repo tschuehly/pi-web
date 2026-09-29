@@ -3,6 +3,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
+import { MAX_ROUTE_PARAM_LENGTH } from "../shared/workspaceFiles.js";
 import { WorkspaceActivityService } from "./activity/workspaceActivityService.js";
 import { MachineStatusService } from "./status/machineStatusService.js";
 import { registerMachineStatusRoutes } from "./status/machineStatusRoutes.js";
@@ -97,7 +98,8 @@ if (agentSessionDirOverride !== undefined) {
 // session can tell it runs inside this pi-web instance. The session
 // environment facts below explain the precautions that follow from it.
 process.env[PI_WEB_SESSION_ENV] = "1";
-const app = Fastify({ logger: true, bodyLimit: maxUploadBytes(daemonEnvironment, config) });
+// Workspace catalog routes carry path-bearing workspace ids longer than Fastify's 100-character default.
+const app = Fastify({ logger: true, routerOptions: { maxParamLength: MAX_ROUTE_PARAM_LENGTH }, bodyLimit: maxUploadBytes(daemonEnvironment, config) });
 if (deprecatedAgentInputs.length > 0) {
   app.log.warn({ deprecatedAgentInputs }, "deprecated agent configuration inputs detected; support will be removed in a future release");
 }

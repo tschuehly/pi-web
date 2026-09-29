@@ -3,7 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { writeClipboardText } from "../clipboard";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
-import type { MarkdownWorkspaceContext, WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
+import type { MarkdownWorkspaceContext, OutsideFileOpenRequest, WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { formattedTextStyles } from "./shared";
 
 @customElement("formatted-text")
@@ -56,17 +56,25 @@ export class FormattedText extends LitElement {
 
   private readonly onFormattedClick = (event: MouseEvent): void => {
     if (!(event.target instanceof Element)) return;
-    const anchor = event.target.closest("a[data-workspace-file]");
+    const anchor = event.target.closest("a[data-workspace-file], a[data-outside-file]");
     if (anchor instanceof HTMLAnchorElement && this.workspaceContext !== undefined
       && !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
       && (!anchor.target || anchor.target === "_self")) {
       const path = anchor.getAttribute("data-workspace-file");
-      if (path !== null) {
-        const request = new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", {
-          detail: { ...this.workspaceContext, path }, bubbles: true, composed: true, cancelable: true,
-        });
-        if (!this.dispatchEvent(request)) event.preventDefault();
+      const outside = anchor.getAttribute("data-outside-file");
+      // HTML pages need their scripts and neighbouring assets, so the macOS app opens local ones in the browser.
+      const absolute = outside ?? (path === null ? null : `${this.workspaceContext.root.replace(/\/+$/, "")}/${path}`);
+      const openLocalFile = this.workspaceContext.machineId === "local" ? window.piWebNative?.openLocalFile : undefined;
+      if (absolute !== null && openLocalFile !== undefined && /\.html?$/i.test(absolute)) {
+        event.preventDefault();
+        void openLocalFile(absolute).catch((error: unknown) => { console.warn("Could not open HTML file in the browser", error); });
+        return;
       }
+      const request = path !== null
+        ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...this.workspaceContext, path }, bubbles: true, composed: true, cancelable: true })
+        : outside === null ? undefined
+        : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: this.workspaceContext.machineId, path: outside }, bubbles: true, composed: true, cancelable: true });
+      if (request !== undefined && !this.dispatchEvent(request)) event.preventDefault();
       return;
     }
     const button = event.target.closest(".code-copy-button, .quote-copy-button");

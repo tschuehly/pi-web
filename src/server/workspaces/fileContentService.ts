@@ -209,7 +209,7 @@ export async function moveWorkspaceFile(rootPath: string, fromPath: string | und
   // Target: uses resolveParentInsideWorkspace + realpath(dirname) pattern (same as writeFile)
   const { root, target: dest, relativePath: destRelative } = await resolveParentInsideWorkspace(rootPath, toPath);
 
-  if (createDirs) await mkdir(dirname(dest), { recursive: true });
+  if (createDirs) await mkdirInside(root, dirname(dest));
 
   // Resolve symlinks in the parent path to prevent escape via symlink
   const realParent = await realpath(dirname(dest));
@@ -230,6 +230,21 @@ export async function moveWorkspaceFile(rootPath: string, fromPath: string | und
   await rename(source, realDest);
   const finalStat = await stat(realDest);
   return { fromPath: fromRelative, toPath: destRelative, size: finalStat.size, modifiedAt: finalStat.mtime.toISOString() };
+}
+
+/** Creates `dir` only after its deepest existing ancestor resolves inside `root`, so a symlink cannot make it create folders elsewhere. */
+async function mkdirInside(root: string, dir: string): Promise<void> {
+  let existing = dir;
+  for (;;) {
+    try {
+      ensureInside(root, await realpath(existing));
+      break;
+    } catch (error: unknown) {
+      if (!isNodeErrorWithCode(error, "ENOENT") || existing === root) throw error;
+      existing = dirname(existing);
+    }
+  }
+  await mkdir(dir, { recursive: true });
 }
 
 function isProbablyBinary(buffer: Buffer): boolean {

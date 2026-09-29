@@ -9,5 +9,9 @@ if (clientDist !== undefined && (!isAbsolute(clientDist) || !existsSync(join(cli
   throw new Error("PI_WEB_CLIENT_DIST must be an absolute directory containing index.html");
 }
 const { config } = effectivePiWebConfig();
-const app = await buildApp({ bodyLimit: maxUploadBytes(process.env, config), ...(clientDist === undefined ? {} : { clientDist }) });
+const app = await buildApp({
+  bodyLimit: maxUploadBytes(process.env, config),
+  requestSource: { ...(config.allowedHosts === undefined ? {} : { allowedHosts: config.allowedHosts }), ...(config.host === undefined ? {} : { host: config.host }) },
+  ...(clientDist === undefined ? {} : { clientDist }),
+});
 await app.listen({ port: config.port ?? 8504, host: config.host ?? "127.0.0.1" });

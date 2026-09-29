@@ -20,13 +20,16 @@ export interface WorkspaceExplorerRouteOptions {
 
 export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: ProjectService, workspaces: WorkspaceCatalog, prefix = "/api", options: WorkspaceExplorerRouteOptions = {}): void {
   registerWorkspaceFileContentParsers(app);
+  // File routes also serve ad-hoc folder workspaces (folder:<absolute directory>).
+  const resolveContext = (params: { projectId: string; workspaceId: string }) =>
+    resolveWorkspaceContext(projects, workspaces, params.projectId, params.workspaceId, true);
 
   app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { q?: string; cursor?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/search`, async (request, reply) => {
     const controller = new AbortController();
     const onClose = () => { if (!reply.raw.writableEnded) controller.abort(); };
     reply.raw.on("close", onClose);
     try {
-      const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
+      const context = await resolveContext(request.params);
       return await searchWorkspaceFiles(context.root, request.query.q ?? "", request.query.cursor ?? "", controller.signal);
     } catch (error) {
       return await sendWorkspaceRequestError(reply, error, 400);
@@ -37,7 +40,7 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
 
   app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { path?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/tree`, async (request, reply) => {
     try {
-      const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
+      const context = await resolveContext(request.params);
       const pathAccess = isAbsoluteishPath(request.query.path ?? "") ? await pathAccessForWorkspaceContext(context, options.config) : undefined;
       return await listWorkspaceTree(context.root, request.query.path, pathAccess);
     } catch (error) {
@@ -47,7 +50,7 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
 
   app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { path?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/file`, async (request, reply) => {
     try {
-      const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
+      const context = await resolveContext(request.params);
       const pathAccess = isAbsoluteishPath(request.query.path ?? "") ? await pathAccessForWorkspaceContext(context, options.config) : undefined;
       return await readWorkspaceFile(context.root, request.query.path, pathAccess);
     } catch (error) {
@@ -57,7 +60,7 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
 
   app.put<{ Params: { projectId: string; workspaceId: string }; Body: Buffer; Querystring: { path?: string; createDirs?: string; overwrite?: string; expectedVersion?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/file`, async (request, reply) => {
     try {
-      const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
+      const context = await resolveContext(request.params);
       const writeOptions: WriteWorkspaceFileOptions = {
         createDirs: request.query.createDirs !== "false",
         ...(request.query.overwrite !== undefined ? { overwrite: request.query.overwrite !== "false" } : {}),
@@ -71,7 +74,7 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
 
   app.delete<{ Params: { projectId: string; workspaceId: string }; Querystring: { path?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/file`, async (request, reply) => {
     try {
-      const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
+      const context = await resolveContext(request.params);
       return await deleteWorkspaceFile(context.root, request.query.path);
     } catch (error) {
       return sendWorkspaceRequestError(reply, error, 400);
@@ -80,7 +83,7 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
 
   app.post<{ Params: { projectId: string; workspaceId: string }; Querystring: { fromPath?: string; toPath?: string; createDirs?: string; overwrite?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/file/move`, async (request, reply) => {
     try {
-      const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
+      const context = await resolveContext(request.params);
       return await moveWorkspaceFile(context.root, request.query.fromPath, request.query.toPath, {
         createDirs: request.query.createDirs !== "false",
         overwrite: request.query.overwrite === "true",
@@ -92,7 +95,7 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
 
   app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { path?: string; download?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/file/preview`, async (request, reply) => {
     try {
-      const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
+      const context = await resolveContext(request.params);
       const download = request.query.download === "1" || request.query.download === "true";
       const pathAccess = isAbsoluteishPath(request.query.path ?? "") ? await pathAccessForWorkspaceContext(context, options.config) : undefined;
       const preview = await readWorkspaceFilePreview(context.root, request.query.path, pathAccess, { download });
@@ -114,7 +117,7 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
 
   app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { q?: string; kind?: "tracked" | "untracked" | "other"; mode?: "file" | "path"; scope?: "tracked" | "all" } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/files`, async (request, reply) => {
     try {
-      const context = await resolveWorkspaceContext(projects, workspaces, request.params.projectId, request.params.workspaceId);
+      const context = await resolveContext(request.params);
       const query = request.query.q ?? "";
       const pathAccess = isAbsoluteishFileSuggestionQuery(query) ? await pathAccessForWorkspaceContext(context, options.config) : undefined;
       if (request.query.mode === "path") return await listPathSuggestions(context.root, query, pathAccess);

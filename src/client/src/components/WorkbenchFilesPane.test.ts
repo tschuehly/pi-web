@@ -168,4 +168,22 @@ describe("Workbench workspace file search", () => {
     await pane.searchFiles(); await pane.updateComplete;
     expect(pane.shadowRoot?.textContent).toContain("results may be incomplete");
   });
+
+  it("browses, opens and saves in an ad-hoc Chat folder without a registered project", async () => {
+    const folder: Workspace = { id: "folder:/loose/.scratch/notes", projectId: "", path: "/loose/.scratch/notes", label: "notes", isMain: false, effectiveConfig: {} };
+    const search = vi.spyOn(api, "searchWorkspaceFiles").mockResolvedValue({ paths: ["a.txt"], cursor: null });
+    const read = vi.spyOn(api, "workspaceFile").mockResolvedValue(file("a.txt", "hello", "v1"));
+    const write = vi.spyOn(api, "writeWorkspaceFile").mockResolvedValue({ path: "a.txt", size: 7, modifiedAt: "now", created: false });
+    const pane = new WorkbenchFilesPane(); pane.workspace = folder; document.body.append(pane); await pane.updateComplete;
+    expect(pane.shadowRoot?.textContent).not.toContain("registered workspaces");
+    expect(pane.shadowRoot?.querySelector<HTMLButtonElement>(".toolbar button")?.disabled).toBe(false);
+    await pane.searchFiles();
+    expect(search.mock.calls[0]?.slice(0, 2)).toEqual(["", folder.id]);
+    expect(await pane.openFile("a.txt")).toBe(true);
+    expect(read.mock.calls[0]?.slice(0, 3)).toEqual(["", folder.id, "a.txt"]);
+    read.mockResolvedValue(file("a.txt", "changed", "v2"));
+    edit(pane, "changed"); await pane.updateComplete;
+    pane.shadowRoot?.querySelectorAll<HTMLButtonElement>(".actions button")[2]?.click();
+    await vi.waitFor(() => { expect(write.mock.calls[0]?.slice(0, 4)).toEqual(["", folder.id, "a.txt", "changed"]); });
+  });
 });
