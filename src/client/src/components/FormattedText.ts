@@ -62,6 +62,14 @@ export class FormattedText extends LitElement {
       && (!anchor.target || anchor.target === "_self")) {
       const path = anchor.getAttribute("data-workspace-file");
       const outside = anchor.getAttribute("data-outside-file");
+      // HTML pages need their scripts and neighbouring assets, so the macOS app opens local ones in the browser.
+      const absolute = outside ?? (path === null ? null : `${this.workspaceContext.root.replace(/\/+$/, "")}/${path}`);
+      const openLocalFile = this.workspaceContext.machineId === "local" ? window.piWebNative?.openLocalFile : undefined;
+      if (absolute !== null && openLocalFile !== undefined && /\.html?$/i.test(absolute)) {
+        event.preventDefault();
+        void openLocalFile(absolute).catch((error: unknown) => { console.warn("Could not open HTML file in the browser", error); });
+        return;
+      }
       const request = path !== null
         ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...this.workspaceContext, path }, bubbles: true, composed: true, cancelable: true })
         : outside === null ? undefined
