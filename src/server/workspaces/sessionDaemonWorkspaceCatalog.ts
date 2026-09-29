@@ -60,13 +60,6 @@ export class SessionDaemonWorkspaceCatalog implements WorkspaceCatalog {
     return parseProviderRuntimeSnapshot(await this.requestJson(`${WORKSPACE_CATALOG_PATH}/provider-runtime`));
   }
 
-  /** Cwds of the daemon's listed Pi sessions (archived included) recorded at exactly `cwd`. */
-  async sessionCwds(cwd: string): Promise<string[]> {
-    const sessions = await this.requestJson(`/sessions?${new URLSearchParams({ cwd }).toString()}`);
-    if (!Array.isArray(sessions)) throw protocolError("session listing response must be an array");
-    return sessions.flatMap((session) => isRecord(session) && typeof session["cwd"] === "string" ? [session["cwd"]] : []);
-  }
-
   private async requestJson(path: string): Promise<unknown> {
     let response: Awaited<ReturnType<SessionDaemonRequestClient["request"]>>;
     try {

@@ -266,9 +266,8 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   registerSessionProxyRoutes(app, sessionDaemon, "/api/machines/local");
   registerPairedPluginBackendProxyRoutes(app, sessionDaemon);
   registerPluginBackendChannelProxyRoutes(app, sessionDaemon);
-  const explorerOptions = { config: configService, sessionCwds: (cwd: string) => daemonWorkspaces.sessionCwds(cwd) };
-  registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api", explorerOptions);
-  registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api/machines/local", explorerOptions);
+  registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api", { config: configService });
+  registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api/machines/local", { config: configService });
   const projectTrustDeps = {
     agentDir: async () => (await requireActiveAgentProfile(agentProfileProvider)).dir,
   };

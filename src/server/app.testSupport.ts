@@ -23,8 +23,6 @@ interface AppTestContext {
   readonly projectDir: string;
   remoteClient: MachineClient | undefined;
   readonly sessionDaemonRequests: CapturedSessionDaemonRequest[];
-  /** Session cwds the fake daemon lists for `GET /sessions?cwd=`; empty keeps the request echo. */
-  sessionCwds: string[];
   readonly piPackageRequests: CapturedPiPackageRequest[];
   readonly workspaceCatalog: AppTestWorkspaceCatalog;
   piWebConfig: PiWebConfigValues;
@@ -36,7 +34,6 @@ let tempDir: string | undefined;
 let projectDir: string | undefined;
 let remoteClient: MachineClient | undefined;
 let sessionDaemonRequests: CapturedSessionDaemonRequest[] = [];
-let sessionCwds: string[] = [];
 let piPackageRequests: CapturedPiPackageRequest[] = [];
 let workspaceCatalog: AppTestWorkspaceCatalog | undefined;
 let piWebConfig: PiWebConfigValues = {};
@@ -63,12 +60,6 @@ export const appTestContext: AppTestContext = {
   },
   get sessionDaemonRequests() {
     return sessionDaemonRequests;
-  },
-  get sessionCwds() {
-    return sessionCwds;
-  },
-  set sessionCwds(cwds) {
-    sessionCwds = cwds;
   },
   get piPackageRequests() {
     return piPackageRequests;
@@ -97,7 +88,6 @@ export function registerAppTestHooks(): void {
     projectDir = join(tempDir, "project");
     remoteClient = undefined;
     sessionDaemonRequests = [];
-    sessionCwds = [];
     piPackageRequests = [];
     piWebConfig = {};
     agentProfileResult = { status: "available", profile: appTestAgentProfile(join(tempDir, "agent")) };
@@ -159,7 +149,6 @@ export function registerAppTestHooks(): void {
     projectDir = undefined;
     remoteClient = undefined;
     sessionDaemonRequests = [];
-    sessionCwds = [];
     piPackageRequests = [];
     workspaceCatalog = undefined;
     piWebConfig = {};
@@ -368,12 +357,6 @@ function fakeSessionDaemon(): SessionProxyDaemon {
     request: (method, path, body) => {
       const captured = { method, path, ...(body === undefined ? {} : { body }) } satisfies CapturedSessionDaemonRequest;
       sessionDaemonRequests.push(captured);
-      const listedCwd = method === "GET" && path.startsWith("/sessions?") ? new URLSearchParams(path.slice("/sessions?".length)).get("cwd") : null;
-      // An empty listing keeps the default echo that proxy tests assert on.
-      if (listedCwd !== null && sessionCwds.length > 0) {
-        const sessions = sessionCwds.filter((cwd) => cwd === listedCwd).map((cwd, index) => ({ id: `session-${String(index)}`, cwd }));
-        return Promise.resolve({ statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(sessions) });
-      }
       return Promise.resolve({
         statusCode: 200,
         headers: { "content-type": "application/json" },

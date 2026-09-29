@@ -6,8 +6,8 @@ export const MAX_WORKSPACE_FILE_CONTENT_BYTES = 512 * 1024;
 
 /**
  * Project route segment for a Chat folder outside every registered project. Its
- * workspace id is `folder:<absolute path>`; the server grants it only while the
- * folder is the working directory of an existing Pi session.
+ * workspace id is `folder:<absolute path>` and names any existing directory. A
+ * registered project persisted with this ID takes precedence.
  */
 export const AD_HOC_FOLDER_PROJECT_ID = "folder";
 /** Fastify route parameter limit for path-bearing ids; Node's 16 KiB header limit bounds URLs anyway. */

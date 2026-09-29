@@ -9,21 +9,20 @@ import { isAbsoluteishPath } from "./workspaces/pathAccessPolicy.js";
 import { readWorkspaceFilePreview } from "./workspaces/filePreviewService.js";
 import { workspaceFilePreviewResponsePolicy } from "./workspaces/filePreviewResponsePolicy.js";
 import { applyWorkspaceFilePreviewErrorResponsePolicy } from "./workspaces/filePreviewResponseHeaders.js";
-import { resolveWorkspaceContext, type SessionCwdLookup } from "./workspaces/workspaceContext.js";
+import { resolveWorkspaceContext } from "./workspaces/workspaceContext.js";
 import { pathAccessForWorkspaceContext } from "./workspaces/effectivePathAccess.js";
 import type { WorkspaceCatalog } from "./workspaces/workspaceCatalog.js";
 import { sendWorkspaceRequestError } from "./workspaces/workspaceRouteErrors.js";
 
 export interface WorkspaceExplorerRouteOptions {
   config?: Pick<PiWebConfigService, "read">;
-  /** Enables ad-hoc folder workspaces, granted only for existing Pi session cwds. */
-  sessionCwds?: SessionCwdLookup;
 }
 
 export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: ProjectService, workspaces: WorkspaceCatalog, prefix = "/api", options: WorkspaceExplorerRouteOptions = {}): void {
   registerWorkspaceFileContentParsers(app);
+  // File routes also serve ad-hoc folder workspaces (folder:<absolute directory>).
   const resolveContext = (params: { projectId: string; workspaceId: string }) =>
-    resolveWorkspaceContext(projects, workspaces, params.projectId, params.workspaceId, options.sessionCwds);
+    resolveWorkspaceContext(projects, workspaces, params.projectId, params.workspaceId, true);
 
   app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { q?: string; cursor?: string } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/search`, async (request, reply) => {
     const controller = new AbortController();
