@@ -12,7 +12,7 @@ import stat
 import sys
 import uuid
 
-LIMIT = 512 * 1024
+LIMIT = 512 * 1024  # replaced per request by versionLimit, the server's MAX_WORKSPACE_FILE_CONTENT_BYTES
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
@@ -49,8 +49,14 @@ def snapshot(parent, name):
         if not stat.S_ISREG(before.st_mode):
             raise ValueError("Path is not a file")
         if before.st_size > LIMIT:
-            raise Conflict("File exceeds the 512 KiB version limit; reload or save a smaller file")
-        data = os.read(fd, LIMIT + 1)
+            raise Conflict("File exceeds the %d KiB version limit; reload or save a smaller file" % (LIMIT // 1024))
+        chunks = []
+        while True:
+            chunk = os.read(fd, LIMIT + 1 - sum(map(len, chunks)))
+            if not chunk:
+                break
+            chunks.append(chunk)
+        data = b"".join(chunks)
         after = os.fstat(fd)
         if (len(data) != before.st_size or before.st_size != after.st_size or
                 before.st_mtime_ns != after.st_mtime_ns or before.st_ctime_ns != after.st_ctime_ns):
@@ -94,6 +100,8 @@ def assert_parent(root, parts, parent):
 
 
 def write(request):
+    global LIMIT
+    LIMIT = request.get("versionLimit", LIMIT)
     parts = request["path"].split("/")
     if not parts or any(p in ("", ".", "..") for p in parts):
         raise ValueError("Invalid workspace path")

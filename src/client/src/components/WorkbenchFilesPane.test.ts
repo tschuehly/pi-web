@@ -114,12 +114,12 @@ describe("Workbench workspace file search", () => {
   });
 
   it("previews the loaded part of a truncated Markdown file", async () => {
-    vi.spyOn(api, "workspaceFile").mockResolvedValue({ ...file("docs/index.md", "# Index\n\npartial"), truncated: true, size: 1136051 });
+    vi.spyOn(api, "workspaceFile").mockResolvedValue({ ...file("docs/index.md", "# Index\n\npartial"), truncated: true, size: 12 * 1024 * 1024 });
     const pane = await mount();
     expect(await pane.openFile("docs/index.md")).toBe(true); await pane.updateComplete;
     const view = pane.shadowRoot?.querySelector("formatted-text");
     expect(view ? Reflect.get(view, "text") : undefined).toContain("# Index");
-    expect(pane.shadowRoot?.textContent).toContain("first 512 KB of 1.1 MB");
+    expect(pane.shadowRoot?.textContent).toContain("first 10.0 MB of 12.0 MB");
     expect(pane.shadowRoot?.textContent).not.toContain("Preview unavailable");
   });
 
