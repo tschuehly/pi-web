@@ -105,7 +105,7 @@ describe("ChatView transcript density", () => {
     expect(tool.shadowRoot?.querySelector(".error-text")?.textContent).toBe("read failed");
   });
 
-  it("keeps tool activity between thinking segments in one expanded block and write results outside it", async () => {
+  it("keeps tool activity between thinking segments in one expanded block, folded to one line, and write results outside it", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
     view.messages = [
@@ -126,9 +126,30 @@ describe("ChatView transcript density", () => {
     const ordered = Array.from(thinking[0]?.querySelectorAll("formatted-text, tool-execution-view") ?? [], (element) => element.localName);
     expect(ordered).toEqual(["formatted-text", "tool-execution-view", "formatted-text"]);
     expect(root.querySelectorAll(".activity-group")).toHaveLength(0);
+    const fold = thinking[0]?.querySelector<HTMLDetailsElement>("details.tool-fold");
+    expect(fold?.open).toBe(false);
+    expect(fold?.querySelector("summary")?.textContent.replace(/\s+/g, " ").trim()).toBe("1 tool call");
     expect(root.querySelectorAll(".event-group:not(.thinking-group):not(.activity-group)")).toHaveLength(1);
     expect(thinking[1]?.querySelector<FormattedText>("formatted-text")?.text).toBe("After write");
     expect(root.querySelector<FormattedText>("article.msg.assistant formatted-text")?.text).toBe("Done");
+  });
+
+  it("says when a folded tool call is running and keeps a failed call visible outside the fold", async () => {
+    const view = new ChatView();
+    view.messages = [
+      { role: "assistant", parts: [{ type: "thinking", text: "Before" }] },
+      { role: "tool", parts: [{ type: "toolExecution", toolCallId: "b", toolName: "bash", summary: "sleep", status: "running" }] },
+      { role: "tool", parts: [{ type: "toolExecution", toolCallId: "c", toolName: "read", summary: "x", status: "success", resultText: "ok" }] },
+      { role: "tool", parts: [{ type: "toolExecution", toolCallId: "a", toolName: "bash", summary: "ls", status: "error", resultText: "boom" }] },
+      { role: "assistant", parts: [{ type: "thinking", text: "After" }] },
+    ];
+    document.body.append(view);
+    await view.updateComplete;
+    const root = requireShadowRoot(view);
+    const folds = [...root.querySelectorAll(".thinking-group details.tool-fold")];
+    expect(folds.map((fold) => fold.querySelector("summary")?.textContent.replace(/\s+/g, " ").trim())).toEqual(["2 tool calls · running"]);
+    const failed = [...root.querySelectorAll("tool-execution-view")].find((row) => row.closest("details.tool-fold") === null);
+    expect(failed).toBeDefined();
   });
 
   it("renders preview errors outside closed Activity even when execution succeeds", async () => {

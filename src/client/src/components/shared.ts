@@ -404,6 +404,14 @@ export const chatStyles = css`
   .thinking-group { padding: 6px 10px; border-left: 2px solid var(--pi-border); border-radius: 4px; background: var(--pi-surface-hover); color: var(--pi-muted); font-size: 13px; font-style: italic; }
   .thinking-group > summary { padding: 0 0 4px; font-style: normal; }
   .thinking-group > formatted-text { display: block; min-width: 0; }
+  .tool-fold { margin: 2px 0; font-style: normal; }
+  .tool-fold > summary { display: inline-flex; align-items: center; gap: 5px; padding: 1px 4px 1px 0; border-radius: 4px; color: var(--pi-muted); font-size: 12px; line-height: 16px; list-style: none; cursor: pointer; }
+  .tool-fold > summary::-webkit-details-marker { display: none; }
+  .tool-fold > summary:hover { color: var(--pi-text); }
+  .tool-fold > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
+  .tool-fold > summary .chevron .tab-icon { width: 12px; height: 12px; }
+  .tool-fold .running { color: var(--pi-text); }
+  .tool-fold > .group-body { padding: 2px 0 2px 17px; }
   .chat-image { display: block; max-width: 100%; max-height: 320px; margin: 8px 0 0; border: 1px solid var(--pi-border); border-radius: 8px; object-fit: contain; cursor: zoom-in; }
   .chat-image:focus-visible { outline: 2px solid var(--pi-accent, var(--pi-success-border)); outline-offset: 2px; }
   dialog.image-zoom { --image-zoom-max-width: min(calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)), calc(var(--pi-workbench-viewport-width, 100vw) - env(safe-area-inset-left) - env(safe-area-inset-right))); --image-zoom-max-height: min(calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)), calc(var(--pi-workbench-viewport-height, 100vh) - env(safe-area-inset-top) - env(safe-area-inset-bottom))); position: fixed; inset: 0; margin: auto; max-width: var(--image-zoom-max-width); max-height: var(--image-zoom-max-height); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: hidden; }
