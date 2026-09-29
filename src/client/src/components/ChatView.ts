@@ -1648,7 +1648,7 @@ export class ChatView extends LitElement {
   static override styles = [chatStyles, css`
     .transcript-filter { position: absolute; z-index: 22; top: 8px; right: 8px; }
     .filter-toggle, .filter-options button { border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); cursor: pointer; }
-    .filter-toggle { display: grid; place-items: center; width: 28px; height: 28px; box-shadow: 0 2px 8px var(--pi-shadow); }
+    .filter-toggle { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; box-shadow: 0 2px 8px var(--pi-shadow); }
     .filter-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
     .filter-toggle[data-filter-active="true"] { color: var(--pi-accent); border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     .filter-options { position: absolute; top: calc(100% + 4px); right: 0; display: grid; gap: 4px; padding: 6px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 4px 12px #0003; }

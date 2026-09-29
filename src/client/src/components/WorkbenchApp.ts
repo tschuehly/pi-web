@@ -1057,6 +1057,7 @@ export class WorkbenchApp extends LitElement {
           ${this.showFiles ? html`
             <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
               @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
+            <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("chevron")}</button></div>
             <workbench-files-pane id="workbench-files" .workspace=${this.filesWorkspace()} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
         </div>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
@@ -1138,10 +1139,16 @@ export class WorkbenchApp extends LitElement {
     .files-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: var(--pi-border); }
     .files-divider:hover::after, .files-divider:focus-visible::after { background: var(--pi-accent); }
     .files-divider:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
+    /* Zero-width flex item right of the divider, so the close chevron sits centred on the border without joining the separator. */
+    .files-close-anchor { position: relative; z-index: 3; flex: 0 0 0; width: 0; }
+    .files-close { position: absolute; top: 50%; left: -15px; transform: translateY(-50%); display: grid; place-items: center; width: 22px; height: 40px; min-height: 0; padding: 0; border: 1px solid var(--pi-border); border-radius: 11px; background: var(--pi-surface); color: var(--pi-text); cursor: pointer; box-shadow: 0 2px 6px var(--pi-shadow-soft); }
+    .files-close:hover { border-color: var(--pi-accent); background: var(--pi-surface-hover); }
+    .files-close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .files-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     workbench-files-pane { flex: 0 0 min(var(--files-width), max(240px, calc(100% - 328px))); box-sizing: border-box; }
     @media (max-width: 760px) {
       .chat-and-files { flex-direction: column; }
-      .files-divider { display: none; }
+      .files-divider, .files-close-anchor { display: none; }
       workbench-files-pane { flex: 0 1 48%; width: 100%; border-top: 1px solid var(--pi-border); }
     }
     @media (max-width: 600px) {

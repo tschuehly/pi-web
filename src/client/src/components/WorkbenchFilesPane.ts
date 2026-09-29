@@ -31,6 +31,10 @@ export class WorkbenchFilesPane extends LitElement {
   @state() private saving = false;
   @state() private error = "";
   @state() private conflict = false;
+  // Image pinch zoom is applied to the element directly so a gesture never re-renders the pane.
+  private imageZoom = 1;
+  private imageFitWidth = 0;
+  private pinchStartZoom: number | undefined;
   private scope = "";
   private readSequence = 0;
   private treeSequence = 0;
@@ -149,6 +153,49 @@ export class WorkbenchFilesPane extends LitElement {
     this.shadowRoot?.querySelector('.picker-results [aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
   }
 
+  /** Scales the image between fit-to-pane (1) and 8×, keeping the point under the pointer in place. */
+  private zoomImage(image: HTMLImageElement, requested: number, clientX: number, clientY: number): void {
+    const pane = image.closest(".preview");
+    if (!(pane instanceof HTMLElement)) return;
+    const zoom = Math.min(8, Math.max(1, requested));
+    if (this.imageZoom === 1) this.imageFitWidth = image.getBoundingClientRect().width;
+    const previous = this.imageZoom;
+    this.imageZoom = zoom;
+    if (zoom === 1) {
+      image.style.removeProperty("width");
+      image.style.removeProperty("max-width");
+      image.style.removeProperty("max-height");
+      return;
+    }
+    if (zoom === previous || this.imageFitWidth === 0) return;
+    const box = pane.getBoundingClientRect();
+    const imageBox = image.getBoundingClientRect();
+    const pointerX = clientX - box.left, pointerY = clientY - box.top;
+    const offsetX = imageBox.left - box.left + pane.scrollLeft, offsetY = imageBox.top - box.top + pane.scrollTop;
+    const ratio = zoom / previous;
+    image.style.maxWidth = "none";
+    image.style.maxHeight = "none";
+    image.style.width = `${String(this.imageFitWidth * zoom)}px`;
+    pane.scrollLeft = (pane.scrollLeft + pointerX - offsetX) * ratio + offsetX - pointerX;
+    pane.scrollTop = (pane.scrollTop + pointerY - offsetY) * ratio + offsetY - pointerY;
+  }
+
+  // WebKit reports a trackpad pinch as non-standard gesture events; other engines send ctrl+wheel.
+  private readonly onImageGesture = (event: Event): void => {
+    const scale: unknown = Reflect.get(event, "scale");
+    if (!(event.currentTarget instanceof HTMLImageElement) || typeof scale !== "number") return;
+    event.preventDefault();
+    if (event.type === "gesturestart") this.pinchStartZoom = this.imageZoom;
+    else if (event.type === "gestureend") this.pinchStartZoom = undefined;
+    else this.zoomImage(event.currentTarget, (this.pinchStartZoom ?? this.imageZoom) * scale, Number(Reflect.get(event, "clientX")), Number(Reflect.get(event, "clientY")));
+  };
+
+  private readonly onImageWheel = { passive: false, handleEvent: (event: WheelEvent): void => {
+    if (!event.ctrlKey || this.pinchStartZoom !== undefined || !(event.currentTarget instanceof HTMLImageElement)) return;
+    event.preventDefault();
+    this.zoomImage(event.currentTarget, this.imageZoom * Math.exp(-event.deltaY / 100), event.clientX, event.clientY);
+  } };
+
   private onPickerKeyDown(event: KeyboardEvent): void {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -181,6 +228,8 @@ export class WorkbenchFilesPane extends LitElement {
       this.buffer = file.binary || file.truncated ? "" : file.content;
       this.mode = "preview";
       await this.updateComplete;
+      const image = this.shadowRoot?.querySelector<HTMLImageElement>(".preview img");
+      if (image !== null && image !== undefined) this.zoomImage(image, 1, 0, 0);
       this.shadowRoot?.querySelector(".preview")?.scrollTo(0, 0);
       return true;
     } catch (error) {
@@ -245,7 +294,7 @@ export class WorkbenchFilesPane extends LitElement {
               ${this.conflict ? html`<button type="button" ?disabled=${this.saving || this.loading} @click=${() => { void this.save(true); }}>Replace current file…</button>` : null}
             </div>
             <div class="preview" ?hidden=${this.mode !== "preview"}>
-              ${(file.mediaType === "image" || file.mediaType === "pdf") && file.size > MAX_INLINE_PREVIEW_BYTES ? html`<p>File too large to preview. Use Download file.</p>` : file.mediaType === "image" ? html`<img alt=${`Preview of ${file.path}`} src=${workspaceFilePreviewUrl(workspace?.projectId ?? "", workspace?.id ?? "", file.path, { machineId: this.machineId, modifiedAt: file.modifiedAt })}>` :
+              ${(file.mediaType === "image" || file.mediaType === "pdf") && file.size > MAX_INLINE_PREVIEW_BYTES ? html`<p>File too large to preview. Use Download file.</p>` : file.mediaType === "image" ? html`<img alt=${`Preview of ${file.path}`} title="Pinch to zoom" @gesturestart=${this.onImageGesture} @gesturechange=${this.onImageGesture} @gestureend=${this.onImageGesture} @wheel=${this.onImageWheel} src=${workspaceFilePreviewUrl(workspace?.projectId ?? "", workspace?.id ?? "", file.path, { machineId: this.machineId, modifiedAt: file.modifiedAt })}>` :
                 file.mediaType === "pdf" ? html`<p>Inline PDF support varies. Use Open or Download if it does not display.</p><iframe title=${`Preview of ${file.path}`} src=${workspaceFilePreviewUrl(workspace?.projectId ?? "", workspace?.id ?? "", file.path, { machineId: this.machineId, modifiedAt: file.modifiedAt })} allow="" referrerpolicy="no-referrer"></iframe>` :
                 file.binary ? html`<p>Preview unavailable: this file is binary.</p>` : html`
                   ${file.truncated ? html`<p role="note">Showing the first ${formatBytes(MAX_WORKSPACE_FILE_CONTENT_BYTES)} of ${formatBytes(file.size)}. The file is too large to edit here; use Download file for all of it.</p>` : null}
@@ -282,7 +331,7 @@ export class WorkbenchFilesPane extends LitElement {
     .surface > p { margin: 10px; }
     .preview { flex: 1; overflow: auto; min-height: 0; padding: 12px; }
     .preview pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-    .preview img { max-width: 100%; max-height: 100%; }
+    .preview img { max-width: 100%; max-height: 100%; touch-action: pan-x pan-y; }
     .preview iframe { width: 100%; height: 100%; border: 0; }
     textarea { flex: 1; min-height: 0; box-sizing: border-box; width: 100%; resize: none; border: 0; padding: 12px; background: var(--pi-bg); color: var(--pi-text); font: 13px/1.5 ui-monospace, monospace; tab-size: 2; }
     [hidden] { display: none !important; }
