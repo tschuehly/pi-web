@@ -1,5 +1,5 @@
 import { LitElement, css, html, svg, type TemplateResult } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import type { SessionStatus } from "../api";
 import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_AXIS_NAMES, WORKING_MODE_STATUS_KEY, type WorkingModeAxis } from "../extensionStatusSnapshots";
 
@@ -39,80 +39,139 @@ function icon(axis: WorkingModeAxis, value: string | undefined): TemplateResult 
 }
 
 /**
- * One icon per Working Mode value. An axis at its default (the first value) shows a muted icon;
- * any other value takes the axis colour and is also written out, so a changed mode is visible at a glance.
- * A narrow composer shows icons only.
- * The native select stays on top (transparent) and owns keyboard, picker, and accessibility.
+ * The composer shows one icon per Working Mode axis. An axis at its default (the first value) shows a
+ * muted icon; any other value takes the axis colour and is also written out, so a changed mode is
+ * visible at a glance. A narrow composer shows icons only.
+ * The icon row is one trigger for a pane with every axis, so several modes can change in one visit:
+ * each value applies immediately and the pane stays open until Esc, an outside click, or the trigger.
  */
 @customElement("working-mode-controls")
 export class WorkingModeControls extends LitElement {
   @property({ attribute: false }) status?: SessionStatus;
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
+  @state() private open = false;
+
+  private readonly closeOnOutsidePointer = (event: PointerEvent): void => {
+    if (!event.composedPath().includes(this)) this.setOpen(false);
+  };
 
   private get selected() {
     return parseWorkingModeSnapshot(this.status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY])?.selected;
   }
 
+  override disconnectedCallback(): void {
+    document.removeEventListener("pointerdown", this.closeOnOutsidePointer, true);
+    super.disconnectedCallback();
+  }
+
   override render() {
     const selected = this.selected;
+    const summary = WORKING_MODE_AXIS_NAMES.map((axis) => `${LABELS[axis]}: ${selected?.[axis] ?? "unavailable"}`).join(", ");
     return html`
-      <section aria-label="Working Mode">
+      <button class="trigger" type="button" title=${summary} aria-label=${`Working Mode — ${summary}`} aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"} ?disabled=${selected === undefined} @click=${() => { this.setOpen(!this.open); }}>
         ${WORKING_MODE_AXIS_NAMES.map((axis) => {
           const value = selected?.[axis];
           const changed = value !== undefined && value !== WORKING_MODE_AXES[axis][0];
-          return html`
-            <label class=${`${axis}${changed ? " changed" : ""}`} title=${`${LABELS[axis]}: ${value ?? "unavailable"}`}>
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>
-              ${changed ? html`<span aria-hidden="true">${value}</span>` : null}
-              <select name=${axis} aria-label=${LABELS[axis]} ?disabled=${selected === undefined} @change=${(event: Event) => { this.change(axis, event); }}>
-                ${selected === undefined ? html`<option value="">${LABELS[axis]}: –</option>` : null}
-                ${WORKING_MODE_AXES[axis].map((option) => html`<option value=${option}>${LABELS[axis]}: ${option}</option>`)}
-              </select>
-            </label>
-          `;
+          return html`<span class=${`axis ${axis}${changed ? " changed" : ""}`} data-axis=${axis}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>${changed ? html`<span class="value">${value}</span>` : null}</span>`;
         })}
-      </section>
+      </button>
+      ${this.open && selected !== undefined ? html`
+        <div class="pane" role="dialog" aria-label="Working Mode" @keydown=${(event: KeyboardEvent) => { this.handlePaneKey(event); }} @focusout=${(event: FocusEvent) => { this.handleFocusOut(event); }}>
+          ${WORKING_MODE_AXIS_NAMES.map((axis) => html`
+            <span class="axis-name" id=${`axis-${axis}`}>${LABELS[axis]}</span>
+            <div class=${`values ${axis}`} role="radiogroup" aria-labelledby=${`axis-${axis}`}>
+              ${WORKING_MODE_AXES[axis].map((value: string) => {
+                const checked = value === selected[axis];
+                return html`<button type="button" role="radio" aria-checked=${checked ? "true" : "false"} tabindex=${checked ? "0" : "-1"} data-value=${value} @click=${() => { this.choose(axis, value); }} @keydown=${(event: KeyboardEvent) => { this.handleRadioKey(event, axis); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>${value}</button>`;
+              })}
+            </div>
+          `)}
+        </div>
+      ` : null}
     `;
   }
 
-  // Always show the reported selection; a user's choice appears once the extension confirms it.
-  override updated() {
-    const selected = this.selected;
-    for (const axis of WORKING_MODE_AXIS_NAMES) {
-      const select = this.renderRoot.querySelector<HTMLSelectElement>(`select[name="${axis}"]`);
-      if (select !== null) select.value = selected?.[axis] ?? "";
+  private setOpen(open: boolean, restoreFocus = false): void {
+    if (open === this.open) return;
+    this.open = open;
+    if (open) {
+      document.addEventListener("pointerdown", this.closeOnOutsidePointer, true);
+      void this.updateComplete.then(() => { this.renderRoot.querySelector<HTMLButtonElement>('.pane [aria-checked="true"]')?.focus(); });
+    } else {
+      document.removeEventListener("pointerdown", this.closeOnOutsidePointer, true);
+      if (restoreFocus) void this.updateComplete.then(() => { this.renderRoot.querySelector<HTMLButtonElement>(".trigger")?.focus(); });
     }
   }
 
-  private change(axis: WorkingModeAxis, event: Event): void {
-    if (!(event.currentTarget instanceof HTMLSelectElement)) return;
-    void this.onRunCommand?.(`/mode ${axis} ${event.currentTarget.value.toLowerCase()}`);
-    this.requestUpdate();
+  // The reported selection stays authoritative: a choice shows as checked once the extension confirms it.
+  private choose(axis: WorkingModeAxis, value: string): void {
+    void this.onRunCommand?.(`/mode ${axis} ${value.toLowerCase()}`);
+  }
+
+  private handlePaneKey(event: KeyboardEvent): void {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.setOpen(false, true);
+  }
+
+  private handleFocusOut(event: FocusEvent): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && next !== this && !this.renderRoot.contains(next)) this.setOpen(false);
+  }
+
+  /** Radio group keys (WAI-ARIA APG): arrows move focus and select within the axis; Tab leaves the row. */
+  private handleRadioKey(event: KeyboardEvent, axis: WorkingModeAxis): void {
+    const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
+    const values: readonly string[] = WORKING_MODE_AXES[axis];
+    const current = event.currentTarget instanceof HTMLElement ? values.indexOf(event.currentTarget.dataset["value"] ?? "") : -1;
+    const target = event.key === "Home" ? 0 : event.key === "End" ? values.length - 1 : step === 0 ? -1 : (current + step + values.length) % values.length;
+    const value = values[target];
+    if (value === undefined) return;
+    event.preventDefault();
+    // Move the roving tab stop now so Tab leaves the row even before the extension confirms the choice.
+    for (const radio of this.renderRoot.querySelectorAll<HTMLButtonElement>(`.values.${axis} [role="radio"]`)) radio.tabIndex = radio.dataset["value"] === value ? 0 : -1;
+    this.renderRoot.querySelector<HTMLButtonElement>(`.values.${axis} [data-value="${value}"]`)?.focus();
+    this.choose(axis, value);
   }
 
   static override styles = css`
-    :host { display: block; flex: 0 1 auto; min-width: 0; }
-    section { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
-    label { position: relative; display: inline-flex; align-items: center; gap: 4px; height: var(--composer-control-size, 24px); min-width: var(--composer-control-size, 24px); justify-content: center; padding: 0 4px; box-sizing: border-box; border-radius: 6px; color: var(--pi-muted); font: 12px system-ui, sans-serif; white-space: nowrap; }
-    label:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
+    :host { display: flex; justify-content: flex-end; flex: 0 1 auto; min-width: 0; }
     /* Axis hues, not theme semantics: each clears 4.7:1 on every theme's composer background and hover. */
     .alignment { --axis-color: light-dark(#0a5cc2, #58a6ff); }
     .attention { --axis-color: light-dark(#7644d4, #bc8cff); }
     .checking { --axis-color: light-dark(#177232, #3fb950); }
     .orchestration { --axis-color: light-dark(#a94400, #f0883e); }
-    label.changed { color: var(--axis-color); }
-    label:has(select:disabled) { opacity: .5; }
-    label:has(select:disabled):hover { background: transparent; color: var(--pi-muted); }
-    label:has(select:focus-visible) { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
+    button { font: 12px system-ui, sans-serif; cursor: pointer; }
+    button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
     svg { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; font: inherit; cursor: pointer; }
-    select:disabled { cursor: default; }
-    /* Narrow composer: changed axes keep only their accent icon; the value stays in the tooltip and select. */
+    .trigger { display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pi-muted); }
+    .trigger:disabled { opacity: .5; cursor: default; }
+    .trigger[aria-expanded="true"] { background: var(--pi-surface-hover); }
+    .axis { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: var(--composer-control-size, 24px); min-width: var(--composer-control-size, 24px); padding: 0 4px; box-sizing: border-box; border-radius: 6px; white-space: nowrap; }
+    .trigger:hover:not(:disabled) .axis { color: var(--pi-text); }
+    .trigger:hover:not(:disabled) .axis:hover { background: var(--pi-surface-hover); }
+    .axis.changed, .trigger:hover:not(:disabled) .axis.changed { color: var(--axis-color); }
+    /* Anchored to the composer footer (the nearest positioned ancestor), right-aligned above it. */
+    .pane { position: absolute; z-index: 20; right: 10px; bottom: calc(100% + 4px); display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 12px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
+    .axis-name { color: var(--pi-muted); }
+    .values { display: flex; flex-wrap: wrap; gap: 2px; }
+    .values > button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--pi-text); white-space: nowrap; }
+    .values > button svg { color: var(--axis-color); }
+    .values > button:hover { background: var(--pi-surface-hover); }
+    .values > button[aria-checked="true"] { border-color: var(--axis-color); background: color-mix(in srgb, var(--axis-color) 14%, transparent); font-weight: 600; }
+    /* Narrow composer: changed axes keep only their accent icon, and the pane becomes a full-width sheet. */
     @container composer (max-width: 560px) {
-      label > span { display: none; }
+      .axis > .value { display: none; }
+      .pane { right: 6px; left: 6px; max-width: none; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px; }
+      .axis-name { margin-top: 4px; }
+    }
+    @media (pointer: coarse) {
+      .values > button { min-height: 34px; }
     }
     @media (forced-colors: active) {
-      label:has(select:focus-visible) { outline-color: Highlight; }
+      button:focus-visible { outline-color: Highlight; }
+      .values > button[aria-checked="true"] { border-color: Highlight; }
     }
   `;
 }

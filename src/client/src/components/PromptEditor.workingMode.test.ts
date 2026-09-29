@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionStatus } from "../api";
-import { WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
+import type { SessionModel, SessionStatus } from "../api";
+import { WORKING_MODE_STATUS_KEY, type WorkingModeAxis } from "../extensionStatusSnapshots";
+import { ModelEffortPicker, modelPickerGroups } from "./ModelEffortPicker";
 import { PromptEditor } from "./PromptEditor";
 import { WorkingModeControls } from "./WorkingModeControls";
 
@@ -26,64 +27,119 @@ function required<T>(value: T | null | undefined): T {
 }
 
 describe("PromptEditor Working Mode controls", () => {
-  it("renders the Working Mode controls between the model selector and Send, and runs their commands", async () => {
-    const run = vi.fn();
+  it("renders the model picker, usage, Working Mode trigger, and actions in one row", async () => {
     const editor = new PromptEditor();
     editor.showUsage = true;
     editor.status = status();
-    editor.onRunCommand = run;
     document.body.append(editor);
     await editor.updateComplete;
 
     const actions = required(editor.shadowRoot?.querySelector(".actions"));
-    const order = [...actions.children].map((child) => child.classList.contains("compact-status") ? "status" : child.classList.contains("usage") ? "usage" : child.classList.contains("composer-actions") ? "composer-actions" : child.localName);
-    expect(order).toEqual(["status", "usage", "working-mode-controls", "composer-actions"]);
+    const order = [...actions.children].map((child) => child.classList.contains("usage") ? "usage" : child.classList.contains("composer-actions") ? "composer-actions" : child.localName);
+    expect(order).toEqual(["model-effort-picker", "usage", "working-mode-controls", "composer-actions"]);
     expect(getComputedStyle(actions).flexWrap).toBe("wrap");
     const composerActions = required(actions.querySelector<HTMLElement>(".composer-actions"));
     expect(getComputedStyle(composerActions).flexShrink).toBe("0");
     expect([...composerActions.children].map((child) => child.getAttribute("aria-label"))).toEqual(["Attach files", "Send message", "Stop current work"]);
 
-    const controls = required(actions.querySelector<WorkingModeControls>("working-mode-controls"));
-    await controls.updateComplete;
-    const alignment = required(select(controls, "Alignment"));
-    expect(alignment.value).toBe("Align");
-    expect(alignment.selectedOptions[0]?.textContent).toBe("Alignment: Align");
+    const controls = await workingMode(editor);
     // Axes at their default show only an icon; a changed axis also writes out its value at every
     // width except a narrow composer, which keeps icons only.
-    expect(axisLabel(controls, "Alignment").title).toBe("Alignment: Align");
-    expect(axisLabel(controls, "Alignment").className).toBe("alignment changed");
-    expect(axisLabel(controls, "Alignment").querySelector("span")?.textContent).toBe("Align");
-    expect(axisLabel(controls, "Attention").className).toBe("attention");
-    expect(axisLabel(controls, "Attention").querySelector("span")).toBeNull();
-    const styles = WorkingModeControls.styles.cssText;
-    expect(styles).not.toMatch(/min-width: 1240px/);
-    expect(styles).toMatch(/@container composer \(max-width: 560px\)\s*\{\s*label > span\s*\{\s*display:\s*none/);
-    expect(axisLabel(controls, "Orchestration").title).toBe("Orchestration: Main");
-    alignment.value = "Plan";
-    alignment.dispatchEvent(new Event("change"));
-    expect(run).toHaveBeenCalledWith("/mode alignment plan");
+    expect(axisIcon(controls, "alignment").className).toBe("axis alignment changed");
+    expect(axisIcon(controls, "alignment").textContent).toBe("Align");
+    expect(axisIcon(controls, "attention").className).toBe("axis attention");
+    expect(axisIcon(controls, "attention").textContent).toBe("");
+    expect(trigger(controls).title).toBe("Alignment: Align, Attention: Default, Checking: Test, Orchestration: Main");
+    expect(WorkingModeControls.styles.cssText).toMatch(/@container composer \(max-width: 560px\)\s*\{\s*\.axis > \.value\s*\{\s*display:\s*none/);
   });
 
-  it("rerenders Working Mode controls when only their extension status changes", async () => {
+  it("opens one Working Mode pane that applies several changes and stays open", async () => {
+    const run = vi.fn();
+    const editor = new PromptEditor();
+    editor.status = status();
+    editor.onRunCommand = run;
+    document.body.append(editor);
+    const controls = await workingMode(editor);
+
+    expect(pane(controls)).toBeNull();
+    trigger(controls).click();
+    await controls.updateComplete;
+    expect(trigger(controls).getAttribute("aria-expanded")).toBe("true");
+    const groups = [...required(pane(controls)).querySelectorAll('[role="radiogroup"]')];
+    expect(groups.map((group) => controls.shadowRoot?.getElementById(group.getAttribute("aria-labelledby") ?? "")?.textContent)).toEqual(["Alignment", "Attention", "Checking", "Orchestration"]);
+    expect(radio(controls, "attention", "Phone").textContent.trim()).toBe("Phone");
+    expect(radio(controls, "attention", "Phone").querySelector("svg")).not.toBeNull();
+    expect(radio(controls, "alignment", "Align").getAttribute("aria-checked")).toBe("true");
+    expect(radio(controls, "alignment", "Align").tabIndex).toBe(0);
+    expect(radio(controls, "alignment", "Plan").tabIndex).toBe(-1);
+    expect(controls.shadowRoot?.activeElement).toBe(radio(controls, "alignment", "Align"));
+
+    radio(controls, "alignment", "Plan").click();
+    radio(controls, "attention", "Phone").click();
+    radio(controls, "orchestration", "Workers").click();
+    await controls.updateComplete;
+    expect(run.mock.calls).toEqual([["/mode alignment plan"], ["/mode attention phone"], ["/mode orchestration workers"]]);
+    expect(pane(controls)).not.toBeNull();
+
+    // The reported selection stays authoritative and re-renders the open pane.
+    editor.status = withModes({ alignment: "Plan", attention: "Phone", checking: "Test", orchestration: "Workers" });
+    await editor.updateComplete;
+    await controls.updateComplete;
+    expect(radio(controls, "alignment", "Plan").getAttribute("aria-checked")).toBe("true");
+    expect(radio(controls, "alignment", "Align").getAttribute("aria-checked")).toBe("false");
+
+    trigger(controls).click();
+    await controls.updateComplete;
+    expect(pane(controls)).toBeNull();
+  });
+
+  it("supports keyboard use and closes the Working Mode pane on Esc or an outside click", async () => {
+    const run = vi.fn();
+    const editor = new PromptEditor();
+    editor.status = status();
+    editor.onRunCommand = run;
+    document.body.append(editor);
+    const controls = await workingMode(editor);
+
+    trigger(controls).click();
+    await controls.updateComplete;
+    radio(controls, "attention", "Default").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, composed: true }));
+    expect(run).toHaveBeenLastCalledWith("/mode attention focused");
+    expect(controls.shadowRoot?.activeElement).toBe(radio(controls, "attention", "Focused"));
+    expect([radio(controls, "attention", "Default").tabIndex, radio(controls, "attention", "Focused").tabIndex]).toEqual([-1, 0]);
+    radio(controls, "attention", "Default").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, composed: true }));
+    expect(run).toHaveBeenLastCalledWith("/mode attention afk");
+    radio(controls, "checking", "Test").dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, composed: true }));
+    expect(run).toHaveBeenLastCalledWith("/mode checking default");
+    expect(pane(controls)).not.toBeNull();
+
+    radio(controls, "checking", "Test").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+    await controls.updateComplete;
+    await controls.updateComplete;
+    expect(pane(controls)).toBeNull();
+    expect(controls.shadowRoot?.activeElement).toBe(trigger(controls));
+
+    trigger(controls).click();
+    await controls.updateComplete;
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    await controls.updateComplete;
+    expect(pane(controls)).toBeNull();
+  });
+
+  it("rerenders the Working Mode trigger when only its extension status changes", async () => {
     const editor = new PromptEditor();
     editor.status = status();
     document.body.append(editor);
-    await editor.updateComplete;
+    const controls = await workingMode(editor);
+    expect(axisIcon(controls, "attention").className).toBe("axis attention");
 
-    const controls = required(editor.shadowRoot?.querySelector<WorkingModeControls>("working-mode-controls"));
-    await controls.updateComplete;
-    expect(select(controls, "Alignment")?.value).toBe("Align");
-
-    editor.status = {
-      ...required(editor.status),
-      extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Plan", attention: "Phone", checking: "Challenge", orchestration: "Main" }, applied: null }) },
-    };
+    editor.status = withModes({ alignment: "Plan", attention: "Phone", checking: "Challenge", orchestration: "Main" });
     await editor.updateComplete;
     await controls.updateComplete;
 
-    expect(select(controls, "Alignment")?.value).toBe("Plan");
-    expect(select(controls, "Attention")?.value).toBe("Phone");
-    expect(select(controls, "Checking")?.value).toBe("Challenge");
+    expect(axisIcon(controls, "alignment").textContent).toBe("Plan");
+    expect(axisIcon(controls, "attention").textContent).toBe("Phone");
+    expect(axisIcon(controls, "checking").textContent).toBe("Challenge");
   });
 
   it("renders compact usage with exact values exposed through semantic list items", async () => {
@@ -133,31 +189,84 @@ describe("PromptEditor Working Mode controls", () => {
     expect(accessibleMetricText(editor, "context")).toBe("Context used tokens unavailable; window: 200000 tokens");
   });
 
-  it("shows the thinking level as text that opens the thinking selector", async () => {
-    const onSelectThinking = vi.fn();
-    const onSelectModel = vi.fn();
-    const editor = new PromptEditor();
-    editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" }, thinkingLevel: "high" };
-    editor.onSelectThinking = onSelectThinking;
-    editor.onSelectModel = onSelectModel;
+  it("shows model and effort as one button whose popover puts effort first and stays open for effort", async () => {
+    const onSetThinkingLevel = vi.fn();
+    const onSetModel = vi.fn();
+    const editor = modelEditor(onSetModel, onSetThinkingLevel);
     document.body.append(editor);
-    await editor.updateComplete;
+    const picker = await modelPicker(editor);
 
-    const thinking = required(editor.shadowRoot?.querySelector<HTMLButtonElement>(".select-thinking"));
-    expect(thinking.textContent).toBe("high");
-    expect(thinking.getAttribute("aria-label")).toBe("Thinking level: high");
-    thinking.click();
-    expect(onSelectThinking).toHaveBeenCalledOnce();
+    const button = modelTrigger(picker);
+    expect(button.textContent.replace(/\s+/g, "")).toBe("claude-opus-5-5·high");
+    expect(button.getAttribute("aria-label")).toBe("Model: anthropic/claude-opus-5-5, thinking high. Change model or thinking");
+    button.click();
+    await vi.waitFor(() => { expect(picker.shadowRoot?.querySelectorAll('[role="option"]').length).toBe(4); });
 
-    const model = required(editor.shadowRoot?.querySelector<HTMLButtonElement>(".select-model"));
-    expect(model.textContent).toBe("anthropic/claude-opus-5-5");
-    expect(model.getAttribute("aria-label")).toBe("Model: anthropic/claude-opus-5-5. Select model");
-    model.click();
-    expect(onSelectModel).toHaveBeenCalledOnce();
+    const popover = required(picker.shadowRoot?.querySelector('[role="dialog"]'));
+    expect([...popover.children].map((child) => child.getAttribute("role") ?? child.localName)).toEqual(["radiogroup", "combobox", "listbox"]);
+    expect([...popover.querySelectorAll('[role="radio"]')].map((radio) => `${radio.textContent}:${radio.getAttribute("aria-checked") ?? ""}`)).toEqual(["off:false", "low:false", "high:true"]);
+    expect([...popover.querySelectorAll(".provider")].map((provider) => provider.textContent)).toEqual(["anthropic", "openai"]);
+    expect(popover.querySelector('[aria-selected="true"]')?.textContent.trim()).toBe("claude-opus-5-5");
+    expect(picker.shadowRoot?.activeElement).toBe(search(picker));
 
-    editor.status = { ...required(editor.status), thinkingLevel: "" };
-    await editor.updateComplete;
-    expect(thinking.textContent).toBe("off");
+    required(popover.querySelector<HTMLButtonElement>('[data-level="low"]')).click();
+    expect(onSetThinkingLevel).toHaveBeenCalledWith("low");
+    await picker.updateComplete;
+    expect(picker.shadowRoot?.querySelector('[role="dialog"]')).not.toBeNull();
+
+    required(popover.querySelector<HTMLButtonElement>('[data-level="high"]')).dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, composed: true }));
+    expect(onSetThinkingLevel).toHaveBeenLastCalledWith("low");
+
+    required(popover.querySelector<HTMLElement>('[role="option"]:not([aria-selected="true"])')).click();
+    await picker.updateComplete;
+    expect(onSetModel).toHaveBeenCalledWith("anthropic", "claude-sonnet-5");
+    expect(picker.shadowRoot?.querySelector('[role="dialog"]')).toBeNull();
+    expect(onSetModel).toHaveBeenCalledOnce();
+  });
+
+  it("filters models by typing, moves with arrows, selects with Enter, and closes on Esc", async () => {
+    const onSetModel = vi.fn();
+    const editor = modelEditor(onSetModel, vi.fn());
+    document.body.append(editor);
+    const picker = await modelPicker(editor);
+
+    modelTrigger(picker).click();
+    await vi.waitFor(() => { expect(picker.shadowRoot?.querySelectorAll('[role="option"]').length).toBe(4); });
+    const input = search(picker);
+    expect(input.getAttribute("aria-activedescendant")).toBe(required(picker.shadowRoot?.querySelector('[aria-selected="true"]')).id);
+    input.value = "gpt";
+    input.dispatchEvent(new Event("input"));
+    await picker.updateComplete;
+    expect([...(picker.shadowRoot?.querySelectorAll('[role="option"]') ?? [])].map((option) => option.textContent.trim())).toEqual(["gpt-6", "gpt-6-mini"]);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, composed: true }));
+    await picker.updateComplete;
+    expect(input.getAttribute("aria-activedescendant")).toBe(required(picker.shadowRoot?.querySelector(".model.active")).id);
+    expect(picker.shadowRoot?.querySelector(".model.active")?.textContent.trim()).toBe("gpt-6-mini");
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true }));
+    await picker.updateComplete;
+    expect(onSetModel).toHaveBeenCalledWith("openai", "gpt-6-mini");
+    expect(picker.shadowRoot?.querySelector('[role="dialog"]')).toBeNull();
+
+    modelTrigger(picker).click();
+    await picker.updateComplete;
+    search(picker).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+    await picker.updateComplete;
+    await picker.updateComplete;
+    expect(picker.shadowRoot?.querySelector('[role="dialog"]')).toBeNull();
+    expect(picker.shadowRoot?.activeElement).toBe(modelTrigger(picker));
+
+    modelTrigger(picker).click();
+    await picker.updateComplete;
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    await picker.updateComplete;
+    expect(picker.shadowRoot?.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("groups models by provider and matches the search against id, provider, and name", () => {
+    const groups = modelPickerGroups([...MODELS, { provider: "", id: "anonymous" }], "");
+    expect(groups.map((group) => [group.provider, group.models.map((model) => model.id)])).toEqual([["anthropic", ["claude-opus-5-5", "claude-sonnet-5"]], ["openai", ["gpt-6", "gpt-6-mini"]]]);
+    expect(modelPickerGroups(MODELS, "OPENAI/").flatMap((group) => group.models.map((model) => model.id))).toEqual(["gpt-6", "gpt-6-mini"]);
+    expect(modelPickerGroups(MODELS, "sonnet").flatMap((group) => group.models.map((model) => model.id))).toEqual(["claude-sonnet-5"]);
   });
 
   it("leaves usage metrics hidden by default for legacy PromptEditor hosts", async () => {
@@ -170,12 +279,63 @@ describe("PromptEditor Working Mode controls", () => {
   });
 });
 
-function select(controls: WorkingModeControls, label: string): HTMLSelectElement | null | undefined {
-  return controls.shadowRoot?.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`);
+const MODELS: SessionModel[] = [
+  { provider: "anthropic", id: "claude-opus-5-5" },
+  { provider: "openai", id: "gpt-6" },
+  { provider: "anthropic", id: "claude-sonnet-5", name: "Claude Sonnet 5" },
+  { provider: "openai", id: "gpt-6-mini" },
+];
+
+function modelEditor(onSetModel: (provider: string, id: string) => void, onSetThinkingLevel: (level: string) => void): PromptEditor {
+  const editor = new PromptEditor();
+  editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" }, thinkingLevel: "high" };
+  editor.thinkingLevels = ["off", "low", "high"];
+  editor.loadModels = () => Promise.resolve(MODELS);
+  editor.onSetModel = onSetModel;
+  editor.onSetThinkingLevel = onSetThinkingLevel;
+  return editor;
 }
 
-function axisLabel(controls: WorkingModeControls, label: string): HTMLLabelElement {
-  return required(select(controls, label)?.closest("label"));
+async function modelPicker(editor: PromptEditor): Promise<ModelEffortPicker> {
+  await editor.updateComplete;
+  const picker = required(editor.shadowRoot?.querySelector<ModelEffortPicker>("model-effort-picker"));
+  await picker.updateComplete;
+  return picker;
+}
+
+function modelTrigger(picker: ModelEffortPicker): HTMLButtonElement {
+  return required(picker.shadowRoot?.querySelector<HTMLButtonElement>(".trigger"));
+}
+
+function search(picker: ModelEffortPicker): HTMLInputElement {
+  return required(picker.shadowRoot?.querySelector<HTMLInputElement>(".search"));
+}
+
+function withModes(selected: Record<WorkingModeAxis, string>): SessionStatus {
+  return { ...status(), extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected, applied: null }) } };
+}
+
+async function workingMode(editor: PromptEditor): Promise<WorkingModeControls> {
+  await editor.updateComplete;
+  const controls = required(editor.shadowRoot?.querySelector<WorkingModeControls>("working-mode-controls"));
+  await controls.updateComplete;
+  return controls;
+}
+
+function trigger(controls: WorkingModeControls): HTMLButtonElement {
+  return required(controls.shadowRoot?.querySelector<HTMLButtonElement>(".trigger"));
+}
+
+function axisIcon(controls: WorkingModeControls, axis: WorkingModeAxis): HTMLElement {
+  return required(controls.shadowRoot?.querySelector<HTMLElement>(`.axis[data-axis="${axis}"]`));
+}
+
+function pane(controls: WorkingModeControls): HTMLElement | null | undefined {
+  return controls.shadowRoot?.querySelector<HTMLElement>('.pane[role="dialog"]');
+}
+
+function radio(controls: WorkingModeControls, axis: WorkingModeAxis, value: string): HTMLButtonElement {
+  return required(controls.shadowRoot?.querySelector<HTMLButtonElement>(`.values.${axis} [role="radio"][data-value="${value}"]`));
 }
 
 function metric(editor: PromptEditor, name: string): HTMLElement {

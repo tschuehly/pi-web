@@ -27,7 +27,7 @@ function required<T>(value: T | null | undefined): T {
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
 
 describe("WorkingModeControls", () => {
-  it("shows one select per axis and waits for status before changing state", async () => {
+  it("lists every axis value in the pane and waits for status before changing state", async () => {
     const run = vi.fn();
     const element = new WorkingModeControls();
     element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" }, applied: null }) });
@@ -35,24 +35,32 @@ describe("WorkingModeControls", () => {
     document.body.append(element);
     await element.updateComplete;
 
-    const selects = [...root(element).querySelectorAll("select")];
-    expect(selects.map((select) => select.getAttribute("aria-label"))).toEqual(["Alignment", "Attention", "Checking", "Orchestration"]);
-    expect(selects.map((select) => select.value)).toEqual(["Align", "Default", "Test", "Main"]);
-    expect([...required(selects[1]).options].map((option) => option.value)).toEqual(["Default", "Focused", "Switching", "Phone", "AFK"]);
-    const alignment = required(selects[0]);
-    alignment.value = "Plan";
-    alignment.dispatchEvent(new Event("change"));
+    required(root(element).querySelector<HTMLButtonElement>(".trigger")).click();
+    await element.updateComplete;
+    const groups = [...root(element).querySelectorAll('[role="radiogroup"]')];
+    expect(groups.map((group) => [...group.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent))).toEqual([
+      ["Default", "Align", "Plan", "Spec"],
+      ["Default", "Focused", "Switching", "Phone", "AFK"],
+      ["Default", "Exercise", "Test", "Challenge"],
+      ["Main", "Subagents", "Workers"],
+    ]);
+    expect([...root(element).querySelectorAll('[aria-checked="true"]')].map((radio) => radio.textContent)).toEqual(["Align", "Default", "Test", "Main"]);
+    required(root(element).querySelector<HTMLButtonElement>('.alignment [data-value="Plan"]')).click();
     await element.updateComplete;
     expect(run).toHaveBeenCalledWith("/mode alignment plan");
-    expect(alignment.value).toBe("Align");
+    expect(root(element).querySelector('.alignment [aria-checked="true"]')?.textContent).toBe("Align");
   });
 
-  it("disables the selects until a current snapshot arrives", async () => {
+  it("disables the trigger until a current snapshot arrives", async () => {
     const element = new WorkingModeControls();
     element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Align", checking: "tests" }, applied: null }) });
     document.body.append(element);
     await element.updateComplete;
-    expect([...root(element).querySelectorAll("select")].every((select) => select.disabled)).toBe(true);
+    const trigger = required(root(element).querySelector<HTMLButtonElement>(".trigger"));
+    expect(trigger.disabled).toBe(true);
+    trigger.click();
+    await element.updateComplete;
+    expect(root(element).querySelector(".pane")).toBeNull();
   });
 
   it("shows each value's icon, colouring only changed axes, and the default icon when unavailable", async () => {
@@ -60,10 +68,10 @@ describe("WorkingModeControls", () => {
     element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Plan", attention: "Default", checking: "Challenge", orchestration: "Workers" }, applied: null }) });
     document.body.append(element);
     await element.updateComplete;
-    const labels = () => [...root(element).querySelectorAll("label")];
+    const labels = () => [...root(element).querySelectorAll(".trigger > .axis")];
     const icons = () => labels().map((label) => label.querySelector("svg")?.innerHTML.replace(/<!--.*?-->/g, "") ?? "");
     const selectedIcons = icons();
-    expect(labels().map((label) => label.className)).toEqual(["alignment changed", "attention", "checking changed", "orchestration changed"]);
+    expect(labels().map((label) => label.className)).toEqual(["axis alignment changed", "axis attention", "axis checking changed", "axis orchestration changed"]);
     expect(selectedIcons[0]).toContain("M13 5h8"); // list-checks
     expect(selectedIcons[1]).toContain("M2.062 12.348"); // eye
     expect(selectedIcons[2]).toContain("m13 19 6-6"); // swords
@@ -77,7 +85,7 @@ describe("WorkingModeControls", () => {
     expect(defaultIcons[1]).toBe(selectedIcons[1]);
     expect(defaultIcons[2]).toContain("M20 13c0 5"); // shield
     expect(defaultIcons[3]).toContain("M19 21v-2"); // user
-    expect(WorkingModeControls.styles.cssText).toMatch(/label\.changed\s*\{\s*color:\s*var\(--axis-color\)/);
+    expect(WorkingModeControls.styles.cssText).toMatch(/\.axis\.changed[^{]*\{\s*color:\s*var\(--axis-color\)/);
   });
 });
 
