@@ -2,7 +2,8 @@ import type { FileContentMediaType } from "./pluginApiTypes.js";
 
 export const MAX_INLINE_PREVIEW_BYTES = 10 * 1024 * 1024;
 export const MAX_INLINE_PREVIEW_LABEL = "10 MB";
-export const MAX_WORKSPACE_FILE_CONTENT_BYTES = 512 * 1024;
+/** Text files up to this size open whole and editable in the Files pane; larger ones show this much, read-only. */
+export const MAX_WORKSPACE_FILE_CONTENT_BYTES = 10 * 1024 * 1024;
 
 /**
  * Project route segment for a Chat folder outside every registered project. Its

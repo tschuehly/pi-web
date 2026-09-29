@@ -139,6 +139,7 @@ async function writeWorkspaceFileUnlocked(rootPath: string, path: string, conten
     overwrite: options.overwrite !== false,
     forceOverwrite: options.overwrite === true,
     expectedVersion: options.expectedVersion,
+    versionLimit: MAX_WORKSPACE_FILE_CONTENT_BYTES,
   }) + "\n");
   child.stdin.write(content);
   let result: WriteWorkspaceFileResponse | undefined;
