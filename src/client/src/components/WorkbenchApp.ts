@@ -1077,7 +1077,6 @@ export class WorkbenchApp extends LitElement {
           .status=${state.status}
           .showUsage=${true}
           .warningCount=${warningCount}
-          .availableThinkingLevels=${state.availableThinkingLevels}
           .sending=${state.sendingPrompts[session.id] === true}
           .onSend=${this.handleSend}
           .onStop=${() => { void this.sessions.stopActiveWork(); }}

@@ -1,14 +1,26 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, svg, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { SessionStatus } from "../api";
 import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_AXIS_NAMES, WORKING_MODE_STATUS_KEY, type WorkingModeAxis } from "../extensionStatusSnapshots";
 
 const LABELS: Record<WorkingModeAxis, string> = { alignment: "Alignment", attention: "Attention", checking: "Checking", orchestration: "Orchestration" };
 
+// Stroke icons in the promptEditorIcons.ts convention (24x24, currentColor, round caps).
+const ICONS: Record<WorkingModeAxis, TemplateResult> = {
+  alignment: svg`<circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="4"></circle><circle cx="12" cy="12" r=".5"></circle>`,
+  attention: svg`<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"></path><circle cx="12" cy="12" r="3"></circle>`,
+  checking: svg`<path d="M12 3 5 6v5c0 4.4 2.9 8 7 10 4.1-2 7-5.6 7-10V6Z"></path><path d="m9 12 2 2 4-4"></path>`,
+  orchestration: svg`<circle cx="5" cy="12" r="2"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="19" cy="12" r="2"></circle><circle cx="19" cy="19" r="2"></circle><path d="M7 12h10M7 11l10-5M7 13l10 5"></path>`,
+};
+
+/**
+ * One icon per Working Mode axis. An axis at its default (the first value) shows only its
+ * icon; any other value is also written out, so a changed mode is visible at a glance.
+ * The native select stays on top (transparent) and owns keyboard, picker, and accessibility.
+ */
 @customElement("working-mode-controls")
 export class WorkingModeControls extends LitElement {
   @property({ attribute: false }) status?: SessionStatus;
-  @property({ type: Boolean, reflect: true }) compact = false;
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
 
   private get selected() {
@@ -19,15 +31,20 @@ export class WorkingModeControls extends LitElement {
     const selected = this.selected;
     return html`
       <section aria-label="Working Mode">
-        ${WORKING_MODE_AXIS_NAMES.map((axis) => html`
-          <label>
-            <span>${LABELS[axis]}</span>
-            <select name=${axis} aria-label=${LABELS[axis]} ?disabled=${selected === undefined} @change=${(event: Event) => { this.change(axis, event); }}>
-              ${selected === undefined ? html`<option value="">${this.compact ? `${LABELS[axis]}: –` : "–"}</option>` : null}
-              ${WORKING_MODE_AXES[axis].map((value) => html`<option value=${value}>${this.compact ? `${LABELS[axis]}: ${value}` : value}</option>`)}
-            </select>
-          </label>
-        `)}
+        ${WORKING_MODE_AXIS_NAMES.map((axis) => {
+          const value = selected?.[axis];
+          const changed = value !== undefined && value !== WORKING_MODE_AXES[axis][0];
+          return html`
+            <label class=${changed ? "changed" : ""} title=${`${LABELS[axis]}: ${value ?? "unavailable"}`}>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICONS[axis]}</svg>
+              ${changed ? html`<span aria-hidden="true">${value}</span>` : null}
+              <select name=${axis} aria-label=${LABELS[axis]} ?disabled=${selected === undefined} @change=${(event: Event) => { this.change(axis, event); }}>
+                ${selected === undefined ? html`<option value="">${LABELS[axis]}: –</option>` : null}
+                ${WORKING_MODE_AXES[axis].map((option) => html`<option value=${option}>${LABELS[axis]}: ${option}</option>`)}
+              </select>
+            </label>
+          `;
+        })}
       </section>
     `;
   }
@@ -48,18 +65,24 @@ export class WorkingModeControls extends LitElement {
   }
 
   static override styles = css`
-    :host { display: block; flex: 0 0 auto; padding: 5px 12px; border-top: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
-    :host([compact]) { flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 0; border-top: 0; background: transparent; }
-    :host([compact]) section { flex-wrap: wrap; gap: 4px; overflow: visible; }
-    :host([compact]) label > span { display: none; }
-    section { display: flex; align-items: center; gap: 12px; overflow-x: auto; }
-    label { display: inline-flex; align-items: center; white-space: nowrap; }
-    label > span { margin-right: 6px; color: var(--pi-muted); font-size: 11px; font-weight: 650; }
-    select { min-height: 26px; padding: 2px 4px; border: 1px solid var(--pi-border); border-radius: 6px; background: transparent; color: var(--pi-text); font: 12px system-ui, sans-serif; cursor: pointer; }
-    select:disabled { color: var(--pi-muted); cursor: default; }
-    select:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
-    @media (max-width: 430px) {
-      :host([compact]) section { flex-wrap: wrap; }
+    :host { display: block; flex: 0 1 auto; min-width: 0; }
+    section { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+    label { position: relative; display: inline-flex; align-items: center; gap: 4px; height: var(--composer-control-size, 24px); min-width: var(--composer-control-size, 24px); justify-content: center; padding: 0 4px; box-sizing: border-box; border-radius: 6px; color: var(--pi-muted); font: 12px system-ui, sans-serif; white-space: nowrap; }
+    label:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
+    label.changed { color: var(--pi-text); }
+    label.changed svg { color: var(--pi-accent); }
+    label:has(select:disabled) { opacity: .5; }
+    label:has(select:disabled):hover { background: transparent; color: var(--pi-muted); }
+    label:has(select:focus-visible) { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
+    svg { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; font: inherit; cursor: pointer; }
+    select:disabled { cursor: default; }
+    /* Narrow composer: changed axes keep only their accent icon; the value stays in the tooltip and select. */
+    @container composer (max-width: 560px) {
+      label > span { display: none; }
+    }
+    @media (forced-colors: active) {
+      label:has(select:focus-visible) { outline-color: Highlight; }
     }
   `;
 }
