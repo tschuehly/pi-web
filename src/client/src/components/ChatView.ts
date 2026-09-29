@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
-import { previewFromDetails } from "../chatMessages";
+import { latestWorkingModeDials, previewFromDetails, workingModeSummary } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
@@ -1059,6 +1059,7 @@ export class ChatView extends LitElement {
     return messages.map((message, offset) => {
       const toolOnly = this.isToolExecutionOnlyMessage(message);
       const skillOnly = this.isSkillReadOnlyMessage(message);
+      const workingModeOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "workingMode");
       const classes = `${toolOnly ? "group-msg tool-execution-shell" : skillOnly ? "group-msg skill-read-shell" : `group-msg ${message.role}`}${message.severity === "error" ? " error" : ""}`;
       const index = messageIndices?.[segmentOffset + offset] ?? startIndex + offset;
       const group = groups[groupIndex];
@@ -1066,7 +1067,7 @@ export class ChatView extends LitElement {
       const anchorId = this.eventAnchorKey(groups, groupIndex, index, withinGroup);
       return html`
         <article class=${classes} data-index=${index} data-scroll-anchor-id=${anchorId}>
-          ${toolOnly || skillOnly ? null : this.renderMessageHeader(message, anchorId)}
+          ${toolOnly || skillOnly || workingModeOnly ? null : this.renderMessageHeader(message, anchorId)}
           ${message.parts.map((part) => this.renderPart(part, message))}
         </article>
       `;
@@ -1202,14 +1203,20 @@ export class ChatView extends LitElement {
         </div>
       </details>
     `;
-    if (part.type === "workingMode") return html`
-      <details class="part working-mode-card">
-        <summary><span class="working-mode-title">Working Mode</span>${part.dials.map((dial) => html`<span class=${dial.guidance === undefined ? "working-mode-value" : "working-mode-value changed"} title=${dial.label}>${dial.value}</span>`)}</summary>
-        ${part.dials.some((dial) => dial.guidance !== undefined)
-          ? html`<dl>${part.dials.filter((dial) => dial.guidance !== undefined).map((dial) => html`<dt>${dial.label} — ${dial.value}</dt><dd>${dial.guidance}</dd>`)}</dl>`
-          : html`<p>Every dial is at its starting setting; no extra guidance applies.</p>`}
-      </details>
-    `;
+    if (part.type === "workingMode") {
+      // Grouping may copy the line, so locate it by its part.
+      const index = this.messages.findIndex((line) => line.parts.includes(part));
+      const summary = workingModeSummary(part.dials, index < 0 ? undefined : latestWorkingModeDials(this.messages, index));
+      // Lucide sliders-horizontal.
+      return html`
+        <details class="part working-mode-card">
+          <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><svg class="working-mode-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 5H3"></path><path d="M12 19H3"></path><path d="M14 3v4"></path><path d="M16 17v4"></path><path d="M21 12h-9"></path><path d="M21 19h-5"></path><path d="M21 5h-7"></path><path d="M8 10v4"></path><path d="M8 12H3"></path></svg><span class="working-mode-summary">${summary}</span></summary>
+          ${part.dials.some((dial) => dial.guidance !== undefined)
+            ? html`<dl>${part.dials.map((dial) => html`<dt>${dial.label} — ${dial.value}</dt><dd>${dial.guidance ?? "Starting setting; no extra guidance."}</dd>`)}</dl>`
+            : html`<p>Every dial is at its starting setting; no extra guidance applies.</p>`}
+        </details>
+      `;
+    }
     if (part.type === "goalLifecycle") return html`
       <details class="part goal-lifecycle">
         <summary>${goalTransitionLabels[part.details.transition]}</summary>
@@ -1663,13 +1670,15 @@ export class ChatView extends LitElement {
     .msg.goal-lifecycle-shell { padding: 0 2px var(--pi-message-padding); }
     .goal-lifecycle { border-left: 3px solid var(--pi-accent); padding: 6px 12px; color: var(--pi-text); background: var(--pi-surface); border-radius: 6px; }
     .goal-lifecycle > summary { cursor: pointer; font-weight: 600; }
-    .working-mode-card { border-left: 3px solid var(--pi-accent); padding: 6px 12px; color: var(--pi-text); background: var(--pi-surface); border-radius: 6px; }
-    .working-mode-card > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-    .working-mode-card > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .working-mode-title { font-weight: 600; margin-right: 4px; }
-    .working-mode-value { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--pi-border); color: var(--pi-muted); font-size: 0.9em; }
-    .working-mode-value.changed { border-color: var(--pi-accent); color: var(--pi-text); font-weight: 600; }
-    .working-mode-card dl { margin: 8px 0 2px; }
+    /* One compact line; the disclosure holds the full guidance. */
+    .working-mode-card { padding: 2px 10px; color: var(--pi-muted); font-size: 0.9em; }
+    .working-mode-card > summary { cursor: pointer; display: flex; align-items: center; gap: 6px; list-style: none; }
+    .working-mode-card > summary::-webkit-details-marker { display: none; }
+    .working-mode-card > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; border-radius: 4px; }
+    .working-mode-card > summary:hover, .working-mode-card[open] { color: var(--pi-text); }
+    .working-mode-icon { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: var(--pi-accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .working-mode-summary { min-width: 0; overflow-wrap: anywhere; }
+    .working-mode-card dl { margin: 8px 0 2px 20px; }
     .working-mode-card dt { font-weight: 600; margin-top: 6px; }
     .working-mode-card dd { margin: 2px 0 0; overflow-wrap: anywhere; }
     .working-mode-card p { margin: 8px 0 2px; }

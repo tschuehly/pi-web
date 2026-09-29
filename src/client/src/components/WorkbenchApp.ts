@@ -4,6 +4,7 @@ import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, 
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
+import { latestWorkingModeSelection } from "../chatMessages";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { AuthController } from "../controllers/authController";
 import { desktopNotifications, DesktopNotificationController } from "../controllers/desktopNotificationController";
@@ -1040,6 +1041,7 @@ export class WorkbenchApp extends LitElement {
           .isCompacting=${state.status?.isCompacting === true}
           .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0}
           .status=${state.status}
+          .workingModeTranscriptSelection=${latestWorkingModeSelection(state.messages)}
           .showUsage=${true}
           .warningCount=${warningCount}
           .sending=${state.sendingPrompts[session.id] === true}

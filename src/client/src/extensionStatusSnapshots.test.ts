@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GOAL_STATUS_STATE_VALUES, isTerminalDelegate, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWatcherStatusSnapshot, parseWorkingModeSnapshot, visibleShellExecutions } from "./extensionStatusSnapshots";
+import { GOAL_STATUS_STATE_VALUES, isTerminalDelegate, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWatcherStatusSnapshot, parseWorkingModeSnapshot, visibleShellExecutions, workingModePending, type WorkingModeState } from "./extensionStatusSnapshots";
 
 describe("extension status snapshots", () => {
   it("accepts only bounded active background bash status", () => {
@@ -111,6 +111,18 @@ describe("extension status snapshots", () => {
     expect(parseWorkingModeSnapshot("not json")).toBeUndefined();
     expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Plan", checking: "tests" }, applied: null }))).toBeUndefined();
     expect(parseWorkingModeSnapshot(JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { ...selected, attention: "Away" }, applied: null }))).toBeUndefined();
+  });
+
+  it("treats a selection as pending until applied, using the transcript block and then the defaults before the first turn", () => {
+    const defaults: WorkingModeState = { alignment: "Default", attention: "Default", checking: "Default", orchestration: "Main" };
+    const focused: WorkingModeState = { ...defaults, attention: "Focused" };
+    const snapshot = (selected: WorkingModeState, applied: WorkingModeState | null) => ({ schemaVersion: 2 as const, phase: "selected" as const, selected, applied });
+    expect(workingModePending(snapshot(focused, focused), defaults)).toBe(false);
+    expect(workingModePending(snapshot(focused, defaults), focused)).toBe(true);
+    expect(workingModePending(snapshot(focused, null), focused)).toBe(false);
+    expect(workingModePending(snapshot(defaults, null), focused)).toBe(true);
+    expect(workingModePending(snapshot(defaults, null), undefined)).toBe(false);
+    expect(workingModePending(snapshot(focused, null), undefined)).toBe(true);
   });
 
   it("accepts bounded source-owned watcher rows and rejects malformed snapshots atomically", () => {

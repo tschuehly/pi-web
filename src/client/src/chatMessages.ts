@@ -1,7 +1,7 @@
 import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes";
 import { parseAskUserOutcome } from "./api/parsers";
 import type { ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview, WorkingModeDial } from "./components/shared";
-import { validGoalId } from "./extensionStatusSnapshots";
+import { validGoalId, WORKING_MODE_AXES as WORKING_MODE_VALUES, WORKING_MODE_AXIS_NAMES, workingModeState, type WorkingModeState } from "./extensionStatusSnapshots";
 
 export function normalizeMessages(messages: unknown[]): ChatLine[] {
   return coalesceToolExecutions(messages.flatMap(normalizeMessage)).filter((message) => message.parts.length > 0);
@@ -264,6 +264,32 @@ function workingModeDials(message: unknown): WorkingModeDial[] | undefined {
     const guidance = text.split("\n").find((line) => line.startsWith(`${label} — ${value}: `))?.slice(`${label} — ${value}: `.length).trim();
     return guidance !== undefined && guidance !== "" ? { label, value, guidance } : { label, value };
   });
+}
+
+/** Dials of the latest Working Mode block among `lines[0..end)`. */
+export function latestWorkingModeDials(lines: readonly ChatLine[], end = lines.length): WorkingModeDial[] | undefined {
+  for (let index = Math.min(end, lines.length) - 1; index >= 0; index--) {
+    const part = lines[index]?.parts.find((candidate) => candidate.type === "workingMode");
+    if (part !== undefined) return part.dials;
+  }
+  return undefined;
+}
+
+export function latestWorkingModeSelection(lines: readonly ChatLine[]): WorkingModeState | undefined {
+  const dials = latestWorkingModeDials(lines);
+  return dials === undefined ? undefined : workingModeState(Object.fromEntries(WORKING_MODE_AXIS_NAMES.map((axis, index) => [axis, dials[index]?.value])));
+}
+
+/** One line for a Working Mode block: what changed since the previous block, else its non-default values. */
+export function workingModeSummary(dials: readonly WorkingModeDial[], previous: readonly WorkingModeDial[] | undefined): string {
+  const isDefault = (dial: WorkingModeDial, index: number) => dial.value === WORKING_MODE_VALUES[WORKING_MODE_AXIS_NAMES[index] ?? "alignment"][0];
+  if (dials.every(isDefault)) return "Working Mode reset to defaults";
+  const changes = dials.flatMap((dial, index) => {
+    const before = previous?.[index]?.value;
+    return before === undefined || before === dial.value ? [] : [`${dial.label} ${before} → ${dial.value}`];
+  });
+  const items = changes.length > 0 ? changes : dials.filter((dial, index) => !isDefault(dial, index)).map((dial) => `${dial.label} ${dial.value}`);
+  return `Working Mode: ${items.join(" · ")}`;
 }
 
 const GOAL_LIFECYCLE_STATES = {

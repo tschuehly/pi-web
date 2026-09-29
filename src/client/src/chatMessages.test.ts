@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ASK_USER_ANSWERS_CUSTOM_TYPE, type AskUserOutcome } from "../../shared/apiTypes";
 import { groupChatMessages } from "./chatGroups";
-import { appendText, appendThinking, normalizeMessage, normalizeMessages, textMessage } from "./chatMessages";
+import { appendText, appendThinking, latestWorkingModeDials, latestWorkingModeSelection, normalizeMessage, normalizeMessages, textMessage, workingModeSummary } from "./chatMessages";
+import type { ChatLine } from "./components/shared";
 
 const askUserOutcome: AskUserOutcome = {
   askId: "ask-1",
@@ -111,6 +112,20 @@ This block replaces every earlier <working-mode> block.
       { label: "Orchestration", value: "Workers", guidance: "Use a scope-owning worker." },
     ] }] }]);
     expect(normalizeMessage({ ...message, details: { selection: { alignment: "Align" } } })[0]?.parts[0]?.type).not.toBe("workingMode");
+  });
+
+  it("summarizes a Working Mode block against the previous one and finds the latest selection", () => {
+    const dials = (values: string[]) => ["Alignment", "Attention", "Checking", "Orchestration"].map((label, index) => ({ label, value: values[index] ?? "" }));
+    const first = dials(["Default", "Focused", "Default", "Main"]);
+    const second = dials(["Default", "Switching", "Exercise", "Main"]);
+    expect(workingModeSummary(first, undefined)).toBe("Working Mode: Attention Focused");
+    expect(workingModeSummary(second, first)).toBe("Working Mode: Attention Focused → Switching · Checking Default → Exercise");
+    expect(workingModeSummary(second, second)).toBe("Working Mode: Attention Switching · Checking Exercise");
+    expect(workingModeSummary(dials(["Default", "Default", "Default", "Main"]), second)).toBe("Working Mode reset to defaults");
+    const lines: ChatLine[] = [{ role: "system", parts: [{ type: "workingMode", dials: first }] }, { role: "user", parts: [{ type: "text", text: "hi" }] }];
+    expect(latestWorkingModeSelection(lines)).toEqual({ alignment: "Default", attention: "Focused", checking: "Default", orchestration: "Main" });
+    expect(latestWorkingModeDials(lines, 0)).toBeUndefined();
+    expect(latestWorkingModeSelection([])).toBeUndefined();
   });
 
   it("projects the upstream Goal lifecycle schema instead of its model-facing fallback text", () => {

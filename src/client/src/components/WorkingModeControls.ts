@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { SessionStatus } from "../api";
-import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_AXIS_NAMES, WORKING_MODE_STATUS_KEY, type WorkingModeAxis } from "../extensionStatusSnapshots";
+import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_AXIS_NAMES, WORKING_MODE_STATUS_KEY, workingModePending, type WorkingModeAxis, type WorkingModeState } from "../extensionStatusSnapshots";
 
 const LABELS: Record<WorkingModeAxis, string> = { alignment: "Alignment", attention: "Attention", checking: "Checking", orchestration: "Orchestration" };
 
@@ -33,6 +33,8 @@ const ICONS: { [A in WorkingModeAxis]: Record<typeof WORKING_MODE_AXES[A][number
   },
 };
 
+const PENDING_LABEL = "Working Mode change not sent yet";
+
 function icon(axis: WorkingModeAxis, value: string | undefined): TemplateResult {
   const icons: Record<string, TemplateResult> = ICONS[axis];
   return icons[value ?? ""] ?? icons[WORKING_MODE_AXES[axis][0]] ?? svg``;
@@ -44,19 +46,22 @@ function icon(axis: WorkingModeAxis, value: string | undefined): TemplateResult 
  * visible at a glance. A narrow composer shows icons only.
  * The icon row is one trigger for a pane with every axis, so several modes can change in one visit:
  * each value applies immediately and the pane stays open until Esc, an outside click, or the trigger.
+ * A selection the model has not received yet marks the trigger with a dot and enables Send (`/mode send`).
  */
 @customElement("working-mode-controls")
 export class WorkingModeControls extends LitElement {
   @property({ attribute: false }) status?: SessionStatus;
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
+  /** Selection of the latest Working Mode block in the loaded transcript; the baseline before the first turn. */
+  @property({ attribute: false }) transcriptSelection?: WorkingModeState;
   @state() private open = false;
 
   private readonly closeOnOutsidePointer = (event: PointerEvent): void => {
     if (!event.composedPath().includes(this)) this.setOpen(false);
   };
 
-  private get selected() {
-    return parseWorkingModeSnapshot(this.status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY])?.selected;
+  private get snapshot() {
+    return parseWorkingModeSnapshot(this.status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY]);
   }
 
   override disconnectedCallback(): void {
@@ -65,8 +70,10 @@ export class WorkingModeControls extends LitElement {
   }
 
   override render() {
-    const selected = this.selected;
-    const summary = WORKING_MODE_AXIS_NAMES.map((axis) => `${LABELS[axis]}: ${selected?.[axis] ?? "unavailable"}`).join(", ");
+    const snapshot = this.snapshot;
+    const selected = snapshot?.selected;
+    const pending = snapshot !== undefined && workingModePending(snapshot, this.transcriptSelection);
+    const summary = WORKING_MODE_AXIS_NAMES.map((axis) => `${LABELS[axis]}: ${selected?.[axis] ?? "unavailable"}`).join(", ") + (pending ? `. ${PENDING_LABEL}` : "");
     return html`
       <button class="trigger" type="button" title=${summary} aria-label=${`Working Mode — ${summary}`} aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"} ?disabled=${selected === undefined} @click=${() => { this.setOpen(!this.open); }}>
         ${WORKING_MODE_AXIS_NAMES.map((axis) => {
@@ -74,6 +81,7 @@ export class WorkingModeControls extends LitElement {
           const changed = value !== undefined && value !== WORKING_MODE_AXES[axis][0];
           return html`<span class=${`axis ${axis}${changed ? " changed" : ""}`} data-axis=${axis}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>${changed ? html`<span class="value">${value}</span>` : null}</span>`;
         })}
+        ${pending ? html`<span class="pending-dot" title=${PENDING_LABEL}></span>` : null}
       </button>
       ${this.open && selected !== undefined ? html`
         <div class="pane" role="dialog" aria-label="Working Mode" @keydown=${(event: KeyboardEvent) => { this.handlePaneKey(event); }} @focusout=${(event: FocusEvent) => { this.handleFocusOut(event); }}>
@@ -88,6 +96,10 @@ export class WorkingModeControls extends LitElement {
               })}
             </div>
           `)}
+          <div class="actions">
+            <!-- Lucide send -->
+            <button class="send" type="button" ?disabled=${!pending} title=${pending ? "Send the Working Mode change now" : "No Working Mode change to send"} @click=${() => { this.send(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg>Send</button>
+          </div>
         </div>
       ` : null}
     `;
@@ -108,6 +120,12 @@ export class WorkingModeControls extends LitElement {
   // The reported selection stays authoritative: a choice shows as checked once the extension confirms it.
   private choose(axis: WorkingModeAxis, value: string): void {
     void this.onRunCommand?.(`/mode ${axis} ${value.toLowerCase()}`);
+  }
+
+  /** Delivers the pending selection now: the extension steers a working agent or starts a turn when idle. */
+  private send(): void {
+    void this.onRunCommand?.("/mode send");
+    this.setOpen(false, true);
   }
 
   private handlePaneKey(event: KeyboardEvent): void {
@@ -147,16 +165,20 @@ export class WorkingModeControls extends LitElement {
     button { font: 12px system-ui, sans-serif; cursor: pointer; }
     button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
     svg { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .trigger { display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pi-muted); }
+    .trigger { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pi-muted); }
     .trigger:disabled { opacity: .5; cursor: default; }
     .trigger[aria-expanded="true"] { background: var(--pi-surface-hover); }
     .axis { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: var(--composer-control-size, 24px); min-width: var(--composer-control-size, 24px); padding: 0 4px; box-sizing: border-box; border-radius: 6px; white-space: nowrap; }
     .trigger:hover:not(:disabled) .axis { color: var(--pi-text); }
     .trigger:hover:not(:disabled) .axis:hover { background: var(--pi-surface-hover); }
+    .pending-dot { position: absolute; top: 0; right: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--pi-accent); box-shadow: 0 0 0 2px var(--pi-surface); }
     .axis.changed, .trigger:hover:not(:disabled) .axis.changed { color: var(--axis-color); }
     /* Anchored to the composer footer (the nearest positioned ancestor), right-aligned above it. */
     .pane { position: absolute; z-index: 20; right: 10px; bottom: calc(100% + 4px); display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 12px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
     .axis-name { color: var(--pi-muted); }
+    .actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; padding-top: 4px; border-top: 1px solid var(--pi-border); }
+    .send { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 10px; border: 1px solid var(--pi-accent); border-radius: 6px; background: var(--pi-accent); color: var(--pi-accent-contrast, #fff); font-weight: 600; }
+    .send:disabled { border-color: var(--pi-border); background: transparent; color: var(--pi-muted); cursor: default; }
     .values { display: flex; flex-wrap: wrap; gap: 2px; }
     /* Every row's values fill the shared value column, so all rows span the widest row's width. */
     .values > button { flex: 1 1 auto; justify-content: center; display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--pi-text); white-space: nowrap; }
@@ -170,13 +192,15 @@ export class WorkingModeControls extends LitElement {
       .axis > .value { display: none; }
       .pane { right: 6px; left: 6px; max-width: none; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px; }
       .axis-name { margin-top: 4px; }
+      .actions { margin-top: 4px; }
     }
     @media (pointer: coarse) {
-      .values > button { min-height: 34px; }
+      .values > button, .send { min-height: 34px; }
     }
     @media (forced-colors: active) {
       button:focus-visible { outline-color: Highlight; }
       .values > button[aria-checked="true"] { border-color: Highlight; }
+      .pending-dot { forced-color-adjust: none; background: Highlight; }
     }
   `;
 }

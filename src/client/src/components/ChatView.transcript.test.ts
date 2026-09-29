@@ -357,7 +357,7 @@ describe("ChatView transcript density", () => {
     }
   });
 
-  it("renders a Working Mode block as one collapsed card of dial values without the raw block", async () => {
+  it("renders each Working Mode block as one collapsed line of what changed, with the full guidance on expand", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
     view.messages = normalizeMessages([{ role: "custom", customType: "working-mode", content: `<working-mode seq="1">\nThomas selected Working Mode Alignment: Align · Attention: Switching · Checking: Default · Orchestration: Workers.
@@ -370,20 +370,27 @@ Attention — Switching: Batch questions.
 Orchestration — Workers: Use a scope-owning worker.
 
 This block replaces every earlier <working-mode> block.
-</working-mode>`, details: { schemaVersion: 2, seq: 1, selection: { alignment: "Align", attention: "Switching", checking: "Default", orchestration: "Workers" } } }]);
+</working-mode>`, details: { schemaVersion: 2, seq: 1, selection: { alignment: "Align", attention: "Switching", checking: "Default", orchestration: "Workers" } } },
+    { role: "user", content: "next" },
+    { role: "custom", customType: "working-mode", content: "<working-mode seq=\"2\">\nAttention — Focused: Stay here.\n\nChecking — Exercise: Run it.\n</working-mode>", details: { schemaVersion: 2, seq: 2, selection: { alignment: "Align", attention: "Focused", checking: "Exercise", orchestration: "Workers" } } },
+    { role: "custom", customType: "working-mode", content: "<working-mode seq=\"3\">\n</working-mode>", details: { schemaVersion: 2, seq: 3, selection: { alignment: "Default", attention: "Default", checking: "Default", orchestration: "Main" } } }]);
     document.body.append(view);
     await view.updateComplete;
 
     const root = requireShadowRoot(view);
-    const card = root.querySelector<HTMLDetailsElement>("details.working-mode-card");
-    expect(card?.open).toBe(false);
-    expect([...(card?.querySelectorAll("summary .working-mode-value") ?? [])].map((chip) => [chip.textContent, chip.classList.contains("changed")])).toEqual([
-      ["Align", true], ["Switching", true], ["Default", false], ["Workers", true],
+    const cards = [...root.querySelectorAll<HTMLDetailsElement>("details.working-mode-card")];
+    expect(cards.map((card) => card.querySelector("summary")?.textContent.trim())).toEqual([
+      "Working Mode: Alignment Align · Attention Switching · Orchestration Workers",
+      "Working Mode: Attention Switching → Focused · Checking Default → Exercise",
+      "Working Mode reset to defaults",
     ]);
-    expect(card?.querySelectorAll("dt")).toHaveLength(3);
+    const card = cards[0];
+    expect(card?.open).toBe(false);
+    expect(card?.querySelectorAll("dt")).toHaveLength(4);
     expect(card?.textContent).toContain("Batch questions.");
     expect(root.textContent).not.toContain("<working-mode");
     expect(root.querySelector("article.msg.system")).toBeNull();
+    expect([...root.querySelectorAll(".msg-header .label")].map((label) => label.textContent)).not.toContain("system");
   });
 
   it("renders a validated Goal lifecycle as one collapsed accessible card without model-only text", async () => {
