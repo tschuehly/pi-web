@@ -21,6 +21,7 @@ export const E2E_SEARCH_MATCHES = 150;
 export const E2E_NOTES_BODY = "Seeded notes body for the file-link check.";
 export const E2E_ADHOC_SESSION_ID = "019ef4c0-0000-7000-8000-00000000e2e2";
 export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
+export const E2E_SIBLING_BODY = "export const seededSiblingBody = true;";
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const root = await realpath(await mkdtemp(join(tmpdir(), "pi-web-e2e-")));
@@ -44,7 +45,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await seedProject(project);
     await writeJson(join(dataDir, "projects.json"), { projects: [{ id: E2E_PROJECT_ID, name: "e2e", path: project, createdAt: new Date().toISOString() }] });
     await writeJson(join(root, "config.json"), { host: "127.0.0.1" });
-    await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md).");
+    // A sibling of the Chat's folder outside every registered project, linked as ../sibling/...
+    const siblingFile = join(root, "sibling", "src", "generator.ts");
+    await mkdir(dirname(siblingFile), { recursive: true });
+    await writeFile(siblingFile, `${E2E_SIBLING_BODY}\n`);
+    await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md). The generator is [the sibling file](../sibling/src/generator.ts).");
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
@@ -75,6 +80,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const listing: unknown = await (await fetch(`${baseUrl}api/projects/${E2E_PROJECT_ID}/workspaces`)).json();
     const workspaceId = mainWorkspaceId(listing);
     process.env["PI_WEB_E2E_CHAT_URL"] = `${baseUrl}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId, session: E2E_SESSION_ID, view: "chat" }).toString()}`;
+    process.env["PI_WEB_E2E_SIBLING_FILE"] = siblingFile;
     process.env["PI_WEB_E2E_ADHOC_CHAT_URL"] = `${baseUrl}?${new URLSearchParams({ session: E2E_ADHOC_SESSION_ID, view: "chat" }).toString()}`;
     return teardown;
   } catch (error) {

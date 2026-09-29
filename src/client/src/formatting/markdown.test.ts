@@ -77,8 +77,7 @@ describe("workspace Markdown downloads", () => {
     ["././reports//./result.zip", "reports/result.zip"],
     ["/srv/work/./reports//result.zip", "reports/result.zip"],
     ["%2E/reports/%2E/result.zip", "reports/result.zip"],
-    ["reports/../result.zip", "reports/../result.zip"],
-    ["../outside.zip", "../outside.zip"],
+    ["reports/../result.zip", "result.zip"],
     ["/srv/work/reports/result.zip", "reports/result.zip"],
     ["reports/a%20%231%3F%25.zip", "reports/a #1?%.zip"],
     ["report.pdf?version=2#page=3", "report.pdf"],
@@ -92,7 +91,7 @@ describe("workspace Markdown downloads", () => {
     expect(url.searchParams.get("download")).toBe("1");
   });
 
-  it.each(["https://example.com/file", "http://example.com", "mailto:hello@example.com", "#section", "/api/status", "/srv/work-other/file", "//example.com/file"])("preserves browser link %s", (destination) => {
+  it.each(["https://example.com/file", "http://example.com", "mailto:hello@example.com", "#section", "//example.com/file"])("preserves browser link %s", (destination) => {
     const anchor = link(`[link](${destination})`, workspace);
     expect(anchor.getAttribute("href")).toBe(destination);
     expect(anchor.rel).toBe("noreferrer noopener");
@@ -110,7 +109,22 @@ describe("workspace Markdown downloads", () => {
     expect(link(text, workspace).href).toBe(first);
     const absolute = "[download](/srv/work/result.zip)";
     expect(link(absolute, workspace).href).toContain("download=1");
-    expect(link(absolute, { ...workspace, root: "/another" }).getAttribute("href")).toBe("/srv/work/result.zip");
+    expect(link(absolute, { ...workspace, root: "/another" }).getAttribute("data-outside-file")).toBe("/srv/work/result.zip");
+  });
+
+  it.each([
+    ["../outside.zip", "/srv/outside.zip", "/srv", "outside.zip"],
+    ["/srv/work-other/file", "/srv/work-other/file", "/srv/work-other", "file"],
+    ["/api/status", "/api/status", "/api", "status"],
+  ])("routes Chat link %s outside the folder through its own folder workspace", (destination, absolute, folder, path) => {
+    vi.stubEnv("BASE_URL", "/nested/pi/");
+    const anchor = link(`[outside](${destination})`, workspace);
+    expect(anchor.hasAttribute("data-workspace-file")).toBe(false);
+    expect(anchor.getAttribute("data-outside-file")).toBe(absolute);
+    expect(anchor.target).toBe("_self");
+    const url = new URL(anchor.href);
+    expect(url.pathname).toBe(`/nested/pi/api/machines/remote%20%2F1/projects/folder/workspaces/${encodeURIComponent(`folder:${folder}`)}/file/preview`);
+    expect(url.searchParams.get("path")).toBe(path);
   });
 
   it("isolates identical nested Markdown by source path and rejects escapes", () => {

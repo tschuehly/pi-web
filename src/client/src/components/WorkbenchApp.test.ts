@@ -402,8 +402,37 @@ describe("Workbench Chat chooser", () => {
     canClose.mockReturnValue(true);
     click(anchors[1]);
     await vi.waitFor(() => { expect(pane.shadowRoot?.querySelector("textarea")?.value).toBe("body of .scratch/LEDGER.md"); });
-    expect(click(anchors[2]).defaultPrevented).toBe(false);
-    expect(read).toHaveBeenCalledTimes(2);
+    expect(anchors[2]?.getAttribute("data-outside-file")).toBe("/elsewhere/x.md");
+    expect(click(anchors[2]).defaultPrevented).toBe(true);
+    await vi.waitFor(() => { expect(pane.shadowRoot?.querySelector("textarea")?.value).toBe("body of x.md"); });
+    expect(read).toHaveBeenLastCalledWith("", "folder:/elsewhere", "x.md", machine.id);
+  });
+
+  it("opens a Chat link outside its folder in the registered workspace that contains the file, then returns to the Chat's workspace", async () => {
+    const sibling: Project = { id: "sibling", name: "Sibling", path: "/pi-web.installed", createdAt: project.createdAt };
+    const siblingWorkspace: Workspace = { id: "sibling-main", projectId: sibling.id, path: sibling.path, label: "main", isMain: true, effectiveConfig: {} };
+    vi.spyOn(api, "workspaces").mockImplementation((projectId) => Promise.resolve(projectId === sibling.id ? [siblingWorkspace] : [workspace]));
+    const current = session("human", "Edit notes");
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), projects: [project, sibling], selectedSession: current, messages: [{ role: "assistant", parts: [{ type: "text", text: "See [generator](../pi-web.installed/src/server/sessions/sessionNameGenerator.ts) and [loose](../loose/notes.md)." }] }] });
+    await app.updateComplete;
+    const read = vi.spyOn(api, "workspaceFile").mockImplementation((_project, _workspace, path) => Promise.resolve({ path, encoding: "utf8", size: 5, modifiedAt: "now", version: "v1", content: `body of ${path}`, truncated: false, binary: false }));
+    const anchors = await chatAnchors(app);
+    expect(anchors.map((anchor) => anchor.getAttribute("data-outside-file"))).toEqual(["/pi-web.installed/src/server/sessions/sessionNameGenerator.ts", "/loose/notes.md"]);
+
+    anchors[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, button: 0 }));
+    await vi.waitFor(() => { expect(read).toHaveBeenCalledWith(sibling.id, siblingWorkspace.id, "src/server/sessions/sessionNameGenerator.ts", machine.id); });
+    const pane = () => app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+    await vi.waitFor(() => { expect(pane()?.shadowRoot?.querySelector("textarea")?.value).toBe("body of src/server/sessions/sessionNameGenerator.ts"); });
+    expect(pane()?.workspace).toBe(siblingWorkspace);
+
+    anchors[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, button: 0 }));
+    await vi.waitFor(() => { expect(read).toHaveBeenLastCalledWith("", "folder:/loose", "notes.md", machine.id); });
+
+    const toggle = app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle");
+    toggle?.click(); await app.updateComplete;
+    toggle?.click(); await app.updateComplete;
+    expect(pane()?.workspace).toBe(workspace);
   });
 
   it("opens workspace file search with Cmd+P or the button without remounting Chat", async () => {

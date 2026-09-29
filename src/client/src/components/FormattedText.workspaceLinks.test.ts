@@ -72,3 +72,14 @@ it("leaves explicit new-tab links native", async () => {
   expect(dispatchClick(view, anchor)).toBe(false);
   expect(listener).not.toHaveBeenCalled();
 });
+
+it("asks the host to open a link outside the Chat folder by its absolute path", async () => {
+  const { view, anchor } = await setup("../sibling/src/a.ts");
+  const inside = vi.fn();
+  const outside = vi.fn((event: Event) => { event.preventDefault(); });
+  view.addEventListener("workspace-file-open", inside);
+  view.addEventListener("outside-file-open", outside);
+  expect(dispatchClick(view, anchor)).toBe(true);
+  expect(inside).not.toHaveBeenCalled();
+  expect(outside.mock.calls[0]?.[0]).toMatchObject({ detail: { machineId: "remote", path: "/sibling/src/a.ts" } });
+});
