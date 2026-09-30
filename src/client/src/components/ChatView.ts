@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
+import { guard } from "lit/directives/guard.js";
 import { repeat } from "lit/directives/repeat.js";
 import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
 import { latestWorkingModeDials, previewFromDetails, workingModeSummary } from "../chatMessages";
@@ -33,7 +34,7 @@ import type { ExtensionDialogAnswerCallback, ExtensionDialogCancelCallback, Exte
 import { registerRenderedModal, type RenderedModalRegistration } from "./modalLayerRegistry";
 import "./ConversationMeter";
 import "./FormattedText";
-import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
+import { workspaceContextChanged, workspaceContextKey, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import { toolActionLabel } from "./ToolExecutionView";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
@@ -221,7 +222,7 @@ function formatToolCallArguments(args: unknown): string {
 export class ChatView extends LitElement {
   @property({ attribute: false }) messages: ChatLine[] = [];
   @property() sessionId = "";
-  @property({ attribute: false }) workspaceContext: MarkdownWorkspaceContext | undefined;
+  @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
   @property({ attribute: false }) onMessageAction?: (entryId: string, action: "fork" | "back") => Promise<void>;
   @property({ type: Boolean }) messageActionsDisabled = false;
   @state() private messageActionPending = false;
@@ -492,10 +493,6 @@ export class ChatView extends LitElement {
   }
 
   override render() {
-    const groups = filterChatGroups(this.groupedMessages(), this.transcriptFilter, this.messages, this.messageStart);
-    const exchange = this.transcriptFilter === "everything"
-      ? currentExchangeGroups(this.messages, groups, this.messageStart, this.hasMore)
-      : { history: [], current: groups, startsOutsideLoadedPage: false };
     return html`
       ${this.renderTopNotices()}
       ${this.renderNotificationLiveRegions()}
@@ -514,15 +511,7 @@ export class ChatView extends LitElement {
         ${this.renderConversationRail()}
         <div class="chat" @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
           ${this.renderHistoryBoundary()}
-          ${exchange.history.length === 0 ? null : html`
-            <details class="exchange-history" open>
-              <summary>Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
-              <div class="exchange-history-body">${this.renderGroups(exchange.history)}</div>
-            </details>
-          `}
-          ${exchange.startsOutsideLoadedPage ? html`<div class="exchange-boundary" role="note">Current loaded tail · the latest user message is in earlier history</div>` : null}
-          ${this.renderGroups(exchange.current)}
-          ${this.transcriptFilter !== "everything" && groups.length === 0 ? html`<p class="filter-empty" role="status">No messages matching ${this.filterLabel()} in loaded history.${this.hasMore ? " Load earlier messages to continue." : ""}</p>` : null}
+          ${this.renderTranscript()}
           ${this.renderQueuedMessages()}
           ${this.renderSessionActivity()}
           ${this.renderOpenAsk()}
@@ -537,6 +526,32 @@ export class ChatView extends LitElement {
       </div>
       ${this.renderImageZoom()}
     `;
+  }
+
+  // Status/activity ticks re-render ChatView about once a second; long transcripts must not be rebuilt for them.
+  // Every instance field the transcript templates read belongs in this list.
+  private renderTranscript() {
+    return guard([
+      this.messages, this.messageStart, this.hasMore, this.transcriptFilter, workspaceContextKey(this.workspaceContext), this.sessionId,
+      this.messageActionsDisabled, this.messageActionPending, this.messageActionError, this.status?.isStreaming === true,
+      this.askDraftSessionId, this.copiedMessageKey, this.onMessageAction,
+    ], () => {
+      const groups = filterChatGroups(this.groupedMessages(), this.transcriptFilter, this.messages, this.messageStart);
+      const exchange = this.transcriptFilter === "everything"
+        ? currentExchangeGroups(this.messages, groups, this.messageStart, this.hasMore)
+        : { history: [], current: groups, startsOutsideLoadedPage: false };
+      return html`
+        ${exchange.history.length === 0 ? null : html`
+          <details class="exchange-history" open>
+            <summary>Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
+            <div class="exchange-history-body">${this.renderGroups(exchange.history)}</div>
+          </details>
+        `}
+        ${exchange.startsOutsideLoadedPage ? html`<div class="exchange-boundary" role="note">Current loaded tail · the latest user message is in earlier history</div>` : null}
+        ${this.renderGroups(exchange.current)}
+        ${this.transcriptFilter !== "everything" && groups.length === 0 ? html`<p class="filter-empty" role="status">No messages matching ${this.filterLabel()} in loaded history.${this.hasMore ? " Load earlier messages to continue." : ""}</p>` : null}
+      `;
+    });
   }
 
   private filterLabel(): string {
