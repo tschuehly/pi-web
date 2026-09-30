@@ -3,13 +3,13 @@ import { customElement, property } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { writeClipboardText } from "../clipboard";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
-import type { MarkdownWorkspaceContext, OutsideFileOpenRequest, WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
+import { workspaceContextChanged, type MarkdownWorkspaceContext, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { formattedTextStyles } from "./shared";
 
 @customElement("formatted-text")
 export class FormattedText extends LitElement {
   @property() text = "";
-  @property({ attribute: false }) workspaceContext: MarkdownWorkspaceContext | undefined;
+  @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
 
   override render() {
     return html`<div class="formatted" dir="auto" @click=${this.onFormattedClick}>${unsafeHTML(toSafeMarkdownHtml(this.text, this.workspaceContext))}</div>`;

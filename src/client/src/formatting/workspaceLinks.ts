@@ -8,6 +8,15 @@ export interface MarkdownWorkspaceContext {
   sourcePath?: string;
 }
 
+/** Value identity: parents rebuild contexts on every render, which must not re-render the transcript. */
+export function workspaceContextKey(context: MarkdownWorkspaceContext | undefined): string {
+  return context === undefined ? "" : JSON.stringify([context.machineId, context.projectId, context.workspaceId, context.root, context.sourcePath]);
+}
+
+export function workspaceContextChanged(next: MarkdownWorkspaceContext | undefined, previous: MarkdownWorkspaceContext | undefined): boolean {
+  return workspaceContextKey(next) !== workspaceContextKey(previous);
+}
+
 /** Do not borrow a newly selected workspace while the old session is still rendered. */
 export function markdownWorkspaceContext(machineId: string, workspace: Workspace | undefined, session: SessionRef): MarkdownWorkspaceContext | undefined {
   if (workspace === undefined || trimTrailingSlashes(workspace.path) !== trimTrailingSlashes(session.cwd)) return undefined;
