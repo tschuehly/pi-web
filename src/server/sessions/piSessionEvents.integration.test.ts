@@ -25,6 +25,8 @@ describe("hosted package messaging with native Pi", () => {
       pi.on("session_start", (_event, ctx) => { id = ctx.sessionManager.getSessionId(); });
       pi.events.on("request", data => pi.events.emit("reply", { id, data }));
     }`);
+    // The built-in MCP extension reads mcp.json from Pi's agent directory.
+    vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
     const modelRuntime = await createTestModelRuntime();
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir, modelRuntime,
@@ -52,6 +54,7 @@ describe("hosted package messaging with native Pi", () => {
     } finally {
       await service.dispose();
       await rm(directory, { recursive: true, force: true });
+      vi.unstubAllEnvs();
     }
   });
   it.each(["existing", "launcher", "created"])("connects a selected %s conversation and observes extension work normally", async (kind) => {

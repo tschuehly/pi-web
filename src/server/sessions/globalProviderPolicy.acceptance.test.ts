@@ -211,6 +211,8 @@ async function policyHarness(options: { runtime?: ModelRuntime; agentDir?: strin
   // Isolate Pi's per-user resource discovery (~/.agents/skills et al.) so the
   // harness sees only extensions written into its explicit agent/project dirs.
   vi.stubEnv("HOME", await tempDir("pi-web-policy-home-"));
+  // The built-in MCP extension reads mcp.json from Pi's agent directory.
+  vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
   const runtime = options.runtime ?? await createTestModelRuntime();
   const { entries, logger } = capturingLogger();
 

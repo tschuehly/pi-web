@@ -7,8 +7,11 @@ import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  createCodemodeExtension,
   createEventBus,
   createEditToolDefinition,
+  createMcpExtension,
+  createToolSearchExtension,
   defineTool,
   hasTrustRequiringProjectResources,
   ProjectTrustStore,
@@ -22,6 +25,7 @@ import {
   type EditToolDetails,
   type ExtensionUIDialogOptions,
   type ExtensionUIContext,
+  type InlineExtension,
   type ModelRuntime,
   type ProjectTrustContext,
   type ProjectTrustEvent,
@@ -966,6 +970,20 @@ export function piWebResourceLoaderOptions(
   return { appendSystemPromptOverride: (base: string[]) => [...base, ...appendSystemPromptSections] };
 }
 
+/**
+ * The CLI's built-in `codemode`, `tool_search`, and MCP extensions, which SDK
+ * sessions only get when the host supplies them. As `builtin:<name>` resources
+ * they load after project trust, `-builtin:<name>` in the `extensions` setting
+ * disables them, and an extension that registers the same tool or command
+ * replaces them, exactly as in the CLI. Each factory call keeps its own state,
+ * so concurrent sessions can share these entries.
+ */
+const PI_BUILTIN_EXTENSIONS: InlineExtension[] = [
+  { name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true },
+  { name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true },
+  { name: "mcp", factory: createMcpExtension(), replaceable: true, builtin: true },
+];
+
 function createDefaultRuntimeFactory(
   sessionEvents: PiSessionEventConnections,
   modelRuntime: ModelRuntime,
@@ -999,7 +1017,7 @@ function createDefaultRuntimeFactory(
       agentDir,
       modelRuntime,
       settingsManager,
-      resourceLoaderOptions: { ...resourceLoaderOptions, eventBus },
+      resourceLoaderOptions: { ...resourceLoaderOptions, eventBus, extensionFactories: PI_BUILTIN_EXTENSIONS },
       ...(projectTrustRequiring
         ? {
             resourceLoaderReloadOptions: {
