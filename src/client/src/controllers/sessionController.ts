@@ -2085,7 +2085,8 @@ export class SessionController {
       this.queueActivityUpdate(event.activity);
       return;
     }
-    const pending = event.startupToken === undefined ? undefined : this.pendingSessionStarts.get(event.startupToken);
+    // Keyed by tempId, but a Workstream launch sends its own token, so match on startupToken.
+    const pending = event.startupToken === undefined ? undefined : [...this.pendingSessionStarts.values()].find((candidate) => candidate.startupToken === event.startupToken);
     if (pending === undefined || pending.discarded) return;
     this.learnPendingStartBackendSession(pending, event.activity.sessionId);
     // An idle startup phase means the daemon has nothing left to attribute, so

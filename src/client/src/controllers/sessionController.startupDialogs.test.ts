@@ -121,6 +121,19 @@ describe("SessionController session_start dialog startup reachability", () => {
     await start;
   });
 
+  it("subscribes when the create carries a caller-supplied startup token (Workstream launch)", async () => {
+    const state = { current: { ...initialAppState(), selectedWorkspace: workspace, sessions: [] } };
+    const harness = pendingStartController(state);
+    const start = harness.controller.startSessionWithOptions({ startupToken: "pi-web:workstream-launch-1" });
+
+    harness.controller.applyGlobalEvent({ type: "session.startup", startupToken: "pi-web:workstream-launch-1", activity: startupActivity() });
+    runPendingAnimationFrames();
+
+    expect(harness.socket.connectedSessionIds).toEqual([BACKEND_SESSION_ID]);
+    resolveBackendSession(harness);
+    await start;
+  });
+
   it("shows a dialog that opens mid-startup on the pending row, answerable before readiness", async () => {
     const state = { current: { ...initialAppState(), selectedWorkspace: workspace, sessions: [] } };
     const harness = pendingStartController(state);
