@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -242,8 +242,29 @@ describe("bundled Git workspace provider", () => {
       signal: new AbortController().signal,
     })).resolves.toEqual({
       title: "Delete workspace: feature/remove",
-      command: `git worktree remove '${linked.replaceAll("'", "'\\''")}'`,
+      command: `git worktree repair '${linked.replaceAll("'", "'\\''")}' && git worktree remove '${linked.replaceAll("'", "'\\''")}'`,
     });
+  });
+
+  it.skipIf(process.platform === "win32")("removes a linked worktree after the main checkout moved", async () => {
+    const repository = await createRepository("original main");
+    const linked = join(repository.parent, "linked worktree");
+    runGit(repository.path, ["worktree", "add", "-b", "feature/moved", linked]);
+    const moved = join(repository.parent, "moved main");
+    await rename(repository.path, moved);
+    const workspaceProvider = await providerFor(createServerPluginExecFile({ env: cleanGitEnvironment() }));
+    const input = project(moved);
+    const target = (await workspaceProvider.list(input, new AbortController().signal))
+      .find(({ path }) => path === linked);
+    if (target === undefined || workspaceProvider.prepareRemove === undefined) {
+      throw new Error("Expected removable Git worktree");
+    }
+
+    const plan = await workspaceProvider.prepareRemove({ project: input, workspace: target, signal: new AbortController().signal });
+    execFileSync("/bin/sh", ["-c", plan.command], { cwd: moved, env: cleanGitEnvironment(), stdio: ["ignore", "pipe", "pipe"] });
+
+    await expect(access(linked)).rejects.toThrow();
+    expect(runGit(moved, ["worktree", "list", "--porcelain"])).not.toContain(linked);
   });
 
   it("keeps current raw worktree paths for a registered subdirectory", async () => {
