@@ -21,6 +21,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(tempDirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -36,6 +37,8 @@ async function startSessionWithSettings(settings: Record<string, unknown> | unde
   const agentDir = join(root, "agent");
   const workspace = join(root, "workspace");
   await mkdir(agentDir, { recursive: true });
+  // The built-in MCP extension reads mcp.json from Pi's agent directory.
+  vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
   await mkdir(workspace, { recursive: true });
   if (settings !== undefined) {
     await writeFile(join(agentDir, "settings.json"), JSON.stringify(settings));
@@ -198,6 +201,8 @@ describe("PiSessionService model catalog", () => {
     const agentDir = join(root, "agent");
     const workspace = join(root, "workspace");
     await mkdir(agentDir, { recursive: true });
+    // The built-in MCP extension reads mcp.json from Pi's agent directory.
+    vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
     await mkdir(workspace, { recursive: true });
     await writeFile(join(agentDir, "settings.json"), JSON.stringify({ enabledModels: [`${PROVIDER}/${FIRST_MODEL}`] }));
 
@@ -239,6 +244,8 @@ describe("PiSessionService model catalog", () => {
     const workspaceA = join(root, "workspace-a");
     const workspaceB = join(root, "workspace-b");
     await mkdir(agentDir, { recursive: true });
+    // The built-in MCP extension reads mcp.json from Pi's agent directory.
+    vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
     await mkdir(join(workspaceA, ".pi"), { recursive: true });
     await mkdir(workspaceB, { recursive: true });
     await writeFile(join(agentDir, "settings.json"), JSON.stringify({ enabledModels: [`${PROVIDER}/${FIRST_MODEL}`] }));

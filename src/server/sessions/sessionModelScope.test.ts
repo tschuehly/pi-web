@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { ModelRuntime, ProjectTrustStore, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
 import { CapturingSessionEventHub, sessionGateway } from "./piSessionService.testSupport.js";
 import { applyEnabledModelToggle, catalogWithEnabledFirst, liveScopedModelIds, persistedEnabledModelPatterns, resolveEnabledModelIds, resolveSessionModelOptions, scopedModelsFromEnabledIds } from "./sessionModelScope.js";
@@ -22,6 +22,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(tempDirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -148,6 +149,8 @@ describe("resolveSessionModelOptions", () => {
     // only loads its overrides once trusted. Persist the decision through the
     // SDK store so the key is canonicalized the way the lookup reads it.
     new ProjectTrustStore(agentDir).set(workspace, true);
+    // The built-in MCP extension reads mcp.json from Pi's agent directory.
+    vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
 
     const gateway = sessionGateway([]);
     gateway.create = (cwd) => SessionManager.inMemory(cwd);

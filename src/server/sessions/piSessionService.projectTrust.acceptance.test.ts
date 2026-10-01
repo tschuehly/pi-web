@@ -69,6 +69,8 @@ async function startProjectSession(options: {
   // Isolate Pi's per-user resource discovery (~/.agents/skills et al.) so only
   // the explicit agent/project dirs contribute resources.
   vi.stubEnv("HOME", await tempDir("pi-web-trust-home-"));
+  // The built-in MCP extension reads mcp.json from Pi's agent directory.
+  vi.stubEnv("PI_CODING_AGENT_DIR", options.agentDirPath);
   const runtime = await createTestModelRuntime();
   const service = new PiSessionService(new CapturingSessionEventHub(), {
     agentDir: options.agentDirPath,

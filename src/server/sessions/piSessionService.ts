@@ -7,8 +7,11 @@ import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  createCodemodeExtension,
   createEventBus,
   createEditToolDefinition,
+  createMcpExtension,
+  createToolSearchExtension,
   defineTool,
   hasTrustRequiringProjectResources,
   ProjectTrustStore,
@@ -22,6 +25,7 @@ import {
   type EditToolDetails,
   type ExtensionUIDialogOptions,
   type ExtensionUIContext,
+  type InlineExtension,
   type ModelRuntime,
   type ProjectTrustContext,
   type ProjectTrustEvent,
@@ -514,8 +518,8 @@ export interface PiAgentSession {
   reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void>;
   getContextUsage(): ClientSessionStatus["contextUsage"] | undefined;
   prompt(text: string, options?: { streamingBehavior?: "steer" | "followUp"; images?: ImageContent[] }): Promise<void>;
-  steer(text: string, images?: ImageContent[]): Promise<void>;
-  followUp(text: string, images?: ImageContent[]): Promise<void>;
+  steer(text: string, images?: ImageContent[]): Promise<unknown>;
+  followUp(text: string, images?: ImageContent[]): Promise<unknown>;
   sendCustomMessage(message: { customType: string; content: string; display: boolean; details?: unknown }, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void>;
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string }>;
   navigateTree?(targetId: string, options?: { summarize?: boolean; customInstructions?: string }): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: unknown }>;
@@ -992,6 +996,20 @@ export function piWebResourceLoaderOptions(
   return { appendSystemPromptOverride: (base: string[]) => [...base, ...appendSystemPromptSections] };
 }
 
+/**
+ * The CLI's built-in `codemode`, `tool_search`, and MCP extensions, which SDK
+ * sessions only get when the host supplies them. As `builtin:<name>` resources
+ * they load after project trust, `-builtin:<name>` in the `extensions` setting
+ * disables them, and an extension that registers the same tool or command
+ * replaces them, exactly as in the CLI. Each factory call keeps its own state,
+ * so concurrent sessions can share these entries.
+ */
+const PI_BUILTIN_EXTENSIONS: InlineExtension[] = [
+  { name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true },
+  { name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true },
+  { name: "mcp", factory: createMcpExtension(), replaceable: true, builtin: true },
+];
+
 function createDefaultRuntimeFactory(
   sessionEvents: PiSessionEventConnections,
   modelRuntime: ModelRuntime,
@@ -1025,7 +1043,7 @@ function createDefaultRuntimeFactory(
       agentDir,
       modelRuntime,
       settingsManager,
-      resourceLoaderOptions: { ...resourceLoaderOptions, eventBus },
+      resourceLoaderOptions: { ...resourceLoaderOptions, eventBus, extensionFactories: PI_BUILTIN_EXTENSIONS },
       ...(projectTrustRequiring
         ? {
             resourceLoaderReloadOptions: {

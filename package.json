@@ -110,9 +110,9 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
-    "@earendil-works/pi-agent-core": "^0.87.1",
-    "@earendil-works/pi-ai": "^0.87.1",
-    "@earendil-works/pi-coding-agent": "^0.87.1",
+    "@earendil-works/pi-agent-core": "^0.99.1",
+    "@earendil-works/pi-ai": "^0.99.1",
+    "@earendil-works/pi-coding-agent": "^0.99.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^24.13.3",
@@ -145,9 +145,9 @@
   "homepage": "https://pi-web.dev/",
   "packageManager": "npm@11.11.0",
   "peerDependencies": {
-    "@earendil-works/pi-agent-core": ">=0.87.0",
-    "@earendil-works/pi-ai": ">=0.87.0",
-    "@earendil-works/pi-coding-agent": ">=0.87.0"
+    "@earendil-works/pi-agent-core": ">=0.99.1",
+    "@earendil-works/pi-ai": ">=0.99.1",
+    "@earendil-works/pi-coding-agent": ">=0.99.1"
   },
   "keywords": [
     "pi-package",
