@@ -126,9 +126,12 @@ export function createGitWorkspaceProvider(context: ServerPluginActivationContex
         throw new Error("Git worktree is no longer available for removal");
       }
       if (current.bare === true) throw new Error("A bare Git workspace cannot be removed as a linked worktree");
+      // Repair first: after the main checkout moves, the linked worktree's
+      // .git file points at the old location and `remove` fails even with --force.
+      const target = shellQuote(workspace.path);
       return {
         title: `Delete workspace: ${workspace.label}`,
-        command: `git worktree remove ${shellQuote(workspace.path)}`,
+        command: `git worktree repair ${target} && git worktree remove ${target}`,
       };
     },
   });
