@@ -1,5 +1,6 @@
 import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes";
 import { parseAskUserOutcome } from "./api/parsers";
+import { isSessionMediaId } from "../../shared/sessionMedia";
 import type { ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview, WorkingModeDial } from "./components/shared";
 import { validGoalId, WORKING_MODE_AXES as WORKING_MODE_VALUES, WORKING_MODE_AXIS_NAMES, workingModeState, type WorkingModeState } from "./extensionStatusSnapshots";
 
@@ -51,7 +52,10 @@ export function appendThinking(messages: ChatLine[], text: string): ChatLine[] {
 }
 
 export function normalizeMessage(message: unknown): ChatLine[] {
-  if (isChatLine(message)) return [message];
+  if (isChatLine(message)) {
+    if (!message.parts.some((part) => getString(part, "type") === "image")) return [message];
+    return [{ ...message, parts: message.parts.flatMap((part) => getString(part, "type") === "image" ? normalizeImage(part) : [part]) }];
+  }
   const lifecycle = goalLifecycleDetails(message);
   if (lifecycle !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "goalLifecycle", details: lifecycle }] }, message)];
   const dials = workingModeDials(message);
@@ -237,12 +241,7 @@ function normalizeContent(content: unknown, message: unknown): ChatPart[] {
       if (skillRead !== undefined) return [{ type: "skillRead", ...skillRead, ...(toolCallId === undefined ? {} : { toolCallId }) }];
       return [{ type: "toolCall", ...(toolCallId === undefined ? {} : { toolCallId }), toolName, summary: summarizeArgs(args), ...(args === undefined ? {} : { args }) }];
     }
-    if (type === "image") {
-      const data = getString(part, "data");
-      const mimeType = getString(part, "mimeType");
-      if (data !== undefined && data !== "" && mimeType !== undefined && mimeType !== "") return [{ type: "image", mimeType, data }];
-      return [{ type: "text", text: "[image]" }];
-    }
+    if (type === "image") return normalizeImage(part);
     return objectFallback(part);
   }).map((part) => part.type === "text" && getString(message, "role") === "toolResult"
     ? toolResultPartFromText(part.text, message)
@@ -325,6 +324,23 @@ function isGoalLifecycleTransition(value: unknown): value is keyof typeof GOAL_L
 function validLifecycleText(value: unknown): value is string {
   return typeof value === "string" && value !== "" && Array.from(value).length <= 400
     && value === value.replace(/(?:(?!\u200d)\p{Cf})|[\u115f\u2800\u3164\uffa0]/gu, "").replace(/\p{Cc}/gu, " ").replace(/\s+/gu, " ").trim();
+}
+
+function normalizeImage(part: unknown): ChatPart[] {
+  const mimeType = getString(part, "mimeType");
+  const mediaId = getProperty(part, "mediaId");
+  if (mediaId !== undefined) {
+    const byteSize = getNumber(part, "byteSize");
+    if (isSessionMediaId(mediaId)
+      && mimeType !== undefined && /^image\/[a-z0-9][a-z0-9.+-]*$/iu.test(mimeType)
+      && byteSize !== undefined && Number.isSafeInteger(byteSize) && byteSize >= 0) {
+      return [{ type: "image", mediaId, mimeType, byteSize }];
+    }
+  } else {
+    const data = getString(part, "data");
+    if (data !== undefined && data !== "" && mimeType !== undefined && mimeType !== "") return [{ type: "image", mimeType, data }];
+  }
+  return [{ type: "text", text: "[image]" }];
 }
 
 function askUserRecordPart(message: unknown): Extract<ChatPart, { type: "askUserRecord" }> | undefined {

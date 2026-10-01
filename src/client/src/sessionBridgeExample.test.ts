@@ -25,6 +25,7 @@ it("starts, refreshes, selects and cycles text reviews through the selected mach
   });
   const second = vi.fn(() => Promise.reject(new Error("Backend unavailable")));
   let context: WorkspacePanelContext = {
+    navigate: () => Promise.resolve(),
     machine: { id: "remote-a", name: "A", kind: "remote" },
     workspace: { id: "workspace", projectId: "project", path: "/workspace", label: "Workspace", isMain: true },
     state: {},

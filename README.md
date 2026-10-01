@@ -36,7 +36,7 @@ Requirements:
 
 - Node.js 22.19.0 or newer
 - npm
-- Pi Coding Agent `>=0.84.0`, configured for your user
+- Pi Coding Agent `>=0.87.0`, configured for your user
 - git and the development tools your agents need
 - Python 3 for saving workspace files (see [requirements](docs/install.html#requirements))
 

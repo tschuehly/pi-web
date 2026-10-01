@@ -4,7 +4,7 @@ import { browserErrorScopeKey, sessionBrowserErrorScope, visibleBrowserErrors } 
 import { ChatTranscriptStore } from "../chatTranscriptStore";
 import { SessionController } from "./sessionController";
 import type { NavigationFreshness } from "./types";
-import { defaultApi, deferred, emptyPage, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type MessagePage, type SessionStatus, type SessionStreamSnapshot } from "./sessionController.testSupport";
+import { transcriptSnapshotFixture, defaultApi, deferred, emptyPage, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type MessagePage, type SessionStatus, type SessionStreamSnapshot } from "./sessionController.testSupport";
 
 function page(text: string, total: number): MessagePage {
   return { messages: [{ role: "assistant", content: text }], start: 0, total };
@@ -20,9 +20,7 @@ describe("SessionController selected-session refresh", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: () => messages.promise,
-      status: () => selectedStatus.promise,
-      streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }),
+      transcriptSnapshot: () => transcriptSnapshotFixture(messages.promise, selectedStatus.promise),
       thinkingLevels: () => Promise.resolve({ levels: [] }),
     };
     const controller = new SessionController(
@@ -60,9 +58,7 @@ describe("SessionController selected-session refresh", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: () => messages.promise,
-      status: () => selectedStatus.promise,
-      streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }),
+      transcriptSnapshot: () => transcriptSnapshotFixture(messages.promise, selectedStatus.promise),
       thinkingLevels: () => Promise.resolve({ levels: [] }),
     };
     const controller = new SessionController(
@@ -97,9 +93,7 @@ describe("SessionController selected-session refresh", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession, replacementSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: () => messages.promise,
-      status: () => selectedStatus.promise,
-      streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }),
+      transcriptSnapshot: () => transcriptSnapshotFixture(messages.promise, selectedStatus.promise),
       thinkingLevels: () => Promise.resolve({ levels: [] }),
     };
     const controller = new SessionController(
@@ -133,21 +127,18 @@ describe("SessionController selected-session refresh", () => {
     const trailingPage = deferred<MessagePage>();
     const trailingStatus = deferred<SessionStatus>();
     const trailingStarted = deferred<undefined>();
-    let messageCalls = 0;
-    let statusCalls = 0;
+    let snapshotCalls = 0;
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: () => {
-        messageCalls += 1;
-        if (messageCalls === 2) trailingStarted.resolve(undefined);
-        return messageCalls === 1 ? firstPage.promise : trailingPage.promise;
+      transcriptSnapshot: () => {
+        snapshotCalls += 1;
+        if (snapshotCalls === 2) trailingStarted.resolve(undefined);
+        return transcriptSnapshotFixture(
+          snapshotCalls === 1 ? firstPage.promise : trailingPage.promise,
+          snapshotCalls === 1 ? firstStatus.promise : trailingStatus.promise,
+        );
       },
-      status: () => {
-        statusCalls += 1;
-        return statusCalls === 1 ? firstStatus.promise : trailingStatus.promise;
-      },
-      streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }),
     };
     const controller = new SessionController(
       () => state,
@@ -161,8 +152,7 @@ describe("SessionController selected-session refresh", () => {
     const duplicate = controller.refreshSelectedSession();
     await Promise.resolve();
 
-    expect(messageCalls).toBe(1);
-    expect(statusCalls).toBe(1);
+    expect(snapshotCalls).toBe(1);
 
     const later = controller.refreshSelectedSession();
     const laterDuplicate = controller.refreshSelectedSession();
@@ -170,15 +160,13 @@ describe("SessionController selected-session refresh", () => {
     firstStatus.resolve({ ...status(oldSession.id), messageCount: 1 });
     await trailingStarted.promise;
 
-    expect(messageCalls).toBe(2);
-    expect(statusCalls).toBe(2);
+    expect(snapshotCalls).toBe(2);
 
     trailingPage.resolve(page("fresh", 2));
     trailingStatus.resolve({ ...status(oldSession.id), messageCount: 2 });
     await Promise.all([first, duplicate, later, laterDuplicate]);
 
-    expect(messageCalls).toBe(2);
-    expect(statusCalls).toBe(2);
+    expect(snapshotCalls).toBe(2);
     expect(state.messages).toEqual([{ role: "assistant", parts: [{ type: "text", text: "fresh" }] }]);
     expect(state.status?.messageCount).toBe(2);
   });
@@ -190,9 +178,10 @@ describe("SessionController selected-session refresh", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession, replacementSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: (session) => sessionLookupId(session) === oldSession.id ? stalePage.promise : Promise.resolve(replacementPage),
-      status: (session) => sessionLookupId(session) === oldSession.id ? staleStatus.promise : Promise.resolve(status(replacementSession.id)),
-      streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }),
+      transcriptSnapshot: (session) => transcriptSnapshotFixture(
+        sessionLookupId(session) === oldSession.id ? stalePage.promise : replacementPage,
+        sessionLookupId(session) === oldSession.id ? staleStatus.promise : status(replacementSession.id),
+      ),
       thinkingLevels: () => Promise.resolve({ levels: [] }),
     };
     const controller = new SessionController(
@@ -215,20 +204,21 @@ describe("SessionController selected-session refresh", () => {
     expect(state.status?.sessionId).toBe(replacementSession.id);
   });
 
-  it("fetches the join-time stream snapshot alongside messages and status on refresh", async () => {
-    // Leg 3 contract: the snapshot is fetched for the selected session on the join
-    // refresh path. Seeding/watermark application is deliberately NOT asserted here
-    // (that is Leg 4); this only guards that the data is fetched.
-    const snapshotLookups: string[] = [];
+  it("fetches one combined transcript snapshot for the selected session on refresh", async () => {
+    const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>(() => transcriptSnapshotFixture(
+      page("live", 1), { ...status(oldSession.id), isStreaming: true },
+      { seq: 5, partial: { role: "assistant", content: [{ type: "text", text: "partial" }] } },
+    ));
+    const messages = vi.fn<typeof defaultApi.messages>();
+    const selectedStatus = vi.fn<typeof defaultApi.status>();
+    const streamSnapshot = vi.fn<typeof defaultApi.streamSnapshot>();
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: () => Promise.resolve(page("live", 1)),
-      status: () => Promise.resolve({ ...status(oldSession.id), isStreaming: true }),
-      streamSnapshot: (session) => {
-        snapshotLookups.push(sessionLookupId(session));
-        return Promise.resolve({ seq: 5, partial: { role: "assistant", content: [{ type: "text", text: "partial" }] } });
-      },
+      transcriptSnapshot,
+      messages,
+      status: selectedStatus,
+      streamSnapshot,
     };
     const controller = new SessionController(
       () => state,
@@ -240,7 +230,10 @@ describe("SessionController selected-session refresh", () => {
 
     await controller.refreshSelectedSession();
 
-    expect(snapshotLookups).toEqual([oldSession.id]);
+    expect(transcriptSnapshot).toHaveBeenCalledExactlyOnceWith(oldSession, { limit: 100 }, "local");
+    expect(messages).not.toHaveBeenCalled();
+    expect(selectedStatus).not.toHaveBeenCalled();
+    expect(streamSnapshot).not.toHaveBeenCalled();
   });
 });
 
@@ -253,9 +246,7 @@ describe("SessionController selected-session refresh errors", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: () => Promise.reject(new Error("poll boom")),
-      status: () => Promise.resolve(status(oldSession.id)),
-      streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }),
+      transcriptSnapshot: () => Promise.reject(new Error("poll boom")),
     };
     const controller = new SessionController(
       () => state,
@@ -299,9 +290,7 @@ describe("SessionController scoped refresh errors", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession, replacementSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: () => messages.promise,
-      status: () => Promise.resolve(status(oldSession.id)),
-      streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }),
+      transcriptSnapshot: () => transcriptSnapshotFixture(messages.promise, status(oldSession.id)),
     };
     const controller = new SessionController(
       () => state,
@@ -351,9 +340,7 @@ describe("SessionController scoped refresh errors", () => {
     };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: () => messages.promise,
-      status: () => Promise.resolve(status(oldSession.id)),
-      streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }),
+      transcriptSnapshot: () => transcriptSnapshotFixture(messages.promise, status(oldSession.id)),
     };
     const controller = new SessionController(
       () => state,
@@ -408,8 +395,7 @@ describe("SessionController unchanged selected-session refresh", () => {
     return { page: page("idle", 1), sessionStatus: { ...status(oldSession.id), messageCount: 1 }, snapshot: { seq: 4, partial: null } };
   }
 
-  // The refresh invokes messages/status/streamSnapshot in order per poll, so the
-  // poll index advances on the last of the three.
+  // Each combined request consumes one coherent poll fixture.
   function controllerWithPolls(polls: RefreshPoll[]) {
     const cacheWrites: string[] = [];
     let pollCalls = 0;
@@ -422,12 +408,10 @@ describe("SessionController unchanged selected-session refresh", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      messages: () => Promise.resolve(poll().page),
-      status: () => Promise.resolve(poll().sessionStatus),
-      streamSnapshot: () => {
-        const snapshot = poll().snapshot;
+      transcriptSnapshot: () => {
+        const current = poll();
         pollCalls += 1;
-        return Promise.resolve(snapshot);
+        return transcriptSnapshotFixture(current.page, current.sessionStatus, current.snapshot);
       },
       thinkingLevels: () => Promise.resolve({ levels: [] }),
     };

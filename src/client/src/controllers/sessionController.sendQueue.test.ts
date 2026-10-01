@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
-import { defaultApi, deferred, emptyPage, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type Deferred, type PromptAttachment, type SessionInfo } from "./sessionController.testSupport";
+import { emptyTranscriptApi as defaultApi, deferred, emptyPage, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type Deferred, type PromptAttachment, type SessionInfo } from "./sessionController.testSupport";
 
 describe("SessionController send queue", () => {
   it("toggles the per-session sending state around an inline attachment send and forwards attachments", async () => {

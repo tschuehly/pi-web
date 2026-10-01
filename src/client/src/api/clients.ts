@@ -49,6 +49,7 @@ import {
   parseSessionStatus,
   parseSessionUnreadCatalogSnapshot,
   parseSessionStreamSnapshot,
+  parseSessionTranscriptSnapshot,
   parseSessionTreeForkResult,
   parseSessionTreeNavigateResult,
   parseSlashCommand,
@@ -59,7 +60,7 @@ import {
   parseWorkspaceTrustResponse,
   requireMachineStatusSnapshot,
 } from "./parsers";
-import { messagePath, workspaceFilesPath } from "./urls";
+import { messagePath, streamSnapshotPath, transcriptSnapshotPath, workspaceFilesPath } from "./urls";
 
 const machinePrefix = (machineId = "local") => `api/machines/${encodeURIComponent(machineId)}`;
 
@@ -266,7 +267,8 @@ export const sessionsApi = {
   deleteArchivedMany: (sessions: readonly SessionRef[], machineId = "local") => request(`${machinePrefix(machineId)}/sessions/bulk/delete-archived`, parseSessionBulkDeleteArchivedResponse, { method: "POST", body: sessionBulkMutationBody(sessions) }),
   messages: (session: SessionRef, options?: { limit?: number; before?: number }, machineId = "local") => request(messagePath(session, options, machineId), parseMessagePage),
   status: (session: SessionRef, machineId = "local") => request(sessionQueryPath(session, "status", machineId), parseSessionStatus),
-  streamSnapshot: (session: SessionRef, machineId = "local") => request(sessionQueryPath(session, "stream-snapshot", machineId), parseSessionStreamSnapshot),
+  streamSnapshot: (session: SessionRef, machineId = "local") => request(streamSnapshotPath(session, machineId), parseSessionStreamSnapshot),
+  transcriptSnapshot: (session: SessionRef, options?: { limit?: number }, machineId = "local") => request(transcriptSnapshotPath(session, options, machineId), parseSessionTranscriptSnapshot),
   promoteQueuedMessage: (session: SessionRef, target: QueuedSessionMessage, machineId = "local") => request(sessionPath(session, "queue/promote", machineId), parseSessionStatus, { method: "POST", body: sessionBody(session, { kind: target.kind, text: target.text }) }),
   promoteAllQueuedMessages: (session: SessionRef, machineId = "local") => request(sessionPath(session, "queue/promote-all", machineId), parseSessionStatus, { method: "POST", body: sessionBody(session) }),
   clearQueue: (session: SessionRef, machineId = "local") => request(sessionPath(session, "queue/clear", machineId), parseSessionStatus, { method: "POST", body: sessionBody(session) }),

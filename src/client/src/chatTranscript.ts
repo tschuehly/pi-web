@@ -86,7 +86,7 @@ function applyFinalLine(messages: ChatLine[], displayEnded: ChatLine): ChatLine[
   if (askUserRecord !== undefined) return reconcileFinalAskUserRecord(messages, displayEnded, askUserRecord);
   const last = messages.at(-1);
   if (last?.role !== displayEnded.role) return [...messages, displayEnded];
-  if ((displayEnded.role === "assistant" && skillReads(last).length === 0) || (messageText(displayEnded) !== "" && sameMessageText(last, displayEnded))) return [...messages.slice(0, -1), displayEnded];
+  if ((displayEnded.role === "assistant" && skillReads(last).length === 0) || ((displayEnded.role === "user" || messageText(displayEnded) !== "") && sameMessageText(last, displayEnded))) return [...messages.slice(0, -1), displayEnded];
   return [...messages, displayEnded];
 }
 

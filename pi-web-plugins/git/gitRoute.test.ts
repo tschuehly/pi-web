@@ -35,6 +35,7 @@ describe("Git selected-diff route", () => {
 function panelContext(machineId: string, projectId: string, workspaceId: string): WorkspacePanelContext {
   const noop = () => undefined;
   return {
+    navigate: () => Promise.resolve(),
     machine: { id: machineId, name: machineId, kind: machineId === "local" ? "local" : "remote" },
     workspace: { id: workspaceId, projectId, path: "/repo", label: "main", isMain: true },
     files: {

@@ -11,15 +11,15 @@
     "marked": "^18.0.6"
   },
   "devDependencies": {
-    "@jmfederico/pi-web": "^1.202609.0",
-    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@jmfederico/pi-web": "^1.202609.1",
+    "@earendil-works/pi-coding-agent": "^0.87.0",
     "@types/node": "^24.13.3",
     "typescript": "^6.0.3",
     "vite": "^8.1.4"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
-    "@jmfederico/pi-web": "^1.202609.0"
+    "@jmfederico/pi-web": "^1.202609.1"
   },
   "pi": { "extensions": ["./dist/companion.js"] },
   "piWeb": {

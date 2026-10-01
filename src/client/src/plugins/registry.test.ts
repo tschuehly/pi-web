@@ -39,6 +39,7 @@ it("resolves file-opening panels by availability, applicability, order and scope
 function createContext(statePatch: Partial<AppState> = {}) {
   const calls: string[] = [];
   const context: PluginRuntimeContext = {
+    navigate: () => Promise.resolve(),
     state: { ...initialAppState(), ...statePatch },
     prompt: {
       insertText: vi.fn(),
@@ -1752,6 +1753,7 @@ function createWorkspaceLabelContext(machineId: string, workspace = testWorkspac
 function createWorkspacePanelContext(machineId: string, prompt: WorkspacePanelContext["prompt"] = { insertText: vi.fn(), getText: vi.fn(() => ""), getSelection: vi.fn(() => null) }): WorkspacePanelContext {
   const workspace = testWorkspace();
   return {
+    navigate: () => Promise.resolve(),
     machine: { id: machineId, name: machineId, kind: machineId === "local" ? "local" : "remote" },
     workspace,
     state: { ...initialAppState(), selectedMachine: testMachine(machineId) },

@@ -52,6 +52,7 @@ describe("SessionController cached-new sessions", () => {
     const api: typeof defaultApi = {
       ...defaultApi,
       stop: (session) => { stoppedIds.push(sessionLookupId(session)); return Promise.resolve({ stopped: true }); },
+      transcriptSnapshot: (session) => Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null }),
       messages: () => Promise.resolve(emptyPage),
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };
@@ -92,9 +93,9 @@ describe("SessionController cached-new sessions", () => {
     const api: typeof defaultApi = {
       ...defaultApi,
       startSession: () => Promise.resolve(replacementSession),
-      messages: (session) => {
+      transcriptSnapshot: (session) => {
         if (sessionLookupId(session) === oldSession.id) return Promise.reject(new Error("Session not found"));
-        return Promise.resolve(emptyPage);
+        return Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null });
       },
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };
@@ -139,9 +140,9 @@ describe("SessionController cached-new sessions", () => {
     const api: typeof defaultApi = {
       ...defaultApi,
       startSession: () => Promise.resolve(replacementSession),
-      messages: (session) => sessionLookupId(session) === oldSession.id
+      transcriptSnapshot: (session) => sessionLookupId(session) === oldSession.id
         ? Promise.reject(new Error("Session not found"))
-        : Promise.resolve(emptyPage),
+        : Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null }),
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };
     const controller = new SessionController(
@@ -224,6 +225,7 @@ describe("SessionController cached-new sessions", () => {
     const api: typeof defaultApi = {
       ...defaultApi,
       respondToCommand: () => Promise.resolve({ type: "done", message: "Session forked", session: replacementSession, promptDraft: "fork me" }),
+      transcriptSnapshot: (session) => Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null }),
       messages: () => Promise.resolve(emptyPage),
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };

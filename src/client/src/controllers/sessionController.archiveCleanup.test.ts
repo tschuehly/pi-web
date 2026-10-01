@@ -3,7 +3,7 @@ import type { SessionInfo } from "../api";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
 import { InMemorySessionSelectionMemory } from "./sessionSelection";
-import { defaultApi, deferred, emptyPage, FakeSocket, oldSession, sessionLookupId, status, workspace, type AppState } from "./sessionController.testSupport";
+import { emptyTranscriptApi as defaultApi, deferred, emptyPage, FakeSocket, oldSession, sessionLookupId, status, workspace, type AppState } from "./sessionController.testSupport";
 
 describe("SessionController archive and cleanup", () => {
   it("forgets the selected active session when archiving leaves only archived sessions", async () => {

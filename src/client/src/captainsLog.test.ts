@@ -32,7 +32,9 @@ async function setup(requestHandler: (operation: string) => Promise<JsonValue> =
     return Promise.resolve({ ...channel, closed });
   });
   const unused = () => { throw new Error("Unrelated host API called"); };
+  const navigate = vi.fn<WorkspacePanelContext["navigate"]>(() => Promise.resolve());
   let context: WorkspacePanelContext = {
+    navigate,
     machine: { id: "remote-a", name: "A", kind: "remote" },
     workspace: { id: "workspace", projectId: "project", path: "/workspace", label: "Workspace", isMain: true }, state: { selectedSession: source },
     files: { readFile: unused, listFiles: unused, writeFile: unused, deleteFile: unused, moveFile: unused },
@@ -40,7 +42,7 @@ async function setup(requestHandler: (operation: string) => Promise<JsonValue> =
     host: { requestRender: () => { render(panel.render(context), container); } },
   };
   context.host.requestRender(); await flush();
-  return { container, lifetime, activation, channels, request, openChannel,
+  return { container, lifetime, activation, channels, request, openChannel, navigate,
     selectSession(selectedSession: NonNullable<WorkspacePanelContext["state"]>["selectedSession"]) { context = { ...context, state: selectedSession === undefined ? {} : { selectedSession } }; context.host.requestRender(); },
     selectMachine(id: string) { context = { ...context, state: { ...context.state, selectedMachine: { id, name: id, kind: "remote" } } }; context.host.requestRender(); },
     switchScope() { context = { ...context, machine: { id: "remote-b", name: "B", kind: "remote" } }; context.host.requestRender(); },
@@ -74,6 +76,8 @@ it("translates the session selected at click time, renders frozen reply chunks, 
     expect(document.querySelector(".captain-answer")?.textContent).toBe(completed.text);
     expect(document.querySelector("script")).toBeNull();
     expect(button().disabled).toBe(false);
+    button("Open source session").click();
+    expect(app.navigate).toHaveBeenCalledExactlyOnceWith({ machineId: "remote-a", projectId: "project", workspaceId: "workspace", sessionId: source.id, view: "chat" });
     expect(required(document.querySelector(".captain-diagnostics")).hasAttribute("open")).toBe(false);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(app.request.mock.calls.map((call) => call[0])).toEqual(["list"]);

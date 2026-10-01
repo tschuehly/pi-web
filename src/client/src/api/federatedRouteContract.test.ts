@@ -6,7 +6,7 @@ import { PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATH, PAIRED_PLUGIN_BACKEND_REQUEST
 import { configApi, filesApi, machineStatusApi, noticesApi, piPackagesApi, piWebApi, pluginsApi, projectsApi, sessionsApi, trustApi, workspacesApi } from "./clients";
 import { globalSessionEvents, realtimeEvents, sessionEvents } from "./sockets";
 import { requestPairedPluginBackend } from "./pluginBackends";
-import { workspaceFilePreviewUrl } from "./urls";
+import { sessionMediaUrl, workspaceFilePreviewUrl } from "./urls";
 
 const machineId = "remote-a";
 const workspace: Workspace = {
@@ -204,6 +204,7 @@ describe("federated route contract", () => {
       ignoreParseFailure(sessionsApi.streamSnapshot(session, machineId)),
       ignoreParseFailure(sessionsApi.promoteQueuedMessage(session, { kind: "followUp", text: "send now" }, machineId)),
       ignoreParseFailure(sessionsApi.promoteAllQueuedMessages(session, machineId)),
+      ignoreParseFailure(sessionsApi.transcriptSnapshot(session, { limit: 20 }, machineId)),
       ignoreParseFailure(sessionsApi.clearQueue(session, machineId)),
       ignoreParseFailure(sessionsApi.dismissWarning(session, "anthropicExtraUsage", machineId)),
       ignoreParseFailure(sessionsApi.submitAsk(session, "ask 1", { answers: [{ id: "q1", values: ["pg"] }] }, machineId)),
@@ -246,6 +247,7 @@ describe("federated route contract", () => {
     const observedRoutes = uniqueHttpRoutes([
       ...fetchMock.mock.calls.map((call) => fetchCallToRoute(call, machineId)),
       routeFromMachineUrl("GET", workspaceFilePreviewUrl("p 1", "w 1", "diagram.svg", { machineId, modifiedAt: "2026-05-25T00:00:00.000Z" }), machineId),
+      routeFromMachineUrl("GET", sessionMediaUrl(session, "a".repeat(64), machineId), machineId),
     ]);
     const unmatched = observedRoutes.filter((route) => !matchesHttpRoute(route, FEDERATED_HTTP_ROUTES));
 

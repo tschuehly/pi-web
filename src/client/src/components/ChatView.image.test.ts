@@ -1,24 +1,27 @@
-import type { TemplateResult } from "lit";
-import { describe, expect, it } from "vitest";
-import type { ChatLine } from "./shared";
-import {
-  ChatView,
-  chatImagePartSource,
-  chatMessageAnchorKey,
-  chatToolOutputLabel,
-} from "./ChatView";
-import { templateEventHandlerAfterMarker } from "../templateInspection.testSupport";
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ChatView, chatImagePartSource, chatMessageAnchorKey, chatToolOutputLabel } from "./ChatView";
+import { TranscriptImage } from "./TranscriptImage";
+import { ImageIntersectionObserver, latestImageObserver, settleImage } from "./imagePresentation.testSupport";
+
+afterEach(() => { document.body.replaceChildren(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("ChatView image content derivation", () => {
-  // Content/attribute derivation (image src/alt, the tool-output header label,
-  // and the scroll-anchor key) lives in pure exported seams rather than being
-  // scraped from rendered `TemplateResult` markup, per the testing-guide rule
-  // that TemplateResult inspection is not for general content assertions.
-  it("derives the image data URL and alt text from an image part", () => {
+  it("derives the legacy image data URL and alt text", () => {
     expect(chatImagePartSource({ type: "image", mimeType: "image/png", data: "QUJD" })).toEqual({
-      src: "data:image/png;base64,QUJD",
-      alt: "attached image",
+      src: "data:image/png;base64,QUJD", alt: "attached image",
     });
+  });
+
+  it("derives reference URLs from selected machine/session context, not a server-provided URL", () => {
+    vi.stubEnv("BASE_URL", "/nested/pi-web/");
+    const part = { type: "image" as const, mimeType: "image/png", mediaId: "a".repeat(64), byteSize: 3 };
+    expect(chatImagePartSource(part)).toBeUndefined();
+    const source = chatImagePartSource(part, { id: "session /?#%", cwd: "/repo /?#%" }, "remote /?#%");
+    if (source === undefined) throw new Error("Expected reference source");
+    const url = new URL(source.src);
+    expect(url.pathname).toBe(`/nested/pi-web/api/machines/remote%20%2F%3F%23%25/sessions/session%20%2F%3F%23%25/media/${part.mediaId}`);
+    expect(url.searchParams.get("cwd")).toBe("/repo /?#%");
   });
 
   it("labels tool image output by tool name and falls back to a generic label", () => {
@@ -33,55 +36,63 @@ describe("ChatView image content derivation", () => {
 });
 
 describe("ChatView image event wiring", () => {
-  // Escape hatch: these two cases verify Lit event wiring (`@load` re-pin and
-  // `@click` zoom) whose only observable effect is a private state/scroll side
-  // effect. Vitest runs with no DOM environment here, so a shadow-DOM click
-  // harness would add disproportionate setup; direct handler extraction anchored
-  // to the stable `@load=`/`@click=` attribute markup is proportionate.
-  it("re-pins late image loads only while already pinned to the bottom", () => {
+  async function mountImage() {
+    vi.stubGlobal("IntersectionObserver", undefined);
     const view = new ChatView();
-    let scrollCalls = 0;
-    if (!Reflect.set(view, "scrollToBottom", () => { scrollCalls += 1; })) throw new Error("Could not observe ChatView.scrollToBottom");
-    const rendered = renderPart(view, { type: "image", mimeType: "image/png", data: "QUJD" });
-    const onLoad = templateEventHandlerAfterMarker(rendered, "@load=");
+    view.messages = [{ role: "user", parts: [{ type: "image", mimeType: "image/png", data: "QUJD" }] }];
+    document.body.append(view);
+    await view.updateComplete;
+    const image = view.renderRoot.querySelector<TranscriptImage>("pi-web-transcript-image");
+    if (image === null) throw new Error("Expected transcript image");
+    const presentation = await settleImage(image);
+    const native = presentation.renderRoot.querySelector("img");
+    if (native === null) throw new Error("Expected native image");
+    return { view, presentation, native };
+  }
 
-    if (!Reflect.set(view, "pinnedToBottom", true)) throw new Error("Could not set ChatView.pinnedToBottom");
-    onLoad(new Event("load"));
-    if (!Reflect.set(view, "pinnedToBottom", false)) throw new Error("Could not set ChatView.pinnedToBottom");
-    onLoad(new Event("load"));
-
-    expect(scrollCalls).toBe(1);
+  it("re-pins late image layout changes only while already pinned to the bottom", async () => {
+    const { view, presentation, native } = await mountImage();
+    const scroll = vi.fn();
+    Reflect.set(view, "scrollToBottom", scroll);
+    Reflect.set(view, "pinnedToBottom", true);
+    native.dispatchEvent(new Event("load"));
+    await presentation.updateComplete;
+    Reflect.set(view, "pinnedToBottom", false);
+    native.dispatchEvent(new Event("error"));
+    await presentation.updateComplete;
+    expect(scroll).toHaveBeenCalledOnce();
   });
 
-  it("opens and closes the image zoom target on click and close", () => {
+  it("opens and closes the image zoom target on click and close", async () => {
+    const { view, presentation, native } = await mountImage();
+    native.dispatchEvent(new Event("load"));
+    await presentation.updateComplete;
+    presentation.renderRoot.querySelector<HTMLButtonElement>(".image-button")?.click();
+    await view.updateComplete;
+    expect(view.renderRoot.querySelector(".image-zoom-full")).not.toBeNull();
+    view.renderRoot.querySelector<HTMLButtonElement>(".image-zoom-close")?.click();
+    await view.updateComplete;
+    expect(view.renderRoot.querySelector(".image-zoom-full")).toBeNull();
+  });
+
+  it("gives nested image observers the actual chat scroller and session cwd", async () => {
+    ImageIntersectionObserver.instances = [];
+    vi.stubGlobal("IntersectionObserver", ImageIntersectionObserver);
     const view = new ChatView();
-    const part = { type: "image", mimeType: "image/png", data: "QUJD" } as const;
-    const rendered = renderPart(view, part);
-    const onClick = templateEventHandlerAfterMarker(rendered, "@click=");
-
-    expect(zoomedImage(view)).toBeUndefined();
-    onClick(new Event("click"));
-    expect(zoomedImage(view)).toEqual(chatImagePartSource(part));
-
-    const close: unknown = Reflect.get(view, "closeImageZoom");
-    if (typeof close !== "function") throw new Error("ChatView.closeImageZoom is not callable");
-    close.call(view);
-    expect(zoomedImage(view)).toBeUndefined();
+    view.machineId = "remote /?";
+    view.sessionId = "session /?";
+    view.sessionCwd = "/correct session cwd";
+    view.messages = [{ role: "user", parts: [{ type: "image", mediaId: "a".repeat(64), mimeType: "image/png", byteSize: 3 }] }];
+    document.body.append(view);
+    await view.updateComplete;
+    const image = view.renderRoot.querySelector<TranscriptImage>("pi-web-transcript-image");
+    if (image === null) throw new Error("Expected transcript image");
+    const presentation = await settleImage(image);
+    expect(latestImageObserver().root).toBe(view.renderRoot.querySelector(".chat"));
+    latestImageObserver().notify();
+    await settleImage(image);
+    const url = new URL(presentation.renderRoot.querySelector("img")?.src ?? "");
+    expect(url.searchParams.get("cwd")).toBe(view.sessionCwd);
+    expect(url.pathname).toContain("/machines/remote%20%2F%3F/sessions/session%20%2F%3F/media/");
   });
 });
-
-function zoomedImage(view: ChatView): unknown {
-  return Reflect.get(view, "zoomedImage");
-}
-
-type RenderPart = (this: ChatView, part: ChatLine["parts"][number], message?: ChatLine) => TemplateResult;
-
-function renderPart(view: ChatView, part: ChatLine["parts"][number], message?: ChatLine): TemplateResult {
-  const method: unknown = Reflect.get(view, "renderPart");
-  if (!isRenderPart(method)) throw new Error("ChatView.renderPart is not callable");
-  return method.call(view, part, message);
-}
-
-function isRenderPart(value: unknown): value is RenderPart {
-  return typeof value === "function";
-}

@@ -1,5 +1,7 @@
 import type { GlobalSessionEvent, RealtimeEvent, SessionNotificationSummaryEvent, SessionUiEvent } from "../../shared/apiTypes.js";
 import { projectBrowserSessionEvent } from "../browserMessageProjection.js";
+import { SESSION_MEDIA_MODE } from "../../shared/sessionMedia.js";
+import { SessionMediaIndex, type SessionMediaScope } from "../sessions/sessionMediaIndex.js";
 
 export interface RealtimeSocket {
   readonly OPEN: number;
@@ -10,21 +12,26 @@ export interface RealtimeSocket {
 }
 
 export class SessionEventHub {
-  private readonly socketsBySession = new Map<string, Set<RealtimeSocket>>();
+  private readonly socketsBySession = new Map<string, { inline: Set<RealtimeSocket>; reference: Set<RealtimeSocket> }>();
   private readonly globalSockets = new Set<RealtimeSocket>();
   private readonly seqBySession = new Map<string, number>();
   private readonly globalUpdates = new Map<string, { sent: string | undefined; sentAt: number; pending: string | undefined; timer: ReturnType<typeof setTimeout> | undefined }>();
   private globalJoinFrame: (() => RealtimeEvent) | undefined;
 
-  add(sessionId: string, socket: RealtimeSocket): void {
-    let sockets = this.socketsBySession.get(sessionId);
-    if (!sockets) {
-      sockets = new Set();
-      this.socketsBySession.set(sessionId, sockets);
+  /** The service and routes use this same owned index; service disposal clears it. */
+  constructor(readonly mediaIndex = new SessionMediaIndex()) {}
+
+  add(sessionId: string, socket: RealtimeSocket, mediaMode?: typeof SESSION_MEDIA_MODE): void {
+    let subscribers = this.socketsBySession.get(sessionId);
+    if (!subscribers) {
+      subscribers = { inline: new Set(), reference: new Set() };
+      this.socketsBySession.set(sessionId, subscribers);
     }
+    const sockets = mediaMode === SESSION_MEDIA_MODE ? subscribers.reference : subscribers.inline;
     sockets.add(socket);
     socket.on("close", () => {
       sockets.delete(socket);
+      if (subscribers.inline.size === 0 && subscribers.reference.size === 0) this.socketsBySession.delete(sessionId);
     });
   }
 
@@ -46,11 +53,15 @@ export class SessionEventHub {
     if (joinFrame !== undefined) this.sendToSocket(this.globalSockets, socket, JSON.stringify(joinFrame));
   }
 
-  publish(sessionId: string, event: SessionUiEvent): void {
+  publish(sessionId: string, event: SessionUiEvent, mediaScope?: SessionMediaScope): void {
     const seq = (this.seqBySession.get(sessionId) ?? 0) + 1;
     this.seqBySession.set(sessionId, seq);
-    const payload = JSON.stringify({ ...projectBrowserSessionEvent(event), seq });
-    this.sendToSockets(this.socketsBySession.get(sessionId), payload);
+    // Index even without subscribers: live tool output may not be persisted yet
+    // when the browser joins or requests a previously published media id.
+    const referenceEvent = projectBrowserSessionEvent(event, (image) => this.mediaIndex.reference(mediaScope, image));
+    const sockets = this.socketsBySession.get(sessionId);
+    if (sockets !== undefined && sockets.inline.size > 0) this.sendToSockets(sockets.inline, JSON.stringify({ ...projectBrowserSessionEvent(event), seq }));
+    if (sockets !== undefined && sockets.reference.size > 0) this.sendToSockets(sockets.reference, JSON.stringify({ ...referenceEvent, seq }));
   }
 
   /**

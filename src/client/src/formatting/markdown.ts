@@ -1,4 +1,5 @@
 import { marked } from "marked";
+import { replaceLocalMarkdownImages } from "./markdownImages";
 import { workspaceFilePreviewUrl } from "../api/urls";
 import { resolveAppUrl } from "../appUrl";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
@@ -14,15 +15,15 @@ renderer.blockquote = function ({ text, tokens }) {
 const MAX_MARKDOWN_CACHE_ENTRIES = 300;
 const markdownHtmlCache = new Map<string, string>();
 
-export function toSafeMarkdownHtml(text: string, workspace?: MarkdownWorkspaceContext): string {
+export function toSafeMarkdownHtml(text: string, workspace?: MarkdownWorkspaceContext, imageIntentKey?: string): string {
   // Only workspace links depend on the effective application base, not route/query changes.
   const key = JSON.stringify([text, workspace === undefined ? null : [
-    workspace.machineId, workspace.projectId, workspace.workspaceId, workspace.root, workspace.sourcePath, resolveAppUrl(""),
+    workspace.machineId, workspace.projectId, workspace.workspaceId, workspace.root, workspace.sourcePath, resolveAppUrl(""), imageIntentKey,
   ]]);
   const cached = markdownHtmlCache.get(key);
   if (cached !== undefined) return cached;
   const html = marked.parse(text, { async: false, breaks: true, gfm: true, renderer });
-  const safeHtml = sanitizeHtml(html, workspace);
+  const safeHtml = sanitizeHtml(html, workspace, imageIntentKey);
   markdownHtmlCache.set(key, safeHtml);
   if (markdownHtmlCache.size > MAX_MARKDOWN_CACHE_ENTRIES) {
     const oldest = markdownHtmlCache.keys().next().value;
@@ -40,9 +41,10 @@ function escapeHtml(text: string): string {
 
 const TABLE_SCROLL_CLASS = "table-scroll";
 
-function sanitizeHtml(html: string, workspace?: MarkdownWorkspaceContext): string {
+function sanitizeHtml(html: string, workspace?: MarkdownWorkspaceContext, imageIntentKey?: string): string {
   const template = document.createElement("template");
   template.innerHTML = html;
+  if (workspace !== undefined) replaceLocalMarkdownImages(template.content, workspace, imageIntentKey);
   template.content.querySelectorAll("script, style, iframe, object, embed").forEach((node) => { node.remove(); });
   template.content.querySelectorAll("*").forEach((element) => {
     const href = element.tagName === "A" ? element.getAttribute("href") : null;

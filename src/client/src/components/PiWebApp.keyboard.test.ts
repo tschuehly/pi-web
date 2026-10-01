@@ -9,6 +9,8 @@ import { ChatView } from "./ChatView";
 import { ModalSurface } from "./ModalSurface";
 import { PiWebApp } from "./PiWebApp";
 import { PromptEditor } from "./PromptEditor";
+import type { TranscriptImage } from "./TranscriptImage";
+import { settleImage } from "./imagePresentation.testSupport";
 
 const IMAGE_DATA = "iVBORw0KGgo=";
 
@@ -194,7 +196,14 @@ async function openImageZoom(app: PiWebApp): Promise<HTMLElement> {
   const container = renderApp(app);
   const view = requiredElement(container.querySelector<ChatView>("chat-view"), "chat view");
   await view.updateComplete;
-  const image = requiredElement(view.shadowRoot?.querySelector<HTMLElement>(".chat-image"), "chat image");
+  expect(view.sessionCwd).toBe(selectedSession.cwd);
+  const transcript = requiredElement(view.renderRoot.querySelector<TranscriptImage>("pi-web-transcript-image"), "transcript image");
+  const presentation = await settleImage(transcript);
+  presentation.renderRoot.querySelector<HTMLButtonElement>(".placeholder")?.click();
+  await settleImage(transcript);
+  requiredElement(presentation.renderRoot.querySelector("img"), "native image").dispatchEvent(new Event("load"));
+  await presentation.updateComplete;
+  const image = requiredElement(presentation.renderRoot.querySelector<HTMLButtonElement>(".image-button"), "image trigger");
   image.focus();
   image.click();
   await view.updateComplete;

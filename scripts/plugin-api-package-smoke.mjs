@@ -14,7 +14,7 @@ const expectedPackageDeclarationPaths = [
   "plugin-api.d.ts",
   "server-plugin-api.d.ts",
 ].sort();
-const minimalPluginPlatformReleaseFloor = "2.202609.0";
+const minimalPluginPlatformReleaseFloor = "1.202609.1";
 const workspaceProviderExamplePiWebRange = `^${minimalPluginPlatformReleaseFloor}`;
 const pluginConsumerCompilerModes = [
   {
@@ -140,6 +140,12 @@ async function assertExampleCompatibilityFloor(packageRoot) {
   const actualRange = manifest?.devDependencies?.["@jmfederico/pi-web"];
   if (actualRange !== workspaceProviderExamplePiWebRange) {
     throw new Error(`Installed workspace-provider example must require @jmfederico/pi-web ${workspaceProviderExamplePiWebRange}; received ${JSON.stringify(actualRange)}`);
+  }
+  const captainsLog = JSON.parse(await readFile(join(packageRoot, "dist", "pi-packages", "captains-log", "package.json"), "utf8"));
+  for (const field of ["devDependencies", "peerDependencies"]) {
+    if (captainsLog[field]?.["@jmfederico/pi-web"] !== workspaceProviderExamplePiWebRange) {
+      throw new Error(`Installed Captain's Log ${field} must require @jmfederico/pi-web ${workspaceProviderExamplePiWebRange}`);
+    }
   }
 }
 

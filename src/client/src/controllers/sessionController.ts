@@ -111,6 +111,12 @@ interface SuppressedCreatedSession {
   machineId: string;
 }
 
+interface SelectedSessionRefreshBuffer {
+  target: SelectedSessionRefreshTarget;
+  events: SessionUiEvent[];
+  pendingDialogs: PendingExtensionDialog[];
+}
+
 interface SelectedSessionRefreshTarget {
   session: SessionInfo;
   machineId: string;
@@ -155,6 +161,7 @@ export class SessionController {
   // the fresh state baseline.
   private lastAppliedSelectedRefresh: { selectionSeq: number; partialJson: string } | undefined;
   private pendingTranscriptEvents: SessionUiEvent[] = [];
+  private refreshEventBuffer: SelectedSessionRefreshBuffer | undefined;
   private pendingStatusBySession = new Map<string, SessionStatus>();
   private pendingActivityBySession = new Map<string, SessionActivity>();
   private pendingFrame: number | undefined;
@@ -322,7 +329,7 @@ export class SessionController {
       closedDialogs: [],
       availableThinkingLevels: [],
     });
-    let buffered: SessionUiEvent[] | undefined;
+    let socketConnected = false;
     try {
       if (session.archived === true) {
         const page = await this.api.messages(session, { limit: MESSAGE_PAGE_SIZE }, machineId);
@@ -333,15 +340,14 @@ export class SessionController {
         if (options?.updateUrl !== false) this.updateUrl();
         return;
       }
-      const socketBuffer: SessionUiEvent[] = [];
-      buffered = socketBuffer;
       this.socket.connect(
         session,
-        (event) => socketBuffer.push(event),
+        (event) => { this.applyEvent(event); },
         () => { void this.refreshSelectedSession(session.id); },
         machineId,
         () => { void this.notifications?.refreshSelectedSession(session, machineId); },
       );
+      socketConnected = true;
       const refreshTarget: SelectedSessionRefreshTarget = {
         session,
         machineId,
@@ -352,8 +358,6 @@ export class SessionController {
       await this.requestSelectedSessionRefresh(refreshTarget);
       if (!this.isCurrentRefreshTarget(refreshTarget) || !navigationIsCurrent(options?.navigation)) return;
       void this.refreshAvailableThinkingLevels();
-      for (const event of socketBuffer) this.applyEvent(event);
-      this.socket.setHandler((event) => { this.applyEvent(event); });
       this.onSelectedSessionReady?.({ machineId, session });
       if (options?.updateUrl !== false) this.updateUrl();
     } catch (error) {
@@ -373,22 +377,14 @@ export class SessionController {
         await this.recreateCachedNewSession(session, options, seq, errorOwner);
         return;
       }
-      // A failed join refresh must not strand the socket on its temporary
-      // buffering callback. Apply what arrived and keep live events flowing so
-      // reconnect/trailing refresh can recover authoritatively.
-      if (buffered !== undefined) {
-        for (const event of buffered) this.applyEvent(event);
-        this.socket.setHandler((event) => { this.applyEvent(event); });
-      }
       this.reportSessionError(session, machineId, error, errorOwner);
       if (options?.propagateRefreshError === true) throw error;
     } finally {
       // A newer URL selection can retire this join before its replacement has
-      // reached the controller. Release our buffering socket in that gap, but
+      // reached the controller. Release our socket in that gap, but
       // never close a socket already owned by a newer controller selection.
-      if (buffered !== undefined && !navigationIsCurrent(options?.navigation)
+      if (socketConnected && !navigationIsCurrent(options?.navigation)
         && this.isCurrentSessionSelection(session.id, machineId, seq)) {
-        buffered.length = 0;
         this.socket.close();
       }
     }
@@ -1370,37 +1366,76 @@ export class SessionController {
     });
   }
 
+  private bufferRefreshEvents(target: SelectedSessionRefreshTarget): SelectedSessionRefreshBuffer {
+    if (this.refreshEventBuffer !== undefined && this.isCurrentRefreshTarget(this.refreshEventBuffer.target)) return this.refreshEventBuffer;
+    this.flushPendingUpdates();
+    const buffer: SelectedSessionRefreshBuffer = { target, events: [], pendingDialogs: this.getState().pendingDialogs };
+    this.refreshEventBuffer = buffer;
+    return buffer;
+  }
+
   private requestSelectedSessionRefresh(target: SelectedSessionRefreshTarget): Promise<void> {
+    if (!this.isCurrentRefreshTarget(target)) return Promise.resolve();
     const key = machineSessionKey(target.machineId, target.session.id);
+    // Start buffering synchronously, including the coordinator's queued phase.
+    this.bufferRefreshEvents(target);
     return this.selectedSessionRefreshes.request(key, async () => {
       if (!this.isCurrentRefreshTarget(target)) return;
-      this.flushPendingUpdates();
-      const [page, status, streamSnapshot] = await Promise.all([
-        this.api.messages(target.session, { limit: MESSAGE_PAGE_SIZE }, target.machineId),
-        this.api.status(target.session, target.machineId),
-        this.api.streamSnapshot(target.session, target.machineId),
-        this.notifications?.refreshSelectedSession(target.session, target.machineId) ?? Promise.resolve(),
-      ]);
-      if (!this.isCurrentRefreshTarget(target)) return;
-      if (this.isUnchangedSelectedRefresh(target, key, page, status, streamSnapshot)) return;
-      // Seed the in-flight partial assistant message on top of committed history
-      // and record the snapshot's sequence as the watermark. Buffered/live events
-      // with `seq <= watermark` are already reflected here and are dropped by
-      // `applyEvent`; later events (`seq > watermark`) stream in on top. The
-      // partial is seeded into the in-memory transcript only, never the raw
-      // history cache, so it never persists.
-      const history = this.transcripts.mergeHistory(key, page);
-      const messages = this.transcripts.seedStreamingPartial(history.messages, streamSnapshot.partial);
-      this.streamWatermark = { sessionId: target.session.id, seq: streamSnapshot.seq };
-      this.setState({
-        ...history,
-        messages,
-        status,
-        activity: this.getState().sessionActivities[target.session.id],
-      });
-      this.applyStatus(status);
-      this.lastAppliedSelectedRefresh = { selectionSeq: target.selectionSeq, partialJson: selectedRefreshPartialJson(streamSnapshot) };
+      const buffer = this.bufferRefreshEvents(target);
+      let notificationsRefresh: Promise<void>;
+      try {
+        // Notifications run alongside the snapshot but must not delay either
+        // transcript display or buffered-event replay. Await them afterwards
+        // so refresh completion and error reporting still include their result.
+        notificationsRefresh = this.notifications?.refreshSelectedSession(target.session, target.machineId) ?? Promise.resolve();
+        notificationsRefresh.catch(() => undefined);
+        const snapshot = await this.api.transcriptSnapshot(target.session, { limit: MESSAGE_PAGE_SIZE }, target.machineId);
+        if (!this.isCurrentRefreshTarget(target)) return;
+        const { page, status } = snapshot;
+        this.preserveBufferedDialogOutcomes(buffer, snapshot.seq);
+        if (!this.isUnchangedSelectedRefresh(target, key, page, status, snapshot)) {
+          // History, partial, and watermark describe the same daemon boundary.
+          // Replay only events newer than it; never overwrite an already-applied
+          // live event with a response that was captured before that event.
+          const history = this.transcripts.mergeHistory(key, page);
+          const messages = this.transcripts.seedStreamingPartial(history.messages, snapshot.partial);
+          this.streamWatermark = { sessionId: target.session.id, seq: snapshot.seq };
+          this.setState({
+            ...history,
+            messages,
+            status,
+            activity: this.getState().sessionActivities[target.session.id],
+          });
+          this.applyStatus(status);
+          this.lastAppliedSelectedRefresh = { selectionSeq: target.selectionSeq, partialJson: selectedRefreshPartialJson(snapshot) };
+        }
+      } finally {
+        if (this.refreshEventBuffer === buffer) this.refreshEventBuffer = undefined;
+        // A failed fetch leaves the previous baseline/watermark intact. Replay
+        // its events there too, so failure never strands or loses live output.
+        // A retired selection must not replay into the newly selected session.
+        if (this.isCurrentRefreshTarget(target)) {
+          for (const event of buffer.events) this.applyEvent(event);
+        }
+      }
+      await notificationsRefresh;
     });
+  }
+
+  private preserveBufferedDialogOutcomes(buffer: SelectedSessionRefreshBuffer, seq: number): void {
+    // Status snapshots contain open dialogs, not their transient outcome cards.
+    // Retain closes that replay will drop, using the pre-refresh dialog payloads
+    // even if a global status has already removed them from the open list.
+    const dialogs = new Map(buffer.pendingDialogs.map((dialog) => [dialog.dialogId, dialog]));
+    for (const event of buffer.events) {
+      if (event.seq === undefined || event.seq > seq || this.isStreamEventBelowWatermark(event)) continue;
+      if (event.type === "dialog.opened") dialogs.set(event.dialog.dialogId, event.dialog);
+      if (event.type === "dialog.closed") {
+        const dialog = dialogs.get(event.dialogId);
+        if (dialog !== undefined) this.recordClosedDialog({ dialog, reason: event.reason, ...(event.answer === undefined ? {} : { answer: event.answer }) });
+        dialogs.delete(event.dialogId);
+      }
+    }
   }
 
   /**
@@ -1415,6 +1450,8 @@ export class SessionController {
   private isUnchangedSelectedRefresh(target: SelectedSessionRefreshTarget, key: string, page: MessagePage, status: SessionStatus, streamSnapshot: SessionStreamSnapshot): boolean {
     const last = this.lastAppliedSelectedRefresh;
     if (last?.selectionSeq !== target.selectionSeq) return false;
+    // A restarted daemon starts a new sequence even if its history is identical.
+    if (streamSnapshot.seq < (this.streamWatermark?.seq ?? 0)) return false;
     if (selectedRefreshPartialJson(streamSnapshot) !== last.partialJson) return false;
     if (!isHistoryTailSlice(this.transcripts.rawHistoryPage(key), page)) return false;
     if (JSON.stringify(status) !== JSON.stringify(this.getState().status)) return false;
@@ -2005,6 +2042,11 @@ export class SessionController {
       this.notifications?.applyInboxEvent(selectedMachineId(this.getState()), event);
       return;
     }
+    const buffer = this.refreshEventBuffer;
+    if (buffer !== undefined && this.isCurrentRefreshTarget(buffer.target)) {
+      buffer.events.push(event);
+      return;
+    }
     // Drop events already reflected in the seeded join snapshot (committed
     // history + partial). Everything past the watermark applies exactly once,
     // so live content streams directly on top of the seeded partial.
@@ -2224,6 +2266,7 @@ export class SessionController {
   }
 
   private clearPendingUpdates(): void {
+    this.refreshEventBuffer = undefined;
     this.pendingTranscriptEvents = [];
     this.pendingStatusBySession.clear();
     this.pendingActivityBySession.clear();
@@ -2238,6 +2281,8 @@ export class SessionController {
   // history + seeded partial and must be dropped. Events with no `seq` (which
   // should not occur on the per-session socket) are never dropped.
   private isStreamEventBelowWatermark(event: SessionUiEvent): boolean {
+    // These effects are not part of the history/status/partial snapshot.
+    if (event.type === "session.name" || event.type === "session.error" || event.type === "command.output") return false;
     const watermark = this.streamWatermark;
     if (watermark === undefined || watermark.sessionId !== this.getState().selectedSession?.id) return false;
     return event.seq !== undefined && event.seq <= watermark.seq;

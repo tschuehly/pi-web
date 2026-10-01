@@ -180,6 +180,9 @@ const plugin: PiWebPlugin = {
                 onTranslate() { translate(context, state); },
                 onReconnect() { void connect(context, state); },
                 onRead(id) { void readEntry(context, state, id); },
+                onOpenSource(sessionId) {
+                  void context.navigate({ machineId: context.machine.id, projectId: context.workspace.projectId, workspaceId: context.workspace.id, sessionId, view: "chat" });
+                },
               })}
             </captains-log-lifetime>`;
           },

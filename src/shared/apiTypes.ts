@@ -1355,6 +1355,12 @@ export interface SessionStreamSnapshot {
   partial: unknown;
 }
 
+/** History, status, and partial captured at one event watermark for refresh/replay. */
+export interface SessionTranscriptSnapshot extends SessionStreamSnapshot {
+  page: MessagePage;
+  status: SessionStatus;
+}
+
 export type CommandResult =
   | { type: "done"; message?: string; session?: SessionInfo; promptDraft?: string }
   | { type: "select"; requestId: string; title: string; options: CommandOption[] }

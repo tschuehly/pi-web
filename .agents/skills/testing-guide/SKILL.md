@@ -19,6 +19,23 @@ For production-code design and testability seams, also use the `code-quality-arc
 - Keep setup readable. A small explicit fixture is better than a magical factory that hides the scenario.
 - Clean up global stubs, fake timers, DOM state, and pending promises so tests do not leak into one another.
 
+## Decide whether a test adds protection
+
+Use three questions when adding or reviewing a test:
+
+1. What meaningful failure does it catch?
+2. What protection does it add beyond existing tests, required delivery steps, or normal usage?
+3. What is the smallest boundary that proves the invariant?
+
+Apply these as a review habit:
+
+- Give each invariant one primary owner. For example, test validation cases at the service boundary and use a route test to prove HTTP wiring.
+- Assign compilation to typecheck/build and packaging contracts to delivery checks against already-built artifacts, such as public declarations and deployment URLs.
+- Rely on normal usage for obvious, recoverable workflow failures it reliably exposes. Automate protection where failures can escape notice, especially security, durable state, resource cleanup, and uncommon supported deployments.
+- Use real processes, sockets, or browsers when their behavior is the invariant; for example, verify process termination with a real child process.
+- Treat feedback time and fixture complexity as maintenance costs. Review slow additions and periodically consolidate overlapping coverage, preserving each meaningful invariant at its chosen boundary.
+- Prefer small explicit fixtures and controllable collaborators. Keep review proportional to the change rather than adding mandatory forms or new testing infrastructure.
+
 ## Choosing the test layer
 
 Prefer this order unless the behavior requires a higher layer:
@@ -102,6 +119,8 @@ Existing extraction tests are acceptable as-is. Convert them to a pure seam or t
 `npm run test:e2e` runs the Playwright specs in `e2e/` in WebKit, the engine of the macOS app's WKWebView. `e2e/isolatedPiWeb.ts` builds the bundled plugins and client, then starts a throwaway session daemon and web/API server. They get their own temp data dir, socket, port and Pi agent dir, and every inherited `PI_*` variable is dropped. The server is seeded with a fixture project and a finished Chat, so no model call is needed, and it is torn down afterwards. Reserve e2e specs for flows that need a real browser and a real server together. They stay out of Vitest's include globs.
 
 ## Checks to run
+
+Delivery artifact checks are separate from the ordinary suite: run `npm run build` followed by `npm run check:artifacts` when changing emitted package contracts. The latter consumes the existing `dist` output and never refreshes it. See [development and delivery checks](../../../docs/development-checks.md) for check ownership.
 
 Run the narrowest meaningful check first:
 

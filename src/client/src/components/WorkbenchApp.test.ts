@@ -23,6 +23,11 @@ import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
 beforeEach(() => {
   vi.spyOn(api, "machines").mockResolvedValue([machine]);
   vi.spyOn(api, "projects").mockResolvedValue([]);
+  // Session selection loads one transcript snapshot; compose it from the per-test messages/status/stream mocks.
+  vi.spyOn(api, "transcriptSnapshot").mockImplementation(async (selected, options, machineId) => {
+    const [page, status, stream] = await Promise.all([api.messages(selected, options, machineId), api.status(selected, machineId), api.streamSnapshot(selected, machineId)]);
+    return { page, status, ...stream };
+  });
   vi.spyOn(api, "notificationInbox").mockImplementation((selected) => Promise.resolve({
     daemonInstanceId: "daemon",
     catalogRevision: 0,

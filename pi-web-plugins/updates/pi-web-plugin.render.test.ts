@@ -51,6 +51,7 @@ function commandRunHandle(input: { title: string; command: string }): TerminalCo
 function panelContext(state: PluginRuntimeState, terminal?: WorkspacePanelTerminal): WorkspacePanelContext {
   const noop = () => undefined;
   return {
+    navigate: () => Promise.resolve(),
     machine: { id: "local", name: "local", kind: "local" },
     workspace: { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true },
     state,

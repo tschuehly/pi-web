@@ -1,9 +1,9 @@
 import type { SessionRef } from "../../../shared/apiTypes";
 import { resolveAppWebSocketUrl } from "../appUrl";
+import { sessionEventsPath } from "./urls";
 
 export function sessionEvents(session: SessionRef, machineId = "local"): WebSocket {
-  const query = `?${new URLSearchParams({ cwd: session.cwd }).toString()}`;
-  return openSocket(`${machinePrefix(machineId)}/sessions/${encodeURIComponent(session.id)}/events${query}`);
+  return openSocket(sessionEventsPath(session, machineId));
 }
 
 export function globalSessionEvents(machineId = "local"): WebSocket {

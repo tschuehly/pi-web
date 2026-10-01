@@ -2,13 +2,15 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { guard } from "lit/directives/guard.js";
 import { repeat } from "lit/directives/repeat.js";
+import { keyed } from "lit/directives/keyed.js";
+import { machineSessionKey } from "../machineKeys";
 import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
 import { latestWorkingModeDials, previewFromDetails, workingModeSummary } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
 import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
-import type { AskUserSubmission, PendingAskUser, PendingExtensionDialog, QueuedSessionMessage, SessionActivity, SessionStatus, SessionWarningSeverity } from "../api";
+import type { AskUserSubmission, PendingAskUser, PendingExtensionDialog, QueuedSessionMessage, SessionActivity, SessionRef, SessionStatus, SessionWarningSeverity } from "../api";
 import type { ClosedExtensionDialog } from "../appState";
 import {
   notificationAnnouncementLabel,
@@ -37,6 +39,9 @@ import "./FormattedText";
 import { workspaceContextChanged, workspaceContextKey, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import { toolActionLabel } from "./ToolExecutionView";
 import { renderBuiltinTabIcon } from "./tabIcons";
+import { transcriptImageSource } from "./TranscriptImage";
+import type { ImageOpenDetail } from "./ImagePresentation";
+import { ImageLayoutScrollController } from "./ImageLayoutScrollController";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
 const messageTimeFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
@@ -120,8 +125,8 @@ export function filterChatGroups(groups: ChatGroup[], filter: TranscriptFilter, 
 export type ChatImagePart = Extract<ChatPart, { type: "image" }>;
 
 /** Derive the `<img>` source URL and alt text for a rendered image part. */
-export function chatImagePartSource(part: ChatImagePart): { src: string; alt: string } {
-  return { src: `data:${part.mimeType};base64,${part.data}`, alt: "attached image" };
+export function chatImagePartSource(part: ChatImagePart, session?: SessionRef, machineId = "local"): { src: string; alt: string } | undefined {
+  return transcriptImageSource(part, session, machineId);
 }
 
 /** The message-header label used when a tool message renders as an image output. */
@@ -222,7 +227,10 @@ function formatToolCallArguments(args: unknown): string {
 export class ChatView extends LitElement {
   @property({ attribute: false }) messages: ChatLine[] = [];
   @property() sessionId = "";
+  @property() sessionCwd = "";
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
+  @property({ attribute: false }) contentRendering: import("../formatting/contentRendering").ChatContentRendering | undefined;
+  @property() machineId = "local";
   @property({ attribute: false }) onMessageAction?: (entryId: string, action: "fork" | "back") => Promise<void>;
   @property({ type: Boolean }) messageActionsDisabled = false;
   @state() private messageActionPending = false;
@@ -270,6 +278,7 @@ export class ChatView extends LitElement {
   private imageZoomModalRegistration: RenderedModalRegistration | undefined;
   private readonly scrollController = new ChatScrollController();
   private chatResizeObserver: ResizeObserver | undefined;
+  private readonly imageLayoutScroll = new ImageLayoutScrollController(this.scrollController);
   private suppressScrollSave = false;
   private suppressLoadMoreRequests = false;
   private loadMoreCheckFrame: number | undefined;
@@ -304,7 +313,21 @@ export class ChatView extends LitElement {
     chat.scrollTop = this.lastScrollTop;
     this.lastClientHeight = chat.clientHeight;
   };
-  private readonly onImageLoad = (): void => {
+  private imageLayoutScrollContext(image: unknown) {
+    return {
+      sessionKey: machineSessionKey(this.machineId, this.sessionId),
+      scroller: this.chat ?? undefined,
+      pinnedToBottom: this.pinnedToBottom,
+      imageViewport: image instanceof HTMLElement ? image : undefined,
+    };
+  }
+  private readonly onImageWillLayout = (event: Event): void => {
+    const image = event.composedPath()[0];
+    if (image !== undefined) this.imageLayoutScroll.capture(image, this.imageLayoutScrollContext(image), this.scrollAnchorElements());
+  };
+  private readonly onImageLayout = (event: Event): void => {
+    const image = event.composedPath()[0];
+    if (image !== undefined && this.imageLayoutScroll.restore(image, this.imageLayoutScrollContext(image), this.scrollAnchorElements())) this.syncScrollMetrics();
     if (this.pinnedToBottom) this.scrollToBottom();
   };
   private readonly openImageZoom = (src: string, alt: string): void => {
@@ -352,6 +375,7 @@ export class ChatView extends LitElement {
     this.scrollController.dispose();
     this.chatResizeObserver?.disconnect();
     this.chatResizeObserver = undefined;
+    this.imageLayoutScroll.reset();
     this.releaseImageZoomModal();
     this.prependRestoreToken += 1;
     if (this.restoreScrollFrame !== undefined) cancelAnimationFrame(this.restoreScrollFrame);
@@ -401,6 +425,7 @@ export class ChatView extends LitElement {
   }
 
   protected override willUpdate(changed: Map<string, unknown>): void {
+    if (changed.has("sessionId") || changed.has("machineId")) this.imageLayoutScroll.reset();
     if (changed.has("sessionId")) {
       this.savePreviousSessionScrollPosition(changed.get("sessionId"));
       this.transcriptFilter = "everything";
@@ -509,7 +534,7 @@ export class ChatView extends LitElement {
         </div>` : null}
         </div>
         ${this.renderConversationRail()}
-        <div class="chat" @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
+        <div class="chat" data-image-scroll-root @image-will-layout=${this.onImageWillLayout} @image-layout=${this.onImageLayout} @image-open=${(event: CustomEvent<ImageOpenDetail>) => { this.openImageZoom(event.detail.src, event.detail.alt); }} @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
           ${this.renderHistoryBoundary()}
           ${this.renderTranscript()}
           ${this.renderQueuedMessages()}
@@ -534,13 +559,15 @@ export class ChatView extends LitElement {
     return guard([
       this.messages, this.messageStart, this.hasMore, this.transcriptFilter, workspaceContextKey(this.workspaceContext), this.sessionId,
       this.messageActionsDisabled, this.messageActionPending, this.messageActionError, this.status?.isStreaming === true,
-      this.askDraftSessionId, this.copiedMessageKey, this.onMessageAction,
+      this.askDraftSessionId, this.copiedMessageKey, this.onMessageAction, this.machineId, this.sessionCwd, this.contentRendering,
     ], () => {
       const groups = filterChatGroups(this.groupedMessages(), this.transcriptFilter, this.messages, this.messageStart);
       const exchange = this.transcriptFilter === "everything"
         ? currentExchangeGroups(this.messages, groups, this.messageStart, this.hasMore)
         : { history: [], current: groups, startsOutsideLoadedPage: false };
-      return html`
+      // Dispose the whole transcript part when the transcript changes: prevents
+      // cross-session DOM reuse and reclaims end markers Lit retains for removed repeat items.
+      return keyed(machineSessionKey(this.machineId, this.sessionId), html`
         ${exchange.history.length === 0 ? null : html`
           <details class="exchange-history" open>
             <summary>Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
@@ -550,7 +577,7 @@ export class ChatView extends LitElement {
         ${exchange.startsOutsideLoadedPage ? html`<div class="exchange-boundary" role="note">Current loaded tail · the latest user message is in earlier history</div>` : null}
         ${this.renderGroups(exchange.current)}
         ${this.transcriptFilter !== "everything" && groups.length === 0 ? html`<p class="filter-empty" role="status">No messages matching ${this.filterLabel()} in loaded history.${this.hasMore ? " Load earlier messages to continue." : ""}</p>` : null}
-      `;
+      `);
     });
   }
 
@@ -849,7 +876,7 @@ export class ChatView extends LitElement {
                 <button type="button" class="queued-send-now-button" aria-label=${`Send follow-up ${String(index + 1)} now`} title=${promotionTitle} ?disabled=${promotionDisabled} @click=${() => { this.onPromoteQueuedMessage?.(message); }}>Send now</button>
               ` : null}
             </div>
-            <formatted-text .workspaceContext=${this.workspaceContext} .text=${message.text}></formatted-text>
+            <formatted-text .intentKey=${JSON.stringify([this.machineId, this.sessionId, "queue", section.source, index, message.kind])} .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${message.text}></formatted-text>
           </div>
         `)}
       </aside>
@@ -988,7 +1015,7 @@ export class ChatView extends LitElement {
       ${this.renderScrollMarker(anchorId)}
       <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${anchorId}>
         ${headerless ? null : this.renderMessageHeader(message, anchorId)}
-        ${message.parts.map((part) => this.renderPart(part, message))}
+        ${message.parts.map((part, partIndex) => this.renderPart(part, message, index, partIndex))}
       </article>
     `;
   }
@@ -999,7 +1026,7 @@ export class ChatView extends LitElement {
       ${this.renderScrollMarker(anchorId)}
       <article class="msg tool-image-output" data-index=${index} data-scroll-anchor-id=${anchorId}>
         ${this.renderMessageHeader(message, anchorId, label)}
-        ${message.parts.map((part) => this.renderPart(part, message))}
+        ${message.parts.map((part, partIndex) => this.renderPart(part, message, index, partIndex))}
       </article>
     `;
   }
@@ -1047,7 +1074,7 @@ export class ChatView extends LitElement {
           ${segments.map((segment) => {
             if (segment.kind === "thinking") {
               const text = segment.messages.flatMap((message) => message.parts).filter((part): part is Extract<ChatPart, { type: "thinking" }> => part.type === "thinking").map((part) => part.text).join("\n\n");
-              return html`<formatted-text .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>`;
+              return html`<formatted-text .intentKey=${JSON.stringify([this.machineId, this.sessionId, "thinking", startIndex, segment.offset])} .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>`;
             }
             if (segment.kind === "skill") return this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset);
             return this.renderToolFold(segment.messages, this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset));
@@ -1096,7 +1123,7 @@ export class ChatView extends LitElement {
       return html`
         <article class=${classes} data-index=${index} data-scroll-anchor-id=${anchorId}>
           ${toolOnly || skillOnly || workingModeOnly ? null : this.renderMessageHeader(message, anchorId)}
-          ${message.parts.map((part) => this.renderPart(part, message))}
+          ${message.parts.map((part, partIndex) => this.renderPart(part, message, index, partIndex))}
         </article>
       `;
     });
@@ -1196,20 +1223,21 @@ export class ChatView extends LitElement {
     return label;
   }
 
-  private renderPart(part: ChatPart, message?: ChatLine) {
-    if (part.type === "text" && message?.role === "bash") return html`<pre class="part shell-output">${part.text}</pre>`;
-    if (part.type === "text") return html`<formatted-text class="part" .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>`;
+  private renderPart(part: ChatPart, message: ChatLine, messageIndex: number, partIndex: number) {
+    const intentKey = JSON.stringify([this.machineId, this.sessionId, message.entryId ?? messageIndex, partIndex]);
+    if (part.type === "text" && message.role === "bash") return html`<pre class="part shell-output">${part.text}</pre>`;
+    if (part.type === "text") return html`<formatted-text .intentKey=${intentKey} class="part" .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>`;
     if (part.type === "thinking") return html`
       <div class="part thinking">
         <small class="thinking-label">Thinking</small>
-        <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>
+        <formatted-text .intentKey=${intentKey} .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>
       </div>
     `;
     if (part.type === "skillInvocation") return html`
       <details class="part skill-invocation">
         <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><span class="disclosure-preview"><b>[skill]</b> ${part.name}</span></summary>
         <small>${part.location}</small>
-        <formatted-text .workspaceContext=${this.workspaceContext} .text=${part.content}></formatted-text>
+        <formatted-text .intentKey=${intentKey} .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${part.content}></formatted-text>
       </details>
     `;
     if (part.type === "skillRead") return html`<div class="part skill-read">Read skill · ${part.name}</div>`;
@@ -1262,8 +1290,9 @@ export class ChatView extends LitElement {
       ></ask-user-card>
     `;
     if (part.type === "image") {
-      const { src, alt } = chatImagePartSource(part);
-      return html`<img class="part chat-image" src=${src} alt=${alt} loading="lazy" role="button" tabindex="0" title="Click to enlarge" @load=${this.onImageLoad} @click=${() => { this.openImageZoom(src, alt); }} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.openImageZoom(src, alt); } }} />`;
+      return html`<pi-web-transcript-image class="part chat-image" .imagePart=${part}
+        .session=${{ id: this.sessionId, cwd: this.sessionCwd }} .machineId=${this.machineId}
+      ></pi-web-transcript-image>`;
     }
     if (part.type === "toolCall") return html`
       <details class="part tool-line">
@@ -1293,6 +1322,7 @@ export class ChatView extends LitElement {
   }
 
   private onScroll() {
+    this.imageLayoutScroll.reset();
     this.requestLoadMoreIfNeeded();
     this.updatePinnedToBottomFromScroll();
     this.scheduleConversationRailUpdate();

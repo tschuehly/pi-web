@@ -6,20 +6,21 @@ import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { loadStagedAttachments, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { SessionController } from "./sessionController";
 import type { NavigationFreshness } from "./types";
-import { defaultApi, deferred, emptyPage, FakeSocket, MemoryStorage, oldSession, sessionKey, sessionLookupId, status, workspace, type AppState, type SessionInfo } from "./sessionController.testSupport";
+import { emptyTranscriptApi as defaultApi, deferred, emptyPage, FakeSocket, MemoryStorage, oldSession, sessionKey, sessionLookupId, status, workspace, type AppState, type SessionInfo } from "./sessionController.testSupport";
 
 describe("SessionController pending starts", () => {
   it("creates and selects a temporary editable session before backend start resolves", async () => {
     const started: SessionInfo = { ...oldSession, id: "started-session", path: "/tmp/started-session.jsonl" };
     const startRequest = deferred<SessionInfo>();
-    const messageCalls: string[] = [];
-    const statusCalls: string[] = [];
+    const snapshotCalls: string[] = [];
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
     const api: typeof defaultApi = {
       ...defaultApi,
       startSession: () => startRequest.promise,
-      messages: (session) => { messageCalls.push(sessionLookupId(session)); return Promise.resolve(emptyPage); },
-      status: (session) => { statusCalls.push(sessionLookupId(session)); return Promise.resolve(status(sessionLookupId(session))); },
+      transcriptSnapshot: (session) => {
+        snapshotCalls.push(sessionLookupId(session));
+        return Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null });
+      },
     };
     const controller = new SessionController(
       () => state,
@@ -36,16 +37,14 @@ describe("SessionController pending starts", () => {
     expect(temporarySession?.persisted).toBe(false);
     expect(state.sessions.map((session) => session.id)).toEqual([temporarySession?.id]);
     expect(state.activity).toMatchObject({ sessionId: temporarySession?.id, phase: "active", label: "Creating session" });
-    expect(messageCalls).toEqual([]);
-    expect(statusCalls).toEqual([]);
+    expect(snapshotCalls).toEqual([]);
 
     startRequest.resolve(started);
     await start;
 
     expect(state.sessions.map((session) => session.id)).toEqual(["started-session"]);
     expect(state.selectedSession?.id).toBe("started-session");
-    expect(messageCalls).toEqual(["started-session"]);
-    expect(statusCalls).toEqual(["started-session"]);
+    expect(snapshotCalls).toEqual(["started-session"]);
   });
 
   it("publishes the stable session id before replacing a pending rendered selection", async () => {
@@ -170,11 +169,11 @@ describe("SessionController pending starts", () => {
     );
 
     const start = controller.startSession({ updateUrl: false });
-    route = { ...route, view: "core:workspace.terminal" };
+    route = { ...route, view: "workspace" };
     startRequest.resolve(started);
     await start;
 
-    expect(expectedView).toBe("core:workspace.terminal");
+    expect(expectedView).toBe("workspace");
     expect(state.sessions.map((session) => session.id)).toEqual([started.id, oldSession.id]);
     expect(state.selectedSession?.id).toBe(started.id);
   });

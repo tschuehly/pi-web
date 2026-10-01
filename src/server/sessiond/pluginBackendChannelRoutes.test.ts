@@ -286,6 +286,33 @@ describe("session daemon plugin backend channels", () => {
     await expect(echoed.next()).resolves.toBe(unrelatedPayload);
   });
 
+  it("rejects malformed JSON before opening a plugin channel and releases admission", async () => {
+    const workspaces = workspaceRegistry();
+    const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
+    if (workspaceId === undefined) throw new Error("Expected workspace");
+    const openChannel = vi.fn(() => ({ receive: () => undefined }));
+    const registry = new PluginBackendRegistry({
+      contributions: [contribution(openChannel)],
+      workspaces,
+    });
+    registerPluginBackendChannelRoutes(app, { projects: projectReader(), backends: registry });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+
+    const socket = connect(workspaceId);
+    const messages = socketMessages(socket);
+    const closed = nextClose(socket);
+    await waitForOpen(socket);
+    socket.send("{");
+
+    const rejection = parsePluginBackendChannelServerEnvelope(await messages.next());
+    expect(rejection).toMatchObject({ kind: "error", code: "invalid-frame" });
+    if (rejection.kind !== "error") throw new Error("Expected sessiond protocol rejection");
+    expect(rejection.message).toContain("must be valid JSON");
+    await expect(closed).resolves.toMatchObject({ code: 1008 });
+    expect(openChannel).not.toHaveBeenCalled();
+    await vi.waitFor(() => { expect(registry.activeChannelCount()).toBe(0); });
+  });
+
   it("attributes stale revisions, plugin receive failures, and binary input before closing", async () => {
     const workspaces = workspaceRegistry();
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;

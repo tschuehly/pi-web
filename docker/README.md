@@ -216,7 +216,7 @@ curl -fsSL "https://raw.githubusercontent.com/jmfederico/pi-web/$ref/docker/inst
 
 ## Container environment
 
-Extra environment variables for the `sessiond` and `web` containers belong in one file inside the persistent data directory:
+Shared extra environment variables for the `sessiond` and `web` containers belong in the persistent data directory:
 
 ```text
 $PI_WEB_DOCKER_DATA_DIR/container.env
@@ -232,7 +232,15 @@ NO_PROXY=localhost,127.0.0.1
 PI_WEB_OFFLINE=1
 ```
 
-Apply changes by recreating the containers:
+For **development-only** values, edit `<repo>/.pi-web/docker-compose-dev.container.env`. The dev launcher creates this gitignored file once with owner-only permissions and never rewrites it. Both dev services load it after the shared file, so matching keys override shared values; production never loads it. `pi-web-docker --dev doctor` reports its path. For example, keep dev's saved remote machines separate without changing other shared state:
+
+```dotenv
+PI_WEB_MACHINES_FILE=/data/pi-web/machines-dev.json
+```
+
+Omitted keys inherit the shared file (or the application's default when neither file sets them). Explicit Compose `environment:` values still win over either env file. These files use Docker Compose dotenv syntax, not shell scripts.
+
+Apply changes by recreating the affected containers. Recreating `sessiond` interrupts active sessions; schedule this when those sessions can be stopped:
 
 ```bash
 ~/.local/share/pi-web-docker/pi-web-docker start
@@ -307,7 +315,7 @@ From the repository root, use the canonical Docker command so the same fail-clos
 ./docker/pi-web-docker --dev start
 ```
 
-The command creates `.pi-web/docker-compose-dev.local.env` on first run, writes `.pi-web/docker-compose-dev.generated.env` and `.pi-web/docker-compose-dev.host.generated.yml`, then runs Docker Compose with `docker/compose.dev.yml` plus that generated host override. The generated environment includes the host repository root as `PI_WEB_DOCKER_DEV_REPO_ROOT`, and the generated override mounts that path back into the containers so Docker helper commands can run Compose from the same absolute path. Edit only the `.local.env` file for persistent dev settings; the `.generated.env` and `.host.generated.yml` files are refreshed by the command. Extra environment variables for the dev containers go in the shared [`container.env`](#container-environment).
+The command creates `.pi-web/docker-compose-dev.local.env` on first run, writes `.pi-web/docker-compose-dev.generated.env` and `.pi-web/docker-compose-dev.host.generated.yml`, then runs Docker Compose with `docker/compose.dev.yml` plus that generated host override. The generated environment includes the host repository root as `PI_WEB_DOCKER_DEV_REPO_ROOT`, and the generated override mounts that path back into the containers so Docker helper commands can run Compose from the same absolute path. Edit only the `.local.env` file for persistent dev settings; the `.generated.env` and `.host.generated.yml` files are refreshed by the command. Extra environment variables for the dev containers go in the shared `container.env` or the dev-only `.pi-web/docker-compose-dev.container.env`; see [Container environment](#container-environment).
 
 Values used by the command are resolved in this order:
 

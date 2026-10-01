@@ -1,4 +1,4 @@
-import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import { type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 

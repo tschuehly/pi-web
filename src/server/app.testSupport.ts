@@ -3,7 +3,8 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Readable } from "node:stream";
-import type { FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
+import { registerProjectMutationRoutes } from "./sessiond/projectMutationRoutes.js";
 import { afterEach, beforeEach } from "vitest";
 import { buildApp } from "./app.js";
 import { ProjectService } from "./projects/projectService.js";
@@ -92,6 +93,7 @@ export function registerAppTestHooks(): void {
     piWebConfig = {};
     agentProfileResult = { status: "available", profile: appTestAgentProfile(join(tempDir, "agent")) };
     const projects = new ProjectService(new ProjectStore(join(tempDir, "projects.json")));
+    const sessionDaemon = fakeSessionDaemon(projects);
     workspaceCatalog = new AppTestWorkspaceCatalog(projects);
     app = await buildApp({
       projects,
@@ -112,7 +114,7 @@ export function registerAppTestHooks(): void {
           capabilities: [],
         }),
       }),
-      sessionDaemon: fakeSessionDaemon(),
+      sessionDaemon,
       agentProfileProvider: { getActiveAgentProfile: () => Promise.resolve(agentProfileResult) },
       config: fakeConfigService(),
       piPackages: fakePiPackageService(),
@@ -139,6 +141,7 @@ export function registerAppTestHooks(): void {
       clientDist: false,
       logger: false,
     });
+    app.addHook("onClose", () => sessionDaemon.close());
   });
 
   afterEach(async () => {
@@ -352,11 +355,27 @@ function fakePiPackageService(): PiPackageService {
   };
 }
 
-function fakeSessionDaemon(): SessionProxyDaemon {
+function fakeSessionDaemon(projects: ProjectService): SessionProxyDaemon & { close(): Promise<void> } {
+  const daemonApp = Fastify({ logger: false });
+  registerProjectMutationRoutes(daemonApp, projects);
   return {
-    request: (method, path, body) => {
+    close: () => daemonApp.close(),
+    requestStream: async (path) => {
+      sessionDaemonRequests.push({ method: "GET", path });
+      const response = await daemonApp.inject({ method: "GET", url: path });
+      return {
+        statusCode: response.statusCode,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([response.rawPayload]),
+      };
+    },
+    request: async (method, path, body) => {
       const captured = { method, path, ...(body === undefined ? {} : { body }) } satisfies CapturedSessionDaemonRequest;
       sessionDaemonRequests.push(captured);
+      if ((method === "POST" && path === "/projects") || (method === "DELETE" && path.startsWith("/projects/"))) {
+        const response = await daemonApp.inject({ method, url: path, ...(body === undefined ? {} : { payload: JSON.stringify(body), headers: { "content-type": "application/json" } }) });
+        return { statusCode: response.statusCode, headers: { "content-type": "application/json" }, body: response.body };
+      }
       return Promise.resolve({
         statusCode: 200,
         headers: { "content-type": "application/json" },

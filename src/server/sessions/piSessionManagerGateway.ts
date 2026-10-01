@@ -89,7 +89,7 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
   // In-flight snapshot reads, deduplicated per path. Each entry removes itself
   // when its read settles, so this map only ever holds genuinely concurrent
   // reads and needs no bound of its own.
-  private readonly pendingTranscriptBranches = new Map<string, Promise<unknown[] | undefined>>();
+  private readonly pendingTranscriptBranches = new Map<string, Promise<TranscriptBranchSnapshot | undefined>>();
 
   constructor(private readonly resolver: SessionDirResolver) {}
 
@@ -154,6 +154,14 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
   }
 
   async readBranch(path: string): Promise<unknown[] | undefined> {
+    return (await this.readTranscriptSnapshot(path))?.branch;
+  }
+
+  async readEntries(path: string): Promise<readonly unknown[] | undefined> {
+    return (await this.readTranscriptSnapshot(path))?.entries;
+  }
+
+  private async readTranscriptSnapshot(path: string): Promise<TranscriptBranchSnapshot | undefined> {
     // A session whose path is known may still have no file on disk (created in
     // memory, never persisted) or be removed externally at any moment. Absence
     // is not a failure: it means there is no disk snapshot to serve.
@@ -161,13 +169,13 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
     if (file === undefined) return undefined;
     const signature = transcriptFileSignature(file);
     const cached = this.transcriptBranches.get(path, signature);
-    if (cached !== undefined) return cached.branch;
+    if (cached !== undefined) return cached;
     const pending = this.pendingTranscriptBranches.get(path);
     if (pending !== undefined) return pending;
     const read = this.readSnapshot(path, file, signature)
       .then((snapshot) => {
         this.transcriptBranches.set(path, snapshot);
-        return snapshot.branch;
+        return snapshot;
       })
       .catch((error: unknown) => {
         // Deleted between the stat above and the read: again, no snapshot.

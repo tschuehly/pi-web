@@ -1,5 +1,6 @@
 import { css, svg, type TemplateResult } from "lit";
 import type { AskUserOutcome } from "../../../shared/apiTypes";
+import type { SessionMediaReference } from "../../../shared/sessionMedia";
 import type { SessionWarningSeverity } from "../api";
 
 /** Directional navigation shadow that avoids a halo above the fixed heading edge. */
@@ -64,9 +65,14 @@ export interface GoalLifecycleDetails {
 /** One Working Mode dial; guidance is present only when the dial differs from its starting value. */
 export interface WorkingModeDial { label: string; value: string; guidance?: string }
 
+/** A reference never carries base64; inline images remain compatible with older machines. */
+export type ChatImagePart =
+  | { type: "image"; mimeType: string; data: string; mediaId?: never; byteSize?: never }
+  | (SessionMediaReference & { data?: never });
+
 export type ChatPart =
   | { type: "text"; text: string }
-  | { type: "image"; mimeType: string; data: string }
+  | ChatImagePart
   | { type: "thinking"; text: string }
   | { type: "skillInvocation"; name: string; location: string; content: string }
   | { type: "skillRead"; name: string; path: string; toolCallId?: string }
@@ -208,8 +214,9 @@ export const appStyles = css`
 
 export const workspacePanelStyles = css`
   :host { display: flex; flex-direction: column; min-height: 0; color: var(--pi-text); background: var(--pi-bg); font: 13px system-ui, sans-serif; container-type: inline-size; }
-  header { flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--pi-border); }
-  .workspace-header-scroll-frame { position: relative; min-width: 0; background: var(--pi-bg); }
+  header { display: flex; align-items: center; flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--pi-border); }
+  .navigation-menu-button { flex: 0 0 auto; margin: 0 8px; }
+  .workspace-header-scroll-frame { flex: 1 1 auto; position: relative; min-width: 0; background: var(--pi-bg); }
   .workspace-header-scroll-frame::before, .workspace-header-scroll-frame::after { content: ""; position: absolute; top: 0; bottom: 0; z-index: 2; width: 18px; opacity: 0; pointer-events: none; transition: opacity .15s ease; }
   .workspace-header-scroll-frame::before { left: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--pi-shadow-strong) 55%, transparent) 0%, transparent 100%); }
   .workspace-header-scroll-frame::after { right: 0; background: linear-gradient(270deg, color-mix(in srgb, var(--pi-shadow-strong) 55%, transparent) 0%, transparent 100%); }
@@ -227,7 +234,6 @@ export const workspacePanelStyles = css`
   .tab-badge { flex: 0 0 auto; display: inline-block; min-width: 14px; border: 1px solid var(--pi-success-border); border-radius: 999px; background: var(--pi-success-surface); color: var(--pi-success); padding: 0 5px; font-size: 11px; line-height: 16px; text-align: center; }
   @container (max-width: 430px) {
     .tabs button.icon-tab { justify-content: center; padding-inline: 7px; }
-    .tabs button.icon-tab .tab-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
   }
   .panel-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
   .empty-state { box-sizing: border-box; width: min(100%, 380px); margin: auto; padding: 24px; display: grid; gap: 8px; color: var(--pi-muted); text-align: center; }
@@ -388,6 +394,7 @@ export const chatStyles = css`
   .activity-dock .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
   .activity-dock.active .dot { animation: pulse 1s ease-in-out infinite; opacity: 1; }
   .msg { max-width: var(--pi-content-max-width); min-width: 0; box-sizing: border-box; margin: 0 0 10px; padding: 0 2px; border: 0; background: transparent; overflow: visible; overflow-wrap: anywhere; }
+  .chat > .msg:last-child { margin-bottom: 0; }
   .msg.user, .msg.assistant { padding: var(--pi-message-padding); border: 1px solid var(--pi-border); border-radius: 14px; }
   .msg.assistant { background: var(--pi-surface); }
   .msg.user { background: color-mix(in srgb, var(--pi-accent) 10%, var(--pi-surface)); border-color: color-mix(in srgb, var(--pi-accent) 30%, var(--pi-border)); }
@@ -412,8 +419,7 @@ export const chatStyles = css`
   .tool-fold > summary .chevron .tab-icon { width: 12px; height: 12px; }
   .tool-fold .running { color: var(--pi-text); }
   .tool-fold > .group-body { padding: 2px 0 2px 17px; }
-  .chat-image { display: block; max-width: 100%; max-height: 320px; margin: 8px 0 0; border: 1px solid var(--pi-border); border-radius: 8px; object-fit: contain; cursor: zoom-in; }
-  .chat-image:focus-visible { outline: 2px solid var(--pi-accent, var(--pi-success-border)); outline-offset: 2px; }
+  .chat-image { --pi-image-max-height: 320px; --pi-image-radius: 8px; display: block; max-width: 100%; margin: 8px 0 0; }
   dialog.image-zoom { --image-zoom-max-width: min(calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)), calc(var(--pi-workbench-viewport-width, 100vw) - env(safe-area-inset-left) - env(safe-area-inset-right))); --image-zoom-max-height: min(calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)), calc(var(--pi-workbench-viewport-height, 100vh) - env(safe-area-inset-top) - env(safe-area-inset-bottom))); position: fixed; inset: 0; margin: auto; max-width: var(--image-zoom-max-width); max-height: var(--image-zoom-max-height); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: hidden; }
   dialog.image-zoom[open] { display: flex; }
   dialog.image-zoom::backdrop { background: rgba(0, 0, 0, 0.8); }
@@ -511,6 +517,7 @@ export const formattedTextStyles = css`
   .copyable-quote:hover > .quote-copy-button, .quote-copy-button:focus { opacity: 1; }
   @media (hover: none) { .quote-copy-button { opacity: 1; } }
   blockquote { border-left: 3px solid var(--pi-border); padding-left: 10px; color: var(--pi-muted); }
+  img { max-width: 100%; }
   a { color: var(--pi-accent); }
   h1, h2, h3, h4 { margin: 14px 0 8px; line-height: 1.2; }
   h1:first-child, h2:first-child, h3:first-child, h4:first-child { margin-top: 0; }

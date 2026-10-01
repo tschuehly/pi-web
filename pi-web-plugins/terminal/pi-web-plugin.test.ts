@@ -123,6 +123,7 @@ function activationContext(runtimePluginId = "pi-web.terminal"): PluginActivatio
 
 function workspaceContext(machineId: string): WorkspacePanelContext {
   return {
+    navigate: () => Promise.resolve(),
     machine: { id: machineId, name: machineId, kind: machineId === "local" ? "local" : "remote" },
     workspace: { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true },
     files: { readFile: vi.fn(), listFiles: vi.fn(), writeFile: vi.fn(), deleteFile: vi.fn(), moveFile: vi.fn() },
@@ -136,6 +137,7 @@ function workspaceContext(machineId: string): WorkspacePanelContext {
 
 function runtimeContext(openTerminal: PluginRuntimeContext["openTerminal"]): PluginRuntimeContext {
   return {
+    navigate: () => Promise.resolve(),
     state: { selectedWorkspace: { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true } },
     prompt: { insertText: vi.fn(), getText: vi.fn(() => ""), getSelection: vi.fn(() => null) },
     openActionPalette: vi.fn(),

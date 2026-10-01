@@ -4,9 +4,11 @@ Select a conversation in the current workspace, open **Captain's Log**, and clic
 
 The pirate gets a short introduction on its first prompt and keeps speaking pirate. Further translations use the same conversation while it is loaded in the session daemon. If it is no longer loaded, the next translation automatically creates a new pirate conversation. There are no confirmation dialogs, workspace reviews, or plain-English mode.
 
-To keep the previous pirate's context after a daemon restart, open the most recent **Captain's Log** conversation in Sessions before translating. Once loading finishes, the plugin can reuse it; it need not remain selected. Then select the conversation whose reply you want translated. The plugin does not reopen saved sessions itself or stop/delete old sessions.
+To keep the previous pirate's context after a daemon restart, open the most recent **Captain's Log** conversation in Sessions before translating. Once loading finishes, the plugin can reuse it; it need not remain selected. Then select the conversation whose reply you want translated. The plugin does not automatically reopen saved sessions or stop/delete old sessions.
 
 ## Results and connections
+
+Use **Open source session** beneath a translation to return to its original conversation in chat, even when another conversation is selected. This action uses the record's machine/project/workspace scope and source session ID. If the source is no longer available, PI WEB shows its normal unavailable-destination message; it does not create a replacement conversation.
 
 - The translation is rendered as Markdown, including headings, lists, emphasis, links, tables, and code blocks. Embedded HTML stays literal, unsafe links are inert, and images are not loaded automatically. **Previous translations** holds earlier results; **Diagnostics** holds session/request IDs and the message trail. Both start collapsed. Existing review-era logs remain on disk but are not shown as translations.
 - The panel inherits PI WEB's workspace styles and themes. The action-palette **Open pirate translator** opens it without spending model tokens.

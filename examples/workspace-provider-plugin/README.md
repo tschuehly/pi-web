@@ -7,7 +7,7 @@ The example imports only the supported package declarations:
 - `@jmfederico/pi-web/plugin-api`
 - `@jmfederico/pi-web/server-plugin-api`
 
-It requires PI WEB `^2.202609.0`; `2.202609.0` is the first release of the API v4/v3 plugin platform used here.
+It requires PI WEB `^1.202609.1`; `1.202609.1` is the first release of the API v4/v3 plugin platform used here.
 
 ## Build and install
 

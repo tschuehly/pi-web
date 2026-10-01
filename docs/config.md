@@ -17,7 +17,7 @@ Pi package settings are separate from PI WEB config. They live in Pi's package-m
 
 ### Custom config paths in installed services
 
-`start`, `restart`, and `doctor` normally use the config path saved in the installed services for readiness checks.
+`start`, `restart`, and `doctor` use the config path saved in the installed services for readiness checks unless the caller supplies a nonempty `PI_WEB_CONFIG` override. `doctor` checks the managed setup, not every custom runtime environment.
 
 | Situation | Behavior / action |
 | --- | --- |
@@ -25,7 +25,8 @@ Pi package settings are separate from PI WEB config. They live in Pi's package-m
 | Override the path for one command | Supply a nonempty `PI_WEB_CONFIG` when invoking that command. This does not rewrite service definitions. |
 | Change the managed service config path | Run `pi-web install --config /path/to/config.json` to regenerate both web/API and sessiond service definitions. |
 | Upgrade from an installation that set the path only for the web service | Rerun that same install command so both services use the same config. |
-| systemd cannot verify the loaded service environment | The command fails rather than guesses. Check `EnvironmentFile=`, stale manager state, a different loaded fragment, or an effective environment mismatch. Drop-ins that leave the inspected environment unchanged are allowed. |
+| systemd cannot verify the loaded service environment | The command fails rather than guesses if manager state is stale, the loaded fragment differs, or a PI WEB-managed environment value cannot be verified. Managed `Environment=` values (currently `PI_WEB_CONFIG`) must match the installed definition; unrelated variables are ignored. Drop-ins that leave managed values unchanged are allowed. |
+| systemd uses `EnvironmentFile=` | Accepted with a nonfatal warning. File contents are not included in systemctl's `Environment` property and PI WEB does not inspect them, so config overrides in those files cannot be verified. |
 | launchd has an old config path or a label loaded from another plist | `start` and `doctor` fail. `restart` reloads installed plists and can repair stale loaded state. |
 
 ## Startup model and thinking defaults

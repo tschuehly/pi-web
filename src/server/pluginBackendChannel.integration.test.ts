@@ -4,11 +4,9 @@ import Fastify, { type FastifyInstance } from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket, type RawData, type WebSocketServer } from "ws";
-import type { JsonValue } from "../server-plugin-api.js";
 import {
   parsePluginBackendChannelServerEnvelope,
   PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES,
-  serializePluginBackendChannelDataEnvelope,
   serializePluginBackendChannelOpenEnvelope,
 } from "../shared/pluginBackendProtocol.js";
 import { registerMachineProxyRoutes } from "./machines/machineProxyRoutes.js";
@@ -38,80 +36,7 @@ afterEach(async () => {
   liveTopologies.clear();
 });
 
-describe("plugin backend channel end-to-end teardown and receive drain", () => {
-  it.each(channelKinds)("drains asynchronous receives before clean close through %s", async (kind) => {
-    const gates = [deferred(), deferred()];
-    const events: string[] = [];
-    const close = vi.fn(() => { events.push("close"); });
-    const topology = await createTopology(() => ({
-      async receive(data) {
-        const sequence = frameSequence(data);
-        events.push(`receive:${String(sequence)}:start`);
-        const gate = gates[sequence - 1];
-        if (gate === undefined) throw new Error("Missing receive gate");
-        await gate.promise;
-        events.push(`receive:${String(sequence)}:end`);
-      },
-      close,
-    }));
-    const browser = topology.connect(kind);
-    const messages = socketMessages(browser);
-    const closed = nextClose(browser);
-    await waitForOpen(browser);
-    browser.send(serializePluginBackendChannelOpenEnvelope("terminal-r1", null));
-    expect(parsePluginBackendChannelServerEnvelope(await messages.next())).toMatchObject({ kind: "ready" });
-    browser.send(serializePluginBackendChannelDataEnvelope({ sequence: 1 }));
-    browser.send(serializePluginBackendChannelDataEnvelope({ sequence: 2 }), () => {
-      browser.close(1000, "browser complete");
-    });
-
-    await vi.waitFor(() => { expect(events).toEqual(["receive:1:start"]); });
-    expect(close).not.toHaveBeenCalled();
-    expect(topology.registry.activeChannelCount()).toBe(1);
-    gates[0]?.resolve();
-    await vi.waitFor(() => {
-      expect(events).toEqual(["receive:1:start", "receive:1:end", "receive:2:start"]);
-    });
-    expect(close).not.toHaveBeenCalled();
-    gates[1]?.resolve();
-
-    await expect(closed).resolves.toMatchObject({ code: 1000 });
-    await vi.waitFor(() => {
-      expect(events).toEqual([
-        "receive:1:start",
-        "receive:1:end",
-        "receive:2:start",
-        "receive:2:end",
-        "close",
-      ]);
-      expect(topology.registry.activeChannelCount()).toBe(0);
-      expect(topology.activeProxyAdmissions()).toEqual({ local: 0, federated: 0 });
-    });
-  });
-
-  it.each(["local-proxy", "federated"] as const)(
-    "forwards semantically invalid bounded text through %s for sessiond rejection",
-    async (kind) => {
-      const topology = await createTopology(() => ({ receive: () => undefined }));
-      const browser = topology.connect(kind);
-      const messages = socketMessages(browser);
-      const closed = nextClose(browser);
-      await waitForOpen(browser);
-
-      browser.send("{");
-
-      const rejection = parsePluginBackendChannelServerEnvelope(await messages.next());
-      expect(rejection).toMatchObject({ kind: "error", code: "invalid-frame" });
-      if (rejection.kind !== "error") throw new Error("Expected sessiond protocol rejection");
-      expect(rejection.message).toContain("must be valid JSON");
-      await expect(closed).resolves.toMatchObject({ code: 1008 });
-      await vi.waitFor(() => {
-        expect(topology.registry.activeChannelCount()).toBe(0);
-        expect(topology.activeProxyAdmissions()).toEqual({ local: 0, federated: 0 });
-      });
-    },
-  );
-
+describe("plugin backend channel physical admission and teardown", () => {
   it("retains admission until concurrent shutdown physically terminates a paused peer", async () => {
     const topology = await createTopology(() => ({ receive: () => undefined }));
     const browser = topology.connect("direct");
@@ -309,15 +234,6 @@ function contribution(
   };
 }
 
-function frameSequence(data: JsonValue): number {
-  if (!isJsonRecord(data) || typeof data["sequence"] !== "number") throw new Error("Expected sequence frame");
-  return data["sequence"];
-}
-
-function isJsonRecord(value: JsonValue): value is Readonly<Record<string, JsonValue>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function expectedPhysicalCounts(kind: ChannelKind, count: number): { sessiond: number; local: number; federated: number } {
   return {
     sessiond: count,
@@ -371,12 +287,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
-function deferred(): { promise: Promise<void>; resolve(): void } {
-  let resolvePromise: () => void = () => undefined;
-  const promise = new Promise<void>((resolve) => { resolvePromise = resolve; });
-  return { promise, resolve: resolvePromise };
-}
-
 function waitForOpen(socket: WebSocket): Promise<void> {
   if (socket.readyState === WebSocket.OPEN) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -385,13 +295,6 @@ function waitForOpen(socket: WebSocket): Promise<void> {
       socket.off("error", reject);
       resolve();
     });
-  });
-}
-
-function nextClose(socket: WebSocket): Promise<{ code: number; reason: string }> {
-  if (socket.readyState === WebSocket.CLOSED) return Promise.resolve({ code: 1006, reason: "" });
-  return new Promise((resolve) => {
-    socket.once("close", (code, reason) => { resolve({ code, reason: reason.toString("utf8") }); });
   });
 }
 

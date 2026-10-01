@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -41,25 +41,16 @@ describe("sessiond persisted server plugin recovery", () => {
     expect(() => { assertOwnedRoot(liveTerminalRoot); }).toThrow("Refusing to clean unowned directory");
     expect(() => { assertOwnedRoot(join(tmpdir(), "pi-web-sessiond-plugin-unowned")); }).toThrow("Refusing to clean unowned directory");
   });
-  it.each([
-    {
-      name: "starts from real config and catalog with no server module imports in emergency safe start",
-      safeStart: "none",
-      expectedDiagnostic: undefined,
-    },
-    {
-      name: "fails closed and starts without server module imports when safe start is malformed",
-      safeStart: "future-level",
-      expectedDiagnostic: "No server plugins will be loaded until safe start is repaired",
-    },
-  ])("$name", async ({ safeStart, expectedDiagnostic }) => {
+  // Config parsing and both safe-start levels are covered by serverPluginRecovery.test.ts
+  // and serverPluginRuntime.test.ts. Keep one real-process fail-closed wiring check.
+  it("fails closed and starts without server module imports when safe start is malformed", async () => {
     const root = await createDaemonFixture();
     const configPath = join(root, "config.json");
     const dataDir = join(root, "data");
     const pluginRoot = join(dataDir, "plugins", "poison");
     const markerPath = join(root, "poison-imported");
     await mkdir(pluginRoot, { recursive: true });
-    await writeFile(configPath, `${JSON.stringify({ serverPlugins: { safeStart } })}\n`, "utf8");
+    await writeFile(configPath, `${JSON.stringify({ serverPlugins: { safeStart: "future-level" } })}\n`, "utf8");
     await writeFile(join(pluginRoot, "package.json"), `${JSON.stringify({
       piWeb: { plugins: [{ id: "poison", serverModule: "server.mjs" }] },
     })}\n`, "utf8");
@@ -73,7 +64,7 @@ describe("sessiond persisted server plugin recovery", () => {
 
     const startupOutput = await waitForOutput(child, "Server listening at", 15_000);
     expect(startupOutput).toContain("Server listening at");
-    if (expectedDiagnostic !== undefined) expect(startupOutput).toContain(expectedDiagnostic);
+    expect(startupOutput).toContain("No server plugins will be loaded until safe start is repaired");
     expect(existsSync(markerPath)).toBe(false);
 
     child.kill("SIGTERM");
@@ -89,59 +80,8 @@ describe("sessiond persisted server plugin recovery", () => {
     expect(existsSync(join(dataDir, "plugin-data"))).toBe(false);
   }, 30_000);
 
-  it.skipIf(process.platform === "win32")("starts a plugin with its persistent directory in the early sessiond phase and permits I/O during disposal", async () => {
-    const root = await createDaemonFixture();
-    await buildTerminalPackage(resolve("pi-web-plugins/terminal"), join(root, "dist/pi-web-plugins/terminal"));
-
-    const configPath = join(root, "config.json");
-    const dataDir = join(root, "data");
-    const pluginRoot = join(dataDir, "plugins", "state-only");
-    const startedMarker = join(root, "state-plugin-started.json");
-    const disposedMarker = join(root, "state-plugin-disposed.txt");
-    await mkdir(pluginRoot, { recursive: true });
-    await writeFile(configPath, "{}\n", "utf8");
-    await writeFile(join(pluginRoot, "package.json"), `${JSON.stringify({
-      piWeb: { plugins: [{ id: "state-only", serverModule: "server.mjs" }] },
-    })}\n`, "utf8");
-    await writeFile(join(pluginRoot, "server.mjs"), `
-      import { readFile, writeFile } from "node:fs/promises";
-      import { join } from "node:path";
-      export default {
-        apiVersion: 3,
-        name: "State-only fixture",
-        activate(context) {
-          const filePath = join(context.dataDirectory, "state.json");
-          return {
-            async start() {
-              await writeFile(filePath, JSON.stringify({ starts: 1 }));
-              await writeFile(${JSON.stringify(startedMarker)}, JSON.stringify({ packageRoot: context.packageRoot }));
-              console.error("STATE_PLUGIN_STARTED");
-            },
-            async dispose() {
-              await writeFile(${JSON.stringify(disposedMarker)}, await readFile(filePath, "utf8"));
-            }
-          };
-        }
-      };
-    `, "utf8");
-
-    const child = spawnFixtureDaemon(root);
-
-    const startupOutput = await waitForOutput(child, "Server listening at", 15_000);
-    expect(startupOutput).toContain("STATE_PLUGIN_STARTED");
-    expect(JSON.parse(await readFile(startedMarker, "utf8"))).toEqual({ packageRoot: await realpath(pluginRoot) });
-    expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "state-only", "state.json"), "utf8")))
-      .toEqual({ starts: 1 });
-    expect((await readdir(pluginRoot)).sort()).toEqual(["package.json", "server.mjs"]);
-
-    child.kill("SIGTERM");
-    const exit = await waitForExit(child, 10_000);
-    children.delete(child);
-
-    expect(exit).toEqual({ code: 0, signal: null });
-    expect(JSON.parse(await readFile(disposedMarker, "utf8"))).toEqual({ starts: 1 });
-  }, 35_000);
-
+  // Persistent-directory lifecycle I/O is exercised at the runtime seam. This
+  // smoke keeps early-state startup alongside the real late-authority assembly.
   it.skipIf(process.platform === "win32")("assembles early workspace providers and sessions before one late consumer resume", async () => {
     const root = await createDaemonFixture();
     await buildTerminalPackage(resolve("pi-web-plugins/terminal"), join(root, "dist/pi-web-plugins/terminal"));

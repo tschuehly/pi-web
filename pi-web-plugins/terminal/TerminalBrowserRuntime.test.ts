@@ -339,6 +339,7 @@ function workspaceContext(
   navigation: Partial<NonNullable<WorkspacePanelContext["navigation"]>> = {},
 ): WorkspacePanelContext {
   return {
+    navigate: () => Promise.resolve(),
     machine: { id: machineId, name: machineId, kind: machineId === "local" ? "local" : "remote" },
     workspace: { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true },
     files: { readFile: vi.fn(), listFiles: vi.fn(), writeFile: vi.fn(), deleteFile: vi.fn(), moveFile: vi.fn() },

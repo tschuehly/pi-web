@@ -1,4 +1,6 @@
 import http from "node:http";
+import https from "node:https";
+import type { Readable } from "node:stream";
 import { WebSocket } from "ws";
 import { isHostAbsoluteAgentDir } from "../config.js";
 import type { ActiveAgentProfileDescriptor } from "../shared/apiTypes.js";
@@ -12,6 +14,12 @@ export type SessionDaemonAgentProfileResult =
 
 export interface SessionDaemonRequestOptions {
   signal?: AbortSignal;
+}
+
+export interface SessionDaemonStreamResponse {
+  statusCode: number;
+  headers: Record<string, string>;
+  body: Readable;
 }
 
 export interface SessionDaemonRequestClient {
@@ -38,6 +46,30 @@ export class SessionDaemonClient {
       return this.requestUrl(method, path, payload, options.signal);
     }
     return this.requestSocket(method, path, payload, options.signal);
+  }
+
+  /** Stream binary resources without UTF-8 decoding or buffering the response. */
+  requestStream(path: string, options: SessionDaemonRequestOptions = {}): Promise<SessionDaemonStreamResponse> {
+    return new Promise((resolve, reject) => {
+      const onResponse = (response: http.IncomingMessage): void => {
+        resolve({
+          statusCode: response.statusCode ?? 500,
+          headers: Object.fromEntries(Object.entries(response.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : value ?? ""])),
+          body: response,
+        });
+      };
+      const requestOptions: http.RequestOptions = {
+        method: "GET",
+        headers: { "accept-encoding": "identity" },
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      };
+      const url = this.baseUrl === undefined || this.baseUrl === "" ? undefined : new URL(path, this.baseUrl);
+      const request = url === undefined
+        ? http.request({ ...requestOptions, socketPath: this.socketPath, path }, onResponse)
+        : (url.protocol === "https:" ? https : http).request(url, requestOptions, onResponse);
+      request.on("error", reject);
+      request.end();
+    });
   }
 
   getActiveAgentProfile(): Promise<SessionDaemonAgentProfileResult> {

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -114,6 +114,48 @@ describe("server plugin runtime", () => {
     const second = await start(2);
     expect(second.healthRecords().filter(({ state }) => state === "active")).toHaveLength(2);
     await second.stop();
+  });
+
+  // This contract needs real runtime lifecycle + filesystem I/O, not a daemon
+  // process. The child assembly smoke separately proves early-phase wiring.
+  it("keeps package files separate from persistent state and permits I/O during disposal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-web-plugin-state-lifecycle-"));
+    tempRoots.push(root);
+    const dataDir = join(root, "data");
+    const packageRoot = join(root, "package");
+    await mkdir(packageRoot);
+    await writeFile(join(packageRoot, "package.json"), "{}\n");
+    let activatedPackageRoot: string | undefined;
+    let revokedDuringDisposal: boolean | undefined;
+    const runtime = await createServerPluginRuntime({
+      dataDir,
+      catalog: { snapshot: () => Promise.resolve(testSnapshot([{ ...entry("state-only"), packageRoot }])) },
+      importer: () => Promise.resolve({ default: plugin("State-only fixture", (context) => {
+        activatedPackageRoot = context.packageRoot;
+        const filePath = join(context.dataDirectory, "state.json");
+        return {
+          start: async () => { await writeFile(filePath, JSON.stringify({ starts: 1 })); },
+          dispose: async () => {
+            revokedDuringDisposal = context.lifetimeSignal.aborted;
+            await writeFile(join(context.dataDirectory, "disposed.json"), await readFile(filePath, "utf8"));
+          },
+        };
+      }) }),
+      logger: testLogger(),
+    });
+    try {
+      expect(runtime.healthRecords()).toEqual([expect.objectContaining({ pluginId: "state-only", state: "active" })]);
+      expect(activatedPackageRoot).toBe(packageRoot);
+      expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "state-only", "state.json"), "utf8")))
+        .toEqual({ starts: 1 });
+    } finally {
+      await runtime.stop();
+    }
+    expect(revokedDuringDisposal).toBe(true);
+    expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "state-only", "disposed.json"), "utf8")))
+      .toEqual({ starts: 1 });
+    expect(await readdir(packageRoot)).toEqual(["package.json"]);
+    expect(await readFile(join(packageRoot, "package.json"), "utf8")).toBe("{}\n");
   });
 
   it("quarantines directory creation failures without activating the affected plugin", async () => {

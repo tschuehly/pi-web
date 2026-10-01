@@ -125,6 +125,7 @@ function fakeDaemon(): SessionProxyDaemon {
       });
       return daemonFailure === undefined ? Promise.resolve(daemonResponse) : Promise.reject(daemonFailure);
     },
+    requestStream: () => { throw new Error("Binary stream not configured for test"); },
     connectWebSocket: () => { throw new Error("WebSocket not configured for test"); },
   };
 }

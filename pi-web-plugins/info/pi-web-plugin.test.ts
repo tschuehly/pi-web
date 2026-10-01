@@ -58,6 +58,7 @@ function findCopyDiagnosticsAction() {
 function runtimeContext(patch: Partial<PluginRuntimeContext> = {}): PluginRuntimeContext {
   const noop = () => undefined;
   return {
+    navigate: () => Promise.resolve(),
     state: {},
     prompt: { insertText: noop, getText: () => "", getSelection: () => null },
     openActionPalette: noop,

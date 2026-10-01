@@ -28,8 +28,10 @@ import {
   type ProjectTrustEventResult,
   type ResourceDiagnostic,
 } from "@earendil-works/pi-coding-agent";
-import type { ClientArchiveSessionsResponse, ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionCleanupExecuteResponse, ClientSessionCleanupPreviewResponse, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, ClientSessionTreeForkRequest, ClientSessionTreeForkResult, ClientSessionTreeNavigateRequest, ClientSessionTreeNavigateResult, ClientThinkingLevel, SessionStreamSnapshot, SessionUiEvent } from "../types.js";
+import type { ClientArchiveSessionsResponse, ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionCleanupExecuteResponse, ClientSessionCleanupPreviewResponse, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, ClientSessionTreeForkRequest, ClientSessionTreeForkResult, ClientSessionTreeNavigateRequest, ClientSessionTreeNavigateResult, ClientThinkingLevel, SessionStreamSnapshot, SessionTranscriptSnapshot, SessionUiEvent } from "../types.js";
 import { projectBrowserMessage } from "../browserMessageProjection.js";
+import { isSessionMediaId } from "../../shared/sessionMedia.js";
+import type { SessionMedia } from "./sessionMediaIndex.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import { clientSessionFirstMessagePreview } from "./clientSessionPreview.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
@@ -431,6 +433,8 @@ export interface PiSessionManagerGateway {
    * stays authoritative.
    */
   readBranch?(path: string): Promise<unknown[] | undefined>;
+  /** Read all branches, sharing the read-only parsed snapshot with readBranch. */
+  readEntries?(path: string): Promise<readonly unknown[] | undefined>;
   create(cwd: string, options?: { parentSession?: string }): PiSessionManager;
   /**
    * Cross-project listing of Pi's session stores (the default store plus any
@@ -1145,7 +1149,7 @@ export interface PiSessionServiceDependencies {
    * Called when unread state changed, so the machine status projection can
    * recompute. The unread catalog itself stays the authority for unread detail.
    */
-  onUnreadChanged?: () => void;
+  onUnreadChanged?: (hasNewCompletion: boolean) => void;
   /**
    * Lets session startup report that provider model lists are refreshing while
    * a session is being constructed. Omit to report the startup phase alone.
@@ -1188,6 +1192,8 @@ export class PiSessionService implements SessionRouteService {
   private readonly unpersistedTreeBranchLeaves = new WeakMap<PiAgentSession, string | null>();
   /** Counts async operations that may append an entry before they settle. */
   private readonly sessionEntryMutationCounts = new WeakMap<PiAgentSession, number>();
+  private readonly pendingPromptEchoes = new WeakMap<PiAgentSession, { userIndex: number; message: ReturnType<typeof userMessage> }[]>();
+  private readonly publishedAssistantPartials = new WeakMap<PiAgentSession, unknown>();
   /** Settings-wide queue preventing enabled-model read/modify/write races across sessions. */
   private modelScopeMutationQueue: Promise<void> = Promise.resolve();
   /** Global and workspace-owned enabled-model states; live session scopes project one entry lazily. */
@@ -1219,8 +1225,8 @@ export class PiSessionService implements SessionRouteService {
   private readonly subsessionHydratedParents = new Set<string>();
   /**
    * Tracked subsession id -> whether a completion notification is armed.
-   * Armed when the child starts working; firing on completion disarms it so a
-   * child that works again (and stops again) notifies the parent each time.
+   * Armed when the child's agent starts a run (not for commands or compaction);
+   * firing on completion disarms it for the next run.
    */
   private readonly subsessionNotifyArmed = new Map<string, boolean>();
   private readonly archiveStore: SessionArchiveRepository;
@@ -1248,7 +1254,7 @@ export class PiSessionService implements SessionRouteService {
   private readonly catalogRefreshStatus: CatalogRefreshStatus | undefined;
   private readonly config: Pick<PiWebConfigService, "read"> | undefined;
   private readonly unreadPublicationRetryInitialMs: number;
-  private readonly onUnreadChanged: (() => void) | undefined;
+  private readonly onUnreadChanged: ((hasNewCompletion: boolean) => void) | undefined;
   private readonly pendingUnreadMutations: SessionUnreadMutation[] = [];
   private unreadPublication: Promise<void> | undefined;
   private unreadPublicationFailure: unknown;
@@ -1343,6 +1349,10 @@ export class PiSessionService implements SessionRouteService {
 
   notificationCatalog(): SessionNotificationCatalogSnapshot {
     return this.notificationStore.catalogSnapshot();
+  }
+
+  async reconcileUnreadWorkspaces(cwds: Iterable<string>): Promise<void> {
+    await this.publishUnreadMutations(this.unreadStore.reconcileWorkspaces(cwds));
   }
 
   async unreadCatalog(): Promise<SessionUnreadCatalogSnapshot> {
@@ -1478,7 +1488,10 @@ export class PiSessionService implements SessionRouteService {
       } finally {
         await active.runtime.dispose();
       }
-    })).finally(() => this.activityMarker.dispose());
+    })).finally(async () => {
+      this.events.mediaIndex.clear();
+      await this.activityMarker.dispose();
+    });
     await this.publishUnreadMutations([]);
   }
 
@@ -2360,19 +2373,19 @@ export class PiSessionService implements SessionRouteService {
   }
 
   /**
-   * Drive parent notifications from a tracked child's status. Arms a pending
-   * notification while the child is working, and when it stops fires a single
-   * follow-up message to the parent via {@link prompt} (which queues if the
-   * parent is busy and delivers immediately when it is idle).
+   * Arm on a tracked child's agent_start, then notify the parent once it stops
+   * working. Commands and compactions can be busy without starting an agent run,
+   * so they must not arm a completion notice.
    */
-  private updateSubsessionTracking(session: PiAgentSession): void {
+  private updateSubsessionTracking(session: PiAgentSession, agentStarted = false): void {
     const link = this.subsessionLinkForActiveChild(session);
     if (link === undefined) return;
     const childId = link.childSessionId;
-    if (this.hasActiveWork(session)) {
+    if (agentStarted) {
       this.subsessionNotifyArmed.set(childId, true);
       return;
     }
+    if (this.hasActiveWork(session)) return;
     if (this.subsessionNotifyArmed.get(childId) !== true) return;
     this.subsessionNotifyArmed.set(childId, false);
     const status: SubsessionStatus = this.activities.get(childId)?.phase === "error" ? "error" : "idle";
@@ -2439,9 +2452,65 @@ export class PiSessionService implements SessionRouteService {
     );
   }
 
+  async transcriptSnapshot(ref: PiSessionRef, page?: { limit?: number }): Promise<SessionTranscriptSnapshot> {
+    const session = await this.getOrOpen(ref);
+    const seqBeforeRead = this.events.currentSeq(session.sessionId);
+    const activeAtCapture = this.hasActiveWork(session);
+    const diskBranch = activeAtCapture ? undefined : await this.readableSessionBranch(ref, session);
+    // Disk reads yield, even if a whole turn starts AND ends while they run.
+    // From the final runtime read through the watermark capture nothing may yield.
+    const branch = diskBranch === undefined || this.hasActiveWork(session) || this.events.currentSeq(session.sessionId) !== seqBeforeRead
+      ? session.sessionManager.getBranch()
+      : diskBranch;
+    const messages = historyMessagesFromEntries(branch);
+    const userCount = messages.filter((message) => isRecord(message) && message["role"] === "user").length;
+    const echoes = (this.pendingPromptEchoes.get(session) ?? []).filter((echo) => echo.userIndex >= userCount);
+    messages.push(...echoes.map((echo) => echo.message));
+    return {
+      page: pageMessagesAtSafeBoundary(messages, page),
+      status: this.statusFromSession(session, transcriptMessageCount(branch) + echoes.length),
+      seq: this.events.currentSeq(session.sessionId),
+      partial: this.publishedAssistantPartials.get(session) ?? null,
+    };
+  }
+
   async messages(ref: PiSessionRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
     const session = await this.getOrOpen(ref);
     return pageMessagesAtSafeBoundary(historyMessagesFromEntries(await this.readableSessionBranch(ref, session)).map(displayPromptMessage), page);
+  }
+
+  async media(ref: PiSessionRef, mediaId: string): Promise<SessionMedia | undefined> {
+    if (!isSessionMediaId(mediaId)) throw new Error("Invalid media id");
+    const index = this.events.mediaIndex;
+    const session = this.activeForRef(ref)?.runtime.session ?? this.startupSessionForRef(ref);
+    // Verify session/cwd ownership before consulting the session-scoped cache.
+    // Cold binary reads do not construct an SDK runtime (which can migrate files).
+    const archived = session === undefined ? await this.getArchived(ref) : undefined;
+    const resolved = session === undefined && archived?.archivePath === undefined
+      ? await this.sessionManager.resolveSessionFile(ref.cwd, ref.id)
+      : undefined;
+    const sessionId = session?.sessionId ?? archived?.sessionId ?? resolved?.id;
+    if (sessionId === undefined || (resolved !== undefined && !cwdPathsEqual(resolved.cwd, ref.cwd))) throw new Error("Session not found");
+    const scope = { id: sessionId, cwd: canonicalizeStoredCwd(session?.sessionManager.getCwd() ?? archived?.cwd ?? resolved?.cwd ?? ref.cwd) };
+    const cached = index.get(scope, mediaId);
+    if (cached !== undefined) return cached;
+    if (session !== undefined) {
+      const live = index.find(scope, mediaId, [
+        session.sessionManager.getEntries?.() ?? session.sessionManager.getBranch(),
+        session.messages,
+        session.state.streamingMessage,
+        this.publishedAssistantPartials.get(session),
+        ...(this.pendingPromptEchoes.get(session) ?? []).map((echo) => echo.message),
+      ]);
+      if (live !== undefined) return live;
+    }
+    // Read disk on misses even for a cached idle runtime: other processes can
+    // append images on any branch without emitting events through this daemon.
+    const path = session?.sessionFile ?? session?.sessionManager.getSessionFile() ?? archived?.archivePath ?? resolved?.path
+      ?? (session === undefined ? undefined : (await this.sessionManager.resolveSessionFile(ref.cwd, sessionId))?.path);
+    if (path === undefined) return undefined;
+    const entries = await this.sessionManager.readEntries?.(path);
+    return entries === undefined ? undefined : index.find(scope, mediaId, entries);
   }
 
   async status(ref: PiSessionRef): Promise<ClientSessionStatus> {
@@ -2712,10 +2781,26 @@ export class PiSessionService implements SessionRouteService {
 
   private beginPromptSubmission(session: PiAgentSession, text: string, behavior: QueuedPromptKind | undefined, images: ImageContent[] = [], echoUserMessage = true, providerText = text): Promise<void> {
     this.publishActivity(session, behavior === "steer" ? "steering queued" : behavior === "followUp" ? "message queued" : "prompt accepted", "active");
-    if (behavior === undefined && echoUserMessage) this.events.publish(session.sessionId, { type: "message.append", message: userMessage(text, images) });
+    const echoes = this.pendingPromptEchoes.get(session) ?? [];
+    const userCount = historyMessagesFromEntries(session.sessionManager.getBranch()).filter((message) => isRecord(message) && message["role"] === "user").length;
+    const echo = behavior === undefined && echoUserMessage
+      ? { userIndex: Math.max(userCount, ...echoes.map((pending) => pending.userIndex + 1)), message: userMessage(text, images) }
+      : undefined;
+    if (echo !== undefined) {
+      // SDK input hooks may await before appending the user message. Keep the
+      // already-published echo visible in snapshots until that append occurs.
+      this.pendingPromptEchoes.set(session, [...echoes, echo]);
+      this.events.publish(session.sessionId, { type: "message.append", message: echo.message }, { id: session.sessionId, cwd: session.sessionManager.getCwd() });
+    }
     if (behavior !== undefined) this.trackRuntimePrompt(session, { kind: behavior, text, ...(providerText === text ? {} : { providerText }), images: [...images] });
     const promptOptions = buildPromptOptions(behavior, images);
-    const promptPromise = this.runSessionEntryMutation(session, "send a prompt", () => session.prompt(providerText, promptOptions));
+    const promptPromise = this.runSessionEntryMutation(session, "send a prompt", () => session.prompt(providerText, promptOptions)).finally(() => {
+      if (echo !== undefined) {
+        const remaining = (this.pendingPromptEchoes.get(session) ?? []).filter((pending) => pending !== echo);
+        if (remaining.length === 0) this.pendingPromptEchoes.delete(session);
+        else this.pendingPromptEchoes.set(session, remaining);
+      }
+    });
     void promptPromise.catch((error: unknown) => {
       this.pruneRuntimePromptProvenance(session);
       const message = error instanceof Error ? error.message : String(error);
@@ -3557,6 +3642,7 @@ export class PiSessionService implements SessionRouteService {
     // Promises inside the dying runtime: settle them rather than dropping them.
     this.endSessionExtensionDialogs(sessionId);
     this.active.delete(sessionId);
+    this.events.mediaIndex.forgetSession({ id: sessionId, cwd: active.runtime.session.sessionManager.getCwd() });
     this.activities.delete(sessionId);
     this.workspaceActivity?.removeSession(sessionId, active.runtime.session.sessionManager.getCwd());
     this.clearAuthLossWarningsForSession(sessionId);
@@ -4081,7 +4167,7 @@ export class PiSessionService implements SessionRouteService {
     // The store applied the mutations already, so the status projection is told
     // now rather than after the durable flush: it reads in-memory unread state
     // and must not lag behind the rows the browser is about to see.
-    if (mutations.length > 0) this.onUnreadChanged?.();
+    if (mutations.length > 0) this.onUnreadChanged?.(mutations.some(({ event }) => event.unread !== null));
     this.enqueueUnreadMutations(mutations);
     this.unreadPublicationFlushRequested = true;
     if (this.unreadPublication === undefined && this.unreadPublicationRetryTimer !== undefined) {
@@ -4194,19 +4280,37 @@ export class PiSessionService implements SessionRouteService {
     let subscribed = true;
     const unsubscribe = session.subscribe((event) => {
       const publish = () => {
+        const eventType = getString(event, "type");
         const message = getProperty(event, "message");
-        if (getString(event, "type") !== "message_end" || !isRecord(message) || message["role"] !== "custom" || message["display"] !== false) {
-          this.events.publish(session.sessionId, toClientEvent(event, session.thinkingLevel, finalizedMessageEntryId(session, event)));
+        if ((eventType === "message_start" || eventType === "message_update") && getString(message, "role") === "assistant") {
+          // SDK state advances before async extension hooks finish. Capture only
+          // published messages, detaching even blocks left intact by projection.
+          this.publishedAssistantPartials.set(session, structuredClone(
+            annotateAssistantThinkingLevel(projectBrowserMessage(message), session.thinkingLevel),
+          ));
+        } else if (eventType === "message_start" || eventType === "message_end" || eventType === "agent_end") {
+          this.publishedAssistantPartials.delete(session);
+        }
+        if (eventType !== "message_end" || !isRecord(message) || message["role"] !== "custom" || message["display"] !== false) {
+          this.events.publish(session.sessionId, toClientEvent(event, session.thinkingLevel, finalizedMessageEntryId(session, event)), { id: session.sessionId, cwd: session.sessionManager.getCwd() });
         }
         this.publishActivityForEvent(session, event);
         this.updateActiveToolExecutionsForEvent(session, event);
-        const eventType = getString(event, "type");
+        // Queued messages can reach the model after an ask opened, even though
+        // there was no ask to dismiss when the user originally submitted them.
+        if (eventType === "message_start" && getString(message, "role") === "user") {
+          void this.voidOpenAskForUserMessage(session).catch((error: unknown) => {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.publishActivity(session, "error", "error", errorMessage);
+            this.events.publish(session.sessionId, { type: "session.error", message: errorMessage });
+          });
+        }
         if (eventType === "queue_update") this.pruneRuntimePromptProvenance(session);
         if (eventType === "agent_end") this.abortRunScopedExtensionDialogs(session.sessionId);
         if (eventType === "compaction_end") this.scheduleCompactionQueueDrain(session.sessionId);
         if (eventType === "agent_start" || eventType === "agent_end") this.scheduleCompactionQueueDrain(session.sessionId);
         this.publishStatus(session);
-        this.updateSubsessionTracking(session);
+        this.updateSubsessionTracking(session, eventType === "agent_start");
       };
       // Pi persists a finalized message immediately after notifying listeners.
       // Wait one microtask for its authoritative entry id, and queue any event
@@ -4231,6 +4335,7 @@ export class PiSessionService implements SessionRouteService {
       subscribed = false;
       this.sessionEvents.close(session);
       unsubscribe();
+      this.publishedAssistantPartials.delete(session);
     };
     this.active.set(session.sessionId, active);
   }
@@ -5488,6 +5593,12 @@ function toClientEvent(event: unknown, thinkingLevel?: string, entryId?: string)
   if (eventType === "tool_execution_end") {
     const result = getProperty(event, "result");
     return { type: "tool.end", toolName: getString(event, "toolName") ?? "", toolCallId: getString(event, "toolCallId") ?? "", text: stringifyToolResult(result), content: toolResultContent(result), details: toolResultDetails(result), isError: getBoolean(event, "isError") === true };
+  }
+  if (eventType === "entry_appended") {
+    // Boundary drafts do not emit message_end. Use the same raw-history
+    // projection as reconnects: context edits must not rewrite the transcript.
+    const [message] = historyMessagesFromEntries([getProperty(event, "entry")]);
+    if (message !== undefined) return { type: "message.append", message };
   }
   if (eventType === "agent_start") return { type: "agent.start" };
   if (eventType === "agent_end") return { type: "agent.end" };

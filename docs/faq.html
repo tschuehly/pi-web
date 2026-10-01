@@ -103,6 +103,7 @@
             <a href="#laptop-or-server">Laptop or server?</a>
             <a href="#plugins">Can I use local plugins?</a>
             <a href="#worktree-list-out-of-date">A worktree I created is missing</a>
+            <a href="#chat-images">How do chat images load?</a>
             <a href="#sessions-stop">Sessions stop unexpectedly</a>
             <a href="#model-response-terminated">Model responses fail with 'terminated'</a>
             <a href="#logs">Where are logs?</a>
@@ -330,6 +331,21 @@
                 Worktrees whose checkout directory no longer exists are hidden, so a directory you removed with
                 <code>rm -rf</code> instead of <code>git worktree remove</code> stops appearing as a selectable
                 workspace. Git still tracks it until you run <code>git worktree prune</code>.
+              </p>
+            </article>
+
+            <article id="chat-images" class="faq-item">
+              <h2>How do chat images load?</h2>
+              <p>
+                Images stored in a session load separately as they approach the visible chat area, so you can read
+                messages without downloading every screenshot first. Use <strong>Show image</strong> to load one
+                immediately, or <strong>Retry</strong> if a download fails. Images referenced by Markdown outside the
+                workspace still require your approval before loading.
+              </p>
+              <p>
+                This changes only what PI WEB sends to the browser; Pi's session files and model inputs stay unchanged.
+                Update and restart the session daemon on each selected machine to enable separate image delivery.
+                A daemon restart can interrupt active sessions, so wait for important work to finish first.
               </p>
             </article>
 

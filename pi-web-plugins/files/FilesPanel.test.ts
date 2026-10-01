@@ -287,6 +287,7 @@ interface ContextOptions {
 
 function createContext(options: ContextOptions = {}): WorkspacePanelContext {
   return {
+    navigate: () => Promise.resolve(),
     machine: { id: "local", name: "Local", kind: "local" },
     workspace: { id: "workspace-1", projectId: "project-1", path: "/repo", label: "repo", isMain: true },
     files: options.files ?? createFiles(),

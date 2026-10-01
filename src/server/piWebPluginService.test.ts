@@ -639,6 +639,8 @@ describe("PiWebPluginService", () => {
     });
 
     await expect(service.manifest()).resolves.toMatchObject({ plugins: [{ id: "enabled" }] });
+    await expect(service.readAsset("enabled", "pi-web-plugin.js")).resolves.toBeDefined();
+    await expect(service.readAsset("disabled", "pi-web-plugin.js")).resolves.toBeUndefined();
     await expect(service.plugins()).resolves.toMatchObject({
       plugins: [
         { id: "disabled", enabled: false },

@@ -56,6 +56,7 @@ it("projects state for every external workspace callback without changing the ho
     signal: new AbortController().signal, lifetimeSignal: new AbortController().signal });
   const unused = () => { throw new Error("Unexpected host call"); };
   const context: WorkspacePanelContext = {
+    navigate: () => Promise.resolve(),
     state: { ...initialAppState(), selectedSession: session },
     machine: { id: "remote", name: "Remote", kind: "remote" },
     workspace: { id: "workspace", projectId: "project", path: "/workspace", label: "Workspace", isMain: true, effectiveConfig: {} },

@@ -24,6 +24,6 @@
     "pi-web-plugins/**/*.ts",
     "pi-packages/**/*.ts"
   ],
-  "ignoreBinaries": ["python3"],
+  "ignoreBinaries": ["mkfifo"],
   "ignoreExportsUsedInFile": true
 }
