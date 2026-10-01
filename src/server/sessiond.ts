@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import { MAX_ROUTE_PARAM_LENGTH } from "../shared/workspaceFiles.js";
@@ -33,6 +32,7 @@ import {
   WorkspaceProviderRegistry,
 } from "./workspaces/workspaceProviderRegistry.js";
 import { sessiondSocketPath } from "../sessiond/config.js";
+import { claimSessiondSocketPath, releaseSessiondSocketPath, sessiondSocketIdentity } from "./sessiond/sessiondSocketOwnership.js";
 import {
   PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
   PI_WEB_HOST_PI_SESSION_EVENTS_CAPABILITY,
@@ -488,9 +488,9 @@ async function listenSessionDaemon({ shutdown }: SessionDaemonRuntime): Promise<
     await app.listen({ port, host });
   } else {
     const path = sessiondSocketPath(daemonEnvironment);
-    await mkdir(dirname(path), { recursive: true });
-    await rm(path, { force: true });
+    await claimSessiondSocketPath(path);
     await app.listen({ path });
-    process.on("exit", () => void rm(path, { force: true }));
+    const identity = sessiondSocketIdentity(path);
+    process.on("exit", () => { releaseSessiondSocketPath(path, identity); });
   }
 }
