@@ -960,6 +960,63 @@ describe("Workbench request waterfalls", () => {
     expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
   });
 
+  it("UI-001: drops a late anchored row after the owner switched to another machine", async () => {
+    const remote: Machine = { ...machine, id: "remote", name: "Remote", kind: "remote" };
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const targeted = deferred<SessionInfo[]>();
+    const sessions = vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? Promise.resolve([]) : targeted.promise);
+    stubSelectedChat();
+    const app = await mountChooser([]);
+    setState(app, { ...getState(app), machines: [machine, remote] });
+
+    openFromWorkstream(app, { sessionId: "anchored", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(sessions).toHaveBeenCalledWith(workspace.path, "local", { sessionId: "anchored" }); });
+    const chooseMachine: unknown = Reflect.get(app, "chooseMachine");
+    if (typeof chooseMachine !== "function") throw new Error("chooseMachine missing");
+    await Reflect.apply(chooseMachine, app, [remote.id]);
+    targeted.resolve([session("anchored", "Local work")]);
+    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+
+    expect(getState(app).selectedMachine?.id).toBe(remote.id);
+    expect(getState(app).selectedSession).toBeUndefined();
+    expect(getState(app).sessions).toEqual([]);
+    expect(getState(app).selectedWorkspace).toBeUndefined();
+  });
+
+  it("UI-001: keeps a current daemon's anchored not-found authoritative at the located folder instead of rebuilding a writable Chat from status", async () => {
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    const sessions = vi.spyOn(api, "sessions").mockRejectedValue(new HttpRequestError("Session not found", 404));
+    const status = stubSelectedChat();
+    const app = await mountChooser([]);
+    sessions.mockClear();
+
+    openFromWorkstream(app, { sessionId: "archived", projectId: project.id, workspaceId: workspace.id });
+
+    await vi.waitFor(() => { expect(getState(app).error).toContain("unavailable"); });
+    expect(getState(app).selectedSession).toBeUndefined();
+    expect(status).not.toHaveBeenCalled();
+    expect(sessions.mock.calls).toEqual([[workspace.path, "local", { sessionId: "archived" }], [workspace.path, "local", { sessionId: "archived" }]]);
+  });
+
+  it("UI-001: opens an anchored Chat that moved from its located folder's targeted row, archived and read-only", async () => {
+    const worktree: Workspace = { ...workspace, id: "worktree", path: "/repo-worktree", label: "worktree", isMain: false };
+    const moved: SessionInfo = { ...session("moved", "Old work"), cwd: worktree.path, archived: true };
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace, worktree]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: worktree.path });
+    vi.spyOn(api, "sessions").mockImplementation((cwd) => cwd === worktree.path ? Promise.resolve([moved]) : Promise.reject(new HttpRequestError("Session not found", 404)));
+    const status = stubSelectedChat();
+    const app = await mountChooser([]);
+
+    openFromWorkstream(app, { sessionId: "moved", projectId: project.id, workspaceId: workspace.id });
+
+    await vi.waitFor(() => { expect(getState(app).selectedSession).toEqual(moved); });
+    await app.updateComplete;
+    expect(getState(app).selectedWorkspace?.id).toBe(worktree.id);
+    expect(status).not.toHaveBeenCalled();
+    expect(promptEditor(app).disabled).toBe(true);
+  });
+
   it.each([
     { case: "the recorded project is gone", projectId: "deleted", workspaceId: "workspace" },
     { case: "the recorded workspace is gone", projectId: "project", workspaceId: "gone" },
@@ -1099,6 +1156,56 @@ describe("Workbench request waterfalls", () => {
     await vi.waitFor(() => { expect(getState(app).sessions.map((candidate) => candidate.id)).toEqual(["blank", "other"]); });
     expect(getState(app).sessions[0]).toEqual(live);
     expect(getState(app).selectedSession?.id).toBe(blank.id);
+  });
+
+  it("UI-002: keeps an unselected new blank Chat with a saved draft, but not a stale persisted row, when the delayed catalog arrives", async () => {
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const row = session("listed", "Keep going");
+    const catalog = deferred<SessionInfo[]>();
+    splitSessions(() => Promise.resolve([row]), () => catalog.promise);
+    stubSelectedChat();
+    window.history.replaceState({}, "", chatUrl(row.id));
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(row.id); });
+    const blank: SessionInfo = { ...session("new-blank", ""), path: "", persisted: false, messageCount: 0 };
+    const stale = session("deleted", "Gone");
+    saveDraft(machineSessionKey("local", blank.id), "Unsent idea");
+    setState(app, { ...getState(app), sessions: [blank, stale, ...getState(app).sessions] });
+
+    catalog.resolve([row, session("other", "Older Chat")]);
+    await vi.waitFor(() => { expect(getState(app).sessions.map((candidate) => candidate.id)).toEqual(["new-blank", "listed", "other"]); });
+    expect(getState(app).sessions[0]).toEqual(blank);
+    expect(loadDraft(machineSessionKey("local", blank.id))).toBe("Unsent idea");
+    expect(getState(app).selectedSession?.id).toBe(row.id);
+  });
+
+  it("UI-002: applies the delayed catalog's archive to the open Chat, read-only, keeping its live title and draft", async () => {
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const row = session("listed", "Keep going", "Old title");
+    const catalog = deferred<SessionInfo[]>();
+    splitSessions(() => Promise.resolve([row]), () => catalog.promise);
+    stubSelectedChat();
+    window.history.replaceState({}, "", chatUrl(row.id));
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(row.id); });
+    await app.updateComplete;
+    expect(promptEditor(app).disabled).toBe(false);
+    const live = { ...row, name: "Live title" };
+    saveDraft(machineSessionKey("local", row.id), "Half written");
+    setState(app, { ...getState(app), sessions: [live], selectedSession: live });
+
+    catalog.resolve([{ ...row, archived: true, archivedAt: "2026-09-01T00:00:00.000Z" }]);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.archived).toBe(true); });
+    await app.updateComplete;
+    const archivedLive = { ...live, archived: true, archivedAt: "2026-09-01T00:00:00.000Z" };
+    expect(getState(app).sessions).toEqual([archivedLive]);
+    expect(getState(app).selectedSession).toEqual(archivedLive);
+    expect(promptEditor(app).disabled).toBe(true);
+    expect(loadDraft(machineSessionKey("local", row.id))).toBe("Half written");
   });
 
   it("UI-002: ignores a late catalog after the owner chose another workspace", async () => {

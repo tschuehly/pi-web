@@ -357,7 +357,8 @@ export class WorkbenchApp extends LitElement {
   /**
    * Fill the workspace catalog behind a Chat opened from its targeted row. The full listing keeps its daemon-side unread
    * reconciliation; a response for a superseded load, machine, or workspace is dropped. Rows the catalog cannot know yet
-   * (the opened or selected blank or pending Chat) and those rows' live state are kept.
+   * (the opened or selected Chat, and any never-saved blank or pending Chat) are kept, as is the opened and selected rows'
+   * live state; only the catalog's archive overrides that state, so an archived Chat never stays writable.
    */
   private async loadCatalogBehind(sessionId: string, workspace: Workspace, machineId: string, sequence: number): Promise<void> {
     let listed: SessionInfo[];
@@ -371,8 +372,14 @@ export class WorkbenchApp extends LitElement {
     const current = this.app.sessions;
     const listedIds = new Set(listed.map((candidate) => candidate.id));
     const keepIds = new Set([sessionId, this.app.selectedSession?.id]);
-    const kept = current.filter((candidate) => !listedIds.has(candidate.id) && keepIds.has(candidate.id));
-    this.setApp({ sessions: [...kept, ...listed.map((row) => keepIds.has(row.id) ? current.find((candidate) => candidate.id === row.id) ?? row : row)] });
+    const kept = current.filter((candidate) => !listedIds.has(candidate.id) && (keepIds.has(candidate.id) || candidate.persisted === false));
+    const merged = listed.map((row) => {
+      const live = keepIds.has(row.id) ? current.find((candidate) => candidate.id === row.id) : undefined;
+      return live === undefined ? row : withListedArchive(live, row);
+    });
+    const selected = this.app.selectedSession;
+    const selectedRow = selected === undefined ? undefined : listed.find((row) => row.id === selected.id);
+    this.setApp({ sessions: [...kept, ...merged], ...(selected === undefined || selectedRow === undefined ? {} : { selectedSession: withListedArchive(selected, selectedRow) }) });
   }
 
   private catalogIsCurrent(workspace: Workspace, machineId: string, sequence: number): boolean {
@@ -497,35 +504,49 @@ export class WorkbenchApp extends LitElement {
     return undefined;
   }
 
-  /** The Chat in the workspace its Workstream recorded, if that workspace still exists and lists the Chat (or, for a blank Chat, serves its status). */
-  private async anchoredWorkstreamSession(detail: OpenWorkstreamSessionDetail, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[]; session: SessionInfo } | undefined> {
+  /**
+   * The Chat in the workspace its Workstream recorded, if that workspace still exists and lists the Chat (or, for a blank
+   * Chat, serves its status). Without `session`, the daemon answered there without the Chat; undefined means no answer.
+   */
+  private async anchoredWorkstreamSession(detail: OpenWorkstreamSessionDetail, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[]; session?: SessionInfo } | undefined> {
     const project = this.app.projects.find((candidate) => candidate.id === detail.projectId);
     if (project === undefined || detail.workspaceId === undefined) return undefined;
     const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
     const workspace = workspaces.find((candidate) => candidate.id === detail.workspaceId);
     if (workspace === undefined) return undefined;
-    // A failed or missing row falls back to the original locate path instead of guessing a row from status.
-    const session = await this.knownSession(detail.sessionId, workspace.path, machineId).catch(() => undefined);
-    return session === undefined ? undefined : { project, workspace, workspaces, session };
+    // A failed or missing row falls back to the locate path instead of guessing a row from status.
+    try {
+      const session = await this.knownSession(detail.sessionId, workspace.path, machineId);
+      return { project, workspace, workspaces, ...(session === undefined ? {} : { session }) };
+    } catch {
+      return undefined;
+    }
   }
 
   /** Open the session that wrote a Workstream's newest checkpoint, wherever it lives. */
   private async openWorkstreamSession(detail: OpenWorkstreamSessionDetail): Promise<void> {
     const machineId = selectedMachineId(this.app);
+    const sequence = this.loadSequence;
+    // A navigation or machine switch while a lookup was in flight supersedes this open.
+    const superseded = () => sequence !== this.loadSequence || selectedMachineId(this.app) !== machineId;
     this.setApp({ error: "" });
     try {
       const anchored = await this.anchoredWorkstreamSession(detail, machineId);
-      if (anchored !== undefined) {
+      if (superseded()) return;
+      if (anchored?.session !== undefined) {
         this.setApp({ selectedProject: anchored.project, selectedWorkspace: anchored.workspace, workspaces: anchored.workspaces, sessions: [anchored.session] });
-        void this.loadCatalogBehind(anchored.session.id, anchored.workspace, machineId, this.loadSequence);
+        void this.loadCatalogBehind(anchored.session.id, anchored.workspace, machineId, sequence);
         await this.openSession(anchored.session);
         return;
       }
       const { cwd } = await api.locate(detail.sessionId, machineId);
+      // A daemon that already answered without the Chat must answer again at the located folder: a current one by row or
+      // 404, only an older one's catalog falls back to status. Without an answered anchor, the status-only path stays.
       const [session, registered] = await Promise.all([
-        this.unlistedSession(detail.sessionId, cwd, machineId),
+        anchored === undefined ? this.unlistedSession(detail.sessionId, cwd, machineId) : this.knownSession(detail.sessionId, cwd, machineId),
         this.registeredWorkspaceForCwd(cwd, machineId),
       ]);
+      if (superseded()) return;
       if (session === undefined) throw new Error(`Session ${detail.sessionId} is unavailable under ${cwd}.`);
       const workspace = registered?.workspace ?? adHocWorkspace(cwd);
       this.setApp({ selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] });
@@ -1257,6 +1278,12 @@ function watchConcerns(batch: object, workstreamId: string | undefined, sessionI
   const quotedSessionId = JSON.stringify(sessionId);
   return events.some((event: unknown) => typeof event !== "object" || event === null
     || Reflect.get(event, "workstreamId") === workstreamId || JSON.stringify(event).includes(quotedSessionId));
+}
+
+/** `live` with the catalog row's archive applied; a Chat the catalog reports archived is never left writable. */
+function withListedArchive(live: SessionInfo, listed: SessionInfo): SessionInfo {
+  if (listed.archived !== true || live.archived === true) return live;
+  return { ...live, archived: true, ...(listed.archivedAt === undefined ? {} : { archivedAt: listed.archivedAt }) };
 }
 
 function isWorkbenchAgentSession(session: SessionInfo): boolean {

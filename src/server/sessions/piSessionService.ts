@@ -1555,8 +1555,9 @@ export class PiSessionService implements SessionRouteService {
    * The ordinary listing's row for exactly `sessionId` under `cwd`, or none.
    * Metadata only: no whole-cwd unread, activity, or notification
    * reconciliation, and no runtime open. A current archive record wins; an
-   * unprojectable one stays absent rather than becoming a writable row. An
-   * unpersisted Chat this daemon already hosts is projected from its values.
+   * unprojectable one stays absent rather than becoming a writable row. A
+   * never-saved Chat this daemon already hosts is projected from its values,
+   * ahead of any row a custom gateway reports for that id.
    */
   private async listSession(cwd: string, sessionId: string): Promise<ClientSession[]> {
     const [sessions, archivedRecords] = await Promise.all([this.sessionManager.list(cwd, { sessionId }), this.archiveStore.list()]);
@@ -1567,10 +1568,11 @@ export class PiSessionService implements SessionRouteService {
       const archived = clientSessionFromArchivedRecord(record, listed);
       return archived === undefined ? [] : [archived];
     }
-    if (listed !== undefined) return [clientSessionFromListEntry(listed)];
     const active = this.active.get(sessionId);
-    if (active?.runtime.session.sessionId !== sessionId || !cwdPathsEqual(active.runtime.cwd, cwd)) return [];
-    return [createdClientSession(active.runtime.session, cwd, active.runtime.session.sessionManager.getHeader?.()?.parentSession)];
+    if (active?.runtime.session.sessionId === sessionId && cwdPathsEqual(active.runtime.cwd, cwd) && !sessionFileExists(active.runtime.session.sessionFile)) {
+      return [createdClientSession(active.runtime.session, cwd, active.runtime.session.sessionManager.getHeader?.()?.parentSession)];
+    }
+    return listed === undefined ? [] : [clientSessionFromListEntry(listed)];
   }
 
   async start(cwd: string, options: StartSessionOptions = {}): Promise<ClientSession> {

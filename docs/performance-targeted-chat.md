@@ -33,9 +33,10 @@ A sessiond change only becomes active after a daemon restart.
 3. **Archive first.** If an archive record has this exact id and cwd, project it with `clientSessionFromArchivedRecord`.
    This includes the legacy fallback to the persisted row.
    If the record cannot be projected, return nothing; it never becomes a writable row.
-4. Otherwise, return the persisted row via `clientSessionFromListEntry`.
-5. Otherwise, if this daemon already hosts an unpersisted Chat with this id and cwd, return its value-only projection.
+4. Otherwise, if this daemon already hosts a never-saved Chat with this id and cwd, return its value-only projection,
+   even when a custom gateway reports a row for that id.
    This is the same row `announceCreatedSession` builds, but nothing is published and runtime startup is not awaited.
+5. Otherwise, return the persisted row via `clientSessionFromListEntry`.
 
 This branch runs before any whole-cwd work, so the targeted lookup never runs unread, activity, or notification reconciliation.
 The ordinary listing keeps that reconciliation, and the client still requests the ordinary listing in the background.
@@ -68,14 +69,19 @@ An unknown external rewrite that keeps both inode and size is the existing blind
 2. If the reply is `404`, the Chat is unavailable. Never fall back to status.
 3. Any other failure is reported as an error.
    For a Workstream anchor, it falls back to the existing locate path.
+   If the anchored daemon answered without the Chat, the located folder is asked again the same way, so a current daemon's
+   404 stays unavailable; only an older daemon's catalog may use the status fallback there.
 4. If the reply is `200`, pick the exact id.
    Only when an older daemon's full catalog lacks the row does the client use the old blank-Chat fallback, which rebuilds the row from `status`.
 5. Select the row with the unchanged `SessionController.selectSession`, which honours `archived`.
    In parallel, `loadCatalogBehind` requests the full catalog.
 
+An anchored row is applied only if the load sequence and machine are unchanged since the lookup began.
 The full catalog is applied only if the load sequence, machine, and workspace are still current.
 Otherwise it is dropped.
-When applied, the catalog keeps the opened and selected rows from in-memory state: their live title, a blank Chat the catalog cannot list yet, and the selection.
+When applied, the catalog keeps the opened and selected rows from in-memory state, including their live title, and every never-saved (`persisted: false`) blank or pending Chat it cannot list yet.
+An unlisted persisted row is dropped.
+The catalog's archive flag is applied to the kept and selected rows, so a Chat archived meanwhile becomes read-only.
 Drafts and selection are never touched.
 
 Existing request reductions UI-001, UI-003, UI-006, UI-009, and WS-006 are unchanged.

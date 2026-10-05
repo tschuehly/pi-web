@@ -107,6 +107,20 @@ describe("PiSessionService targeted listing", () => {
     await service.dispose();
   });
 
+  it("prefers an exact hosted never-saved Chat's projection over a custom gateway's persisted row for the same id", async () => {
+    const hosted = fakeRuntime("blank-id", { sessionFile: undefined, sessionManager: fakeSessionManager(CWD, { getSessionId: () => "blank-id" }) });
+    const { gateway, calls } = countingGateway([{ ...sessionRecord("blank-id"), messageCount: 4, firstMessage: "stale metadata" }]);
+    const hub = new CapturingSessionEventHub();
+    const service = new PiSessionService(hub, { agentDir: TEST_AGENT_DIR, modelRuntime: testModelRuntime, archiveStore: emptyArchiveStore(), createAgentRuntime: runtimeCreator(hosted.runtime), sessionManager: gateway, heartbeatIntervalMs: 60_000 });
+    await service.start(CWD);
+    const opened = calls.open;
+
+    const [listed] = await service.list(CWD, { sessionId: "blank-id" });
+    expect(listed).toMatchObject({ id: "blank-id", cwd: CWD, path: "", persisted: false, messageCount: 0, firstMessage: "" });
+    expect(calls.open).toBe(opened);
+    await service.dispose();
+  });
+
   it("leaves sibling unread and activity state alone, while the ordinary listing still reconciles", async () => {
     const unreadStore = new SessionUnreadStore();
     const reconcileCwd = vi.spyOn(unreadStore, "reconcileCwd");
