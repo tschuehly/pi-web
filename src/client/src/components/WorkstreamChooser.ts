@@ -1,9 +1,9 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { pluginsApi, sessionsApi } from "../api/clients";
+import { pluginsApi, sessionsApi, workspacesApi } from "../api/clients";
 import { requestPairedPluginBackend } from "../api/pluginBackends";
 import { parseBoundedPluginBackendJson } from "../../../shared/pluginBackendProtocol";
-import type { SessionActivity, SessionInfo, SessionStatus } from "../api";
+import type { SessionActivity, SessionInfo, SessionStatus, Workspace } from "../api";
 import { isSessionActive, sessionActivityText } from "../../../shared/activity";
 import { renderActivityIndicator } from "./activityBadge";
 import { listStyles } from "./shared";
@@ -197,6 +197,27 @@ export function directoriesOf(checkpoint: WorkstreamCheckpoint | undefined): str
   return [...new Set(files.map((ref) => ref.slice(0, ref.lastIndexOf("/")) || "/"))];
 }
 
+/** The exact row for one Chat in one cwd; an older daemon ignores `sessionId` and returns its whole catalog. */
+const targetedChat = (id: string, cwd: string, machineId: string): Promise<SessionInfo | undefined> =>
+  sessionsApi.sessions(cwd, machineId, { sessionId: id }).then((rows) => rows.find((row) => row.id === id && row.cwd === cwd), () => undefined);
+
+/**
+ * PI WEB metadata for one Workstream Chat: the recorded workspace's targeted row first, then the cwd the daemon locates.
+ * A Chat recorded on another machine stays unavailable; nothing is rebuilt from status.
+ */
+async function workstreamChatInfo(session: WorkstreamSession, machineId: string, workspacesOf: (projectId: string) => Promise<readonly Workspace[]>): Promise<SessionInfo | undefined> {
+  if (session.machineId !== undefined && session.machineId !== machineId) return undefined;
+  let anchoredCwd: string | undefined;
+  if (session.projectId !== undefined && session.workspaceId !== undefined) {
+    const workspaces = await workspacesOf(session.projectId).catch((): Workspace[] => []);
+    anchoredCwd = workspaces.find((workspace) => workspace.id === session.workspaceId)?.path;
+    const row = anchoredCwd === undefined ? undefined : await targetedChat(session.id, anchoredCwd, machineId);
+    if (row !== undefined) return row;
+  }
+  const cwd = await sessionsApi.locate(session.id, machineId).then((located) => located.cwd, () => undefined);
+  return cwd === undefined || cwd === anchoredCwd ? undefined : targetedChat(session.id, cwd, machineId);
+}
+
 @customElement("workstream-chooser")
 export class WorkstreamChooser extends LitElement {
   /** PI WEB project name; only Workstream groups equal to it (case- and punctuation-insensitive) are shown. */
@@ -219,10 +240,14 @@ export class WorkstreamChooser extends LitElement {
   @state() private liveWorkstreamIds = new Set<string>();
   /** PI WEB session metadata keyed by id, for Chat titles. */
   @state() private chatInfo = new Map<string, SessionInfo>();
-  /** Workstream whose Chat lookup has finished; until then unnamed Chats show as loading. */
-  @state() private chatsResolvedFor = "";
-  private recentChats: Promise<void> | undefined;
-  private readonly listedCwds = new Set<string>();
+  /** Chats whose lookup finished without a row; other active Chats without metadata show as loading. */
+  @state() private chatMisses = new Set<string>();
+  /** In-flight Chat lookups by session id, so reopening a card does not repeat them. */
+  private readonly chatLookups = new Map<string, Promise<void>>();
+  /** Async results apply only while their machine, load, and card selection are still current. */
+  private machineEpoch = 0;
+  private loadSequence = 0;
+  private selection = 0;
   private liveSessionKey = "";
   private readonly workstreamBySession = new Map<string, Promise<string | undefined>>();
 
@@ -233,22 +258,37 @@ export class WorkstreamChooser extends LitElement {
   }
 
   private async load(): Promise<void> {
+    const sequence = ++this.loadSequence;
     const context = this.serviceContext;
     if (context === undefined) return;
     this.loading = true;
     try {
       const list = await listWorkstreams(context);
-      this.summaries = this.sortedSummaries(list);
+      if (sequence === this.loadSequence) this.summaries = this.sortedSummaries(list);
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error);
+      if (sequence === this.loadSequence) this.error = error instanceof Error ? error.message : String(error);
     } finally {
-      this.loading = false;
+      if (sequence === this.loadSequence) this.loading = false;
     }
+  }
+
+  /** Workstreams, Chat metadata, and live associations belong to one machine; a switch forgets them and the open card. */
+  protected override willUpdate(changed: Map<string, unknown>): void {
+    if (!changed.has("serviceMachineId")) return;
+    this.machineEpoch++;
+    this.selection++;
+    this.selected = undefined;
+    this.chatInfo = new Map();
+    this.chatMisses = new Set();
+    this.chatLookups.clear();
+    this.workstreamBySession.clear();
+    this.liveSessionKey = "";
+    this.liveWorkstreamIds = new Set();
   }
 
   protected override updated(changed: Map<string, unknown>): void {
     if (changed.has("serviceMachineId") || changed.has("serviceProjectId") || changed.has("serviceWorkspaceId")) void this.load();
-    if (changed.has("sessionStatuses") || changed.has("sessionActivities")) void this.resolveLiveWorkstreams();
+    if (changed.has("serviceMachineId") || changed.has("sessionStatuses") || changed.has("sessionActivities")) void this.resolveLiveWorkstreams();
   }
 
   private async resolveLiveWorkstreams(): Promise<void> {
@@ -258,6 +298,7 @@ export class WorkstreamChooser extends LitElement {
     const key = sessionIds.join("\0");
     if (key === this.liveSessionKey) return;
     this.liveSessionKey = key;
+    const epoch = this.machineEpoch;
     const workstreamIds = await Promise.all(sessionIds.map((sessionId) => {
       const cached = this.workstreamBySession.get(sessionId);
       if (cached !== undefined) return cached;
@@ -267,24 +308,27 @@ export class WorkstreamChooser extends LitElement {
       const lookup = listWorkstreams(context, { sessionId, includeClosed: true })
         .then((matches) => matches.length === 1 ? matches[0]?.id : undefined)
         .catch(() => undefined)
-        .then((id) => { if (id === undefined) this.workstreamBySession.delete(sessionId); return id; });
+        .then((id) => { if (id === undefined && this.workstreamBySession.get(sessionId) === lookup) this.workstreamBySession.delete(sessionId); return id; });
       this.workstreamBySession.set(sessionId, lookup);
       return lookup;
     }));
-    if (key === this.liveSessionKey) this.liveWorkstreamIds = new Set(workstreamIds.filter((id): id is string => id !== undefined));
+    if (key === this.liveSessionKey && epoch === this.machineEpoch) this.liveWorkstreamIds = new Set(workstreamIds.filter((id): id is string => id !== undefined));
   }
 
   private async select(id: string): Promise<void> {
     this.notice = "";
+    const selection = ++this.selection;
     if (this.selected?.id === id) { this.selected = undefined; return; }
     try {
       const context = this.serviceContext;
       if (context === undefined) throw new Error("Choose a workspace before opening a Workstream.");
-      this.selected = await inspectWorkstream(context, id);
+      const snapshot = await inspectWorkstream(context, id);
+      if (selection !== this.selection) return;
+      this.selected = snapshot;
       this.error = "";
-      void this.loadChatNames(this.selected);
+      this.loadChatNames(snapshot);
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error);
+      if (selection === this.selection) this.error = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -292,38 +336,38 @@ export class WorkstreamChooser extends LitElement {
     return [...list].sort((a, b) => (b.lastCheckpointAt ?? b.createdAt).localeCompare(a.lastCheckpointAt ?? a.createdAt));
   }
 
-  private addChats(rows: SessionInfo[]): void {
-    const next = new Map(this.chatInfo);
-    for (const row of rows) next.set(row.id, row);
-    this.chatInfo = next;
-  }
-
-  /** Recent sessions first; a Chat outside them is found through its working directory. Failures leave checkpoint fallbacks. */
-  private async loadChatNames(snapshot: WorkstreamSnapshot): Promise<void> {
+  /**
+   * Look up each active Chat on its own, so one slow lookup never holds another's title. A found row is kept for this
+   * machine; a miss or failure leaves the checkpoint fallback and is retried when the card opens again.
+   */
+  private loadChatNames(snapshot: WorkstreamSnapshot): void {
     const machineId = this.serviceMachineId;
-    try {
-      this.recentChats ??= sessionsApi.recent(500, machineId).then((rows) => { this.addChats(rows); });
-      await this.recentChats;
-    } catch {
-      this.recentChats = undefined;
+    const epoch = this.machineEpoch;
+    const projects = new Map<string, Promise<readonly Workspace[]>>();
+    const workspacesOf = (projectId: string): Promise<readonly Workspace[]> => {
+      let workspaces = projects.get(projectId);
+      if (workspaces === undefined) { workspaces = workspacesApi.workspaces(projectId, machineId); projects.set(projectId, workspaces); }
+      return workspaces;
+    };
+    for (const session of snapshot.sessions) {
+      if (session.status !== "active" || this.chatInfo.has(session.id) || this.chatLookups.has(session.id)) continue;
+      const lookup = workstreamChatInfo(session, machineId, workspacesOf).then((row) => {
+        if (epoch !== this.machineEpoch) return;
+        if (this.chatLookups.get(session.id) === lookup) this.chatLookups.delete(session.id);
+        if (row === undefined) this.chatMisses = new Set(this.chatMisses).add(session.id);
+        else this.chatInfo = new Map(this.chatInfo).set(row.id, row);
+      });
+      this.chatLookups.set(session.id, lookup);
     }
-    const missing = snapshot.sessions.filter((session) => session.status === "active" && !this.chatInfo.has(session.id));
-    const cwds = await Promise.all(missing.map((session) => sessionsApi.locate(session.id, machineId).then((located) => located.cwd, () => undefined)));
-    for (const cwd of new Set(cwds)) {
-      if (cwd === undefined || this.listedCwds.has(cwd)) continue;
-      this.listedCwds.add(cwd);
-      await sessionsApi.sessions(cwd, machineId).then((rows) => { this.addChats(rows); }, () => { this.listedCwds.delete(cwd); });
-    }
-    this.chatsResolvedFor = snapshot.id;
   }
 
-  private chatTitle(snapshot: WorkstreamSnapshot, session: WorkstreamSession): string {
+  private chatTitle(session: WorkstreamSession): string {
     const info = this.chatInfo.get(session.id);
     const cp = session.latestCheckpoint;
     const named = [info?.name, cp?.sessionTitle, info?.firstMessage].map((value) => value?.trim() ?? "").find((value) => value !== "");
     if (named !== undefined) return named;
     if (cp !== null) return firstClause(cp.whatChanged, 80);
-    return this.chatsResolvedFor === snapshot.id ? "Chat not found in PI WEB" : "Loading title…";
+    return session.status === "active" && info === undefined && !this.chatMisses.has(session.id) ? "Loading title…" : "Chat not found in PI WEB";
   }
 
   private renderSessionRow(snapshot: WorkstreamSnapshot, session: WorkstreamSession) {
@@ -333,7 +377,7 @@ export class WorkstreamChooser extends LitElement {
     const when = Math.max(sessionActivityTime(session), modified === undefined ? 0 : new Date(modified).getTime() || 0);
     return html`
       <button class="session-row ${live ? "live" : ""}" data-session-id=${session.id} @click=${() => { this.open(snapshot, session); }}>
-        <span class="session-title">${this.chatTitle(snapshot, session)}</span>
+        <span class="session-title">${this.chatTitle(session)}</span>
         <span class="session-meta">
           ${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}
           ${session.status === "active" ? nothing : html`<span class="status">${session.status}</span>`}

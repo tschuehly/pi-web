@@ -3,7 +3,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkstreamChooser, WorkstreamServiceError, actor, appendWorkstream, attentionOf, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, referencesOf, sessionsByActivity, watchWorkstreams, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { workstreamAccentColor } from "../workstreamColor";
-import { pluginsApi } from "../api/clients";
+import { pluginsApi, sessionsApi, workspacesApi } from "../api/clients";
+import { HttpRequestError } from "../api/http";
+import type { SessionInfo, Workspace } from "../api";
 
 // Legacy checkpoints still carry a continuation prompt; PI WEB must neither show nor preload it.
 const checkpoint = (id: string, recordedAt: string, next: string, references: string[] = []) => ({ id, whatChanged: `${id} changed. More detail.`, remains: "Review", next, nextSessionPrompt: `Continue ${id}`, references, recordedAt });
@@ -26,14 +28,37 @@ const snapshot: WorkstreamSnapshot = {
 
 const summaries = [{ id: "ws-2", title: "Older", group: null, createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-09-20T00:00:00.000Z", lastCheckpointAt: "2026-09-01T00:00:00.000Z", unresolvedHumanTaskCount: 0, next: "Pia does old thing", waitingOn: "agent" as const }, { id: "ws-1", title: snapshot.title, group: "Embabel", createdAt: "2026-08-28T00:00:00.000Z", updatedAt: snapshot.updatedAt, lastCheckpointAt: new Date().toISOString(), unresolvedHumanTaskCount: 1, next: "Thomas logs in and asks the five questions.", waitingOn: "owner" as const }];
 
-// PI WEB session metadata: s-b is recent, s-a is found through its working directory, s-old and s-none are unknown.
-const chat = (id: string, name: string | undefined, modified: string) => ({ id, path: `/sessions/${id}.jsonl`, cwd: "/repo/me", ...(name === undefined ? {} : { name }), created: modified, modified, messageCount: 3, firstMessage: "" });
+// PI WEB session metadata: s-b is anchored in workspace w1 of project p1, s-a is located through its working directory, s-old and s-none are unknown.
+const chat = (id: string, name: string | undefined, modified: string, cwd = "/repo/me"): SessionInfo => ({ id, path: `/sessions/${id}.jsonl`, cwd, ...(name === undefined ? {} : { name }), created: modified, modified, messageCount: 3, firstMessage: "" });
+const workspace = (id: string, projectId: string, path: string): Workspace => ({ id, projectId, path, label: id, isMain: true, effectiveConfig: {} });
+const catalog = [chat("s-b", "Trial login", "2026-09-18T10:40:00.000Z", "/repo/me-trial"), chat("s-a", "Stack review", "2026-09-18T07:30:00.000Z")];
 function chatsResponse(url: string): Response | undefined {
-  if (url.includes("/sessions/recent")) return Response.json([chat("s-b", "Trial login", "2026-09-18T10:40:00.000Z")]);
+  if (url.includes("/sessions/recent")) return Response.json([catalog[0]]);
   if (url.includes("/sessions/locate/s-a")) return Response.json({ cwd: "/repo/me" });
   if (url.includes("/sessions/locate/")) return new Response("not found", { status: 404 });
-  if (url.includes("/sessions?cwd=")) return Response.json([chat("s-a", "Stack review", "2026-09-18T07:30:00.000Z")]);
-  return undefined;
+  const query = /\/sessions\?(.*)$/.exec(url)?.[1];
+  if (query === undefined) return undefined;
+  const params = new URLSearchParams(query);
+  const row = catalog.find((candidate) => candidate.id === params.get("sessionId") && candidate.cwd === params.get("cwd"));
+  return row === undefined ? new Response("not found", { status: 404 }) : Response.json([row]);
+}
+
+/** A promise the test settles explicitly, to hold one lookup while others finish. */
+function held<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((settle) => { resolve = settle; });
+  return { promise, resolve };
+}
+const never = <T>(): Promise<T> => new Promise<T>(() => undefined);
+const notFound = () => Promise.reject(new HttpRequestError("Session not found", 404));
+const titleOf = (element: WorkstreamChooser, sessionId: string): string | undefined => shadow(element).querySelector(`[data-session-id="${sessionId}"] .session-title`)?.textContent;
+const targetedCalls = (sessionId: string) => vi.mocked(sessionsApi.sessions).mock.calls.filter(([, , options]) => options?.sessionId === sessionId);
+
+async function openCard(element: WorkstreamChooser, workstreamId = "ws-1"): Promise<void> {
+  await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
+  const row = [...shadow(element).querySelectorAll<HTMLElement>(".workstream")].find((item) => item.style.getPropertyValue("--workstream-color") === workstreamAccentColor(workstreamId));
+  row?.querySelector<HTMLButtonElement>(".row")?.click();
+  await vi.waitFor(() => { expect(row?.querySelector(".card")).not.toBeNull(); });
 }
 
 function requestBody(url: string, init?: RequestInit): { operation: string; input: unknown } {
@@ -81,6 +106,7 @@ beforeEach(() => {
     diagnostics: [],
     serverRuntime: { status: "available", terminalMode: "required", restartRequired: false, recovery: { showSafeStart: "pi-web plugins safe-start show", bundledOnly: "pi-web plugins safe-start set bundled-only --restart", noServerPlugins: "pi-web plugins safe-start set none --restart", clearSafeStart: "pi-web plugins safe-start clear --restart" } },
   });
+  vi.spyOn(workspacesApi, "workspaces").mockImplementation((projectId) => projectId === "p1" ? Promise.resolve([workspace("w1", "p1", "/repo/me-trial")]) : Promise.reject(new Error("unknown project")));
   stubService();
 });
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -353,6 +379,151 @@ describe("WorkstreamChooser", () => {
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".card")).not.toBeNull(); });
     expect(element.shadowRoot?.querySelector(".card .missing")?.textContent).toContain("write the overview for ws-1");
     expect(element.shadowRoot?.querySelector(".card .goal")).toBeNull();
+  });
+});
+
+describe("WorkstreamChooser Chat titles", () => {
+  const anchoredCard: WorkstreamSnapshot = { ...snapshot, sessions: [
+    { id: "anchored-1", status: "active", projectId: "p1", workspaceId: "w1", latestCheckpoint: null },
+    { id: "anchored-2", status: "active", machineId: "local", projectId: "p1", workspaceId: "w2", latestCheckpoint: null },
+    { id: "loose", status: "active", latestCheckpoint: null },
+  ] };
+
+  it("titles anchored Chats from their targeted rows while global and unanchored lookups are held", async () => {
+    stubService(summaries, anchoredCard);
+    const recent = vi.spyOn(sessionsApi, "recent").mockReturnValue(never());
+    const locate = vi.spyOn(sessionsApi, "locate").mockReturnValue(never());
+    const workspaces = vi.mocked(workspacesApi.workspaces).mockResolvedValue([workspace("w1", "p1", "/repo/one"), workspace("w2", "p1", "/repo/two")]);
+    const sessions = vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, _machineId, options) => options?.sessionId === undefined
+      ? never()
+      : Promise.resolve([chat(options.sessionId, `Title ${options.sessionId}`, "2026-09-18T10:40:00.000Z", cwd)]));
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+
+    await vi.waitFor(() => { expect(titleOf(element, "anchored-1")).toBe("Title anchored-1"); });
+    expect(titleOf(element, "anchored-2")).toBe("Title anchored-2");
+    expect(titleOf(element, "loose")).toBe("Loading title…");
+    expect(recent).not.toHaveBeenCalled();
+    expect(workspaces).toHaveBeenCalledTimes(1);
+    expect(workspaces).toHaveBeenCalledWith("p1", "local");
+    expect(sessions.mock.calls.map(([cwd, machineId, options]) => [cwd, machineId, options?.sessionId])).toEqual([["/repo/one", "local", "anchored-1"], ["/repo/two", "local", "anchored-2"]]);
+    expect(locate.mock.calls).toEqual([["loose", "local"]]);
+
+    const opened = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }, { once: true }); });
+    shadow(element).querySelector<HTMLButtonElement>('button[data-session-id="anchored-1"]')?.click();
+    expect(await opened).toMatchObject({ sessionId: "anchored-1", projectId: "p1", workspaceId: "w1" });
+  });
+
+  it("marks each Chat ready on its own when an unanchored lookup finishes later", async () => {
+    stubService(summaries, anchoredCard);
+    const located = held<{ cwd: string }>();
+    vi.spyOn(sessionsApi, "locate").mockReturnValue(located.promise);
+    vi.mocked(workspacesApi.workspaces).mockResolvedValue([workspace("w1", "p1", "/repo/one")]);
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, _machineId, options) => cwd === "/repo/one" && options?.sessionId === "anchored-1"
+      ? Promise.resolve([chat("anchored-1", "First", "2026-09-18T10:40:00.000Z", cwd)])
+      : cwd === "/repo/loose" && options?.sessionId === "loose" ? Promise.resolve([chat("loose", "Loose title", "2026-09-18T10:40:00.000Z", cwd)]) : notFound());
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+
+    await vi.waitFor(() => { expect(titleOf(element, "anchored-1")).toBe("First"); });
+    // anchored-2's workspace is gone, so it waits on the held locate like the unanchored Chat.
+    expect(titleOf(element, "anchored-2")).toBe("Loading title…");
+    expect(titleOf(element, "loose")).toBe("Loading title…");
+    located.resolve({ cwd: "/repo/loose" });
+    await vi.waitFor(() => { expect(titleOf(element, "loose")).toBe("Loose title"); });
+    await vi.waitFor(() => { expect(titleOf(element, "anchored-2")).toBe("Chat not found in PI WEB"); });
+  });
+
+  it("falls back for legacy, moved, and unknown anchors and never applies a row from another id, cwd, or machine", async () => {
+    const session = (id: string, anchor: { machineId?: string; projectId?: string; workspaceId?: string } = {}) => ({ id, status: "active", ...anchor, latestCheckpoint: null });
+    stubService(summaries, { ...snapshot, sessions: [
+      session("legacy", { projectId: "p1", workspaceId: "w1" }),
+      session("archived", { projectId: "p1", workspaceId: "w1" }),
+      session("moved", { projectId: "p1", workspaceId: "w-gone" }),
+      session("unknown-project", { projectId: "p-gone", workspaceId: "w1" }),
+      session("stale-anchor", { projectId: "p1", workspaceId: "w1" }),
+      session("elsewhere", { machineId: "remote", projectId: "p1", workspaceId: "w1" }),
+    ] });
+    const status = vi.spyOn(sessionsApi, "status");
+    const locate = vi.spyOn(sessionsApi, "locate").mockImplementation((id) => id === "moved" ? Promise.resolve({ cwd: "/repo/moved" }) : id === "stale-anchor" ? Promise.resolve({ cwd: "/repo/me-trial" }) : notFound());
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, _machineId, options) => {
+      const at = (id: string, name: string, rowCwd = cwd) => chat(id, name, "2026-09-18T10:40:00.000Z", rowCwd);
+      // A legacy daemon ignores sessionId and answers with its whole catalog.
+      if (options?.sessionId === "legacy") return Promise.resolve([at("other", "Other Chat"), at("legacy", "Wrong workspace", "/repo/elsewhere"), at("legacy", "Legacy title")]);
+      if (options?.sessionId === "archived") return Promise.resolve([{ ...at("archived", "Archived title"), archived: true }]);
+      if (options?.sessionId === "moved" && cwd === "/repo/moved") return Promise.resolve([at("moved", "Moved title")]);
+      return notFound();
+    });
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+
+    await vi.waitFor(() => { expect(["legacy", "archived", "moved", "unknown-project", "stale-anchor", "elsewhere"].map((id) => titleOf(element, id))).toEqual(["Legacy title", "Archived title", "Moved title", "Chat not found in PI WEB", "Chat not found in PI WEB", "Chat not found in PI WEB"]); });
+    expect(locate.mock.calls.map(([id]) => id).sort()).toEqual(["moved", "stale-anchor", "unknown-project"]);
+    expect(targetedCalls("stale-anchor")).toHaveLength(1);
+    expect(targetedCalls("elsewhere")).toHaveLength(0);
+    expect(shadow(element).querySelector('[data-session-id="other"]')).toBeNull();
+    expect(status).not.toHaveBeenCalled();
+  });
+
+  it("drops a late Workstream inspection after the owner switches cards", async () => {
+    const first = held<Response>();
+    const other: WorkstreamSnapshot = { ...snapshot, id: "ws-2", title: "Older", sessions: [] };
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
+      if (body.operation === "list") return Promise.resolve(Response.json({ ok: true, value: summaries }));
+      return body.input !== null && typeof body.input === "object" && "workstreamId" in body.input && body.input.workstreamId === "ws-1" ? first.promise : Promise.resolve(Response.json({ ok: true, value: other }));
+    }));
+    const element = newChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await openCard(element, "ws-2");
+    first.resolve(Response.json({ ok: true, value: snapshot }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await element.updateComplete;
+    expect([...shadow(element).querySelectorAll(".card")].map((card) => card.getAttribute("aria-label"))).toEqual(["Re-entry card for Older"]);
+  });
+
+  it("keeps a superseded machine's late list, card, title, and live lookup out of the current view", async () => {
+    const localRow = held<SessionInfo[]>();
+    const localLive = held<Response>();
+    const localList = held<Response>();
+    let listCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
+      const machine = /machines\/([^/]+)/.exec(url)?.[1] ?? "local";
+      if (body.operation === "list" && sessionIdOf(body.input) !== undefined) return machine === "local" ? localLive.promise : Promise.resolve(Response.json({ ok: true, value: [] }));
+      if (body.operation === "list") return ++listCalls === 2 ? localList.promise : Promise.resolve(Response.json({ ok: true, value: machine === "local" ? summaries : [summaries[1]] }));
+      return Promise.resolve(Response.json({ ok: true, value: anchoredCard }));
+    }));
+    vi.spyOn(sessionsApi, "locate").mockImplementation(notFound);
+    vi.mocked(workspacesApi.workspaces).mockResolvedValue([workspace("w1", "p1", "/repo/one")]);
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((_cwd, machineId) => machineId === "local" ? localRow.promise : notFound());
+    const element = newChooser();
+    element.sessionActivities = { "live-x": active("live-x") };
+    document.body.append(element);
+    await openCard(element);
+    expect(titleOf(element, "anchored-1")).toBe("Loading title…");
+
+    element.serviceWorkspaceId = "other-workspace"; // a second local list, held until after the machine switch
+    await element.updateComplete;
+    element.serviceMachineId = "remote";
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(1); });
+    expect(shadow(element).querySelector(".card")).toBeNull();
+    localList.resolve(Response.json({ ok: true, value: summaries }));
+    localRow.resolve([chat("anchored-1", "Local title", "2026-09-18T10:40:00.000Z", "/repo/one")]);
+    localLive.resolve(Response.json({ ok: true, value: [summaries[1]] }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await element.updateComplete;
+    expect(shadow(element).querySelectorAll(".row")).toHaveLength(1);
+    expect(shadow(element).querySelector(".row .activity-indicator.session")).toBeNull();
+
+    await openCard(element);
+    await vi.waitFor(() => { expect(titleOf(element, "anchored-1")).toBe("Chat not found in PI WEB"); });
+    expect(vi.mocked(sessionsApi.sessions).mock.calls.at(-1)?.[1]).toBe("remote");
   });
 });
 
