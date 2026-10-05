@@ -140,3 +140,66 @@ it("keeps local HTML in the Files pane outside the macOS app", async () => {
   expect(dispatchClick(view, anchor)).toBe(true);
   expect(listener).toHaveBeenCalledOnce();
 });
+
+it("reveals a local .docx link in Finder without opening anything, while a .md link still opens the Files pane", async () => {
+  const openLocalFile = vi.fn(() => Promise.resolve(true));
+  const revealLocalFile = vi.fn(() => Promise.resolve(true));
+  Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile, revealLocalFile } });
+  try {
+    const listener = vi.fn((event: Event) => { event.preventDefault(); });
+    const docx = await setup("docs/Plan.docx", "local");
+    docx.view.addEventListener("workspace-file-open", listener);
+    expect(dispatchClick(docx.view, docx.anchor)).toBe(true);
+    expect(revealLocalFile).toHaveBeenCalledWith("/work/docs/Plan.docx");
+    await Promise.resolve();
+    expect(openLocalFile).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+
+    const markdown = await setup("docs/notes.md", "local");
+    markdown.view.addEventListener("workspace-file-open", listener);
+    expect(dispatchClick(markdown.view, markdown.anchor)).toBe(true);
+    expect(revealLocalFile).toHaveBeenCalledOnce();
+    expect(openLocalFile).not.toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { path: "docs/notes.md" } });
+  } finally {
+    Reflect.deleteProperty(window, "piWebNative");
+  }
+});
+
+it("opens a .docx link in the Files pane when the app cannot reveal it", async () => {
+  const listener = vi.fn((event: Event) => { event.preventDefault(); });
+  const remote = await setup("docs/Plan.docx");
+  remote.view.addEventListener("workspace-file-open", listener);
+  expect(dispatchClick(remote.view, remote.anchor)).toBe(true);
+  expect(listener).toHaveBeenCalledOnce();
+});
+
+it("adds a Show in Finder button to each local file link that reveals the file without opening it", async () => {
+  const revealLocalFile = vi.fn(() => Promise.resolve(true));
+  const openLocalFile = vi.fn(() => Promise.resolve(true));
+  Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile, revealLocalFile } });
+  try {
+    const listener = vi.fn();
+    const local = await setup("../elsewhere/Plan.docx", "local");
+    local.view.addEventListener("outside-file-open", listener);
+    const button = local.anchor.nextElementSibling;
+    if (!(button instanceof HTMLButtonElement)) throw new Error("Missing Show in Finder button");
+    expect(button.getAttribute("aria-label")).toBe("Show file in Finder");
+    expect(button.querySelector("svg")).not.toBeNull();
+    button.click();
+    expect(revealLocalFile).toHaveBeenCalledWith("/elsewhere/Plan.docx");
+    expect(openLocalFile).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+    local.view.requestUpdate();
+    await local.view.updateComplete;
+    expect(local.view.renderRoot.querySelectorAll(".file-reveal-button")).toHaveLength(1);
+
+    const remote = await setup("docs/Plan.docx");
+    expect(remote.view.renderRoot.querySelector(".file-reveal-button")).toBeNull();
+  } finally {
+    Reflect.deleteProperty(window, "piWebNative");
+  }
+  const outsideApp = await setup("docs/Plan.docx", "local");
+  expect(outsideApp.view.renderRoot.querySelector(".file-reveal-button")).toBeNull();
+});

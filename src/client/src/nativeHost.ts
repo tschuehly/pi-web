@@ -6,6 +6,8 @@ export interface PiWebNativeHost {
   setSleepDisabled?: (disabled: boolean) => Promise<boolean>;
   /** macOS app only: opens an existing local HTML file in the default browser. */
   openLocalFile?: (path: string) => Promise<boolean>;
+  /** macOS app only: selects an existing local file or folder in Finder. */
+  revealLocalFile?: (path: string) => Promise<boolean>;
 }
 
 declare global {
