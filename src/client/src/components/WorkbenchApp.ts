@@ -505,10 +505,9 @@ export class WorkbenchApp extends LitElement {
   }
 
   /**
-   * The Chat in the workspace its Workstream recorded, if that workspace still exists and lists the Chat (or, for a blank
-   * Chat, serves its status). Without `session`, the daemon answered there without the Chat; undefined means no answer.
+   * The authoritative Chat in its recorded workspace. Only a legacy catalog miss may reconstruct a blank Chat from status.
    */
-  private async anchoredWorkstreamSession(detail: OpenWorkstreamSessionDetail, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[]; session?: SessionInfo } | undefined> {
+  private async anchoredWorkstreamSession(detail: OpenWorkstreamSessionDetail, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[]; session: SessionInfo } | undefined> {
     const project = this.app.projects.find((candidate) => candidate.id === detail.projectId);
     if (project === undefined || detail.workspaceId === undefined) return undefined;
     const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
@@ -517,7 +516,7 @@ export class WorkbenchApp extends LitElement {
     // A failed or missing row falls back to the locate path instead of guessing a row from status.
     try {
       const session = await this.knownSession(detail.sessionId, workspace.path, machineId);
-      return { project, workspace, workspaces, ...(session === undefined ? {} : { session }) };
+      return session === undefined ? undefined : { project, workspace, workspaces, session };
     } catch {
       return undefined;
     }
@@ -526,8 +525,8 @@ export class WorkbenchApp extends LitElement {
   /** Open the session that wrote a Workstream's newest checkpoint, wherever it lives. */
   private async openWorkstreamSession(detail: OpenWorkstreamSessionDetail): Promise<void> {
     const machineId = selectedMachineId(this.app);
-    const sequence = this.loadSequence;
-    // A navigation or machine switch while a lookup was in flight supersedes this open.
+    const sequence = ++this.loadSequence;
+    // A newer open, navigation or machine switch supersedes this lookup.
     const superseded = () => sequence !== this.loadSequence || selectedMachineId(this.app) !== machineId;
     this.setApp({ error: "" });
     try {
@@ -540,10 +539,10 @@ export class WorkbenchApp extends LitElement {
         return;
       }
       const { cwd } = await api.locate(detail.sessionId, machineId);
-      // A daemon that already answered without the Chat must answer again at the located folder: a current one by row or
-      // 404, only an older one's catalog falls back to status. Without an answered anchor, the status-only path stays.
+      if (superseded()) return;
+      // Every located Chat needs archive-authoritative metadata, whether or not the Workstream recorded an anchor.
       const [session, registered] = await Promise.all([
-        anchored === undefined ? this.unlistedSession(detail.sessionId, cwd, machineId) : this.knownSession(detail.sessionId, cwd, machineId),
+        this.knownSession(detail.sessionId, cwd, machineId),
         this.registeredWorkspaceForCwd(cwd, machineId),
       ]);
       if (superseded()) return;
@@ -552,7 +551,7 @@ export class WorkbenchApp extends LitElement {
       this.setApp({ selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] });
       await this.openSession(session);
     } catch (error) {
-      this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Start a new session for this Workstream instead.` });
+      if (!superseded()) this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Start a new session for this Workstream instead.` });
     }
   }
 

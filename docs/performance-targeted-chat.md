@@ -63,20 +63,20 @@ An unknown external rewrite that keeps both inode and size is the existing blind
 
 ## Client call flow
 
-`WorkbenchApp.knownSession` serves the complete Chat URL in `load`, the project-less URL in `openSessionAnywhere`, and the recorded Workstream anchor in `anchoredWorkstreamSession`:
+`WorkbenchApp.knownSession` serves the complete Chat URL in `load`, the project-less URL in `openSessionAnywhere`, and every Workstream Chat, whether anchored or located:
 
 1. Request `api.sessions(cwd, machineId, { sessionId })`.
 2. If the reply is `404`, the Chat is unavailable. Never fall back to status.
 3. Any other failure is reported as an error.
    For a Workstream anchor, it falls back to the existing locate path.
-   If the anchored daemon answered without the Chat, the located folder is asked again the same way, so a current daemon's
-   404 stays unavailable; only an older daemon's catalog may use the status fallback there.
+   The located folder is always asked again the same way, including when there is no recorded anchor or the anchor failed.
+   A current daemon's 404 stays unavailable; only an older daemon's catalog may use the status fallback there.
 4. If the reply is `200`, pick the exact id.
    Only when an older daemon's full catalog lacks the row does the client use the old blank-Chat fallback, which rebuilds the row from `status`.
 5. Select the row with the unchanged `SessionController.selectSession`, which honours `archived`.
    In parallel, `loadCatalogBehind` requests the full catalog.
 
-An anchored row is applied only if the load sequence and machine are unchanged since the lookup began.
+Each Workstream open advances the navigation sequence. Its row or error is applied only if that sequence and machine remain current; a newer open supersedes the old lookup.
 The full catalog is applied only if the load sequence, machine, and workspace are still current.
 Otherwise it is dropped.
 When applied, the catalog keeps the opened and selected rows from in-memory state, including their live title, and every never-saved (`persisted: false`) blank or pending Chat it cannot list yet.
@@ -85,7 +85,7 @@ The catalog's archive flag is applied to the kept and selected rows, so a Chat a
 Drafts and selection are never touched.
 
 Existing request reductions UI-001, UI-003, UI-006, UI-009, and WS-006 are unchanged.
-The unanchored Workstream path still opens from `locate` and status without any listing.
+The unanchored Workstream path uses `locate` and one targeted listing rather than guessing archive state from status. A legacy catalog miss can still reconstruct a hosted blank Chat.
 
 ## Request counts per cold known-Chat open
 
