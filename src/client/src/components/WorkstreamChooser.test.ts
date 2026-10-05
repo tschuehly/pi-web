@@ -527,6 +527,239 @@ describe("WorkstreamChooser Chat titles", () => {
   });
 });
 
+describe("WorkstreamChooser bounded and scoped Chat metadata", () => {
+  const ids = Array.from({ length: 64 }, (_, index) => `c${String(index).padStart(2, "0")}`);
+  // Equal activity times keep record order, so c00–c04 are the five visible Chats and c05–c63 fold away.
+  const crowded: WorkstreamSnapshot = { ...snapshot, sessions: ids.map((id) => ({ id, status: "active", projectId: "p1", workspaceId: "w1", latestCheckpoint: null })) };
+  const settle = async (element: WorkstreamChooser): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, 0)); await new Promise((resolve) => setTimeout(resolve, 0)); await element.updateComplete; };
+  /** A scope change re-renders twice: the property update, then the list load it starts from `updated()`. */
+  const rescope = async (element: WorkstreamChooser, property: "serviceMachineId" | "serviceWorkspaceId", value: string): Promise<void> => {
+    element[property] = value;
+    await element.updateComplete;
+    await element.updateComplete;
+  };
+  const expandOlder = (element: WorkstreamChooser): void => { shadow(element).querySelector<HTMLElement>("details.older > summary")?.click(); };
+  const collapseCard = async (element: WorkstreamChooser): Promise<void> => {
+    shadow(element).querySelector<HTMLButtonElement>(".workstream.open .row")?.click();
+    await element.updateComplete;
+    expect(shadow(element).querySelector(".card")).toBeNull();
+  };
+
+  /** Targeted rows the test answers by hand; a request is live until it is answered or its signal aborts. */
+  function heldRows() {
+    const calls: { sessionId: string; cwd: string; machineId: string; signal: AbortSignal | undefined; answered: boolean; answer: (rows: SessionInfo[]) => void }[] = [];
+    let peak = 0;
+    const live = () => calls.filter((call) => !call.answered && call.signal?.aborted !== true);
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, machineId = "local", options) => new Promise<SessionInfo[]>((resolve) => {
+      const call = { sessionId: options?.sessionId ?? "", cwd, machineId, signal: options?.signal, answered: false, answer: (rows: SessionInfo[]) => { call.answered = true; resolve(rows); } };
+      calls.push(call);
+      peak = Math.max(peak, live().length);
+    }));
+    const answer = (sessionId: string, name: string): void => { for (const call of live().filter((candidate) => candidate.sessionId === sessionId)) call.answer([chat(sessionId, name, "2026-09-18T10:40:00.000Z", call.cwd)]); };
+    return { calls, live, peak: () => peak, answer, on: (machineId: string) => calls.filter((call) => call.machineId === machineId) };
+  }
+
+  it("requests only the five visible Chats of a 64-Chat card and titles each as its own row arrives", async () => {
+    stubService(summaries, crowded);
+    const rows = heldRows();
+    const locate = vi.spyOn(sessionsApi, "locate");
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+
+    await settle(element);
+    expect(rows.calls.map((call) => call.sessionId)).toEqual(ids.slice(0, 5));
+    expect(vi.mocked(workspacesApi.workspaces)).toHaveBeenCalledTimes(1);
+    expect(locate).not.toHaveBeenCalled();
+    expect(shadow(element).querySelector<HTMLDetailsElement>("details.older")?.open).toBe(false);
+    rows.answer("c02", "Third");
+    await vi.waitFor(() => { expect(titleOf(element, "c02")).toBe("Third"); });
+    expect(titleOf(element, "c00")).toBe("Loading title…");
+  });
+
+  it("loads expanded older Chats lazily, never more than eight at once, and keeps every older name", async () => {
+    stubService(summaries, crowded);
+    const rows = heldRows();
+    const locate = vi.spyOn(sessionsApi, "locate");
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+    await vi.waitFor(() => { expect(rows.calls).toHaveLength(5); });
+
+    expandOlder(element);
+    await settle(element);
+    expect(rows.calls.map((call) => call.sessionId)).toEqual(ids.slice(0, 8));
+    rows.answer("c00", "Newest");
+    await vi.waitFor(() => { expect(rows.calls.map((call) => call.sessionId)).toEqual(ids.slice(0, 9)); });
+    for (let round = 0; round < 12 && titleOf(element, "c63") !== "Title c63"; round++) {
+      for (const call of rows.live()) rows.answer(call.sessionId, `Title ${call.sessionId}`);
+      await settle(element);
+    }
+    expect(ids.slice(1).map((id) => titleOf(element, id))).toEqual(ids.slice(1).map((id) => `Title ${id}`));
+    expect(rows.calls).toHaveLength(64);
+    expect(rows.peak()).toBe(8);
+    expect(vi.mocked(workspacesApi.workspaces)).toHaveBeenCalledTimes(1);
+    expect(locate).not.toHaveBeenCalled();
+  });
+
+  it("aborts a superseded machine's held lookups so each new machine starts at once, coalescing a reopened card", async () => {
+    stubService(summaries, crowded);
+    const rows = heldRows();
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+    expandOlder(element);
+    await vi.waitFor(() => { expect(rows.live()).toHaveLength(8); });
+
+    for (const machine of ["remote", "third"]) {
+      await rescope(element, "serviceMachineId", machine);
+      await openCard(element);
+      await vi.waitFor(() => { expect(rows.on(machine).map((call) => call.sessionId)).toEqual(ids.slice(0, 5)); });
+      expect(rows.live().every((call) => call.machineId === machine)).toBe(true);
+      expandOlder(element);
+      await vi.waitFor(() => { expect(rows.on(machine)).toHaveLength(8); });
+    }
+    await collapseCard(element);
+    await openCard(element);
+    expandOlder(element);
+    await settle(element);
+    expect(rows.on("third")).toHaveLength(8);
+    expect(rows.calls).toHaveLength(24);
+    expect(rows.peak()).toBe(8);
+    expect(vi.mocked(workspacesApi.workspaces).mock.calls.map(([, machineId]) => machineId)).toEqual(["local", "remote", "third"]);
+  });
+
+  it.each(["serviceProjectId", "serviceWorkspaceId"] as const)("drops a held inspection when the same machine's %s changes", async (property) => {
+    const inspection = held<Response>();
+    const operations: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
+      operations.push(body.operation);
+      return body.operation === "inspect" ? inspection.promise : Promise.resolve(Response.json({ ok: true, value: summaries }));
+    }));
+    const sessions = vi.spyOn(sessionsApi, "sessions");
+    const element = newChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(operations).toContain("inspect"); });
+
+    element[property] = "elsewhere";
+    await vi.waitFor(() => { expect(operations.filter((operation) => operation === "list")).toHaveLength(2); });
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+    inspection.resolve(Response.json({ ok: true, value: snapshot }));
+    await settle(element);
+    expect(shadow(element).querySelector(".card")).toBeNull();
+    expect(sessions).not.toHaveBeenCalled();
+  });
+
+  it("shows a genuine loading state while a reopened card retries an earlier miss", async () => {
+    stubService(summaries, { ...snapshot, sessions: [{ id: "retry", status: "active", projectId: "p1", workspaceId: "w1", latestCheckpoint: null }] });
+    const sessions = vi.spyOn(sessionsApi, "sessions").mockImplementation(notFound);
+    const locate = vi.spyOn(sessionsApi, "locate").mockImplementation(notFound);
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+    await vi.waitFor(() => { expect(titleOf(element, "retry")).toBe("Chat not found in PI WEB"); });
+    await collapseCard(element);
+
+    const retried = held<SessionInfo[]>();
+    sessions.mockReturnValue(retried.promise);
+    await openCard(element);
+    await vi.waitFor(() => { expect(sessions).toHaveBeenCalledTimes(2); });
+    expect(titleOf(element, "retry")).toBe("Loading title…");
+    retried.resolve([chat("retry", "Second try", "2026-09-18T10:40:00.000Z", "/repo/me-trial")]);
+    await vi.waitFor(() => { expect(titleOf(element, "retry")).toBe("Second try"); });
+    expect(locate).toHaveBeenCalledTimes(1);
+  });
+
+  describe("after a legacy record's anchor repair to another machine", () => {
+    let repaired = false;
+    const legacy = { id: "repaired", status: "active", latestCheckpoint: null };
+    beforeEach(() => {
+      repaired = false;
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+        const body = requestBody(url, init);
+        const value = body.operation === "list" ? summaries : { ...snapshot, sessions: [repaired ? { ...legacy, machineId: "remote", projectId: "p1", workspaceId: "w1" } : legacy] };
+        return Promise.resolve(Response.json({ ok: true, value }));
+      }));
+      vi.spyOn(sessionsApi, "locate").mockResolvedValue({ cwd: "/repo/legacy" });
+    });
+
+    it("reuses a cached local title for the same record, then never shows it for the repaired one", async () => {
+      const sessions = vi.spyOn(sessionsApi, "sessions").mockResolvedValue([chat("repaired", "Local title", "2026-09-18T10:40:00.000Z", "/repo/legacy")]);
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      await vi.waitFor(() => { expect(titleOf(element, "repaired")).toBe("Local title"); });
+      await collapseCard(element);
+      await rescope(element, "serviceWorkspaceId", "other-workspace");
+      await openCard(element);
+      expect(titleOf(element, "repaired")).toBe("Local title");
+
+      await collapseCard(element);
+      repaired = true;
+      await openCard(element);
+      await settle(element);
+      expect(titleOf(element, "repaired")).toBe("Chat not found in PI WEB");
+      expect(sessions).toHaveBeenCalledTimes(1);
+      expect(sessionsApi.locate).toHaveBeenCalledTimes(1);
+      expect(workspacesApi.workspaces).not.toHaveBeenCalled();
+    });
+
+    it("does not apply a late local row to the repaired record", async () => {
+      const row = held<SessionInfo[]>();
+      const sessions = vi.spyOn(sessionsApi, "sessions").mockReturnValue(row.promise);
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      await vi.waitFor(() => { expect(sessions).toHaveBeenCalledTimes(1); });
+      await collapseCard(element);
+      repaired = true;
+      await openCard(element);
+      row.resolve([chat("repaired", "Late local title", "2026-09-18T10:40:00.000Z", "/repo/legacy")]);
+      await settle(element);
+      expect(titleOf(element, "repaired")).toBe("Chat not found in PI WEB");
+      expect(sessions).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("never renders a title cached before a machine switch, even while the new machine's row is held", async () => {
+    stubService(summaries, { ...snapshot, sessions: [{ id: "anchored", status: "active", projectId: "p1", workspaceId: "w1", latestCheckpoint: null }] });
+    const remote = held<SessionInfo[]>();
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, machineId) => machineId === "local" ? Promise.resolve([chat("anchored", "Cached local", "2026-09-18T10:40:00.000Z", cwd)]) : remote.promise);
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+    await vi.waitFor(() => { expect(titleOf(element, "anchored")).toBe("Cached local"); });
+
+    const seen: string[] = [];
+    const observer = new MutationObserver(() => { seen.push(shadow(element).textContent); });
+    observer.observe(shadow(element), { subtree: true, childList: true, characterData: true });
+    await rescope(element, "serviceMachineId", "remote");
+    await openCard(element);
+    expect(titleOf(element, "anchored")).toBe("Loading title…");
+    remote.resolve([chat("anchored", "Remote title", "2026-09-18T10:40:00.000Z", "/repo/me-trial")]);
+    await vi.waitFor(() => { expect(titleOf(element, "anchored")).toBe("Remote title"); });
+    observer.disconnect();
+    expect(seen.filter((text) => text.includes("Cached local"))).toEqual([]);
+  });
+
+  it("clears the previous machine's Workstreams and keeps them cleared when the new machine's list fails", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      requestBody(url, init);
+      return url.includes("/machines/remote/") ? Promise.reject(new Error("Remote list unavailable")) : Promise.resolve(Response.json({ ok: true, value: summaries }));
+    }));
+    const element = newChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+
+    element.serviceMachineId = "remote";
+    await vi.waitFor(() => { expect(shadow(element).querySelector('[role="alert"]')?.textContent).toContain("Remote list unavailable"); });
+    expect(shadow(element).querySelectorAll(".row")).toHaveLength(0);
+  });
+});
+
 describe("re-entry helpers", () => {
   it("drops temporary checkpoint directories before choosing a launch target", () => {
     expect(directoriesOf(checkpoint("old", "", "", ["/private/tmp/pi-context-views-20260909", "/tmp/plan.md", "/repo/valid"]))).toEqual(["/repo/valid"]);
