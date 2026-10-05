@@ -4,7 +4,10 @@ import { GOAL_STATUS_STATE_VALUES, isTerminalDelegate, parseBackgroundBashStatus
 describe("extension status snapshots", () => {
   it("accepts only bounded active background bash status", () => {
     const parse = (jobs: unknown[]) => parseBackgroundBashStatusSnapshot(JSON.stringify({ schemaVersion: 1, jobs }));
-    expect(parse([{ id: "job-1", elapsedSeconds: 42, bytes: 1024, command: "TOKEN=secret" }])).toEqual([
+    expect(parse([{ id: "job-1", elapsedSeconds: 42, bytes: 1024, command: "npm test", output: "ok\n", logPath: "/jobs/1/output.log" }])).toEqual([
+      { id: "job-1", elapsedSeconds: 42, bytes: 1024, command: "npm test", output: "ok\n", logPath: "/jobs/1/output.log" },
+    ]);
+    expect(parse([{ id: "job-1", elapsedSeconds: 42, bytes: 1024, command: 7, output: "x".repeat(1_201) }])).toEqual([
       { id: "job-1", elapsedSeconds: 42, bytes: 1024 },
     ]);
     expect(parse([{ id: "job-1", command: "test", elapsedSeconds: -1, bytes: 0 }])).toEqual([]);

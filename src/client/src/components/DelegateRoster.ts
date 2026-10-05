@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { repeat } from "lit/directives/repeat.js";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import type { SessionStatus } from "../api";
 import { ACTIVITY_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY, WATCHER_STATUS_KEY, isTerminalDelegate, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, parseWatcherStatusSnapshot, visibleShellExecutions } from "../extensionStatusSnapshots";
 
@@ -13,6 +13,20 @@ export class DelegateRoster extends LitElement {
   @property({ attribute: false }) status?: SessionStatus;
   @property({ type: Boolean }) collapsed = false;
   @property({ attribute: false }) onToggleCollapsed?: () => void;
+  @state() private expandedBashJobs = new Set<string>();
+
+  // Keep each open log on its newest lines unless the reader scrolled up.
+  override updated(): void {
+    for (const pre of this.shadowRoot?.querySelectorAll<HTMLElement>(".bash-log pre") ?? []) {
+      if (pre.dataset["pinned"] !== "false") pre.scrollTop = pre.scrollHeight;
+    }
+  }
+
+  private toggleBashJob(id: string): void {
+    const next = new Set(this.expandedBashJobs);
+    if (!next.delete(id)) next.add(id);
+    this.expandedBashJobs = next;
+  }
 
   override render() {
     const delegates = parseDelegateActivitySnapshot(this.status?.extensionStatuses?.[ACTIVITY_STATUS_KEY]);
@@ -40,11 +54,20 @@ export class DelegateRoster extends LitElement {
         <div class="rows" id="delegate-roster-rows" tabindex="0" role="region" aria-label="Activity entries" ?hidden=${this.collapsed}>${repeat(rows, (row) => row.key, (row) => {
           if (row.source === "background-bash") {
             const item = row.item;
+            const expanded = this.expandedBashJobs.has(item.id);
+            const logId = `bash-log-${item.id}`;
             return html`<div class="row" data-row-key=${row.key}>
               <span class="kind shell" role="img" aria-label="Background bash" title="Background bash"></span>
-              <span class="identity"><strong>Background bash</strong><span class="meta">${item.id.slice(0, 8)}</span></span>
+              <button type="button" class="identity expand" aria-expanded=${String(expanded)} aria-controls=${logId} title=${expanded ? "Hide output" : "Show output"} @click=${() => { this.toggleBashJob(item.id); }}>
+                <strong><span class="chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span> Background bash</strong><span class="meta">${item.id.slice(0, 8)}</span>
+              </button>
               <span class="activity delegate-status">Running · ${String(item.elapsedSeconds)}s · ${String(item.bytes)} bytes output</span>
               <span class="state running" role="img" aria-label="Running" title="Running"></span>
+              ${expanded ? html`<div class="bash-log" id=${logId}>
+                ${item.command === undefined ? null : html`<code class="bash-command">$ ${item.command}</code>`}
+                ${item.logPath === undefined ? null : html`<small class="meta">Recent output only. Full log: ${item.logPath}</small>`}
+                <pre tabindex="0" aria-label="Recent output" @scroll=${(event: Event) => { const pre = event.currentTarget; if (pre instanceof HTMLElement) pre.dataset["pinned"] = String(pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4); }}>${item.output === undefined || item.output === "" ? "No output yet." : item.output}</pre>
+              </div>` : null}
             </div>`;
           }
           if (row.source === "watcher") {
@@ -124,6 +147,11 @@ export class DelegateRoster extends LitElement {
     .identity, .task, .activity { min-width: 0; overflow-wrap: anywhere; }
     .identity { grid-column: 2; grid-row: 1 / 3; display: grid; align-content: start; gap: 0; }
     .meta { color: var(--pi-muted); }
+    .expand { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .expand:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
+    .bash-log { grid-column: 1 / -1; display: grid; gap: 2px; min-width: 0; padding: 2px 0 4px 20px; }
+    .bash-command { overflow-wrap: anywhere; color: var(--pi-muted); }
+    .bash-log pre { max-height: 80px; margin: 0; padding: 4px 6px; overflow: auto; border-radius: 4px; background: var(--pi-surface-hover); font-size: 10.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
     .task { grid-column: 3; grid-row: 1; }
     .activity { grid-column: 3; grid-row: 2; color: var(--pi-muted); }
     .delegate-status { grid-row: 1 / 3; color: var(--pi-text); }

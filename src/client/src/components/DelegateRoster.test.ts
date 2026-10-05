@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from "vitest";
 import type { SessionStatus } from "../api";
-import { ACTIVITY_STATUS_KEY } from "../extensionStatusSnapshots";
+import { ACTIVITY_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY } from "../extensionStatusSnapshots";
 import { DelegateRoster } from "./DelegateRoster";
 
 afterEach(() => { document.body.replaceChildren(); });
@@ -47,5 +47,38 @@ describe("DelegateRoster status cell", () => {
     expect(css).toMatch(/\.delegate-status\.fallback\s*\{[^}]*font-style:\s*italic/);
     expect(css).toMatch(/\.rows\s*\{[^}]*grid-template-columns:\s*8px fit-content\(35%\)/);
     expect(css).toMatch(/\.row\s*\{[^}]*grid-template-columns:\s*subgrid/);
+  });
+
+  it("expands a background bash row to show its command, recent output, and log path", async () => {
+    const element = new DelegateRoster();
+    element.status = {
+      sessionId: "s", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+      extensionStatuses: { [BACKGROUND_BASH_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, jobs: [{ id: "job-1", elapsedSeconds: 3, bytes: 9, command: "npm test", output: "passing\n", logPath: "/jobs/job-1/output.log" }] }) },
+    } satisfies SessionStatus;
+    document.body.append(element);
+    await element.updateComplete;
+    const toggle = element.shadowRoot?.querySelector<HTMLButtonElement>("button.expand");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(element.shadowRoot?.querySelector(".bash-log")).toBeNull();
+    toggle?.click();
+    await element.updateComplete;
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    const log = element.shadowRoot?.querySelector(".bash-log");
+    expect(log?.querySelector("code")?.textContent).toBe("$ npm test");
+    expect(log?.querySelector("pre")?.textContent).toBe("passing\n");
+    expect(log?.querySelector("small")?.textContent).toContain("/jobs/job-1/output.log");
+    expect(log?.querySelector("small + pre"), "the log path stays above the scrolling output").not.toBeNull();
+    const pre = log?.querySelector("pre");
+    if (!(pre instanceof HTMLElement)) throw new Error("missing output");
+    Object.defineProperty(pre, "scrollHeight", { configurable: true, value: 500 });
+    element.requestUpdate();
+    await element.updateComplete;
+    expect(pre.scrollTop, "an open log follows its newest output").toBe(500);
+    pre.dataset["pinned"] = "false";
+    pre.scrollTop = 100;
+    element.requestUpdate();
+    await element.updateComplete;
+    expect(pre.scrollTop, "a reader who scrolled up keeps their place").toBe(100);
   });
 });
