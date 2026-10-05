@@ -201,32 +201,38 @@ export function directoriesOf(checkpoint: WorkstreamCheckpoint | undefined): str
 const targetedChat = (id: string, cwd: string, machineId: string, signal: AbortSignal): Promise<SessionInfo | undefined> =>
   sessionsApi.sessions(cwd, machineId, { sessionId: id, signal }).then((rows) => rows.find((row) => row.id === id && row.cwd === cwd), () => undefined);
 
-/** Settles like `promise`, but rejects as soon as `signal` aborts, so an abandoned lookup frees its slot at once. */
-function unlessAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+/**
+ * Settles like `start()`, but starts nothing once `signal` has aborted and rejects as soon as it aborts, so an abandoned
+ * lookup frees its slot at once and issues no further request.
+ */
+function unlessAborted<T>(start: () => Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const abort = (): void => { reject(new Error("Chat lookup aborted")); };
     if (signal.aborted) { abort(); return; }
     signal.addEventListener("abort", abort, { once: true });
-    void promise.then(resolve, reject).finally(() => { signal.removeEventListener("abort", abort); });
+    void start().then(resolve, reject).finally(() => { signal.removeEventListener("abort", abort); });
   });
 }
 
 /**
  * PI WEB metadata for one Workstream Chat on this machine: the recorded workspace's targeted row first, then the cwd the
- * daemon locates. Nothing is rebuilt from status. Every step stops when `signal` aborts.
+ * daemon locates. Nothing is rebuilt from status. Once `signal` aborts, no step starts and the open request closes;
+ * the daemon may still finish read-only work it had already begun. `workspacesOf` requests are shared and owned by
+ * the caller.
  */
 async function workstreamChatInfo(session: WorkstreamSession, machineId: string, workspacesOf: (projectId: string) => Promise<readonly Workspace[]>, signal: AbortSignal): Promise<SessionInfo | undefined> {
-  const step = <T>(promise: Promise<T>): Promise<T> => unlessAborted(promise, signal);
+  const step = <T>(start: () => Promise<T>): Promise<T> => unlessAborted(start, signal);
+  const { projectId, workspaceId } = session;
   let anchoredCwd: string | undefined;
-  if (session.projectId !== undefined && session.workspaceId !== undefined) {
-    const workspaces = await step(workspacesOf(session.projectId).catch((): Workspace[] => []));
-    anchoredCwd = workspaces.find((workspace) => workspace.id === session.workspaceId)?.path;
-    const row = anchoredCwd === undefined ? undefined : await step(targetedChat(session.id, anchoredCwd, machineId, signal));
+  if (projectId !== undefined && workspaceId !== undefined) {
+    const workspaces = await step(() => workspacesOf(projectId).catch((): Workspace[] => []));
+    const cwd = workspaces.find((workspace) => workspace.id === workspaceId)?.path;
+    const row = cwd === undefined ? undefined : await step(() => targetedChat(session.id, cwd, machineId, signal));
     if (row !== undefined) return row;
+    anchoredCwd = cwd;
   }
-  // ponytail: locate takes no signal, so an aborted locate frees its slot here but its request still runs; add `signal` to sessionsApi.locate if abandoned locates pile up.
-  const cwd = await step(sessionsApi.locate(session.id, machineId).then((located) => located.cwd, () => undefined));
-  return cwd === undefined || cwd === anchoredCwd ? undefined : step(targetedChat(session.id, cwd, machineId, signal));
+  const cwd = await step(() => sessionsApi.locate(session.id, machineId, { signal }).then((located) => located.cwd, () => undefined));
+  return cwd === undefined || cwd === anchoredCwd ? undefined : step(() => targetedChat(session.id, cwd, machineId, signal));
 }
 
 /** A Chat record's lookup identity: its id and recorded anchors, so an anchor repair never reuses another record's row. */
@@ -236,6 +242,8 @@ const VISIBLE_CHATS = 5;
 /** Component-wide ceiling on running Chat lookups; each lookup issues one request at a time. */
 const CHAT_LOOKUP_LIMIT = 8;
 interface ChatLookup { session: WorkstreamSession; machineId: string; controller: AbortController; running: boolean }
+/** One project's workspace request, shared by lookups and aborted once no queued or running lookup needs it. */
+interface ProjectWorkspaces { promise: Promise<readonly Workspace[]>; controller: AbortController; settled: boolean }
 
 @customElement("workstream-chooser")
 export class WorkstreamChooser extends LitElement {
@@ -266,8 +274,8 @@ export class WorkstreamChooser extends LitElement {
   /** Wanted lookups waiting for one of the `CHAT_LOOKUP_LIMIT` slots, in display order. */
   private chatQueue: string[] = [];
   private runningLookups = 0;
-  /** Workspace resolutions shared by the open card's lookups, by project id. */
-  private cardWorkspaces = new Map<string, Promise<readonly Workspace[]>>();
+  /** Workspace requests shared by current lookups, by project id. */
+  private readonly cardWorkspaces = new Map<string, ProjectWorkspaces>();
   /** Async results apply only while their machine, load, and card selection are still current. */
   private machineEpoch = 0;
   private loadSequence = 0;
@@ -310,13 +318,18 @@ export class WorkstreamChooser extends LitElement {
     this.notice = "";
     this.chatInfo = new Map();
     this.chatMisses = new Set();
-    for (const lookup of this.chatLookups.values()) lookup.controller.abort();
-    this.chatLookups.clear();
-    this.chatQueue = [];
-    this.cardWorkspaces = new Map();
+    this.wantChats([], () => false);
     this.workstreamBySession.clear();
     this.liveSessionKey = "";
     this.liveWorkstreamIds = new Set();
+  }
+
+  /** A detached chooser closes its Chat metadata requests; reattached, it starts with no card open. */
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.selection++;
+    this.selected = undefined;
+    this.wantChats([], () => false);
   }
 
   protected override updated(changed: Map<string, unknown>): void {
@@ -380,14 +393,16 @@ export class WorkstreamChooser extends LitElement {
    */
   private loadChatNames(snapshot: WorkstreamSnapshot): void {
     const keys = new Set(snapshot.sessions.map(chatKey));
-    this.cardWorkspaces = new Map();
+    // A newly opened card reads fresh workspaces, but joins a request still in flight.
+    for (const [projectId, shared] of this.cardWorkspaces) if (shared.settled) this.cardWorkspaces.delete(projectId);
     if ([...this.chatMisses].some((key) => keys.has(key))) this.chatMisses = new Set([...this.chatMisses].filter((key) => !keys.has(key)));
     this.wantChats(sessionsByActivity(snapshot.sessions).slice(0, VISIBLE_CHATS), (key) => keys.has(key));
   }
 
   /**
    * Make `sessions` the wanted lookups, in display order. Queued lookups nobody wants are dropped; running ones finish
-   * and stay cached unless `keepRunning` refuses them, which aborts them and frees their slots.
+   * and stay cached unless `keepRunning` refuses them, which aborts them and frees their slots. A shared project
+   * workspace request is aborted once no remaining lookup belongs to its project.
    */
   private wantChats(sessions: readonly WorkstreamSession[], keepRunning: (key: string) => boolean = () => true): void {
     const wanted = new Map<string, WorkstreamSession>();
@@ -403,6 +418,12 @@ export class WorkstreamChooser extends LitElement {
     for (const [key, session] of wanted) {
       if (!this.chatLookups.has(key)) this.chatLookups.set(key, { session, machineId: this.serviceMachineId, controller: new AbortController(), running: false });
     }
+    const projects = new Set([...this.chatLookups.values()].map((lookup) => lookup.session.projectId));
+    for (const [projectId, shared] of this.cardWorkspaces) {
+      if (projects.has(projectId)) continue;
+      this.cardWorkspaces.delete(projectId);
+      shared.controller.abort();
+    }
     this.chatQueue = [...wanted.keys()].filter((key) => this.chatLookups.get(key)?.running === false);
     this.pumpChatLookups();
   }
@@ -417,9 +438,16 @@ export class WorkstreamChooser extends LitElement {
       lookup.running = true;
       this.runningLookups++;
       const workspacesOf = (projectId: string): Promise<readonly Workspace[]> => {
-        let workspaces = this.cardWorkspaces.get(projectId);
-        if (workspaces === undefined) { workspaces = workspacesApi.workspaces(projectId, lookup.machineId); this.cardWorkspaces.set(projectId, workspaces); }
-        return workspaces;
+        let shared = this.cardWorkspaces.get(projectId);
+        if (shared === undefined) {
+          const controller = new AbortController();
+          const request: ProjectWorkspaces = { promise: workspacesApi.workspaces(projectId, lookup.machineId, { signal: controller.signal }), controller, settled: false };
+          const settle = (): void => { request.settled = true; };
+          void request.promise.then(settle, settle);
+          shared = request;
+          this.cardWorkspaces.set(projectId, shared);
+        }
+        return shared.promise;
       };
       void workstreamChatInfo(lookup.session, lookup.machineId, workspacesOf, lookup.controller.signal)
         .catch(() => undefined)

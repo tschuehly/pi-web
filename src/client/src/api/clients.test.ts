@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PiWebConfigValues, TerminalCommandRun, Workspace } from "../../../shared/apiTypes";
 import { configApi, filesApi, machinesApi, noticesApi, piPackagesApi, piWebApi, pluginsApi, SessionTreeForkUnavailableError, sessionsApi, workspacesApi } from "./clients";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { searchWorkspaceFiles } from "../../../server/workspaces/fileTreeService";
@@ -41,6 +43,9 @@ const commandRun: TerminalCommandRun = {
   createdAt: "2026-05-25T00:00:00.000Z",
   metadata: {},
 };
+
+// Node's own fetch, captured before any test stubs the global.
+const nodeFetch = globalThis.fetch;
 
 beforeEach(() => {
   vi.stubGlobal("document", { baseURI: "https://pi.example.test/" });
@@ -554,6 +559,68 @@ describe("session API compatibility", () => {
     ]);
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ cwd: ref.cwd, daemonInstanceId: "daemon-a", notificationId: "opaque/id?" });
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 2)[1]))).toEqual({ cwd: ref.cwd, daemonInstanceId: "daemon-a", throughOrder: 1, throughOverflowWatermark: 7 });
+  });
+});
+
+describe("request cancellation", () => {
+  it("keeps two-argument locate requests unchanged and passes an optional signal to fetch", async () => {
+    const fetchMock = stubSequenceFetch([jsonResponse({ cwd: "/repo" }), jsonResponse({ cwd: "/repo" })]);
+    const controller = new AbortController();
+
+    await expect(sessionsApi.locate("s /?", "remote a")).resolves.toEqual({ cwd: "/repo" });
+    await expect(sessionsApi.locate("s /?", "remote a", { signal: controller.signal })).resolves.toEqual({ cwd: "/repo" });
+
+    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/sessions/locate/s%20%2F%3F");
+    expect(fetchCall(fetchMock, 0)[1]?.signal).toBeUndefined();
+    expect(fetchCall(fetchMock, 1)[0]).toBe(fetchCall(fetchMock, 0)[0]);
+    expect(fetchCall(fetchMock, 1)[1]?.signal).toBe(controller.signal);
+  });
+
+  it("closes aborted locate and workspace requests on a real loopback connection before the next request starts", async () => {
+    const log: string[] = [];
+    const waiters: { entry: string; resolve: () => void }[] = [];
+    const record = (entry: string): void => {
+      log.push(entry);
+      for (const waiter of waiters.filter((candidate) => candidate.entry === entry)) waiter.resolve();
+    };
+    const logged = (entry: string): Promise<void> => new Promise((resolve) => { if (log.includes(entry)) resolve(); else waiters.push({ entry, resolve }); });
+    // The server never answers, so each request stays open until the client closes it.
+    const server = createServer((request, response) => {
+      const url = request.url ?? "";
+      record(`open ${url}`);
+      response.on("close", () => { record(`${response.writableFinished ? "answered" : "closed"} ${url}`); });
+    });
+    const sockets = new Set<Socket>();
+    server.on("connection", (socket) => { sockets.add(socket); socket.on("close", () => { sockets.delete(socket); }); });
+    await new Promise<void>((resolve) => { server.listen(0, "127.0.0.1", resolve); });
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("Loopback server has no port");
+      vi.stubGlobal("fetch", nodeFetch);
+      vi.stubGlobal("document", { baseURI: `http://127.0.0.1:${String(address.port)}/` });
+      const locatePath = "/api/machines/remote%20a/sessions/locate/s%20%2F%3F";
+      const workspacesPath = "/api/machines/remote%20a/projects/p%201/workspaces";
+
+      await expect(sessionsApi.locate("s /?", "remote a", { signal: AbortSignal.abort() })).rejects.toMatchObject({ name: "AbortError" });
+      const locating = new AbortController();
+      const located = sessionsApi.locate("s /?", "remote a", { signal: locating.signal });
+      await logged(`open ${locatePath}`);
+      locating.abort();
+      await expect(located).rejects.toMatchObject({ name: "AbortError" });
+      await logged(`closed ${locatePath}`);
+
+      const listing = new AbortController();
+      const listed = workspacesApi.workspaces("p 1", "remote a", { signal: listing.signal });
+      await logged(`open ${workspacesPath}`);
+      listing.abort();
+      await expect(listed).rejects.toMatchObject({ name: "AbortError" });
+      await logged(`closed ${workspacesPath}`);
+
+      expect(log).toEqual([`open ${locatePath}`, `closed ${locatePath}`, `open ${workspacesPath}`, `closed ${workspacesPath}`]);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) => { server.close((error) => { if (error === undefined) resolve(); else reject(error); }); });
+    }
   });
 });
 

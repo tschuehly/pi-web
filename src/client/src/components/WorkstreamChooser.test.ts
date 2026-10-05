@@ -406,9 +406,9 @@ describe("WorkstreamChooser Chat titles", () => {
     expect(titleOf(element, "loose")).toBe("Loading title…");
     expect(recent).not.toHaveBeenCalled();
     expect(workspaces).toHaveBeenCalledTimes(1);
-    expect(workspaces).toHaveBeenCalledWith("p1", "local");
+    expect(workspaces.mock.calls.map(([projectId, machineId, options]) => [projectId, machineId, options?.signal instanceof AbortSignal])).toEqual([["p1", "local", true]]);
     expect(sessions.mock.calls.map(([cwd, machineId, options]) => [cwd, machineId, options?.sessionId])).toEqual([["/repo/one", "local", "anchored-1"], ["/repo/two", "local", "anchored-2"]]);
-    expect(locate.mock.calls).toEqual([["loose", "local"]]);
+    expect(locate.mock.calls.map(([id, machineId, options]) => [id, machineId, options?.signal instanceof AbortSignal])).toEqual([["loose", "local", true]]);
 
     const opened = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }, { once: true }); });
     shadow(element).querySelector<HTMLButtonElement>('button[data-session-id="anchored-1"]')?.click();
@@ -757,6 +757,104 @@ describe("WorkstreamChooser bounded and scoped Chat metadata", () => {
     element.serviceMachineId = "remote";
     await vi.waitFor(() => { expect(shadow(element).querySelector('[role="alert"]')?.textContent).toContain("Remote list unavailable"); });
     expect(shadow(element).querySelectorAll(".row")).toHaveLength(0);
+  });
+
+  describe("on the wire", () => {
+    interface HeldRequest { url: string; signal: AbortSignal | undefined; open: boolean; openAtStart: string[]; answer: (value: unknown) => void }
+    /**
+     * A fake fetch beneath the real API clients: it answers the Workstream service with `cards` and holds every Chat
+     * metadata request until the test answers it or its signal aborts, which closes it as fetch would.
+     */
+    function heldTransport(cards: Record<string, WorkstreamSnapshot>) {
+      vi.mocked(workspacesApi.workspaces).mockRestore();
+      const requests: HeldRequest[] = [];
+      let peak = 0;
+      const open = (): HeldRequest[] => requests.filter((request) => request.open);
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+        if (url.includes("/paired-plugin-backends/")) {
+          const { operation, input } = requestBody(url, init);
+          const id = typeof input === "object" && input !== null && "workstreamId" in input && typeof input.workstreamId === "string" ? input.workstreamId : "";
+          return Promise.resolve(Response.json({ ok: true, value: operation === "list" ? sessionIdOf(input) === undefined ? summaries : [] : cards[id] }));
+        }
+        return new Promise<Response>((resolve, reject) => {
+          const signal = init?.signal ?? undefined;
+          const request: HeldRequest = { url, signal, open: true, openAtStart: open().map((held) => held.url), answer: (value) => { request.open = false; resolve(Response.json(value)); } };
+          requests.push(request);
+          peak = Math.max(peak, open().length);
+          const abort = (): void => { request.open = false; reject(new DOMException("The operation was aborted.", "AbortError")); };
+          if (signal?.aborted === true) abort(); else signal?.addEventListener("abort", abort, { once: true });
+        });
+      }));
+      return { requests, open, peak: () => peak, paths: () => requests.map((request) => new URL(request.url).pathname + new URL(request.url).search) };
+    }
+    const looseCard = (id: string, prefix: string): WorkstreamSnapshot => ({ ...snapshot, id, sessions: Array.from({ length: 12 }, (_, index) => ({ id: `${prefix}${String(index).padStart(2, "0")}`, status: "active", latestCheckpoint: null })) });
+    const anchored = (id: string, projectId: string) => ({ id, status: "active", projectId, workspaceId: "w1", latestCheckpoint: null });
+
+    it.each(["machine", "card"] as const)("closes all eight held locates at a %s switch before the next scope's requests start", async (change) => {
+      const transport = heldTransport({ "ws-1": looseCard("ws-1", "a"), "ws-2": looseCard("ws-2", "b") });
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      expandOlder(element);
+      await vi.waitFor(() => { expect(transport.open()).toHaveLength(8); });
+      const first = [...transport.requests];
+      expect(transport.paths()).toEqual(ids.slice(0, 8).map((id) => `/api/machines/local/sessions/locate/a${id.slice(1)}`));
+
+      if (change === "machine") { await rescope(element, "serviceMachineId", "remote"); await openCard(element); } else await openCard(element, "ws-2");
+      expandOlder(element);
+      await vi.waitFor(() => { expect(transport.requests).toHaveLength(16); });
+      await settle(element);
+
+      expect(first.map((request) => [request.signal?.aborted, request.open])).toEqual(first.map(() => [true, false]));
+      const next = transport.requests.slice(first.length);
+      // No request of the next scope started while one of the superseded scope was still open.
+      expect(next.flatMap((request) => request.openAtStart).filter((url) => first.some((old) => old.url === url))).toEqual([]);
+      expect(transport.open()).toHaveLength(8);
+      expect(transport.requests.filter((request) => request.url.includes("/machines/local/sessions/locate/a"))).toHaveLength(8);
+      expect(transport.peak()).toBe(8);
+    });
+
+    it("closes a held locate and workspace request when the chooser leaves the page, and starts nothing after", async () => {
+      const transport = heldTransport({ "ws-1": { ...snapshot, sessions: [anchored("anchored", "p1"), { id: "loose", status: "active", latestCheckpoint: null }] } });
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      await vi.waitFor(() => { expect(transport.paths()).toEqual(["/api/machines/local/projects/p1/workspaces", "/api/machines/local/sessions/locate/loose"]); });
+
+      element.remove();
+      expect(transport.requests.map((request) => [request.signal?.aborted, request.open])).toEqual([[true, false], [true, false]]);
+      await settle(element);
+      expect(transport.requests).toHaveLength(2);
+    });
+
+    it("keeps a held project workspace request for a Chat that still needs it and closes the one nobody needs", async () => {
+      const transport = heldTransport({
+        "ws-1": { ...snapshot, sessions: [anchored("a1", "p1"), anchored("a2", "p2")] },
+        "ws-2": { ...snapshot, id: "ws-2", sessions: [anchored("b1", "p1")] },
+      });
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      const workspacesOf = ["/api/machines/local/projects/p1/workspaces", "/api/machines/local/projects/p2/workspaces"];
+      await vi.waitFor(() => { expect(transport.paths()).toEqual(workspacesOf); });
+      // Collapsing and reopening the card joins its running lookups and their shared project requests.
+      for (let round = 0; round < 2; round++) { await collapseCard(element); await openCard(element); }
+      await settle(element);
+      expect(transport.paths()).toEqual(workspacesOf);
+      expect(transport.open()).toHaveLength(2);
+
+      await openCard(element, "ws-2");
+      const [p1, p2] = transport.requests;
+      await vi.waitFor(() => { expect(p2?.signal?.aborted).toBe(true); });
+      expect([p1?.signal?.aborted, p1?.open, p2?.open]).toEqual([false, true, false]);
+      p1?.answer({ status: "folder", projectId: "p1", workspaces: [workspace("w1", "p1", "/repo/one")], diagnostics: [] });
+      await vi.waitFor(() => { expect(transport.requests).toHaveLength(3); });
+      transport.requests[2]?.answer([chat("b1", "Shared project title", "2026-09-18T10:40:00.000Z", "/repo/one")]);
+      await vi.waitFor(() => { expect(titleOf(element, "b1")).toBe("Shared project title"); });
+      await settle(element);
+      expect(transport.paths()).toEqual([...workspacesOf, "/api/machines/local/sessions?cwd=%2Frepo%2Fone&sessionId=b1"]);
+      expect(transport.peak()).toBe(2);
+    });
   });
 });
 

@@ -256,7 +256,11 @@ export const sessionsApi = {
     options?.signal === undefined ? undefined : { signal: options.signal },
   ),
   recent: (limit = 200, machineId = "local") => request(`${machinePrefix(machineId)}/sessions/recent?${new URLSearchParams({ limit: String(limit) }).toString()}`, arrayOf(parseSessionInfo)),
-  locate: (sessionId: string, machineId = "local"): Promise<{ cwd: string }> => request(`${machinePrefix(machineId)}/sessions/locate/${encodeURIComponent(sessionId)}`, parseLocatedSession),
+  locate: (sessionId: string, machineId = "local", options?: { signal?: AbortSignal }): Promise<{ cwd: string }> => request(
+    `${machinePrefix(machineId)}/sessions/locate/${encodeURIComponent(sessionId)}`,
+    parseLocatedSession,
+    options?.signal === undefined ? undefined : { signal: options.signal },
+  ),
   unreadCatalog: (machineId = "local") => request(`${machinePrefix(machineId)}/sessions/unread`, parseSessionUnreadCatalogSnapshot, { cache: "no-store" }),
   acknowledgeUnread: (session: SessionRef, catalogId: string, throughCompletionOrder: number, machineId = "local") => {
     const body: SessionUnreadAcknowledgeRequest = { cwd: session.cwd, catalogId, throughCompletionOrder };
