@@ -2,11 +2,17 @@ import { appendFile, mkdir, mkdtemp, readFile, rename, rm, utimes, writeFile } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createPiSessionManagerGateway, defaultPiSessionDir, defaultPiSessionsRoot, filterSessionsForCwd, resolveSessionFileInDir, SessionDirResolver } from "./piSessionManagerGateway.js";
+import { createPiSessionManagerGateway, defaultPiSessionDir, defaultPiSessionsRoot, filterSessionsForCwd, locateSessionInDirs, resolveSessionFileInDir, SessionDirResolver } from "./piSessionManagerGateway.js";
 import { DEFAULT_TRANSCRIPT_BRANCH_CACHE_LIMIT } from "./transcriptBranchCache.js";
 import type { PiSessionListEntry } from "./piSessionService.js";
 import type { PiSessionManager } from "./piSessionService.js";
 import { readSessionHeaderSummary } from "./sessionFileHeader.js";
+
+// Pass-through spy so tests can count the gateway's own header reads.
+vi.mock("./sessionFileHeader.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./sessionFileHeader.js")>();
+  return { ...original, readSessionHeaderSummary: vi.fn(original.readSessionHeaderSummary) };
+});
 import { isRecord } from "./sessionFileFormat.js";
 import { rewriteHeaderWithoutParentSession } from "./sessionFileRewrite.testSupport.js";
 import { sep } from "node:path";
@@ -591,7 +597,126 @@ describe("gateway session-file resolution by id", () => {
   it("resolves nothing when the session directory does not exist", async () => {
     await expect(resolveSessionFileInDir(join(tempDir, "missing-sessions"), cwd, "any-session", readSessionHeaderSummary)).resolves.toBeUndefined();
   });
+
+  it("reads the headers of a miss concurrently, within a bound", async () => {
+    const sharedSessionDir = join(tempDir, "shared-sessions");
+    for (let index = 0; index < 60; index += 1) {
+      await writeNamedSessionFile(sharedSessionDir, `2026-01-01T00-00-${String(index).padStart(2, "0")}-000Z_other-${String(index)}.jsonl`, { id: `other-${String(index)}`, cwd });
+    }
+    const reader = concurrencyTrackingReader();
+
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "missing-id", reader.read)).resolves.toBeUndefined();
+    expect(reader.reads()).toBe(60);
+    expect(reader.maxInFlight()).toBeGreaterThan(1);
+    expect(reader.maxInFlight()).toBeLessThanOrEqual(32);
+  });
+
+  it("keeps bucket, exact-over-prefix, and newest-first order when header reads finish out of order", async () => {
+    const sharedSessionDir = join(tempDir, "shared-sessions");
+    await writeNamedSessionFile(sharedSessionDir, "2026-01-01T00-00-00-000Z_abc-one.jsonl", { id: "abc-one", cwd });
+    const newestPath = await writeNamedSessionFile(sharedSessionDir, "2026-01-02T00-00-00-000Z_abc-two.jsonl", { id: "abc-two", cwd });
+    await writeNamedSessionFile(sharedSessionDir, "hand-1.jsonl", { id: "abc-hand-1", cwd });
+    await writeNamedSessionFile(sharedSessionDir, "hand-2.jsonl", { id: "abc-hand-2", cwd });
+    // Later candidates finish first, so completion order cannot pick the winner.
+    const reader = reverseCompletionReader(["abc-two", "abc-one", "hand-2", "hand-1", "renamed"]);
+
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "abc", reader)).resolves.toEqual({ id: "abc-two", cwd, path: newestPath });
+
+    const exactPath = await writeNamedSessionFile(sharedSessionDir, "renamed.jsonl", { id: "abc", cwd });
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "abc", reader)).resolves.toEqual({ id: "abc", cwd, path: exactPath });
+
+    // No filename candidate: the remaining files decide, tied timestamps by plain name order.
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "abc-hand", reader)).resolves.toEqual({ id: "abc-hand-2", cwd, path: join(sharedSessionDir, "hand-2.jsonl") });
+  });
 });
+
+describe("locating sessions across session directories", () => {
+  it("reads the headers of a miss concurrently across directories, within a bound", async () => {
+    const dirs = ["a", "b", "c"].map((name) => join(tempDir, "store", name));
+    for (const dir of dirs) {
+      for (let index = 0; index < 20; index += 1) await writeNamedSessionFile(dir, `2026-01-01T00-00-${String(index).padStart(2, "0")}-000Z_s-${String(index)}.jsonl`, { id: `s-${String(index)}`, cwd });
+    }
+    const reader = concurrencyTrackingReader();
+
+    await expect(locateSessionInDirs(dirs, "missing-id", reader.read)).resolves.toBeUndefined();
+    expect(reader.reads()).toBe(60);
+    expect(reader.maxInFlight()).toBeGreaterThan(1);
+    expect(reader.maxInFlight()).toBeLessThanOrEqual(32);
+  });
+
+  it("prefers an exact header id over a newer prefix match across directories when reads finish out of order", async () => {
+    const otherCwd = join(tempDir, "other-workspace");
+    const dirs = [join(tempDir, "store", "a"), join(tempDir, "store", "b")];
+    await writeNamedSessionFile(dirs[0] ?? "", "2026-01-02T00-00-00-000Z_abc-newer.jsonl", { id: "abc-newer", cwd });
+    await writeNamedSessionFile(dirs[1] ?? "", "2026-01-01T00-00-00-000Z_abc.jsonl", { id: "abc", cwd: `${otherCwd}${sep}` });
+    await writeNamedSessionFile(dirs[1] ?? "", "2026-01-03T00-00-00-000Z_abc-no-cwd.jsonl", { id: "abc-no-cwd" });
+    const reader = reverseCompletionReader(["abc-no-cwd", "abc-newer", "abc"]);
+
+    await expect(locateSessionInDirs(dirs, "abc", reader)).resolves.toEqual({ cwd: otherCwd });
+    await expect(locateSessionInDirs(dirs, "abc-n", reader)).resolves.toEqual({ cwd });
+  });
+
+  it("shares header reads between concurrent lookups instead of repeating them", async () => {
+    for (let index = 0; index < 40; index += 1) await writeSessionFile(defaultPiSessionDir(cwd, agentDir), `stored-${String(index)}`, cwd);
+    const gateway = createPiSessionManagerGateway(piProfileOptions());
+    if (gateway.locate === undefined) throw new Error("Gateway locate is unavailable");
+    const locate = gateway.locate.bind(gateway);
+    const readSpy = vi.mocked(readSessionHeaderSummary);
+    readSpy.mockClear();
+
+    const located = await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map((index) => locate(`missing-${String(index)}`)));
+
+    expect(located).toEqual(Array.from({ length: 8 }, () => undefined));
+    // Eight independent misses would read every header eight times.
+    expect(readSpy.mock.calls.length).toBeLessThanOrEqual(80);
+    // Sharing is in flight only: a later lookup reads the headers again.
+    readSpy.mockClear();
+    await locate("missing-again");
+    expect(readSpy.mock.calls.length).toBe(40);
+  });
+
+  it("finds a session created after a miss, with no remembered miss", async () => {
+    const gateway = createPiSessionManagerGateway(piProfileOptions());
+    if (gateway.locate === undefined) throw new Error("Gateway locate is unavailable");
+    await writeSessionFile(defaultPiSessionDir(cwd, agentDir), "existing", cwd);
+
+    await expect(gateway.locate("late-session")).resolves.toBeUndefined();
+    await writeSessionFile(defaultPiSessionDir(cwd, agentDir), "late-session", cwd);
+    await expect(gateway.locate("late-session")).resolves.toEqual({ cwd });
+  });
+});
+
+/** A real header reader that records how many reads overlap. */
+function concurrencyTrackingReader() {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let reads = 0;
+  return {
+    read: async (sessionFile: string) => {
+      reads += 1;
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return await readSessionHeaderSummary(sessionFile);
+      } finally {
+        inFlight -= 1;
+      }
+    },
+    reads: () => reads,
+    maxInFlight: () => maxInFlight,
+  };
+}
+
+/** A real header reader whose reads finish in reverse of the listed file-stem order. */
+function reverseCompletionReader(stemsInCandidateOrder: readonly string[]) {
+  return async (sessionFile: string) => {
+    const stem = sessionFile.slice(sessionFile.lastIndexOf(sep) + 1, -".jsonl".length);
+    const order = stemsInCandidateOrder.findIndex((candidate) => stem === candidate || stem.endsWith(`_${candidate}`));
+    await new Promise((resolve) => setTimeout(resolve, (stemsInCandidateOrder.length - Math.max(order, 0)) * 5));
+    return readSessionHeaderSummary(sessionFile);
+  };
+}
 
 describe("filterSessionsForCwd", () => {
   it("matches cwds that differ only by trailing separator or redundant segments", () => {

@@ -678,6 +678,146 @@ describe("session summary scanner multi-chunk folding with a small chunk seam", 
   });
 });
 
+describe("session summary scanner shared work across directories and callers", () => {
+  const SMALL_CHUNK_BYTES = 64;
+
+  it("keeps another directory's memo when a directory is scanned, even a nested one", async () => {
+    // Pruning is scoped to the scanned directory's own entries: scanning the
+    // parent must neither walk nor drop the memo of a directory below it.
+    const nestedDir = join(sessionDir, "nested");
+    await mkdir(nestedDir);
+    await writeSession("parent.jsonl", [headerLine({ id: "parent", cwd: WORKSPACE })]);
+    await writeFile(join(nestedDir, "child.jsonl"), `${headerLine({ id: "child", cwd: WORKSPACE })}\n`, "utf8");
+    const scanner = new SessionSummaryScanner();
+    expect(await scanner.scanSessionSummariesInDir(nestedDir)).toMatchObject([{ id: "child" }]);
+    expect(await scanner.scanSessionSummariesInDir(sessionDir)).toMatchObject([{ id: "parent" }]);
+
+    const openSpy = vi.spyOn(fsPromises, "open");
+    try {
+      expect(await scanner.scanSessionSummariesInDir(nestedDir)).toMatchObject([{ id: "child" }]);
+      expect(openSpy).not.toHaveBeenCalled();
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("bounds read buffers globally across concurrent cold directory scans", async () => {
+    // A global listing scans every project directory at once; read buffers
+    // must be bounded per scanner, not per directory.
+    const dirs = ["a", "b", "c", "d", "e"].map((name) => join(sessionDir, name));
+    for (const dir of dirs) {
+      await mkdir(dir);
+      for (let index = 0; index < 12; index += 1) {
+        await writeFile(join(dir, `s-${String(index)}.jsonl`), `${headerLine({ id: `${dir}-${String(index)}`, cwd: WORKSPACE })}\n`, "utf8");
+      }
+    }
+    const scanner = new SessionSummaryScanner({ chunkBytes: SMALL_CHUNK_BYTES });
+
+    const allocSpy = vi.spyOn(Buffer, "allocUnsafe");
+    try {
+      const listings = await Promise.all(dirs.map((dir) => scanner.scanSessionSummariesInDir(dir)));
+      expect(listings.map((listing) => listing.length)).toEqual([12, 12, 12, 12, 12]);
+      // 10 per directory would be 50; the scanner-wide bound is 32.
+      expect(allocSpy.mock.calls.filter(([size]) => size === SMALL_CHUNK_BYTES).length).toBeLessThanOrEqual(32);
+    } finally {
+      allocSpy.mockRestore();
+    }
+    for (const dir of dirs) expect(await scanner.scanSessionSummariesInDir(dir)).toEqual(await coldListing(dir));
+  });
+
+  it("keeps scanning after failed reads release their buffers", async () => {
+    for (let index = 0; index < 12; index += 1) await writeSession(`ok-${String(index)}.jsonl`, [headerLine({ id: `ok-${String(index)}`, cwd: WORKSPACE })]);
+    const scanner = new SessionSummaryScanner({ chunkBytes: SMALL_CHUNK_BYTES });
+    const openSpy = vi.spyOn(fsPromises, "open").mockRejectedValue(new Error("EMFILE"));
+    try {
+      expect(await scanner.scanSessionSummariesInDir(sessionDir)).toEqual([]);
+    } finally {
+      openSpy.mockRestore();
+    }
+    expect(await scanner.scanSessionSummariesInDir(sessionDir)).toHaveLength(12);
+  });
+
+  it("shares the work of concurrent duplicate scans of one directory", async () => {
+    await writeSession("shared.jsonl", [headerLine({ id: "shared", cwd: WORKSPACE })]);
+    const scanner = new SessionSummaryScanner();
+    const readdirSpy = vi.spyOn(fsPromises, "readdir");
+    try {
+      const listings = await Promise.all([1, 2, 3, 4, 5].map(() => scanner.scanSessionSummariesInDir(sessionDir)));
+      for (const listing of listings) expect(listing).toMatchObject([{ id: "shared" }]);
+      expect(readdirSpy.mock.calls.length).toBeLessThanOrEqual(2);
+    } finally {
+      readdirSpy.mockRestore();
+    }
+  });
+
+  it("never answers a scan with work that started before the scan was requested", async () => {
+    // Sharing must not serve a caller a listing taken before its request: a
+    // session created just before the call is always listed.
+    await writeSession("before.jsonl", [headerLine({ id: "before", cwd: WORKSPACE })]);
+    const scanner = new SessionSummaryScanner();
+    const realReaddir = fsPromises.readdir;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const readdirSpy = vi.spyOn(fsPromises, "readdir");
+    readdirSpy.mockImplementationOnce(async (...args) => {
+      const names = await realReaddir(...args);
+      await gate;
+      return names;
+    });
+    try {
+      const inFlight = scanner.scanSessionSummariesInDir(sessionDir);
+      await vi.waitFor(() => { expect(readdirSpy).toHaveBeenCalled(); });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await writeSession("after.jsonl", [headerLine({ id: "after", cwd: WORKSPACE })]);
+      const requestedLater = scanner.scanSessionSummariesInDir(sessionDir);
+      release();
+      expect((await inFlight).map((session) => session.id)).toEqual(["before"]);
+      expect((await requestedLater).map((session) => session.id).sort()).toEqual(["after", "before"]);
+    } finally {
+      readdirSpy.mockRestore();
+    }
+  });
+
+  it("does not let an in-flight read re-memoize a file invalidated meanwhile", async () => {
+    // An in-place rewrite followed by invalidate() must win over a full scan
+    // that read the old bytes before the invalidation and finishes after it.
+    const parentPath = join(tempDir, "parents", "parent.jsonl");
+    const path = await writeSession("raced-detach.jsonl", [
+      headerLine({ id: "raced-detach", cwd: WORKSPACE, parentSession: parentPath }),
+      messageLine({ role: "user", content: textContent("first") }),
+    ]);
+    const scanner = new SessionSummaryScanner();
+    const realOpen = fsPromises.open;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let closing!: () => void;
+    const closingStarted = new Promise<void>((resolve) => { closing = resolve; });
+    const openSpy = vi.spyOn(fsPromises, "open").mockImplementationOnce(async (...args) => {
+      const handle = await realOpen(...args);
+      const close = handle.close.bind(handle);
+      // Hold the scan after it read the old bytes, before it memoizes them.
+      handle.close = async () => {
+        closing();
+        await gate;
+        await close();
+      };
+      return handle;
+    });
+    try {
+      const inFlight = scanner.scanSessionSummariesInDir(sessionDir);
+      await closingStarted;
+      await rewriteHeaderWithoutParentSession(path);
+      scanner.invalidate(path);
+      release();
+      expect(await inFlight).toMatchObject([{ id: "raced-detach", parentSessionPath: parentPath }]);
+    } finally {
+      openSpy.mockRestore();
+    }
+    const [listed] = await scanner.scanSessionSummariesInDir(sessionDir);
+    expect(listed).not.toHaveProperty("parentSessionPath");
+  });
+});
+
 describe("session summary scanner deliberate SDK divergences", () => {
   it("skips headers with an empty, missing, or non-string id, where the SDK lists a broken entry", async () => {
     // The SDK lists these sessions with whatever the header carries as id
