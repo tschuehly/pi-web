@@ -107,7 +107,8 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
 
   constructor(private readonly resolver: SessionDirResolver) {}
 
-  async list(cwd: string): Promise<PiSessionListEntry[]> {
+  async list(cwd: string, options?: { sessionId?: string }): Promise<PiSessionListEntry[]> {
+    if (options?.sessionId !== undefined) return this.listSession(cwd, options.sessionId);
     const resolution = this.resolver.resolve(cwd);
     // Lightweight streaming summaries instead of the SDK's full-transcript
     // listing: same fields, but message bodies are never parsed once the first
@@ -118,6 +119,20 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
       cwd: canonicalizeStoredCwd(session.cwd),
     }));
     return filterSessionsForCwd(sessions, cwd);
+  }
+
+  /**
+   * The one listing row for exactly `sessionId` under `cwd`, from header reads
+   * plus one summary of the verified file: no directory scan. A prefix
+   * resolution never proves the exact id, and the summary is checked again
+   * because the path can be replaced between the header and summary reads.
+   */
+  private async listSession(cwd: string, sessionId: string): Promise<PiSessionListEntry[]> {
+    const resolved = await this.resolveSessionFile(cwd, sessionId);
+    if (resolved?.id !== sessionId) return [];
+    const summary = await this.summaryScanner.summarizeSessionFile(resolved.path);
+    if (summary?.id !== sessionId) return [];
+    return filterSessionsForCwd([{ ...summary, cwd: canonicalizeStoredCwd(summary.cwd) }], cwd);
   }
 
   async listRecent(limit: number): Promise<PiSessionListEntry[]> {

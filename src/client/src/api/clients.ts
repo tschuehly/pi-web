@@ -245,8 +245,13 @@ export const workspacesApi = {
 };
 
 export const sessionsApi = {
-  sessions: (cwd: string, machineId = "local", options?: { signal?: AbortSignal }) => request(
-    `${machinePrefix(machineId)}/sessions?cwd=${encodeURIComponent(cwd)}`,
+  /**
+   * The workspace catalog, or with `sessionId` that one exact row. A current
+   * daemon answers a targeted miss with 404; an older one ignores the id and
+   * returns the whole catalog, so callers still pick the row by id.
+   */
+  sessions: (cwd: string, machineId = "local", options?: { signal?: AbortSignal; sessionId?: string }) => request(
+    `${machinePrefix(machineId)}/sessions?cwd=${encodeURIComponent(cwd)}${options?.sessionId === undefined ? "" : `&sessionId=${encodeURIComponent(options.sessionId)}`}`,
     arrayOf(parseSessionInfo),
     options?.signal === undefined ? undefined : { signal: options.signal },
   ),

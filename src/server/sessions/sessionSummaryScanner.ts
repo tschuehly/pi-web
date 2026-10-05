@@ -171,6 +171,16 @@ export class SessionSummaryScanner {
     return pending.queued;
   }
 
+  /**
+   * Summarize one known session file through the same memo and scanner-wide
+   * read bound as a directory listing, without listing, pruning, or queueing
+   * behind its directory. The summary describes whatever file the path held
+   * when it was read; callers verify its identity.
+   */
+  summarizeSessionFile(filePath: string): Promise<PiSessionListEntry | undefined> {
+    return this.scanFileWithMemo(filePath, this.memo.get(dirname(filePath)));
+  }
+
   private startDirectoryScan(sessionDir: string): Promise<PiSessionListEntry[]> {
     const entry: PendingDirectoryScan = { running: this.scanDirectory(sessionDir) };
     this.pendingScans.set(sessionDir, entry);

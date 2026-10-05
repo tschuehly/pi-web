@@ -14,6 +14,10 @@ interface SessionQuery {
   media?: string;
 }
 
+interface SessionListQuery extends SessionQuery {
+  sessionId?: unknown;
+}
+
 interface RecentSessionsQuery {
   limit?: string;
 }
@@ -42,10 +46,16 @@ const MAX_NOTIFICATION_DAEMON_ID_LENGTH = 512;
 const MAX_NOTIFICATION_ID_LENGTH = 1024;
 
 export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRouteService, eventHub: SessionEventHub, prefix = ""): void {
-  app.get<{ Querystring: SessionQuery }>(`${prefix}/sessions`, async (request, reply) => {
+  app.get<{ Querystring: SessionListQuery }>(`${prefix}/sessions`, async (request, reply) => {
     if (request.query.cwd === undefined || request.query.cwd === "") return reply.code(400).send({ error: "cwd query parameter is required" });
     try {
-      return await sessions.list(normalizeRequestCwd(request.query.cwd));
+      const cwd = normalizeRequestCwd(request.query.cwd);
+      if (request.query.sessionId === undefined) return await sessions.list(cwd);
+      const sessionId = requireNonEmptyBoundedString(request.query.sessionId, "sessionId", MAX_NOTIFICATION_SESSION_ID_LENGTH);
+      if (sessionId.trim() === "") throw new Error("sessionId field must not be blank");
+      // A targeted miss is an explicit 404: older daemons ignore the id and answer with the whole catalog instead.
+      const listed = await sessions.list(cwd, { sessionId });
+      return listed.length === 0 ? await reply.code(404).send({ error: "Session not found" }) : listed;
     } catch (error) {
       return reply.code(400).send({ error: errorMessage(error) });
     }

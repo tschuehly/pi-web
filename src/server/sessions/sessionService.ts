@@ -50,7 +50,8 @@ export type SessionRouteRef = ClientSessionRef;
  * handling and daemon shutdown stay on the concrete service.
  */
 export interface SessionRouteService {
-  list(cwd: string): Promise<ClientSession[]>;
+  /** With `sessionId`: at most the one exact row for that session under `cwd`, without whole-cwd reconciliation. */
+  list(cwd: string, options?: { sessionId?: string }): Promise<ClientSession[]>;
   listRecent(limit: number): Promise<ClientSession[]>;
   /**
    * Create a session. Most startup tokens are ephemeral progress labels;

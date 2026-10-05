@@ -7,6 +7,7 @@ import { DEFAULT_TRANSCRIPT_BRANCH_CACHE_LIMIT } from "./transcriptBranchCache.j
 import type { PiSessionListEntry } from "./piSessionService.js";
 import type { PiSessionManager } from "./piSessionService.js";
 import { readSessionHeaderSummary } from "./sessionFileHeader.js";
+import { SessionSummaryScanner } from "./sessionSummaryScanner.js";
 
 // Pass-through spy so tests can count the gateway's own header reads.
 vi.mock("./sessionFileHeader.js", async (importOriginal) => {
@@ -717,6 +718,115 @@ function reverseCompletionReader(stemsInCandidateOrder: readonly string[]) {
     return readSessionHeaderSummary(sessionFile);
   };
 }
+
+describe("targeted session listing", () => {
+  // Spies on the shared scanner prove the targeted path never lists a directory
+  // and summarizes only the one verified file; restored after each test.
+  const spies: { mockRestore(): void }[] = [];
+  afterEach(() => {
+    for (const spy of spies.splice(0)) spy.mockRestore();
+  });
+
+  const message = (id: string, role: string, text: string) =>
+    JSON.stringify({ type: "message", id, parentId: "root", timestamp: "2026-01-01T00:01:00.000Z", message: { role, content: [{ type: "text", text }] } });
+  const sessionInfo = (name: string) => JSON.stringify({ type: "session_info", id: `info-${name}`, parentId: "root", timestamp: "2026-01-01T00:02:00.000Z", name });
+
+  async function targetedStore() {
+    const sessionDir = join(tempDir, "targeted-sessions");
+    const targetPath = await writeNamedSessionFile(sessionDir, "2026-01-02T00-00-00-000Z_target-id.jsonl", { id: "target-id", cwd });
+    await appendFile(targetPath, `${message("m1", "user", "hello")}\n`, "utf8");
+    await writeNamedSessionFile(sessionDir, "2026-01-01T00-00-00-000Z_sibling-id.jsonl", { id: "sibling-id", cwd });
+    const options = piProfileOptions({ PI_CODING_AGENT_SESSION_DIR: sessionDir });
+    return { sessionDir, targetPath, gateway: createPiSessionManagerGateway(options), options };
+  }
+
+  // Directory scans and single-file summaries are the scanner's only ways to read transcripts.
+  function countScannerWork() {
+    const directoryScans = vi.spyOn(SessionSummaryScanner.prototype, "scanSessionSummariesInDir");
+    const summaryReads = vi.spyOn(SessionSummaryScanner.prototype, "summarizeSessionFile");
+    spies.push(directoryScans, summaryReads);
+    return { directoryScans, summaryReads };
+  }
+
+  it("returns the full listing's exact row from one summary read and no directory scan", async () => {
+    const { targetPath, gateway, options } = await targetedStore();
+    const full = (await createPiSessionManagerGateway(options).list(cwd)).find((session) => session.id === "target-id");
+    expect(full).toBeDefined();
+    const { directoryScans, summaryReads } = countScannerWork();
+
+    await expect(gateway.list(cwd, { sessionId: "target-id" })).resolves.toEqual([full]);
+    expect(directoryScans).not.toHaveBeenCalled();
+    expect(summaryReads.mock.calls).toEqual([[targetPath]]);
+  });
+
+  it("stays fresh across appends, renames, and a cleared name", async () => {
+    const { targetPath, gateway } = await targetedStore();
+    await expect(gateway.list(cwd, { sessionId: "target-id" })).resolves.toMatchObject([{ id: "target-id", messageCount: 1, firstMessage: "hello" }]);
+
+    await appendFile(targetPath, `${message("m2", "assistant", "hi")}\n${sessionInfo("Renamed")}\n`, "utf8");
+    await expect(gateway.list(cwd, { sessionId: "target-id" })).resolves.toMatchObject([{ id: "target-id", messageCount: 2, name: "Renamed" }]);
+
+    await appendFile(targetPath, `${sessionInfo("")}\n`, "utf8");
+    const [cleared] = await gateway.list(cwd, { sessionId: "target-id" });
+    expect(cleared).toMatchObject({ id: "target-id", messageCount: 2 });
+    expect(cleared).not.toHaveProperty("name");
+  });
+
+  it("stops answering for a session whose file was replaced by another session", async () => {
+    const { sessionDir, targetPath, gateway } = await targetedStore();
+    await gateway.list(cwd, { sessionId: "target-id" });
+    const replacement = await writeNamedSessionFile(sessionDir, "replacement.tmp", { id: "replacement-id", cwd });
+    await rename(replacement, targetPath);
+
+    await expect(gateway.list(cwd, { sessionId: "target-id" })).resolves.toEqual([]);
+    await expect(gateway.list(cwd, { sessionId: "replacement-id" })).resolves.toMatchObject([{ id: "replacement-id", path: targetPath }]);
+  });
+
+  it("re-verifies the summarized file when it is replaced between the header and summary reads", async () => {
+    const { sessionDir, targetPath, gateway } = await targetedStore();
+    const intruder = await writeNamedSessionFile(sessionDir, "intruder.tmp", { id: "intruder-id", cwd });
+    const resolve = gateway.resolveSessionFile.bind(gateway);
+    spies.push(vi.spyOn(gateway, "resolveSessionFile").mockImplementationOnce(async (refCwd, sessionId) => {
+      const resolved = await resolve(refCwd, sessionId);
+      await rename(intruder, targetPath);
+      return resolved;
+    }));
+
+    await expect(gateway.list(cwd, { sessionId: "target-id" })).resolves.toEqual([]);
+  });
+
+  it("never treats an id prefix as the exact requested session", async () => {
+    const { gateway } = await targetedStore();
+    await expect(gateway.resolveSessionFile(cwd, "target")).resolves.toMatchObject({ id: "target-id" });
+
+    await expect(gateway.list(cwd, { sessionId: "target" })).resolves.toEqual([]);
+  });
+
+  it("does not answer for the same id under another cwd", async () => {
+    const { gateway } = await targetedStore();
+    const otherCwd = join(tempDir, "other-workspace");
+    await mkdir(otherCwd, { recursive: true });
+
+    await expect(gateway.list(otherCwd, { sessionId: "target-id" })).resolves.toEqual([]);
+  });
+
+  it("finds the real session behind a file name that embeds its id but holds another session", async () => {
+    const sessionDir = join(tempDir, "collision-sessions");
+    await writeNamedSessionFile(sessionDir, "2026-01-02T00-00-00-000Z_wanted-id.jsonl", { id: "decoy-id", cwd });
+    const realPath = await writeNamedSessionFile(sessionDir, "hand-named.jsonl", { id: "wanted-id", cwd });
+    const gateway = createPiSessionManagerGateway(piProfileOptions({ PI_CODING_AGENT_SESSION_DIR: sessionDir }));
+
+    await expect(gateway.list(cwd, { sessionId: "wanted-id" })).resolves.toMatchObject([{ id: "wanted-id", path: realPath }]);
+  });
+
+  it("keeps the ordinary listing when no session id is given", async () => {
+    const { gateway } = await targetedStore();
+    const { directoryScans } = countScannerWork();
+
+    expect((await gateway.list(cwd, {})).map((session) => session.id).sort()).toEqual(["sibling-id", "target-id"]);
+    expect(directoryScans).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("filterSessionsForCwd", () => {
   it("matches cwds that differ only by trailing separator or redundant segments", () => {
