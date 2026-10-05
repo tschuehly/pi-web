@@ -76,7 +76,16 @@ An unknown external rewrite that keeps both inode and size is the existing blind
 5. Select the row with the unchanged `SessionController.selectSession`, which honours `archived`.
    In parallel, `loadCatalogBehind` requests the full catalog.
 
-Each Workstream open advances the navigation sequence. Its row or error is applied only if that sequence and machine remain current; a newer open supersedes the old lookup.
+Each Workstream open takes its own open number and records the current navigation sequence and machine.
+A newer open, any navigation, or a machine switch supersedes it.
+It checks this after every lookup step: before the anchored row request, before a legacy catalog miss asks `status`, and before each further batch of project workspace listings.
+A superseded open sends nothing more and reports no error.
+While it looks up, an open leaves in-flight navigation alone, so a failed open never cancels a chooser catalog, project listing, or machine boot.
+Only when it applies a Chat does it advance the navigation sequence and clear the Loading indicator of the navigation it dropped.
+If that dropped navigation was a machine boot still waiting for its projects, the open asks for that machine's projects once more.
+
+A row-first open, whether from a Chat URL or a Workstream, keeps every never-saved (`persisted: false`) blank or pending Chat already listed for the same machine and folder.
+Rows from another machine or folder are not carried over.
 The full catalog is applied only if the load sequence, machine, and workspace are still current.
 Otherwise it is dropped.
 When applied, the catalog keeps the opened and selected rows from in-memory state, including their live title, and every never-saved (`persisted: false`) blank or pending Chat it cannot list yet.

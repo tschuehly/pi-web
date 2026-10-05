@@ -56,6 +56,8 @@ export function rootProjectOf(project: Project, projects: readonly Project[]): P
 }
 export const rootProjects = (projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === project.id);
 const subprojectsOf = (root: Project, projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === root.id);
+/** Never-saved blank or pending Chats in this folder: no listing returns them yet, so opening another Chat from its row keeps them. */
+const unsavedChatsIn = (rows: readonly SessionInfo[], cwd: string, openedId: string): SessionInfo[] => rows.filter((row) => row.persisted === false && row.cwd === cwd && row.id !== openedId);
 
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
@@ -77,6 +79,7 @@ export class WorkbenchApp extends LitElement {
   private readonly realtime = new RealtimeSocket();
   private realtimeMachineId: string | undefined;
   private loadSequence = 0;
+  private workstreamOpenSequence = 0;
   private workstreamLoadSequence = 0;
   private workstreamWatchSequence: number | undefined;
   private workstreamWatchDelay = 2_000;
@@ -266,12 +269,14 @@ export class WorkbenchApp extends LitElement {
       if (!keepRealtime) this.connectRealtime();
       if (machine === undefined) throw new Error("No PI WEB machine is available.");
 
+      const previousRows = selectedMachineId(previous) === machine.id ? previous.sessions : [];
+      const isCurrent = () => sequence === this.loadSequence;
       const knownProjects = reuse && previous.projects.length > 0 && (route.projectId === undefined || previous.projects.some((candidate) => candidate.id === route.projectId));
       const projects = knownProjects ? previous.projects : await api.projects(machine.id);
       if (sequence !== this.loadSequence) return;
       this.setApp({ projects });
       if (!completeChatRoute(route)) {
-        if (route.sessionId !== undefined && route.projectId === undefined) { await this.openSessionAnywhere(route.sessionId, machine.id, sequence); return; }
+        if (route.sessionId !== undefined && route.projectId === undefined) { await this.openSessionAnywhere(route.sessionId, machine.id, sequence, previousRows); return; }
         await this.restoreLastWorkspace(projects, machine.id, sequence);
         return;
       }
@@ -282,10 +287,10 @@ export class WorkbenchApp extends LitElement {
       if (sequence !== this.loadSequence) return;
       const workspace = workspaces.find((candidate) => candidate.id === route.workspaceId);
       if (workspace === undefined) throw new Error("The selected workspace is no longer available.");
-      const session = await this.knownSession(route.sessionId, workspace.path, machine.id);
+      const session = await this.knownSession(route.sessionId, workspace.path, machine.id, isCurrent);
       if (sequence !== this.loadSequence) return;
       if (session === undefined) throw new Error("The selected session is no longer available.");
-      this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions: keepSelection ? this.app.sessions : [session] });
+      this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions: keepSelection ? this.app.sessions : [...unsavedChatsIn(previousRows, workspace.path, session.id), session] });
       void this.loadCatalogBehind(session.id, workspace, machine.id, sequence);
       await this.sessions.selectSession(session, { updateUrl: false });
     } catch (error) {
@@ -326,14 +331,14 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** Reopen a Chat that belongs to no project: find its folder by id, then treat that folder as an ad-hoc workspace. */
-  private async openSessionAnywhere(sessionId: string, machineId: string, sequence: number): Promise<void> {
+  private async openSessionAnywhere(sessionId: string, machineId: string, sequence: number, previousRows: readonly SessionInfo[]): Promise<void> {
     const { cwd } = await api.locate(sessionId, machineId).catch(() => ({ cwd: undefined }));
     if (sequence !== this.loadSequence) return;
     const workspace = cwd === undefined ? undefined : adHocWorkspace(cwd);
-    const session = workspace === undefined ? undefined : await this.knownSession(sessionId, workspace.path, machineId);
+    const session = workspace === undefined ? undefined : await this.knownSession(sessionId, workspace.path, machineId, () => sequence === this.loadSequence);
     if (sequence !== this.loadSequence) return;
     if (workspace === undefined || session === undefined) throw new Error("The selected session is no longer available.");
-    this.setApp({ selectedProject: undefined, workspaces: [workspace], selectedWorkspace: workspace, sessions: [session] });
+    this.setApp({ selectedProject: undefined, workspaces: [workspace], selectedWorkspace: workspace, sessions: [...unsavedChatsIn(previousRows, workspace.path, session.id), session] });
     void this.loadCatalogBehind(session.id, workspace, machineId, sequence);
     await this.sessions.selectSession(session, { updateUrl: false });
   }
@@ -341,9 +346,9 @@ export class WorkbenchApp extends LitElement {
   /**
    * The listing row for exactly this Chat, without waiting for its workspace catalog. A current daemon answers with the
    * row or 404, and its metadata keeps the archived flag authoritative. An older daemon ignores the id and returns the
-   * whole catalog; only there may a missing row be a blank Chat rebuilt from status.
+   * whole catalog; only there may a missing row be a blank Chat rebuilt from status, and only while `isCurrent` holds.
    */
-  private async knownSession(id: string, cwd: string, machineId: string): Promise<SessionInfo | undefined> {
+  private async knownSession(id: string, cwd: string, machineId: string, isCurrent: () => boolean = () => true): Promise<SessionInfo | undefined> {
     let listed: SessionInfo[];
     try {
       listed = await api.sessions(cwd, machineId, { sessionId: id });
@@ -351,7 +356,8 @@ export class WorkbenchApp extends LitElement {
       if (error instanceof HttpRequestError && error.status === 404) return undefined;
       throw error;
     }
-    return listed.find((candidate) => candidate.id === id) ?? await this.unlistedSession(id, cwd, machineId);
+    const row = listed.find((candidate) => candidate.id === id);
+    return row !== undefined || !isCurrent() ? row : this.unlistedSession(id, cwd, machineId);
   }
 
   /**
@@ -486,14 +492,14 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** A Git worktree may be a sibling of its registered project's root, not a descendant. */
-  private registeredWorkspaceForCwd(cwd: string, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
-    return this.firstRegisteredWorkspace([...this.app.projects].sort((a, b) => b.path.length - a.path.length), machineId, (workspace) => workspace.path === cwd);
+  private registeredWorkspaceForCwd(cwd: string, machineId: string, isCurrent?: () => boolean): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
+    return this.firstRegisteredWorkspace([...this.app.projects].sort((a, b) => b.path.length - a.path.length), machineId, (workspace) => workspace.path === cwd, isCurrent);
   }
 
-  /** The first project, in the given order, that lists a matching workspace. */
-  private async firstRegisteredWorkspace(projects: readonly Project[], machineId: string, matches: (workspace: Workspace) => boolean): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
+  /** The first project, in the given order, that lists a matching workspace; no further batch starts once `isCurrent` fails. */
+  private async firstRegisteredWorkspace(projects: readonly Project[], machineId: string, matches: (workspace: Workspace) => boolean, isCurrent: () => boolean = () => true): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
     // ponytail: fixed batches of 4 bound the fan-out; a server lookup by path would make this one request.
-    for (let start = 0; start < projects.length; start += 4) {
+    for (let start = 0; start < projects.length && isCurrent(); start += 4) {
       const listed = await Promise.all(projects.slice(start, start + 4).map(async (project) => {
         const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
         return { project, workspaces, workspace: workspaces.find(matches) };
@@ -507,15 +513,16 @@ export class WorkbenchApp extends LitElement {
   /**
    * The authoritative Chat in its recorded workspace. Only a legacy catalog miss may reconstruct a blank Chat from status.
    */
-  private async anchoredWorkstreamSession(detail: OpenWorkstreamSessionDetail, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[]; session: SessionInfo } | undefined> {
+  private async anchoredWorkstreamSession(detail: OpenWorkstreamSessionDetail, machineId: string, isCurrent: () => boolean): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[]; session: SessionInfo } | undefined> {
     const project = this.app.projects.find((candidate) => candidate.id === detail.projectId);
     if (project === undefined || detail.workspaceId === undefined) return undefined;
     const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
+    if (!isCurrent()) return undefined;
     const workspace = workspaces.find((candidate) => candidate.id === detail.workspaceId);
     if (workspace === undefined) return undefined;
     // A failed or missing row falls back to the locate path instead of guessing a row from status.
     try {
-      const session = await this.knownSession(detail.sessionId, workspace.path, machineId);
+      const session = await this.knownSession(detail.sessionId, workspace.path, machineId, isCurrent);
       return session === undefined ? undefined : { project, workspace, workspaces, session };
     } catch {
       return undefined;
@@ -525,33 +532,44 @@ export class WorkbenchApp extends LitElement {
   /** Open the session that wrote a Workstream's newest checkpoint, wherever it lives. */
   private async openWorkstreamSession(detail: OpenWorkstreamSessionDetail): Promise<void> {
     const machineId = selectedMachineId(this.app);
-    const sequence = ++this.loadSequence;
-    // A newer open, navigation or machine switch supersedes this lookup.
-    const superseded = () => sequence !== this.loadSequence || selectedMachineId(this.app) !== machineId;
+    const open = ++this.workstreamOpenSequence;
+    let navigation = this.loadSequence;
+    // A newer open, any navigation, or a machine switch supersedes this lookup. A lookup leaves in-flight navigation alone.
+    const isCurrent = () => open === this.workstreamOpenSequence && navigation === this.loadSequence && selectedMachineId(this.app) === machineId;
+    // Applying the Chat takes over navigation: in-flight chooser and boot loads are dropped, so their Loading ends here.
+    const apply = (session: SessionInfo, project: Project | undefined, workspace: Workspace, workspaces: Workspace[]): number => {
+      const projectsPending = this.loading && this.app.projects.length === 0;
+      navigation = ++this.loadSequence;
+      this.loading = false;
+      this.setApp({ selectedProject: project, selectedWorkspace: workspace, workspaces, sessions: [...unsavedChatsIn(this.app.sessions, workspace.path, session.id), session] });
+      // ponytail: re-asks for the projects of an interrupted machine boot; resuming the dropped request would need per-step sequences.
+      if (projectsPending) void api.projects(machineId).then((projects) => { if (selectedMachineId(this.app) === machineId && this.app.projects.length === 0) this.setApp({ projects }); }, () => undefined);
+      return navigation;
+    };
     this.setApp({ error: "" });
     try {
-      const anchored = await this.anchoredWorkstreamSession(detail, machineId);
-      if (superseded()) return;
-      if (anchored?.session !== undefined) {
-        this.setApp({ selectedProject: anchored.project, selectedWorkspace: anchored.workspace, workspaces: anchored.workspaces, sessions: [anchored.session] });
+      const anchored = await this.anchoredWorkstreamSession(detail, machineId, isCurrent);
+      if (!isCurrent()) return;
+      if (anchored !== undefined) {
+        const sequence = apply(anchored.session, anchored.project, anchored.workspace, anchored.workspaces);
         void this.loadCatalogBehind(anchored.session.id, anchored.workspace, machineId, sequence);
         await this.openSession(anchored.session);
         return;
       }
       const { cwd } = await api.locate(detail.sessionId, machineId);
-      if (superseded()) return;
+      if (!isCurrent()) return;
       // Every located Chat needs archive-authoritative metadata, whether or not the Workstream recorded an anchor.
       const [session, registered] = await Promise.all([
-        this.knownSession(detail.sessionId, cwd, machineId),
-        this.registeredWorkspaceForCwd(cwd, machineId),
+        this.knownSession(detail.sessionId, cwd, machineId, isCurrent),
+        this.registeredWorkspaceForCwd(cwd, machineId, isCurrent),
       ]);
-      if (superseded()) return;
+      if (!isCurrent()) return;
       if (session === undefined) throw new Error(`Session ${detail.sessionId} is unavailable under ${cwd}.`);
       const workspace = registered?.workspace ?? adHocWorkspace(cwd);
-      this.setApp({ selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] });
+      apply(session, registered?.project, workspace, registered?.workspaces ?? [workspace]);
       await this.openSession(session);
     } catch (error) {
-      if (!superseded()) this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Start a new session for this Workstream instead.` });
+      if (isCurrent()) this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Start a new session for this Workstream instead.` });
     }
   }
 

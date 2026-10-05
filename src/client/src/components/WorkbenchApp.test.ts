@@ -1458,6 +1458,405 @@ describe("Workbench request waterfalls", () => {
   });
 });
 
+// Independent review repros for targeted Workstream opens racing chooser navigation, machine switches, and each other.
+describe("Workstream open versus in-flight navigation", () => {
+  const remote: Machine = { ...machine, id: "remote", name: "Remote", kind: "remote" };
+  const chatUrl = (id: string) => `/?project=${project.id}&workspace=${workspace.id}&session=${id}&view=chat`;
+  const flush = async () => { for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); }); };
+  const call = async (app: WorkbenchApp, name: string, ...args: unknown[]): Promise<void> => {
+    const fn: unknown = Reflect.get(app, name);
+    if (typeof fn !== "function") throw new Error(`${name} missing`);
+    await Promise.resolve(Reflect.apply(fn, app, args));
+  };
+  const loadingText = (app: WorkbenchApp) => app.shadowRoot?.querySelector('p[role="status"]')?.textContent ?? null;
+  const back = (app: WorkbenchApp) => { app.shadowRoot?.querySelector<HTMLButtonElement>("button.back")?.click(); };
+  const blankRow = (id: string, cwd = workspace.path): SessionInfo => ({ ...session(id, ""), cwd, path: "", persisted: false, messageCount: 0 });
+  const ids = (app: WorkbenchApp) => getState(app).sessions.map((candidate) => candidate.id);
+  const isLoading = (app: WorkbenchApp): unknown => Reflect.get(app, "loading");
+
+  it("a held unanchored locate sends no old-machine metadata, status, or project scan after a machine switch", async () => {
+    const app = await mountChooser([]);
+    setState(app, { ...getState(app), machines: [machine, remote] });
+    vi.spyOn(api, "projects").mockResolvedValue([]);
+    const located = deferred<{ cwd: string }>();
+    vi.spyOn(api, "locate").mockReturnValue(located.promise);
+    const sessions = vi.spyOn(api, "sessions").mockResolvedValue([session("old-open", "Old")]);
+    const status = vi.spyOn(api, "status").mockResolvedValue(idleStatus("old-open"));
+    const workspaces = vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    openFromWorkstream(app, { sessionId: "old-open" });
+    await vi.waitFor(() => { expect(api.locate).toHaveBeenCalledWith("old-open", "local"); });
+    await call(app, "chooseMachine", remote.id);
+    sessions.mockClear(); status.mockClear(); workspaces.mockClear();
+    located.resolve({ cwd: workspace.path });
+    await flush();
+    expect({ sessions: sessions.mock.calls, status: status.mock.calls, workspaces: workspaces.mock.calls }).toEqual({ sessions: [], status: [], workspaces: [] });
+    expect(getState(app).selectedSession).toBeUndefined();
+    expect(getState(app).selectedMachine?.id).toBe(remote.id);
+    expect(getState(app).error).toBe("");
+  });
+
+  it("a held anchored workspace listing sends no old-machine row, status, or locate request after a machine switch", async () => {
+    const app = await mountChooser([]);
+    setState(app, { ...getState(app), machines: [machine, remote] });
+    vi.spyOn(api, "projects").mockResolvedValue([]);
+    const listed = deferred<Workspace[]>();
+    vi.spyOn(api, "workspaces").mockReturnValue(listed.promise);
+    const sessions = vi.spyOn(api, "sessions").mockResolvedValue([]);
+    const status = vi.spyOn(api, "status").mockResolvedValue(idleStatus("held"));
+    const locate = vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    openFromWorkstream(app, { sessionId: "held", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(api.workspaces).toHaveBeenCalled(); });
+    await call(app, "chooseMachine", remote.id);
+    listed.resolve([workspace]);
+    await flush();
+    expect({ sessions: sessions.mock.calls, status: status.mock.calls.length, locate: locate.mock.calls }).toEqual({ sessions: [], status: 0, locate: [] });
+    expect(getState(app).selectedSession).toBeUndefined();
+    expect(getState(app).error).toBe("");
+  });
+
+  it.each([
+    { case: "anchored", detail: { projectId: project.id, workspaceId: workspace.id } },
+    { case: "located", detail: {} },
+  ])("a held legacy catalog for an $case open never rebuilds the blank Chat from old-machine status after a machine switch", async ({ detail }) => {
+    const app = await mountChooser([]);
+    setState(app, { ...getState(app), machines: [machine, remote] });
+    vi.spyOn(api, "projects").mockResolvedValue([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const locate = vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    const legacy = deferred<SessionInfo[]>();
+    vi.spyOn(api, "sessions").mockReturnValue(legacy.promise);
+    const status = vi.spyOn(api, "status").mockResolvedValue(idleStatus("blank"));
+    openFromWorkstream(app, { sessionId: "blank", ...detail });
+    await vi.waitFor(() => { expect(api.sessions).toHaveBeenCalledWith(workspace.path, "local", { sessionId: "blank" }); });
+    await call(app, "chooseMachine", remote.id);
+    legacy.resolve([]);
+    await flush();
+    expect(status).not.toHaveBeenCalled();
+    if (detail.projectId !== undefined) expect(locate).not.toHaveBeenCalled();
+    expect(getState(app).selectedSession).toBeUndefined();
+    expect(getState(app).error).toBe("");
+  });
+
+  it("a superseded unanchored open starts no further old-machine project batch", async () => {
+    const extra = Array.from({ length: 5 }, (_, index): Project => ({ ...project, id: `p${String(index)}`, name: `P${String(index)}`, path: `/p${String(index)}` }));
+    const app = await mountChooser([]);
+    setState(app, { ...getState(app), machines: [machine, remote], projects: extra });
+    vi.spyOn(api, "projects").mockResolvedValue([]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/unregistered" });
+    vi.spyOn(api, "sessions").mockResolvedValue([{ ...session("far", "Far"), cwd: "/unregistered" }]);
+    const firstBatch = deferred<Workspace[]>();
+    const workspaces = vi.spyOn(api, "workspaces").mockReturnValue(firstBatch.promise);
+    openFromWorkstream(app, { sessionId: "far" });
+    await vi.waitFor(() => { expect(workspaces).toHaveBeenCalledTimes(4); });
+    await call(app, "chooseMachine", remote.id);
+    firstBatch.resolve([]);
+    await flush();
+    expect(workspaces).toHaveBeenCalledTimes(4);
+    expect(getState(app).selectedSession).toBeUndefined();
+  });
+
+  it("drops a held located row-lookup error after a machine switch", async () => {
+    const app = await mountChooser([]);
+    setState(app, { ...getState(app), machines: [machine, remote] });
+    vi.spyOn(api, "projects").mockResolvedValue([]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const row = deferred<SessionInfo[]>();
+    vi.spyOn(api, "sessions").mockReturnValue(row.promise);
+    openFromWorkstream(app, { sessionId: "err-open" });
+    await vi.waitFor(() => { expect(api.sessions).toHaveBeenCalled(); });
+    await call(app, "chooseMachine", remote.id);
+    row.reject(new HttpRequestError("boom", 500));
+    await flush();
+    expect(getState(app).error).toBe("");
+    expect(getState(app).selectedSession).toBeUndefined();
+  });
+
+  it("a fast anchored newer open beats a held older locate, which makes no later lookup", async () => {
+    const app = await mountChooser([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const located = deferred<{ cwd: string }>();
+    vi.spyOn(api, "locate").mockReturnValue(located.promise);
+    const newer = session("newer", "Newer");
+    const sessions = vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => Promise.resolve(options?.sessionId === "newer" ? [newer] : [session(options?.sessionId ?? "catalog", "Old")]));
+    stubSelectedChat();
+    openFromWorkstream(app, { sessionId: "older" });
+    await vi.waitFor(() => { expect(api.locate).toHaveBeenCalledWith("older", "local"); });
+    openFromWorkstream(app, { sessionId: "newer", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("newer"); });
+    located.resolve({ cwd: workspace.path });
+    await flush();
+    expect(getState(app).selectedSession?.id).toBe("newer");
+    expect(sessions.mock.calls.some(([, , options]) => options?.sessionId === "older")).toBe(false);
+    expect(getState(app).error).toBe("");
+  });
+
+  it("drops an older open's error after a newer open succeeded on the same machine", async () => {
+    const app = await mountChooser([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const located = deferred<{ cwd: string }>();
+    vi.spyOn(api, "locate").mockReturnValue(located.promise);
+    vi.spyOn(api, "sessions").mockResolvedValue([session("newer", "Newer")]);
+    stubSelectedChat();
+    openFromWorkstream(app, { sessionId: "older" });
+    await vi.waitFor(() => { expect(api.locate).toHaveBeenCalled(); });
+    openFromWorkstream(app, { sessionId: "newer", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("newer"); });
+    located.reject(new Error("old failed"));
+    await flush();
+    expect(getState(app).error).toBe("");
+    expect(getState(app).selectedSession?.id).toBe("newer");
+  });
+
+  it("keeps a current daemon's 404 authoritative at the anchor and the located folder, without status", async () => {
+    const app = await mountChooser([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/elsewhere" });
+    const sessions = vi.spyOn(api, "sessions").mockRejectedValue(new HttpRequestError("Session not found", 404));
+    const status = vi.spyOn(api, "status");
+    openFromWorkstream(app, { sessionId: "gone", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(getState(app).error).toContain("unavailable"); });
+    expect(status).not.toHaveBeenCalled();
+    expect(getState(app).selectedSession).toBeUndefined();
+    expect(sessions.mock.calls).toEqual([[workspace.path, "local", { sessionId: "gone" }], ["/elsewhere", "local", { sessionId: "gone" }]]);
+  });
+
+  it("keeps a current daemon's 404 authoritative for an unanchored open, without status", async () => {
+    const app = await mountChooser([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    vi.spyOn(api, "sessions").mockRejectedValue(new HttpRequestError("Session not found", 404));
+    const status = vi.spyOn(api, "status");
+    openFromWorkstream(app, { sessionId: "gone" });
+    await vi.waitFor(() => { expect(getState(app).error).toContain("unavailable"); });
+    expect(status).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { case: "its anchor workspace vanished", registered: [], located: workspace.path },
+    { case: "its anchor lookup failed", registered: [workspace], located: "/moved" },
+  ])("opens the located archived row read-only without status when $case", async ({ registered, located }) => {
+    const archived: SessionInfo = { ...session("arch", "Stored"), cwd: located, archived: true, archivedAt: "2026-09-01T00:00:00.000Z" };
+    const app = await mountChooser([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue(registered);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: located });
+    vi.spyOn(api, "sessions").mockImplementation((cwd) => cwd === located ? Promise.resolve([archived]) : Promise.reject(new HttpRequestError("boom", 500)));
+    const status = stubSelectedChat();
+    openFromWorkstream(app, { sessionId: "arch", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("arch"); });
+    await app.updateComplete;
+    expect(getState(app).selectedSession?.archived).toBe(true);
+    expect(status).not.toHaveBeenCalled();
+    expect(promptEditor(app).disabled).toBe(true);
+  });
+
+  it("rebuilds a legacy daemon's blank Chat at the anchor from status", async () => {
+    const app = await mountChooser([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const locate = vi.spyOn(api, "locate");
+    vi.spyOn(api, "sessions").mockResolvedValue([]);
+    const status = stubSelectedChat();
+    openFromWorkstream(app, { sessionId: "blank", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("blank"); });
+    expect(status).toHaveBeenCalled();
+    expect(locate).not.toHaveBeenCalled();
+    expect(getState(app).selectedSession?.archived).toBeUndefined();
+  });
+
+  it("an open that succeeds during a held chooser catalog clears Loading and Back shows that workspace's catalog", async () => {
+    const app = await mountChooser([]);
+    const catalog = deferred<SessionInfo[]>();
+    const row = session("ws-chat", "Workstream chat");
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const sessions = vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? catalog.promise : Promise.resolve([row]));
+    stubSelectedChat();
+    void call(app, "chooseWorkspace", workspace.id);
+    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(true); });
+    openFromWorkstream(app, { sessionId: row.id, projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(row.id); });
+    expect(Reflect.get(app, "loading")).toBe(false);
+    catalog.resolve([row, session("other", "Other")]);
+    await flush();
+    back(app);
+    await app.updateComplete;
+    await flush();
+    await app.updateComplete;
+    expect({ loading: isLoading(app), text: loadingText(app), sessions: ids(app).sort() }).toEqual({ loading: false, text: null, sessions: ["other", "ws-chat"] });
+    // The chooser's own catalog request and the open's catalog behind; no queued stale request after that.
+    expect(sessions.mock.calls.filter(([, , options]) => options?.sessionId === undefined)).toHaveLength(2);
+  });
+
+  it("a failing open during a held chooser catalog leaves that navigation to finish its list and Loading", async () => {
+    const app = await mountChooser([session("existing", "Existing")]);
+    const catalog = deferred<SessionInfo[]>();
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "locate").mockRejectedValue(new HttpRequestError("Session x was not found", 404));
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? catalog.promise : Promise.reject(new HttpRequestError("Session not found", 404)));
+    void call(app, "chooseWorkspace", workspace.id);
+    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(true); });
+    openFromWorkstream(app, { sessionId: "missing", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(getState(app).error).not.toBe(""); });
+    catalog.resolve([session("existing", "Existing")]);
+    await flush();
+    await app.updateComplete;
+    expect({ loading: isLoading(app), text: loadingText(app), sessions: ids(app) }).toEqual({ loading: false, text: null, sessions: ["existing"] });
+    expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
+  });
+
+  it("a stale Other-tab card that fails during a machine switch keeps the new machine's projects", async () => {
+    const app = await mountChooser([]);
+    setState(app, { ...getState(app), machines: [machine, remote] });
+    Reflect.set(app, "chooserView", "other");
+    await app.updateComplete;
+    const remoteProject: Project = { ...project, id: "remote-project", name: "Remote project" };
+    const projects = deferred<Project[]>();
+    vi.spyOn(api, "projects").mockReturnValue(projects.promise);
+    vi.spyOn(api, "locate").mockRejectedValue(new HttpRequestError("not found", 404));
+    void call(app, "chooseMachine", remote.id);
+    await app.updateComplete;
+    openFromWorkstream(app, { sessionId: "stale-card" });
+    projects.resolve([remoteProject]);
+    await flush();
+    await app.updateComplete;
+    expect({ projects: getState(app).projects.map((candidate) => candidate.id), loading: isLoading(app) }).toEqual({ projects: ["remote-project"], loading: false });
+  });
+
+  it("an open that succeeds during a machine switch still receives that machine's projects", async () => {
+    const app = await mountChooser([]);
+    setState(app, { ...getState(app), machines: [machine, remote] });
+    const remoteProject: Project = { ...project, id: "remote-project", name: "Remote project", path: "/remote" };
+    const projects = deferred<Project[]>();
+    const listProjects = vi.spyOn(api, "projects").mockReturnValue(projects.promise);
+    listProjects.mockClear();
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/adhoc" });
+    vi.spyOn(api, "sessions").mockResolvedValue([{ ...session("remote-chat", "Remote"), cwd: "/adhoc" }]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([]);
+    stubSelectedChat();
+    void call(app, "chooseMachine", remote.id);
+    openFromWorkstream(app, { sessionId: "remote-chat" });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("remote-chat"); });
+    expect(Reflect.get(app, "loading")).toBe(false);
+    projects.resolve([remoteProject]);
+    await flush();
+    expect(getState(app).projects.map((candidate) => candidate.id)).toEqual(["remote-project"]);
+    // The machine switch's own request, then one more after the open dropped it.
+    expect(listProjects.mock.calls).toEqual([[remote.id], [remote.id]]);
+    expect(getState(app).selectedSession?.id).toBe("remote-chat");
+  });
+
+  it("reloads a project-less archived URL read-only without status", async () => {
+    const archived: SessionInfo = { ...session("arch3", "Stored"), cwd: "/adhoc", archived: true };
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/adhoc" });
+    vi.spyOn(api, "sessions").mockResolvedValue([archived]);
+    const status = stubSelectedChat();
+    window.history.replaceState({}, "", "/?session=arch3&view=chat");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("arch3"); });
+    await app.updateComplete;
+    expect(getState(app).selectedSession?.archived).toBe(true);
+    expect(status).not.toHaveBeenCalled();
+    expect(promptEditor(app).disabled).toBe(true);
+  });
+
+  it("writes a complete URL for a located registered Chat and a session-only URL for an unregistered one", async () => {
+    const app = await mountChooser([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "locate").mockImplementation((id) => Promise.resolve({ cwd: id === "reg" ? workspace.path : "/adhoc" }));
+    vi.spyOn(api, "sessions").mockImplementation((cwd, _machineId, options) => Promise.resolve([{ ...session(options?.sessionId ?? "x", "T"), cwd }]));
+    stubSelectedChat();
+    openFromWorkstream(app, { sessionId: "reg" });
+    await vi.waitFor(() => { expect(window.location.search).toContain("session=reg"); });
+    expect(window.location.search).toContain(`project=${project.id}`);
+    expect(window.location.search).toContain(`workspace=${workspace.id}`);
+    back(app);
+    await app.updateComplete;
+    openFromWorkstream(app, { sessionId: "unreg" });
+    await vi.waitFor(() => { expect(window.location.search).toContain("session=unreg"); });
+    expect(window.location.search).not.toContain("project=");
+  });
+
+  it("an anchored open keeps an unselected never-saved blank Chat and its draft in the same folder, through the catalog", async () => {
+    const blank = blankRow("blank-z");
+    saveDraft(machineSessionKey("local", blank.id), "Unsent idea");
+    const app = await mountChooser([blank, session("y-old", "Y")]);
+    const row = session("y", "Y");
+    const catalog = deferred<SessionInfo[]>();
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? catalog.promise : Promise.resolve([row]));
+    stubSelectedChat();
+    openFromWorkstream(app, { sessionId: "y", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("y"); });
+    expect(ids(app)).toEqual(["blank-z", "y"]);
+    catalog.resolve([row, session("other", "Other")]);
+    await vi.waitFor(() => { expect(ids(app)).toEqual(["blank-z", "y", "other"]); });
+    expect(getState(app).sessions[0]).toEqual(blank);
+    expect(loadDraft(machineSessionKey("local", blank.id))).toBe("Unsent idea");
+  });
+
+  it("an open in another folder does not carry the previous folder's never-saved Chats", async () => {
+    const feature: Workspace = { ...workspace, id: "feature", path: "/repo-feature", label: "feature", isMain: false };
+    const app = await mountChooser([blankRow("blank-main"), blankRow("blank-feature", feature.path)]);
+    const row: SessionInfo = { ...session("f", "F"), cwd: feature.path };
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace, feature]);
+    vi.spyOn(api, "sessions").mockResolvedValue([row]);
+    stubSelectedChat();
+    openFromWorkstream(app, { sessionId: "f", projectId: project.id, workspaceId: feature.id });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("f"); });
+    await flush();
+    expect(ids(app)).toEqual(["blank-feature", "f"]);
+  });
+
+  it.each([
+    { case: "same machine and folder", machineId: "local", cwd: workspace.path, kept: true },
+    { case: "another folder", machineId: "local", cwd: "/elsewhere", kept: false },
+    { case: "another machine", machineId: "remote", cwd: workspace.path, kept: false },
+  ])("a Chat URL load keeps a never-saved Chat of the $case: $kept", async ({ machineId, cwd, kept }) => {
+    const app = await mountChooser([]);
+    const owner = machineId === "local" ? machine : remote;
+    const blank = blankRow("blank", cwd);
+    setState(app, { ...getState(app), machines: [machine, remote], selectedMachine: owner, sessions: [blank, session("stale", "Stale")] });
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const row = session("listed", "Listed");
+    const catalog = deferred<SessionInfo[]>();
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? catalog.promise : Promise.resolve([row]));
+    stubSelectedChat();
+    window.history.pushState({}, "", chatUrl(row.id));
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(row.id); });
+    expect(ids(app)).toEqual(kept ? ["blank", "listed"] : ["listed"]);
+    catalog.resolve([row]);
+    await flush();
+    expect(ids(app)).toEqual(kept ? ["blank", "listed"] : ["listed"]);
+    expect(Reflect.get(app, "loading")).toBe(false);
+  });
+
+  it("UI-015 (accepted caveat): a targeted archived row stays read-only over a fresh unarchived catalog until the workspace is listed again", async () => {
+    const archived: SessionInfo = { ...session("ua", "Stored"), archived: true, archivedAt: "2026-09-01T00:00:00.000Z" };
+    const app = await mountChooser([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    const catalog = deferred<SessionInfo[]>();
+    let full = 0;
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => {
+      if (options?.sessionId !== undefined) return Promise.resolve([archived]);
+      full += 1;
+      return full === 1 ? catalog.promise : Promise.resolve([session("ua", "Stored")]);
+    });
+    stubSelectedChat();
+    openFromWorkstream(app, { sessionId: "ua", projectId: project.id, workspaceId: workspace.id });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("ua"); });
+    catalog.resolve([session("ua", "Stored")]);
+    await flush();
+    expect(getState(app).selectedSession?.archived).toBe(true);
+    expect(getState(app).sessions.find((candidate) => candidate.id === "ua")?.archived).toBe(true);
+    await call(app, "chooseWorkspace", workspace.id);
+    expect(getState(app).sessions.find((candidate) => candidate.id === "ua")?.archived).toBeUndefined();
+  });
+});
+
 interface Deferred<T> { promise: Promise<T>; resolve: (value: T) => void; reject: (reason: unknown) => void }
 
 function deferred<T>(): Deferred<T> {
