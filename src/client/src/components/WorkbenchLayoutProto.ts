@@ -159,6 +159,7 @@ export class ProtoChatPane extends LitElement {
       <div class="body" data-files=${this.files}>
         <div class="chat-column">
           <chat-view
+            dense
             @workspace-file-open=${this.openWorkspaceFile}
             .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)}
             .sessionId=${session.id}
@@ -194,6 +195,7 @@ export class ProtoChatPane extends LitElement {
           <delegate-roster .status=${state.status}></delegate-roster>
           <goal-status-chip .status=${state.status}></goal-status-chip>
           <prompt-editor
+            dense
             .sessionId=${session.id}
             .cwd=${state.selectedWorkspace?.path}
             .machineId=${machineId}
@@ -224,19 +226,20 @@ export class ProtoChatPane extends LitElement {
   }
 
   static override styles = css`
-    :host { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--pi-bg); color: var(--pi-text); font: 14px system-ui, sans-serif; }
+    /* Half the comfortable profile's spacing inside a pane. */
+    :host { --pi-panel-padding: 5px; --pi-message-padding: 5px; --pi-toolbar-gap: 3px; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: transparent; color: var(--pi-text); font: 14px system-ui, sans-serif; }
     .placeholder { margin: auto; color: var(--pi-muted); }
-    .error { flex: 0 0 auto; padding: 6px 12px; border-bottom: 1px solid var(--pi-border); color: var(--pi-danger); }
+    .error { flex: 0 0 auto; padding: 4px 10px; background: color-mix(in srgb, var(--pi-danger) 12%, transparent); color: var(--pi-danger); }
     .body { flex: 1 1 auto; display: flex; min-width: 0; min-height: 0; }
     .chat-column { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     delegate-roster, goal-status-chip, prompt-editor { flex: 0 0 auto; }
     .body { container-type: inline-size; }
-    workbench-files-pane { flex: 0 0 min(420px, 45%); box-sizing: border-box; min-width: 0; border-left: 1px solid var(--pi-border); }
+    workbench-files-pane { flex: 0 0 min(420px, 45%); box-sizing: border-box; min-width: 0; background: color-mix(in srgb, var(--pi-text) 4%, transparent); }
     /* Too narrow to split (a grid tile): Files takes the whole pane until it is toggled off. */
     @container (max-width: 860px) {
       .body[data-files="true"] .chat-column { display: none; }
-      .body[data-files="true"] workbench-files-pane { flex: 1 1 auto; border-left: 0; }
+      .body[data-files="true"] workbench-files-pane { flex: 1 1 auto; }
     }
   `;
 }
@@ -547,8 +550,13 @@ export class WorkbenchLayoutProto extends LitElement {
    * Put the home's picks in this window, moving them out of any other window. A Chat picked on its own joins its
    * Workstream's group when it has one.
    */
-  private async addFromHome({ picks, group }: HomeAdd): Promise<void> {
+  private async addFromHome({ picks: requested, group }: HomeAdd): Promise<void> {
     this.adding = false;
+    const machineId = this.machine?.id ?? "local";
+    // A Workstream records Chats this machine may not have; "Add all" keeps the ones PI WEB lists.
+    // ponytail: membership in the 500 most recent Chats; a server lookup by id would also find older ones.
+    const known = requested.length < 2 ? undefined : new Set((await api.recent(500, machineId).catch((): SessionInfo[] => [])).map((row) => row.id));
+    const picks = known === undefined ? requested : requested.filter((pick) => known.has(pick.id));
     const context = group === undefined ? await this.workstreamContext() : undefined;
     const owners = await Promise.all(picks.map(async (pick) => group ?? (context === undefined ? undefined : await workstreamForSession(context, pick.id).then((found) => found ?? undefined, () => undefined))));
     const ids = new Set(picks.map((pick) => pick.id));
@@ -927,7 +935,9 @@ export class WorkbenchLayoutProto extends LitElement {
   static override styles = css`
     :host { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--pi-bg); color: var(--pi-text); font: 13px system-ui, sans-serif; }
     button { font: inherit; color: inherit; cursor: pointer; }
-    .bar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-width: 0; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--pi-border); background: var(--pi-surface); }
+    /* No rules anywhere: chrome, tiles and gutters differ by tint. Focused tile = the brighter surface in either scheme. */
+    :host { --tile-focused: light-dark(var(--pi-bg), color-mix(in srgb, var(--pi-surface) 70%, var(--pi-bg))); --tile-rest: light-dark(color-mix(in srgb, var(--pi-surface) 70%, var(--pi-bg)), var(--pi-bg)); --gutter: light-dark(color-mix(in srgb, var(--pi-surface) 88%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 70%, black)); }
+    .bar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-width: 0; height: 38px; padding: 0 8px 0 12px; background: var(--pi-surface); }
     .lead { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; }
     .win-name { color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
     .pager { display: flex; align-items: center; gap: 4px; color: var(--pi-muted); font-size: 12px; }
@@ -936,9 +946,9 @@ export class WorkbenchLayoutProto extends LitElement {
     .pager button:disabled { opacity: .35; cursor: default; }
     .tabs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; overflow-x: auto; scrollbar-width: none; }
     .group { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 2px; }
-    .group + .group { padding-left: 12px; border-left: 1px solid var(--pi-border-muted); }
+    .group + .group { padding-left: 4px; }
     /* Workstream identity: the home card's colour (--ws), tinted like its marker so --pi-text keeps >= 4.5:1. */
-    .chip { flex: 0 1 auto; min-width: 40px; max-width: 200px; overflow: hidden; padding: 2px 8px; border: 1px solid var(--ws, var(--pi-border)); border-radius: 999px; background: color-mix(in srgb, var(--ws, transparent) 30%, var(--pi-surface)); color: var(--pi-text); font-size: 11px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+    .chip { flex: 0 1 auto; min-width: 40px; max-width: 200px; overflow: hidden; padding: 2px 8px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--ws, transparent) 30%, var(--pi-surface)); color: var(--pi-text); font-size: 11px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
     button.chip:hover { background: color-mix(in srgb, var(--ws, transparent) 18%, var(--pi-surface-hover)); }
     .chip.small { flex: 0 1 auto; min-width: 0; max-width: 40%; padding: 0 7px; font-weight: 500; }
     .tab { flex: 0 1 auto; min-width: 72px; max-width: 260px; display: flex; align-items: center; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 4px 0 9px; border-radius: 7px; color: var(--pi-muted); cursor: pointer; user-select: none; }
@@ -963,28 +973,28 @@ export class WorkbenchLayoutProto extends LitElement {
     .icon:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .icon[aria-pressed="true"] { color: var(--pi-accent); background: var(--pi-selection-bg, var(--pi-surface-hover)); }
     .icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .add { height: 28px; padding: 0 10px; border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); white-space: nowrap; }
-    .add:hover, .add[aria-expanded="true"] { border-color: var(--pi-accent); }
-    .segmented { display: flex; border: 1px solid var(--pi-border); border-radius: 7px; overflow: hidden; }
-    .segmented button { height: 26px; padding: 0 10px; border: 0; background: none; color: var(--pi-muted); }
-    .segmented button + button { border-left: 1px solid var(--pi-border); }
-    .segmented button[aria-pressed="true"] { background: var(--pi-selection-bg, var(--pi-surface-hover)); color: var(--pi-text); font-weight: 600; }
-    .stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 1px; background: var(--pi-border); }
-    .stage[data-layout="tabs"], .stage[data-maximized="true"] { display: block; background: var(--pi-bg); }
-    .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--pi-bg); }
+    .add { height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--pi-surface-hover); white-space: nowrap; }
+    .add:hover, .add[aria-expanded="true"] { background: var(--pi-selection-bg, var(--pi-surface-hover)); }
+    .segmented { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--pi-surface-hover); }
+    .segmented button { height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); }
+    .segmented button[aria-pressed="true"] { background: var(--pi-bg); color: var(--pi-text); font-weight: 600; }
+    .stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 3px; background: var(--gutter); }
+    .stage[data-layout="tabs"], .stage[data-maximized="true"] { display: block; background: var(--tile-focused); }
+    .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--tile-rest); }
+    .tile[data-focused="true"], .stage[data-layout="tabs"] .tile, .stage[data-maximized="true"] .tile { background: var(--tile-focused); }
     .tile[data-visible="false"], .stage[data-layout="tabs"] .tile, .stage[data-maximized="true"] .tile { position: absolute; inset: 0; }
     .tile[data-visible="false"] { visibility: hidden; pointer-events: none; }
-    .tile-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 4px 0 8px; border-left: 3px solid var(--ws, transparent); border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); cursor: default; user-select: none; }
+    .tile-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; height: 26px; box-sizing: border-box; padding: 0 4px 0 8px; border-left: 3px solid var(--ws, transparent); color: var(--pi-muted); font-size: 12px; cursor: default; user-select: none; }
     .tile-bar .title { flex: 0 1 auto; }
-    .tile[data-focused="true"] .tile-bar { color: var(--pi-text); background: color-mix(in srgb, var(--ws, var(--pi-accent)) 12%, var(--pi-surface)); }
+    .tile[data-focused="true"] .tile-bar { color: var(--pi-text); }
     .stage[data-layout="tabs"] .tile-bar { display: none; }
     .tile-actions { flex: 0 0 auto; margin-left: auto; display: flex; gap: 2px; opacity: 0; }
     .tile-bar:hover .tile-actions, .tile[data-focused="true"] .tile-actions, .tile-actions:focus-within { opacity: 1; }
-    .tile-actions .icon { width: 24px; height: 24px; }
+    .tile-actions .icon { width: 22px; height: 22px; }
     proto-chat-pane { flex: 1 1 auto; }
     /* The home fills an empty window, or sits as a sheet over a full one. */
     proto-home.empty { grid-area: 1 / 1 / 3 / 3; background: var(--pi-bg); }
-    .home-sheet { position: fixed; z-index: 30; inset: 40px 0 0; background: var(--pi-overlay, rgb(0 0 0 / 40%)); }
+    .home-sheet { position: fixed; z-index: 30; inset: 38px 0 0; background: var(--pi-overlay, rgb(0 0 0 / 40%)); }
     .menu { position: fixed; z-index: 40; min-width: 220px; display: grid; padding: 4px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 10px 30px var(--pi-shadow); }
     .menu button { padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; }
     .menu button:hover { background: var(--pi-surface-hover); }

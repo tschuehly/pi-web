@@ -513,7 +513,7 @@ export const chatStyles = css`
 export const formattedTextStyles = css`
   :host { display: block; }
   .formatted { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; text-align: start; unicode-bidi: plaintext; }
-  p, ul, ol, pre, blockquote, .table-scroll, .code-block-wrapper { margin: 0 0 10px; }
+  p, ul, ol, pre, blockquote, .table-scroll, .code-block-wrapper { margin: 0 0 var(--pi-paragraph-gap, 10px); }
   :is(p, ul, ol, pre, blockquote, .table-scroll, .code-block-wrapper):last-child { margin-bottom: 0; }
   ul, ol { padding-left: 22px; }
   li + li { margin-top: 3px; }
@@ -652,4 +652,25 @@ export const promptEditorStyles = css`
   @media (forced-colors: active) {
     .editor-resize-handle:focus-visible, button:focus-visible { outline-color: Highlight; }
   }
+  /* Dense (layout prototype): two rows at most, no rules; a tinted field instead of a top border. */
+  :host([dense]) footer { gap: 1px; padding: 3px 6px 3px; border-top: 0; }
+  :host([dense]) footer.shell-mode { background: transparent; }
+  :host([dense]) .input-row { display: flex; align-items: flex-end; gap: 4px; min-width: 0; padding: 0 2px 0 8px; border-radius: 8px; background: color-mix(in srgb, var(--pi-text) 6%, transparent); }
+  :host([dense]) .input-row:has(.cm-editor.cm-focused) { background: color-mix(in srgb, var(--pi-text) 9%, transparent); }
+  :host([dense]) footer.shell-mode .input-row { background: var(--pi-success-bg); }
+  :host([dense]) .editor-wrap { flex: 1 1 auto; }
+  :host([dense]) .markdown-editor .cm-editor { min-height: 0; font-size: 14px; }
+  :host([dense]) .markdown-editor .cm-content { min-height: 0; padding: 4px 0; }
+  :host([dense]) .composer-actions { padding-bottom: 1px; }
+  :host([dense]) .icon-button { width: 26px; height: 26px; min-height: 0; }
+  :host([dense]) .actions { flex-wrap: nowrap; gap: 10px; min-width: 0; margin: 0; padding: 0 4px; overflow: hidden; font-size: 11px; }
+  :host([dense]) .attachments { position: relative; flex: 0 1 auto; max-width: 40%; margin: 0; align-self: center; gap: 4px; }
+  :host([dense]) .attachment-chip { width: auto; height: 24px; display: inline-flex; align-items: center; border: 0; border-radius: 5px; overflow: visible; background: var(--pi-surface-hover); }
+  :host([dense]) .attachment-open { min-height: 0; padding: 0; border: 0; background: none; }
+  :host([dense]) .attachment-open img, :host([dense]) .attachment-open .attachment-file-preview { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 5px; object-fit: cover; font-size: 8px; }
+  :host([dense]) .attachment-remove { position: static; width: 16px; height: 22px; min-height: 0; border: 0; border-radius: 4px; background: none; color: var(--pi-muted); line-height: 1; }
+  :host([dense]) .attachment-menu { position: absolute; z-index: 30; bottom: calc(100% + 8px); left: 0; padding: 6px; border-radius: 8px; background: var(--pi-surface); box-shadow: 0 6px 20px var(--pi-shadow); }
+  :host([dense]) .attachment-menu select { border: 0; background: var(--pi-surface-hover); font-size: 13px; }
+  :host([dense]) .attachment-error { flex-basis: auto; font-weight: 700; }
+  :host([dense]) .mode-hint { bottom: 3px; border: 0; padding: 0 6px; }
 `;
