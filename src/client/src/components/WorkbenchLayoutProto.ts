@@ -899,6 +899,7 @@ export class WorkbenchLayoutProto extends LitElement {
           @dragstart=${(event: DragEvent) => { this.dragStart(event, [entry.id], entry.title); }} @dragend=${(event: DragEvent) => { this.dragEnd(event, [entry.id]); }}>
           ${this.dot(entry)}
           <span class="title" title=${entry.title}>${entry.title}</span>
+          ${this.statusOf(entry) === "needs" ? html`<span class="needs">Needs you</span>` : nothing}
           ${entry.group === undefined ? nothing : html`<span class="chip small" title=${`Workstream: ${entry.group}`}>${entry.group}</span>`}
           <span class="tile-actions">
             <button class="icon" title="Files" aria-label="Files" aria-pressed=${entry.files === true} @click=${() => { this.toggleFiles(entry.id); }}>${renderBuiltinTabIcon("files")}</button>
@@ -936,7 +937,8 @@ export class WorkbenchLayoutProto extends LitElement {
     :host { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--pi-bg); color: var(--pi-text); font: 13px system-ui, sans-serif; }
     button { font: inherit; color: inherit; cursor: pointer; }
     /* No rules anywhere: chrome, tiles and gutters differ by tint. Focused tile = the brighter surface in either scheme. */
-    :host { --tile-focused: light-dark(var(--pi-bg), color-mix(in srgb, var(--pi-surface) 70%, var(--pi-bg))); --tile-rest: light-dark(color-mix(in srgb, var(--pi-surface) 70%, var(--pi-bg)), var(--pi-bg)); --gutter: light-dark(color-mix(in srgb, var(--pi-surface) 88%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 70%, black)); }
+    /* Every bundled theme's surface is lighter than its bg, light or dark. */
+    :host { --tile-focused: var(--pi-surface); --tile-rest: var(--pi-bg); --gutter: light-dark(color-mix(in srgb, var(--pi-bg) 94%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 85%, black)); }
     .bar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-width: 0; height: 38px; padding: 0 8px 0 12px; background: var(--pi-surface); }
     .lead { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; }
     .win-name { color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
@@ -991,6 +993,7 @@ export class WorkbenchLayoutProto extends LitElement {
     .tile-actions { flex: 0 0 auto; margin-left: auto; display: flex; gap: 2px; opacity: 0; }
     .tile-bar:hover .tile-actions, .tile[data-focused="true"] .tile-actions, .tile-actions:focus-within { opacity: 1; }
     .tile-actions .icon { width: 22px; height: 22px; }
+    .needs { flex: 0 0 auto; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--pi-warning) 28%, transparent); color: var(--pi-text); font-size: 11px; font-weight: 700; line-height: 18px; }
     proto-chat-pane { flex: 1 1 auto; }
     /* The home fills an empty window, or sits as a sheet over a full one. */
     proto-home.empty { grid-area: 1 / 1 / 3 / 3; background: var(--pi-bg); }

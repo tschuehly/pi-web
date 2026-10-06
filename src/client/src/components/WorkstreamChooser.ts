@@ -612,7 +612,7 @@ export class WorkstreamChooser extends LitElement {
           <h4>PRs and issues</h4>
           <ul class="refs">${references.map((ref) => html`<li><span class="kind">${ref.kind}</span><a href=${ref.url} target="_blank" rel="noreferrer">${ref.key}</a></li>`)}</ul>
         `}
-        <h4>Chats</h4>
+        <h4 class="chats-heading">Chats${this.addAll && snapshot.sessions.some((session) => this.chatEligible(session)) ? html`<button class="add-all" @click=${() => { this.addAllChats(snapshot); }}>Add all Chats</button>` : nothing}</h4>
         ${sessions.length === 0 ? html`<p class="missing">No Chats yet.</p>` : html`
           <div class="session-list">${sessions.slice(0, VISIBLE_CHATS).map((session) => this.renderSessionRow(snapshot, session))}</div>
           ${olderChats > 0 ? html`<details class="older" @toggle=${loadOlder}><summary>${String(olderChats)} older Chat${olderChats > 1 ? "s" : ""}</summary><div class="session-list">${sessions.slice(VISIBLE_CHATS).map((session) => this.renderSessionRow(snapshot, session))}</div></details>` : nothing}
@@ -637,7 +637,6 @@ export class WorkstreamChooser extends LitElement {
             ${directories.length > 0 || cp?.references?.some(isTemporaryDirectory) !== true ? html`<button @click=${() => { this.start(snapshot, latest); }}>New session</button>` : nothing}
             ${cp?.references?.some(isTemporaryDirectory) === true ? html`<button ?disabled=${!this.canStartEmpty} title="Choose a persistent workspace first" @click=${() => { this.start(snapshot, latest, true); }}>New session in selected workspace</button>` : nothing}
           `}
-          ${this.addAll && snapshot.sessions.some((session) => this.chatEligible(session)) ? html`<button class="add-all" @click=${() => { this.addAllChats(snapshot); }}>Add all Chats</button>` : nothing}
         </div>
       </div>
     `;
@@ -695,6 +694,8 @@ export class WorkstreamChooser extends LitElement {
     .session-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .session-meta { flex: none; display: flex; align-items: center; gap: 4px; max-width: 45%; color: var(--pi-text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .status { padding: 0 5px; border: 1px solid var(--pi-border); border-radius: 999px; }
+    .chats-heading { display: flex; align-items: center; gap: 10px; }
+    .add-all { min-height: 0; padding: 2px 10px; border-color: var(--pi-success-border); background: var(--pi-success-bg); font-size: 12px; font-weight: 700; }
     .placed { padding: 0 6px; border: 1px solid var(--pi-accent-border, var(--pi-border)); border-radius: 4px; color: var(--pi-text); font-size: 11px; }
     details { margin-top: 6px; }
     summary { display: inline-flex; gap: 6px; padding: 2px 4px 2px 0; border-radius: 4px; color: var(--pi-text); font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
