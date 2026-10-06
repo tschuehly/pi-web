@@ -1129,7 +1129,6 @@ export class WorkbenchApp extends LitElement {
           <div class="chat-column">
         <chat-view
           .contentRendering=${this.contentRendering}
-          .machineId=${selectedMachineId(state)}
           @workspace-file-open=${this.openWorkspaceFile}
           @outside-file-open=${this.openOutsideFile}
           .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)}
