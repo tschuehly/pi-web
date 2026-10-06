@@ -107,10 +107,10 @@ function backgroundBashPart(message: unknown): Extract<ChatPart, { type: "backgr
     || elapsedSeconds === undefined || !Number.isInteger(elapsedSeconds) || elapsedSeconds < 0
     || (state !== "complete" && state !== "failed" && state !== "cancelled")
     || (exitCode !== undefined && (typeof exitCode !== "number" || !Number.isInteger(exitCode))) || content === undefined) return undefined;
-  const marker = `\nFull output (available until session shutdown): ${logPath}\n`;
-  const start = content.indexOf(marker);
-  if (start < 0) return undefined;
-  const output = content.slice(start + marker.length).replace(/^\[showing recent output only\]\n/, "");
+  // Durable jobs write `Full output:`; older persisted completions carry the session-shutdown wording.
+  const marker = [`\nFull output: ${logPath}\n`, `\nFull output (available until session shutdown): ${logPath}\n`].find((text) => content.includes(text));
+  if (marker === undefined) return undefined;
+  const output = content.slice(content.indexOf(marker) + marker.length).replace(/^\[showing recent output only\]\n/, "");
   return { type: "backgroundBash", details: { id, command, state, elapsedSeconds, logPath, ...(typeof exitCode === "number" ? { exitCode } : {}) }, output };
 }
 

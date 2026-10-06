@@ -108,6 +108,17 @@ describe("chat message normalization", () => {
     }
   });
 
+  it("projects durable-job background bash completions, including a cancelled job without an exit code (ISSUE-075)", () => {
+    const logPath = "/Users/me/.pi-workbench/background-bash/jobs/job-2/output.log";
+    const details = { id: "job-2", command: "npm run review", state: "cancelled", elapsedSeconds: 9, bytes: 30, logPath };
+    const content = `Background bash job-2 cancelled (exit unknown).\nFull output: ${logPath}\n=== evidence-review 12:22:49`;
+    expect(normalizeMessage({ role: "custom", customType: "background-bash", content, details })).toEqual([{
+      role: "system", parts: [{ type: "backgroundBash", details: { id: "job-2", command: "npm run review", state: "cancelled", elapsedSeconds: 9, logPath }, output: "=== evidence-review 12:22:49" }],
+    }]);
+    const truncated = `Background bash job-2 failed (exit 1).\nFull output: ${logPath}\n[showing recent output only]\ntail\n`;
+    expect(normalizeMessage({ role: "custom", customType: "background-bash", content: truncated, details: { ...details, state: "failed", exitCode: 1 } })[0]?.parts[0]).toMatchObject({ type: "backgroundBash", output: "tail\n" });
+  });
+
   it("projects ask_user answer messages into visible read-only record parts", () => {
     const normalized = normalizeMessage({
       role: "custom",
