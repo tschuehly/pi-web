@@ -7,6 +7,9 @@ describe("extension status snapshots", () => {
     expect(parse([{ id: "job-1", elapsedSeconds: 42, bytes: 1024, command: "npm test", output: "ok\n", logPath: "/jobs/1/output.log" }])).toEqual([
       { id: "job-1", elapsedSeconds: 42, bytes: 1024, command: "npm test", output: "ok\n", logPath: "/jobs/1/output.log" },
     ]);
+    expect(parse([{ id: "job-1", elapsedSeconds: 1, bytes: 0, description: "Run unit tests" }, { id: "job-2", elapsedSeconds: 1, bytes: 0, description: "x".repeat(121) }])).toEqual([
+      { id: "job-1", elapsedSeconds: 1, bytes: 0, description: "Run unit tests" }, { id: "job-2", elapsedSeconds: 1, bytes: 0 },
+    ]);
     expect(parse([{ id: "job-1", elapsedSeconds: 42, bytes: 1024, command: 7, output: "x".repeat(1_201) }])).toEqual([
       { id: "job-1", elapsedSeconds: 42, bytes: 1024 },
     ]);

@@ -6,6 +6,9 @@ import { ChatView } from "./ChatView";
 import type { FormattedText } from "./FormattedText";
 import { chatStyles } from "./shared";
 import type { ToolExecutionView } from "./ToolExecutionView";
+import type { BashLogButton } from "./BashLogButton";
+import { api } from "../api";
+import { hasRenderedModal } from "./modalLayerRegistry";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -376,6 +379,42 @@ describe("ChatView transcript density", () => {
       if (secure === undefined) Reflect.deleteProperty(window, "isSecureContext");
       else Object.defineProperty(window, "isSecureContext", secure);
     }
+  });
+
+  it("shows a background bash description instead of its command and opens the full log in a modal", async () => {
+    const logPath = "/Users/me/.pi-workbench/background-bash/jobs/job-3/output.log";
+    const read = vi.spyOn(api, "workspaceFile").mockResolvedValue({ path: "output.log", encoding: "utf8", size: 12, modifiedAt: "2026-09-01T00:00:00.000Z", content: "line 1\nline 2", truncated: false, binary: false });
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = normalizeMessages([{ role: "custom", customType: "background-bash",
+      content: `Background bash job-3 complete (exit 0).\nFull output: ${logPath}\nok`,
+      details: { id: "job-3", command: "npm run build -- --mode production", description: "Build the production bundle", state: "complete", exitCode: 0, elapsedSeconds: 3, bytes: 2, logPath },
+    }]);
+    document.body.append(view);
+    await view.updateComplete;
+    const card = view.shadowRoot?.querySelector<HTMLDetailsElement>("details.background-bash-card");
+    const summary = card?.querySelector("summary");
+    expect(summary?.textContent).toContain("Build the production bundle");
+    expect(summary?.textContent).not.toContain("npm run build");
+    expect(card?.querySelector(".background-bash-full-command")?.textContent).toBe("npm run build -- --mode production");
+
+    const button = summary?.querySelector<BashLogButton>("bash-log-button");
+    await button?.updateComplete;
+    const inspect = button?.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Show full log"]');
+    inspect?.focus();
+    inspect?.click();
+    expect(card?.open).toBe(false);
+    expect(read).toHaveBeenCalledWith("folder", "folder:/Users/me/.pi-workbench/background-bash/jobs/job-3", "output.log", "local");
+    await vi.waitFor(() => { expect(button?.shadowRoot?.querySelector("pre")?.textContent).toBe("line 1\nline 2"); });
+    const dialog = button?.shadowRoot?.querySelector("dialog");
+    expect(dialog?.open).toBe(true);
+    expect(hasRenderedModal(document)).toBe(true);
+    expect(button?.shadowRoot?.activeElement).toBe(button?.shadowRoot?.querySelector(".close"));
+    dialog?.dispatchEvent(new Event("cancel", { cancelable: true }));
+    await button?.updateComplete;
+    expect(dialog?.open).toBe(false);
+    expect(hasRenderedModal(document)).toBe(false);
+    expect(button?.shadowRoot?.activeElement).toBe(inspect);
   });
 
   it("renders each Working Mode block as one collapsed line of what changed, with the full guidance on expand", async () => {

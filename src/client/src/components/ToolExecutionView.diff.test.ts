@@ -79,4 +79,15 @@ describe("tool execution diff details", () => {
       else Object.defineProperty(navigator, "clipboard", clipboard);
     }
   });
+
+  it("offers the full log on a bash row whose details carry a log path, and keeps the full command on expand", async () => {
+    const args = { description: "Run the unit tests", command: "npm test -- --run" };
+    const view = await renderTool({ toolName: "bash", summary: "npm test", args, details: { id: "job", logPath: "/Users/me/.pi-workbench/background-bash/jobs/job/output.log" }, resultText: "ok" });
+    const row = view.shadowRoot?.querySelector(".tool-row");
+    expect(row?.querySelector(".row-argument")?.textContent).toBe("Run the unit tests");
+    expect(row?.querySelector("bash-log-button")).toHaveProperty("logPath", "/Users/me/.pi-workbench/background-bash/jobs/job/output.log");
+    expect(view.shadowRoot?.querySelector(".detail-target-value")?.textContent).toContain("npm test -- --run");
+    const plain = await renderTool({ toolName: "bash", summary: "ls", args: { command: "ls" }, resultText: "ok" });
+    expect(plain.shadowRoot?.querySelector("bash-log-button")).toBeNull();
+  });
 });

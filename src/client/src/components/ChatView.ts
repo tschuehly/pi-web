@@ -42,6 +42,7 @@ import { renderBuiltinTabIcon } from "./tabIcons";
 import { transcriptImageSource } from "./TranscriptImage";
 import type { ImageOpenDetail } from "./ImagePresentation";
 import { ImageLayoutScrollController } from "./ImageLayoutScrollController";
+import "./BashLogButton";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
 const messageTimeFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
@@ -1270,8 +1271,11 @@ export class ChatView extends LitElement {
       <details class="part background-bash-card">
         <summary><span aria-hidden="true">${part.details.state === "complete" ? "✓" : part.details.state === "cancelled" ? "○" : "✖"}</span>
           <span>${part.details.state} · exit ${part.details.exitCode === undefined ? "unknown" : String(part.details.exitCode)} · ${String(part.details.elapsedSeconds)}s</span>
-          <code class="background-bash-command" title=${part.details.command}>${part.details.command}</code>
+          ${part.details.description === undefined ? html`<code class="background-bash-command" title=${part.details.command}>${part.details.command}</code>`
+            : html`<span class="background-bash-command" title=${part.details.command}>${part.details.description}</span>`}
+          <bash-log-button .logPath=${part.details.logPath} .machineId=${this.machineId}></bash-log-button>
         </summary>
+        ${part.details.description === undefined ? null : html`<code class="background-bash-full-command">${part.details.command}</code>`}
         <pre class="background-bash-output">${part.output}</pre>
         <div class="background-bash-log"><code>${part.details.logPath}</code>
           <button type="button" aria-label="Copy log path" @click=${() => { void writeClipboardText(part.details.logPath); }}>Copy</button>
@@ -1319,7 +1323,7 @@ export class ChatView extends LitElement {
         ${part.args === undefined ? null : html`<pre>${formatToolCallArguments(part.args)}</pre>`}
       </details>
     `;
-    if (part.type === "toolExecution") return html`<tool-execution-view class="part" .execution=${part}></tool-execution-view>`;
+    if (part.type === "toolExecution") return html`<tool-execution-view class="part" .machineId=${this.machineId} .execution=${part}></tool-execution-view>`;
     if (part.type === "toolResult") {
       const preview = previewFromDetails(part.details);
       if ((typeof part.details === "object" && part.details !== null && typeof Reflect.get(part.details, "diff") === "string") || preview?.diff !== undefined) return html`
@@ -1765,6 +1769,7 @@ export class ChatView extends LitElement {
     .background-bash-card > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-width: 0; }
     .background-bash-card > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .background-bash-command { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .background-bash-full-command { display: block; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
     .background-bash-output { max-height: 240px; overflow: auto; white-space: pre; font: inherit; font-family: monospace; }
     .background-bash-log { display: flex; align-items: center; gap: 8px; }
     .background-bash-log code { overflow-wrap: anywhere; min-width: 0; }

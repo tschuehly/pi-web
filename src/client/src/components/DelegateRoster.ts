@@ -59,7 +59,7 @@ export class DelegateRoster extends LitElement {
             return html`<div class="row" data-row-key=${row.key}>
               <span class="kind shell" role="img" aria-label="Background bash" title="Background bash"></span>
               <button type="button" class="identity expand" aria-expanded=${String(expanded)} aria-controls=${logId} title=${expanded ? "Hide output" : "Show output"} @click=${() => { this.toggleBashJob(item.id); }}>
-                <strong><span class="chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span> Background bash</strong><span class="meta">${item.id.slice(0, 8)}</span>
+                <strong><span class="chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span> ${item.description ?? "Background bash"}</strong><span class="meta">${item.id.slice(0, 8)}</span>
               </button>
               <span class="activity delegate-status">Running · ${String(item.elapsedSeconds)}s · ${String(item.bytes)} bytes output</span>
               <span class="state running" role="img" aria-label="Running" title="Running"></span>

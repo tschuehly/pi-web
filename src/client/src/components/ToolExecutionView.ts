@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { writeClipboardText } from "../clipboard";
 import type { ToolExecutionPart } from "./shared";
 import { renderBuiltinTabIcon } from "./tabIcons";
+import "./BashLogButton";
 
 const MAX_COLLAPSED_DIFF_LINES = 180;
 
@@ -41,6 +42,7 @@ export function toolRowSummary(execution: ToolExecutionPart): ToolRowSummary {
 export class ToolExecutionView extends LitElement {
   @property({ attribute: false }) execution: ToolExecutionPart | undefined;
   @property({ type: Boolean }) orphan = false;
+  @property() machineId = "local";
   @state() private showFullDiff = false;
   @state() private copied = false;
 
@@ -70,6 +72,7 @@ export class ToolExecutionView extends LitElement {
           <strong>${toolActionLabel(execution.toolName)}</strong>
           ${row.argument === undefined ? null : html`<span class="row-argument">${row.argument}</span>`}
           ${row.result === undefined ? null : html`<span class="row-result">· ${row.result}</span>`}
+          ${execution.toolName !== "bash" || logPath(execution.details) === undefined ? null : html`<bash-log-button .logPath=${logPath(execution.details) ?? ""} .machineId=${this.machineId}></bash-log-button>`}
         </summary>
         <div class="tool-body">
           <div class="tool-meta">
@@ -207,6 +210,12 @@ function toolTarget(execution: ToolExecutionPart, path: string | undefined): Too
   return undefined;
 }
 
+/** Output log of a Workbench background-bash job, foreground or background. */
+function logPath(details: unknown): string | undefined {
+  const path = getString(details, "logPath");
+  return path?.startsWith("/") === true ? path : undefined;
+}
+
 function pathFromArgs(args: unknown): string | undefined {
   return getString(args, "path") ?? getString(args, "file_path");
 }
@@ -216,6 +225,8 @@ function toolArgumentSummary(execution: ToolExecutionPart): string {
   if ((execution.toolName === "read" || execution.toolName === "edit" || execution.toolName === "write") && path !== undefined) {
     return path.replace(/\\/g, "/").split("/").filter((segment) => segment !== "").slice(-2).join("/");
   }
+  const description = getString(execution.args, "description")?.replace(/\s+/g, " ").trim();
+  if (execution.toolName === "bash" && description !== undefined && description !== "") return truncate(description, 70);
   const command = getString(execution.args, "command");
   if (execution.toolName === "bash" && command !== undefined) return truncate(command.replace(/\s+/g, " ").trim(), 70);
   return truncate(execution.summary.replace(/\s+/g, " ").trim(), 70);

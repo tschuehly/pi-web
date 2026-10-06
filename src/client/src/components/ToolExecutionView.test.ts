@@ -21,6 +21,12 @@ describe("toolRowSummary", () => {
     expect(toolRowSummary(execution({ toolName: "search", summary: `query ${"y".repeat(80)}` })).argument).toHaveLength(70);
   });
 
+  it("shows a bash description instead of the command, falling back to the command", () => {
+    const args = { description: "  Check installed\n app build date ", command: "stat -f %Sm ~/Applications/Pi.app" };
+    expect(toolRowSummary(execution({ toolName: "bash", args })).argument).toBe("Check installed app build date");
+    expect(toolRowSummary(execution({ toolName: "bash", args: { ...args, description: " " } })).argument).toBe(args.command);
+  });
+
   it("summarizes multiline output only after a tool finishes", () => {
     expect(toolRowSummary(execution({ status: "running", resultText: "one\ntwo" }))).toEqual({ argument: "input" });
     expect(toolRowSummary(execution({ status: "success", resultText: "one\ntwo" }))).toEqual({ argument: "input", result: "2 lines" });

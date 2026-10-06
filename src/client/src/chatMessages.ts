@@ -98,6 +98,7 @@ function backgroundBashPart(message: unknown): Extract<ChatPart, { type: "backgr
   const details = getProperty(message, "details");
   const id = getString(details, "id");
   const command = getString(details, "command");
+  const description = getString(details, "description")?.trim();
   const state = getString(details, "state");
   const elapsedSeconds = getNumber(details, "elapsedSeconds");
   const logPath = getString(details, "logPath");
@@ -111,7 +112,7 @@ function backgroundBashPart(message: unknown): Extract<ChatPart, { type: "backgr
   const marker = [`\nFull output: ${logPath}\n`, `\nFull output (available until session shutdown): ${logPath}\n`].find((text) => content.includes(text));
   if (marker === undefined) return undefined;
   const output = content.slice(content.indexOf(marker) + marker.length).replace(/^\[showing recent output only\]\n/, "");
-  return { type: "backgroundBash", details: { id, command, state, elapsedSeconds, logPath, ...(typeof exitCode === "number" ? { exitCode } : {}) }, output };
+  return { type: "backgroundBash", details: { id, command, ...(description === undefined || description === "" ? {} : { description }), state, elapsedSeconds, logPath, ...(typeof exitCode === "number" ? { exitCode } : {}) }, output };
 }
 
 function assistantErrorLine(message: unknown): ChatLine | undefined {

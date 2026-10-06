@@ -84,7 +84,7 @@ function validStatusTime(value: unknown): value is string {
     && Number.isFinite(Date.parse(value));
 }
 
-export interface BackgroundBashStatusItem { id: string; elapsedSeconds: number; bytes: number; command?: string; output?: string; logPath?: string }
+export interface BackgroundBashStatusItem { id: string; elapsedSeconds: number; bytes: number; command?: string; description?: string; output?: string; logPath?: string }
 
 // Optional preview text: kept only when it is a bounded string, otherwise dropped without rejecting the job.
 const previewText = (value: unknown, max: number): string | undefined => typeof value === "string" && value.length <= max ? value : undefined;
@@ -103,9 +103,10 @@ export function parseBackgroundBashStatusSnapshot(text: string | undefined): Bac
       || typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes < 0) return [];
     ids.add(id);
     const command = previewText(entry["command"], 240);
+    const description = previewText(entry["description"], 120);
     const output = previewText(entry["output"], 1_200);
     const logPath = previewText(entry["logPath"], 1_024);
-    jobs.push({ id, elapsedSeconds, bytes, ...(command === undefined ? {} : { command }), ...(output === undefined ? {} : { output }), ...(logPath === undefined ? {} : { logPath }) });
+    jobs.push({ id, elapsedSeconds, bytes, ...(command === undefined ? {} : { command }), ...(description === undefined ? {} : { description }), ...(output === undefined ? {} : { output }), ...(logPath === undefined ? {} : { logPath }) });
   }
   return jobs;
 }

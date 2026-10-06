@@ -79,7 +79,7 @@ export type ChatPart =
   | { type: "askUserRecord"; outcome: AskUserOutcome }
   | { type: "goalLifecycle"; details: GoalLifecycleDetails }
   | { type: "subagentCompletion"; text: string }
-  | { type: "backgroundBash"; details: { id: string; command: string; state: "complete" | "failed" | "cancelled"; elapsedSeconds: number; logPath: string; exitCode?: number }; output: string }
+  | { type: "backgroundBash"; details: { id: string; command: string; description?: string; state: "complete" | "failed" | "cancelled"; elapsedSeconds: number; logPath: string; exitCode?: number }; output: string }
   | { type: "workingMode"; dials: WorkingModeDial[] }
   | { type: "toolCall"; toolCallId?: string; toolName: string; summary: string; args?: unknown }
   | ToolExecutionPart
