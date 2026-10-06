@@ -6,13 +6,16 @@ import { SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent
 import { AGENT_SESSION_DIR_ENV_KEYS } from "../../config.js";
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import { isNodeErrorWithCode } from "../workspaces/pathSafety.js";
-import { readSessionHeaderSummary, type SessionHeaderReader } from "./sessionFileHeader.js";
+import { readSessionHeaderSummary, type SessionHeaderReader, type SessionHeaderSummary } from "./sessionFileHeader.js";
 import { tryParseEntry } from "./sessionFileFormat.js";
 import { SessionSummaryScanner } from "./sessionSummaryScanner.js";
 import { TranscriptBranchCache, type TranscriptBranchSnapshot } from "./transcriptBranchCache.js";
 import type { PiSessionListEntry, PiSessionManager, PiSessionManagerGateway, ResolvedSessionFile } from "./piSessionService.js";
 
 type SessionDirSource = "env" | "settings" | "pi-default";
+
+/** Header reads in flight per id lookup; lookups that miss read every header. */
+const MAX_CONCURRENT_HEADER_READS = 16;
 
 export interface SessionDirResolution {
   source: SessionDirSource;
@@ -90,10 +93,22 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
   // when its read settles, so this map only ever holds genuinely concurrent
   // reads and needs no bound of its own.
   private readonly pendingTranscriptBranches = new Map<string, Promise<TranscriptBranchSnapshot | undefined>>();
+  // In-flight header reads, shared by concurrent id lookups that walk the same
+  // candidates (several Workstream misses at once). Nothing outlives its read:
+  // no header or miss is remembered, so new sessions are always found.
+  private readonly pendingHeaderReads = new Map<string, Promise<SessionHeaderSummary | undefined>>();
+  private readonly readHeaderShared: SessionHeaderReader = (sessionFile) => {
+    const pending = this.pendingHeaderReads.get(sessionFile);
+    if (pending !== undefined) return pending;
+    const read = readSessionHeaderSummary(sessionFile).finally(() => this.pendingHeaderReads.delete(sessionFile));
+    this.pendingHeaderReads.set(sessionFile, read);
+    return read;
+  };
 
   constructor(private readonly resolver: SessionDirResolver) {}
 
-  async list(cwd: string): Promise<PiSessionListEntry[]> {
+  async list(cwd: string, options?: { sessionId?: string }): Promise<PiSessionListEntry[]> {
+    if (options?.sessionId !== undefined) return this.listSession(cwd, options.sessionId);
     const resolution = this.resolver.resolve(cwd);
     // Lightweight streaming summaries instead of the SDK's full-transcript
     // listing: same fields, but message bodies are never parsed once the first
@@ -104,6 +119,20 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
       cwd: canonicalizeStoredCwd(session.cwd),
     }));
     return filterSessionsForCwd(sessions, cwd);
+  }
+
+  /**
+   * The one listing row for exactly `sessionId` under `cwd`, from header reads
+   * plus one summary of the verified file: no directory scan. A prefix
+   * resolution never proves the exact id, and the summary is checked again
+   * because the path can be replaced between the header and summary reads.
+   */
+  private async listSession(cwd: string, sessionId: string): Promise<PiSessionListEntry[]> {
+    const resolved = await this.resolveSessionFile(cwd, sessionId);
+    if (resolved?.id !== sessionId) return [];
+    const summary = await this.summaryScanner.summarizeSessionFile(resolved.path);
+    if (summary?.id !== sessionId) return [];
+    return filterSessionsForCwd([{ ...summary, cwd: canonicalizeStoredCwd(summary.cwd) }], cwd);
   }
 
   async listRecent(limit: number): Promise<PiSessionListEntry[]> {
@@ -117,28 +146,12 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
 
   resolveSessionFile(cwd: string, sessionId: string): Promise<ResolvedSessionFile | undefined> {
     const resolution = this.resolver.resolve(cwd);
-    return resolveSessionFileInDir(resolution.sessionDir, cwd, sessionId, readSessionHeaderSummary);
+    return resolveSessionFileInDir(resolution.sessionDir, cwd, sessionId, this.readHeaderShared);
   }
 
   async locate(sessionId: string): Promise<{ cwd: string } | undefined> {
     const sessionDirs = await listGlobalSessionDirs(this.resolver.defaultSessionsRoot(), this.resolver.globalEnvSessionDir());
-    const sessionFiles = (await Promise.all(sessionDirs.map(listSessionFiles))).flat();
-    const fileNameMatches: string[] = [];
-    const remainingFiles: string[] = [];
-    for (const sessionFile of sessionFiles) {
-      (fileNameMatchesSessionId(basename(sessionFile), sessionId) ? fileNameMatches : remainingFiles).push(sessionFile);
-    }
-    fileNameMatches.sort(byNewestEmbeddedTimestamp);
-    remainingFiles.sort(byNewestEmbeddedTimestamp);
-
-    let prefixCwd: string | undefined;
-    for (const sessionFile of [...fileNameMatches, ...remainingFiles]) {
-      const header = await readSessionHeaderSummary(sessionFile);
-      if (header?.cwd === undefined || header.cwd === "") continue;
-      if (header.id === sessionId) return { cwd: canonicalizeStoredCwd(header.cwd) };
-      if (prefixCwd === undefined && header.id.startsWith(sessionId)) prefixCwd = canonicalizeStoredCwd(header.cwd);
-    }
-    return prefixCwd === undefined ? undefined : { cwd: prefixCwd };
+    return locateSessionInDirs(sessionDirs, sessionId, this.readHeaderShared);
   }
 
   invalidateSessionFile(sessionFile: string): void {
@@ -368,7 +381,7 @@ export function filterSessionsForCwd(sessions: readonly PiSessionListEntry[], cw
  * Among matches, an exact header id wins over a prefix match wherever it
  * appears. Ambiguous prefix candidates are considered in two buckets: filename
  * matches before remaining files, with each bucket sorted by the creation time
- * embedded in SDK-style names (see `byNewestEmbeddedTimestamp`).
+ * embedded in SDK-style names (see `sortedByNewestEmbeddedTimestamp`).
  *
  * The header's cwd is returned canonicalized, matching what `list` reports.
  */
@@ -378,32 +391,87 @@ export async function resolveSessionFileInDir(
   sessionId: string,
   readHeader: SessionHeaderReader,
 ): Promise<ResolvedSessionFile | undefined> {
-  const sessionFiles = await listSessionFiles(sessionDir);
+  const match = await findSessionFileByHeader(await listSessionFiles(sessionDir), sessionId, readHeader, (header) => cwdPathsEqual(header.cwd, cwd));
+  return match === undefined ? undefined : { id: match.header.id, cwd: canonicalizeStoredCwd(match.header.cwd), path: match.path };
+}
+
+/**
+ * Locate a session's working directory by id across `sessionDirs`, with the
+ * candidate order and header rules of {@link resolveSessionFileInDir} and no
+ * cwd filter. Headers without a cwd never match.
+ */
+export async function locateSessionInDirs(sessionDirs: readonly string[], sessionId: string, readHeader: SessionHeaderReader): Promise<{ cwd: string } | undefined> {
+  const sessionFiles = (await Promise.all(sessionDirs.map(listSessionFiles))).flat();
+  const match = await findSessionFileByHeader(sessionFiles, sessionId, readHeader, () => true);
+  return match === undefined ? undefined : { cwd: canonicalizeStoredCwd(match.header.cwd) };
+}
+
+interface SessionHeaderMatch {
+  path: string;
+  header: SessionHeaderSummary & { cwd: string };
+}
+
+/**
+ * The session file whose header holds `sessionId`, exactly or as a prefix.
+ *
+ * Filename matches are searched before the remaining files, so a renamed file
+ * still resolves when every filename candidate fails header verification. An
+ * exact header id wins over a prefix match wherever it appears; otherwise the
+ * first prefix match in candidate order wins. Headers are read concurrently,
+ * but the winner is chosen by candidate order, never by completion order.
+ */
+async function findSessionFileByHeader(
+  sessionFiles: readonly string[],
+  sessionId: string,
+  readHeader: SessionHeaderReader,
+  accepts: (header: SessionHeaderSummary & { cwd: string }) => boolean,
+): Promise<SessionHeaderMatch | undefined> {
   const fileNameMatches: string[] = [];
   const remainingFiles: string[] = [];
   for (const sessionFile of sessionFiles) {
     (fileNameMatchesSessionId(basename(sessionFile), sessionId) ? fileNameMatches : remainingFiles).push(sessionFile);
   }
-  fileNameMatches.sort(byNewestEmbeddedTimestamp);
-  remainingFiles.sort(byNewestEmbeddedTimestamp);
-
-  // A prefix match is only provisional: an exact header id wins over it
-  // wherever it appears, so the search continues after one is found.
-  let prefixMatch: ResolvedSessionFile | undefined;
-  // Filename matches first; the remaining files follow so a renamed file still
-  // resolves when every filename candidate fails header verification.
-  for (const sessionFile of [...fileNameMatches, ...remainingFiles]) {
-    const header = await readHeader(sessionFile);
-    if (header?.cwd === undefined) continue;
-    if (!cwdPathsEqual(header.cwd, cwd)) continue;
-    if (header.id === sessionId) {
-      return { id: header.id, cwd: canonicalizeStoredCwd(header.cwd), path: sessionFile };
-    }
-    if (prefixMatch === undefined && header.id.startsWith(sessionId)) {
-      prefixMatch = { id: header.id, cwd: canonicalizeStoredCwd(header.cwd), path: sessionFile };
-    }
+  // A prefix match is only provisional: an exact header id in a later bucket
+  // still wins over it.
+  let prefixMatch: SessionHeaderMatch | undefined;
+  for (const bucket of [sortedByNewestEmbeddedTimestamp(fileNameMatches), sortedByNewestEmbeddedTimestamp(remainingFiles)]) {
+    const { exact, prefix } = await searchHeaderBucket(bucket, sessionId, readHeader, accepts);
+    if (exact !== undefined) return exact;
+    prefixMatch ??= prefix;
   }
   return prefixMatch;
+}
+
+/**
+ * Read one ordered bucket's headers with bounded concurrency. Workers claim
+ * candidates in order and stop claiming past the earliest exact match, so
+ * every earlier candidate is still read and an exact hit ends the search early.
+ */
+async function searchHeaderBucket(
+  files: readonly string[],
+  sessionId: string,
+  readHeader: SessionHeaderReader,
+  accepts: (header: SessionHeaderSummary & { cwd: string }) => boolean,
+): Promise<{ exact?: SessionHeaderMatch | undefined; prefix?: SessionHeaderMatch | undefined }> {
+  const matches: (SessionHeaderMatch | undefined)[] = [];
+  let exactAt = files.length;
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    while (nextIndex < exactAt) {
+      const index = nextIndex++;
+      const path = files[index];
+      if (path === undefined) break;
+      const header = await readHeader(path);
+      if (header?.cwd === undefined || header.cwd === "" || !header.id.startsWith(sessionId)) continue;
+      const match = { path, header: { ...header, cwd: header.cwd } };
+      if (!accepts(match.header)) continue;
+      matches[index] = match;
+      if (header.id === sessionId) exactAt = Math.min(exactAt, index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_HEADER_READS, files.length) }, worker));
+  if (exactAt < files.length) return { exact: matches[exactAt] };
+  return { prefix: matches.find((match) => match !== undefined) };
 }
 
 /**
@@ -418,11 +486,15 @@ export async function resolveSessionFileInDir(
  * the resolver never stats transcript files, so ambiguous prefix candidates
  * within each bucket are considered in this creation-time order instead.
  */
-function byNewestEmbeddedTimestamp(a: string, b: string): number {
-  const timestampA = embeddedFileNameTimestamp(basename(a));
-  const timestampB = embeddedFileNameTimestamp(basename(b));
-  if (timestampA !== timestampB) return timestampA < timestampB ? 1 : -1;
-  return a < b ? 1 : a > b ? -1 : 0;
+function sortedByNewestEmbeddedTimestamp(files: readonly string[]): string[] {
+  // Keys computed once per file: a miss sorts every file in the store.
+  return files
+    .map((path) => ({ path, timestamp: embeddedFileNameTimestamp(basename(path)) }))
+    .sort((a, b) => {
+      if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? 1 : -1;
+      return a.path < b.path ? 1 : a.path > b.path ? -1 : 0;
+    })
+    .map(({ path }) => path);
 }
 
 /** The creation timestamp embedded in an SDK-style session file name ("" when absent). */

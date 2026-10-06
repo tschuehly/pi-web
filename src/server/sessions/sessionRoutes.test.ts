@@ -61,6 +61,44 @@ afterEach(async () => {
 });
 
 describe("session routes", () => {
+  it("lists one exact session when a session id is given, and keeps no-id listings unchanged", async () => {
+    const routeApp = Fastify({ logger: false });
+    const listCalls: unknown[][] = [];
+    const row: ClientSession = { id: "s /?", cwd: resolve("/repo"), path: "/sessions/s.jsonl", persisted: true, created: "2026-01-01T00:00:00.000Z", modified: "2026-01-02T00:00:00.000Z", messageCount: 1, firstMessage: "Hi" };
+    const routeService = new class extends CapturingRouteSessionService {
+      override list(...args: [cwd?: string, options?: { sessionId?: string }]): Promise<ClientSession[]> {
+        listCalls.push(args);
+        const sessionId = args[1]?.sessionId;
+        return Promise.resolve(args.length === 1 ? [row, { ...row, id: "other" }] : sessionId === "s /?" ? [row] : []);
+      }
+    }();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+
+    try {
+      const cwd = encodeURIComponent("/repo");
+      const full = await routeApp.inject({ method: "GET", url: `/sessions?cwd=${cwd}` });
+      const targeted = await routeApp.inject({ method: "GET", url: `/sessions?cwd=${cwd}&sessionId=${encodeURIComponent("s /?")}` });
+      const missing = await routeApp.inject({ method: "GET", url: `/sessions?cwd=${cwd}&sessionId=gone` });
+
+      expect(full.statusCode).toBe(200);
+      expect(full.json()).toHaveLength(2);
+      expect(targeted.statusCode).toBe(200);
+      expect(targeted.json()).toEqual([row]);
+      // Modern not-found is explicit, so clients can tell it from an older daemon that ignored the id.
+      expect(missing.statusCode).toBe(404);
+      expect(missing.json()).toEqual({ error: "Session not found" });
+      expect(listCalls).toEqual([[resolve("/repo")], [resolve("/repo"), { sessionId: "s /?" }], [resolve("/repo"), { sessionId: "gone" }]]);
+
+      for (const query of ["sessionId=", "sessionId=%20%20", `sessionId=${"x".repeat(513)}`, "sessionId=a&sessionId=b"]) {
+        const rejected = await routeApp.inject({ method: "GET", url: `/sessions?cwd=${cwd}&${query}` });
+        expect(rejected.statusCode, query).toBe(400);
+      }
+      expect(listCalls).toHaveLength(3);
+    } finally {
+      await routeApp.close();
+    }
+  });
+
   it("returns notification catalog and selected-inbox snapshots with required cwd context", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1591,7 +1629,7 @@ class CapturingRouteSessionService implements SessionRouteService {
     return notificationSnapshot(ref);
   }
 
-  list(): never { throw unusedRouteMethod("list"); }
+  list(): Promise<ClientSession[]> { return Promise.reject(unusedRouteMethod("list")); }
 
   listRecent(limit: number): Promise<ClientSession[]> {
     this.listRecentCalls.push(limit);

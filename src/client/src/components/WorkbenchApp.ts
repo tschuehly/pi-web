@@ -1,6 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
+import { HttpRequestError } from "../api/http";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
@@ -74,6 +75,7 @@ export class WorkbenchApp extends LitElement {
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
+  private realtimeMachineId: string | undefined;
   private loadSequence = 0;
   private workstreamLoadSequence = 0;
   private workstreamWatchSequence: number | undefined;
@@ -114,7 +116,7 @@ export class WorkbenchApp extends LitElement {
 
   private openNotificationChat(machineId: string, sessionId: string): void {
     writeRoute({ machineId, sessionId, projectId: undefined, workspaceId: undefined, tool: undefined, view: undefined });
-    void this.load(readRoute());
+    void this.load(readRoute(), { reuseLoaded: true });
   }
 
   private readonly notifications = new SessionNotificationController(
@@ -158,7 +160,7 @@ export class WorkbenchApp extends LitElement {
       return;
     }
     this.showFiles = false;
-    void this.load(readRoute());
+    void this.load(readRoute(), { reuseLoaded: true });
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
@@ -212,6 +214,7 @@ export class WorkbenchApp extends LitElement {
     this.finishFilesResize();
     this.systemLightThemeMedia?.removeEventListener("change", this.onSystemLightThemeChange);
     this.realtime.close();
+    this.realtimeMachineId = undefined;
     window.clearTimeout(this.workstreamWatchTimer);
     this.auth.dispose();
     this.sessions.dispose();
@@ -233,8 +236,10 @@ export class WorkbenchApp extends LitElement {
     this.desktopNotifications.sync(previous, this.app);
   }
 
-  private async load(route: ParsedAppRoute): Promise<void> {
+  /** `reuseLoaded`: Back and notification clicks keep this window's machines, projects, and realtime socket on the same machine. */
+  private async load(route: ParsedAppRoute, options?: { reuseLoaded?: boolean }): Promise<void> {
     const sequence = ++this.loadSequence;
+    const previous = this.app;
     const selectedWorkspace = this.app.selectedWorkspace;
     const retainSelection = completeChatRoute(route)
       && route.sessionId === this.app.selectedSession?.id
@@ -245,20 +250,24 @@ export class WorkbenchApp extends LitElement {
     this.loading = true;
     if (!retainSelection) this.sessions.clearActiveSession();
     try {
-      const machines = await api.machines();
+      const reuse = options?.reuseLoaded === true && previous.selectedMachine?.id === (route.machineId ?? "local");
+      const machines = reuse ? previous.machines : await api.machines();
       if (sequence !== this.loadSequence) return;
       const machine = machines.find((candidate) => candidate.id === (route.machineId ?? "local"))
         ?? machines.find((candidate) => candidate.id === "local")
         ?? machines[0];
       const keepSelection = retainSelection && machine?.id === selectedMachineId(this.app);
       if (retainSelection && !keepSelection) this.sessions.clearActiveSession();
+      // A connected realtime socket keeps live Chat states current, so keep them instead of waiting for its reconnect snapshot.
+      const keepRealtime = this.realtimeMachineId === (machine?.id ?? "local");
       this.setApp(keepSelection
         ? { machines, selectedMachine: machine, error: "" }
-        : { ...initialAppState(), machines, selectedMachine: machine });
-      this.connectRealtime();
+        : { ...initialAppState(), ...(keepRealtime ? { sessionStatuses: this.app.sessionStatuses, sessionActivities: this.app.sessionActivities } : {}), machines, selectedMachine: machine });
+      if (!keepRealtime) this.connectRealtime();
       if (machine === undefined) throw new Error("No PI WEB machine is available.");
 
-      const projects = await api.projects(machine.id);
+      const knownProjects = reuse && previous.projects.length > 0 && (route.projectId === undefined || previous.projects.some((candidate) => candidate.id === route.projectId));
+      const projects = knownProjects ? previous.projects : await api.projects(machine.id);
       if (sequence !== this.loadSequence) return;
       this.setApp({ projects });
       if (!completeChatRoute(route)) {
@@ -273,11 +282,11 @@ export class WorkbenchApp extends LitElement {
       if (sequence !== this.loadSequence) return;
       const workspace = workspaces.find((candidate) => candidate.id === route.workspaceId);
       if (workspace === undefined) throw new Error("The selected workspace is no longer available.");
-      const sessions = await api.sessions(workspace.path, machine.id);
+      const session = await this.knownSession(route.sessionId, workspace.path, machine.id);
       if (sequence !== this.loadSequence) return;
-      const session = sessions.find((candidate) => candidate.id === route.sessionId) ?? await this.unlistedSession(route.sessionId, workspace.path, machine.id);
       if (session === undefined) throw new Error("The selected session is no longer available.");
-      this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions });
+      this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions: keepSelection ? this.app.sessions : [session] });
+      void this.loadCatalogBehind(session.id, workspace, machine.id, sequence);
       await this.sessions.selectSession(session, { updateUrl: false });
     } catch (error) {
       if (sequence === this.loadSequence) {
@@ -313,8 +322,7 @@ export class WorkbenchApp extends LitElement {
     const workspaceId = record !== undefined && typeof record.workspaceId === "string" ? record.workspaceId : undefined;
     const project = projects.find((candidate) => candidate.id === projectId) ?? rootProjects(projects)[0];
     if (project === undefined || sequence !== this.loadSequence) return;
-    await this.chooseProject(rootProjectOf(project, projects).id);
-    if (workspaceId !== undefined && this.app.workspaces.some((candidate) => candidate.id === workspaceId) && this.app.selectedWorkspace?.id !== workspaceId) await this.chooseWorkspace(workspaceId);
+    await this.chooseProject(rootProjectOf(project, projects).id, workspaceId);
   }
 
   /** Reopen a Chat that belongs to no project: find its folder by id, then treat that folder as an ad-hoc workspace. */
@@ -322,12 +330,53 @@ export class WorkbenchApp extends LitElement {
     const { cwd } = await api.locate(sessionId, machineId).catch(() => ({ cwd: undefined }));
     if (sequence !== this.loadSequence) return;
     const workspace = cwd === undefined ? undefined : adHocWorkspace(cwd);
-    const sessions = workspace === undefined ? [] : await api.sessions(workspace.path, machineId).catch((): SessionInfo[] => []);
-    const session = sessions.find((candidate) => candidate.id === sessionId) ?? (workspace === undefined ? undefined : await this.unlistedSession(sessionId, workspace.path, machineId));
+    const session = workspace === undefined ? undefined : await this.knownSession(sessionId, workspace.path, machineId);
     if (sequence !== this.loadSequence) return;
     if (workspace === undefined || session === undefined) throw new Error("The selected session is no longer available.");
-    this.setApp({ selectedProject: undefined, workspaces: [workspace], selectedWorkspace: workspace, sessions });
+    this.setApp({ selectedProject: undefined, workspaces: [workspace], selectedWorkspace: workspace, sessions: [session] });
+    void this.loadCatalogBehind(session.id, workspace, machineId, sequence);
     await this.sessions.selectSession(session, { updateUrl: false });
+  }
+
+  /**
+   * The listing row for exactly this Chat, without waiting for its workspace catalog. A current daemon answers with the
+   * row or 404, and its metadata keeps the archived flag authoritative. An older daemon ignores the id and returns the
+   * whole catalog; only there may a missing row be a blank Chat rebuilt from status.
+   */
+  private async knownSession(id: string, cwd: string, machineId: string): Promise<SessionInfo | undefined> {
+    let listed: SessionInfo[];
+    try {
+      listed = await api.sessions(cwd, machineId, { sessionId: id });
+    } catch (error) {
+      if (error instanceof HttpRequestError && error.status === 404) return undefined;
+      throw error;
+    }
+    return listed.find((candidate) => candidate.id === id) ?? await this.unlistedSession(id, cwd, machineId);
+  }
+
+  /**
+   * Fill the workspace catalog behind a Chat opened from its targeted row. The full listing keeps its daemon-side unread
+   * reconciliation; a response for a superseded load, machine, or workspace is dropped. Rows the catalog cannot know yet
+   * (the opened or selected blank or pending Chat) and those rows' live state are kept.
+   */
+  private async loadCatalogBehind(sessionId: string, workspace: Workspace, machineId: string, sequence: number): Promise<void> {
+    let listed: SessionInfo[];
+    try {
+      listed = await api.sessions(workspace.path, machineId);
+    } catch (error) {
+      if (this.catalogIsCurrent(workspace, machineId, sequence)) this.setApp({ error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    if (!this.catalogIsCurrent(workspace, machineId, sequence)) return;
+    const current = this.app.sessions;
+    const listedIds = new Set(listed.map((candidate) => candidate.id));
+    const keepIds = new Set([sessionId, this.app.selectedSession?.id]);
+    const kept = current.filter((candidate) => !listedIds.has(candidate.id) && keepIds.has(candidate.id));
+    this.setApp({ sessions: [...kept, ...listed.map((row) => keepIds.has(row.id) ? current.find((candidate) => candidate.id === row.id) ?? row : row)] });
+  }
+
+  private catalogIsCurrent(workspace: Workspace, machineId: string, sequence: number): boolean {
+    return sequence === this.loadSequence && selectedMachineId(this.app) === machineId && this.app.selectedWorkspace?.id === workspace.id;
   }
 
   /** A Chat with no user message yet is not listed, but the daemon still serves it; rebuild it from status so a reload keeps it open. */
@@ -341,6 +390,7 @@ export class WorkbenchApp extends LitElement {
   private connectRealtime(): void {
     this.realtime.close();
     const machineId = selectedMachineId(this.app);
+    this.realtimeMachineId = machineId;
     this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, undefined, machineId);
   }
 
@@ -370,7 +420,7 @@ export class WorkbenchApp extends LitElement {
     }
   }
 
-  private async chooseProject(projectId: string): Promise<void> {
+  private async chooseProject(projectId: string, preferredWorkspaceId?: string): Promise<void> {
     const project = this.app.projects.find((candidate) => candidate.id === projectId);
     const sequence = ++this.loadSequence;
     this.sessions.clearActiveSession();
@@ -382,7 +432,8 @@ export class WorkbenchApp extends LitElement {
       const workspaces = (await Promise.all(subprojectsOf(project, this.app.projects).map((member) => api.workspaces(member.id, machineId)))).flat();
       if (sequence !== this.loadSequence) return;
       this.setApp({ workspaces });
-      const preferred = workspaces.find((candidate) => candidate.projectId === project.id && candidate.isMain) ?? workspaces[0];
+      const preferred = workspaces.find((candidate) => candidate.id === preferredWorkspaceId)
+        ?? workspaces.find((candidate) => candidate.projectId === project.id && candidate.isMain) ?? workspaces[0];
       if (preferred !== undefined) await this.chooseWorkspace(preferred.id);
     } catch (error) {
       if (sequence === this.loadSequence) this.setApp({ error: String(error) });
@@ -428,13 +479,34 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** A Git worktree may be a sibling of its registered project's root, not a descendant. */
-  private async registeredWorkspaceForCwd(cwd: string, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
-    for (const project of [...this.app.projects].sort((a, b) => b.path.length - a.path.length)) {
-      const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
-      const workspace = workspaces.find((candidate) => candidate.path === cwd);
-      if (workspace !== undefined) return { project, workspace, workspaces };
+  private registeredWorkspaceForCwd(cwd: string, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
+    return this.firstRegisteredWorkspace([...this.app.projects].sort((a, b) => b.path.length - a.path.length), machineId, (workspace) => workspace.path === cwd);
+  }
+
+  /** The first project, in the given order, that lists a matching workspace. */
+  private async firstRegisteredWorkspace(projects: readonly Project[], machineId: string, matches: (workspace: Workspace) => boolean): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
+    // ponytail: fixed batches of 4 bound the fan-out; a server lookup by path would make this one request.
+    for (let start = 0; start < projects.length; start += 4) {
+      const listed = await Promise.all(projects.slice(start, start + 4).map(async (project) => {
+        const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
+        return { project, workspaces, workspace: workspaces.find(matches) };
+      }));
+      const hit = listed.find((candidate) => candidate.workspace !== undefined);
+      if (hit?.workspace !== undefined) return { project: hit.project, workspace: hit.workspace, workspaces: hit.workspaces };
     }
     return undefined;
+  }
+
+  /** The Chat in the workspace its Workstream recorded, if that workspace still exists and lists the Chat (or, for a blank Chat, serves its status). */
+  private async anchoredWorkstreamSession(detail: OpenWorkstreamSessionDetail, machineId: string): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[]; session: SessionInfo } | undefined> {
+    const project = this.app.projects.find((candidate) => candidate.id === detail.projectId);
+    if (project === undefined || detail.workspaceId === undefined) return undefined;
+    const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
+    const workspace = workspaces.find((candidate) => candidate.id === detail.workspaceId);
+    if (workspace === undefined) return undefined;
+    // A failed or missing row falls back to the original locate path instead of guessing a row from status.
+    const session = await this.knownSession(detail.sessionId, workspace.path, machineId).catch(() => undefined);
+    return session === undefined ? undefined : { project, workspace, workspaces, session };
   }
 
   /** Open the session that wrote a Workstream's newest checkpoint, wherever it lives. */
@@ -442,6 +514,13 @@ export class WorkbenchApp extends LitElement {
     const machineId = selectedMachineId(this.app);
     this.setApp({ error: "" });
     try {
+      const anchored = await this.anchoredWorkstreamSession(detail, machineId);
+      if (anchored !== undefined) {
+        this.setApp({ selectedProject: anchored.project, selectedWorkspace: anchored.workspace, workspaces: anchored.workspaces, sessions: [anchored.session] });
+        void this.loadCatalogBehind(anchored.session.id, anchored.workspace, machineId, this.loadSequence);
+        await this.openSession(anchored.session);
+        return;
+      }
       const { cwd } = await api.locate(detail.sessionId, machineId);
       const [session, registered] = await Promise.all([
         this.unlistedSession(detail.sessionId, cwd, machineId),
@@ -475,11 +554,9 @@ export class WorkbenchApp extends LitElement {
         cwd = workspace.path;
       }
       if (isTemporaryDirectory(cwd)) throw new Error(`The Workstream points to a temporary directory (${cwd}). Move the work to a persistent workspace before starting a Chat.`);
-      const candidates = await Promise.all(this.app.projects.map(async (project) => ({
-        project,
-        workspaces: await api.workspaces(project.id, machineId).catch((): Workspace[] => []),
-      })));
-      match = candidates.find(({ workspaces }) => workspaces.some((workspace) => workspace.path === cwd));
+      const loaded = this.app.workspaces.find((workspace) => workspace.path === cwd);
+      const owner = this.app.projects.find((project) => project.id === loaded?.projectId);
+      match = owner !== undefined ? { project: owner, workspaces: this.app.workspaces } : await this.firstRegisteredWorkspace(this.app.projects, machineId, (workspace) => workspace.path === cwd);
     } catch (error) {
       this.setApp({ error: `Could not find a working directory for this Workstream: ${error instanceof Error ? error.message : String(error)}` });
       return;
@@ -648,9 +725,11 @@ export class WorkbenchApp extends LitElement {
           if (sequence !== this.workstreamLoadSequence || this.app.selectedSession?.id !== sessionId) return;
           if (batch.nextSequence !== this.workstreamWatchSequence) {
             this.workstreamWatchSequence = batch.nextSequence;
-            this.workstreamWatchDelay = 2_000;
-            await this.loadCurrentWorkstream(false);
-            return;
+            if (watchConcerns(batch, this.currentWorkstream?.id, sessionId)) {
+              this.workstreamWatchDelay = 2_000;
+              await this.loadCurrentWorkstream(false);
+              return;
+            }
           }
           if (this.currentWorkstreamError !== "" && this.workstreamWatchDelay >= 30_000) {
             await this.loadCurrentWorkstream(false);
@@ -1169,6 +1248,15 @@ export class WorkbenchApp extends LitElement {
 
 function completeChatRoute(route: ParsedAppRoute): route is ParsedAppRoute & { projectId: string; workspaceId: string; sessionId: string } {
   return route.projectId !== undefined && route.workspaceId !== undefined && route.sessionId !== undefined;
+}
+
+/** Whether a Workstream watch batch can change the header of `sessionId`, which shows `workstreamId`; unexpected shapes count. */
+function watchConcerns(batch: object, workstreamId: string | undefined, sessionId: string): boolean {
+  const events: unknown = Reflect.get(batch, "events");
+  if (Reflect.get(batch, "mode") !== "replay" || !Array.isArray(events) || events.length === 0) return true;
+  const quotedSessionId = JSON.stringify(sessionId);
+  return events.some((event: unknown) => typeof event !== "object" || event === null
+    || Reflect.get(event, "workstreamId") === workstreamId || JSON.stringify(event).includes(quotedSessionId));
 }
 
 function isWorkbenchAgentSession(session: SessionInfo): boolean {

@@ -85,6 +85,22 @@ describe("buildApp remote machine proxy routes", () => {
     expect(appTestContext.sessionDaemonRequests).toEqual([]);
   });
 
+  it("forwards an encoded targeted session listing and the remote's explicit not-found", async () => {
+    const add = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const remote = add.json<{ id: string }>();
+    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
+      statusCode: 404,
+      headers: { "content-type": "application/json" },
+      body: Readable.from([JSON.stringify({ error: "Session not found" })]),
+    }));
+    appTestContext.remoteClient = fakeRemoteClient({ request });
+    const response = await appTestContext.app.inject({ url: `/api/machines/${remote.id}/sessions?cwd=%2Frepo&sessionId=s%20%2F%3F%26x` });
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "Session not found" });
+    expect(proxiedCall(request, 0).arguments).toEqual(["GET", "/api/sessions?cwd=%2Frepo&sessionId=s%20%2F%3F%26x", undefined]);
+    expect(appTestContext.sessionDaemonRequests).toEqual([]);
+  });
+
   it("preserves the force-refresh query when proxying update checks", async () => {
     const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
     const remote = addResponse.json<{ id: string }>();

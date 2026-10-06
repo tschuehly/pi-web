@@ -1,7 +1,7 @@
 import { open, readdir, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import type { Stats } from "node:fs";
-import { join, sep } from "node:path";
+import { dirname, join } from "node:path";
 import { isRecord, tryParseEntry } from "./sessionFileFormat.js";
 import type { PiSessionListEntry } from "./piSessionService.js";
 
@@ -58,8 +58,15 @@ const TAB = 0x09;
 const MESSAGE_TYPE_BYTES = Buffer.from("message");
 const SESSION_INFO_TYPE_BYTES = Buffer.from("session_info");
 
-/** Same bound the SDK uses for its concurrent session-info builds. */
+/** Same bound the SDK uses for its concurrent session-info builds; applies per directory. */
 const MAX_CONCURRENT_SESSION_SUMMARY_SCANS = 10;
+
+/**
+ * Whole-file reads in flight per scanner, across every directory it scans at
+ * once. Bounds open handles and 4 MiB read buffers for global listings that
+ * scan every project directory concurrently.
+ */
+const MAX_CONCURRENT_FILE_READS = 32;
 
 /** Default read chunk size for the streaming pass; see SessionSummaryScannerOptions. */
 const SCAN_CHUNK_BYTES = 4 * 1024 * 1024;
@@ -86,8 +93,9 @@ export interface SessionSummaryScannerOptions {
  * deliberately trivial to invalidate — it never holds anything the file
  * itself cannot re-derive:
  *
- * - Key: absolute file path. Trusted value: file identity (dev/ino) plus the
- *   size the cached summary was folded from.
+ * - Key: absolute file path, grouped by its directory so pruning one
+ *   directory never walks another's entries. Trusted value: file identity
+ *   (dev/ino) plus the size the cached summary was folded from.
  * - Identity and size unchanged → cached summary. The mtime is re-read from
  *   the same stat, so `modified` stays faithful even on a cache hit.
  * - Identity or size changed → the cached summary is dropped and the file is
@@ -97,7 +105,11 @@ export interface SessionSummaryScannerOptions {
  *   longer appear in the directory listing are pruned on each scan.
  * - {@link clear} drops every entry. There are no TTLs and nothing is
  *   persisted: the memo is an in-process speedup, and a daemon restart starts
- *   cold but correct.
+ *   cold but correct. A read still in flight across {@link clear} or
+ *   {@link invalidate} answers its own listing but is not memoized.
+ * - Concurrent scans of one directory share work without serving stale
+ *   results: a request made while a scan runs joins the one scan queued
+ *   behind it, which starts only after the running scan settles.
  *
  * The one thing the key cannot detect is an in-place rewrite that keeps the
  * inode and the size, which the stat-only fast path then serves from the
@@ -107,8 +119,16 @@ export interface SessionSummaryScannerOptions {
  * unknown external rewrites.
  */
 export class SessionSummaryScanner {
-  private readonly memo = new Map<string, MemoizedSessionSummary>();
+  /** Directory → file path → memoized summary. */
+  private readonly memo = new Map<string, Map<string, MemoizedSessionSummary>>();
   private readonly chunkBytes: number;
+  /** Bumped by clear/invalidate so reads started before them are not memoized. */
+  private generation = 0;
+  private readonly pendingScans = new Map<string, PendingDirectoryScan>();
+  private activeFileReads = 0;
+  private readonly fileReadWaiters: (() => void)[] = [];
+  /** Read buffers reused while reads are active; dropped once the scanner is idle. */
+  private readonly freeReadBuffers: Buffer[] = [];
 
   constructor(options: SessionSummaryScannerOptions = {}) {
     const chunkBytes = options.chunkBytes ?? SCAN_CHUNK_BYTES;
@@ -120,6 +140,7 @@ export class SessionSummaryScanner {
 
   /** Drop every cached summary, forcing full re-parses on the next listing. */
   clear(): void {
+    this.generation += 1;
     this.memo.clear();
   }
 
@@ -130,7 +151,8 @@ export class SessionSummaryScanner {
    * such rewrites. Dropping a path that is not memoized is a no-op.
    */
   invalidate(filePath: string): void {
-    this.memo.delete(filePath);
+    this.generation += 1;
+    this.memo.get(dirname(filePath))?.delete(filePath);
   }
 
   /**
@@ -139,39 +161,74 @@ export class SessionSummaryScanner {
    * whose identity and size have not changed since the previous scan of their
    * directory are answered from the memo (one stat each) instead of being read.
    */
-  async scanSessionSummariesInDir(sessionDir: string): Promise<PiSessionListEntry[]> {
+  scanSessionSummariesInDir(sessionDir: string): Promise<PiSessionListEntry[]> {
+    const pending = this.pendingScans.get(sessionDir);
+    if (pending === undefined) return this.startDirectoryScan(sessionDir);
+    // Never join the running scan: it may predate this request. The queued
+    // scan starts after it settles, so it is fresh for every caller joining it.
+    const startQueued = (): Promise<PiSessionListEntry[]> => this.startDirectoryScan(sessionDir);
+    pending.queued ??= pending.running.then(startQueued, startQueued);
+    return pending.queued;
+  }
+
+  /**
+   * Summarize one known session file through the same memo and scanner-wide
+   * read bound as a directory listing, without listing, pruning, or queueing
+   * behind its directory. The summary describes whatever file the path held
+   * when it was read; callers verify its identity.
+   */
+  summarizeSessionFile(filePath: string): Promise<PiSessionListEntry | undefined> {
+    return this.scanFileWithMemo(filePath, this.memo.get(dirname(filePath)));
+  }
+
+  private startDirectoryScan(sessionDir: string): Promise<PiSessionListEntry[]> {
+    const entry: PendingDirectoryScan = { running: this.scanDirectory(sessionDir) };
+    this.pendingScans.set(sessionDir, entry);
+    const settle = (): void => {
+      if (this.pendingScans.get(sessionDir) === entry) this.pendingScans.delete(sessionDir);
+    };
+    entry.running.then(settle, settle);
+    return entry.running;
+  }
+
+  private async scanDirectory(sessionDir: string): Promise<PiSessionListEntry[]> {
     const files = await listSessionFilesInDir(sessionDir);
-    this.pruneEntriesRemovedFrom(sessionDir, files);
-    const summaries = await scanSessionFilesWithBoundedConcurrency(files, this.chunkBytes, (file, chunkBuffer) => this.scanFileWithMemo(file, chunkBuffer));
+    const dirMemo = this.pruneEntriesRemovedFrom(sessionDir, files);
+    const summaries = await scanSessionFilesWithBoundedConcurrency(files, (file) => this.scanFileWithMemo(file, dirMemo));
     return sortedSessionSummaries(summaries);
   }
 
-  private pruneEntriesRemovedFrom(sessionDir: string, existingFiles: readonly string[]): void {
-    const dirPrefix = sessionDir.endsWith(sep) ? sessionDir : sessionDir + sep;
+  /** The scanned directory's memo with entries for vanished files dropped; other directories are never walked. */
+  private pruneEntriesRemovedFrom(sessionDir: string, existingFiles: readonly string[]): Map<string, MemoizedSessionSummary> | undefined {
+    // Same normalization `join` gives every listed file path, so the key is
+    // the `dirname` that invalidate() derives from a file path.
+    const dirKey = dirname(join(sessionDir, "_"));
+    const dirMemo = this.memo.get(dirKey);
+    if (dirMemo === undefined) return undefined;
     const existing = new Set(existingFiles);
-    for (const path of this.memo.keys()) {
-      // Deletion invalidates automatically: entries for the scanned directory
-      // whose file no longer exists are dropped, keeping the memo bounded.
-      if (path.startsWith(dirPrefix) && !existing.has(path)) this.memo.delete(path);
-    }
+    // Deletion invalidates automatically: entries whose file no longer exists
+    // are dropped, keeping the memo bounded.
+    for (const path of dirMemo.keys()) if (!existing.has(path)) dirMemo.delete(path);
+    if (dirMemo.size === 0) this.memo.delete(dirKey);
+    return dirMemo;
   }
 
-  private async scanFileWithMemo(filePath: string, chunkBuffer: () => Buffer): Promise<PiSessionListEntry | undefined> {
-    const memoized = this.memo.get(filePath);
-    if (memoized === undefined) return this.fullScan(filePath, chunkBuffer);
+  private async scanFileWithMemo(filePath: string, dirMemo: Map<string, MemoizedSessionSummary> | undefined): Promise<PiSessionListEntry | undefined> {
+    const memoized = dirMemo?.get(filePath);
+    if (memoized === undefined) return this.fullScan(filePath);
 
     let stats: Stats;
     try {
       stats = await stat(filePath);
     } catch {
       // Went away between readdir and stat: drop it and skip, like the SDK.
-      this.memo.delete(filePath);
+      this.memo.get(dirname(filePath))?.delete(filePath);
       return undefined;
     }
 
     if (stats.dev !== memoized.dev || stats.ino !== memoized.ino || stats.size !== memoized.size) {
       // Anything but an unchanged file is scanned whole again.
-      return this.fullScan(filePath, chunkBuffer);
+      return this.fullScan(filePath);
     }
     // Stat-only fast path: unchanged file, so no open and no read. Its one
     // blind spot is an equal-size in-place rewrite that keeps the inode;
@@ -179,15 +236,48 @@ export class SessionSummaryScanner {
     return buildSummaryFromFold(memoized.fold, filePath, stats.mtime);
   }
 
-  private async fullScan(filePath: string, chunkBuffer: () => Buffer): Promise<PiSessionListEntry | undefined> {
-    const scanned = await scanWholeSessionFile(filePath, chunkBuffer);
+  private async fullScan(filePath: string): Promise<PiSessionListEntry | undefined> {
+    const generation = this.generation;
+    const scanned = await this.withFileReadSlot((readBuffer) => scanWholeSessionFile(filePath, readBuffer));
+    // Looked up after the read, so a clear() meanwhile never revives an orphaned map.
+    const dirKey = dirname(filePath);
     if (scanned === undefined) {
-      this.memo.delete(filePath);
+      this.memo.get(dirKey)?.delete(filePath);
       return undefined;
     }
-    this.memo.set(filePath, { dev: scanned.dev, ino: scanned.ino, size: scanned.size, fold: scanned.fold });
+    if (generation === this.generation) {
+      let dirMemo = this.memo.get(dirKey);
+      if (dirMemo === undefined) this.memo.set(dirKey, (dirMemo = new Map<string, MemoizedSessionSummary>()));
+      dirMemo.set(filePath, { dev: scanned.dev, ino: scanned.ino, size: scanned.size, fold: scanned.fold });
+    }
     return buildSummaryFromFold(scanned.fold, filePath, scanned.mtime);
   }
+
+  /**
+   * Run one whole-file read within the scanner-wide bound, handing it a
+   * lazily leased read buffer (failed opens never allocate one). Buffers are
+   * reused across directories while reads are active and released when the
+   * scanner goes idle, so a warm daemon retains none.
+   */
+  private async withFileReadSlot<T>(read: (readBuffer: () => Buffer) => Promise<T>): Promise<T> {
+    if (this.activeFileReads < MAX_CONCURRENT_FILE_READS) this.activeFileReads += 1;
+    else await new Promise<void>((resolve) => this.fileReadWaiters.push(resolve)); // slot handed over on release
+    let buffer: Buffer | undefined;
+    try {
+      return await read(() => (buffer ??= this.freeReadBuffers.pop() ?? Buffer.allocUnsafe(this.chunkBytes)));
+    } finally {
+      if (buffer !== undefined) this.freeReadBuffers.push(buffer);
+      const next = this.fileReadWaiters.shift();
+      if (next !== undefined) next();
+      else if (--this.activeFileReads === 0) this.freeReadBuffers.length = 0;
+    }
+  }
+}
+
+/** A directory scan in flight, plus the one scan queued behind it for later requests. */
+interface PendingDirectoryScan {
+  running: Promise<PiSessionListEntry[]>;
+  queued?: Promise<PiSessionListEntry[]>;
 }
 
 /** One memoized file: the identity and size it was scanned at, plus its summary state. */
@@ -508,24 +598,17 @@ function sortedSessionSummaries(summaries: readonly (PiSessionListEntry | undefi
 
 async function scanSessionFilesWithBoundedConcurrency(
   files: readonly string[],
-  chunkBytes: number,
-  scan: (file: string, chunkBuffer: () => Buffer) => Promise<PiSessionListEntry | undefined>,
+  scan: (file: string) => Promise<PiSessionListEntry | undefined>,
 ): Promise<(PiSessionListEntry | undefined)[]> {
   const results: (PiSessionListEntry | undefined)[] = Array.from({ length: files.length }, () => undefined);
   let nextIndex = 0;
   const workerCount = Math.min(MAX_CONCURRENT_SESSION_SUMMARY_SCANS, files.length);
   const workers = Array.from({ length: workerCount }, async () => {
-    // One reusable read buffer per worker, allocated on first use: warm
-    // listings answer every file from the memo's stat-only fast path and
-    // must not pay a chunk-sized allocation per worker for reads that
-    // never happen.
-    let chunkBuffer: Buffer | undefined;
-    const readBuffer = (): Buffer => (chunkBuffer ??= Buffer.allocUnsafe(chunkBytes));
     for (;;) {
       const index = nextIndex++;
       const file = files[index];
       if (file === undefined) return;
-      results[index] = await scan(file, readBuffer).catch(() => undefined);
+      results[index] = await scan(file).catch(() => undefined);
     }
   });
   await Promise.all(workers);

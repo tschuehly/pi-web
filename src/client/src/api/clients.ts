@@ -245,13 +245,22 @@ export const workspacesApi = {
 };
 
 export const sessionsApi = {
-  sessions: (cwd: string, machineId = "local", options?: { signal?: AbortSignal }) => request(
-    `${machinePrefix(machineId)}/sessions?cwd=${encodeURIComponent(cwd)}`,
+  /**
+   * The workspace catalog, or with `sessionId` that one exact row. A current
+   * daemon answers a targeted miss with 404; an older one ignores the id and
+   * returns the whole catalog, so callers still pick the row by id.
+   */
+  sessions: (cwd: string, machineId = "local", options?: { signal?: AbortSignal; sessionId?: string }) => request(
+    `${machinePrefix(machineId)}/sessions?cwd=${encodeURIComponent(cwd)}${options?.sessionId === undefined ? "" : `&sessionId=${encodeURIComponent(options.sessionId)}`}`,
     arrayOf(parseSessionInfo),
     options?.signal === undefined ? undefined : { signal: options.signal },
   ),
   recent: (limit = 200, machineId = "local") => request(`${machinePrefix(machineId)}/sessions/recent?${new URLSearchParams({ limit: String(limit) }).toString()}`, arrayOf(parseSessionInfo)),
-  locate: (sessionId: string, machineId = "local"): Promise<{ cwd: string }> => request(`${machinePrefix(machineId)}/sessions/locate/${encodeURIComponent(sessionId)}`, parseLocatedSession),
+  locate: (sessionId: string, machineId = "local", options?: { signal?: AbortSignal }): Promise<{ cwd: string }> => request(
+    `${machinePrefix(machineId)}/sessions/locate/${encodeURIComponent(sessionId)}`,
+    parseLocatedSession,
+    options?.signal === undefined ? undefined : { signal: options.signal },
+  ),
   unreadCatalog: (machineId = "local") => request(`${machinePrefix(machineId)}/sessions/unread`, parseSessionUnreadCatalogSnapshot, { cache: "no-store" }),
   acknowledgeUnread: (session: SessionRef, catalogId: string, throughCompletionOrder: number, machineId = "local") => {
     const body: SessionUnreadAcknowledgeRequest = { cwd: session.cwd, catalogId, throughCompletionOrder };

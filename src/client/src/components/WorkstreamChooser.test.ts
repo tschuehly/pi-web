@@ -3,7 +3,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkstreamChooser, WorkstreamServiceError, actor, appendWorkstream, attentionOf, directoriesOf, firstClause, groupMatchesProject, isTemporaryDirectory, latestCheckpoints, referencesOf, sessionsByActivity, watchWorkstreams, type OpenWorkstreamSessionDetail, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { workstreamAccentColor } from "../workstreamColor";
-import { pluginsApi } from "../api/clients";
+import { pluginsApi, sessionsApi, workspacesApi } from "../api/clients";
+import { HttpRequestError } from "../api/http";
+import type { SessionInfo, Workspace } from "../api";
 
 // Legacy checkpoints still carry a continuation prompt; PI WEB must neither show nor preload it.
 const checkpoint = (id: string, recordedAt: string, next: string, references: string[] = []) => ({ id, whatChanged: `${id} changed. More detail.`, remains: "Review", next, nextSessionPrompt: `Continue ${id}`, references, recordedAt });
@@ -26,14 +28,37 @@ const snapshot: WorkstreamSnapshot = {
 
 const summaries = [{ id: "ws-2", title: "Older", group: null, createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-09-20T00:00:00.000Z", lastCheckpointAt: "2026-09-01T00:00:00.000Z", unresolvedHumanTaskCount: 0, next: "Pia does old thing", waitingOn: "agent" as const }, { id: "ws-1", title: snapshot.title, group: "Embabel", createdAt: "2026-08-28T00:00:00.000Z", updatedAt: snapshot.updatedAt, lastCheckpointAt: new Date().toISOString(), unresolvedHumanTaskCount: 1, next: "Thomas logs in and asks the five questions.", waitingOn: "owner" as const }];
 
-// PI WEB session metadata: s-b is recent, s-a is found through its working directory, s-old and s-none are unknown.
-const chat = (id: string, name: string | undefined, modified: string) => ({ id, path: `/sessions/${id}.jsonl`, cwd: "/repo/me", ...(name === undefined ? {} : { name }), created: modified, modified, messageCount: 3, firstMessage: "" });
+// PI WEB session metadata: s-b is anchored in workspace w1 of project p1, s-a is located through its working directory, s-old and s-none are unknown.
+const chat = (id: string, name: string | undefined, modified: string, cwd = "/repo/me"): SessionInfo => ({ id, path: `/sessions/${id}.jsonl`, cwd, ...(name === undefined ? {} : { name }), created: modified, modified, messageCount: 3, firstMessage: "" });
+const workspace = (id: string, projectId: string, path: string): Workspace => ({ id, projectId, path, label: id, isMain: true, effectiveConfig: {} });
+const catalog = [chat("s-b", "Trial login", "2026-09-18T10:40:00.000Z", "/repo/me-trial"), chat("s-a", "Stack review", "2026-09-18T07:30:00.000Z")];
 function chatsResponse(url: string): Response | undefined {
-  if (url.includes("/sessions/recent")) return Response.json([chat("s-b", "Trial login", "2026-09-18T10:40:00.000Z")]);
+  if (url.includes("/sessions/recent")) return Response.json([catalog[0]]);
   if (url.includes("/sessions/locate/s-a")) return Response.json({ cwd: "/repo/me" });
   if (url.includes("/sessions/locate/")) return new Response("not found", { status: 404 });
-  if (url.includes("/sessions?cwd=")) return Response.json([chat("s-a", "Stack review", "2026-09-18T07:30:00.000Z")]);
-  return undefined;
+  const query = /\/sessions\?(.*)$/.exec(url)?.[1];
+  if (query === undefined) return undefined;
+  const params = new URLSearchParams(query);
+  const row = catalog.find((candidate) => candidate.id === params.get("sessionId") && candidate.cwd === params.get("cwd"));
+  return row === undefined ? new Response("not found", { status: 404 }) : Response.json([row]);
+}
+
+/** A promise the test settles explicitly, to hold one lookup while others finish. */
+function held<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((settle) => { resolve = settle; });
+  return { promise, resolve };
+}
+const never = <T>(): Promise<T> => new Promise<T>(() => undefined);
+const notFound = () => Promise.reject(new HttpRequestError("Session not found", 404));
+const titleOf = (element: WorkstreamChooser, sessionId: string): string | undefined => shadow(element).querySelector(`[data-session-id="${sessionId}"] .session-title`)?.textContent;
+const targetedCalls = (sessionId: string) => vi.mocked(sessionsApi.sessions).mock.calls.filter(([, , options]) => options?.sessionId === sessionId);
+
+async function openCard(element: WorkstreamChooser, workstreamId = "ws-1"): Promise<void> {
+  await vi.waitFor(() => { expect(shadow(element).querySelector(".row")).not.toBeNull(); });
+  const row = [...shadow(element).querySelectorAll<HTMLElement>(".workstream")].find((item) => item.style.getPropertyValue("--workstream-color") === workstreamAccentColor(workstreamId));
+  row?.querySelector<HTMLButtonElement>(".row")?.click();
+  await vi.waitFor(() => { expect(row?.querySelector(".card")).not.toBeNull(); });
 }
 
 function requestBody(url: string, init?: RequestInit): { operation: string; input: unknown } {
@@ -81,6 +106,7 @@ beforeEach(() => {
     diagnostics: [],
     serverRuntime: { status: "available", terminalMode: "required", restartRequired: false, recovery: { showSafeStart: "pi-web plugins safe-start show", bundledOnly: "pi-web plugins safe-start set bundled-only --restart", noServerPlugins: "pi-web plugins safe-start set none --restart", clearSafeStart: "pi-web plugins safe-start clear --restart" } },
   });
+  vi.spyOn(workspacesApi, "workspaces").mockImplementation((projectId) => projectId === "p1" ? Promise.resolve([workspace("w1", "p1", "/repo/me-trial")]) : Promise.reject(new Error("unknown project")));
   stubService();
 });
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -353,6 +379,510 @@ describe("WorkstreamChooser", () => {
     await vi.waitFor(() => { expect(element.shadowRoot?.querySelector(".card")).not.toBeNull(); });
     expect(element.shadowRoot?.querySelector(".card .missing")?.textContent).toContain("write the overview for ws-1");
     expect(element.shadowRoot?.querySelector(".card .goal")).toBeNull();
+  });
+});
+
+describe("WorkstreamChooser Chat titles", () => {
+  const anchoredCard: WorkstreamSnapshot = { ...snapshot, sessions: [
+    { id: "anchored-1", status: "active", projectId: "p1", workspaceId: "w1", latestCheckpoint: null },
+    { id: "anchored-2", status: "active", machineId: "local", projectId: "p1", workspaceId: "w2", latestCheckpoint: null },
+    { id: "loose", status: "active", latestCheckpoint: null },
+  ] };
+
+  it("titles anchored Chats from their targeted rows while global and unanchored lookups are held", async () => {
+    stubService(summaries, anchoredCard);
+    const recent = vi.spyOn(sessionsApi, "recent").mockReturnValue(never());
+    const locate = vi.spyOn(sessionsApi, "locate").mockReturnValue(never());
+    const workspaces = vi.mocked(workspacesApi.workspaces).mockResolvedValue([workspace("w1", "p1", "/repo/one"), workspace("w2", "p1", "/repo/two")]);
+    const sessions = vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, _machineId, options) => options?.sessionId === undefined
+      ? never()
+      : Promise.resolve([chat(options.sessionId, `Title ${options.sessionId}`, "2026-09-18T10:40:00.000Z", cwd)]));
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+
+    await vi.waitFor(() => { expect(titleOf(element, "anchored-1")).toBe("Title anchored-1"); });
+    expect(titleOf(element, "anchored-2")).toBe("Title anchored-2");
+    expect(titleOf(element, "loose")).toBe("Loading title…");
+    expect(recent).not.toHaveBeenCalled();
+    expect(workspaces).toHaveBeenCalledTimes(1);
+    expect(workspaces.mock.calls.map(([projectId, machineId, options]) => [projectId, machineId, options?.signal instanceof AbortSignal])).toEqual([["p1", "local", true]]);
+    expect(sessions.mock.calls.map(([cwd, machineId, options]) => [cwd, machineId, options?.sessionId])).toEqual([["/repo/one", "local", "anchored-1"], ["/repo/two", "local", "anchored-2"]]);
+    expect(locate.mock.calls.map(([id, machineId, options]) => [id, machineId, options?.signal instanceof AbortSignal])).toEqual([["loose", "local", true]]);
+
+    const opened = new Promise<OpenWorkstreamSessionDetail>((resolve) => { element.addEventListener("open-workstream-session", (event) => { resolve(detailOf(event)); }, { once: true }); });
+    shadow(element).querySelector<HTMLButtonElement>('button[data-session-id="anchored-1"]')?.click();
+    expect(await opened).toMatchObject({ sessionId: "anchored-1", projectId: "p1", workspaceId: "w1" });
+  });
+
+  it("marks each Chat ready on its own when an unanchored lookup finishes later", async () => {
+    stubService(summaries, anchoredCard);
+    const located = held<{ cwd: string }>();
+    vi.spyOn(sessionsApi, "locate").mockReturnValue(located.promise);
+    vi.mocked(workspacesApi.workspaces).mockResolvedValue([workspace("w1", "p1", "/repo/one")]);
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, _machineId, options) => cwd === "/repo/one" && options?.sessionId === "anchored-1"
+      ? Promise.resolve([chat("anchored-1", "First", "2026-09-18T10:40:00.000Z", cwd)])
+      : cwd === "/repo/loose" && options?.sessionId === "loose" ? Promise.resolve([chat("loose", "Loose title", "2026-09-18T10:40:00.000Z", cwd)]) : notFound());
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+
+    await vi.waitFor(() => { expect(titleOf(element, "anchored-1")).toBe("First"); });
+    // anchored-2's workspace is gone, so it waits on the held locate like the unanchored Chat.
+    expect(titleOf(element, "anchored-2")).toBe("Loading title…");
+    expect(titleOf(element, "loose")).toBe("Loading title…");
+    located.resolve({ cwd: "/repo/loose" });
+    await vi.waitFor(() => { expect(titleOf(element, "loose")).toBe("Loose title"); });
+    await vi.waitFor(() => { expect(titleOf(element, "anchored-2")).toBe("Chat not found in PI WEB"); });
+  });
+
+  it("falls back for legacy, moved, and unknown anchors and never applies a row from another id, cwd, or machine", async () => {
+    const session = (id: string, anchor: { machineId?: string; projectId?: string; workspaceId?: string } = {}) => ({ id, status: "active", ...anchor, latestCheckpoint: null });
+    stubService(summaries, { ...snapshot, sessions: [
+      session("legacy", { projectId: "p1", workspaceId: "w1" }),
+      session("archived", { projectId: "p1", workspaceId: "w1" }),
+      session("moved", { projectId: "p1", workspaceId: "w-gone" }),
+      session("unknown-project", { projectId: "p-gone", workspaceId: "w1" }),
+      session("stale-anchor", { projectId: "p1", workspaceId: "w1" }),
+      session("elsewhere", { machineId: "remote", projectId: "p1", workspaceId: "w1" }),
+    ] });
+    const status = vi.spyOn(sessionsApi, "status");
+    const locate = vi.spyOn(sessionsApi, "locate").mockImplementation((id) => id === "moved" ? Promise.resolve({ cwd: "/repo/moved" }) : id === "stale-anchor" ? Promise.resolve({ cwd: "/repo/me-trial" }) : notFound());
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, _machineId, options) => {
+      const at = (id: string, name: string, rowCwd = cwd) => chat(id, name, "2026-09-18T10:40:00.000Z", rowCwd);
+      // A legacy daemon ignores sessionId and answers with its whole catalog.
+      if (options?.sessionId === "legacy") return Promise.resolve([at("other", "Other Chat"), at("legacy", "Wrong workspace", "/repo/elsewhere"), at("legacy", "Legacy title")]);
+      if (options?.sessionId === "archived") return Promise.resolve([{ ...at("archived", "Archived title"), archived: true }]);
+      if (options?.sessionId === "moved" && cwd === "/repo/moved") return Promise.resolve([at("moved", "Moved title")]);
+      return notFound();
+    });
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+
+    await vi.waitFor(() => { expect(["legacy", "archived", "moved", "unknown-project", "stale-anchor", "elsewhere"].map((id) => titleOf(element, id))).toEqual(["Legacy title", "Archived title", "Moved title", "Chat not found in PI WEB", "Chat not found in PI WEB", "Chat not found in PI WEB"]); });
+    expect(locate.mock.calls.map(([id]) => id).sort()).toEqual(["moved", "stale-anchor", "unknown-project"]);
+    expect(targetedCalls("stale-anchor")).toHaveLength(1);
+    expect(targetedCalls("elsewhere")).toHaveLength(0);
+    expect(shadow(element).querySelector('[data-session-id="other"]')).toBeNull();
+    expect(status).not.toHaveBeenCalled();
+  });
+
+  it("drops a late Workstream inspection after the owner switches cards", async () => {
+    const first = held<Response>();
+    const other: WorkstreamSnapshot = { ...snapshot, id: "ws-2", title: "Older", sessions: [] };
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
+      if (body.operation === "list") return Promise.resolve(Response.json({ ok: true, value: summaries }));
+      return body.input !== null && typeof body.input === "object" && "workstreamId" in body.input && body.input.workstreamId === "ws-1" ? first.promise : Promise.resolve(Response.json({ ok: true, value: other }));
+    }));
+    const element = newChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await openCard(element, "ws-2");
+    first.resolve(Response.json({ ok: true, value: snapshot }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await element.updateComplete;
+    expect([...shadow(element).querySelectorAll(".card")].map((card) => card.getAttribute("aria-label"))).toEqual(["Re-entry card for Older"]);
+  });
+
+  it("keeps a superseded machine's late list, card, title, and live lookup out of the current view", async () => {
+    const localRow = held<SessionInfo[]>();
+    const localLive = held<Response>();
+    const localList = held<Response>();
+    let listCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
+      const machine = /machines\/([^/]+)/.exec(url)?.[1] ?? "local";
+      if (body.operation === "list" && sessionIdOf(body.input) !== undefined) return machine === "local" ? localLive.promise : Promise.resolve(Response.json({ ok: true, value: [] }));
+      if (body.operation === "list") return ++listCalls === 2 ? localList.promise : Promise.resolve(Response.json({ ok: true, value: machine === "local" ? summaries : [summaries[1]] }));
+      return Promise.resolve(Response.json({ ok: true, value: anchoredCard }));
+    }));
+    vi.spyOn(sessionsApi, "locate").mockImplementation(notFound);
+    vi.mocked(workspacesApi.workspaces).mockResolvedValue([workspace("w1", "p1", "/repo/one")]);
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((_cwd, machineId) => machineId === "local" ? localRow.promise : notFound());
+    const element = newChooser();
+    element.sessionActivities = { "live-x": active("live-x") };
+    document.body.append(element);
+    await openCard(element);
+    expect(titleOf(element, "anchored-1")).toBe("Loading title…");
+
+    element.serviceWorkspaceId = "other-workspace"; // a second local list, held until after the machine switch
+    await element.updateComplete;
+    element.serviceMachineId = "remote";
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(1); });
+    expect(shadow(element).querySelector(".card")).toBeNull();
+    localList.resolve(Response.json({ ok: true, value: summaries }));
+    localRow.resolve([chat("anchored-1", "Local title", "2026-09-18T10:40:00.000Z", "/repo/one")]);
+    localLive.resolve(Response.json({ ok: true, value: [summaries[1]] }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await element.updateComplete;
+    expect(shadow(element).querySelectorAll(".row")).toHaveLength(1);
+    expect(shadow(element).querySelector(".row .activity-indicator.session")).toBeNull();
+
+    await openCard(element);
+    await vi.waitFor(() => { expect(titleOf(element, "anchored-1")).toBe("Chat not found in PI WEB"); });
+    expect(vi.mocked(sessionsApi.sessions).mock.calls.at(-1)?.[1]).toBe("remote");
+  });
+});
+
+describe("WorkstreamChooser bounded and scoped Chat metadata", () => {
+  const ids = Array.from({ length: 64 }, (_, index) => `c${String(index).padStart(2, "0")}`);
+  // Equal activity times keep record order, so c00–c04 are the five visible Chats and c05–c63 fold away.
+  const crowded: WorkstreamSnapshot = { ...snapshot, sessions: ids.map((id) => ({ id, status: "active", projectId: "p1", workspaceId: "w1", latestCheckpoint: null })) };
+  const settle = async (element: WorkstreamChooser): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, 0)); await new Promise((resolve) => setTimeout(resolve, 0)); await element.updateComplete; };
+  /** A scope change re-renders twice: the property update, then the list load it starts from `updated()`. */
+  const rescope = async (element: WorkstreamChooser, property: "serviceMachineId" | "serviceWorkspaceId", value: string): Promise<void> => {
+    element[property] = value;
+    await element.updateComplete;
+    await element.updateComplete;
+  };
+  const expandOlder = (element: WorkstreamChooser): void => { shadow(element).querySelector<HTMLElement>("details.older > summary")?.click(); };
+  const collapseCard = async (element: WorkstreamChooser): Promise<void> => {
+    shadow(element).querySelector<HTMLButtonElement>(".workstream.open .row")?.click();
+    await element.updateComplete;
+    expect(shadow(element).querySelector(".card")).toBeNull();
+  };
+
+  /** Targeted rows the test answers by hand; a request is live until it is answered or its signal aborts. */
+  function heldRows() {
+    const calls: { sessionId: string; cwd: string; machineId: string; signal: AbortSignal | undefined; answered: boolean; answer: (rows: SessionInfo[]) => void }[] = [];
+    let peak = 0;
+    const live = () => calls.filter((call) => !call.answered && call.signal?.aborted !== true);
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, machineId = "local", options) => new Promise<SessionInfo[]>((resolve) => {
+      const call = { sessionId: options?.sessionId ?? "", cwd, machineId, signal: options?.signal, answered: false, answer: (rows: SessionInfo[]) => { call.answered = true; resolve(rows); } };
+      calls.push(call);
+      peak = Math.max(peak, live().length);
+    }));
+    const answer = (sessionId: string, name: string): void => { for (const call of live().filter((candidate) => candidate.sessionId === sessionId)) call.answer([chat(sessionId, name, "2026-09-18T10:40:00.000Z", call.cwd)]); };
+    return { calls, live, peak: () => peak, answer, on: (machineId: string) => calls.filter((call) => call.machineId === machineId) };
+  }
+
+  it("requests only the five visible Chats of a 64-Chat card and titles each as its own row arrives", async () => {
+    stubService(summaries, crowded);
+    const rows = heldRows();
+    const locate = vi.spyOn(sessionsApi, "locate");
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+
+    await settle(element);
+    expect(rows.calls.map((call) => call.sessionId)).toEqual(ids.slice(0, 5));
+    expect(vi.mocked(workspacesApi.workspaces)).toHaveBeenCalledTimes(1);
+    expect(locate).not.toHaveBeenCalled();
+    expect(shadow(element).querySelector<HTMLDetailsElement>("details.older")?.open).toBe(false);
+    rows.answer("c02", "Third");
+    await vi.waitFor(() => { expect(titleOf(element, "c02")).toBe("Third"); });
+    expect(titleOf(element, "c00")).toBe("Loading title…");
+  });
+
+  it("loads expanded older Chats lazily, never more than eight at once, and keeps every older name", async () => {
+    stubService(summaries, crowded);
+    const rows = heldRows();
+    const locate = vi.spyOn(sessionsApi, "locate");
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+    await vi.waitFor(() => { expect(rows.calls).toHaveLength(5); });
+
+    expandOlder(element);
+    await settle(element);
+    expect(rows.calls.map((call) => call.sessionId)).toEqual(ids.slice(0, 8));
+    rows.answer("c00", "Newest");
+    await vi.waitFor(() => { expect(rows.calls.map((call) => call.sessionId)).toEqual(ids.slice(0, 9)); });
+    for (let round = 0; round < 12 && titleOf(element, "c63") !== "Title c63"; round++) {
+      for (const call of rows.live()) rows.answer(call.sessionId, `Title ${call.sessionId}`);
+      await settle(element);
+    }
+    expect(ids.slice(1).map((id) => titleOf(element, id))).toEqual(ids.slice(1).map((id) => `Title ${id}`));
+    expect(rows.calls).toHaveLength(64);
+    expect(rows.peak()).toBe(8);
+    expect(vi.mocked(workspacesApi.workspaces)).toHaveBeenCalledTimes(1);
+    expect(locate).not.toHaveBeenCalled();
+  });
+
+  it("aborts a superseded machine's held lookups so each new machine starts at once, coalescing a reopened card", async () => {
+    stubService(summaries, crowded);
+    const rows = heldRows();
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+    expandOlder(element);
+    await vi.waitFor(() => { expect(rows.live()).toHaveLength(8); });
+
+    for (const machine of ["remote", "third"]) {
+      await rescope(element, "serviceMachineId", machine);
+      await openCard(element);
+      await vi.waitFor(() => { expect(rows.on(machine).map((call) => call.sessionId)).toEqual(ids.slice(0, 5)); });
+      expect(rows.live().every((call) => call.machineId === machine)).toBe(true);
+      expandOlder(element);
+      await vi.waitFor(() => { expect(rows.on(machine)).toHaveLength(8); });
+    }
+    await collapseCard(element);
+    await openCard(element);
+    expandOlder(element);
+    await settle(element);
+    expect(rows.on("third")).toHaveLength(8);
+    expect(rows.calls).toHaveLength(24);
+    expect(rows.peak()).toBe(8);
+    expect(vi.mocked(workspacesApi.workspaces).mock.calls.map(([, machineId]) => machineId)).toEqual(["local", "remote", "third"]);
+  });
+
+  it.each(["serviceProjectId", "serviceWorkspaceId"] as const)("drops a held inspection when the same machine's %s changes", async (property) => {
+    const inspection = held<Response>();
+    const operations: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      const body = requestBody(url, init);
+      operations.push(body.operation);
+      return body.operation === "inspect" ? inspection.promise : Promise.resolve(Response.json({ ok: true, value: summaries }));
+    }));
+    const sessions = vi.spyOn(sessionsApi, "sessions");
+    const element = newChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+    shadow(element).querySelector<HTMLButtonElement>(".row")?.click();
+    await vi.waitFor(() => { expect(operations).toContain("inspect"); });
+
+    element[property] = "elsewhere";
+    await vi.waitFor(() => { expect(operations.filter((operation) => operation === "list")).toHaveLength(2); });
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+    inspection.resolve(Response.json({ ok: true, value: snapshot }));
+    await settle(element);
+    expect(shadow(element).querySelector(".card")).toBeNull();
+    expect(sessions).not.toHaveBeenCalled();
+  });
+
+  it("shows a genuine loading state while a reopened card retries an earlier miss", async () => {
+    stubService(summaries, { ...snapshot, sessions: [{ id: "retry", status: "active", projectId: "p1", workspaceId: "w1", latestCheckpoint: null }] });
+    const sessions = vi.spyOn(sessionsApi, "sessions").mockImplementation(notFound);
+    const locate = vi.spyOn(sessionsApi, "locate").mockImplementation(notFound);
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+    await vi.waitFor(() => { expect(titleOf(element, "retry")).toBe("Chat not found in PI WEB"); });
+    await collapseCard(element);
+
+    const retried = held<SessionInfo[]>();
+    sessions.mockReturnValue(retried.promise);
+    await openCard(element);
+    await vi.waitFor(() => { expect(sessions).toHaveBeenCalledTimes(2); });
+    expect(titleOf(element, "retry")).toBe("Loading title…");
+    retried.resolve([chat("retry", "Second try", "2026-09-18T10:40:00.000Z", "/repo/me-trial")]);
+    await vi.waitFor(() => { expect(titleOf(element, "retry")).toBe("Second try"); });
+    expect(locate).toHaveBeenCalledTimes(1);
+  });
+
+  describe("after a legacy record's anchor repair to another machine", () => {
+    let repaired = false;
+    const legacy = { id: "repaired", status: "active", latestCheckpoint: null };
+    beforeEach(() => {
+      repaired = false;
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+        const body = requestBody(url, init);
+        const value = body.operation === "list" ? summaries : { ...snapshot, sessions: [repaired ? { ...legacy, machineId: "remote", projectId: "p1", workspaceId: "w1" } : legacy] };
+        return Promise.resolve(Response.json({ ok: true, value }));
+      }));
+      vi.spyOn(sessionsApi, "locate").mockResolvedValue({ cwd: "/repo/legacy" });
+    });
+
+    it("reuses a cached local title for the same record, then never shows it for the repaired one", async () => {
+      const sessions = vi.spyOn(sessionsApi, "sessions").mockResolvedValue([chat("repaired", "Local title", "2026-09-18T10:40:00.000Z", "/repo/legacy")]);
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      await vi.waitFor(() => { expect(titleOf(element, "repaired")).toBe("Local title"); });
+      await collapseCard(element);
+      await rescope(element, "serviceWorkspaceId", "other-workspace");
+      await openCard(element);
+      expect(titleOf(element, "repaired")).toBe("Local title");
+
+      await collapseCard(element);
+      repaired = true;
+      await openCard(element);
+      await settle(element);
+      expect(titleOf(element, "repaired")).toBe("Chat not found in PI WEB");
+      expect(sessions).toHaveBeenCalledTimes(1);
+      expect(sessionsApi.locate).toHaveBeenCalledTimes(1);
+      expect(workspacesApi.workspaces).not.toHaveBeenCalled();
+    });
+
+    it("does not apply a late local row to the repaired record", async () => {
+      const row = held<SessionInfo[]>();
+      const sessions = vi.spyOn(sessionsApi, "sessions").mockReturnValue(row.promise);
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      await vi.waitFor(() => { expect(sessions).toHaveBeenCalledTimes(1); });
+      await collapseCard(element);
+      repaired = true;
+      await openCard(element);
+      row.resolve([chat("repaired", "Late local title", "2026-09-18T10:40:00.000Z", "/repo/legacy")]);
+      await settle(element);
+      expect(titleOf(element, "repaired")).toBe("Chat not found in PI WEB");
+      expect(sessions).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("never renders a title cached before a machine switch, even while the new machine's row is held", async () => {
+    stubService(summaries, { ...snapshot, sessions: [{ id: "anchored", status: "active", projectId: "p1", workspaceId: "w1", latestCheckpoint: null }] });
+    const remote = held<SessionInfo[]>();
+    vi.spyOn(sessionsApi, "sessions").mockImplementation((cwd, machineId) => machineId === "local" ? Promise.resolve([chat("anchored", "Cached local", "2026-09-18T10:40:00.000Z", cwd)]) : remote.promise);
+    const element = newChooser();
+    document.body.append(element);
+    await openCard(element);
+    await vi.waitFor(() => { expect(titleOf(element, "anchored")).toBe("Cached local"); });
+
+    const seen: string[] = [];
+    const observer = new MutationObserver(() => { seen.push(shadow(element).textContent); });
+    observer.observe(shadow(element), { subtree: true, childList: true, characterData: true });
+    await rescope(element, "serviceMachineId", "remote");
+    await openCard(element);
+    expect(titleOf(element, "anchored")).toBe("Loading title…");
+    remote.resolve([chat("anchored", "Remote title", "2026-09-18T10:40:00.000Z", "/repo/me-trial")]);
+    await vi.waitFor(() => { expect(titleOf(element, "anchored")).toBe("Remote title"); });
+    observer.disconnect();
+    expect(seen.filter((text) => text.includes("Cached local"))).toEqual([]);
+  });
+
+  it("clears the previous machine's Workstreams and keeps them cleared when the new machine's list fails", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      requestBody(url, init);
+      return url.includes("/machines/remote/") ? Promise.reject(new Error("Remote list unavailable")) : Promise.resolve(Response.json({ ok: true, value: summaries }));
+    }));
+    const element = newChooser();
+    document.body.append(element);
+    await vi.waitFor(() => { expect(shadow(element).querySelectorAll(".row")).toHaveLength(2); });
+
+    element.serviceMachineId = "remote";
+    await vi.waitFor(() => { expect(shadow(element).querySelector('[role="alert"]')?.textContent).toContain("Remote list unavailable"); });
+    expect(shadow(element).querySelectorAll(".row")).toHaveLength(0);
+  });
+
+  describe("on the wire", () => {
+    interface HeldRequest { url: string; signal: AbortSignal | undefined; open: boolean; openAtStart: string[]; answer: (value: unknown) => void }
+    /**
+     * A fake fetch beneath the real API clients: it answers the Workstream service with `cards` and holds every Chat
+     * metadata request until the test answers it or its signal aborts, which closes it as fetch would.
+     */
+    function heldTransport(cards: Record<string, WorkstreamSnapshot>) {
+      vi.mocked(workspacesApi.workspaces).mockRestore();
+      const requests: HeldRequest[] = [];
+      let peak = 0;
+      const open = (): HeldRequest[] => requests.filter((request) => request.open);
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+        if (url.includes("/paired-plugin-backends/")) {
+          const { operation, input } = requestBody(url, init);
+          const id = typeof input === "object" && input !== null && "workstreamId" in input && typeof input.workstreamId === "string" ? input.workstreamId : "";
+          return Promise.resolve(Response.json({ ok: true, value: operation === "list" ? sessionIdOf(input) === undefined ? summaries : [] : cards[id] }));
+        }
+        return new Promise<Response>((resolve, reject) => {
+          const signal = init?.signal ?? undefined;
+          const request: HeldRequest = { url, signal, open: true, openAtStart: open().map((held) => held.url), answer: (value) => { request.open = false; resolve(Response.json(value)); } };
+          requests.push(request);
+          peak = Math.max(peak, open().length);
+          const abort = (): void => { request.open = false; reject(new DOMException("The operation was aborted.", "AbortError")); };
+          if (signal?.aborted === true) abort(); else signal?.addEventListener("abort", abort, { once: true });
+        });
+      }));
+      return { requests, open, peak: () => peak, paths: () => requests.map((request) => new URL(request.url).pathname + new URL(request.url).search) };
+    }
+    const looseCard = (id: string, prefix: string): WorkstreamSnapshot => ({ ...snapshot, id, sessions: Array.from({ length: 12 }, (_, index) => ({ id: `${prefix}${String(index).padStart(2, "0")}`, status: "active", latestCheckpoint: null })) });
+    const anchored = (id: string, projectId: string) => ({ id, status: "active", projectId, workspaceId: "w1", latestCheckpoint: null });
+
+    it.each(["machine", "card"] as const)("closes all eight held locates at a %s switch before the next scope's requests start", async (change) => {
+      const transport = heldTransport({ "ws-1": looseCard("ws-1", "a"), "ws-2": looseCard("ws-2", "b") });
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      expandOlder(element);
+      await vi.waitFor(() => { expect(transport.open()).toHaveLength(8); });
+      const first = [...transport.requests];
+      expect(transport.paths()).toEqual(ids.slice(0, 8).map((id) => `/api/machines/local/sessions/locate/a${id.slice(1)}`));
+
+      if (change === "machine") { await rescope(element, "serviceMachineId", "remote"); await openCard(element); } else await openCard(element, "ws-2");
+      expandOlder(element);
+      await vi.waitFor(() => { expect(transport.requests).toHaveLength(16); });
+      await settle(element);
+
+      expect(first.map((request) => [request.signal?.aborted, request.open])).toEqual(first.map(() => [true, false]));
+      const next = transport.requests.slice(first.length);
+      // No request of the next scope started while one of the superseded scope was still open.
+      expect(next.flatMap((request) => request.openAtStart).filter((url) => first.some((old) => old.url === url))).toEqual([]);
+      expect(transport.open()).toHaveLength(8);
+      expect(transport.requests.filter((request) => request.url.includes("/machines/local/sessions/locate/a"))).toHaveLength(8);
+      expect(transport.peak()).toBe(8);
+    });
+
+    it("closes a held locate and workspace request when the chooser leaves the page, and starts nothing after", async () => {
+      const transport = heldTransport({ "ws-1": { ...snapshot, sessions: [anchored("anchored", "p1"), { id: "loose", status: "active", latestCheckpoint: null }] } });
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      await vi.waitFor(() => { expect(transport.paths()).toEqual(["/api/machines/local/projects/p1/workspaces", "/api/machines/local/sessions/locate/loose"]); });
+
+      element.remove();
+      expect(transport.requests.map((request) => [request.signal?.aborted, request.open])).toEqual([[true, false], [true, false]]);
+      await settle(element);
+      expect(transport.requests).toHaveLength(2);
+    });
+
+    it("keeps a held project workspace request for a Chat that still needs it and closes the one nobody needs", async () => {
+      const transport = heldTransport({
+        "ws-1": { ...snapshot, sessions: [anchored("a1", "p1"), anchored("a2", "p2")] },
+        "ws-2": { ...snapshot, id: "ws-2", sessions: [anchored("b1", "p1")] },
+      });
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      const workspacesOf = ["/api/machines/local/projects/p1/workspaces", "/api/machines/local/projects/p2/workspaces"];
+      await vi.waitFor(() => { expect(transport.paths()).toEqual(workspacesOf); });
+      // Collapsing and reopening the card joins its running lookups and their shared project requests.
+      for (let round = 0; round < 2; round++) { await collapseCard(element); await openCard(element); }
+      await settle(element);
+      expect(transport.paths()).toEqual(workspacesOf);
+      expect(transport.open()).toHaveLength(2);
+
+      await openCard(element, "ws-2");
+      const [p1, p2] = transport.requests;
+      await vi.waitFor(() => { expect(p2?.signal?.aborted).toBe(true); });
+      expect([p1?.signal?.aborted, p1?.open, p2?.open]).toEqual([false, true, false]);
+      p1?.answer({ status: "folder", projectId: "p1", workspaces: [workspace("w1", "p1", "/repo/one")], diagnostics: [] });
+      await vi.waitFor(() => { expect(transport.requests).toHaveLength(3); });
+      transport.requests[2]?.answer([chat("b1", "Shared project title", "2026-09-18T10:40:00.000Z", "/repo/one")]);
+      await vi.waitFor(() => { expect(titleOf(element, "b1")).toBe("Shared project title"); });
+      await settle(element);
+      expect(transport.paths()).toEqual([...workspacesOf, "/api/machines/local/sessions?cwd=%2Frepo%2Fone&sessionId=b1"]);
+      expect(transport.peak()).toBe(2);
+    });
+
+    it("counts a retained workspace request for a queued Chat against the eight-request ceiling", async () => {
+      const old = Array.from({ length: 8 }, (_, index) => anchored(`old${String(index)}`, `p${String(index)}`));
+      const cards: Record<string, WorkstreamSnapshot> = { "ws-1": { ...snapshot, sessions: old } };
+      const transport = heldTransport(cards);
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      expandOlder(element);
+      await vi.waitFor(() => { expect(transport.open()).toHaveLength(8); });
+      await collapseCard(element);
+      // old0's machine anchor is repaired away, so its lookup stops; the newer new1 still wants old0's project p0.
+      const newer = Array.from({ length: 5 }, (_, index) => ({ ...anchored(`new${String(index)}`, index === 1 ? "p0" : `fresh${String(index)}`), latestCheckpoint: checkpoint(`cp${String(index)}`, `2026-09-19T00:00:0${String(9 - index)}.000Z`, "Newer") }));
+      cards["ws-1"] = { ...snapshot, sessions: [...newer, { ...anchored("old0", "p0"), machineId: "remote" }, ...old.slice(1)] };
+      await openCard(element);
+      await settle(element);
+
+      const p0 = transport.requests[0];
+      expect([p0?.signal?.aborted, p0?.open]).toEqual([false, true]);
+      expect(transport.requests).toHaveLength(8);
+      p0?.answer({ status: "folder", projectId: "p0", workspaces: [workspace("w1", "p0", "/repo/p0")], diagnostics: [] });
+      await vi.waitFor(() => { expect(transport.paths().at(-1)).toBe("/api/machines/local/sessions?cwd=%2Frepo%2Fp0&sessionId=new1"); });
+      transport.requests.at(-1)?.answer([chat("new1", "Shared project title", "2026-09-19T00:00:08.000Z", "/repo/p0")]);
+      await vi.waitFor(() => { expect(titleOf(element, "new1")).toBe("Shared project title"); });
+      // Its freed slot admits the first fresh project.
+      await vi.waitFor(() => { expect(transport.paths().at(-1)).toBe("/api/machines/local/projects/fresh0/workspaces"); });
+      expect(transport.peak()).toBe(8);
+    });
   });
 });
 

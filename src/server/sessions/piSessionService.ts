@@ -412,7 +412,12 @@ export interface PiSessionManager {
 }
 
 export interface PiSessionManagerGateway {
-  list(cwd: string): Promise<PiSessionListEntry[]>;
+  /**
+   * Sessions persisted under `cwd`. With `sessionId`, an implementation may
+   * narrow the result to that exact session; callers re-filter, so gateways
+   * that ignore the option stay correct.
+   */
+  list(cwd: string, options?: { sessionId?: string }): Promise<PiSessionListEntry[]>;
   /** Fast cross-project listing, newest first. Falls back to listAll when unavailable. */
   listRecent?(limit: number): Promise<PiSessionListEntry[]>;
   /**
@@ -1526,7 +1531,8 @@ export class PiSessionService implements SessionRouteService {
       .map(clientSessionFromListEntry);
   }
 
-  async list(cwd: string): Promise<ClientSession[]> {
+  async list(cwd: string, options?: { sessionId?: string }): Promise<ClientSession[]> {
+    if (options?.sessionId !== undefined) return this.listSession(cwd, options.sessionId);
     const [sessions, archivedRecords] = await Promise.all([this.sessionManager.list(cwd), this.archiveStore.list()]);
     const sessionsById = new Map(sessions.map((session) => [session.id, session]));
     const archivedForCwd = archivedRecords.filter((record) => record.cwd === cwd);
@@ -1543,6 +1549,28 @@ export class PiSessionService implements SessionRouteService {
       .filter(isDefined)
       .sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified));
     return [...unarchivedSessions, ...archivedSessions];
+  }
+
+  /**
+   * The ordinary listing's row for exactly `sessionId` under `cwd`, or none.
+   * Metadata only: no whole-cwd unread, activity, or notification
+   * reconciliation, and no runtime open. A current archive record wins; an
+   * unprojectable one stays absent rather than becoming a writable row. An
+   * unpersisted Chat this daemon already hosts is projected from its values.
+   */
+  private async listSession(cwd: string, sessionId: string): Promise<ClientSession[]> {
+    const [sessions, archivedRecords] = await Promise.all([this.sessionManager.list(cwd, { sessionId }), this.archiveStore.list()]);
+    // Gateways may ignore the target and return the whole cwd.
+    const listed = sessions.find((session) => session.id === sessionId && cwdPathsEqual(session.cwd, cwd));
+    const record = archivedRecords.find((candidate) => candidate.cwd === cwd && candidate.sessionId === sessionId);
+    if (record !== undefined) {
+      const archived = clientSessionFromArchivedRecord(record, listed);
+      return archived === undefined ? [] : [archived];
+    }
+    if (listed !== undefined) return [clientSessionFromListEntry(listed)];
+    const active = this.active.get(sessionId);
+    if (active?.runtime.session.sessionId !== sessionId || !cwdPathsEqual(active.runtime.cwd, cwd)) return [];
+    return [createdClientSession(active.runtime.session, cwd, active.runtime.session.sessionManager.getHeader?.()?.parentSession)];
   }
 
   async start(cwd: string, options: StartSessionOptions = {}): Promise<ClientSession> {
@@ -1638,20 +1666,7 @@ export class PiSessionService implements SessionRouteService {
     cwd: string,
     parentSession?: string,
   ): ClientSession {
-    const { session } = active.runtime;
-    const created: ClientSession = {
-      id: session.sessionId,
-      path: session.sessionFile ?? "",
-      cwd,
-      persisted: sessionFileExists(session.sessionFile),
-      created: new Date().toISOString(),
-      modified: new Date().toISOString(),
-      messageCount: session.messages.length,
-      firstMessage: "",
-      // Include the parent so listeners can nest the new session in the tree
-      // immediately, instead of showing it flat until the next reload.
-      ...(parentSession === undefined ? {} : { parentSessionPath: parentSession }),
-    };
+    const created = createdClientSession(active.runtime.session, cwd, parentSession);
     // Broadcast so other clients (and the spawning agent's UI) can add the new
     // session to their list without a manual reload.
     this.events.publishGlobal({ type: "session.created", session: created });
@@ -5045,6 +5060,23 @@ function notificationIdentityForSession(session: PiAgentSession): { sessionId: s
   return {
     sessionId: session.sessionId,
     cwd: canonicalizeStoredCwd(session.sessionManager.getCwd()),
+  };
+}
+
+/** The row announced for a newly created session, from its runtime values alone. */
+function createdClientSession(session: PiAgentSession, cwd: string, parentSession: string | undefined): ClientSession {
+  return {
+    id: session.sessionId,
+    path: session.sessionFile ?? "",
+    cwd,
+    persisted: sessionFileExists(session.sessionFile),
+    created: new Date().toISOString(),
+    modified: new Date().toISOString(),
+    messageCount: session.messages.length,
+    firstMessage: "",
+    // Include the parent so listeners can nest the new session in the tree
+    // immediately, instead of showing it flat until the next reload.
+    ...(parentSession === undefined ? {} : { parentSessionPath: parentSession }),
   };
 }
 
