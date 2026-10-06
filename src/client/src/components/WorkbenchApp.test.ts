@@ -195,6 +195,7 @@ describe("Workbench Chat chooser", () => {
     shown[0]?.onclick?.(new Event("click"));
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("first"); });
     expect(window.location.search).toContain("session=first");
+    expect(Reflect.get(app, "revealTarget")).toBeUndefined();
   });
   it("routes a background Chat's global attention notification to its Chat", async () => {
     const shown: FakeBrowserNotification[] = [];
@@ -218,6 +219,30 @@ describe("Workbench Chat chooser", () => {
     shown[0]?.onclick?.(new Event("click"));
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("second"); });
     expect(window.location.search).toContain("session=second");
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.revealTarget).toEqual({ machineId: "local", sessionId: "second", anchor: "ask:ask-1" });
+  });
+
+  it("reveals a notification's message from the opening URL once, and from the native app without a reload", async () => {
+    const first = session("first", "First", "First Chat");
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    vi.spyOn(api, "sessions").mockResolvedValue([first]);
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "first", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
+    window.history.replaceState({}, "", "/?session=first&message=entry%3Areply-1");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("first"); });
+    await app.updateComplete;
+    const view = app.shadowRoot?.querySelector<ChatView>("chat-view");
+    expect(view?.revealTarget).toEqual({ machineId: "local", sessionId: "first", anchor: "entry:reply-1" });
+    expect(window.location.search).not.toContain("message");
+
+    window.dispatchEvent(new CustomEvent("pi-web:notification-open", { detail: { machineId: "local", sessionId: "first", message: "dialog:d-1" } }));
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.revealTarget).toEqual({ machineId: "local", sessionId: "first", anchor: "dialog:d-1" }); });
+    window.dispatchEvent(new CustomEvent("pi-web:notification-open", { detail: { machineId: "local", sessionId: "first", message: "bad anchor" } }));
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.revealTarget).toBeUndefined(); });
   });
 
   it("offers notification permission through an explicit accessible gesture and hides the control after denial", async () => {

@@ -95,6 +95,16 @@ export function writeRoute(route: ParsedAppRoute, options?: { replace?: boolean 
   else window.history.pushState({}, "", url);
 }
 
+/** Takes the notification's message anchor from the URL so a reload or restored window does not reveal it again. */
+export function takeMessageAnchor(): string | undefined {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("message")) return undefined;
+  const anchor = nonEmpty(url.searchParams.get("message"));
+  url.searchParams.delete("message");
+  window.history.replaceState(window.history.state, "", url);
+  return anchor;
+}
+
 function nonEmpty(value: string | null): string | undefined {
   return value === null || value === "" ? undefined : value;
 }

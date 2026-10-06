@@ -8,7 +8,7 @@ import { initialAppState, type AppState } from "../appState";
 import { latestWorkingModeSelection } from "../chatMessages";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { AuthController } from "../controllers/authController";
-import { desktopNotifications, DesktopNotificationController } from "../controllers/desktopNotificationController";
+import { desktopNotifications, DesktopNotificationController, NATIVE_NOTIFICATION_OPEN_EVENT, NOTIFICATION_ANCHOR } from "../controllers/desktopNotificationController";
 import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
@@ -23,12 +23,12 @@ import { applyPresentationProfile, builtInPresentationProfile, readStoredPresent
 import { applyCheckpointSessionTitle } from "../workstreamCheckpointTitle";
 import { workstreamOrientationDepth } from "../workstreamOrientation";
 import { hasRenderedModal } from "./modalLayerRegistry";
-import { readRoute, writeRoute, type ParsedAppRoute } from "../route";
+import { readRoute, takeMessageAnchor, writeRoute, type ParsedAppRoute } from "../route";
 import { sessionTitle } from "../sessionLabels";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
-import type { ChatView } from "./ChatView";
+import type { ChatRevealTarget, ChatView } from "./ChatView";
 import type { PromptEditor } from "./PromptEditor";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import "./AllSessions";
@@ -116,13 +116,27 @@ export class WorkbenchApp extends LitElement {
     desktopNotifications(),
     () => { this.requestUpdate(); },
     () => this.currentWorkstream?.title,
-    (machineId, sessionId) => { this.openNotificationChat(machineId, sessionId); },
+    (machineId, sessionId, anchor) => { this.openNotificationChat(machineId, sessionId, anchor); },
   );
 
-  private openNotificationChat(machineId: string, sessionId: string): void {
+  @state() private revealTarget: ChatRevealTarget | undefined;
+
+  private openNotificationChat(machineId: string, sessionId: string, anchor: string | undefined): void {
+    this.revealTarget = anchor === undefined ? undefined : { machineId, sessionId, anchor };
     writeRoute({ machineId, sessionId, projectId: undefined, workspaceId: undefined, tool: undefined, view: undefined });
     void this.load(readRoute(), { reuseLoaded: true });
   }
+
+  /** The macOS app reveals a message in the Chat this window already shows without reloading it. */
+  private readonly onNativeNotificationOpen = (event: Event): void => {
+    const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+    if (typeof detail !== "object" || detail === null) return;
+    const machineId: unknown = Reflect.get(detail, "machineId");
+    const sessionId: unknown = Reflect.get(detail, "sessionId");
+    const message: unknown = Reflect.get(detail, "message");
+    if (typeof machineId !== "string" || machineId === "" || typeof sessionId !== "string" || sessionId === "") return;
+    this.openNotificationChat(machineId, sessionId, typeof message === "string" && NOTIFICATION_ANCHOR.test(message) ? message : undefined);
+  };
 
   private readonly notifications = new SessionNotificationController(
     () => this.app,
@@ -194,12 +208,16 @@ export class WorkbenchApp extends LitElement {
     this.sessions.resume();
     this.notifications.resume();
     window.addEventListener("popstate", this.onPopState);
+    window.addEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
     window.addEventListener("resize", this.onWindowResize);
     applyPresentationProfile(readStoredPresentationProfile() ?? builtInPresentationProfile("comfortable"));
     this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
     void this.initializeThemes();
-    void this.load(readRoute());
+    const anchor = takeMessageAnchor();
+    const route = readRoute();
+    if (anchor !== undefined && NOTIFICATION_ANCHOR.test(anchor) && route.sessionId !== undefined) this.revealTarget = { machineId: route.machineId ?? "local", sessionId: route.sessionId, anchor };
+    void this.load(route);
   }
 
   private async initializeThemes(): Promise<void> {
@@ -229,6 +247,7 @@ export class WorkbenchApp extends LitElement {
 
   override disconnectedCallback(): void {
     window.removeEventListener("popstate", this.onPopState);
+    window.removeEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
     window.removeEventListener("resize", this.onWindowResize);
     this.finishFilesResize();
@@ -1136,6 +1155,7 @@ export class WorkbenchApp extends LitElement {
           .sessionCwd=${session.cwd}
           .machineId=${selectedMachineId(state)}
           .messages=${state.messages}
+          .revealTarget=${this.revealTarget}
           .messageStart=${state.messagePageStart}
           .messageEnd=${state.messagePageEnd}
           .messageTotal=${state.messagePageTotal}

@@ -154,9 +154,36 @@ describe("DesktopNotificationController", () => {
     test.notifications[0]?.handle.onclick?.(new Event("click"));
 
     expect(test.focus).toHaveBeenCalledOnce();
-    expect(test.openChat).toHaveBeenCalledExactlyOnceWith("local", "session-1");
+    expect(test.openChat).toHaveBeenCalledExactlyOnceWith("local", "session-1", undefined);
     expect(test.notifications[0]?.options.data).toEqual({ machineId: "local", sessionId: "session-1" });
     expect(test.notifications[0]?.handle.close).toHaveBeenCalledOnce();
+  });
+
+  it("carries the related message to the click so the Chat can reveal it, and none for errors", () => {
+    const test = harness();
+    const idle = state({ messages: [{ entryId: "reply-1", role: "assistant", parts: [{ type: "text", text: "Done" }] }] });
+    test.controller.sync(initialAppState(), idle);
+    test.controller.activate(state({ status: status(true) }));
+    test.controller.sync(idle, idle);
+    test.controller.sync(idle, state({ pendingAsk: ask, pendingDialogs: [dialog] }));
+    test.controller.attention(idle, { type: "session.attention", sessionId: "session-2", cwd: "/other", kind: "ask", id: "unsafe id/../", detail: "?" }, "local");
+    test.controller.sessionError(idle, "failed", 7);
+
+    expect(test.notifications.map((notification): unknown => notification.options.data)).toEqual([
+      { machineId: "local", sessionId: "session-1", message: "entry:reply-1" },
+      { machineId: "local", sessionId: "session-1", message: "ask:ask-1" },
+      { machineId: "local", sessionId: "session-1", message: "dialog:dialog-1" },
+      { machineId: "local", sessionId: "session-2" },
+      { machineId: "local", sessionId: "session-1" },
+    ]);
+    for (const notification of test.notifications) notification.handle.onclick?.(new Event("click"));
+    expect(test.openChat.mock.calls).toEqual([
+      ["local", "session-1", "entry:reply-1"],
+      ["local", "session-1", "ask:ask-1"],
+      ["local", "session-1", "dialog:dialog-1"],
+      ["local", "session-2", undefined],
+      ["local", "session-1", undefined],
+    ]);
   });
 
   it("routes non-selected attention, suppresses selected events, and deduplicates both arrival orders", () => {
@@ -169,9 +196,9 @@ describe("DesktopNotificationController", () => {
     test.controller.attention(selected, other, "local");
     test.controller.attention(selected, { ...other, sessionId: session.id, cwd: session.cwd }, "local");
     expect(test.notifications).toHaveLength(1);
-    expect(test.notifications[0]).toMatchObject({ title: "Other Chat", options: { body: "Question · Which branch?", data: { machineId: "local", sessionId: "session-2" } } });
+    expect(test.notifications[0]).toMatchObject({ title: "Other Chat", options: { body: "Question · Which branch?", data: { machineId: "local", sessionId: "session-2", message: "ask:ask-2" } } });
     test.notifications[0]?.handle.onclick?.(new Event("click"));
-    expect(test.openChat).toHaveBeenCalledWith("local", "session-2");
+    expect(test.openChat).toHaveBeenCalledWith("local", "session-2", "ask:ask-2");
 
     test.controller.attention(selected, { ...other, kind: "error", id: "42", detail: "terminal failed" , sessionId: session.id }, "local");
     test.controller.sessionError(selected, "terminal failed", 42);
@@ -288,6 +315,8 @@ describe("DesktopNotificationController", () => {
 
     expect(host.notify).toHaveBeenLastCalledWith("Build Chat", "Finished", { machineId: "local", sessionId: "session-1" });
     expect(() => { handle.onclick = () => undefined; handle.close(); }).not.toThrow();
+    await adapter.show("Build Chat", { body: "Finished", data: { machineId: "local", sessionId: "session-1", message: "entry:reply-1" } });
+    expect(host.notify).toHaveBeenLastCalledWith("Build Chat", "Finished", { machineId: "local", sessionId: "session-1", message: "entry:reply-1" });
   });
 
   it("downgrades native permission and rerenders when delivery is rejected", async () => {

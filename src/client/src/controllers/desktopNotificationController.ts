@@ -38,7 +38,7 @@ export class DesktopNotificationController {
     private readonly browser: DesktopNotificationBrowser,
     private readonly onPermissionChange: () => void = () => undefined,
     private readonly workstreamTitle: () => string | undefined = () => undefined,
-    private readonly openChat: (machineId: string, sessionId: string) => void = () => undefined,
+    private readonly openChat: (machineId: string, sessionId: string, anchor?: string) => void = () => undefined,
   ) {
     this.diagnostic = browser.diagnostic;
   }
@@ -70,19 +70,19 @@ export class DesktopNotificationController {
 
     const nextStreaming = next.status?.isStreaming;
     if (this.streaming === true && nextStreaming === false) {
-      const reply = [...next.messages].reverse().find((line) => line.role === "assistant")?.parts
-        .filter((part) => part.type === "text").map((part) => part.text).join("");
-      this.notifySelected(next, "complete", `Finished · ${preview(reply ?? "")}`);
+      const replyLine = [...next.messages].reverse().find((line) => line.role === "assistant");
+      const reply = replyLine?.parts.filter((part) => part.type === "text").map((part) => part.text).join("");
+      this.notifySelected(next, "complete", `Finished · ${preview(reply ?? "")}`, replyLine?.entryId === undefined ? undefined : `entry:${replyLine.entryId}`);
     }
     this.streaming = nextStreaming;
 
     const askId = next.pendingAsk?.askId;
     if (askId !== undefined && this.mark(nextKey, "ask", askId)) {
-      this.notifySelected(next, "ask", `Question · ${next.pendingAsk?.questions[0]?.question ?? "Needs an answer"}`);
+      this.notifySelected(next, "ask", `Question · ${next.pendingAsk?.questions[0]?.question ?? "Needs an answer"}`, `ask:${askId}`);
     }
     for (const dialog of next.pendingDialogs) {
       if (!this.mark(nextKey, "dialog", dialog.dialogId)) continue;
-      this.notifySelected(next, "dialog", `Dialog · ${dialog.title}`);
+      this.notifySelected(next, "dialog", `Dialog · ${dialog.title}`, `dialog:${dialog.dialogId}`);
     }
 
     void previous;
@@ -113,7 +113,7 @@ export class DesktopNotificationController {
     const key = machineSessionKey(machineId, event.sessionId);
     if (key === selectedSessionKey(state) || !this.mark(key, event.kind, event.id)) return;
     const reason = event.kind === "ask" ? "Question" : event.kind === "dialog" ? "Dialog" : "Error";
-    this.notify(machineId, event.sessionId, event.cwd, event.sessionName, event.kind, `${reason} · ${event.detail}`);
+    this.notify(machineId, event.sessionId, event.cwd, event.sessionName, event.kind, `${reason} · ${event.detail}`, event.kind === "error" ? undefined : `${event.kind}:${event.id}`);
   }
 
   private mark(key: string, kind: SessionAttentionEvent["kind"], id: string): boolean {
@@ -132,13 +132,15 @@ export class DesktopNotificationController {
     this.streaming = undefined;
   }
 
-  private notifySelected(state: AppState, tag: DesktopNotificationKind, body: string): void {
+  private notifySelected(state: AppState, tag: DesktopNotificationKind, body: string, anchor?: string): void {
     const session = state.selectedSession;
     if (session === undefined) return;
-    this.notify(selectedMachineId(state), session.id, session.cwd, session.name === undefined || session.name.trim() === "" ? this.workstreamTitle() : session.name, tag, body);
+    this.notify(selectedMachineId(state), session.id, session.cwd, session.name === undefined || session.name.trim() === "" ? this.workstreamTitle() : session.name, tag, body, anchor);
   }
 
-  private notify(machineId: string, sessionId: string, cwd: string, name: string | undefined, tag: DesktopNotificationKind, body: string): void {
+  /** `anchor` names the message to reveal on click: `entry:<entryId>`, `ask:<askId>`, or `dialog:<dialogId>`. */
+  private notify(machineId: string, sessionId: string, cwd: string, name: string | undefined, tag: DesktopNotificationKind, body: string, anchor?: string): void {
+    const message = anchor !== undefined && NOTIFICATION_ANCHOR.test(anchor) ? anchor : undefined;
     if (this.browser.permission() !== "granted" || !this.browser.isBackground()) return;
     const key = machineSessionKey(machineId, sessionId);
     if (tag === "error") {
@@ -151,12 +153,12 @@ export class DesktopNotificationController {
     const title = [name, cwd.split("/").filter(Boolean).at(-1), cwd]
       .find((value) => value !== undefined && value.trim().length > 0)?.trim() ?? "Chat";
     try {
-      const shown = this.browser.show(title, { body, tag: `${key}:${tag}`, data: { machineId, sessionId } });
+      const shown = this.browser.show(title, { body, tag: `${key}:${tag}`, data: { machineId, sessionId, ...(message === undefined ? {} : { message }) } });
       if (shown instanceof Promise) {
-        void shown.then((notification) => { this.bindClick(notification, machineId, sessionId); }).catch((error: unknown) => { this.deliveryFailed(error); });
+        void shown.then((notification) => { this.bindClick(notification, machineId, sessionId, message); }).catch((error: unknown) => { this.deliveryFailed(error); });
         return;
       }
-      this.bindClick(shown, machineId, sessionId);
+      this.bindClick(shown, machineId, sessionId, message);
     } catch (error) {
       this.deliveryFailed(error);
     }
@@ -167,10 +169,10 @@ export class DesktopNotificationController {
     this.onPermissionChange();
   }
 
-  private bindClick(notification: DesktopNotificationHandle, machineId: string, sessionId: string): void {
+  private bindClick(notification: DesktopNotificationHandle, machineId: string, sessionId: string, message: string | undefined): void {
     notification.onclick = () => {
       this.browser.focus();
-      this.openChat(machineId, sessionId);
+      this.openChat(machineId, sessionId, message);
       notification.close();
     };
   }
@@ -181,6 +183,9 @@ function preview(text: string): string {
   return firstLine.length === 0 ? "Response complete" : firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
 }
 
+/** The native app accepts the same anchors and drops the notification otherwise. */
+export const NATIVE_NOTIFICATION_OPEN_EVENT = "pi-web:notification-open";
+export const NOTIFICATION_ANCHOR = /^(?:entry|ask|dialog):[A-Za-z0-9._-]{1,120}$/u;
 const NATIVE_NOTIFICATION_PERMISSION_KEY = "pi-web:native-notifications:permission";
 const BROWSER_PERMISSION_DENIED = "Desktop notification permission was denied. Enable notifications for PI WEB in your browser's site settings (and System Settings if needed), then reload.";
 
@@ -239,7 +244,8 @@ function nativeDesktopNotifications(nativeHost: NativeNotificationHost, storage:
         const target: unknown = options.data;
         if (typeof target !== "object" || target === null || !("machineId" in target) || typeof target.machineId !== "string"
           || !("sessionId" in target) || typeof target.sessionId !== "string") throw new Error("Notification requires a Chat target");
-        await nativeHost.notify(title, options.body ?? "", { machineId: target.machineId, sessionId: target.sessionId });
+        const message = "message" in target && typeof target.message === "string" ? { message: target.message } : {};
+        await nativeHost.notify(title, options.body ?? "", { machineId: target.machineId, sessionId: target.sessionId, ...message });
         return { onclick: null, close: () => undefined };
       } catch (error) {
         downgrade();

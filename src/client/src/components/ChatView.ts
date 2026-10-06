@@ -158,6 +158,13 @@ export function chatGroupScrollMarkerId(endIndex: number, presentation?: ChatGro
 }
 
 /** The unique render key and outer scroll anchor for a split transcript fragment. */
+/** `entry:<entryId>`, `ask:<askId>`, or `dialog:<dialogId>` in one Chat. */
+export interface ChatRevealTarget {
+  machineId: string;
+  sessionId: string;
+  anchor: string;
+}
+
 export function chatFragmentAnchorKey(groups: ChatGroup[], index: number): string {
   const group = groups[index];
   if (group === undefined) throw new RangeError("Chat fragment index is out of bounds");
@@ -266,6 +273,8 @@ export class ChatView extends LitElement {
   @property({ type: Boolean }) warningsVisible = true;
   @property({ attribute: false }) onToggleWarnings?: () => void;
   @property({ attribute: false }) onLoadMore?: () => void;
+  /** A message to scroll to and flash once; a new object reveals again. */
+  @property({ attribute: false }) revealTarget: ChatRevealTarget | undefined;
   @query(".chat") private chat?: HTMLDivElement | null;
   @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement | null;
   @state() private pinnedToBottom = true;
@@ -287,6 +296,8 @@ export class ChatView extends LitElement {
   private scrollToBottomFrame: number | undefined;
   private scrollToOpenAskFrame: number | undefined;
   private scrollToOpenDialogFrame: number | undefined;
+  private revealFrame: number | undefined;
+  private revealedTarget: ChatRevealTarget | undefined;
   private conversationRailFrame: number | undefined;
   private groupedMessagesInput?: ChatLine[];
   private groupedMessagesStart = 0;
@@ -392,6 +403,8 @@ export class ChatView extends LitElement {
       this.scrollToOpenDialogFrame = undefined;
     }
     if (this.conversationRailFrame !== undefined) cancelAnimationFrame(this.conversationRailFrame);
+    if (this.revealFrame !== undefined) cancelAnimationFrame(this.revealFrame);
+    this.revealFrame = undefined;
     window.removeEventListener("resize", this.onViewportResize);
     window.removeEventListener("pagehide", this.onPageHide);
     window.visualViewport?.removeEventListener("resize", this.onViewportResize);
@@ -476,6 +489,38 @@ export class ChatView extends LitElement {
     if (changed.has("messages") || changed.has("hasMore") || changed.has("loadingMore")) this.requestLoadMoreIfNeeded();
     if (changed.has("notificationInbox") && this.pendingNotificationFocus !== undefined) this.focusPendingNotificationTarget();
     if (changed.has("zoomedImage")) this.syncImageZoomDialog();
+    if (changed.has("revealTarget") || changed.has("sessionId") || changed.has("messages") || changed.has("pendingAsk") || changed.has("pendingDialogs")) this.scheduleReveal();
+  }
+
+  /** Runs after scroll restoration, so the revealed message wins over the saved position. */
+  private scheduleReveal(): void {
+    const target = this.revealTarget;
+    if (target === undefined || target === this.revealedTarget || this.revealFrame !== undefined) return;
+    this.revealFrame = requestAnimationFrame(() => {
+      this.revealFrame = undefined;
+      if (this.revealTarget !== target || target.sessionId !== this.sessionId || target.machineId !== this.machineId) return;
+      const element = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-entry-id], [data-scroll-anchor-id]"))
+        .find((candidate) => candidate.getAttribute("data-scroll-anchor-id") === target.anchor || `entry:${candidate.getAttribute("data-entry-id") ?? ""}` === target.anchor);
+      const chat = this.chat;
+      if (element === undefined || chat == null) {
+        // ponytail: an anchor outside the loaded page keeps the usual restored position; page back to it if owners miss it.
+        if (this.messages.length > 0 || this.pendingAsk !== undefined || this.pendingDialogs.length > 0) this.revealedTarget = target;
+        return;
+      }
+      this.revealedTarget = target;
+      this.pendingScrollRestoreSessionId = undefined;
+      this.pendingScrollRestorePosition = undefined;
+      for (const frame of [this.restoreScrollFrame, this.scrollToBottomFrame, this.scrollToOpenAskFrame, this.scrollToOpenDialogFrame]) if (frame !== undefined) cancelAnimationFrame(frame);
+      this.restoreScrollFrame = this.scrollToBottomFrame = this.scrollToOpenAskFrame = this.scrollToOpenDialogFrame = undefined;
+      for (let details = element.closest("details"); details !== null; details = details.parentElement?.closest("details") ?? null) details.open = true;
+      this.withSuppressedScrollSave(() => {
+        chat.scrollTop += element.getBoundingClientRect().top - chat.getBoundingClientRect().top;
+        this.syncScrollMetrics();
+        this.pinnedToBottom = this.isNearBottom();
+      });
+      element.setAttribute("data-notification-reveal", "");
+      setTimeout(() => { element.removeAttribute("data-notification-reveal"); }, 2000);
+    });
   }
 
   private syncImageZoomDialog(): void {
@@ -1029,7 +1074,7 @@ export class ChatView extends LitElement {
     const shellClass = workingModeOnly || backgroundBashOnly ? "msg goal-lifecycle-shell" : toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : subagentCompletionOnly ? "msg subagent-completion-shell" : "msg skill-read-shell";
     return html`
       ${this.renderScrollMarker(anchorId)}
-      <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${anchorId}>
+      <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${anchorId} data-entry-id=${message.entryId ?? nothing}>
         ${headerless ? null : this.renderMessageHeader(message, anchorId)}
         ${message.parts.map((part, partIndex) => this.renderPart(part, message, index, partIndex))}
       </article>
@@ -1040,7 +1085,7 @@ export class ChatView extends LitElement {
     const label = chatToolOutputLabel(toolName);
     return html`
       ${this.renderScrollMarker(anchorId)}
-      <article class="msg tool-image-output" data-index=${index} data-scroll-anchor-id=${anchorId}>
+      <article class="msg tool-image-output" data-index=${index} data-scroll-anchor-id=${anchorId} data-entry-id=${message.entryId ?? nothing}>
         ${this.renderMessageHeader(message, anchorId, label)}
         ${message.parts.map((part, partIndex) => this.renderPart(part, message, index, partIndex))}
       </article>
@@ -1137,7 +1182,7 @@ export class ChatView extends LitElement {
       const withinGroup = messageIndices?.slice(0, segmentOffset + offset).filter((candidate, earlier) => candidate === index && group?.kind === "group" && group.messages[earlier]?.parts.some((part) => part.type !== "thinking") === true).length ?? 0;
       const anchorId = this.eventAnchorKey(groups, groupIndex, index, withinGroup);
       return html`
-        <article class=${classes} data-index=${index} data-scroll-anchor-id=${anchorId}>
+        <article class=${classes} data-index=${index} data-scroll-anchor-id=${anchorId} data-entry-id=${message.entryId ?? nothing}>
           ${toolOnly || skillOnly || workingModeOnly ? null : this.renderMessageHeader(message, anchorId)}
           ${message.parts.map((part, partIndex) => this.renderPart(part, message, index, partIndex))}
         </article>
@@ -1727,6 +1772,9 @@ export class ChatView extends LitElement {
   }
 
   static override styles = [chatStyles, css`
+    [data-notification-reveal] { animation: notification-reveal 2s ease-out; }
+    @keyframes notification-reveal { from { box-shadow: 0 0 0 2px var(--pi-accent); background-color: var(--pi-selection-bg); } }
+    @media (prefers-reduced-motion: reduce) { [data-notification-reveal] { animation: none; outline: 2px solid var(--pi-accent); } }
     .transcript-filter { position: absolute; z-index: 22; top: 8px; right: 8px; }
     .filter-toggle, .filter-options button { border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); cursor: pointer; }
     .filter-toggle { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; box-shadow: 0 2px 8px var(--pi-shadow); }
