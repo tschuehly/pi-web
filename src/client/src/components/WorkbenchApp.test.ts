@@ -16,7 +16,7 @@ import { DelegateRoster } from "./DelegateRoster";
 import type { FormattedText } from "./FormattedText";
 import { GoalStatusChip } from "./GoalStatusChip";
 import { PromptEditor } from "./PromptEditor";
-import { WorkbenchApp, rootProjectOf, rootProjects } from "./WorkbenchApp";
+import { WorkbenchApp, rootProjectOf, rootProjects, sessionInfoText } from "./WorkbenchApp";
 import { HttpRequestError } from "../api/http";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
@@ -144,9 +144,9 @@ describe("Chat in a folder", () => {
     document.body.append(app);
     await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
     await app.updateComplete;
-    expect(app.shadowRoot?.querySelector('button[aria-label="Chat in a folder…"] svg')).not.toBeNull();
+    expect(app.shadowRoot?.querySelector('button[aria-label="New Chat without a project"] svg')).not.toBeNull();
     expect(app.shadowRoot?.querySelector('button[aria-label="Add project…"] svg')).not.toBeNull();
-    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Chat in a folder…"]')?.click();
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="New Chat without a project"]')?.dispatchEvent(new MouseEvent("click", { altKey: true }));
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("adhoc"); });
     expect(getState(app).selectedWorkspace?.path).toBe("/anywhere/notes");
     expect(window.location.search).toBe("?session=adhoc&view=chat");
@@ -157,6 +157,45 @@ describe("Chat in a folder", () => {
     await vi.waitFor(() => { expect(getState(reopened).selectedSession?.id).toBe("adhoc"); });
     expect(getState(reopened).selectedWorkspace?.path).toBe("/anywhere/notes");
     delete window.piWebNative;
+  });
+
+  it("starts a plain click's Chat in ~/IdeaProjects without opening the folder panel", async () => {
+    const started = { ...session("ideas", ""), cwd: "/Users/me/IdeaProjects" };
+    const start = vi.spyOn(api, "startSession").mockResolvedValue(started);
+    vi.spyOn(api, "sessions").mockResolvedValue([]);
+    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "ideas", persisted: false, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "projectDirectories").mockResolvedValue([{ path: "/Users/me/IdeaProjects-old/", kind: "other" }, { path: "/Users/me/IdeaProjects/", kind: "other" }]);
+    const pickDirectory = vi.fn(() => Promise.resolve("/elsewhere"));
+    window.piWebNative = { pickDirectory, notify: () => Promise.resolve() };
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="New Chat without a project"]')?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("ideas"); });
+    expect(start.mock.calls[0]?.[0]).toBe("/Users/me/IdeaProjects");
+    expect(pickDirectory).not.toHaveBeenCalled();
+    delete window.piWebNative;
+  });
+
+  it("explains a folder panel that never opened instead of failing silently", async () => {
+    vi.spyOn(api, "projectDirectories").mockResolvedValue([]);
+    window.piWebNative = { pickDirectory: () => Promise.reject(new Error("WKWebView API client did not respond to this postMessage")), notify: () => Promise.resolve() };
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="New Chat without a project"]')?.click();
+    await vi.waitFor(() => { expect(getState(app).error).toContain("Quit and reopen Pi Workbench"); });
+    delete window.piWebNative;
+  });
+});
+
+describe("session info", () => {
+  it("lists id, folder and transcript, and never invents a path for an unsaved Chat", () => {
+    const saved = { ...session("abc", ""), cwd: "/work", path: "/store/abc.jsonl" };
+    expect(sessionInfoText(saved)).toBe("Session: abc\nFolder: /work\nTranscript: /store/abc.jsonl");
+    expect(sessionInfoText({ ...saved, persisted: false })).toContain("Transcript: not saved yet");
   });
 });
 

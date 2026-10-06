@@ -16,6 +16,7 @@ import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale,
 import { markdownWorkspaceContext, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { machineSessionKey } from "../machineKeys";
 import { nativeDirectoryPicker } from "../nativeHost";
+import { writeClipboardText } from "../clipboard";
 import { loadExternalPlugins } from "../plugins/external";
 import { PluginRegistry } from "../plugins/registry";
 import { themePackPlugin } from "../plugins/themes";
@@ -48,6 +49,24 @@ import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, watchWorkstr
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 /** A folder used for one Chat without registering a project. */
+/** The machine's ~/IdeaProjects as an absolute path, or undefined when it does not exist. */
+export async function defaultChatFolder(machineId: string): Promise<string | undefined> {
+  const found = (await api.projectDirectories("~/IdeaProjects", machineId).catch(() => [])).find((entry) => entry.path.endsWith("/IdeaProjects/"));
+  return found?.path.slice(0, -1);
+}
+
+/** WebKit says only "did not respond" when the macOS open panel never appears, typically because the app binary changed while it ran. */
+export function folderPanelError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `Failed to choose a folder: ${message}${message.includes("did not respond") ? ". Quit and reopen Pi Workbench; the folder panel cannot open in an app that was updated while running." : ""}`;
+}
+
+/** Session id, folder and transcript file, one per line, for pasting into another Chat or tool. */
+export function sessionInfoText(session: SessionInfo): string {
+  const transcript = session.persisted === false || session.path === "" ? "not saved yet" : session.path;
+  return `Session: ${session.id}\nFolder: ${session.cwd}\nTranscript: ${transcript}`;
+}
+
 export const adHocWorkspace = (path: string): Workspace => ({ id: adHocFolderWorkspaceId(path), projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
 
 /** A project whose path lies inside another registered project belongs to that project's tab. */
@@ -66,6 +85,7 @@ export class WorkbenchApp extends LitElement {
   @state() private loading = true;
   @state() private showAgentSessions = false;
   @state() private showAllSessions = false;
+  @state() private sessionInfoCopied = false;
   @state() private chooserView: "project" | "other" | "all" = "project";
   @state() private currentWorkstream: WorkstreamSnapshot | null | undefined;
   @state() private currentWorkstreamError = "";
@@ -842,11 +862,20 @@ export class WorkbenchApp extends LitElement {
     }, options);
   }
 
-  /** Start one Chat in any folder without registering a project. */
-  private async startChatInFolder(): Promise<void> {
-    const picker = nativeDirectoryPicker(selectedMachineId(this.app));
-    if (picker === undefined) { this.setApp({ error: "Choosing a folder needs the macOS app; add the folder as a project instead." }); return; }
-    const path = await picker.pickDirectory().catch(() => null);
+  /** Start one Chat without a project: in ~/IdeaProjects, or in a picked folder when asked or when that folder is missing. */
+  private async startChatInFolder(pick: boolean): Promise<void> {
+    const machineId = selectedMachineId(this.app);
+    let path: string | null | undefined = pick ? undefined : await defaultChatFolder(machineId);
+    if (path === undefined) {
+      const picker = nativeDirectoryPicker(machineId);
+      if (picker === undefined) { this.setApp({ error: "Choosing a folder needs the macOS app; add the folder as a project instead." }); return; }
+      try {
+        path = await picker.pickDirectory();
+      } catch (error) {
+        this.setApp({ error: folderPanelError(error) });
+        return;
+      }
+    }
     if (path === null) return;
     const workspace = adHocWorkspace(path);
     this.sessions.clearActiveSession();
@@ -862,8 +891,14 @@ export class WorkbenchApp extends LitElement {
       const path = await picker.pickDirectory();
       if (path !== null) await this.addProject(path, false);
     } catch (error) {
-      this.setApp({ error: `Failed to choose project folder: ${error instanceof Error ? error.message : String(error)}` });
+      this.setApp({ error: folderPanelError(error) });
     }
+  }
+
+  private async copySessionInfo(session: SessionInfo): Promise<void> {
+    if (!await writeClipboardText(sessionInfoText(session))) { this.setApp({ error: "Could not copy the session info." }); return; }
+    this.sessionInfoCopied = true;
+    window.setTimeout(() => { this.sessionInfoCopied = false; }, 1200);
   }
 
   private async addProject(path: string, create: boolean): Promise<void> {
@@ -976,7 +1011,7 @@ export class WorkbenchApp extends LitElement {
             <span class="tab-actions">
               ${this.renderSettingsPanel()}
               ${this.renderDesktopNotificationButton()}
-              <button class="icon-button" title="Chat in a folder…" aria-label="Chat in a folder…" @click=${() => { void this.startChatInFolder(); }}>
+              <button class="icon-button" title="New Chat in ~/IdeaProjects (⌥-click: choose a folder)" aria-label="New Chat without a project" @click=${(event: MouseEvent) => { void this.startChatInFolder(event.altKey); }}>
                 ${renderBuiltinTabIcon("chat-plus")}
               </button>
               <button class="icon-button" title="Add project…" aria-label="Add project…" @click=${() => { void this.chooseProjectFolder(); }}>
@@ -1145,6 +1180,7 @@ export class WorkbenchApp extends LitElement {
           <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("files")}</button>
           <button type="button" class="header-action" title="Search files (⌘P)" aria-label="Search files" ?disabled=${state.selectedWorkspace === undefined} @click=${() => { this.openFileSearch(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><span>Search files</span></button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
+          <button class="icon-button" type="button" title=${`${sessionInfoText(session)}\n\nClick to copy`} aria-label=${this.sessionInfoCopied ? "Copied session info" : "Copy session info"} @click=${() => { void this.copySessionInfo(session); }}>${this.sessionInfoCopied ? html`<span aria-hidden="true">✓</span>` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`}</button>
           ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}
         </header>
