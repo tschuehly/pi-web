@@ -11,6 +11,8 @@ export class AllSessions extends LitElement {
   /** Live per-session state, keyed by session id, buffered by the daemon events socket. */
   @property({ attribute: false }) sessionStatuses: Record<string, SessionStatus> = {};
   @property({ attribute: false }) sessionActivities: Record<string, SessionActivity> = {};
+  /** Layout prototype: where each placed Chat lives (window name), shown on its row. */
+  @property({ attribute: false }) sessionPlacement: Record<string, string> = {};
   @state() private sessions: SessionInfo[] = [];
   @state() private query = "";
   @state() private showAgentSessions = false;
@@ -37,7 +39,7 @@ export class AllSessions extends LitElement {
     const doing = live ? sessionActivityText(this.sessionActivities[session.id]) : undefined;
     return html`
       <button class="row ${live ? "live" : ""}" @click=${() => { this.open(session); }}>
-        <span class="row-title">${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}<strong>${sessionTitle(session)}</strong></span>
+        <span class="row-title">${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}<strong>${sessionTitle(session)}</strong>${this.sessionPlacement[session.id] === undefined ? nothing : html`<em class="placed">${this.sessionPlacement[session.id]}</em>`}</span>
         <span>${doing ?? shortenHome(session.cwd)}</span>
         <small>${modifiedTime(session.modified)} · ${String(session.messageCount)} messages</small>
       </button>
@@ -93,6 +95,7 @@ export class AllSessions extends LitElement {
     .row strong, .row span, .row small { overflow-wrap: anywhere; }
     .row span, .row small, p { color: var(--pi-muted); }
     .row-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .placed { flex: none; padding: 0 6px; border: 1px solid var(--pi-accent-border, var(--pi-border)); border-radius: 4px; color: var(--pi-text); font-size: 11px; font-style: normal; }
     p { margin: 0; }
     .error { color: var(--pi-danger); }
     @media (max-width: 600px) { .row { grid-template-columns: 1fr; gap: 3px; } }

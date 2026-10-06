@@ -6,7 +6,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { styleMap } from "lit/directives/style-map.js";
-import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Machine, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type Workspace } from "../api";
+import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Machine, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionActivity, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { initialAppState, type AppState } from "../appState";
 import { latestWorkingModeSelection } from "../chatMessages";
@@ -22,24 +22,28 @@ import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference } from "../theme";
 import type { PromptEditor } from "./PromptEditor";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
-import { adHocWorkspace, rootProjects } from "./WorkbenchApp";
-import { inspectWorkstream, listWorkstreams, sessionsByActivity, type WorkstreamServiceContext } from "./WorkstreamChooser";
+import { workstreamAccentColor } from "../workstreamColor";
+import { WorkbenchApp, adHocWorkspace, rootProjectOf, rootProjects } from "./WorkbenchApp";
+import { workstreamForSession, type OpenWorkstreamSessionDetail, type WorkstreamServiceContext } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
+import "./AllSessions";
 import "./ChatView";
 import "./CommandPicker";
 import "./DelegateRoster";
 import "./GoalStatusChip";
 import "./PromptEditor";
 import "./WorkbenchFilesPane";
+import "./WorkstreamChooser";
 
 /** One tab or tile. `groupId`/`group` = its Workstream, absent for a Chat without one. */
 interface Entry { id: string; sessionId: string; title: string; groupId?: string | undefined; group?: string | undefined; files?: boolean | undefined }
 interface Win { name: string; entries: Entry[]; focused?: string | undefined; layout: "grid" | "tabs"; maximized?: string | undefined }
 type Store = Record<string, Win>;
-interface Live { streaming: boolean; needsOwner: boolean; unread: boolean }
-interface PaneState { title: string; streaming: boolean; needsOwner: boolean }
+interface Live { streaming: boolean; needsOwner: boolean; unread: boolean; error: boolean }
+interface PaneState { title: string; streaming: boolean; needsOwner: boolean; error: boolean }
 interface Choice { id: string; title: string }
-interface Catalog { workstreams: { id: string; title: string; sessions: Choice[] }[]; loose: Choice[] }
+/** A pick from the home: Chats, with their Workstream when the home knows it. */
+interface HomeAdd { picks: Choice[]; group?: { id: string; title: string } | undefined }
 interface Resolved { project: Project | undefined; workspace: Workspace; workspaces: Workspace[] }
 
 const STORE_KEY = "pi-workbench.layout-proto.v2";
@@ -47,7 +51,11 @@ const readStore = (): Store => { try { return JSON.parse(localStorage.getItem(ST
 const uid = (): string => crypto.randomUUID().slice(0, 8);
 const SWIPE_END_MS = 150, SWIPE_COMMIT = 0.3, FLICK_PX_PER_MS = 0.8;
 const AGENT_SESSION = /^workbench-(?:coordinator|implementer|planner|reviewer|scout)-[0-9a-f]{8}$/u;
-const matches = (text: string, q: string): boolean => text.toLowerCase().includes(q);
+const STATUS_LABELS = { needs: "Needs you", error: "Error", running: "Working", done: "Done while you were away", idle: "Idle" } as const;
+/** The normal shell's remembered workspace, so the home opens where it does there. */
+const LAST_WORKSPACE_KEY = "pi-workbench.last-workspace";
+/** Workstream identity colour (same helper as the home card's marker). */
+const wsStyle = (groupId: string | undefined) => styleMap(groupId === undefined ? {} : { "--ws": workstreamAccentColor(groupId) });
 
 /** Whether a wheel starting at this event scrolls something horizontally (code block, table) instead of swiping. */
 function canScrollX(event: WheelEvent): boolean {
@@ -133,6 +141,7 @@ export class ProtoChatPane extends LitElement {
       title: session === undefined ? "" : sessionTitle(session),
       streaming: this.app.status?.isStreaming === true,
       needsOwner: this.app.pendingAsk !== undefined || this.app.pendingDialogs.length > 0,
+      error: this.loadError !== "" || this.app.error !== "",
     };
     const json = JSON.stringify(report);
     if (json === this.lastReport) return;
@@ -232,6 +241,168 @@ export class ProtoChatPane extends LitElement {
   `;
 }
 
+/**
+ * The Workbench home (the normal shell's chooser with no Chat selected): same markup and styles, with the real
+ * `workstream-chooser` and `all-sessions`. Picking a Chat emits `home-add` instead of opening it.
+ */
+@customElement("proto-home")
+export class ProtoHome extends LitElement {
+  @property({ attribute: false }) machine: Machine | undefined;
+  @property({ attribute: false }) projects: Project[] = [];
+  /** Session id → window name, for Chats already placed in a window. */
+  @property({ attribute: false }) placement: Record<string, string> = {};
+  @property({ attribute: false }) sessionStatuses: Record<string, SessionStatus> = {};
+  @property({ attribute: false }) sessionActivities: Record<string, SessionActivity> = {};
+  /** Shown as a sheet over a window: a close action, and a click beside the card closes it. */
+  @property({ type: Boolean }) closable = false;
+  @state() private view: "project" | "other" | "all" = "project";
+  @state() private project: Project | undefined;
+  @state() private workspaces: Workspace[] = [];
+  @state() private workspace: Workspace | undefined;
+  @state() private sessions: SessionInfo[] = [];
+  @state() private showAll = false;
+  @state() private showAgents = false;
+  @state() private loading = false;
+  @state() private starting = false;
+  @state() private error = "";
+  private sequence = 0;
+
+  private get machineId(): string { return this.machine?.id ?? "local"; }
+
+  protected override updated(changed: Map<string, unknown>): void {
+    if (changed.has("projects") && this.project === undefined && this.projects.length > 0) void this.restore();
+  }
+
+  private async restore(): Promise<void> {
+    const saved = ((): { machineId?: unknown; projectId?: unknown; workspaceId?: unknown } | null => {
+      try { return JSON.parse(localStorage.getItem(LAST_WORKSPACE_KEY) ?? "null") as { machineId?: unknown } | null; } catch { return null; }
+    })();
+    const record = saved?.machineId === this.machineId ? saved : null;
+    const project = this.projects.find((candidate) => candidate.id === record?.projectId) ?? rootProjects(this.projects)[0];
+    if (project !== undefined) await this.chooseProject(rootProjectOf(project, this.projects).id, typeof record?.workspaceId === "string" ? record.workspaceId : undefined);
+  }
+
+  private async chooseProject(projectId: string, preferredWorkspaceId?: string): Promise<void> {
+    const project = this.projects.find((candidate) => candidate.id === projectId);
+    const sequence = ++this.sequence;
+    this.project = project; this.workspace = undefined; this.workspaces = []; this.sessions = []; this.error = "";
+    if (project === undefined) return;
+    this.loading = true;
+    try {
+      const members = this.projects.filter((candidate) => rootProjectOf(candidate, this.projects).id === project.id);
+      const workspaces = (await Promise.all(members.map((member) => api.workspaces(member.id, this.machineId)))).flat();
+      if (sequence !== this.sequence) return;
+      this.workspaces = workspaces;
+      const preferred = workspaces.find((candidate) => candidate.id === preferredWorkspaceId)
+        ?? workspaces.find((candidate) => candidate.projectId === project.id && candidate.isMain) ?? workspaces[0];
+      if (preferred !== undefined) await this.chooseWorkspace(preferred.id);
+    } catch (error) {
+      if (sequence === this.sequence) this.error = String(error);
+    } finally {
+      if (sequence === this.sequence) this.loading = false;
+    }
+  }
+
+  private async chooseWorkspace(workspaceId: string): Promise<void> {
+    const workspace = this.workspaces.find((candidate) => candidate.id === workspaceId);
+    const sequence = ++this.sequence;
+    this.project = this.projects.find((candidate) => candidate.id === workspace?.projectId) ?? this.project;
+    this.workspace = workspace; this.sessions = []; this.error = "";
+    if (workspace === undefined) return;
+    this.loading = true;
+    try {
+      const sessions = await api.sessions(workspace.path, this.machineId);
+      if (sequence === this.sequence) this.sessions = sessions;
+    } catch (error) {
+      if (sequence === this.sequence) this.error = String(error);
+    } finally {
+      if (sequence === this.sequence) this.loading = false;
+    }
+  }
+
+  private async startChat(): Promise<void> {
+    const workspace = this.workspace;
+    if (workspace === undefined) return;
+    this.starting = true;
+    try {
+      const session = await api.startSession(workspace.path, this.machineId);
+      this.add({ picks: [{ id: session.id, title: sessionTitle(session) }] });
+    } catch (error) {
+      this.error = String(error);
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  private add(detail: HomeAdd): void { this.dispatchEvent(new CustomEvent<HomeAdd>("home-add", { detail, bubbles: true, composed: true })); }
+  private close(): void { this.dispatchEvent(new CustomEvent("home-close", { bubbles: true, composed: true })); }
+
+  override render() {
+    const isAgent = (session: SessionInfo) => AGENT_SESSION.test(session.name ?? "");
+    const agentSessionCount = this.sessions.filter(isAgent).length;
+    const visibleSessions = this.showAgents ? this.sessions : this.sessions.filter((session) => !isAgent(session));
+    const recentSessions = this.showAll ? visibleSessions : visibleSessions.slice(0, 5);
+    const project = this.project;
+    const projectId = project?.id ?? "";
+    const workspaceId = this.workspace?.id ?? "";
+    const onOpen = (event: CustomEvent<OpenWorkstreamSessionDetail>) => { this.add({ picks: [{ id: event.detail.sessionId, title: "Chat" }] }); };
+    const onAddAll = (event: CustomEvent<{ workstreamId: string; title: string; sessions: Choice[] }>) => { this.add({ picks: event.detail.sessions, group: { id: event.detail.workstreamId, title: event.detail.title } }); };
+    const pick = (session: SessionInfo) => { this.add({ picks: [{ id: session.id, title: sessionTitle(session) }] }); };
+    const placed = (id: string) => this.placement[id];
+    return html`
+      <main class="chooser" data-view="chooser" @click=${(event: Event) => { if (this.closable && event.target === event.currentTarget) this.close(); }}>
+        <section>
+          <div class="tabs" role="tablist">
+            ${rootProjects(this.projects).map((candidate) => html`<button role="tab" aria-selected=${this.view === "project" && project !== undefined && rootProjectOf(project, this.projects).id === candidate.id} @click=${() => { this.view = "project"; void this.chooseProject(candidate.id); }}>${candidate.name}</button>`)}
+            <button role="tab" aria-selected=${this.view === "other"} @click=${() => { this.view = "other"; }}>Other</button>
+            <button role="tab" aria-selected=${this.view === "all"} @click=${() => { this.view = "all"; }}>All sessions</button>
+            <span class="tab-actions">
+              ${this.closable ? html`<button class="icon-button" title="Close (Esc)" aria-label="Close" @click=${() => { this.close(); }}>✕</button>` : nothing}
+            </span>
+          </div>
+          ${this.view === "all" ? html`<all-sessions .sessionStatuses=${this.sessionStatuses} .sessionActivities=${this.sessionActivities} .sessionPlacement=${this.placement} @open-session=${(event: CustomEvent<SessionInfo>) => { pick(event.detail); }}></all-sessions>`
+            : this.view === "other" ? html`<workstream-chooser .serviceMachineId=${this.machineId} .serviceProjectId=${projectId} .serviceWorkspaceId=${workspaceId} .sessionStatuses=${this.sessionStatuses} .sessionActivities=${this.sessionActivities} .sessionPlacement=${this.placement} addAll .excludeProjects=${rootProjects(this.projects).map((candidate) => candidate.name)} @open-workstream-session=${onOpen} @add-workstream-chats=${onAddAll}></workstream-chooser>`
+            : project === undefined ? html`<p>Choose a project.</p>` : html`
+            <div class="new-chat">
+              <button class="primary" ?disabled=${this.workspace === undefined || this.starting} @click=${() => { void this.startChat(); }}>New Chat</button>
+              <label>in
+                <select aria-label="Workspace" .value=${workspaceId} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value); }}>
+                  ${this.workspaces.map((workspace) => html`<option value=${workspace.id} ?selected=${workspace.id === workspaceId}>${this.projects.find((candidate) => candidate.id === workspace.projectId)?.name ?? ""} · ${workspace.label}${workspace.isMain ? " (main)" : ""}</option>`)}
+                </select>
+              </label>
+            </div>
+            <workstream-chooser .project=${rootProjectOf(project, this.projects).name} .serviceMachineId=${this.machineId} .serviceProjectId=${projectId} .serviceWorkspaceId=${workspaceId} .sessionStatuses=${this.sessionStatuses} .sessionActivities=${this.sessionActivities} .sessionPlacement=${this.placement} addAll @open-workstream-session=${onOpen} @add-workstream-chats=${onAddAll}></workstream-chooser>
+          `}
+          ${this.loading ? html`<p role="status">Loading…</p>` : nothing}
+          ${this.error === "" ? nothing : html`<p class="error" role="alert">${this.error}</p>`}
+          ${this.view !== "project" || this.workspace === undefined ? nothing : html`
+            <div class="sessions">
+              <h2>Sessions <small>${String(visibleSessions.length)}</small></h2>
+              ${recentSessions.map((session) => html`
+                <button class="session" @click=${() => { pick(session); }}>
+                  <strong>${sessionTitle(session)}</strong>
+                  <small>${session.archived === true ? "Archived · " : ""}${String(session.messageCount)} messages${placed(session.id) === undefined ? "" : ` · in ${placed(session.id) ?? ""}`}</small>
+                </button>
+              `)}
+              <div class="session-tools">
+                ${visibleSessions.length > 5 ? html`<button class="link" @click=${() => { this.showAll = !this.showAll; }}>${this.showAll ? "Show recent only" : `Show all ${String(visibleSessions.length)}`}</button>` : nothing}
+                ${agentSessionCount === 0 ? nothing : html`
+                  <label class="agent-filter"><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgents} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.showAgents = event.target.checked; }}> Show agent sessions (${agentSessionCount})</label>
+                `}
+              </div>
+            </div>
+          `}
+        </section>
+      </main>
+    `;
+  }
+
+  // The normal shell's own styles, so the home looks the same; only the host is not a fixed full-window shell.
+  static override styles = [WorkbenchApp.styles, css`
+    :host { position: static; display: block; height: 100%; padding: 0; overflow: hidden; }
+  `];
+}
+
 @customElement("workbench-layout-proto")
 export class WorkbenchLayoutProto extends LitElement {
   @state() private store: Store = readStore();
@@ -241,11 +412,10 @@ export class WorkbenchLayoutProto extends LitElement {
   @state() private live = new Map<string, Live>();
   @state() private alive = new Map<string, number>();
   @state() private adding = false;
-  @state() private addQuery = "";
-  @state() private expanded = new Set<string>();
-  @state() private catalog: Catalog | undefined;
-  @state() private catalogError = "";
-  private projects: Project[] = [];
+  @state() private projects: Project[] = [];
+  /** Live status of every session, for the home's activity marks (same controller the shell uses). */
+  @state() private homeApp: AppState = initialAppState();
+  private readonly homeLive = new SessionController(() => this.homeApp, (patch) => { this.homeApp = { ...this.homeApp, ...patch }; }, () => undefined);
   private workspaceIndex: Promise<{ project: Project; workspaces: Workspace[] }[]> | undefined;
   private readonly realtime = new RealtimeSocket();
   private readonly channel = new BroadcastChannel("pi-workbench.layout-proto");
@@ -284,6 +454,7 @@ export class WorkbenchLayoutProto extends LitElement {
     window.removeEventListener("pagehide", this.onPageHide);
     window.clearInterval(this.pingTimer);
     this.realtime.close();
+    this.homeLive.dispose();
     this.channel.close();
     super.disconnectedCallback();
   }
@@ -305,11 +476,12 @@ export class WorkbenchLayoutProto extends LitElement {
     if (this.store[id] === undefined) this.mutate((store) => { store[id] = { name: this.nextWindowName(store), entries: [], layout: "grid" }; });
     const machines = await api.machines();
     const machine = machines.find((candidate) => candidate.id === "local") ?? machines[0];
+    this.machine = machine;
     this.projects = await api.projects(machine?.id ?? "local").catch(() => []);
     this.realtime.connect((event) => {
+      if (event.type !== "session.attention" && event.type !== "sessions.unread" && event.type !== "notices.updated" && event.type !== "machine.status") this.homeLive.applyGlobalEvent(event);
       for (const pane of this.renderRoot.querySelectorAll<ProtoChatPane>("proto-chat-pane")) pane.applyGlobal(event);
     }, undefined, machine?.id ?? "local");
-    this.machine = machine;
   }
 
   private nextWindowName(store: Store): string {
@@ -336,7 +508,6 @@ export class WorkbenchLayoutProto extends LitElement {
   private readonly closePopups = (event: Event): void => {
     const inside = (name: string) => event.composedPath().some((node) => node instanceof HTMLElement && node.classList.contains(name));
     if (this.menu !== undefined && !inside("menu")) this.menu = undefined;
-    if (this.adding && !inside("add-pop") && !inside("add")) this.adding = false;
   };
 
   // ---------- where sessions live ----------
@@ -368,48 +539,18 @@ export class WorkbenchLayoutProto extends LitElement {
     return undefined;
   }
 
-  /** Open Workstreams with their Chats, and recent Chats without a Workstream. */
-  private async loadCatalog(): Promise<void> {
-    const machineId = this.machine?.id ?? "local";
-    try {
-      const context = await this.workstreamContext();
-      const [recent, listed] = await Promise.all([api.recent(500, machineId), context === undefined ? [] : listWorkstreams(context)]);
-      const rows = new Map(recent.map((row) => [row.id, row]));
-      const summaries = [...listed].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      const snapshots = [];
-      // ponytail: one inspect per open Workstream, eight at a time; a list-with-sessions operation would make this one call.
-      for (let start = 0; start < summaries.length; start += 8) {
-        snapshots.push(...await Promise.all(summaries.slice(start, start + 8).map((summary) => (context === undefined ? Promise.resolve(undefined) : inspectWorkstream(context, summary.id)).catch(() => undefined))));
-      }
-      const placed = new Set<string>();
-      const workstreams = snapshots.flatMap((snapshot) => {
-        if (snapshot === undefined) return [];
-        // ponytail: only Chats among the 500 most recent are offered; older Workstream Chats need a server lookup by id.
-        const sessions = sessionsByActivity(snapshot.sessions.filter((session) => session.status !== "failed" && session.status !== "pending")).flatMap((session) => {
-          const row = rows.get(session.id);
-          if (row === undefined) return [];
-          placed.add(session.id);
-          return [{ id: session.id, title: sessionTitle(row) }];
-        });
-        return sessions.length === 0 ? [] : [{ id: snapshot.id, title: snapshot.title, sessions }];
-      });
-      const loose = recent.filter((row: SessionInfo) => !placed.has(row.id) && !AGENT_SESSION.test(row.name ?? "")).map((row) => ({ id: row.id, title: sessionTitle(row) }));
-      this.catalog = { workstreams, loose };
-      this.catalogError = "";
-    } catch (error) {
-      this.catalogError = error instanceof Error ? error.message : String(error);
-    }
-  }
-
   private openAdd(): void {
-    this.adding = true;
-    this.addQuery = "";
-    void this.loadCatalog();
-    void this.updateComplete.then(() => { this.renderRoot.querySelector<HTMLInputElement>(".add-pop input")?.focus(); });
+    if (this.win.entries.length > 0) this.adding = true;
   }
 
-  /** Put these sessions in this window, moving them out of any other window. */
-  private addSessions(picks: Choice[], group?: { id: string; title: string }): void {
+  /**
+   * Put the home's picks in this window, moving them out of any other window. A Chat picked on its own joins its
+   * Workstream's group when it has one.
+   */
+  private async addFromHome({ picks, group }: HomeAdd): Promise<void> {
+    this.adding = false;
+    const context = group === undefined ? await this.workstreamContext() : undefined;
+    const owners = await Promise.all(picks.map(async (pick) => group ?? (context === undefined ? undefined : await workstreamForSession(context, pick.id).then((found) => found ?? undefined, () => undefined))));
     const ids = new Set(picks.map((pick) => pick.id));
     let focus: string | undefined;
     this.mutate((store) => {
@@ -421,23 +562,25 @@ export class WorkbenchLayoutProto extends LitElement {
       }
       const win = store[this.winId];
       if (win === undefined) return;
-      for (const pick of picks) {
-        const owner = group ?? this.catalog?.workstreams.find((workstream) => workstream.sessions.some((session) => session.id === pick.id));
+      picks.forEach((pick, index) => {
+        const owner = owners[index];
         const existing = win.entries.find((entry) => entry.sessionId === pick.id);
-        if (existing !== undefined) { focus ??= existing.id; continue; }
+        if (existing !== undefined) { focus ??= existing.id; return; }
         const entry: Entry = { id: uid(), sessionId: pick.id, title: pick.title, groupId: owner?.id, group: owner?.title };
         win.entries.push(entry);
         focus ??= entry.id;
-      }
+      });
       win.focused = focus ?? win.focused;
       win.maximized = undefined;
     });
-    this.adding = false;
     if (focus !== undefined) this.activate(focus);
   }
 
-  private holder(sessionId: string): string | undefined {
-    return Object.entries(this.store).find(([, win]) => win.entries.some((entry) => entry.sessionId === sessionId))?.[0];
+  /** Session id → the window holding it, for the home's "in Window N" marks. */
+  private placedIn(): Record<string, string> {
+    const placed: Record<string, string> = {};
+    for (const [winId, win] of Object.entries(this.store)) for (const entry of win.entries) placed[entry.sessionId] = winId === this.winId ? "This window" : win.name;
+    return placed;
   }
 
   // ---------- grouping and focus ----------
@@ -496,13 +639,13 @@ export class WorkbenchLayoutProto extends LitElement {
 
   private onPaneState(entry: Entry, report: PaneState): void {
     const before = this.live.get(entry.id);
-    this.patchLive(entry.id, { streaming: report.streaming, needsOwner: report.needsOwner, unread: (before?.unread ?? false) || (before?.streaming === true && !report.streaming && this.win.focused !== entry.id) });
+    this.patchLive(entry.id, { streaming: report.streaming, needsOwner: report.needsOwner, error: report.error, unread: (before?.unread ?? false) || (before?.streaming === true && !report.streaming && this.win.focused !== entry.id) });
     if (report.title !== "" && report.title !== entry.title) this.mutateWin((win) => { const stored = win.entries.find((candidate) => candidate.id === entry.id); if (stored !== undefined) stored.title = report.title; });
   }
 
   private patchLive(id: string, patch: Partial<Live>): void {
     const next = new Map(this.live);
-    next.set(id, { streaming: false, needsOwner: false, unread: false, ...this.live.get(id), ...patch });
+    next.set(id, { streaming: false, needsOwner: false, unread: false, error: false, ...this.live.get(id), ...patch });
     this.live = next;
   }
 
@@ -639,17 +782,15 @@ export class WorkbenchLayoutProto extends LitElement {
   }
 
   // ---------- rendering ----------
-  private statusOf(entry: Entry): "running" | "needs" | "idle" {
+  /** Needs you › error › working › done (finished while you were away) › idle. */
+  private statusOf(entry: Entry): keyof typeof STATUS_LABELS {
     const live = this.live.get(entry.id);
-    if (live?.needsOwner === true || live?.unread === true) return "needs";
-    return live?.streaming === true ? "running" : "idle";
+    return live?.needsOwner === true ? "needs" : live?.error === true ? "error" : live?.streaming === true ? "running" : live?.unread === true ? "done" : "idle";
   }
 
   private dot(entry: Entry) {
     const status = this.statusOf(entry);
-    const live = this.live.get(entry.id);
-    const label = live?.needsOwner === true ? "Waiting for your answer" : live?.unread === true ? "Finished while you were away" : status === "running" ? "Working" : "Idle";
-    return html`<span class="dot" data-status=${status} title=${label} aria-label=${label}></span>`;
+    return html`<span class="dot" data-status=${status} role="img" title=${STATUS_LABELS[status]} aria-label=${STATUS_LABELS[status]}></span>`;
   }
 
   /** Grid cells for the visible page: 1 fills, 2 side by side, 3 = two over one, 4 = 2×2. */
@@ -703,14 +844,10 @@ export class WorkbenchLayoutProto extends LitElement {
         </div>
       </nav>
       <div class="stage" data-layout=${win.layout} data-maximized=${win.maximized !== undefined}>
-        ${empty ? html`
-          <div class="empty">
-            <p>No Chats in this window yet.</p>
-            <button class="primary" @click=${() => { this.openAdd(); }}>Add a Workstream or Chat <kbd>⌘T</kbd></button>
-          </div>` : nothing}
+        ${empty ? this.renderHome(false) : nothing}
         ${this.machine === undefined ? nothing : repeat(ordered, (entry) => entry.id, (entry) => this.renderTile(entry, ordered))}
       </div>
-      ${this.adding ? this.renderAdd() : nothing}
+      ${this.adding && !empty ? html`<div class="home-sheet">${this.renderHome(true)}</div>` : nothing}
       ${this.renderMenu()}
     `;
   }
@@ -720,13 +857,13 @@ export class WorkbenchLayoutProto extends LitElement {
       <div class="tabs" role="tablist" aria-label=${`${win.name} Chats`}>
         ${this.groups().map((group) => html`
           <div class="group" role="group" aria-label=${group.title ?? "Without Workstream"}>
-            ${group.title === undefined ? nothing : html`<button class="chip" title=${group.title} draggable="true"
+            ${group.title === undefined ? nothing : html`<button class="chip" style=${wsStyle(group.id)} title=${`Workstream: ${group.title}`} draggable="true"
               @click=${(event: MouseEvent) => { this.openMenu(event, group.entries.map((entry) => entry.id), group.title ?? ""); }}
               @contextmenu=${(event: MouseEvent) => { this.openMenu(event, group.entries.map((entry) => entry.id), group.title ?? ""); }}
               @dragstart=${(event: DragEvent) => { this.dragStart(event, group.entries.map((entry) => entry.id), group.title ?? ""); }}
               @dragend=${(event: DragEvent) => { this.dragEnd(event, group.entries.map((entry) => entry.id)); }}>${group.title}</button>`}
             ${group.entries.map((entry) => html`
-              <div role="tab" tabindex="0" class="tab" draggable="true" data-id=${entry.id} aria-selected=${entry.id === win.focused} title=${entry.title}
+              <div role="tab" tabindex="0" class="tab" style=${wsStyle(entry.groupId)} data-status=${this.statusOf(entry)} draggable="true" data-id=${entry.id} aria-selected=${entry.id === win.focused} title=${entry.title}
                 @click=${() => { this.activate(entry.id); }}
                 @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.activate(entry.id); } }}
                 @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([entry.id]); }}
@@ -746,7 +883,7 @@ export class WorkbenchLayoutProto extends LitElement {
     const place = this.placement(entry, ordered);
     const maximized = win.maximized === entry.id;
     return html`
-      <section class="tile" data-id=${entry.id} data-visible=${place.visible} data-focused=${entry.id === win.focused} style=${styleMap(place.area === undefined ? {} : { gridArea: place.area })}
+      <section class="tile" data-id=${entry.id} data-visible=${place.visible} data-focused=${entry.id === win.focused} style=${styleMap({ ...(place.area === undefined ? {} : { gridArea: place.area }), ...(entry.groupId === undefined ? {} : { "--ws": workstreamAccentColor(entry.groupId) }) })}
         @pointerdown=${() => { this.setFocused(entry.id); }} @focusin=${() => { this.setFocused(entry.id); }}
         @pane-state=${(event: CustomEvent<PaneState>) => { this.onPaneState(entry, event.detail); }}
         @pane-files=${() => { this.toggleFiles(entry.id, true); }}>
@@ -765,51 +902,10 @@ export class WorkbenchLayoutProto extends LitElement {
       </section>`;
   }
 
-  private renderAdd() {
-    const q = this.addQuery.trim().toLowerCase();
-    const catalog = this.catalog;
-    const here = this.winId;
-    const where = (sessionId: string) => {
-      const holder = this.holder(sessionId);
-      if (holder === undefined) return nothing;
-      return html`<span class="where" data-here=${holder === here}>${holder === here ? "Here" : this.store[holder]?.name ?? "Other window"}</span>`;
-    };
-    const sessionRow = (pick: Choice, group?: { id: string; title: string }) => html`
-      <button class="pick session" @click=${() => { this.addSessions([pick], group); }}><span class="title">${pick.title}</span>${where(pick.id)}</button>`;
-    const workstreams = (catalog?.workstreams ?? []).flatMap((workstream) => {
-      const titleHit = q === "" || matches(workstream.title, q);
-      const sessions = titleHit ? workstream.sessions : workstream.sessions.filter((session) => matches(session.title, q));
-      return sessions.length === 0 ? [] : [{ ...workstream, shown: sessions }];
-    });
-    const loose = (catalog?.loose ?? []).filter((pick) => q === "" || matches(pick.title, q)).slice(0, q === "" ? 30 : 100);
-    const firstWorkstream = workstreams[0];
-    const addFirst = (): void => { if (firstWorkstream !== undefined) this.addSessions(firstWorkstream.sessions, firstWorkstream); else if (loose[0] !== undefined) this.addSessions([loose[0]]); };
-    return html`
-      <div class="add-pop" data-centered=${this.win.entries.length === 0} role="dialog" aria-label=${`Add to ${this.win.name}`}>
-        <input type="text" placeholder="Search Workstreams and Chats" aria-label="Search Workstreams and Chats" .value=${this.addQuery}
-          @input=${(event: Event) => { this.addQuery = (event.target as HTMLInputElement).value; }}
-          @keydown=${(event: KeyboardEvent) => {
-            if (event.key === "Enter") addFirst();
-          }}>
-        <div class="add-list">
-          ${catalog === undefined ? html`<p class="note">${this.catalogError === "" ? "Loading…" : this.catalogError}</p>` : nothing}
-          ${workstreams.length === 0 ? nothing : html`<h3>Workstreams</h3>`}
-          ${workstreams.map((workstream) => {
-            const open = q !== "" || this.expanded.has(workstream.id);
-            const shown = open ? workstream.shown : workstream.shown.slice(0, 3);
-            return html`
-              <div class="ws">
-                <button class="pick ws-row" title="Add all its Chats" @click=${() => { this.addSessions(workstream.sessions, workstream); }}>
-                  <span class="title">${workstream.title}</span><span class="meta">Add ${String(workstream.sessions.length)}</span>
-                </button>
-                ${shown.map((pick) => sessionRow(pick, workstream))}
-                ${shown.length < workstream.shown.length ? html`<button class="more" @click=${() => { this.expanded = new Set([...this.expanded, workstream.id]); }}>${String(workstream.shown.length - shown.length)} more</button>` : nothing}
-              </div>`;
-          })}
-          ${loose.length === 0 ? nothing : html`<h3>Chats without a Workstream</h3>${loose.map((pick) => sessionRow(pick))}`}
-          ${catalog !== undefined && workstreams.length === 0 && loose.length === 0 ? html`<p class="note">Nothing matches.</p>` : nothing}
-        </div>
-      </div>`;
+  private renderHome(closable: boolean) {
+    return html`<proto-home class=${closable ? "" : "empty"} ?closable=${closable} .machine=${this.machine} .projects=${this.projects} .placement=${this.placedIn()}
+      .sessionStatuses=${this.homeApp.sessionStatuses} .sessionActivities=${this.homeApp.sessionActivities}
+      @home-add=${(event: CustomEvent<HomeAdd>) => { void this.addFromHome(event.detail); }} @home-close=${() => { this.adding = false; }}></proto-home>`;
   }
 
   private renderMenu() {
@@ -841,20 +937,26 @@ export class WorkbenchLayoutProto extends LitElement {
     .tabs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; overflow-x: auto; scrollbar-width: none; }
     .group { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 2px; }
     .group + .group { padding-left: 12px; border-left: 1px solid var(--pi-border-muted); }
-    .chip { flex: 0 1 auto; min-width: 40px; max-width: 200px; overflow: hidden; padding: 2px 8px; border: 1px solid var(--pi-border); border-radius: 999px; background: none; color: var(--pi-muted); font-size: 11px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
-    button.chip:hover { color: var(--pi-text); border-color: var(--pi-muted); }
+    /* Workstream identity: the home card's colour (--ws), tinted like its marker so --pi-text keeps >= 4.5:1. */
+    .chip { flex: 0 1 auto; min-width: 40px; max-width: 200px; overflow: hidden; padding: 2px 8px; border: 1px solid var(--ws, var(--pi-border)); border-radius: 999px; background: color-mix(in srgb, var(--ws, transparent) 30%, var(--pi-surface)); color: var(--pi-text); font-size: 11px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+    button.chip:hover { background: color-mix(in srgb, var(--ws, transparent) 18%, var(--pi-surface-hover)); }
     .chip.small { flex: 0 1 auto; min-width: 0; max-width: 40%; padding: 0 7px; font-weight: 500; }
     .tab { flex: 0 1 auto; min-width: 72px; max-width: 260px; display: flex; align-items: center; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 4px 0 9px; border-radius: 7px; color: var(--pi-muted); cursor: pointer; user-select: none; }
     .tab:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
-    .tab[aria-selected="true"] { background: var(--pi-bg); color: var(--pi-text); box-shadow: inset 0 -2px 0 var(--pi-accent); }
+    .tab { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ws, transparent) 55%, transparent); }
+    .tab[aria-selected="true"] { background: var(--pi-bg); color: var(--pi-text); box-shadow: inset 0 -2px 0 var(--ws, var(--pi-accent)); }
+    .tab[data-status="needs"] { color: var(--pi-text); font-weight: 600; }
     .tab:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
     .tab .x { flex: 0 0 auto; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--pi-muted); line-height: 1; visibility: hidden; }
     .tab:hover .x, .tab[aria-selected="true"] .x { visibility: visible; }
     .tab .x:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .title { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--pi-border); }
-    .dot[data-status="running"] { background: var(--pi-accent); animation: pulse 1.2s ease-in-out infinite; }
-    .dot[data-status="needs"] { background: var(--pi-warning, #d29922); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pi-warning, #d29922) 25%, transparent); }
+    /* Status from theme tokens: working = success (as the home's live mark), needs you = warning with a halo, done = accent (as unread), error = danger. */
+    .dot { flex: 0 0 auto; box-sizing: border-box; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--pi-dim); }
+    .dot[data-status="running"] { border: 0; background: var(--pi-success); animation: pulse 1.2s ease-in-out infinite; }
+    .dot[data-status="needs"] { width: 10px; height: 10px; border: 0; background: var(--pi-warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pi-warning) 35%, transparent); }
+    .dot[data-status="done"] { border: 0; background: var(--pi-accent); }
+    .dot[data-status="error"] { border: 0; background: var(--pi-danger); }
     @keyframes pulse { 50% { opacity: .35; } }
     .actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
     .icon { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); font-size: 14px; }
@@ -872,37 +974,17 @@ export class WorkbenchLayoutProto extends LitElement {
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--pi-bg); }
     .tile[data-visible="false"], .stage[data-layout="tabs"] .tile, .stage[data-maximized="true"] .tile { position: absolute; inset: 0; }
     .tile[data-visible="false"] { visibility: hidden; pointer-events: none; }
-    .tile-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; height: 30px; padding: 0 4px 0 10px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); cursor: default; user-select: none; }
+    .tile-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 4px 0 8px; border-left: 3px solid var(--ws, transparent); border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); cursor: default; user-select: none; }
     .tile-bar .title { flex: 0 1 auto; }
-    .tile[data-focused="true"] .tile-bar { color: var(--pi-text); box-shadow: inset 0 2px 0 var(--pi-accent); }
+    .tile[data-focused="true"] .tile-bar { color: var(--pi-text); background: color-mix(in srgb, var(--ws, var(--pi-accent)) 12%, var(--pi-surface)); }
     .stage[data-layout="tabs"] .tile-bar { display: none; }
     .tile-actions { flex: 0 0 auto; margin-left: auto; display: flex; gap: 2px; opacity: 0; }
     .tile-bar:hover .tile-actions, .tile[data-focused="true"] .tile-actions, .tile-actions:focus-within { opacity: 1; }
     .tile-actions .icon { width: 24px; height: 24px; }
     proto-chat-pane { flex: 1 1 auto; }
-    .empty { grid-area: 1 / 1 / 3 / 3; display: grid; place-content: center; justify-items: center; gap: 14px; background: var(--pi-bg); color: var(--pi-muted); font-size: 14px; }
-    .empty p { margin: 0; }
-    .primary { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border: 1px solid var(--pi-accent); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); font-size: 14px; }
-    kbd { padding: 0 5px; border: 1px solid var(--pi-border); border-radius: 4px; color: var(--pi-muted); font: 11px ui-monospace, monospace; }
-    .add-pop { position: fixed; z-index: 30; top: 44px; right: 8px; width: min(480px, calc(100vw - 16px)); max-height: min(70vh, 640px); display: flex; flex-direction: column; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 16px 40px var(--pi-shadow); }
-    .add-pop[data-centered="true"] { top: 18vh; right: auto; left: 50%; transform: translateX(-50%); }
-    .add-pop input { margin: 10px; padding: 7px 10px; border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); font: inherit; font-size: 14px; }
-    .add-pop input:focus { outline: 2px solid var(--pi-accent); outline-offset: -1px; }
-    .add-list { min-height: 0; overflow-y: auto; padding: 0 6px 8px; }
-    .add-list h3 { margin: 10px 8px 4px; color: var(--pi-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-    .ws { padding: 2px 0 6px; }
-    .ws + .ws { border-top: 1px solid var(--pi-border-muted); padding-top: 6px; }
-    .pick { width: 100%; display: flex; align-items: center; gap: 10px; padding: 5px 8px; border: 0; border-radius: 6px; background: none; text-align: left; }
-    .pick:hover { background: var(--pi-surface-hover); }
-    .ws-row { font-weight: 600; }
-    .pick .title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.3; }
-    .ws .session { padding-left: 22px; color: var(--pi-muted); }
-    .ws .session:hover { color: var(--pi-text); }
-    .meta { flex: 0 0 auto; color: var(--pi-accent); font-size: 12px; font-weight: 500; }
-    .where { flex: 0 0 auto; padding: 0 6px; border-radius: 4px; background: var(--pi-surface-hover); color: var(--pi-muted); font-size: 11px; }
-    .where[data-here="true"] { color: var(--pi-accent); }
-    .more { margin-left: 22px; padding: 2px 8px; border: 0; background: none; color: var(--pi-accent); font-size: 12px; }
-    .note { margin: 10px; color: var(--pi-muted); }
+    /* The home fills an empty window, or sits as a sheet over a full one. */
+    proto-home.empty { grid-area: 1 / 1 / 3 / 3; background: var(--pi-bg); }
+    .home-sheet { position: fixed; z-index: 30; inset: 40px 0 0; background: var(--pi-overlay, rgb(0 0 0 / 40%)); }
     .menu { position: fixed; z-index: 40; min-width: 220px; display: grid; padding: 4px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 10px 30px var(--pi-shadow); }
     .menu button { padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; }
     .menu button:hover { background: var(--pi-surface-hover); }

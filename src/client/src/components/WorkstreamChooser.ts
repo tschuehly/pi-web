@@ -265,6 +265,10 @@ export class WorkstreamChooser extends LitElement {
   /** Live per-session state, keyed by session id, buffered by the daemon events socket. */
   @property({ attribute: false }) sessionStatuses: Record<string, SessionStatus> = {};
   @property({ attribute: false }) sessionActivities: Record<string, SessionActivity> = {};
+  /** Layout prototype: where each placed Chat lives (window name), shown on its row. */
+  @property({ attribute: false }) sessionPlacement: Record<string, string> = {};
+  /** Layout prototype: offer "Add all Chats" on an open card (`add-workstream-chats` event). */
+  @property({ type: Boolean }) addAll = false;
   @state() private summaries: WorkstreamSummary[] = [];
   @state() private selected: WorkstreamSnapshot | undefined;
   @state() private error = "";
@@ -506,6 +510,7 @@ export class WorkstreamChooser extends LitElement {
         <span class="session-meta">
           ${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}
           ${session.status === "active" ? nothing : html`<span class="status">${session.status}</span>`}
+          ${this.sessionPlacement[session.id] === undefined ? nothing : html`<span class="placed">${this.sessionPlacement[session.id]}</span>`}
           <span>${doing ?? (when === 0 ? "" : ago(new Date(when).toISOString()))}</span>
         </span>
       </button>
@@ -534,6 +539,11 @@ export class WorkstreamChooser extends LitElement {
 
   private startEmpty(snapshot: WorkstreamSnapshot): void {
     this.dispatchStart({ workstreamId: snapshot.id, directories: [] });
+  }
+
+  private addAllChats(snapshot: WorkstreamSnapshot): void {
+    const sessions = sessionsByActivity(snapshot.sessions).filter((session) => this.chatEligible(session)).map((session) => ({ id: session.id, title: this.chatTitle(session) }));
+    this.dispatchEvent(new CustomEvent("add-workstream-chats", { detail: { workstreamId: snapshot.id, title: snapshot.title, sessions }, bubbles: true, composed: true }));
   }
 
   private dispatchStart(detail: StartWorkstreamSessionDetail): void {
@@ -622,11 +632,12 @@ export class WorkstreamChooser extends LitElement {
                 : html`<p class="missing">No session has checkpointed yet.</p>`
               : this.project === undefined
                 ? html`<p class="missing">This Workstream has no matching PI WEB project tab. Set its group to a registered project before starting it.</p>`
-                : html`<button class="primary" title=${this.canStartEmpty ? "Start Workstream Chat" : "Choose a workspace first"} ?disabled=${!this.canStartEmpty} @click=${() => { this.startEmpty(snapshot); }}>Start Workstream Chat</button>`}
-          ${latest === undefined ? nothing : html`
+                : this.addAll ? nothing : html`<button class="primary" title=${this.canStartEmpty ? "Start Workstream Chat" : "Choose a workspace first"} ?disabled=${!this.canStartEmpty} @click=${() => { this.startEmpty(snapshot); }}>Start Workstream Chat</button>`}
+          ${latest === undefined || this.addAll ? nothing : html`
             ${directories.length > 0 || cp?.references?.some(isTemporaryDirectory) !== true ? html`<button @click=${() => { this.start(snapshot, latest); }}>New session</button>` : nothing}
             ${cp?.references?.some(isTemporaryDirectory) === true ? html`<button ?disabled=${!this.canStartEmpty} title="Choose a persistent workspace first" @click=${() => { this.start(snapshot, latest, true); }}>New session in selected workspace</button>` : nothing}
           `}
+          ${this.addAll && snapshot.sessions.some((session) => this.chatEligible(session)) ? html`<button class="add-all" @click=${() => { this.addAllChats(snapshot); }}>Add all Chats</button>` : nothing}
         </div>
       </div>
     `;
@@ -684,6 +695,7 @@ export class WorkstreamChooser extends LitElement {
     .session-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .session-meta { flex: none; display: flex; align-items: center; gap: 4px; max-width: 45%; color: var(--pi-text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .status { padding: 0 5px; border: 1px solid var(--pi-border); border-radius: 999px; }
+    .placed { padding: 0 6px; border: 1px solid var(--pi-accent-border, var(--pi-border)); border-radius: 4px; color: var(--pi-text); font-size: 11px; }
     details { margin-top: 6px; }
     summary { display: inline-flex; gap: 6px; padding: 2px 4px 2px 0; border-radius: 4px; color: var(--pi-text); font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
     summary:hover { text-decoration: underline; }
