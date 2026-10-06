@@ -488,11 +488,11 @@ export class WorkbenchLayoutProto extends LitElement {
     button { font: inherit; color: inherit; cursor: pointer; }
     .strip { flex: 0 0 auto; display: flex; align-items: stretch; gap: 8px; min-width: 0; padding: 0 8px; border-bottom: 1px solid var(--pi-border); background: var(--pi-surface); }
     .tabs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; overflow-x: auto; scrollbar-width: none; }
-    .group { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 3px 4px 3px 0; }
+    .group { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 2px; padding: 3px 4px 3px 0; }
     .group + .group { padding-left: 10px; border-left: 1px solid var(--pi-border-muted); }
-    .group-chip { flex: 0 1 auto; max-width: 220px; overflow: hidden; padding: 1px 7px; border: 1px solid var(--pi-border); border-radius: 999px; color: var(--pi-muted); font-size: 11px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
-    .group-chip.small { max-width: 160px; font-size: 10.5px; padding: 0 6px; }
-    .tab { flex: 0 0 auto; max-width: 220px; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--pi-muted); }
+    .group-chip { flex: 0 1 auto; min-width: 48px; max-width: 180px; overflow: hidden; padding: 1px 7px; border: 1px solid var(--pi-border); border-radius: 999px; color: var(--pi-muted); font-size: 11px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+    .group-chip.small { flex-shrink: 0; min-width: 0; max-width: 160px; font-size: 10.5px; padding: 0 6px; }
+    .tab { flex: 0 1 auto; min-width: 64px; max-width: 220px; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--pi-muted); }
     .tab:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .tab[data-onscreen="true"] { color: var(--pi-text); }
     .tab[aria-selected="true"] { border-color: var(--pi-border); background: var(--pi-bg); color: var(--pi-text); font-weight: 600; box-shadow: inset 0 -2px 0 var(--pi-accent); }
