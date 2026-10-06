@@ -3556,8 +3556,21 @@ export class PiSessionService implements SessionRouteService {
     return [...sessionIds];
   }
 
-  /** Find the working directory of a persisted session by id, across every project. */
+  /**
+   * Find the working directory of a persisted session by id, across every
+   * project, including an archived Chat whose file left the SDK session
+   * folders. An exact archive record answers from its own metadata; an archived
+   * prefix match answers only when no active Chat matches, so it never hides an
+   * exact active id. A malformed archive fails the lookup.
+   */
   async locate(sessionId: string): Promise<{ cwd: string } | undefined> {
+    const archived = await this.archiveStore.get(sessionId);
+    if (archived?.sessionId === sessionId) return { cwd: archived.cwd };
+    const active = await this.locateInSessionStores(sessionId);
+    return active ?? (archived === undefined ? undefined : { cwd: archived.cwd });
+  }
+
+  private async locateInSessionStores(sessionId: string): Promise<{ cwd: string } | undefined> {
     if (this.sessionManager.locate !== undefined) return this.sessionManager.locate(sessionId);
     const session = findSessionByIdOrPrefix(await this.sessionManager.listAll(), sessionId);
     return session === undefined ? undefined : { cwd: session.cwd };
