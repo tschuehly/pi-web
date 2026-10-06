@@ -171,13 +171,71 @@
 <li><strong>Capabilities</strong> let a plugin declare the host or plugin functionality it requires. Dependencies must be available at the requested version before the plugin starts.</li>
 </ul>
 <p>Plugins declare contributions in <code>activate()</code>, initialize dependency-backed work in <code>start()</code>, and release resources in <code>dispose()</code>. Long-lived work follows the plugin&#39;s <code>lifetimeSignal</code>. Simple browser plugins only need to return their contributions.</p>
+<h3 id="tabs-without-a-workspace">Tabs without a workspace</h3>
+<p>Use <code>applicationPanels</code> for machine dashboards and other tabs that should remain usable before a project, workspace, or session is selected. They share the third-column tool tabs and existing navigation with <code>workspacePanels</code>; workspace panels still require a selected workspace.</p>
+<pre><code>activate: ({ html }) =&gt; ({
+  contributions: {
+    applicationPanels: [{
+      id: "dashboard",
+      title: "Dashboard",
+      render: (context) =&gt; html`&lt;p&gt;${context.machine.name}: ${context.state.selectedProject?.name ?? "No project selected"}&lt;/p&gt;`,
+    }],
+  },
+})</code></pre>
+<p><code>ApplicationPanelContext</code> supplies the current <code>machine</code>, basic selection <code>state</code>, <code>navigate</code>, <code>prompt</code>, and <code>host.requestRender()</code>. <code>state.selectedProject</code>, <code>state.selectedWorkspace</code>, and <code>state.selectedSession</code> are optional snapshots, refreshed as selections change without reactivating the plugin. <code>workspace</code> is available only when a workspace is selected; its workspace-bound <code>terminal</code> is supplied only when that machine also has an available Terminal provider (not in Terminal-disabled recovery mode). Render callbacks may run repeatedly; an inactive tab need not stay mounted. Portable gateway panels follow the selected machine, while machine-specific panels use the existing per-machine availability rules.</p>
+<h3>Follow selection while a tab is closed</h3>
+<p>Capture <code>selection</code> from the public activation context to observe basic machine, project, workspace, and session information independently of panel mounting. <code>getSnapshot()</code> reads the current selection synchronously. <code>subscribe(listener)</code> reports changes after the host commits its UI state; several changes in one commit may be coalesced. It does not call the listener immediately, and unrelated status updates, tool changes, and route queries are not selection notifications. Snapshots are detached from host state and other subscribers; they contain no transcript or private session-file path.</p>
+<pre><code>export default {
+  apiVersion: 4,
+  name: "Selection observer",
+  activate: ({ selection }) =&gt; {
+    console.log("Current selection", selection?.getSnapshot());
+    const unsubscribe = selection?.subscribe((snapshot) =&gt; {
+      console.log("Selection changed", snapshot.selectedMachine?.name, snapshot.selectedProject?.path);
+    });
+    return { contributions: {}, dispose: () =&gt; unsubscribe?.() };
+  },
+};</code></pre>
+<p>The returned unsubscribe function is idempotent and can be called as soon as observation is no longer needed. The host also stops subscriptions when the plugin lifetime ends, including failed activation/start rollback; retaining the service cannot start a new subscription after that point. A throwing or rejected subscriber is logged with its plugin identity without blocking other subscribers. For rendering alone, use the panel's fresh <code>state</code> instead of subscribing. <code>selection</code> is optional on older hosts; update PI WEB when the service is needed.</p>
+<h3 id="discover-projects-on-the-contexts-machine">Discover projects on the context's machine</h3>
+<p>Action, application-panel, and workspace contexts supply read-only <code>projects</code> access directly. <code>listProjects()</code> returns registered projects with <code>id</code>, <code>name</code>, and <code>path</code>; <code>suggestDirectories(query)</code> returns directory suggestions with <code>path</code>, using the same path-search rules as the host's Add Project picker. Discovery works without a selected project or workspace. Call these asynchronous methods from an action, event handler, or component that owns loading and error display, not from the synchronous panel render itself.</p>
+<pre><code>const access = context.projects;
+if (access === undefined) throw new Error("Update PI WEB to use project discovery");
+const registered = await access.listProjects();
+const suggestions = await access.suggestDirectories("/home/me/projects/");
+// Keep the discovery target when later navigating to a result.
+if (registered[0]) {
+  await context.navigate({ machineId: access.machineId, projectId: registered[0].id, view: "navigation" });
+}</code></pre>
+<p>Each service captures its <code>machineId</code> when the host creates the context. Retaining it, or completing an in-flight request after selection changes, still targets that machine. A fresh context follows the selected machine for portable gateway plugins; machine-specific instances receive contexts only on their registration machine, under the existing loading and visibility rules. Remote request failures reject rather than substituting gateway projects. Results contain detached basic information, and the service exposes no project mutation or generic HTTP methods. <code>projects</code> is optional on older hosts; update PI WEB when it is needed.</p>
+<p>Browser API v4 remains unchanged. No capability requirement is needed for application panels, selection observation, or project discovery. Older hosts may omit the tab silently; update PI WEB to use it. Current hosts warn at registration about unknown contribution names, attributing the warning to the plugin, and ignore them while keeping recognized contributions.</p>
+<h3 id="attach-text-context-to-a-message">Attach text context to a message</h3>
+<p>Action, application-panel, and workspace-panel contexts provide optional <code>prompt.setChip(chip)</code> and <code>prompt.removeChip(id)</code> methods. Use them to stage labeled, removable text context in the existing composer. Feature-detect these methods on older hosts; browser API v4 is unchanged.</p>
+<p>Each prompt facade captures the machine and conversation when its context is created. Staging requires a ready, non-archived conversation at that point; calls throw when there is no such target or the owning plugin is unavailable. Retaining a facade never redirects its chips to a later selection. Call from an action or event handler, not from a render callback.</p>
+<pre><code>const prompt = context.prompt;
+if (!prompt.setChip) throw new Error("Update PI WEB to attach text context");
+prompt.setChip({
+  id: "selected-note", // local to this plugin and captured conversation
+  label: "Selected note",
+  text: savedNote.text,
+  onRemove: (reason) =&gt; {
+    // "user" means removal in the composer; "submitted" means server acceptance.
+    forgetSavedNote(savedNote.id);
+  },
+});
+// Withdraw without calling onRemove:
+// prompt.removeChip?.("selected-note");
+</code></pre>
+<p>Setting the same id replaces its text, label, and callback without notifying the old callback. Chips remain available when a panel closes or the user navigates away, and reappear on return to their conversation. <strong>Send</strong> appends their text verbatim after the user's message, separated by blank lines; chips alone can be sent. Chip-bearing messages are ordinary prompts, even when the typed text starts with <code>/</code> or <code>!</code>. Existing attachment delivery and steer/follow-up controls still apply.</p>
+<p>Server acceptance consumes the submitted versions and calls their <code>onRemove("submitted")</code> handlers. Failed sends retain chips and composition for retry. Acceptance means the server accepted the prompt, not that the agent finished answering; a browser-local pending-session queue is not acceptance. Updating a chip while Send is in flight retains the new version; the submitted version's callback still receives its notification. Callback failures are logged with the owner identity without blocking other owners.</p>
+<p>Host staging is browser-memory-only and clears on reload. Plugins own any saved chip data. To restore it, obtain a fresh context for the saved machine/conversation (navigate there first if needed), then call <code>setChip</code> with the saved id, label, text, and newly created callback. Store ordinary data, not callback functions or host objects; repeated restoration replaces rather than duplicates the same chip. No host persistence or callback reconstruction is performed.</p>
 <h3 id="opening-workspace-files-from-chat">Opening workspace files from chat</h3>
 <p>Chat Markdown links to relative files (including <code>./file</code>) or absolute paths inside the session workspace open in the bundled Files panel. The link retains a download URL for modifier/new-tab clicks and when no panel accepts it. File access still uses server-side workspace containment checks.</p>
 <p>A workspace panel can opt in with <code>fileOpenQuery(context, path)</code>. This synchronous hook receives its contribution-scoped context and a decoded workspace-relative path; return a navigation query such as <code>{ file: path }</code>, or <code>undefined</code> to decline. Keep the hook free of side effects: the host opens the first accepting visible, enabled panel for the selected machine, ordered by panel <code>order</code> then title, and applies its namespaced query through normal panel navigation. The panel reads the selection from <code>context.navigation.query</code>; no Files-plugin dependency is required.</p>
 <h3 id="panel-and-tab-navigation">Panel and tab navigation</h3>
-<p>The URL's <code>view</code> selects a responsive panel: <code>navigation</code>, <code>chat</code>, or <code>workspace</code>. The independent <code>tool</code> parameter selects a workspace tab by contribution ID. Opening a workspace tool sets <code>view=workspace</code> and <code>tool</code> to its ID; switching to chat keeps the selected tool. Contribution IDs are not accepted in <code>view</code>. Browser plugins use <code>selectMainView("workspace")</code> to show the workspace panel without changing its selected tab, or <code>selectWorkspaceTool(panelId)</code> to select and show a particular tool.</p>
+<p>The URL's <code>view</code> selects a responsive panel: <code>navigation</code>, <code>chat</code>, or <code>workspace</code>. The independent <code>tool</code> parameter selects an application or workspace tab by contribution ID. Opening a workspace tool sets <code>view=workspace</code> and <code>tool</code> to its ID; switching to chat keeps the selected tool. Contribution IDs are not accepted in <code>view</code>. Browser plugins use <code>selectMainView("workspace")</code> to show the workspace panel without changing its selected tab, or <code>selectWorkspaceTool(panelId)</code> to select and show a particular tool.</p>
 <p>Invalid values remain in the URL rather than triggering a redirect. An invalid <code>view</code> shows a warning and displays navigation on mobile; on two-column layouts, navigation remains alongside a valid requested tool or, otherwise, chat. Desktop keeps its normal columns. A valid workspace view with an invalid tool shows an unavailable-tab message inside the workspace panel, without selecting another tab or adding a duplicate warning. Omitted parameters use defaults and are not errors.</p>
-<p>Action and workspace-panel contexts expose <code>navigate(destination): Promise&lt;void&gt;</code> for complete destinations:</p>
+<p>Action, application-panel, and workspace-panel contexts expose <code>navigate(destination): Promise&lt;void&gt;</code> for complete destinations. For a selected workspace:</p>
 <pre><code>await context.navigate({
   machineId: context.machine.id,
   projectId: context.workspace.projectId,
@@ -252,8 +310,8 @@ ln -s /path/to/plugin-folder ~/.pi-web/plugins/my-plugin</code></pre></div>
 <li><strong>Files</strong> supplies file browsing, previews, and uploads. Disabling its panel does not remove other plugins&#39; file helpers.</li>
 <li><strong>Git</strong> discovers Git workspaces and provides status/diff. Disabling it leaves the project-folder workspace available unless another provider takes over.</li>
 <li><strong>Mermaid</strong> uses the default manual mode: choose <strong>Render</strong> to preview <code>mermaid</code> fences and <code>.mmd</code>/<code>.mermaid</code> text files. Its bundled engine runs locally in an opaque-origin sandbox with network access blocked; no diagram service receives your source. Interactive links and external resources are intentionally unavailable. Disable Mermaid in plugin Settings to keep plain code rendering. Only a browser reload is needed after changing this browser-only plugin.</li>
-<li><strong>Info</strong> displays PI WEB status and copyable diagnostics.</li>
-<li><strong>Updates</strong> shows update/restart guidance when relevant and offers a manual update check.</li>
+<li><strong>Info</strong> displays machine and PI WEB status without requiring a workspace, adds workspace details when selected, and provides copyable diagnostics.</li>
+<li><strong>Updates</strong> shows update/restart guidance when relevant and offers a manual update check. Guidance and Copy work without a workspace; Run requires a selected workspace with an available Terminal provider on that machine.</li>
 <li><strong>Workspace Tasks</strong> turns project commands into runnable buttons.</li>
 </ul>
 <h3 id="workspace-tasks">Workspace Tasks</h3>
@@ -282,8 +340,15 @@ ln -s /path/to/plugin-folder ~/.pi-web/plugins/my-plugin</code></pre></div>
 </section>
 <section id="pi-extension-dialogs"><h2>Pi extension dialogs</h2>
 <p>Pi extensions can ask for confirmation, a selection, or text input. PI WEB shows these questions inline in the conversation, including during session startup or while a tool is waiting. They remain answerable after a browser reload, and the first answer wins across tabs.</p>
-<p>Dialogs use the extension&#39;s timeout and the host&#39;s configured <a href="config#extension-dialogs">dialog timeout</a>. Aborting work or replacing its runtime closes the relevant outstanding questions. Answered cards are browser-local and need not survive a reload. Reloading while a new session is still being created can temporarily lose its question card; the pending question still has its deadline.</p>
+<p>Dialogs use the extension&#39;s timeout and the host&#39;s configured <a href="config#extension-dialogs">dialog timeout</a>. Aborting work, replacing a runtime, or reloading extensions closes the relevant outstanding questions. Answered cards are browser-local and need not survive a reload. If you reload during startup, find the live conversation in Sessions and open it to answer its pending questions.</p>
 <p>These three dialog methods are supported; other Pi extension UI surfaces, such as custom editors and widgets, are not. An extension should not assume every UI feature works just because <code>hasUI</code> is true.</p>
+<h3 id="extension-tree-commands">Extension tree commands</h3>
+<p>Pi extension commands can rewind with <code>ctx.navigateTree()</code> and fork with <code>ctx.fork()</code>, including follow-up work using the fresh <code>withSession</code> context. These operations run independently of browser connections. Rewinds refresh the viewed conversation; forks appear in Sessions for you to open. Other viewers keep their own selection and unsent drafts.</p>
+<p>Prepared text appears as suggested input. Choose <strong>Use suggested input</strong> to replace this browser&#39;s current draft; it is never applied automatically. The latest suggestion survives browser reloads while the daemon hosts the conversation. A later tree action, submitted user message, runtime close, or daemon restart can clear it. Explicit web rewind/fork buttons keep their response-driven navigation and editor behavior.</p>
+<p>Extension idle/reload actions are supported. <code>ctx.newSession()</code> and <code>ctx.switchSession()</code> report that they are unsupported; use the web UI for those actions. Other terminal editor and widget APIs remain unsupported.</p>
+<h3 id="pi-markdown-transformers">Pi Markdown transformers</h3>
+<p>PI WEB applies a session's <code>pi.registerMarkdownTransformer()</code> chain to completed and historical user text, assistant text, and assistant thinking. Transformations run in the session daemon before browser Markdown sanitization and code-fence previews; file previews are unaffected. Original session content and <strong>Copy message</strong> stay unchanged. Code-fence Raw/copy controls use the transformed fence source.</p>
+<p>Live partial responses remain untransformed until completion, including after reconnect. Transformers receive <code>isStreaming: false</code> and a fixed <code>availableWidth: 80</code> (a compatibility approximation, not browser geometry). Empty transformed parts are hidden, but their message row remains. Failed transformers are logged and skipped; later transformers receive the last successful result. Keep transformers synchronous and cheap, since history reads also invoke them.</p>
 </section>
 <section id="agent-development"><span id="ask-ai"></span><span id="agent-docs"></span><span id="develop"></span><h2>Agent development</h2>
 <p>Give the agent a goal, the data it should use, and the actions it may take:</p>

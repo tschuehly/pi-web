@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyMessagesFromEntries } from "./transcriptMessages.js";
+import { annotateAssistantThinkingLevel, historyMessagesFromEntries } from "./transcriptMessages.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import { projectBrowserMessageResponse } from "../browserMessageProjection.js";
 import { parseMessagePage } from "../../client/src/api/parsers.js";
@@ -7,6 +7,15 @@ import { groupChatMessages } from "../../client/src/chatGroups.js";
 import { normalizeMessages } from "../../client/src/chatMessages.js";
 
 describe("durable transcript identity", () => {
+  it.each(["low", "off"])("preserves Pi's physical thinking level %s over the selected fallback", (thinkingLevel) => {
+    const message = { role: "assistant", content: "answer", thinkingLevel };
+    expect(annotateAssistantThinkingLevel(message, "high")).toBe(message);
+    const [historical] = historyMessagesFromEntries([
+      { type: "thinking_level_change", thinkingLevel: "high" },
+      { type: "message", id: "assistant-1", message },
+    ]);
+    expect(historical).toMatchObject({ thinkingLevel });
+  });
   it("propagates entry IDs through paging, browser projection, API parsing and ChatLine mapping", () => {
     const entries = [
       { type: "message", id: "user-1", message: { role: "user", content: "hello" } },

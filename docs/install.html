@@ -107,11 +107,12 @@
               <h2>Requirements</h2>
               <ul>
                 <li><strong>Node.js 22.19.0 or newer</strong> and npm.</li>
-                <li><strong>Pi Coding Agent <code>&gt;=0.99.1</code></strong> installed/configured so the <code>pi</code> command works for your user.</li>
+                <li><strong>Pi Coding Agent <code>1.x</code></strong> installed/configured so the <code>pi</code> command works for your user.</li>
                 <li><strong>Python 3</strong> on the web/API service's PATH to save workspace files. The save helper requires descriptor-relative file operations (available on macOS and Linux); saves fail closed without them. Existing files larger than 512 KiB cannot be saved through the editor because they cannot be version-checked.</li>
                 <li>A shell login environment that exposes Node, npm, Pi, git, and any tools your agents need.</li>
                 <li>For the automatic installer: a supported per-user service manager.</li>
               </ul>
+              <p>PI WEB requires Pi 1.x; Pi 0.x and Pi 2.x are outside the supported dependency range. When upgrading from Pi 0.x, update Pi and PI WEB together, then restart the web/API service before the session daemon. Restarting the daemon interrupts active sessions.</p>
               <div class="callout warning">
                 <strong>Important PATH detail:</strong>
                 PI WEB services run through a non-interactive login shell with <code>-lc</code>. Setup that only lives in
@@ -341,6 +342,15 @@ server {
 <span class="comment"># From a checkout, install the split development services:</span>
 <span class="prompt">$</span> pi-web install --dev</code></pre>
               </div>
+            </section>
+
+            <section id="updates">
+              <h2>Update PI WEB</h2>
+              <p>Run <code>pi-web version --check</code> to compare installed and running versions and check the latest available npm release. Ordinary <code>pi-web version</code> and <code>pi-web --version</code> do not check for new releases.</p>
+              <p>Run <code>pi-web update</code> to update a supported installation. The Updates panel runs the same command on the selected machine; it does not use a separate updater.</p>
+              <p>The command explains the update and asks for confirmation. Restarting the session daemon interrupts active sessions and terminals. Use <code>--yes</code> only when you explicitly accept that interruption, including in non-interactive scripts.</p>
+              <p>Docker, global npm, user-scope Pi-managed installations, and Git checkouts use their respective update tools. Native updates require installed PI WEB services. A checkout update only fast-forwards a clean branch with an upstream; dirty, detached, or non-fast-forward checkouts stop before installation and restart.</p>
+              <p>Inside PI WEB, Linux native updates require a working systemd user manager. The restart runs independently of the terminal; the command prints a journal command for checking its outcome. On macOS, native updates use a detached launchd handoff so the initiating terminal can finish safely. Docker uses its existing independent update runner.</p>
             </section>
 
             <section id="configure">

@@ -245,6 +245,7 @@ export class ChatView extends LitElement {
   @property({ type: Number }) pendingMessageCount = 0;
   @property({ attribute: false }) clientQueuedMessages: QueuedSessionMessage[] = [];
   @property({ attribute: false }) status?: SessionStatus;
+  @property({ attribute: false }) onUseSuggestedInput: ((machineId: string, sessionId: string) => void) | undefined;
   @property({ attribute: false }) activity?: SessionActivity;
   @property({ attribute: false }) pendingAsk?: PendingAskUser;
   @property({ attribute: false }) askDraftSessionId = "";
@@ -539,6 +540,7 @@ export class ChatView extends LitElement {
           ${this.renderTranscript()}
           ${this.renderQueuedMessages()}
           ${this.renderSessionActivity()}
+          ${this.renderSuggestedInput()}
           ${this.renderOpenAsk()}
           ${this.renderExtensionDialogs()}
         </div>
@@ -883,6 +885,19 @@ export class ChatView extends LitElement {
     `;
   }
 
+  private renderSuggestedInput() {
+    const text = this.status?.sessionId === this.sessionId ? this.status.suggestedInput : undefined;
+    if (text === undefined || this.onUseSuggestedInput === undefined) return null;
+    return html`
+      <aside class="suggested-input">
+        <strong>Suggested input</strong>
+        <p class="suggested-input-text" dir="auto">${text === "" ? "Empty input" : text}</p>
+        <small>Replaces your current draft. Nothing is sent.</small>
+        <button type="button" @click=${() => { this.onUseSuggestedInput?.(this.machineId, this.sessionId); }}>Use suggested input</button>
+      </aside>
+    `;
+  }
+
   private renderOpenAsk() {
     if (this.pendingAsk === undefined) return null;
     return html`
@@ -1073,7 +1088,7 @@ export class ChatView extends LitElement {
           <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><small>Thinking</small></summary>
           ${segments.map((segment) => {
             if (segment.kind === "thinking") {
-              const text = segment.messages.flatMap((message) => message.parts).filter((part): part is Extract<ChatPart, { type: "thinking" }> => part.type === "thinking").map((part) => part.text).join("\n\n");
+              const text = segment.messages.flatMap((message) => message.parts).filter((part): part is Extract<ChatPart, { type: "thinking" }> => part.type === "thinking").map((part) => part.displayText ?? part.text).filter((partText) => partText !== "").join("\n\n");
               return html`<formatted-text .intentKey=${JSON.stringify([this.machineId, this.sessionId, "thinking", startIndex, segment.offset])} .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>`;
             }
             if (segment.kind === "skill") return this.renderMessageGroupBody(segment.messages, startIndex, groups, groupIndex, messageIndices, segment.offset);
@@ -1225,14 +1240,18 @@ export class ChatView extends LitElement {
 
   private renderPart(part: ChatPart, message: ChatLine, messageIndex: number, partIndex: number) {
     const intentKey = JSON.stringify([this.machineId, this.sessionId, message.entryId ?? messageIndex, partIndex]);
-    if (part.type === "text" && message.role === "bash") return html`<pre class="part shell-output">${part.text}</pre>`;
-    if (part.type === "text") return html`<formatted-text .intentKey=${intentKey} class="part" .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>`;
-    if (part.type === "thinking") return html`
-      <div class="part thinking">
-        <small class="thinking-label">Thinking</small>
-        <formatted-text .intentKey=${intentKey} .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${part.text}></formatted-text>
-      </div>
-    `;
+    if (part.type === "text" || part.type === "thinking") {
+      const text = part.displayText ?? part.text;
+      if (text === "") return null;
+      if (part.type === "thinking") return html`
+        <div class="part thinking">
+          <small class="thinking-label">Thinking</small>
+          <formatted-text .intentKey=${intentKey} .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>
+        </div>
+      `;
+      if (message.role === "bash") return html`<pre class="part shell-output">${text}</pre>`;
+      return html`<formatted-text .intentKey=${intentKey} class="part" .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>`;
+    }
     if (part.type === "skillInvocation") return html`
       <details class="part skill-invocation">
         <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><span class="disclosure-preview"><b>[skill]</b> ${part.name}</span></summary>

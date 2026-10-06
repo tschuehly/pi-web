@@ -9,13 +9,12 @@ export interface UpdatesRuntimeHint {
   dockerMode?: PiWebDockerMode;
 }
 
-// The single command users should run when they do not want to think: if an
-// update is available, `commands.update` already chains the update and a full
-// restart; otherwise, when anything is stale, a full restart is enough.
+// The shared update CLI owns installation-specific planning, confirmation, and
+// safe execution. Stale components without an available update need a restart.
 export function recommendedCommand(status: PiWebStatusResponse): CommandEntry | undefined {
   const { commands, release, components } = status;
   if (release.updateAvailable && typeof commands.update === "string" && commands.update !== "") {
-    return { label: "Update & restart everything", command: commands.update };
+    return { label: "Update PI WEB", command: commands.update };
   }
   const restartNeeded = components.web.stale || components.sessiond.stale || !components.sessiond.available;
   if (restartNeeded && typeof commands.restart === "string" && commands.restart !== "") {
@@ -75,7 +74,9 @@ export function fallbackDockerStatus(hint: UpdatesRuntimeHint, generatedAt = "fe
     },
     release: { packageName: "@jmfederico/pi-web", updateAvailable: false, skipped: true },
     commands: {
-      update: `${commandPrefix} update`,
+      // The development image mounts its built checkout at /workspace and does
+      // not install a global pi-web executable. Both invoke the same CLI.
+      update: hint.dockerMode === "dev" ? "node /workspace/dist/cli.js update" : "pi-web update",
       restart: `${commandPrefix} restart`,
       restartWeb: `${commandPrefix} restart-web`,
       restartSessiond: `${commandPrefix} restart-sessiond`,

@@ -11,6 +11,7 @@ import {
   launchdRuntimeDetails,
   managedServiceProbeEnvironment,
   nodeVersionCheck,
+  parseVersionOptions,
   regularFileExists,
   runReadinessCliCommand,
   serviceBackendForPlatform,
@@ -35,6 +36,17 @@ afterEach(() => {
   } else {
     process.env["PI_WEB_CONFIG"] = originalPiWebConfig;
   }
+});
+
+describe("version arguments", () => {
+  it("only enables remote release lookup explicitly", () => {
+    expect(parseVersionOptions([])).toEqual({});
+    expect(parseVersionOptions(["--check"])).toEqual({ check: true });
+  });
+
+  it.each([["--unknown"], ["--check", "extra"], ["--check", "--check"]])("rejects invalid arguments %j", (...args) => {
+    expect(() => parseVersionOptions(args)).toThrow("Usage: pi-web version [--check]");
+  });
 });
 
 describe("commandWithVersionCheck", () => {

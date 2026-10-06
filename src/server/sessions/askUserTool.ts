@@ -1,4 +1,4 @@
-import { Type, type Static } from "typebox";
+import { Type, type Static } from "pi-web-typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import {
   ASK_USER_ID_MAX_LENGTH,
@@ -106,6 +106,8 @@ function postedText(result: PendingAskOpenResult): string {
 export function createAskUserToolDefinition(deps: AskUserToolDeps) {
   return defineTool<typeof AskUserParams, AskUserToolDetails>({
     name: "ask_user",
+    // Nested tools cannot terminate the outer agent run.
+    exposure: "model-only",
     label: "Ask user",
     description: "Post a set of questions to the user as a browser form and end this run. Answers arrive later as a follow-up message; the user may leave any question unanswered.",
     promptSnippet: "ask_user: post a question set to the user; ends the run, answers return as a follow-up",

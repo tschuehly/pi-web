@@ -27,6 +27,31 @@ const ref = sessionRef("session-1");
 const user = { role: "user", content: "hello" };
 
 describe("PiSessionService.transcriptSnapshot", () => {
+  it("transforms snapshot history and pending echoes without transforming the published partial", async () => {
+    const { service, fake, branch, events } = fixture();
+    const assistant = { role: "assistant", content: [{ type: "text", text: "answer" }] };
+    const partial = { role: "assistant", content: [{ type: "thinking", thinking: "working" }] };
+    const prompt = deferred<undefined>();
+    fake.session.prompt = () => prompt.promise;
+    fake.session.extensionRunner.getMarkdownTransformers = () => [(text) => `[${text}]`];
+    branch.push({ type: "message", message: assistant });
+    try {
+      await service.prompt(ref, "hello");
+      fake.session.isStreaming = true;
+      fake.emit({ type: "message_start", message: partial });
+      const snapshot = await service.transcriptSnapshot(ref);
+      expect(snapshot.page).toEqual({ start: 0, total: 2, messages: [
+        { role: "assistant", content: [{ type: "text", text: "answer", displayText: "[answer]" }] },
+        { role: "user", content: "hello", displayText: "[hello]" },
+      ] });
+      expect(snapshot.partial).toEqual(partial);
+      expect(snapshot.seq).toBe(events.currentSeq(ref.id));
+      expect(assistant.content[0]).toEqual({ type: "text", text: "answer" });
+      // Pending echoes remain original internally, so repeated reads do not re-transform display text.
+      expect((await service.transcriptSnapshot(ref)).page).toEqual(snapshot.page);
+    } finally { prompt.resolve(undefined); await service.dispose(); }
+  });
+
   it("uses an unchanged idle disk branch for both history and status", async () => {
     const { service, events } = fixture(() => Promise.resolve([{ type: "message", message: user }]));
     try {

@@ -12,13 +12,13 @@
   },
   "devDependencies": {
     "@jmfederico/pi-web": "^1.202609.1",
-    "@earendil-works/pi-coding-agent": "^0.99.1",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
     "@types/node": "^24.13.3",
     "typescript": "^6.0.3",
     "vite": "^8.1.4"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
     "@jmfederico/pi-web": "^1.202609.1"
   },
   "pi": { "extensions": ["./dist/companion.js"] },

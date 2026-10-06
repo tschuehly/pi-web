@@ -12,6 +12,7 @@ import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "..
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
 import { WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
+import type { StagedPromptChip } from "../promptChips";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
@@ -43,6 +44,11 @@ export function promptEditorDragHeight(startHeight: number, startY: number, curr
   return clampNumber(startHeight + ((startY - currentY) / scale), PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
 }
 
+type PromptSendArgs = [text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string, chips?: readonly StagedPromptChip[]];
+// Existing composer consumers may still send fire-and-forget; only a boolean
+// promise confirms the new chip-bearing submission path.
+type PromptSendHandler = ((...args: PromptSendArgs) => void | Promise<void>) | ((...args: PromptSendArgs) => Promise<boolean>);
+
 @customElement("prompt-editor")
 export class PromptEditor extends LitElement {
   @property({ type: Boolean }) disabled = false;
@@ -66,7 +72,9 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean, reflect: true, attribute: "show-usage" }) showUsage = false;
   @property({ type: Number }) warningCount = 0;
   @property({ type: Boolean }) sending = false;
-  @property({ attribute: false }) onSend?: (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string) => unknown;
+  @property({ attribute: false }) promptChips: readonly StagedPromptChip[] = [];
+  @property({ attribute: false }) onRemoveChip?: (chip: StagedPromptChip) => void;
+  @property({ attribute: false }) onSend?: PromptSendHandler;
   @property({ attribute: false }) onStop?: () => void;
   /** Thinking levels the current model supports, for the model and effort popover. */
   @property({ attribute: false }) thinkingLevels: readonly string[] = [];
@@ -91,6 +99,8 @@ export class PromptEditor extends LitElement {
   @state() private attachments: readonly PendingAttachment[] = [];
   @state() private attachmentDelivery: PromptAttachmentDelivery = loadAttachmentDelivery();
   @state() private attachmentError: string | undefined = undefined;
+  @state() private chipSendingKey: string | undefined = undefined;
+  @state() private chipError: string | undefined = undefined;
   private attachmentSeq = 0;
   private nextImageReference = 1;
   private pendingImageReferences: readonly string[] = [];
@@ -135,6 +145,7 @@ export class PromptEditor extends LitElement {
     this.knownCommandNames.clear();
     this.commandCatalogRequest = undefined;
     this.requestVersion += 1;
+    this.chipError = undefined;
     this.currentInputMode = inputModeForDraft(this.draft);
     this.completions = [];
     this.selectedIndex = 0;
@@ -181,11 +192,11 @@ export class PromptEditor extends LitElement {
   }
 
   override render() {
-    const shellInputMode = this.currentInputMode.kind === "shell" ? this.currentInputMode : undefined;
+    const shellInputMode = this.promptChips.length === 0 && this.currentInputMode.kind === "shell" ? this.currentInputMode : undefined;
     const shellMode = shellInputMode !== undefined;
     const steersInput = this.canSteer && !this.isCompacting;
     const queuesInput = this.canSteer || this.isCompacting;
-    const busy = this.disabled || this.sending;
+    const busy = this.disabled || this.sending || this.chipSendingKey === this.composerKey();
     const maximumHeight = this.maximumEditorHeight();
     const currentHeight = this.currentEditorHeight(maximumHeight);
     const editorHeightStyle = `--prompt-editor-maximum-height: ${String(maximumHeight)}px${this.manualEditorHeight === undefined ? "" : `; --prompt-editor-manual-height: ${String(this.manualEditorHeight)}px`}`;
@@ -214,6 +225,7 @@ export class PromptEditor extends LitElement {
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
+          ${this.renderPromptChips()}
           ${this.renderAttachments()}
           <autocomplete-menu .items=${this.currentCompletions()} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
         </div>
@@ -301,6 +313,21 @@ export class PromptEditor extends LitElement {
         ${this.warningCount > 0 ? metric("warnings", `Warnings ${String(this.warningCount)}`, `Session warnings: ${String(this.warningCount)}`) : null}
         ${status.pendingMessageCount > 0 ? metric("queued", `Queued ${String(status.pendingMessageCount)}`, `Queued messages: ${String(status.pendingMessageCount)}`) : null}
       </ul>
+    `;
+  }
+
+  private renderPromptChips() {
+    if (this.promptChips.length === 0 && this.chipError === undefined) return null;
+    return html`
+      <div class="prompt-chips" aria-label="Pending plugin context">
+        ${this.promptChips.map((chip) => html`
+          <div class="prompt-chip" title=${chip.text}>
+            <span>${chip.label}</span>
+            <button type="button" aria-label=${`Remove ${chip.label}`} ?disabled=${this.disabled} @click=${() => this.onRemoveChip?.(chip)}>×</button>
+          </div>
+        `)}
+        ${this.chipError === undefined ? null : html`<div class="chip-error" role="alert">${this.chipError}</div>`}
+      </div>
     `;
   }
 
@@ -867,14 +894,15 @@ export class PromptEditor extends LitElement {
   }
 
   private send(streamingBehavior?: "steer" | "followUp") {
-    if (this.disabled || this.sending) return;
+    if (this.disabled || this.sending || this.chipSendingKey === this.composerKey()) return;
     if (this.pendingImageReferences.length > 0) {
       this.attachmentError = "Wait for image attachments to finish loading.";
       return;
     }
     const text = sanitizeDraftImageReferences(this.draft, this.attachments).trim();
     const pending = this.attachments;
-    if (text === "" && pending.length === 0) return;
+    const chips = this.promptChips;
+    if (text === "" && pending.length === 0 && chips.length === 0) return;
     const behavior = this.canSteer || this.isCompacting ? streamingBehavior : undefined;
     const attachments = pending.length > 0 ? this.currentAttachments() : undefined;
     const delivery = this.effectiveAttachmentDelivery();
@@ -882,6 +910,10 @@ export class PromptEditor extends LitElement {
     // (the uploads pattern): the save lands exactly where the label pointed,
     // independent of how the session cwd would resolve its own project config.
     const folder = attachments !== undefined && delivery === "folder" ? this.attachmentsFolder : undefined;
+    if (chips.length > 0) {
+      void this.sendWithChips(text, behavior, attachments, attachments === undefined ? undefined : delivery, folder, chips);
+      return;
+    }
     const snapshot = this.composerSnapshot();
     this.resetComposer();
     const resetGeneration = this.draftGeneration;
@@ -943,6 +975,32 @@ export class PromptEditor extends LitElement {
         changes: { from: 0, to: editor.state.doc.length, insert: snapshot.draft },
         selection: EditorSelection.cursor(Math.min(snapshot.cursor, snapshot.draft.length)),
       });
+    }
+  }
+
+  private composerKey(): string {
+    return machineSessionKey(this.machineId, this.sessionId ?? "");
+  }
+
+  private async sendWithChips(text: string, behavior: "steer" | "followUp" | undefined, attachments: PromptAttachment[] | undefined, delivery: PromptAttachmentDelivery | undefined, folder: string | undefined, chips: readonly StagedPromptChip[]): Promise<void> {
+    const key = this.composerKey();
+    const draft = this.draft;
+    const pending = this.attachments;
+    this.chipSendingKey = key;
+    this.chipError = undefined;
+    try {
+      const accepted = await this.onSend?.(text, behavior, attachments, delivery, folder, chips);
+      if (key !== this.composerKey() || !this.isConnected) return;
+      if (accepted === true) {
+        // Do not erase edits made during delivery, or the next conversation.
+        if (draft === this.draft && pending === this.attachments) this.resetComposer();
+      } else {
+        this.chipError = "Message not submitted. Context kept for retry.";
+      }
+    } catch (error) {
+      if (key === this.composerKey()) this.chipError = `Message not submitted: ${String(error)}`;
+    } finally {
+      if (this.chipSendingKey === key) this.chipSendingKey = undefined;
     }
   }
 

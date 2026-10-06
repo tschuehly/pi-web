@@ -85,7 +85,7 @@ function renderRecommended(html: HtmlTemplateTag, terminal: WorkspacePanelTermin
     <section class="updates-recommended">
       <strong>Recommended</strong>
       ${messages.length === 0
-        ? html`<p class="muted">Run this one command to bring this installation fully up to date. Nothing else is required.</p>`
+        ? html`<p class="muted">Run the recommended command. Updates require confirmation in the terminal and may interrupt active sessions; the CLI will provide instructions if this terminal cannot safely run the update.</p>`
         : messages.map((message) => renderNotice(html, message))}
       ${renderCommand(html, terminal, recommended.label, recommended.command)}
     </section>
@@ -180,7 +180,7 @@ const plugin = {
           run: (context) => context.checkForPiWebUpdates?.(),
         },
       ],
-      workspacePanels: [
+      applicationPanels: [
         {
           id: "workspace.updates",
           title: "Updates",

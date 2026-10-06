@@ -8,6 +8,7 @@ import { parsePiWebComponentStatus, parsePiWebVersionResponse } from "./shared/p
 
 const PI_WEB_PACKAGE_NAME = "@jmfederico/pi-web";
 const PI_WEB_VERSION_TIMEOUT_MS = 2000;
+const NPM_RELEASE_TIMEOUT_MS = 5000;
 const PI_WEB_VERSION_ENDPOINT_PATH = "/api/pi-web/version";
 const PI_WEB_STATUS_ENDPOINT_PATH = "/api/pi-web/status";
 const DEFAULT_PACKAGE_VERSION = "0.0.0-dev";
@@ -26,12 +27,26 @@ export interface RunningVersionInfo {
   sessiondError?: string;
 }
 
+export type NpmReleaseCheck =
+  | { status: "available"; latestVersion: string }
+  | { status: "skipped"; reason: string }
+  | { status: "error"; error: string };
+
+export interface PiWebVersionReport extends RunningVersionInfo {
+  /** Absent unless an explicit release check was requested. */
+  release?: NpmReleaseCheck;
+}
+
 export interface PiWebVersionReportOptions {
+  /** Explicitly query the latest npm release; ordinary reports stay local. */
+  check?: boolean;
+  /** Invoking environment for offline/version-check policy (defaults to process.env). */
+  env?: NodeJS.ProcessEnv;
   /** Environment used only to select and resolve the web/API config. */
   configEnv?: NodeJS.ProcessEnv;
   /** A prior config-selection failure that makes a web/API probe untrustworthy. */
   webEndpointError?: string;
-  /** Injectable HTTP boundary for deterministic readiness tests. */
+  /** Injectable HTTP boundary for local probes and explicit npm release checks. */
   fetch?: typeof globalThis.fetch;
 }
 
@@ -95,12 +110,46 @@ export function packageVersion(): string {
   return readPackageInfo()?.version ?? DEFAULT_PACKAGE_VERSION;
 }
 
-export async function printPiWebVersionReport(options: PiWebVersionReportOptions = {}): Promise<RunningVersionInfo> {
+export async function printPiWebVersionReport(options: PiWebVersionReportOptions = {}): Promise<PiWebVersionReport> {
   console.log("PI WEB version");
   printInstalledPackageVersions();
   const runningInfo = await collectRunningVersionInfo(options);
   printRunningVersionInfo(runningInfo);
-  return runningInfo;
+  if (options.check !== true) return runningInfo;
+  const release = await checkLatestNpmRelease(options);
+  console.log("Latest npm release:");
+  if (release.status === "available") console.log(`✓ ${PI_WEB_PACKAGE_NAME}: ${release.latestVersion}`);
+  else if (release.status === "skipped") console.log(`? skipped: ${release.reason}`);
+  else console.log(`! npm release check failed: ${release.error}`);
+  return { ...runningInfo, release };
+}
+
+async function checkLatestNpmRelease(options: PiWebVersionReportOptions): Promise<NpmReleaseCheck> {
+  const env = options.env ?? process.env;
+  const disabledBy = ["PI_WEB_SKIP_VERSION_CHECK", "PI_WEB_OFFLINE", "PI_SKIP_VERSION_CHECK", "PI_OFFLINE"]
+    .filter((key) => env[key] !== undefined && env[key] !== "");
+  if (disabledBy.length > 0) return { status: "skipped", reason: `remote version checks disabled by ${disabledBy.join(", ")}` };
+
+  const controller = new AbortController();
+  try {
+    const latestVersion = await withTimeout((async () => {
+      const response = await (options.fetch ?? globalThis.fetch)(`https://registry.npmjs.org/${encodeURIComponent(PI_WEB_PACKAGE_NAME)}/latest`, {
+        headers: { accept: "application/json", "user-agent": `${PI_WEB_PACKAGE_NAME}/${packageVersion()}` },
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`npm registry returned HTTP ${String(response.status)}`);
+      const data: unknown = await response.json();
+      const version = isRecord(data) ? data["version"] : undefined;
+      if (typeof version !== "string" || version.trim() === "") throw new Error("npm registry response did not include a version");
+      return version.trim();
+    })(), NPM_RELEASE_TIMEOUT_MS, "npm registry check timed out after 5000 ms");
+    return { status: "available", latestVersion };
+  } catch (error) {
+    return { status: "error", error: errorMessage(error) };
+  } finally {
+    // Cancel transport/body work on timeout as well as clearing the deadline timer.
+    controller.abort();
+  }
 }
 
 function packageRootPath(): string {

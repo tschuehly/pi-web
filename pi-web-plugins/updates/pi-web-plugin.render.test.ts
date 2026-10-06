@@ -2,7 +2,7 @@
 
 import { html, render, svg } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PiWebComponentStatus, PiWebStatusResponse, PluginRuntimeState, TerminalCommandRun, TerminalCommandRunHandle, WorkspacePanelContext, WorkspacePanelTerminal } from "@jmfederico/pi-web/plugin-api";
+import type { PiWebComponentStatus, PiWebStatusResponse, PluginRuntimeState, TerminalCommandRun, TerminalCommandRunHandle, ApplicationPanelContext, WorkspacePanelTerminal } from "@jmfederico/pi-web/plugin-api";
 import plugin from "./pi-web-plugin.js";
 
 function component(overrides: Partial<PiWebComponentStatus> = {}): PiWebComponentStatus {
@@ -48,23 +48,18 @@ function commandRunHandle(input: { title: string; command: string }): TerminalCo
   return { run, completed: Promise.resolve({ ...run, status: "succeeded" }) };
 }
 
-function panelContext(state: PluginRuntimeState, terminal?: WorkspacePanelTerminal): WorkspacePanelContext {
+function panelContext(state: PluginRuntimeState, terminal?: WorkspacePanelTerminal): ApplicationPanelContext {
   const noop = () => undefined;
   return {
     navigate: () => Promise.resolve(),
     machine: { id: "local", name: "local", kind: "local" },
-    workspace: { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true },
     state,
-    files: {
-      readFile: () => Promise.reject(new Error("not implemented")),
-      listFiles: () => Promise.reject(new Error("not implemented")),
-      writeFile: () => Promise.reject(new Error("not implemented")),
-      deleteFile: () => Promise.reject(new Error("not implemented")),
-      moveFile: () => Promise.reject(new Error("not implemented")),
-    },
     host: { requestRender: noop },
     prompt: { insertText: noop, getText: () => "", getSelection: () => null },
-    terminal: terminal ?? { open: noop, runCommand: () => Promise.reject(new Error("not implemented")) },
+    ...(terminal === undefined ? {} : {
+      workspace: { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true },
+      terminal,
+    }),
   };
 }
 
@@ -78,8 +73,8 @@ function renderPanel(value: PiWebStatusResponse, terminal?: WorkspacePanelTermin
     signal: new AbortController().signal,
     lifetimeSignal: new AbortController().signal,
   }).contributions;
-  const panel = contributions.workspacePanels[0];
-  if (panel === undefined) throw new Error("Expected Updates workspace panel");
+  const panel = contributions.applicationPanels[0];
+  if (panel === undefined) throw new Error("Expected Updates application panel");
   const container = document.createElement("div");
   document.body.append(container);
   render(panel.render(panelContext({ piWebStatus: value }, terminal)), container);
@@ -105,7 +100,7 @@ afterEach(() => {
 
 describe("Updates plugin panel layout", () => {
   it("folds the update notice into one recommended action above the services and optional commands", () => {
-    const update = "npm install -g @jmfederico/pi-web --allow-scripts=node-pty && pi-web restart";
+    const update = "pi-web update";
     const container = renderPanel(status({
       release: { packageName: "@jmfederico/pi-web", updateAvailable: true, latestVersion: "1.202605.9" },
       commands: {
@@ -163,6 +158,16 @@ describe("Updates plugin panel layout", () => {
     expect(sectionOrder(container)).toEqual(["notices", "Installed services", "Suggested commands", "meta"]);
   });
 
+  it("explains confirmation and safe-execution limits rather than promising a seamless update", () => {
+    const container = renderPanel(status({
+      release: { packageName: "@jmfederico/pi-web", updateAvailable: true },
+      commands: { update: "pi-web update" },
+    }));
+    expect(container.querySelector(".updates-recommended")?.textContent).toContain("Updates require confirmation in the terminal");
+    expect(container.textContent).toContain("if this terminal cannot safely run the update");
+    expect(container.textContent).not.toContain("Nothing else is required");
+  });
+
   it("shows the quiet state without a recommended action when everything is current", () => {
     const container = renderPanel(status({ commands: { restart: "pi-web restart" } }));
 
@@ -171,8 +176,10 @@ describe("Updates plugin panel layout", () => {
     expect(sectionOrder(container)).toEqual(["notices", "Installed services", "Suggested commands", "meta"]);
   });
 
-  it("runs the recommended command in a terminal from the recommended action", () => {
-    const update = "pi-web-docker update";
+  it.each([
+    "pi-web update",
+    "PI_CODING_AGENT_DIR='/profiles/active' '/usr/bin/node' '/opt/pi-web/dist/cli.js' update",
+  ])("runs the recommended command unchanged in the panel-scoped terminal: %s", (update) => {
     const runCommand = vi.fn<WorkspacePanelTerminal["runCommand"]>((input) => Promise.resolve(commandRunHandle(input)));
     const container = renderPanel(status({
       release: { packageName: "@jmfederico/pi-web", updateAvailable: true, latestVersion: "1.202605.9" },
@@ -191,7 +198,7 @@ describe("Updates plugin panel layout", () => {
     runButton.click();
 
     expect(runCommand).toHaveBeenCalledWith({
-      title: "Update & restart everything",
+      title: "Update PI WEB",
       command: update,
       open: true,
       metadata: { "pi.plugin": "updates" },

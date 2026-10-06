@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
 import type { SessionNotificationInboxEvent } from "../../../shared/apiTypes";
 import { SessionController, type SessionNotificationSessionBridge } from "./sessionController";
-import { defaultApi, EmitSocket, emptyPage, oldSession, runPendingAnimationFrames, status, workspace, type AppState } from "./sessionController.testSupport";
+import { defaultApi, deferred, EmitSocket, emptyPage, oldSession, runPendingAnimationFrames, status, workspace, type AppState } from "./sessionController.testSupport";
 
 function inboxEvent(): SessionNotificationInboxEvent {
   return {
@@ -132,6 +132,65 @@ describe("SessionController notification event boundary", () => {
     finishNotifications?.();
     await selecting;
     expect(selected).toBe(true);
+  });
+
+  it.each(["resolve", "reject"] as const)("keeps refreshes and live output flowing while notifications are pending (%s)", async (outcome) => {
+    const socket = new EmitSocket();
+    const notifications = deferred<undefined>();
+    const snapshot = {
+      page: { messages: [{ role: "user", content: "hello" }], start: 0, total: 1 },
+      status: { ...status(oldSession.id), isStreaming: true },
+      seq: 1,
+      partial: { role: "assistant", content: [{ type: "text", text: "first" }] },
+    };
+    const nextSnapshot = deferred<typeof snapshot>();
+    const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>()
+      .mockResolvedValueOnce(snapshot)
+      .mockReturnValueOnce(nextSnapshot.promise);
+    const bridge: SessionNotificationSessionBridge = {
+      prepareSelectedSession: vi.fn(),
+      clearSelectedSession: vi.fn(),
+      refreshSelectedSession: vi.fn(() => notifications.promise),
+      applyInboxEvent: vi.fn(),
+    };
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { socket, notifications: bridge, api: { ...defaultApi, transcriptSnapshot, thinkingLevels: () => Promise.resolve({ levels: [] }) } },
+    );
+    const selecting = controller.selectSession(oldSession, { updateUrl: false });
+    let refreshing: Promise<void> | undefined;
+    try {
+      await vi.waitFor(() => { expect(state.messages[1]?.parts).toEqual([{ type: "text", text: "first" }]); });
+      refreshing = controller.refreshSelectedSession();
+      socket.emit({ type: "assistant.delta", text: " new", seq: 2 });
+      // A pending notification join must not occupy the transcript coordinator.
+      await vi.waitFor(() => { expect(transcriptSnapshot).toHaveBeenCalledTimes(2); });
+      nextSnapshot.resolve(snapshot);
+      await vi.waitFor(() => {
+        runPendingAnimationFrames();
+        expect(state.messages[1]?.parts).toEqual([{ type: "text", text: "first new" }]);
+      });
+      socket.emit({ type: "assistant.delta", text: " output", seq: 3 });
+      runPendingAnimationFrames();
+      expect(state.messages[1]?.parts).toEqual([{ type: "text", text: "first new output" }]);
+      expect(Object.values(state.browserErrors)).toEqual([]);
+
+      if (outcome === "reject") notifications.reject(new Error("notifications unavailable"));
+      else notifications.resolve(undefined);
+      await Promise.all([selecting, refreshing]);
+      if (outcome === "reject") {
+        expect(Object.values(state.browserErrors).map((error) => error.message)).toContain("Error: notifications unavailable");
+      }
+    } finally {
+      notifications.resolve(undefined);
+      nextSnapshot.resolve(snapshot);
+      await Promise.all([selecting, refreshing]);
+      controller.dispose();
+    }
   });
 
   it("handles inbox events before transcript watermarking while ordinary extension output still flows", async () => {

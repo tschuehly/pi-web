@@ -1,4 +1,4 @@
-import { Type } from "typebox";
+import { Type } from "pi-web-typebox";
 import { KNOWN_THINKING_LEVELS } from "../../shared/thinkingLevels.js";
 import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TranscriptContentKind, TranscriptEntry, TranscriptRole, TranscriptView } from "./subsessionTranscript.js";
@@ -287,6 +287,8 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
 
   const yieldTool = defineTool<typeof YieldToSubsessionsParams, { subsessions: SubsessionSummary[] }>({
     name: "yield_to_subsessions",
+    // Nested tools cannot terminate the outer agent run.
+    exposure: "model-only",
     label: "Yield to subsessions",
     description: "At a join point, end this run while tracked children work; completion notices wake you. If none work, continue. Call alone and last; do not poll.",
     promptSnippet: "yield_to_subsessions: end the run at a join point; call alone and last",

@@ -22,6 +22,34 @@ describe("PiSessionService", () => {
       return { fake, service, events };
     }
 
+    it("projects history and completed events, but leaves streaming deltas and reconnect partials original", async () => {
+      const message = { role: "assistant", content: [{ type: "text", text: "<think></think>answer" }] };
+      const branch = [{ type: "message", message }];
+      const { fake, service, events } = messagesService(branch, { state: { streamingMessage: message } });
+      fake.session.extensionRunner.getMarkdownTransformers = () => [(text) => text.replace("<think></think>", "")];
+      const projected = { role: "assistant", content: [{ type: "text", text: "<think></think>answer", displayText: "answer" }] };
+      try {
+        expect((await service.messages(sessionRef("session-1"))).messages).toEqual([projected]);
+        fake.emit({ type: "message_end", message });
+        fake.emit({ type: "entry_appended", entry: { type: "message", message } });
+        fake.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<think>" } });
+        // message_end publication waits one microtask for its persisted entry id.
+        await Promise.resolve();
+        expect(events.sessionEvents.map(({ event }) => event)).toEqual(expect.arrayContaining([
+          { type: "message.end", message: projected },
+          { type: "message.append", message: projected },
+          { type: "assistant.delta", text: "<think>" },
+        ]));
+        expect((await service.streamSnapshot(sessionRef("session-1"))).partial).toEqual(message);
+        expect(message.content[0]).toEqual({ type: "text", text: "<think></think>answer" });
+        // Resolve the current runner chain each time, including after extension reload.
+        fake.session.extensionRunner.getMarkdownTransformers = () => [];
+        expect((await service.messages(sessionRef("session-1"))).messages).toEqual([message]);
+      } finally {
+        await service.dispose();
+      }
+    });
+
     it("annotates paged assistant messages with the thinking level in effect from branch entries", async () => {
       const branch = [
         { type: "message", message: { role: "user", content: [{ type: "text", text: "hi" }] } },

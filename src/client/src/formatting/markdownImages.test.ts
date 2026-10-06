@@ -24,15 +24,34 @@ it.each([
   expect(localMarkdownImage(input, "/srv/work")).toEqual({ path, outside });
 });
 
-it.each(["https://example.com/a.png", "//example.com/a.png", "data:image/png,x", "bad%ZZ.png", "a%00.png"])("does not interpret %s as a local file", (input) => {
-  expect(localMarkdownImage(input, "/srv/work")).toBeUndefined();
+it.each([
+  ["C:/work", "screenshots/a.png", "screenshots/a.png", false],
+  ["C:\\work", "screenshots/a.png", "screenshots/a.png", false],
+  ["C:\\work\\", "./screenshots/../a.png", "a.png", false],
+  ["C:/work", "../a%20b.png", "C:/a b.png", true],
+  ["C:\\work", "/outside/a.png", "C:/outside/a.png", true],
+  ["C:/", "../../a.png", "a.png", false],
+  ["C:/work", "C:/work/a.png", "a.png", false],
+  ["C:/work", "c:/work/a.png", "a.png", false],
+  ["C:/work", "D:/outside/a.png", "D:/outside/a.png", true],
+  ["\\\\server\\share\\work", "screenshots/a.png", "screenshots/a.png", false],
+  ["//server/share/work", "../a.png", "//server/share/a.png", true],
+  ["\\\\server\\share\\work", "../../../a.png", "//server/share/a.png", true],
+])("classifies %s image %s using the workspace's Windows path syntax", (root, input, path, outside) => {
+  expect(localMarkdownImage(input, root)).toEqual({ path, outside });
 });
 
-it("renders local images through machine-aware nested preview URLs without approving outside images", () => {
+it.each(["https://example.com/a.png", "//example.com/a.png", "data:image/png,x", "bad%ZZ.png", "a%00.png"])("does not interpret %s as a local file", (input) => {
+  for (const root of ["/srv/work", "C:/work", "\\\\server\\share\\work"]) {
+    expect(localMarkdownImage(input, root)).toBeUndefined();
+  }
+});
+
+it.each(["/srv/work", "C:/work", "C:\\work", "\\\\server\\share\\work"])("renders machine-aware nested preview URLs without approving outside images (%s)", (root) => {
   vi.stubEnv("BASE_URL", "/nested/pi/");
   const host = document.createElement("div");
   host.innerHTML = toSafeMarkdownHtml("![inside](a.png) ![outside](/tmp/a.png) ![external](https://example.com/a.png)", {
-    machineId: "remote /1", projectId: "p", workspaceId: "w", root: "/srv/work",
+    machineId: "remote /1", projectId: "p", workspaceId: "w", root,
   });
   const images = host.querySelectorAll("pi-web-markdown-image");
   const first = required(images[0]);

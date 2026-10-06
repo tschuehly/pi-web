@@ -7,6 +7,31 @@ import type { ChatLine } from "./components/shared";
 
 const imageReference = { type: "image" as const, mediaId: "0123456789abcdef".repeat(4), mimeType: "image/png", byteSize: 3 };
 
+it.each(["visible", "", undefined, 42])("preserves original text and optional string display text (%s)", (displayText) => {
+  const display = typeof displayText === "string" ? { displayText } : {};
+  expect(normalizeMessages([{ role: "assistant", content: [
+    { type: "text", text: "original", displayText },
+    { type: "thinking", thinking: "reasoning", displayText },
+    { type: "thinking", text: "fallback reasoning", displayText },
+  ] }])).toEqual([{ role: "assistant", parts: [
+    { type: "text", text: "original", ...display },
+    { type: "thinking", text: "reasoning", ...display },
+    { type: "thinking", text: "fallback reasoning", ...display },
+  ] }]);
+  expect(normalizeMessages([{ role: "user", content: "original", displayText }])).toEqual([
+    { role: "user", parts: [{ type: "text", text: "original", ...display }] },
+  ]);
+});
+
+it("drops stale display overrides when original text resumes streaming", () => {
+  expect(appendText([{ role: "assistant", parts: [{ type: "text", text: "original", displayText: "display" }] }], "assistant", " delta")).toEqual([
+    { role: "assistant", parts: [{ type: "text", text: "original delta" }] },
+  ]);
+  expect(appendThinking([{ role: "assistant", parts: [{ type: "thinking", text: "original", displayText: "display" }] }], " delta")).toEqual([
+    { role: "assistant", parts: [{ type: "thinking", text: "original delta" }] },
+  ]);
+});
+
 const askUserOutcome: AskUserOutcome = {
   askId: "ask-1",
   reason: "submitted",

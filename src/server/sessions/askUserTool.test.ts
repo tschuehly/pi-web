@@ -1,13 +1,17 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
+import { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { createAskUserToolDefinition, type AskUserInvocation } from "./askUserTool.js";
 import { PendingAskStore, PendingAskValidationError } from "./pendingAskStore.js";
+import { stubExtensionToolContext } from "./piSessionService.testSupport.js";
 
 function ctxFor(sessionId: string): ExtensionToolContext {
-  const sessionManager = { getSessionId: () => sessionId, getSessionFile: () => undefined };
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- test stub with the minimal surface the tool uses.
-  return { sessionManager } as unknown as ExtensionToolContext;
+  return stubExtensionToolContext({
+    sessionManager: {
+      getSessionId: () => sessionId,
+      getSessionFile: () => undefined,
+    },
+  });
 }
 
 function firstText(content: readonly (TextContent | ImageContent)[]): string {
@@ -38,6 +42,7 @@ describe("createAskUserToolDefinition", () => {
     const { tool } = toolOverStore();
 
     expect(tool.name).toBe("ask_user");
+    expect(tool.exposure).toBe("model-only");
     expect(tool.description).toBe("Post a set of questions to the user as a browser form and end this run. Answers arrive later as a follow-up message; the user may leave any question unanswered.");
     expect(tool.promptSnippet).toBe("ask_user: post a question set to the user; ends the run, answers return as a follow-up");
     expect(tool.promptGuidelines).toEqual([

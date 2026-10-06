@@ -1,8 +1,9 @@
 import type { Api, AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { runAgentLoop, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
-import type { ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { stubExtensionToolContext } from "./piSessionService.testSupport.js";
+import { Type } from "pi-web-typebox";
 import { describe, expect, it, vi } from "vitest";
 import { createSubsessionToolDefinitions, type SubsessionSummary, type SubsessionToolDeps } from "./spawnSubsessionTool.js";
 
@@ -20,13 +21,13 @@ const model: Model<Api> = {
 };
 
 function extensionContext(): ExtensionToolContext {
-  const sessionManager = {
-    getSessionId: () => "parent-1",
-    getSessionFile: () => "/sessions/parent-1.jsonl",
-  };
   // The wrapped yield definition only reads the two session-manager methods above.
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- minimal integration boundary for a Pi tool definition.
-  return { sessionManager } as unknown as ExtensionToolContext;
+  return stubExtensionToolContext({
+    sessionManager: {
+      getSessionId: () => "parent-1",
+      getSessionFile: () => "/sessions/parent-1.jsonl",
+    },
+  });
 }
 
 function wrapDefinition(definition: ToolDefinition, ctx: ExtensionToolContext): AgentTool {

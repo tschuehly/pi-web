@@ -64,6 +64,8 @@ export interface PluginActivationContext {
   readonly signal: AbortSignal;
   /** Aborted before failed-start rollback or browser-host shutdown disposal. */
   readonly lifetimeSignal: AbortSignal;
+  /** Current browser selection, independent of panel mounting. Omitted by older hosts. */
+  readonly selection?: PluginSelectionService;
 }
 
 /** Resolver containing only the exact capability requirements declared by a plugin. */
@@ -157,6 +159,7 @@ export interface ContentRenderingCapability {
 export interface PluginContributions {
   contentRenderers?: ContentRendererContribution[];
   actions?: PluginAction[];
+  applicationPanels?: ApplicationPanelContribution[];
   workspacePanels?: WorkspacePanelContribution[];
   workspaceLabels?: WorkspaceLabelContribution[];
   themes?: ThemeContribution[];
@@ -167,6 +170,27 @@ export interface PluginMachine {
   id: string;
   name: string;
   kind: MachineKind;
+}
+
+/** Basic registered project information on a host-bound machine. */
+export interface PluginProject {
+  readonly id: string;
+  readonly name: string;
+  readonly path: string;
+}
+
+/** A directory suggested by the target machine's project directory search. */
+export interface PluginProjectDirectorySuggestion {
+  readonly path: string;
+}
+
+/** Read-only project discovery with a fixed machine target, independent of later selection. */
+export interface PluginProjects {
+  readonly machineId: string;
+  /** List registered projects, not every directory on the machine. */
+  listProjects(): Promise<readonly PluginProject[]>;
+  /** Suggest directories matching a path query using the host's project picker rules. */
+  suggestDirectories(query: string): Promise<readonly PluginProjectDirectorySuggestion[]>;
 }
 
 /** Selected conversation snapshot, scoped to PluginRuntimeState.selectedMachine. */
@@ -180,14 +204,46 @@ export interface PluginSelectedSession {
   pending: boolean;
 }
 
+/** Basic selection only; no transcript, route query, or status data. */
+export interface PluginSelectionSnapshot {
+  /** Undefined before machines load. */
+  readonly selectedMachine?: Readonly<PluginMachine>;
+  readonly selectedProject?: PluginProject;
+  readonly selectedWorkspace?: Readonly<Workspace>;
+  readonly selectedSession?: Readonly<PluginSelectedSession>;
+}
+
+export interface PluginSelectionService {
+  /** Read a fresh, detached snapshot synchronously. */
+  getSnapshot(): PluginSelectionSnapshot;
+  /**
+   * Notify after host UI commits that change basic selection; does not call immediately.
+   * Multiple changes within one commit may be coalesced.
+   * Works while panels are closed. Ends at plugin lifetime abort, or earlier via
+   * the returned idempotent unsubscribe. Subscriber failures are logged in isolation.
+   */
+  subscribe(listener: (snapshot: PluginSelectionSnapshot) => void | Promise<void>): () => void;
+}
+
 export interface PluginRuntimeState {
   /** Identity of the currently selected machine. Undefined only on older hosts or before machines load. */
   selectedMachine?: PluginMachine;
+  selectedProject?: PluginProject;
   selectedWorkspace?: Workspace;
   selectedSession?: PluginSelectedSession;
   workspaceTool?: string;
   mainView?: "navigation" | "chat" | "workspace";
   piWebStatus?: PiWebStatusResponse;
+}
+
+export interface PluginPromptChip {
+  /** Plugin-local identity; setting the same id replaces its data and callback. */
+  readonly id: string;
+  readonly label: string;
+  /** Non-empty text appended verbatim to the message, separated by blank lines. */
+  readonly text: string;
+  /** User removal or server-accepted submission; programmatic withdrawal is silent. */
+  readonly onRemove?: (reason: "user" | "submitted") => void | Promise<void>;
 }
 
 export interface PluginPromptEditor {
@@ -199,6 +255,16 @@ export interface PluginPromptEditor {
   getText(): string;
   /** Get the current selection range, or null if no selection or editor not mounted. */
   getSelection(): { start: number; end: number; text: string } | null;
+  /**
+   * Stage or replace this plugin's chip in the machine/conversation captured by
+   * this context. Requires a ready, non-archived selected conversation when the
+   * context is created. Throws when that target or plugin is unavailable.
+   * Browser memory only; survives panel closure/navigation, not page reload.
+   * Omitted by older hosts. Call from event handlers, not render callbacks.
+   */
+  setChip?(chip: PluginPromptChip): void;
+  /** Withdraw this plugin's chip from the captured conversation without notification. */
+  removeChip?(id: string): void;
 }
 
 /** A complete navigation destination, not a patch of the current route. */
@@ -215,6 +281,8 @@ export interface PluginRuntimeContext {
   /** Navigate using host restoration defaults. Route failures appear in the host UI. */
   navigate: (destination: PluginNavigationDestination) => Promise<void>;
   state: PluginRuntimeState;
+  /** Read-only discovery on this context's machine. Omitted by older hosts. */
+  projects?: PluginProjects;
   prompt: PluginPromptEditor;
   openActionPalette: () => void;
   focusPrompt: () => void;
@@ -385,6 +453,8 @@ export interface WorkspaceContext {
   workspace: Workspace;
   state?: PluginRuntimeState;
   files: WorkspaceFilesContextValue;
+  /** Read-only discovery on this context's machine. Omitted by older hosts. */
+  projects?: PluginProjects;
   /** Exact package-paired request/channel capabilities, independent of workspace ownership. */
   peer?: PluginPeer;
   host: WorkspaceHost;
@@ -418,6 +488,33 @@ export interface WorkspacePanelContext extends WorkspaceContext {
   terminal: WorkspacePanelTerminal;
   /** Contribution-scoped address-bar state for deep links and browser history. */
   navigation?: WorkspacePanelNavigationV1;
+}
+
+/** Fresh selection context; available even when no project, workspace, or session is selected. */
+export interface ApplicationPanelContext {
+  machine: PluginMachine;
+  state: PluginRuntimeState;
+  /** Read-only discovery on this context's machine. Omitted by older hosts. */
+  projects?: PluginProjects;
+  /** Present only when a workspace is selected on this machine. */
+  workspace?: Workspace;
+  /** Workspace-bound terminal; present only with a selected workspace and an available Terminal provider. */
+  terminal?: WorkspacePanelTerminal;
+  navigate: (destination: PluginNavigationDestination) => Promise<void>;
+  prompt: PluginPromptEditor;
+  host: WorkspaceHost;
+}
+
+/** A third-column tool tab that does not require a workspace. */
+export interface ApplicationPanelContribution {
+  id: LocalContributionId;
+  title: string;
+  icon?: TemplateResult;
+  order?: number;
+  routeAliases?: string[];
+  visible?: (context: ApplicationPanelContext) => boolean;
+  badge?: (context: ApplicationPanelContext) => string | number | TemplateResult | undefined;
+  render: (context: ApplicationPanelContext) => TemplateResult;
 }
 
 export type WorkspacePanelIcon = TemplateResult;

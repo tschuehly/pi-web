@@ -40,7 +40,8 @@ describe("PiSessionService", () => {
         restore: (sessionId: string) => { archived.delete(sessionId); return Promise.resolve(); },
         isArchived: (sessionId: string) => Promise.resolve(archived.has(sessionId)),
       };
-      const service = new PiSessionService(new CapturingSessionEventHub(), {
+      const events = new CapturingSessionEventHub();
+      const service = new PiSessionService(events, {
         agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
         createAgentRuntime,
@@ -49,7 +50,7 @@ describe("PiSessionService", () => {
         spawnTargets: { resolveSpawnTarget: () => Promise.resolve(decision) },
         heartbeatIntervalMs,
       });
-      return { parent, child, children, service };
+      return { parent, child, children, service, events };
     }
 
     it("records the parent, delivers the prompt, and lists the tracked child", async () => {
@@ -979,6 +980,113 @@ describe("PiSessionService", () => {
         expect(parent.calls.sendCustomMessage).toHaveLength(0);
       } finally {
         child.session.isCompacting = false;
+        await service.dispose();
+      }
+    });
+
+    it.each([
+      ["go", "No model selected"],
+      ["/skill:review", "No API key for anthropic"],
+    ])("notifies the parent when %s fails before the child's agent starts", async (text, message) => {
+      vi.useFakeTimers();
+      const { parent, child, service, events } = subsessionService({ allowed: true, cwd: "/workspace" }, 10);
+      let rejectPrompt!: (error: Error) => void;
+      const promptFinished = new Promise<void>((_resolve, reject) => { rejectPrompt = reject; });
+      child.session.prompt = vi.fn(() => promptFinished);
+      try {
+        await service.start("/workspace");
+        await expect(service.spawnSubsession({ spawningCwd: "/workspace", parentSessionId: "parent-1", parentSessionFile: "/tmp/parent-1.jsonl", prompt: text }))
+          .resolves.toEqual({ sessionId: "child-1", cwd: "/workspace" });
+        expect(parent.calls.sendCustomMessage).toHaveLength(0);
+
+        // The child was accepted, but model/auth validation rejects without
+        // any agent_start/agent_end event to wake the waiting parent.
+        rejectPrompt(new Error(message));
+        await vi.advanceTimersByTimeAsync(0);
+        await expect(service.listSubsessions("parent-1")).resolves.toMatchObject([{ status: "error" }]);
+        expect(events.sessionEvents).toContainEqual({ sessionId: "child-1", event: { type: "session.error", message } });
+        expect(parent.calls.sendCustomMessage).toHaveLength(1);
+        expect(parent.calls.sendCustomMessage[0]?.message).toMatchObject({
+          customType: "subsession.completion", display: true, details: { sessionId: "child-1" },
+        });
+        expect(parent.calls.sendCustomMessage[0]?.message.content).toContain("Subsession child-1 stopped working (error).");
+        expect(parent.calls.sendCustomMessage[0]?.message.content).toContain(message);
+        expect(parent.calls.sendCustomMessage[0]?.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+        await vi.advanceTimersByTimeAsync(50);
+        expect(parent.calls.sendCustomMessage).toHaveLength(1);
+
+        // An early failure must not interfere with the next real agent run.
+        child.session.isStreaming = true;
+        child.emit({ type: "agent_start" });
+        child.session.isStreaming = false;
+        child.emit({ type: "agent_end" });
+        await vi.advanceTimersByTimeAsync(50);
+        expect(parent.calls.sendCustomMessage).toHaveLength(2);
+      } finally {
+        rejectPrompt(new Error(message));
+        child.session.isStreaming = false;
+        await service.dispose();
+      }
+    });
+
+    it("does not duplicate a completion notice when a started agent's prompt rejects", async () => {
+      vi.useFakeTimers();
+      const { parent, child, service } = subsessionService({ allowed: true, cwd: "/workspace" }, 10);
+      let rejectPrompt!: (error: Error) => void;
+      const promptFinished = new Promise<void>((_resolve, reject) => { rejectPrompt = reject; });
+      child.session.prompt = () => promptFinished;
+      try {
+        await service.start("/workspace");
+        await service.spawnSubsession({ spawningCwd: "/workspace", parentSessionId: "parent-1", parentSessionFile: "/tmp/parent-1.jsonl", prompt: "go" });
+        child.session.isStreaming = true;
+        child.emit({ type: "agent_start" });
+        child.session.isStreaming = false;
+        child.emit({ type: "agent_end" });
+        rejectPrompt(new Error("run failed"));
+        await vi.advanceTimersByTimeAsync(50);
+        expect(parent.calls.sendCustomMessage).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(50);
+        expect(parent.calls.sendCustomMessage).toHaveLength(1);
+      } finally {
+        rejectPrompt(new Error("run failed"));
+        child.session.isStreaming = false;
+        await service.dispose();
+      }
+    });
+
+    it("does not arm a completion notice when an idle child's extension command rejects", async () => {
+      vi.useFakeTimers();
+      const { parent, child, service, events } = subsessionService({ allowed: true, cwd: "/workspace" }, 10);
+      try {
+        await service.start("/workspace");
+        await service.spawnSubsession({ spawningCwd: "/workspace", parentSessionId: "parent-1", parentSessionFile: "/tmp/parent-1.jsonl", prompt: "go" });
+        await vi.advanceTimersByTimeAsync(0);
+        child.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "pi-vcc" }];
+        child.session.prompt = () => Promise.reject(new Error("command failed"));
+        await service.prompt(sessionRef("child-1", "/workspace"), "/pi-vcc status");
+        await vi.advanceTimersByTimeAsync(50);
+        expect(events.sessionEvents).toContainEqual({ sessionId: "child-1", event: { type: "session.error", message: "command failed" } });
+        expect(parent.calls.sendCustomMessage).toHaveLength(0);
+      } finally {
+        await service.dispose();
+      }
+    });
+
+    it("does not notify the parent when a pending initial prompt rejects after the child is stopped", async () => {
+      vi.useFakeTimers();
+      const { parent, child, service } = subsessionService({ allowed: true, cwd: "/workspace" }, 10);
+      let rejectPrompt!: (error: Error) => void;
+      const promptFinished = new Promise<void>((_resolve, reject) => { rejectPrompt = reject; });
+      child.session.prompt = () => promptFinished;
+      try {
+        await service.start("/workspace");
+        await service.spawnSubsession({ spawningCwd: "/workspace", parentSessionId: "parent-1", parentSessionFile: "/tmp/parent-1.jsonl", prompt: "go" });
+        await service.stop(sessionRef("child-1", "/workspace"));
+        rejectPrompt(new Error("prompt cancelled"));
+        await vi.advanceTimersByTimeAsync(50);
+        expect(parent.calls.sendCustomMessage).toHaveLength(0);
+      } finally {
+        rejectPrompt(new Error("prompt cancelled"));
         await service.dispose();
       }
     });

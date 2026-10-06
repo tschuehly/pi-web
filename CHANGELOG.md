@@ -1,5 +1,43 @@
 # @jmfederico/pi-web
 
+## 1.202610.1
+
+### Patch Changes
+
+- 4c3574f: Enable Pi's built-in MCP, codemode, and tool-search extensions in PI WEB sessions, respecting built-in disable settings and replacement extensions.
+- a0a7c3b: Remove the extra bottom spacing below the compacting-history notice when it is the last card in the chat.
+- 134ce2e: Require Pi 1.x for all Pi SDK dependencies and bundled companions; Pi 0.x is no longer supported, and Pi 2.x is outside the supported range. Update Pi and PI WEB together, then restart the web/API service before the session daemon. Restarting the daemon interrupts active sessions.
+
+  Keep run-ending question and subsession-yield tools out of codemode scripts, preserve Pi's recorded thinking level, and keep nested tool calls attached to their parent transcript result across reconnects. Explicitly reject virtual-model routers because their session-bound context cannot safely use PI WEB's shared model runtime; select a physical model instead.
+
+- 77951f8: Apply Pi extension Markdown transformers to completed and historical transcript text without changing original messages. Live partial responses remain untransformed until completion.
+- d33a2fc: Add `pi-web update` as the shared update entry point for the CLI and Updates panel, with installation-aware handling, clean-checkout fast-forward updates, and explicit confirmation before disruptive updates. Keep nested Linux and macOS restarts detached from the initiating terminal. Add `pi-web version --check` to report the latest available npm release.
+
+## 1.202610.0
+
+### Patch Changes
+
+- d4bff09: Show chat activity in a compact, bottom-centered overlay attached to the input divider, without shifting the transcript when it appears or disappears. Hide the indicator and remove its reserved bottom padding while idle, giving conversations more vertical space, especially on phones.
+- cf23269: Wake waiting parent sessions when a tracked child's prompt fails before its agent starts, and include the failure reason in the completion notice without notifying for standalone commands or compaction.
+- fa56a98: Clean up orphan unread completions in the background after project/workspace removal or new completions, preventing permanently stuck indicators. Cleanup is coalesced with a one-minute delay and skips empty catalogs; ordinary reads do not trigger workspace scans. When workspace discovery is complete, re-adding a project first clears historical orphan unread state. Session and project files are preserved. Project add/remove operations now require the session daemon.
+- 5cd88b5: Refresh the workspace session list when the app returns to the foreground or reconnects, so sessions created while disconnected appear without a page reload.
+- 3519535: Serve content-hashed client assets under `assets/` with an immutable one-year cache policy so reloads skip revalidating them. The app shell and other static files keep revalidating, so new releases are still picked up on the next load.
+- 92d3eee: Display workspace images inline in chat, and let users load images outside the workspace by clicking a path-labelled placeholder that is replaced by the image. Remember explicitly shown images when revisiting the same message in the tab for 15 minutes.
+- f308a51: Load image-heavy chats faster by fetching transcript images separately as they approach the viewport, with consistent placeholders and retry controls. Support local and remote sessions without changing Pi's stored transcripts.
+- cf23269: Show selected-session transcripts without waiting for notifications, and keep later chat refreshes and live assistant output responsive while notifications are slow to load. Notification updates and error reporting are preserved.
+- b10a462: Load browser plugin modules in parallel instead of one at a time to reduce startup delays on high-latency links. A required Terminal plugin still loads alone first, and plugins still register in manifest order.
+- 1e8f5c8: Add `context.navigate(destination)` for browser plugin actions and workspace panels, using normal host navigation and unavailable-destination UI. Captain's Log translations now offer an Open source session action.
+- dd77161: Keep new user messages and assistant responses correctly separated during background refreshes and reconnects, without losing or duplicating streamed text.
+- cf23269: Allow adding healthy projects when an unrelated workspace provider fails or returns incomplete results. Preserve unread completions until workspace discovery recovers, with logged cleanup retries; durable cleanup failures still block admission.
+- a923302: Dismiss unanswered questions when a queued chat message reaches the conversation, including questions posted after the message was queued.
+- 0e4d29c: Keep project and machine dialog actions reachable on short phone screens by fitting dialogs within their padded backdrop and allowing project content to scroll. Fit model, authentication, and command pickers to the available backdrop height as well.
+- cf23269: Restrict federated session media to supported raster images and prevent remote error pages or weak security headers from serving executable content.
+- b458d6a: Restore project, workspace, and session URLs without waiting for plugin modules to load. Routes that name a workspace tool now also restore their selection immediately and wait for plugins only to resolve the tool, so opening a session link on a slow connection no longer blocks on every plugin download.
+- 25377c9: Release the previous transcript's DOM when switching sessions or machines, preventing retained marker nodes from accumulating during repeated navigation while preserving incremental updates within the current session.
+- 055291b: Allow instructed thinking-level overrides when spawning independent sessions or tracked subsessions. Omitted levels still inherit from the parent, and valid levels are adjusted to the selected model's capabilities.
+- 044defb: Keep the current session selected when an older machine navigation finishes loading after you navigate away and back.
+- cf23269: Fix local Markdown images in Windows workspaces, including remote machines and network shares, so workspace images load normally and outside images retain valid paths and approval controls.
+
 ## 1.202609.1
 
 ### Patch Changes

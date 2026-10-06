@@ -82,6 +82,8 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
     };
 
     for (const part of message.parts) {
+      // A Markdown transformer hid this reasoning; keep it out of the thinking group.
+      if (part.type === "thinking" && part.displayText === "") continue;
       const kind = chatPartKind(message, part);
       if (kind !== runKind) flush();
       runKind = kind;

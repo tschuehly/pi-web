@@ -1,8 +1,8 @@
 diff --git a/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js b/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js
-index 07af8cf..552cd01 100644
+index 1da213f..62b7dce 100644
 --- a/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js
 +++ b/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js
-@@ -1312,6 +1312,28 @@ export class AgentSession {
+@@ -1341,6 +1341,28 @@ export class AgentSession {
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -31,7 +31,7 @@ index 07af8cf..552cd01 100644
      async _runAgentPrompt(messages) {
          this._agentRunAbortRequested = false;
          // Compaction before the prompt may have scheduled a retry; the new prompt replaces it.
-@@ -1734,10 +1756,10 @@ export class AgentSession {
+@@ -1766,10 +1788,10 @@ export class AgentSession {
          }
          else if (options?.triggerTurn) {
              if (this._isEmittingAgentSettled) {
@@ -44,7 +44,7 @@ index 07af8cf..552cd01 100644
          }
          else if (this.isStreaming) {
              // Appending now would put the message between an assistant tool call and its
-@@ -1750,6 +1772,14 @@ export class AgentSession {
+@@ -1782,6 +1804,14 @@ export class AgentSession {
              this._appendCustomMessage(appMessage);
          }
      }

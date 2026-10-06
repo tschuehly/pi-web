@@ -64,8 +64,9 @@ export class WorkbenchSettingsPanel extends LitElement {
   }
 
   private renderPopover() {
-    const pair = findThemePairForTheme(this.themePairs, this.themePreference.themeId);
-    const currentScheme = this.themes.find((theme) => theme.id === this.themePreference.themeId)?.colorScheme;
+    const currentTheme = this.themes.find((theme) => theme.id === this.themePreference.themeId);
+    const pair = currentTheme === undefined ? undefined : findThemePairForTheme(this.themePairs, currentTheme.id);
+    const currentScheme = currentTheme?.colorScheme;
     return html`
       <div class="popover" role="dialog" aria-label="Workbench settings" style="top: ${String(this.anchorTop)}px; right: ${String(this.anchorRight)}px; max-height: calc(var(--pi-workbench-viewport-height, 100vh) - ${String(this.anchorTop)}px - 12px);" @keydown=${(event: KeyboardEvent) => { this.onPopoverKeyDown(event); }}>
         <fieldset>

@@ -1,17 +1,20 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
+import { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { Check } from "typebox/value";
+import { Check } from "pi-web-typebox/value";
 import { KNOWN_THINKING_LEVELS } from "../../shared/thinkingLevels.js";
+import { stubExtensionToolContext } from "./piSessionService.testSupport.js";
 import { createSubsessionToolDefinitions, type SubsessionToolDeps } from "./spawnSubsessionTool.js";
 
 const dispatchModel = { provider: "anthropic", id: "claude-sonnet" };
 
 function ctxFor(sessionId: string, sessionFile: string | undefined, model?: unknown, thinkingLevel?: string): ExtensionToolContext {
-  const sessionManager = { getSessionId: () => sessionId, getSessionFile: () => sessionFile };
   // The subsession tools only read sessionManager.getSessionId/getSessionFile, model, and thinkingLevel.
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- test stub with the minimal surface the tools use.
-  return { sessionManager, ...(model === undefined ? {} : { model }), ...(thinkingLevel === undefined ? {} : { thinkingLevel }) } as unknown as ExtensionToolContext;
+  return stubExtensionToolContext({
+    sessionManager: { getSessionId: () => sessionId, getSessionFile: () => sessionFile },
+    model,
+    thinkingLevel,
+  });
 }
 
 function tools(deps: Partial<SubsessionToolDeps>) {
@@ -46,6 +49,13 @@ function firstText(content: readonly (TextContent | ImageContent)[]): string {
 }
 
 describe("createSubsessionToolDefinitions", () => {
+  it("keeps run-ending yield model-only while other subsession tools remain callable", () => {
+    const definitions = tools({});
+    expect(definitions.yield.exposure).toBe("model-only");
+    for (const name of ["spawn", "list", "check", "read"] as const) {
+      expect(definitions[name].exposure ?? "direct").toBe("direct");
+    }
+  });
   it("spawn_subsession forwards parent identity and params from the live context", async () => {
     const spawn = vi.fn(() => Promise.resolve({ sessionId: "child-1", cwd: "/repos/a" }));
     const { spawn: spawnTool } = tools({ spawn });
