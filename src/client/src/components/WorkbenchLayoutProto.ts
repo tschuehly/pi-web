@@ -67,6 +67,8 @@ export class ProtoChatPane extends LitElement {
   @property({ attribute: false }) machine: Machine | undefined;
   @property({ attribute: false }) resolveWorkspace: ((cwd: string) => Promise<Resolved>) | undefined;
   @property({ type: Boolean }) files = false;
+  /** An unfocused grid tile: the composer drops its usage meter to keep the grid calm. */
+  @property({ type: Boolean }) quiet = false;
   @state() private app: AppState = initialAppState();
   @state() private loadError = "";
   @query("prompt-editor") private promptEditor?: PromptEditor;
@@ -194,7 +196,7 @@ export class ProtoChatPane extends LitElement {
             .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0}
             .status=${state.status}
             .workingModeTranscriptSelection=${latestWorkingModeSelection(state.messages)}
-            .showUsage=${true}
+            .showUsage=${!this.quiet}
             .warningCount=${state.status?.warnings?.length ?? 0}
             .sending=${state.sendingPrompts[session.id] === true}
             .onSend=${this.handleSend}
@@ -759,7 +761,7 @@ export class WorkbenchLayoutProto extends LitElement {
             <button class="icon" title="Close" aria-label=${`Close ${entry.title}`} @click=${() => { this.close([entry.id]); }}>×</button>
           </span>
         </header>
-        <proto-chat-pane .sessionId=${entry.sessionId} .machine=${this.machine} .resolveWorkspace=${this.resolveWorkspace} .files=${entry.files === true}></proto-chat-pane>
+        <proto-chat-pane .sessionId=${entry.sessionId} .machine=${this.machine} .resolveWorkspace=${this.resolveWorkspace} .files=${entry.files === true} .quiet=${win.layout === "grid" && win.maximized === undefined && entry.id !== win.focused}></proto-chat-pane>
       </section>`;
   }
 
