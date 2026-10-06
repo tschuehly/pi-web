@@ -22,6 +22,12 @@ import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
 
+// Browser plugin modules load by URL import; serve the bundled Mermaid source instead.
+vi.mock("../plugins/external", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../plugins/external")>();
+  return { ...actual, loadExternalPlugins: (url: string, options: Parameters<typeof actual.loadExternalPlugins>[1] = {}) => actual.loadExternalPlugins(url, { ...options, moduleLoader: () => import("../../../../pi-web-plugins/mermaid/pi-web-plugin") }) };
+});
+
 beforeEach(() => {
   vi.spyOn(api, "machines").mockResolvedValue([machine]);
   vi.spyOn(api, "projects").mockResolvedValue([]);
@@ -445,6 +451,32 @@ describe("Workbench Chat chooser", () => {
     expect(click(anchors[2]).defaultPrevented).toBe(true);
     await vi.waitFor(() => { expect(pane.shadowRoot?.querySelector("textarea")?.value).toBe("body of x.md"); });
     expect(read).toHaveBeenLastCalledWith("", "folder:/elsewhere", "x.md", machine.id);
+  });
+
+  it("offers the enabled Mermaid plugin for mermaid fences in Chat", async () => {
+    const manifest = { lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [
+      { id: "mermaid", module: "/pi-web-plugins/mermaid/browser/pi-web-plugin.js", source: "bundled", scope: "bundled", machineSpecific: false },
+      { id: "files", module: "/pi-web-plugins/files/browser/pi-web-plugin.js", source: "bundled", scope: "bundled", machineSpecific: false },
+    ] };
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url.endsWith("/pi-web-plugins/manifest.json")
+      ? new Response(JSON.stringify(manifest), { status: 200 })
+      : url.endsWith("/plugins") ? pluginLifecycleResponse() : new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const current = session("human", "Draw");
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current, messages: [{ role: "assistant", parts: [{ type: "text", text: "```mermaid\nflowchart LR\n  A --> B\n```" }] }] });
+    await app.updateComplete;
+    const chat = app.shadowRoot?.querySelector<ChatView>("chat-view");
+    if (chat === null || chat === undefined) throw new Error("Chat was not rendered");
+    await vi.waitFor(async () => {
+      app.requestUpdate();
+      await app.updateComplete;
+      await chat.updateComplete;
+      const text = chat.renderRoot.querySelector<FormattedText>("formatted-text");
+      await text?.updateComplete;
+      expect(text?.renderRoot.querySelector("pi-web-content-renderer")).not.toBeNull();
+    });
+    expect(chat.machineId).toBe(machine.id);
   });
 
   it("opens a Chat link outside its folder in the registered workspace that contains the file, then returns to the Chat's workspace", async () => {

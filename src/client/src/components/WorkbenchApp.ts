@@ -16,6 +16,7 @@ import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale,
 import { markdownWorkspaceContext, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { machineSessionKey } from "../machineKeys";
 import { nativeDirectoryPicker } from "../nativeHost";
+import { loadExternalPlugins } from "../plugins/external";
 import { PluginRegistry } from "../plugins/registry";
 import { themePackPlugin } from "../plugins/themes";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile } from "../presentationProfiles";
@@ -88,7 +89,8 @@ export class WorkbenchApp extends LitElement {
   private readonly pendingWorkstreamContexts = new Map<string, Promise<WorkstreamServiceContext | undefined>>();
   private orientationPendingSessionId: string | undefined;
   private workstreamWatchTimer: number | undefined;
-  private readonly themes = new PluginRegistry();
+  private readonly plugins = new PluginRegistry();
+  @state() private contentRendering: PluginRegistry["chatContentRendering"] | undefined;
   private themesInitialized = false;
   @state() private themePreference: ThemePreference = readStoredThemePreference() ?? { themeId: "themes:github-dark", auto: true };
   private readonly systemLightThemeMedia = typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia("(prefers-color-scheme: light)") : undefined;
@@ -96,8 +98,8 @@ export class WorkbenchApp extends LitElement {
 
   private applyPreferredTheme(): void {
     const theme = resolveThemePreference({
-      themes: this.themes.getThemes(),
-      themePairs: this.themes.getThemePairs(),
+      themes: this.plugins.getThemes(),
+      themePairs: this.plugins.getThemePairs(),
       preference: this.themePreference,
       prefersLight: this.systemLightThemeMedia?.matches ?? false,
     }).activeTheme;
@@ -203,11 +205,26 @@ export class WorkbenchApp extends LitElement {
   private async initializeThemes(): Promise<void> {
     if (!this.themesInitialized) {
       this.themesInitialized = true;
-      await this.themes.register({ id: "themes", plugin: themePackPlugin });
+      await this.plugins.register({ id: "themes", plugin: themePackPlugin });
+      void this.loadContentRenderers();
     }
     if (!this.isConnected) return;
     this.applyPreferredTheme();
     this.requestUpdate();
+  }
+
+  // ponytail: the Workbench shell hosts no plugin panels or actions, so it loads only the enabled
+  // gateway Mermaid renderer for Chat fences; widen the allowlist when another renderer plugin ships.
+  private async loadContentRenderers(): Promise<void> {
+    try {
+      const { registrations } = await loadExternalPlugins("pi-web-plugins/manifest.json", { shouldLoadPlugin: (entry) => entry.id === "mermaid" && !entry.machineSpecific });
+      if (registrations.length === 0) return;
+      await this.plugins.registerBatch(registrations);
+      // A new reference re-renders already displayed Chat messages.
+      this.contentRendering = this.plugins.chatContentRendering;
+    } catch (error) {
+      console.warn("Chat content renderers unavailable", error);
+    }
   }
 
   override disconnectedCallback(): void {
@@ -885,8 +902,8 @@ export class WorkbenchApp extends LitElement {
     return html`
       <workbench-settings-panel
         .themePreference=${this.themePreference}
-        .themes=${this.themes.getThemes()}
-        .themePairs=${this.themes.getThemePairs()}
+        .themes=${this.plugins.getThemes()}
+        .themePairs=${this.plugins.getThemePairs()}
         .onThemePreferenceChange=${(preference: ThemePreference) => { this.setThemePreference(preference); }}
       ></workbench-settings-panel>
     `;
@@ -1111,6 +1128,8 @@ export class WorkbenchApp extends LitElement {
         <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>
           <div class="chat-column">
         <chat-view
+          .contentRendering=${this.contentRendering}
+          .machineId=${selectedMachineId(state)}
           @workspace-file-open=${this.openWorkspaceFile}
           @outside-file-open=${this.openOutsideFile}
           .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)}
