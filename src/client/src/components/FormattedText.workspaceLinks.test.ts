@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
+import { writeClipboardText } from "../clipboard";
 import { FormattedText } from "./FormattedText";
+
+vi.mock("../clipboard", () => ({ writeClipboardText: vi.fn().mockResolvedValue(true) }));
 
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
 
@@ -209,6 +212,10 @@ it("adds a Show in Finder button to each local file link that reveals the file w
     local.view.requestUpdate();
     await local.view.updateComplete;
     expect(local.view.renderRoot.querySelectorAll(".file-reveal-button")).toHaveLength(1);
+    const copy = button.nextElementSibling;
+    if (!(copy instanceof HTMLButtonElement) || !copy.classList.contains("file-copy-button")) throw new Error("Missing Copy full path button");
+    copy.click();
+    expect(writeClipboardText).toHaveBeenLastCalledWith("/elsewhere/Plan.docx");
 
     const remote = await setup("docs/Plan.docx");
     expect(remote.view.renderRoot.querySelector(".file-reveal-button")).toBeNull();
@@ -217,4 +224,22 @@ it("adds a Show in Finder button to each local file link that reveals the file w
   }
   const outsideApp = await setup("docs/Plan.docx", "local");
   expect(outsideApp.view.renderRoot.querySelector(".file-reveal-button")).toBeNull();
+});
+
+it.each([["docs/plans/seamless-promotion.md", "/work/docs/plans/seamless-promotion.md"], ["/Users/me/notes.md", "/Users/me/notes.md"]])("shows and copies the full path of %s while keeping the download href", async (destination, absolute) => {
+  const { view, anchor } = await setup(destination);
+  expect(anchor.title).toBe(absolute);
+  expect(anchor.href).toContain("download=1");
+  const listener = vi.fn();
+  view.addEventListener("workspace-file-open", listener);
+  view.addEventListener("outside-file-open", listener);
+  const button = view.renderRoot.querySelector<HTMLButtonElement>(".file-copy-button");
+  if (button === null) throw new Error("Missing Copy full path button");
+  expect(button.getAttribute("aria-label")).toBe("Copy full path");
+  button.click();
+  expect(writeClipboardText).toHaveBeenLastCalledWith(absolute);
+  expect(listener).not.toHaveBeenCalled();
+  view.requestUpdate();
+  await view.updateComplete;
+  expect(view.renderRoot.querySelectorAll(".file-copy-button")).toHaveLength(1);
 });

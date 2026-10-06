@@ -12,6 +12,9 @@ const FILE_LINK_SELECTOR = "a[data-workspace-file], a[data-outside-file]";
 const REVEAL_IN_FINDER = /\.(docx?|docm|xlsx?|xlsm|xlsb|pptx?|pptm|ppsx|key|pages|numbers|odt|ods|odp|odg|rtf|epub|zip|dmg|pkg|mp3|m4a|wav|flac|aac|mp4|m4v|mov|webm|mkv)$/i;
 // Lucide folder-search.
 const REVEAL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1"/><path d="m21 21-1.9-1.9"/><circle cx="17" cy="17" r="3"/></svg>';
+// Lucide copy.
+const COPY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+type CopyKind = "code block" | "quote" | "full path";
 
 @customElement("formatted-text")
 export class FormattedText extends LitElement {
@@ -36,19 +39,34 @@ export class FormattedText extends LitElement {
     this.enhanceFileLinks();
   }
 
-  /** In the macOS app, each local file link gets a button that reveals the file in Finder. */
+  /**
+   * Each file link shows its full path as a tooltip and gets a Copy full path button; the href stays the
+   * download URL so middle-click and the no-host fallback keep working. In the macOS app, local links also
+   * get a button that reveals the file in Finder.
+   */
   private enhanceFileLinks(): void {
-    if (this.workspaceContext?.machineId !== "local" || window.piWebNative?.revealLocalFile === undefined) return;
+    const context = this.workspaceContext;
+    if (context === undefined) return;
+    const reveal = context.machineId === "local" && window.piWebNative?.revealLocalFile !== undefined;
     this.renderRoot.querySelectorAll(FILE_LINK_SELECTOR).forEach((anchor) => {
-      if (anchor.nextElementSibling?.classList.contains("file-reveal-button") === true) return;
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "file-reveal-button";
-      button.title = "Show in Finder";
-      button.setAttribute("aria-label", `Show ${anchor.textContent.trim()} in Finder`);
-      button.innerHTML = REVEAL_ICON;
-      anchor.after(button);
+      const absolute = this.absoluteLinkPath(anchor, context);
+      if (absolute === null || anchor.hasAttribute("data-full-path")) return;
+      anchor.setAttribute("data-full-path", absolute);
+      anchor.setAttribute("title", absolute);
+      const copy = this.createIconButton("file-copy-button", "Copy full path", "Copy full path", COPY_ICON);
+      anchor.after(copy);
+      if (reveal) anchor.after(this.createIconButton("file-reveal-button", "Show in Finder", `Show ${anchor.textContent.trim()} in Finder`, REVEAL_ICON));
     });
+  }
+
+  private createIconButton(className: string, title: string, label: string, icon: string): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.title = title;
+    button.setAttribute("aria-label", label);
+    button.innerHTML = icon;
+    return button;
   }
 
   /** The absolute local path of a Chat file link: outside links carry it, workspace links are relative to the root. */
@@ -98,6 +116,13 @@ export class FormattedText extends LitElement {
     if (revealed instanceof Element && this.workspaceContext !== undefined) {
       const absolute = this.absoluteLinkPath(revealed, this.workspaceContext);
       if (absolute !== null) void window.piWebNative?.revealLocalFile?.(absolute).catch((error: unknown) => { console.warn("Could not show the file in Finder", error); });
+      return;
+    }
+    const copyPath = event.target.closest(".file-copy-button");
+    if (copyPath instanceof HTMLButtonElement) {
+      const linked = copyPath.previousElementSibling?.closest(".file-reveal-button")?.previousElementSibling ?? copyPath.previousElementSibling;
+      const absolute = linked?.getAttribute("data-full-path");
+      if (absolute !== null && absolute !== undefined) void this.copyText(absolute, copyPath, "full path");
       return;
     }
     const anchor = event.target.closest(FILE_LINK_SELECTOR);
@@ -156,7 +181,7 @@ export class FormattedText extends LitElement {
     return request !== undefined && !this.dispatchEvent(request);
   }
 
-  private async copyText(text: string, button: HTMLButtonElement, kind: "code block" | "quote"): Promise<void> {
+  private async copyText(text: string, button: HTMLButtonElement, kind: CopyKind): Promise<void> {
     const copied = await writeClipboardText(text);
     this.setCopyButtonState(button, copied ? "copied" : "failed", kind);
     window.setTimeout(() => {
@@ -164,7 +189,7 @@ export class FormattedText extends LitElement {
     }, 1200);
   }
 
-  private setCopyButtonState(button: HTMLButtonElement, state: "idle" | "copied" | "failed", kind: "code block" | "quote"): void {
+  private setCopyButtonState(button: HTMLButtonElement, state: "idle" | "copied" | "failed", kind: CopyKind): void {
     const icon = button.querySelector("span");
     if (icon !== null) icon.textContent = state === "copied" ? "✓" : "⧉";
     const label = state === "copied" ? `Copied ${kind}` : state === "failed" ? `Failed to copy ${kind}` : `Copy ${kind}`;

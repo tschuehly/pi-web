@@ -528,9 +528,9 @@ export const formattedTextStyles = css`
   .quote-copy-button { opacity: 0; }
   .copyable-quote:hover > .quote-copy-button, .quote-copy-button:focus { opacity: 1; }
   @media (hover: none) { .quote-copy-button { opacity: 1; } }
-  .file-reveal-button { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 2px; border: 0; border-radius: 4px; background: transparent; color: var(--pi-muted); padding: 0; vertical-align: -3px; cursor: pointer; }
-  .file-reveal-button:hover, .file-reveal-button:focus-visible { color: var(--pi-text); background: var(--pi-surface); }
-  .file-reveal-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .file-reveal-button, .file-copy-button { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 2px; border: 0; border-radius: 4px; background: transparent; color: var(--pi-muted); padding: 0; vertical-align: -3px; cursor: pointer; }
+  .file-reveal-button:hover, .file-reveal-button:focus-visible, .file-copy-button:hover, .file-copy-button:focus-visible { color: var(--pi-text); background: var(--pi-surface); }
+  .file-reveal-button svg, .file-copy-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   blockquote { border-left: 3px solid var(--pi-border); padding-left: 10px; color: var(--pi-muted); }
   img { max-width: 100%; }
   a { color: var(--pi-accent); }
