@@ -33,7 +33,8 @@ const SWIPE_END_MS = 150, SWIPE_COMMIT = 0.3, FLICK_PX_PER_MS = 0.8;
 /** Whether a wheel starting at this event scrolls something horizontally (code block, table) instead of swiping. */
 function canScrollX(event: WheelEvent): boolean {
   for (const node of event.composedPath()) {
-    if (!(node instanceof Object) || (node as Node).nodeType !== 1) continue;
+    // Frame nodes come from another realm, so `instanceof` against this window's classes fails.
+    if ((node as Partial<Node>).nodeType !== 1) continue;
     const element = node as HTMLElement;
     const view = element.ownerDocument.defaultView;
     if (view === null) continue;
