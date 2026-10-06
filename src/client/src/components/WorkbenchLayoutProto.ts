@@ -145,7 +145,7 @@ export class ProtoChatPane extends LitElement {
     const machineId = selectedMachineId(state);
     return html`
       ${state.error === "" ? nothing : html`<div class="error" role="alert">${state.error}</div>`}
-      <div class="body">
+      <div class="body" data-files=${this.files}>
         <div class="chat-column">
           <chat-view
             @workspace-file-open=${this.openWorkspaceFile}
@@ -220,7 +220,13 @@ export class ProtoChatPane extends LitElement {
     .chat-column { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     delegate-roster, goal-status-chip, prompt-editor { flex: 0 0 auto; }
-    workbench-files-pane { flex: 0 0 min(420px, 50%); box-sizing: border-box; min-width: 0; border-left: 1px solid var(--pi-border); }
+    .body { container-type: inline-size; }
+    workbench-files-pane { flex: 0 0 min(420px, 45%); box-sizing: border-box; min-width: 0; border-left: 1px solid var(--pi-border); }
+    /* Too narrow to split (a grid tile): Files takes the whole pane until it is toggled off. */
+    @container (max-width: 860px) {
+      .body[data-files="true"] .chat-column { display: none; }
+      .body[data-files="true"] workbench-files-pane { flex: 1 1 auto; border-left: 0; }
+    }
   `;
 }
 
@@ -686,7 +692,7 @@ export class WorkbenchLayoutProto extends LitElement {
           </div>`}
         <div class="actions">
           ${tabs && focused !== undefined ? html`<button class="icon" title="Files" aria-label="Files" aria-pressed=${focused.files === true} @click=${() => { this.toggleFiles(focused.id); }}>${renderBuiltinTabIcon("files")}</button>` : nothing}
-          <button class="add" title="Add Chats (⌘T)" aria-haspopup="dialog" aria-expanded=${this.adding} @click=${() => { if (this.adding) this.adding = false; else this.openAdd(); }}>＋ Add</button>
+          ${empty ? nothing : html`<button class="add" title="Add Chats (⌘T)" aria-haspopup="dialog" aria-expanded=${this.adding} @click=${() => { if (this.adding) this.adding = false; else this.openAdd(); }}>＋ Add</button>`}
           ${empty ? nothing : html`
             <div class="segmented" role="group" aria-label="Layout (⌃G)" title="Toggle layout (⌃G)">
               <button aria-pressed=${win.layout === "grid"} @click=${() => { if (win.layout !== "grid") this.toggleLayout(); }}>Grid</button>
@@ -777,8 +783,8 @@ export class WorkbenchLayoutProto extends LitElement {
     const firstWorkstream = workstreams[0];
     const addFirst = (): void => { if (firstWorkstream !== undefined) this.addSessions(firstWorkstream.sessions, firstWorkstream); else if (loose[0] !== undefined) this.addSessions([loose[0]]); };
     return html`
-      <div class="add-pop" role="dialog" aria-label=${`Add to ${this.win.name}`}>
-        <input type="search" placeholder="Search Workstreams and Chats" aria-label="Search Workstreams and Chats" .value=${this.addQuery}
+      <div class="add-pop" data-centered=${this.win.entries.length === 0} role="dialog" aria-label=${`Add to ${this.win.name}`}>
+        <input type="text" placeholder="Search Workstreams and Chats" aria-label="Search Workstreams and Chats" .value=${this.addQuery}
           @input=${(event: Event) => { this.addQuery = (event.target as HTMLInputElement).value; }}
           @keydown=${(event: KeyboardEvent) => {
             if (event.key === "Enter") addFirst();
@@ -836,7 +842,7 @@ export class WorkbenchLayoutProto extends LitElement {
     .chip { flex: 0 1 auto; min-width: 40px; max-width: 200px; overflow: hidden; padding: 2px 8px; border: 1px solid var(--pi-border); border-radius: 999px; background: none; color: var(--pi-muted); font-size: 11px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
     button.chip:hover { color: var(--pi-text); border-color: var(--pi-muted); }
     .chip.small { flex: 0 1 auto; min-width: 0; max-width: 40%; padding: 0 7px; font-weight: 500; }
-    .tab { flex: 0 1 auto; min-width: 72px; max-width: 220px; display: flex; align-items: center; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 4px 0 9px; border-radius: 7px; color: var(--pi-muted); cursor: pointer; user-select: none; }
+    .tab { flex: 0 1 auto; min-width: 72px; max-width: 260px; display: flex; align-items: center; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 4px 0 9px; border-radius: 7px; color: var(--pi-muted); cursor: pointer; user-select: none; }
     .tab:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .tab[aria-selected="true"] { background: var(--pi-bg); color: var(--pi-text); box-shadow: inset 0 -2px 0 var(--pi-accent); }
     .tab:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
@@ -877,6 +883,7 @@ export class WorkbenchLayoutProto extends LitElement {
     .primary { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border: 1px solid var(--pi-accent); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); font-size: 14px; }
     kbd { padding: 0 5px; border: 1px solid var(--pi-border); border-radius: 4px; color: var(--pi-muted); font: 11px ui-monospace, monospace; }
     .add-pop { position: fixed; z-index: 30; top: 44px; right: 8px; width: min(480px, calc(100vw - 16px)); max-height: min(70vh, 640px); display: flex; flex-direction: column; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 16px 40px var(--pi-shadow); }
+    .add-pop[data-centered="true"] { top: 18vh; right: auto; left: 50%; transform: translateX(-50%); }
     .add-pop input { margin: 10px; padding: 7px 10px; border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); color: var(--pi-text); font: inherit; font-size: 14px; }
     .add-pop input:focus { outline: 2px solid var(--pi-accent); outline-offset: -1px; }
     .add-list { min-height: 0; overflow-y: auto; padding: 0 6px 8px; }
@@ -886,6 +893,7 @@ export class WorkbenchLayoutProto extends LitElement {
     .pick { width: 100%; display: flex; align-items: center; gap: 10px; padding: 5px 8px; border: 0; border-radius: 6px; background: none; text-align: left; }
     .pick:hover { background: var(--pi-surface-hover); }
     .ws-row { font-weight: 600; }
+    .pick .title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.3; }
     .ws .session { padding-left: 22px; color: var(--pi-muted); }
     .ws .session:hover { color: var(--pi-text); }
     .meta { flex: 0 0 auto; color: var(--pi-accent); font-size: 12px; font-weight: 500; }
