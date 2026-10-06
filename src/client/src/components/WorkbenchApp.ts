@@ -120,8 +120,6 @@ export class WorkbenchApp extends LitElement {
   );
 
   private openNotificationChat(machineId: string, sessionId: string): void {
-    // Layout prototype: the hosting window decides which tile or tab shows the Chat.
-    if (EMBEDDED) { window.parent.postMessage({ type: "pi-proto-open", machineId, sessionId }, location.origin); return; }
     writeRoute({ machineId, sessionId, projectId: undefined, workspaceId: undefined, tool: undefined, view: undefined });
     void this.load(readRoute(), { reuseLoaded: true });
   }
@@ -428,8 +426,6 @@ export class WorkbenchApp extends LitElement {
 
   private handleRealtimeEvent(event: BrowserRealtimeEvent): void {
     if (event.type === "session.attention") {
-      // ponytail: layout prototype tiles skip other Chats' attention so N tiles never notify N times; the host would own this.
-      if (EMBEDDED) return;
       this.desktopNotifications.attention(this.app, event, selectedMachineId(this.app));
       return;
     }
@@ -926,28 +922,7 @@ export class WorkbenchApp extends LitElement {
     `;
   }
 
-  private lastEmbedState = "";
-
-  /** Layout prototype: report this tile's Chat to the hosting window. */
-  private postEmbedState(): void {
-    const session = this.app.selectedSession;
-    const state = {
-      type: "pi-proto-chat",
-      search: location.search,
-      sessionId: session?.id,
-      title: session === undefined ? "New tab" : sessionTitle(session),
-      workstream: this.currentWorkstream === undefined ? undefined : this.currentWorkstream?.title ?? null,
-      streaming: this.app.status?.isStreaming === true,
-      needsOwner: this.app.pendingAsk !== undefined || this.app.pendingDialogs.length > 0,
-    };
-    const json = JSON.stringify(state);
-    if (json === this.lastEmbedState) return;
-    this.lastEmbedState = json;
-    window.parent.postMessage(state, location.origin);
-  }
-
   protected override updated(): void {
-    if (EMBEDDED) this.postEmbedState();
     if (this.app.selectedSession !== undefined) return;
     const workspace = this.shadowRoot?.querySelector<HTMLSelectElement>('select[aria-label="Workspace"]');
     if (workspace !== undefined && workspace !== null) workspace.value = this.app.selectedWorkspace?.id ?? "";
@@ -1328,9 +1303,6 @@ export class WorkbenchApp extends LitElement {
     }
   `;
 }
-
-/** Layout prototype (`?layout=proto`) hosts each Chat in an `?embed=1` frame of this shell. */
-const EMBEDDED = typeof window !== "undefined" && window.parent !== window && new URLSearchParams(location.search).get("embed") === "1";
 
 function completeChatRoute(route: ParsedAppRoute): route is ParsedAppRoute & { projectId: string; workspaceId: string; sessionId: string } {
   return route.projectId !== undefined && route.workspaceId !== undefined && route.sessionId !== undefined;
