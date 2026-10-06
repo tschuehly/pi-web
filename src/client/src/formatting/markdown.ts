@@ -77,8 +77,8 @@ function sanitizeHtml(html: string, workspace?: MarkdownWorkspaceContext, imageI
   return template.innerHTML;
 }
 
-// Markdown tables stay at their natural width and scroll horizontally instead of
-// being squeezed into the chat column, which is unreadable on narrow screens.
+// Markdown tables fit the chat column and wrap their cells; the wrapper scrolls only
+// what cannot wrap (an over-wide image or many columns on a narrow screen).
 function wrapTablesInScrollRegions(root: DocumentFragment): void {
   root.querySelectorAll("table").forEach((table) => {
     if (table.parentElement?.classList.contains(TABLE_SCROLL_CLASS) === true) return;

@@ -542,8 +542,8 @@ export const formattedTextStyles = css`
   h4 { font-size: 14px; }
   .table-scroll { max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
   .table-scroll:focus-visible { outline: 1px solid var(--pi-accent); outline-offset: 2px; }
-  table { border-collapse: collapse; width: max-content; min-width: 100%; max-width: none; }
-  th, td { border: 1px solid var(--pi-border); padding: 4px 8px; max-width: 48ch; overflow-wrap: anywhere; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid var(--pi-border); padding: 4px 8px; overflow-wrap: anywhere; }
   th { background: var(--pi-surface); }
 `;
 
