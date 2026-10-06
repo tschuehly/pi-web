@@ -75,7 +75,7 @@
     "smoke:package-install": "node scripts/smoke-package-install.mjs",
     "prepublishOnly": "npm run verify",
     "publish:npm": "npm publish --access public",
-    "prepare": "node scripts/install-git-hooks.mjs",
+    "prepare": "node scripts/install-git-hooks.mjs && patch-package",
     "changeset": "changeset",
     "release:version": "changeset version",
     "changelog:status": "changeset status"
@@ -123,6 +123,7 @@
     "happy-dom": "^20.11.1",
     "knip": "^6.25.0",
     "mermaid": "^11.17.2",
+    "patch-package": "^8.0.1",
     "tsx": "^4.23.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0",
