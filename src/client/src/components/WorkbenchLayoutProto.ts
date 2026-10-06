@@ -121,9 +121,9 @@ export class WorkbenchLayoutProto extends LitElement {
     return `Window ${String(n)}`;
   }
 
-  /** First run: open the six most recent Chats so the prototype starts with real work. */
+  /** First run: open the eight most recent Chats so the prototype starts with real work. */
   private async seed(): Promise<void> {
-    const rows = await api.recent(6).catch(() => []);
+    const rows = await api.recent(8).catch(() => []);
     this.mutate((store) => {
       const win = store[this.winId];
       if (win === undefined) return;
