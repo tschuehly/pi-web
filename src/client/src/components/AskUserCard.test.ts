@@ -96,6 +96,58 @@ describe("ask-user-card live form", () => {
     });
   });
 
+  it("edits a proposed option into the custom answer for single and multi-select questions", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([
+      question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")]),
+      question("stack", "Pick the stack", [option("lit", "Lit"), option("react", "React")], { multiple: true }),
+    ]), onSubmit);
+    const root = renderRoot(card);
+    const editButtons = [...root.querySelectorAll<HTMLButtonElement>("button[aria-label='Edit this answer']")];
+    expect(editButtons).toHaveLength(4);
+    expect(editButtons[0]?.type).toBe("button");
+
+    // Radio: editing replaces the selected option with Custom.
+    inputWithValue(root, "vim").click();
+    await card.updateComplete;
+    requiredElement(editButtons[1], "edit VS Code").click();
+    await card.updateComplete;
+    await Promise.resolve();
+    const editorText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-0"), "editor textarea");
+    expect(editorText.value).toBe("VS Code");
+    expect(root.activeElement).toBe(editorText);
+    expect(editorText.selectionStart).toBe("VS Code".length);
+    expect(inputWithValue(root, "vim").checked).toBe(false);
+    expect(inputWithValue(root, "code").checked).toBe(false);
+    editorText.value = "VS Code Insiders";
+    editorText.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+
+    // Checkbox: editing keeps other checked options, does not toggle the edited one, and replaces old custom text.
+    inputWithValue(root, "lit").click();
+    requiredElement(root.querySelector<HTMLInputElement>("#ask-user-question-1 input[value='__pi_web_other__']"), "stack custom").click();
+    await card.updateComplete;
+    const stackText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-1"), "stack textarea");
+    stackText.value = "Svelte";
+    stackText.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await card.updateComplete;
+    requiredElement(editButtons[3], "edit React").click();
+    await card.updateComplete;
+    await Promise.resolve();
+    const editedStackText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-1"), "stack textarea");
+    expect(editedStackText.value).toBe("React");
+    expect(root.activeElement).toBe(editedStackText);
+    expect(inputWithValue(root, "react").checked).toBe(false);
+
+    buttonWithText(root, "Send answers").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", {
+      answers: [
+        { id: "editor", values: [], otherText: "VS Code Insiders" },
+        { id: "stack", values: ["lit"], otherText: "React" },
+      ],
+    });
+  });
+
   it("shows and submits the custom field directly when no options were supplied", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([

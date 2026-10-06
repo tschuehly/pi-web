@@ -1,4 +1,4 @@
-import { LitElement, css, html, type PropertyValues, type TemplateResult } from "lit";
+import { LitElement, css, html, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import {
@@ -18,6 +18,9 @@ import {
   type AskDraftAnswer,
   type AskDraftAnswers,
 } from "../askDrafts";
+
+// Lucide "pencil" (https://lucide.dev, ISC).
+const PENCIL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>`;
 
 export type AskUserSubmitCallback = (askId: string, submission: AskUserSubmission) => void | Promise<void>;
 
@@ -114,19 +117,28 @@ export class AskUserCard extends LitElement {
         ${question.detail === undefined ? null : html`<p class="question-detail" id=${detailId}>${question.detail}</p>`}
         <div class="options">
           ${question.options.map((option) => html`
-            <label class="option">
-              <input
-                type=${inputType}
-                name=${this.questionGroupName(ask, question)}
-                value=${option.value}
-                .checked=${answer?.values.includes(option.value) === true}
-                @change=${(event: Event) => { this.changeOption(question, option.value, event); }}
-              />
-              <span class="option-copy">
-                <span class="option-label">${option.label}</span>
-                ${option.detail === undefined ? null : html`<span class="option-detail">${option.detail}</span>`}
-              </span>
-            </label>
+            <div class="option-row">
+              <label class="option">
+                <input
+                  type=${inputType}
+                  name=${this.questionGroupName(ask, question)}
+                  value=${option.value}
+                  .checked=${answer?.values.includes(option.value) === true}
+                  @change=${(event: Event) => { this.changeOption(question, option.value, event); }}
+                />
+                <span class="option-copy">
+                  <span class="option-label">${option.label}</span>
+                  ${option.detail === undefined ? null : html`<span class="option-detail">${option.detail}</span>`}
+                </span>
+              </label>
+              <button
+                class="edit-option"
+                type="button"
+                aria-label="Edit this answer"
+                title="Edit this answer"
+                @click=${() => { this.editOption(question, index, option.label); }}
+              >${PENCIL_ICON}</button>
+            </div>
           `)}
           ${freeTextOnly ? null : html`
             <label class="option other-option">
@@ -256,6 +268,16 @@ export class AskUserCard extends LitElement {
     if (input.checked) void this.focusOtherInput(index);
   }
 
+  /** Starts a Custom answer from an option's label; the option itself stays unchanged. */
+  private editOption(question: AskUserQuestion, index: number, label: string): void {
+    const current = this.answers[question.id];
+    this.setAnswer(question, {
+      values: question.multiple === true ? [...(current?.values ?? [])] : [],
+      otherText: label.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH),
+    });
+    void this.focusOtherInput(index, true);
+  }
+
   private changeOtherText(question: AskUserQuestion, event: Event): void {
     const input = event.currentTarget;
     if (!(input instanceof HTMLTextAreaElement)) return;
@@ -326,9 +348,11 @@ export class AskUserCard extends LitElement {
     });
   }
 
-  private async focusOtherInput(index: number): Promise<void> {
+  private async focusOtherInput(index: number, cursorAtEnd = false): Promise<void> {
     await this.updateComplete;
-    this.renderRoot.querySelector<HTMLElement>(`#${this.otherInputId(index)}`)?.focus();
+    const input = this.renderRoot.querySelector<HTMLTextAreaElement>(`#${this.otherInputId(index)}`);
+    input?.focus();
+    if (cursorAtEnd && input !== null) input.setSelectionRange(input.value.length, input.value.length);
   }
 
   private isOtherSelected(question: AskUserQuestion, answer: AskDraftAnswer | undefined): boolean {
@@ -471,6 +495,17 @@ export class AskUserCard extends LitElement {
     }
     .options { display: grid; gap: 7px; }
     legend + .options { margin-top: 10px; }
+    .option-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px; }
+    .edit-option {
+      display: inline-flex;
+      margin-top: 4px;
+      border-color: transparent;
+      background: transparent;
+      color: var(--pi-muted);
+      padding: 4px;
+    }
+    .edit-option:hover:not(:disabled) { color: var(--pi-text); }
+    .edit-option svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .option {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr);
