@@ -239,11 +239,17 @@ async function workstreamChatInfo(session: WorkstreamSession, machineId: string,
 const chatKey = (session: WorkstreamSession): string => JSON.stringify([session.id, session.machineId ?? null, session.projectId ?? null, session.workspaceId ?? null]);
 /** Chats shown before the "older Chats" fold; older ones are looked up only once the fold opens. */
 const VISIBLE_CHATS = 5;
-/** Component-wide ceiling on running Chat lookups; each lookup issues one request at a time. */
+/**
+ * Component-wide ceiling on open Chat metadata requests. Each running lookup issues one request at a time, and a
+ * retained workspace request no running lookup waits on holds a slot of its own.
+ */
 const CHAT_LOOKUP_LIMIT = 8;
 interface ChatLookup { session: WorkstreamSession; machineId: string; controller: AbortController; running: boolean }
-/** One project's workspace request, shared by lookups and aborted once no queued or running lookup needs it. */
-interface ProjectWorkspaces { promise: Promise<readonly Workspace[]>; controller: AbortController; settled: boolean }
+/**
+ * One project's workspace request, shared by lookups and aborted once no queued or running lookup needs it. `waiting`
+ * counts running lookups that joined it and have not finished.
+ */
+interface ProjectWorkspaces { promise: Promise<readonly Workspace[]>; controller: AbortController; settled: boolean; waiting: number }
 
 @customElement("workstream-chooser")
 export class WorkstreamChooser extends LitElement {
@@ -428,25 +434,42 @@ export class WorkstreamChooser extends LitElement {
     this.pumpChatLookups();
   }
 
-  /** Start queued lookups while a slot is free. Each settles on its own, so one slow Chat never holds another's title. */
+  /** A retained workspace request whose consumers are all queued: still open, but owned by no running lookup. */
+  private unowned(shared: ProjectWorkspaces | undefined): boolean {
+    return shared !== undefined && !shared.settled && shared.waiting === 0;
+  }
+
+  /**
+   * Start queued lookups while a slot is free, counting unowned workspace requests as taken. A queued lookup that joins
+   * an unowned request takes over its slot, so it starts even when none is free. Each lookup settles on its own, so one
+   * slow Chat never holds another's title.
+   */
   private pumpChatLookups(): void {
-    while (this.runningLookups < CHAT_LOOKUP_LIMIT) {
-      const key = this.chatQueue.shift();
-      if (key === undefined) return;
+    const queue = this.chatQueue;
+    this.chatQueue = [];
+    for (const key of queue) {
       const lookup = this.chatLookups.get(key);
       if (lookup === undefined || lookup.running) continue;
+      const { projectId, workspaceId } = lookup.session;
+      const joinsUnowned = projectId !== undefined && workspaceId !== undefined && this.unowned(this.cardWorkspaces.get(projectId));
+      const held = [...this.cardWorkspaces.values()].filter((shared) => this.unowned(shared)).length;
+      if (!joinsUnowned && this.runningLookups + held >= CHAT_LOOKUP_LIMIT) { this.chatQueue.push(key); continue; }
       lookup.running = true;
       this.runningLookups++;
+      let joined: ProjectWorkspaces | undefined;
       const workspacesOf = (projectId: string): Promise<readonly Workspace[]> => {
         let shared = this.cardWorkspaces.get(projectId);
         if (shared === undefined) {
           const controller = new AbortController();
-          const request: ProjectWorkspaces = { promise: workspacesApi.workspaces(projectId, lookup.machineId, { signal: controller.signal }), controller, settled: false };
-          const settle = (): void => { request.settled = true; };
+          const request: ProjectWorkspaces = { promise: workspacesApi.workspaces(projectId, lookup.machineId, { signal: controller.signal }), controller, settled: false, waiting: 0 };
+          // A settled unowned request frees its slot.
+          const settle = (): void => { request.settled = true; this.pumpChatLookups(); };
           void request.promise.then(settle, settle);
           shared = request;
           this.cardWorkspaces.set(projectId, shared);
         }
+        joined = shared;
+        shared.waiting++;
         return shared.promise;
       };
       void workstreamChatInfo(lookup.session, lookup.machineId, workspacesOf, lookup.controller.signal)
@@ -458,7 +481,7 @@ export class WorkstreamChooser extends LitElement {
           if (row === undefined) this.chatMisses = new Set(this.chatMisses).add(key);
           else this.chatInfo = new Map(this.chatInfo).set(key, row);
         })
-        .finally(() => { this.runningLookups--; this.pumpChatLookups(); });
+        .finally(() => { if (joined !== undefined) joined.waiting--; this.runningLookups--; this.pumpChatLookups(); });
     }
   }
 

@@ -855,6 +855,34 @@ describe("WorkstreamChooser bounded and scoped Chat metadata", () => {
       expect(transport.paths()).toEqual([...workspacesOf, "/api/machines/local/sessions?cwd=%2Frepo%2Fone&sessionId=b1"]);
       expect(transport.peak()).toBe(2);
     });
+
+    it("counts a retained workspace request for a queued Chat against the eight-request ceiling", async () => {
+      const old = Array.from({ length: 8 }, (_, index) => anchored(`old${String(index)}`, `p${String(index)}`));
+      const cards: Record<string, WorkstreamSnapshot> = { "ws-1": { ...snapshot, sessions: old } };
+      const transport = heldTransport(cards);
+      const element = newChooser();
+      document.body.append(element);
+      await openCard(element);
+      expandOlder(element);
+      await vi.waitFor(() => { expect(transport.open()).toHaveLength(8); });
+      await collapseCard(element);
+      // old0's machine anchor is repaired away, so its lookup stops; the newer new1 still wants old0's project p0.
+      const newer = Array.from({ length: 5 }, (_, index) => ({ ...anchored(`new${String(index)}`, index === 1 ? "p0" : `fresh${String(index)}`), latestCheckpoint: checkpoint(`cp${String(index)}`, `2026-09-19T00:00:0${String(9 - index)}.000Z`, "Newer") }));
+      cards["ws-1"] = { ...snapshot, sessions: [...newer, { ...anchored("old0", "p0"), machineId: "remote" }, ...old.slice(1)] };
+      await openCard(element);
+      await settle(element);
+
+      const p0 = transport.requests[0];
+      expect([p0?.signal?.aborted, p0?.open]).toEqual([false, true]);
+      expect(transport.requests).toHaveLength(8);
+      p0?.answer({ status: "folder", projectId: "p0", workspaces: [workspace("w1", "p0", "/repo/p0")], diagnostics: [] });
+      await vi.waitFor(() => { expect(transport.paths().at(-1)).toBe("/api/machines/local/sessions?cwd=%2Frepo%2Fp0&sessionId=new1"); });
+      transport.requests.at(-1)?.answer([chat("new1", "Shared project title", "2026-09-19T00:00:08.000Z", "/repo/p0")]);
+      await vi.waitFor(() => { expect(titleOf(element, "new1")).toBe("Shared project title"); });
+      // Its freed slot admits the first fresh project.
+      await vi.waitFor(() => { expect(transport.paths().at(-1)).toBe("/api/machines/local/projects/fresh0/workspaces"); });
+      expect(transport.peak()).toBe(8);
+    });
   });
 });
 
