@@ -11,6 +11,7 @@ import { readStoredPresentationProfile } from "../presentationProfiles";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { readStoredThemePreference } from "../theme";
 import type { ChatView } from "./ChatView";
+import { transcriptImageSource, type TranscriptImage } from "./TranscriptImage";
 import { DelegateRoster } from "./DelegateRoster";
 import type { FormattedText } from "./FormattedText";
 import { GoalStatusChip } from "./GoalStatusChip";
@@ -354,6 +355,21 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
     expect(getState(app).error).not.toContain("no longer available");
     expect(getState(app).selectedSession?.id).toBe("fresh");
+  });
+
+  it("scopes media-referenced transcript images to the Chat's session cwd and machine", async () => {
+    const current = session("human", "See image");
+    const app = await mountChooser([current]);
+    const mediaId = "a".repeat(64);
+    setState(app, { ...getState(app), selectedSession: current, messages: [{ role: "user", parts: [{ type: "image", mediaId, mimeType: "image/png", byteSize: 3 }] }] });
+    await app.updateComplete;
+    const chat = app.shadowRoot?.querySelector<ChatView>("chat-view");
+    if (chat === null || chat === undefined) throw new Error("Chat was not rendered");
+    await chat.updateComplete;
+    const image = chat.renderRoot.querySelector<TranscriptImage>("pi-web-transcript-image");
+    if (image?.imagePart === undefined) throw new Error("Transcript image was not rendered");
+    const source = transcriptImageSource(image.imagePart, image.session, image.machineId);
+    expect(source?.src).toContain(`/api/machines/local/sessions/human/media/${mediaId}?cwd=%2Frepo`);
   });
 
   it("opens and closes the side Files pane without remounting Chat", async () => {

@@ -1115,6 +1115,8 @@ export class WorkbenchApp extends LitElement {
           @outside-file-open=${this.openOutsideFile}
           .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)}
           .sessionId=${session.id}
+          .sessionCwd=${session.cwd}
+          .machineId=${selectedMachineId(state)}
           .messages=${state.messages}
           .messageStart=${state.messagePageStart}
           .messageEnd=${state.messagePageEnd}
