@@ -127,6 +127,8 @@ export class WorkbenchApp extends LitElement {
     void this.load(readRoute(), { reuseLoaded: true });
   }
 
+  private readonly onPageAttention = (): void => { this.desktopNotifications.clearVisible(this.app); };
+
   /** The macOS app reveals a message in the Chat this window already shows without reloading it. */
   private readonly onNativeNotificationOpen = (event: Event): void => {
     const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
@@ -209,6 +211,8 @@ export class WorkbenchApp extends LitElement {
     this.notifications.resume();
     window.addEventListener("popstate", this.onPopState);
     window.addEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
+    window.addEventListener("focus", this.onPageAttention);
+    document.addEventListener("visibilitychange", this.onPageAttention);
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
     window.addEventListener("resize", this.onWindowResize);
     applyPresentationProfile(readStoredPresentationProfile() ?? builtInPresentationProfile("comfortable"));
@@ -248,6 +252,8 @@ export class WorkbenchApp extends LitElement {
   override disconnectedCallback(): void {
     window.removeEventListener("popstate", this.onPopState);
     window.removeEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
+    window.removeEventListener("focus", this.onPageAttention);
+    document.removeEventListener("visibilitychange", this.onPageAttention);
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
     window.removeEventListener("resize", this.onWindowResize);
     this.finishFilesResize();

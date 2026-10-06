@@ -186,6 +186,30 @@ describe("DesktopNotificationController", () => {
     ]);
   });
 
+  it("closes shown notifications for the Chat once it is visible and focused, leaving other Chats", () => {
+    const test = harness();
+    const selected = state();
+    test.controller.sync(initialAppState(), selected);
+    test.controller.activate(selected);
+    test.controller.sessionError(selected, "failed", 1);
+    test.controller.attention(selected, { type: "session.attention", sessionId: "session-2", cwd: "/other", kind: "ask", id: "ask-2", detail: "?" }, "local");
+    const [own, other] = test.notifications;
+
+    test.controller.clearVisible(selected);
+    expect(own?.handle.close).not.toHaveBeenCalled();
+
+    test.setBackground(false);
+    test.controller.sync(selected, selected);
+    expect(own?.handle.close).toHaveBeenCalledOnce();
+    expect(other?.handle.close).not.toHaveBeenCalled();
+    test.controller.clearVisible(selected);
+    expect(own?.handle.close).toHaveBeenCalledOnce();
+
+    const second = state({ selectedSession: { ...session, id: "session-2", cwd: "/other" } });
+    test.controller.sync(selected, second);
+    expect(other?.handle.close).toHaveBeenCalledOnce();
+  });
+
   it("routes non-selected attention, suppresses selected events, and deduplicates both arrival orders", () => {
     const test = harness();
     const selected = state();

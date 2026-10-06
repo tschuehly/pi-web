@@ -33,6 +33,7 @@ export class DesktopNotificationController {
   private streaming: boolean | undefined;
   private readonly seen = new Set<string>();
   private readonly recentErrors = new Map<string, number>();
+  private readonly open = new Map<string, Set<DesktopNotificationHandle>>();
 
   constructor(
     private readonly browser: DesktopNotificationBrowser,
@@ -60,7 +61,17 @@ export class DesktopNotificationController {
     this.onPermissionChange();
   }
 
+  /** Closes shown notifications for the Chat the owner is looking at; the macOS app clears its own on window focus. */
+  clearVisible(state: AppState): void {
+    const key = selectedSessionKey(state);
+    const handles = key === undefined ? undefined : this.open.get(key);
+    if (key === undefined || handles === undefined || this.browser.isBackground()) return;
+    this.open.delete(key);
+    for (const handle of handles) handle.close();
+  }
+
   sync(previous: AppState, next: AppState): void {
+    this.clearVisible(next);
     const nextKey = selectedSessionKey(next);
     if (nextKey !== this.sessionKey) {
       this.reset(nextKey);
@@ -170,7 +181,16 @@ export class DesktopNotificationController {
   }
 
   private bindClick(notification: DesktopNotificationHandle, machineId: string, sessionId: string, message: string | undefined): void {
+    const key = machineSessionKey(machineId, sessionId);
+    const handles = this.open.get(key) ?? new Set();
+    handles.add(notification);
+    this.open.delete(key);
+    this.open.set(key, handles);
+    // ponytail: closed-by-OS handles stay until their Chat is viewed; the 256-Chat cap bounds them.
+    const oldest = this.open.keys().next().value;
+    if (this.open.size > 256 && oldest !== undefined) this.open.delete(oldest);
     notification.onclick = () => {
+      handles.delete(notification);
       this.browser.focus();
       this.openChat(machineId, sessionId, message);
       notification.close();
