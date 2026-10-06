@@ -9,7 +9,7 @@ import { formattedTextStyles } from "./shared";
 
 const FILE_LINK_SELECTOR = "a[data-workspace-file], a[data-outside-file]";
 // ponytail: binary documents the Files pane cannot show; others (text, code, Makefile) open in the pane. Extend as needed.
-const REVEAL_IN_FINDER = /\.(docx?|docm|xlsx?|xlsm|pptx?|pptm|key|pages|numbers|odt|ods|odp|rtf|epub|zip|dmg|pkg|mp3|m4a|wav|mp4|mov)$/i;
+const REVEAL_IN_FINDER = /\.(docx?|docm|xlsx?|xlsm|xlsb|pptx?|pptm|ppsx|key|pages|numbers|odt|ods|odp|odg|rtf|epub|zip|dmg|pkg|mp3|m4a|wav|flac|aac|mp4|m4v|mov|webm|mkv)$/i;
 // Lucide folder-search.
 const REVEAL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1"/><path d="m21 21-1.9-1.9"/><circle cx="17" cy="17" r="3"/></svg>';
 

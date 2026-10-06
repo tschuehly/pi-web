@@ -167,6 +167,21 @@ it("reveals a local .docx link in Finder without opening anything, while a .md l
   }
 });
 
+it.each(["xlsb", "ppsx", "odg", "flac", "aac", "webm", "m4v", "mkv"])("reveals a local .%s link in Finder", async (extension) => {
+  const revealLocalFile = vi.fn(() => Promise.resolve(true));
+  Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile: vi.fn(), revealLocalFile } });
+  try {
+    const listener = vi.fn();
+    const link = await setup(`docs/file.${extension}`, "local");
+    link.view.addEventListener("workspace-file-open", listener);
+    expect(dispatchClick(link.view, link.anchor)).toBe(true);
+    expect(revealLocalFile).toHaveBeenCalledWith(`/work/docs/file.${extension}`);
+    expect(listener).not.toHaveBeenCalled();
+  } finally {
+    Reflect.deleteProperty(window, "piWebNative");
+  }
+});
+
 it("opens a .docx link in the Files pane when the app cannot reveal it", async () => {
   const listener = vi.fn((event: Event) => { event.preventDefault(); });
   const remote = await setup("docs/Plan.docx");
