@@ -194,6 +194,8 @@ describe("Workbench Files editor", () => {
     const unload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(true);
+    // after the toast, the status must not claim "Saved" while the hunk holds the user's text
+    await vi.waitFor(() => { expect(status(pane)).toBe("Review agent changes"); }, { timeout: 3500 });
     $(pane, ".strip .approve")?.click(); await pane.updateComplete;
     expect(pane.canClose()).toBe(true);
   });

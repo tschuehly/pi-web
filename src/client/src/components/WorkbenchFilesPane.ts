@@ -536,7 +536,7 @@ export class WorkbenchFilesPane extends LitElement {
     const svgFile = isSvg(file) && file?.truncated !== true;
     const text = file !== undefined && !file.binary;
     const slash = this.selectedPath.lastIndexOf("/");
-    const status = file === undefined ? "" : this.toast !== "" ? this.toast : !this.editable ? "Read-only" : this.saving ? "Saving…" : this.deleted ? "Deleted on disk" : this.dirty ? "Unsaved · ⌘S" : "Saved";
+    const status = file === undefined ? "" : this.toast !== "" ? this.toast : !this.editable ? "Read-only" : this.saving ? "Saving…" : this.deleted ? "Deleted on disk" : this.overlapPending ? "Review agent changes" : this.dirty ? "Unsaved · ⌘S" : "Saved";
     const statusClass = this.toast !== "" ? "toast" : this.deleted ? "danger" : this.dirty ? "dirty" : "";
     return html`
       ${this.full ? html`<div class="backdrop" @mousedown=${() => { this.full = false; }}></div>` : nothing}
