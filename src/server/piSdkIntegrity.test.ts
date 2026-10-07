@@ -18,6 +18,7 @@ describe("Pi SDK package integrity", () => {
     expect(version).toMatch(/^1\./);
     for (const name of [
       "AgentSession",
+      "collectCacheMisses",
       "createAgentSession",
       "createAgentSessionRuntime",
       "createCodemodeExtension",
@@ -27,6 +28,7 @@ describe("Pi SDK package integrity", () => {
       "DefaultPackageManager",
       "DefaultResourceLoader",
       "defineTool",
+      "detectCacheMiss",
       "formatDimensionNote",
       "ModelRuntime",
       "ProjectTrustStore",

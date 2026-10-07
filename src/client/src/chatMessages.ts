@@ -81,7 +81,9 @@ export function normalizeMessage(message: unknown): ChatLine[] {
   const displayRole = role === "assistant" && visible.length > 0 && visible.every((part) => part.type === "skillRead") ? "skill" : role;
   const lines = visible.length > 0 ? [withMessageMeta({ role: displayRole, parts: visible, ...(source === undefined ? {} : { source }) }, message)] : [];
   const errorLine = assistantErrorLine(message);
-  return errorLine === undefined ? lines : [...lines, withMessageMeta(errorLine, message)];
+  const cacheMissNotice = role === "assistant" ? getString(message, "cacheMissNotice") : undefined;
+  const noticeLine: ChatLine | undefined = cacheMissNotice === undefined || cacheMissNotice === "" ? undefined : { ...textMessage("system", cacheMissNotice), severity: "warning" };
+  return [...lines, ...[errorLine, noticeLine].flatMap((line) => line === undefined ? [] : [withMessageMeta(line, message)])];
 }
 
 function subagentCompletionText(message: unknown): string | undefined {

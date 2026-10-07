@@ -1074,7 +1074,7 @@ export class ChatView extends LitElement {
     const shellClass = workingModeOnly || backgroundBashOnly ? "msg goal-lifecycle-shell" : toolOnly ? "msg tool-execution-shell" : askUserRecordOnly ? "msg ask-user-record-shell" : goalLifecycleOnly ? "msg goal-lifecycle-shell" : subagentCompletionOnly ? "msg subagent-completion-shell" : "msg skill-read-shell";
     return html`
       ${this.renderScrollMarker(anchorId)}
-      <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === "error" ? " error" : ""}`} data-index=${index} data-scroll-anchor-id=${anchorId} data-entry-id=${message.entryId ?? nothing}>
+      <article class=${`${headerless ? shellClass : `msg ${message.role}`}${message.severity === undefined ? "" : ` ${message.severity}`}`} data-index=${index} data-scroll-anchor-id=${anchorId} data-entry-id=${message.entryId ?? nothing}>
         ${headerless ? null : this.renderMessageHeader(message, anchorId)}
         ${message.parts.map((part, partIndex) => this.renderPart(part, message, index, partIndex))}
       </article>
@@ -1176,7 +1176,7 @@ export class ChatView extends LitElement {
       const toolOnly = this.isToolExecutionOnlyMessage(message);
       const skillOnly = this.isSkillReadOnlyMessage(message);
       const workingModeOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "workingMode");
-      const classes = `${toolOnly ? "group-msg tool-execution-shell" : skillOnly ? "group-msg skill-read-shell" : `group-msg ${message.role}`}${message.severity === "error" ? " error" : ""}`;
+      const classes = `${toolOnly ? "group-msg tool-execution-shell" : skillOnly ? "group-msg skill-read-shell" : `group-msg ${message.role}`}${message.severity === undefined ? "" : ` ${message.severity}`}`;
       const index = messageIndices?.[segmentOffset + offset] ?? startIndex + offset;
       const group = groups[groupIndex];
       const withinGroup = messageIndices?.slice(0, segmentOffset + offset).filter((candidate, earlier) => candidate === index && group?.kind === "group" && group.messages[earlier]?.parts.some((part) => part.type !== "thinking") === true).length ?? 0;

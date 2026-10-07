@@ -248,6 +248,17 @@ describe("applyTranscriptEvent", () => {
     ]);
   });
 
+  it("follows the paying assistant turn with its cache-miss notice, live and from history", () => {
+    const ended = { role: "assistant", content: [{ type: "text", text: "answer" }], stopReason: "stop", cacheMissNotice: "Cache miss: 51k tokens re-billed" };
+    const notice: ChatLine = { ...textMessage("system", "Cache miss: 51k tokens re-billed"), severity: "warning" };
+
+    expect(applyTranscriptEvent([textMessage("user", "question"), textMessage("assistant", "ans")], { type: "message.end", message: ended }))
+      .toEqual([textMessage("user", "question"), textMessage("assistant", "answer"), notice]);
+    expect(normalizeMessages([{ role: "user", content: "question" }, ended]))
+      .toEqual([textMessage("user", "question"), textMessage("assistant", "answer"), notice]);
+    expect(normalizeMessages([{ ...ended, cacheMissNotice: undefined }])).toEqual([textMessage("assistant", "answer")]);
+  });
+
   it("replaces streamed thinking and skill reads when the finalized assistant message includes thinking", () => {
     const streamed: ChatLine[] = [
       { role: "assistant", parts: [{ type: "thinking", text: "load skill" }] },
