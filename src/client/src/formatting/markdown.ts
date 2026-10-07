@@ -3,7 +3,7 @@ import { replaceLocalMarkdownImages } from "./markdownImages";
 import { workspaceFilePreviewUrl } from "../api/urls";
 import { resolveAppUrl } from "../appUrl";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
-import { outsideChatFilePath, workspaceMarkdownFilePath, type MarkdownWorkspaceContext } from "./workspaceLinks";
+import { fileLinkLines, outsideChatFilePath, workspaceMarkdownFilePath, type MarkdownWorkspaceContext } from "./workspaceLinks";
 
 const renderer = new marked.Renderer();
 renderer.html = ({ text }) => escapeHtml(text);
@@ -51,6 +51,8 @@ function sanitizeHtml(html: string, workspace?: MarkdownWorkspaceContext, imageI
     if (href !== null && workspace !== undefined) {
       const path = workspaceMarkdownFilePath(href, workspace);
       const outside = path === undefined ? outsideChatFilePath(href, workspace) : undefined;
+      const lines = path === undefined && outside === undefined ? undefined : fileLinkLines(href);
+      if (lines !== undefined) element.setAttribute("data-lines", `${String(lines.start)}-${String(lines.end)}`);
       if (path !== undefined) {
         element.setAttribute("href", workspaceFilePreviewUrl(workspace.projectId, workspace.workspaceId, path, { machineId: workspace.machineId, download: true }));
         element.setAttribute("data-workspace-file", path);

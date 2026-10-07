@@ -13,7 +13,7 @@ import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
 import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale, stepInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
-import { markdownWorkspaceContext, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
+import { markdownWorkspaceContext, type LineRange, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { machineSessionKey } from "../machineKeys";
 import { nativeDirectoryPicker } from "../nativeHost";
 import { writeClipboardText } from "../clipboard";
@@ -1119,7 +1119,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** Show `path` in the Files pane, in `workspace` or else the Chat's own workspace. */
-  private openInFiles(workspace: Workspace | undefined, path: string): void {
+  private openInFiles(workspace: Workspace | undefined, path: string, lines?: LineRange): void {
     const current = this.filesWorkspace();
     const next = workspace ?? this.app.selectedWorkspace;
     const switching = current !== undefined && (next?.projectId !== current.projectId || next.id !== current.id);
@@ -1129,7 +1129,7 @@ export class WorkbenchApp extends LitElement {
     this.showFiles = true;
     void this.updateComplete.then(async () => {
       const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
-      if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.openFile(path); }
+      if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.openFile(path, false, lines); }
     });
   }
 
@@ -1140,15 +1140,15 @@ export class WorkbenchApp extends LitElement {
       || request.machineId !== selectedMachineId(this.app) || request.projectId !== workspace.projectId
       || request.workspaceId !== workspace.id || request.root !== workspace.path) return;
     event.preventDefault();
-    this.openInFiles(undefined, request.path);
+    this.openInFiles(undefined, request.path, request.lines);
   };
 
   private readonly openOutsideFile = (event: CustomEvent<OutsideFileOpenRequest>): void => {
-    const { machineId, path } = event.detail;
+    const { machineId, path, lines } = event.detail;
     if (event.defaultPrevented || machineId !== selectedMachineId(this.app)) return;
     event.preventDefault();
     void this.workspaceForFile(path, machineId).then(
-      (target) => { this.openInFiles(target.workspace, target.path); },
+      (target) => { this.openInFiles(target.workspace, target.path, lines); },
       (error: unknown) => { this.setApp({ error: error instanceof Error ? error.message : String(error) }); },
     );
   };

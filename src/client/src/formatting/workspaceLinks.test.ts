@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { outsideChatFilePath, workspaceMarkdownFilePath } from "./workspaceLinks";
+import { fileLinkLines, outsideChatFilePath, workspaceMarkdownFilePath } from "./workspaceLinks";
 
 const workspace = { machineId: "local", projectId: "p", workspaceId: "w", root: "/work" };
 
@@ -48,5 +48,29 @@ describe("workspace Markdown path normalization", () => {
 
   it("decodes only once and preserves meaningful filename characters", () => {
     expect(workspaceMarkdownFilePath("./.hidden//%252E%252E/a%20%23%3F%25.txt", workspace)).toBe(".hidden/%2E%2E/a #?%.txt");
+  });
+});
+
+describe("file link line ranges", () => {
+  it("reads #L40-L58, #L40, :40-58 and :40 and keeps the suffix out of the path", () => {
+    const context = { machineId: "local", projectId: "p", workspaceId: "w", root: "/repo" };
+    expect(fileLinkLines("src/a.ts#L40-L58")).toEqual({ start: 40, end: 58 });
+    expect(fileLinkLines("src/a.ts#L40")).toEqual({ start: 40, end: 40 });
+    expect(fileLinkLines("src/a.ts:40-58")).toEqual({ start: 40, end: 58 });
+    expect(fileLinkLines("src/a.ts:40")).toEqual({ start: 40, end: 40 });
+    expect(fileLinkLines("src/a.ts")).toBeUndefined();
+    expect(workspaceMarkdownFilePath("src/a.ts:40-58", context)).toBe("src/a.ts");
+    expect(workspaceMarkdownFilePath("src/a.ts#L40-L58", context)).toBe("src/a.ts");
+    expect(outsideChatFilePath("/elsewhere/b.md:7", context)).toBe("/elsewhere/b.md");
+  });
+
+  it("reads a line suffix on a bare file name instead of taking it for a URL scheme", () => {
+    const context = { machineId: "local", projectId: "p", workspaceId: "w", root: "/repo" };
+    expect(workspaceMarkdownFilePath("README.md:40-58", context)).toBe("README.md");
+    expect(workspaceMarkdownFilePath("README.md:40", { ...context, sourcePath: "docs/a.md" })).toBe("docs/README.md");
+    for (const url of ["https://example.com:8080", "http://example.com:80/x", "tel:12345", "mailto:a@b.co", "C:/x/a.md:4", "C:\\x\\a.md:4"]) {
+      expect(workspaceMarkdownFilePath(url, context)).toBeUndefined();
+      expect(outsideChatFilePath(url, context)).toBeUndefined();
+    }
   });
 });

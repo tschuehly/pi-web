@@ -139,7 +139,7 @@ export class FormattedText extends LitElement {
         event.preventDefault();
         void native.revealLocalFile(absolute).catch((error: unknown) => {
           console.warn("Could not show the file in Finder", error);
-          this.requestFileOpen(context, path, outside);
+          this.requestFileOpen(context, path, outside, anchor);
         });
         return;
       }
@@ -152,11 +152,11 @@ export class FormattedText extends LitElement {
         event.preventDefault();
         void openLocalFile(absolute).catch((error: unknown) => {
           if (html) { console.warn("Could not open HTML file in the browser", error); return; }
-          this.requestFileOpen(context, path, outside);
+          this.requestFileOpen(context, path, outside, anchor);
         });
         return;
       }
-      if (this.requestFileOpen(this.workspaceContext, path, outside)) event.preventDefault();
+      if (this.requestFileOpen(this.workspaceContext, path, outside, anchor)) event.preventDefault();
       return;
     }
     const button = event.target.closest(".code-copy-button, .quote-copy-button");
@@ -173,11 +173,13 @@ export class FormattedText extends LitElement {
   };
 
   /** Asks the host to open a Chat file link; true when a host handled (cancelled) the request. */
-  private requestFileOpen(context: NonNullable<FormattedText["workspaceContext"]>, path: string | null, outside: string | null): boolean {
+  private requestFileOpen(context: NonNullable<FormattedText["workspaceContext"]>, path: string | null, outside: string | null, anchor: Element): boolean {
+    const [start = 0, end = start] = (anchor.getAttribute("data-lines") ?? "").split("-").map(Number);
+    const lines = start > 0 ? { lines: { start, end } } : {};
     const request = path !== null
-      ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...context, path }, bubbles: true, composed: true, cancelable: true })
+      ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...context, path, ...lines }, bubbles: true, composed: true, cancelable: true })
       : outside === null ? undefined
-      : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: context.machineId, path: outside }, bubbles: true, composed: true, cancelable: true });
+      : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: context.machineId, path: outside, ...lines }, bubbles: true, composed: true, cancelable: true });
     return request !== undefined && !this.dispatchEvent(request);
   }
 

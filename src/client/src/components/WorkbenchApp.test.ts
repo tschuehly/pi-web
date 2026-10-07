@@ -19,6 +19,7 @@ import { PromptEditor } from "./PromptEditor";
 import { WorkbenchApp, rootProjectOf, rootProjects, sessionInfoText } from "./WorkbenchApp";
 import { HttpRequestError } from "../api/http";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
+import { EditorView } from "@codemirror/view";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
 
@@ -65,6 +66,11 @@ const stubSelectedChat = () => {
 };
 const openFromWorkstream = (app: WorkbenchApp, detail: Record<string, unknown>) => {
   app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("open-workstream-session", { detail: { workstreamId: "workstream", directories: [], ...detail } }));
+};
+
+const paneText = (pane: WorkbenchFilesPane | null | undefined): string | undefined => {
+  const dom = pane?.shadowRoot?.querySelector<HTMLElement>(".cm-editor");
+  return dom === null || dom === undefined ? undefined : EditorView.findFromDOM(dom)?.state.doc.toString();
 };
 
 describe("project tabs", () => {
@@ -500,7 +506,7 @@ describe("Workbench Chat chooser", () => {
       return event;
     };
     expect(click(anchors[0]).defaultPrevented).toBe(true);
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector("workbench-files-pane")?.shadowRoot?.querySelector("textarea")?.value).toBe("body of docs/notes.md"); });
+    await vi.waitFor(() => { expect(paneText(app.shadowRoot?.querySelector("workbench-files-pane"))).toBe("body of docs/notes.md"); });
     expect(read).toHaveBeenCalledWith(project.id, workspace.id, "docs/notes.md", machine.id);
     const pane = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
     if (pane === undefined || pane === null) throw new Error("Files pane was not mounted");
@@ -510,10 +516,10 @@ describe("Workbench Chat chooser", () => {
     expect(read).toHaveBeenCalledTimes(1);
     canClose.mockReturnValue(true);
     click(anchors[1]);
-    await vi.waitFor(() => { expect(pane.shadowRoot?.querySelector("textarea")?.value).toBe("body of .scratch/LEDGER.md"); });
+    await vi.waitFor(() => { expect(paneText(pane)).toBe("body of .scratch/LEDGER.md"); });
     expect(anchors[2]?.getAttribute("data-outside-file")).toBe("/elsewhere/x.md");
     expect(click(anchors[2]).defaultPrevented).toBe(true);
-    await vi.waitFor(() => { expect(pane.shadowRoot?.querySelector("textarea")?.value).toBe("body of x.md"); });
+    await vi.waitFor(() => { expect(paneText(pane)).toBe("body of x.md"); });
     expect(read).toHaveBeenLastCalledWith("", "folder:/elsewhere", "x.md", machine.id);
   });
 
@@ -558,7 +564,7 @@ describe("Workbench Chat chooser", () => {
     anchors[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, button: 0 }));
     await vi.waitFor(() => { expect(read).toHaveBeenCalledWith(sibling.id, siblingWorkspace.id, "src/server/sessions/sessionNameGenerator.ts", machine.id); });
     const pane = () => app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
-    await vi.waitFor(() => { expect(pane()?.shadowRoot?.querySelector("textarea")?.value).toBe("body of src/server/sessions/sessionNameGenerator.ts"); });
+    await vi.waitFor(() => { expect(paneText(pane())).toBe("body of src/server/sessions/sessionNameGenerator.ts"); });
     expect(pane()?.workspace).toBe(siblingWorkspace);
 
     anchors[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, button: 0 }));
@@ -575,7 +581,7 @@ describe("Workbench Chat chooser", () => {
     const app = await mountChooser([current]);
     setState(app, { ...getState(app), selectedSession: current });
     await app.updateComplete;
-    const search = vi.spyOn(api, "searchWorkspaceFiles").mockResolvedValue({ paths: [], cursor: null });
+    const tree = vi.spyOn(api, "workspaceTree").mockResolvedValue({ path: "", entries: [], scannedAt: "now", truncated: false });
     const chat = app.shadowRoot?.querySelector("chat-view");
     const key = new KeyboardEvent("keydown", { key: "p", metaKey: true, cancelable: true });
     window.dispatchEvent(key);
@@ -583,21 +589,18 @@ describe("Workbench Chat chooser", () => {
     const ctrl = new KeyboardEvent("keydown", { key: "p", ctrlKey: true, cancelable: true });
     window.dispatchEvent(ctrl);
     expect(ctrl.defaultPrevented).toBe(false);
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector("workbench-files-pane")?.shadowRoot?.querySelector("modal-surface")).not.toBeNull(); });
-    await vi.waitFor(() => { expect(search.mock.calls[0]?.slice(0, 5)).toEqual([project.id, workspace.id, "", "", "local"]); });
-    expect(search.mock.calls[0]?.[5]?.signal).toBeInstanceOf(AbortSignal);
+    const pane = () => app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+    await vi.waitFor(() => { expect(pane()?.shadowRoot?.querySelector(".pane.tree-open")).not.toBeNull(); });
+    await vi.waitFor(() => { expect(tree.mock.calls[0]?.slice(0, 4)).toEqual([project.id, workspace.id, "", "local"]); });
+    await vi.waitFor(() => { expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]')); });
     expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
-    const modalKey = new KeyboardEvent("keydown", { key: "p", metaKey: true, cancelable: true, bubbles: true, composed: true });
-    app.shadowRoot?.querySelector("workbench-files-pane")?.shadowRoot?.querySelector("modal-surface")?.dispatchEvent(modalKey);
-    expect(modalKey.defaultPrevented).toBe(false);
     expect(WorkbenchApp.styles.cssText).toMatch(/header > button\s*\{[^}]*min-height:\s*32px;[^}]*border-color:\s*transparent/);
     expect(app.shadowRoot?.querySelector<HTMLButtonElement>('header button[aria-label="Search files"]')?.classList.contains("header-action")).toBe(true);
-    app.shadowRoot?.querySelector("workbench-files-pane")?.shadowRoot?.querySelector<HTMLButtonElement>('.picker-content button[aria-label="Close"]')?.click();
-    await app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.updateComplete;
+    // happy-dom's ShadowRoot.activeElement throws while focus sits in another nested shadow root.
+    pane()?.shadowRoot?.querySelector<HTMLInputElement>('input[aria-label="Filter files"]')?.blur();
     app.shadowRoot?.querySelector<HTMLButtonElement>('header button[aria-label="Search files"]')?.click();
-    await vi.waitFor(() => { expect(search).toHaveBeenCalledTimes(2); });
-    app.shadowRoot?.querySelector("workbench-files-pane")?.shadowRoot?.querySelector<HTMLButtonElement>('.picker-content button[aria-label="Close"]')?.click();
-    await app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.updateComplete;
+    await vi.waitFor(() => { expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]')); });
+    pane()?.shadowRoot?.querySelector<HTMLInputElement>('input[aria-label="Filter files"]')?.blur();
   });
 
   it("bounds Files resizing by available Chat width for pointer and keyboard input", async () => {
