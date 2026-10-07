@@ -22,6 +22,14 @@ export const E2E_NOTES_BODY = "Seeded notes body for the file-link check.";
 export const E2E_ADHOC_SESSION_ID = "019ef4c0-0000-7000-8000-00000000e2e2";
 export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
 export const E2E_SIBLING_BODY = "export const seededSiblingBody = true;";
+export const E2E_PLAN = [
+  "# Release plan", "", "The launch is on Friday.", "",
+  "- [ ] Write the release notes", "- [x] Tag the build", "  - nested item with `inline code`", "",
+  "| Area | Owner | Notes | Status | A long header for a wide column | Another wide column |",
+  "| --- | --- | --- | --- | --- | --- |",
+  "| Docs | Ana | Update the install guide and the changelog | open | more text that makes the table wide | even more text |",
+  "", "```ts", "const ready = true;", "```", "", "## Risks", "", "Network flakiness could delay the rollout by a day or two.", "",
+].join("\n");
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const root = await realpath(await mkdtemp(join(tmpdir(), "pi-web-e2e-")));
@@ -49,7 +57,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const siblingFile = join(root, "sibling", "src", "generator.ts");
     await mkdir(dirname(siblingFile), { recursive: true });
     await writeFile(siblingFile, `${E2E_SIBLING_BODY}\n`);
-    await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md). The generator is [the sibling file](../sibling/src/generator.ts).");
+    await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md). The generator is [the sibling file](../sibling/src/generator.ts). See [the lines](docs/long.md#L40-L42).");
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
@@ -81,6 +89,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const workspaceId = mainWorkspaceId(listing);
     process.env["PI_WEB_E2E_CHAT_URL"] = `${baseUrl}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId, session: E2E_SESSION_ID, view: "chat" }).toString()}`;
     process.env["PI_WEB_E2E_SIBLING_FILE"] = siblingFile;
+    process.env["PI_WEB_E2E_PROJECT_DIR"] = project;
     process.env["PI_WEB_E2E_ADHOC_CHAT_URL"] = `${baseUrl}?${new URLSearchParams({ session: E2E_ADHOC_SESSION_ID, view: "chat" }).toString()}`;
     return teardown;
   } catch (error) {
@@ -92,6 +101,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
 async function seedProject(project: string): Promise<void> {
   await writeFile(join(project, "docs", "notes.md"), `# Seeded notes\n\n${E2E_NOTES_BODY}\n`);
+  for (const name of ["plan.md", "conflict.md"]) await writeFile(join(project, "docs", name), E2E_PLAN);
+  await writeFile(join(project, "docs", "long.md"), Array.from({ length: 80 }, (_, index) => `Line ${String(index + 1)} of the long file.`).join("\n"));
   await Promise.all(Array.from({ length: E2E_SEARCH_MATCHES }, (_, index) => writeFile(join(project, "entries", `entry-${String(index).padStart(3, "0")}.txt`), "")));
   const git = (...args: string[]) => {
     const result = spawnSync("git", ["-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid", "-C", project, ...args], {

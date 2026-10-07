@@ -23,14 +23,31 @@ export function markdownWorkspaceContext(machineId: string, workspace: Workspace
   return { machineId, projectId: workspace.projectId, workspaceId: workspace.id, root: workspace.path };
 }
 
+/** 1-based inclusive lines a file link points at. */
+export interface LineRange {
+  start: number;
+  end: number;
+}
+
 export interface WorkspaceFileOpenRequest extends MarkdownWorkspaceContext {
   path: string;
+  lines?: LineRange;
 }
 
 /** A Chat file link that leaves the Chat's folder; `path` is absolute on `machineId`. */
 export interface OutsideFileOpenRequest {
   machineId: string;
   path: string;
+  lines?: LineRange;
+}
+
+/** The lines a file link points at: `#L40-L58`, `#L40`, `:40-58` or `:40`. */
+export function fileLinkLines(href: string): LineRange | undefined {
+  const match = /#L(\d+)(?:-L?(\d+))?$/.exec(href.trim()) ?? /:(\d+)(?:-(\d+))?(?:[?#].*)?$/.exec(href.trim());
+  if (match === null) return undefined;
+  const start = Number(match[1]);
+  const end = match[2] === undefined ? start : Number(match[2]);
+  return start > 0 ? { start, end: Math.max(start, end) } : undefined;
 }
 
 /** Classification only: filesystem containment and symlink checks belong to the server. */
@@ -75,7 +92,8 @@ function decodedFileReference(href: string): string | undefined {
   // Markdown destinations are URL references. Decode the path once, after removing URL suffixes.
   let path: string;
   try {
-    path = decodeURIComponent(reference.split(/[?#]/, 1)[0] ?? "");
+    // A `:40` or `:40-58` line suffix is not part of the path.
+    path = decodeURIComponent((reference.split(/[?#]/, 1)[0] ?? "").replace(/:\d+(?:-\d+)?$/, ""));
   } catch {
     return undefined;
   }
