@@ -1,8 +1,9 @@
 // CodeMirror pieces of the Files pane: Markdown live preview, inline agent hunks, highlighted line ranges.
-import { ChangeSet, StateEffect, StateField, Text, Transaction, type EditorState, type Extension, type Range, type TransactionSpec } from "@codemirror/state";
+import { history } from "@codemirror/commands";
+import { ChangeSet, Compartment, StateEffect, StateField, Text, Transaction, type EditorState, type Extension, type Range, type TransactionSpec } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import { diff } from "@codemirror/merge";
-import { HighlightStyle, LanguageSupport, StreamLanguage, syntaxTree } from "@codemirror/language";
+import { HighlightStyle, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { css } from "@codemirror/lang-css";
 import { go } from "@codemirror/lang-go";
 import { html } from "@codemirror/lang-html";
@@ -54,8 +55,10 @@ const checkbox = (checked: boolean) => new Widget(`cb${String(checked)}`, (view)
   box.checked = checked;
   box.setAttribute("aria-label", checked ? "Done" : "Not done");
   wrap.append(box);
-  box.addEventListener("mousedown", (event) => {
-    event.preventDefault();
+  // mousedown keeps the editor's focus and cursor; click also covers keyboard activation.
+  box.addEventListener("mousedown", (event) => { event.preventDefault(); });
+  box.addEventListener("click", (event) => {
+    event.preventDefault(); // the doc change re-renders the box; never let it toggle on its own
     const pos = view.posAtDOM(wrap);
     const match = /\[( |x|X)\]/.exec(view.state.doc.sliceString(pos, pos + 8));
     if (match) view.dispatch({ changes: { from: pos + match.index + 1, to: pos + match.index + 2, insert: checked ? " " : "x" } });
@@ -183,22 +186,51 @@ function buildPreview(state: EditorState, render: (markdown: string) => string):
   return Decoration.set(deco, true);
 }
 
-export const proseHighlight = HighlightStyle.define([
+/** Prose (Markdown) and code token styles in PI WEB theme colors, so they follow light and dark themes. */
+export const filesHighlighting = syntaxHighlighting(HighlightStyle.define([
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strong, fontWeight: "650" },
   { tag: tags.strikethrough, textDecoration: "line-through" },
   { tag: tags.heading, fontWeight: "650" },
-  { tag: [tags.processingInstruction, tags.meta, tags.url], color: "var(--pi-muted)" },
-]);
+  { tag: [tags.processingInstruction, tags.meta, tags.url, tags.operator, tags.punctuation], color: "var(--pi-muted)" },
+  { tag: tags.comment, color: "var(--pi-muted)", fontStyle: "italic" },
+  { tag: tags.keyword, color: "var(--pi-purple)" },
+  { tag: [tags.string, tags.special(tags.string), tags.regexp], color: "var(--pi-success)" },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom, tags.attributeName], color: "var(--pi-warning)" },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--pi-accent)" },
+  { tag: tags.tagName, color: "var(--pi-danger)" },
+  { tag: tags.propertyName, color: "var(--pi-text-secondary)" },
+]));
 
-/** Obsidian-style live preview: markup hides unless the cursor is inside its element. */
-export function livePreview(render: (markdown: string) => string): Extension {
+/**
+ * Obsidian-style live preview: markup hides unless the cursor is inside its element.
+ * A click on a rendered link (or ⌘/Ctrl-click anywhere on one) hands `open` the link rendered as an anchor.
+ */
+export function livePreview(render: (markdown: string) => string, open: (anchor: HTMLAnchorElement) => void): Extension {
   const field = StateField.define<DecorationSet>({
     create: (state) => buildPreview(state, render),
     update: (value, tr) => tr.docChanged || tr.selection !== undefined || syntaxTree(tr.state) !== syntaxTree(tr.startState) ? buildPreview(tr.state, render) : value,
     provide: (f) => EditorView.decorations.from(f),
   });
-  return [field, EditorView.contentAttributes.of({ class: "lp-on" })];
+  const links = EditorView.domEventHandlers({
+    mousedown(event, view) {
+      const span = event.button === 0 && event.target instanceof Element ? event.target.closest(".lp-link") : null;
+      if (span === null) return false;
+      let link: SyntaxNode | null = syntaxTree(view.state).resolveInner(view.posAtDOM(span), 1);
+      while (link !== null && link.name !== "Link") link = link.parent;
+      if (link === null) return false;
+      const { from, to } = link;
+      if (!event.metaKey && !event.ctrlKey && view.state.selection.ranges.some((r) => r.from <= to && r.to >= from)) return false;
+      const holder = document.createElement("div");
+      holder.innerHTML = render(view.state.doc.sliceString(from, to));
+      const anchor = holder.querySelector("a");
+      if (anchor === null) return false;
+      event.preventDefault();
+      open(anchor);
+      return true;
+    },
+  });
+  return [field, links, EditorView.contentAttributes.of({ class: "lp-on" })];
 }
 
 // ---------------- agent hunks: inline diff of what the agent changed on disk ----------------
@@ -227,7 +259,8 @@ function hunkButtons(view: EditorView, id: number, compact: boolean): HTMLElemen
     button.setAttribute("aria-label", label);
     if (compact || act !== "merge") button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${HUNK_ICONS[act]}</svg>`;
     else button.textContent = label;
-    button.addEventListener("mousedown", (event) => { event.preventDefault(); runHunkAction(view, id, act); });
+    button.addEventListener("mousedown", (event) => { event.preventDefault(); });
+    button.addEventListener("click", () => { runHunkAction(view, id, act); });
     bar.append(button);
   }
   return bar;
@@ -289,25 +322,24 @@ export const hunkField = StateField.define<readonly Hunk[]>({
     const incoming = tr.effects.flatMap((e) => e.is(addHunks) ? e.value : []);
     const startDoc = tr.startState.doc;
     const lineSpan = (from: number, to: number) => [startDoc.lineAt(from).number, startDoc.lineAt(to).number] as const;
-    const regions: (IncomingHunk & { absorbed: Hunk[] })[] = [];
-    const absorbed = new Set<number>();
-    for (const n of incoming) {
-      const region: IncomingHunk & { absorbed: Hunk[] } = { ...n, absorbed: [] };
-      const [nf, nt] = lineSpan(n.sFrom, n.sTo);
-      for (const e of hunks) {
-        if (absorbed.has(e.id)) continue;
-        const [ef, et] = lineSpan(e.from, e.to);
-        if (ef <= nt && nf <= et) {
-          region.absorbed.push(e);
-          absorbed.add(e.id);
-          region.sFrom = Math.min(region.sFrom, e.from);
-          region.sTo = Math.max(region.sTo, e.to);
-          region.overlaps ||= e.overlaps;
-        }
+    const regions: (IncomingHunk & { absorbed: Hunk[] })[] = incoming.map((n) => ({ ...n, absorbed: [] }));
+    // Merge transitively: a region that grows by absorbing a hunk may now meet another region or hunk.
+    if (regions.length > 0) for (let merged = true; merged;) {
+      merged = false;
+      for (const r of regions) {
+        const [rf, rt] = lineSpan(r.sFrom, r.sTo);
+        const meets = (from: number, to: number) => { const [f, t] = lineSpan(from, to); return f <= rt && rf <= t; };
+        const hunk = hunks.find((e) => meets(e.from, e.to));
+        const other = hunk === undefined ? regions.find((q) => q !== r && meets(q.sFrom, q.sTo)) : undefined;
+        const part = hunk ?? other;
+        if (part === undefined) continue;
+        if (hunk !== undefined) { hunks = hunks.filter((e) => e !== hunk); r.absorbed.push(hunk); r.sFrom = Math.min(r.sFrom, hunk.from); r.sTo = Math.max(r.sTo, hunk.to); }
+        if (other !== undefined) { regions.splice(regions.indexOf(other), 1); r.absorbed.push(...other.absorbed); r.sFrom = Math.min(r.sFrom, other.sFrom); r.sTo = Math.max(r.sTo, other.sTo); }
+        r.overlaps ||= part.overlaps;
+        merged = true;
+        break;
       }
-      regions.push(region);
     }
-    hunks = hunks.filter((h) => !absorbed.has(h.id));
     if (tr.docChanged) hunks = hunks.map((h) => {
       const from = tr.changes.mapPos(h.from, 1);
       return { ...h, from, to: Math.max(from, tr.changes.mapPos(h.to, -1)) };
@@ -435,19 +467,41 @@ export function diskChangeSpec(state: EditorState, base: string, disk: string): 
   const baseDoc = Text.of(base.split("\n"));
   const myLines: [number, number][] = [];
   mine.iterChangedRanges((fA, tA) => { myLines.push([baseDoc.lineAt(fA).number, baseDoc.lineAt(tA).number]); });
-  const changes: { from: number; to: number; insert: string }[] = [], hunks: IncomingHunk[] = [];
+  const regions: { from: number; to: number; fB: number; tB: number; overlaps: boolean }[] = [];
   for (const c of lineChunks(base, disk)) {
     const lf = baseDoc.lineAt(c.fA).number, lt = baseDoc.lineAt(Math.max(c.fA, c.tA - (c.tA > c.fA ? 1 : 0))).number;
     const overlaps = myLines.some(([f, t]) => lf <= t && f <= lt);
     // where this base range lives in the doc; when the user edited it, their version is what gets replaced (and kept as "old")
     const from = mine.mapPos(c.fA, -1), to = Math.max(from, mine.mapPos(c.tA, 1));
-    changes.push({ from, to, insert: disk.slice(c.fB, c.tB) });
-    hunks.push({ sFrom: from, sTo: to, overlaps });
+    const last = regions.at(-1);
+    // Chunks only meet in the doc when the user edited the text between them: replace that span once, with the disk text in between.
+    if (last !== undefined && from <= last.to) { last.to = Math.max(last.to, to); last.tB = c.tB; last.overlaps = true; }
+    else regions.push({ from, to, fB: c.fB, tB: c.tB, overlaps });
   }
+  const changes = regions.map((r) => ({ from: r.from, to: r.to, insert: disk.slice(r.fB, r.tB) }));
+  const hunks = regions.map((r): IncomingHunk => ({ sFrom: r.from, sTo: r.to, overlaps: r.overlaps }));
   return {
     spec: { changes: ChangeSet.of(changes, doc.length), effects: addHunks.of(hunks), annotations: [Transaction.addToHistory.of(false), Transaction.remote.of(true)] },
     overlaps: hunks.some((h) => h.overlaps),
   };
+}
+
+const historySlot = new Compartment();
+/** Undo history for the editor; `applyDiskChange` resets it when an agent edit lands on unsaved edits. */
+export const editHistory = (): Extension => historySlot.of(history());
+
+/**
+ * Dispatches the agent's disk text over the editor. When it overlaps unsaved edits the undo history is dropped:
+ * undoing a local edit the agent rewrote would mix both versions, and Reject is the way back.
+ */
+export function applyDiskChange(view: EditorView, base: string, disk: string): boolean {
+  const { spec, overlaps } = diskChangeSpec(view.state, base, disk);
+  view.dispatch(spec);
+  if (overlaps) {
+    view.dispatch({ effects: historySlot.reconfigure([]) });
+    view.dispatch({ effects: historySlot.reconfigure(history()) });
+  }
+  return overlaps;
 }
 
 // ---------------- highlighted line range (Chat links with #L40-L58) ----------------

@@ -87,13 +87,15 @@ export function outsideChatFilePath(href: string, context: MarkdownWorkspaceCont
 
 /** A Markdown destination decoded once to a file path, or undefined for URLs, fragments and unsafe characters. */
 function decodedFileReference(href: string): string | undefined {
-  const reference = href.trim();
+  const trimmed = href.trim();
+  // A `:40` or `:40-58` line suffix is not part of the path, nor a URL scheme (`README.md:40`).
+  // ponytail: only stripped after a dot or slash, so `tel:123` stays a URL; a bare `Makefile:40` is not linked.
+  const reference = trimmed.replace(/^([^?#]*[./][^?#:]*):\d+(?:-\d+)?(?=[?#]|$)/, "$1");
   if (reference === "" || /^[#?]/.test(reference) || reference.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(reference)) return undefined;
   // Markdown destinations are URL references. Decode the path once, after removing URL suffixes.
   let path: string;
   try {
-    // A `:40` or `:40-58` line suffix is not part of the path.
-    path = decodeURIComponent((reference.split(/[?#]/, 1)[0] ?? "").replace(/:\d+(?:-\d+)?$/, ""));
+    path = decodeURIComponent(reference.split(/[?#]/, 1)[0] ?? "");
   } catch {
     return undefined;
   }

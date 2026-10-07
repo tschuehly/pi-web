@@ -157,10 +157,75 @@ describe("Workbench Files editor", () => {
     expect($(pane, ".hunk-ins")?.textContent).toBe("Monday");
     expect($(pane, ".strip")?.textContent).toContain("1 agent change");
     expect(status(pane)).toBe("Agent edit applied");
-    $(pane, ".hunk-inline-btns .reject")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    $(pane, ".hunk-inline-btns .reject")?.click();
     await pane.updateComplete;
     expect(text(pane)).toBe("The launch is on Friday.\n");
     expect($(pane, ".strip")).toBeNull();
+  });
+
+  it("keeps CRLF files clean when the agent edits them and saves them back with CRLF", async () => {
+    const read = vi.spyOn(api, "workspaceFile").mockResolvedValueOnce(file("a.txt", "one\r\ntwo\r\nthree\r\n", "v1"));
+    const write = vi.spyOn(api, "writeWorkspaceFile").mockResolvedValue({ path: "a.txt", size: 1, modifiedAt: "now", created: false });
+    const pane = await mount();
+    await pane.openFile("a.txt");
+    read.mockResolvedValueOnce(file("a.txt", "one\r\nTWO\r\nthree\r\n", "v2"));
+    await pane.syncWithDisk(); await pane.updateComplete;
+    expect(text(pane)).toBe("one\nTWO\nthree\n");
+    expect($(pane, ".strip")?.textContent).toContain("1 agent change");
+    expect(pane.canClose()).toBe(true);
+    edit(pane, "one\nTWO\nthree\nfour\n");
+    read.mockResolvedValueOnce(file("a.txt", "one\r\nTWO\r\nthree\r\nfour\r\n", "v3"));
+    save(pane);
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledWith("p", "w", "a.txt", "one\r\nTWO\r\nthree\r\nfour\r\n", { expectedVersion: "v2" }, "local"); });
+    await vi.waitFor(() => { expect(status(pane)).toBe("Saved"); });
+    expect(text(pane)).toBe("one\nTWO\nthree\nfour\n");
+  });
+
+  it("guards unsaved edits the agent overwrote: they live only in the hunk until resolved", async () => {
+    const read = vi.spyOn(api, "workspaceFile").mockResolvedValueOnce(file("a.txt", "The launch is on Friday.\n", "v1"));
+    vi.stubGlobal("confirm", vi.fn(() => false));
+    const pane = await mount();
+    await pane.openFile("a.txt");
+    edit(pane, "The launch is on Saturday.\n");
+    read.mockResolvedValueOnce(file("a.txt", "The launch is on Monday.\n", "v2"));
+    await pane.syncWithDisk(); await pane.updateComplete;
+    expect(text(pane)).toBe("The launch is on Monday.\n");
+    expect(pane.canClose()).toBe(false);
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    $(pane, ".strip .approve")?.click(); await pane.updateComplete;
+    expect(pane.canClose()).toBe(true);
+  });
+
+  it("keeps edits typed while another file is still loading unless the user discards them", async () => {
+    let finish!: (value: FileContentResponse) => void;
+    const read = vi.spyOn(api, "workspaceFile").mockResolvedValueOnce(file("a.txt", "a", "v1"));
+    const confirm = vi.fn(() => false); vi.stubGlobal("confirm", confirm);
+    const pane = await mount();
+    await pane.openFile("a.txt");
+    read.mockImplementationOnce(() => new Promise((done) => { finish = done; }));
+    const switching = pane.openFile("b.txt");
+    edit(pane, "typed while loading");
+    finish(file("b.txt", "b", "v1"));
+    expect(await switching).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(text(pane)).toBe("typed while loading");
+    expect($(pane, ".crumbs")?.getAttribute("title")).toBe("a.txt");
+  });
+
+  it("opens rendered Live links: workspace files here at their lines, web links in a new tab", async () => {
+    const read = vi.spyOn(api, "workspaceFile").mockImplementation((_p, _w, path) => Promise.resolve(file(path, path === "docs/a.md" ? "Go to [b](b.md:2) or [web](https://example.com).\n" : "1\n2\n3\n", "v1")));
+    const open = vi.fn(() => null); vi.stubGlobal("open", open);
+    const pane = await mount();
+    await pane.openFile("docs/a.md"); await pane.updateComplete;
+    const links = pane.shadowRoot?.querySelectorAll(".lp-link") ?? [];
+    links[1]?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    expect(open).toHaveBeenCalledWith("https://example.com", "_blank", "noopener,noreferrer");
+    links[0]?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    await vi.waitFor(() => { expect(text(pane)).toBe("1\n2\n3\n"); });
+    expect(read.mock.calls.at(-1)?.[2]).toBe("docs/b.md");
+    expect([...pane.shadowRoot?.querySelectorAll(".cm-range") ?? []].map((line) => line.textContent)).toEqual(["2"]);
   });
 
   it("on a save conflict re-reads the file and shows the agent's changes for review", async () => {
@@ -238,6 +303,20 @@ describe("Workbench Files read-only files", () => {
       expect(status(pane)).toBe("Read-only");
     }
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it("previews an SVG as an image in Live and edits its source in Raw", async () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>';
+    vi.spyOn(api, "workspaceFile").mockResolvedValue({ ...file("icon.svg", source, "v1"), mediaType: "image" as const });
+    const pane = await mount();
+    await pane.openFile("icon.svg"); await pane.updateComplete;
+    expect($(pane, ".preview img")?.getAttribute("src")).toBe(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`);
+    expect($(pane, ".editor")?.hidden).toBe(true);
+    [...pane.shadowRoot?.querySelectorAll<HTMLButtonElement>(".seg button") ?? []].find((button) => button.textContent === "Raw")?.click();
+    await pane.updateComplete;
+    expect($(pane, ".preview")).toBeNull();
+    expect($(pane, ".editor")?.hidden).toBe(false);
+    expect(text(pane)).toBe(source);
   });
 
   it("offers Show in Finder in the macOS app", async () => {

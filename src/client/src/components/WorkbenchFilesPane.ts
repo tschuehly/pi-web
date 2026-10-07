@@ -2,8 +2,7 @@ import { LitElement, css, html, nothing, svg, type PropertyValues, type SVGTempl
 import { customElement, property, state } from "lit/decorators.js";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, drawSelection, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { api, type FileContentResponse, type FileTreeEntry, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
@@ -12,9 +11,13 @@ import { toSafeMarkdownHtml } from "../formatting/markdown";
 import { workspaceFilePreviewUrl } from "../api/urls";
 import { writeClipboardText } from "../clipboard";
 import { MAX_INLINE_PREVIEW_BYTES, MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../../shared/workspaceFiles";
-import { bulkHunkAction, clearHunks, diskChangeSpec, hunkField, languageFor, lineRangeHighlight, lineRangeSpec, livePreview, proseHighlight } from "./workbenchFilesEditor";
+import { applyDiskChange, bulkHunkAction, clearHunks, editHistory, filesHighlighting, hunkField, languageFor, lineRangeHighlight, lineRangeSpec, livePreview } from "./workbenchFilesEditor";
 
 const isMarkdown = (path: string): boolean => /\.(?:md|markdown|mdx)$/i.test(path);
+/** SVG is text the editor can change and an image the pane can preview. */
+const isSvg = (file: FileContentResponse | undefined): boolean => file?.mediaType === "image" && !file.binary;
+/** CodeMirror keeps LF lines; the file's own line ending comes back on save. */
+const toLf = (text: string): string => text.replace(/\r\n?/g, "\n");
 const MODE_KEY = "pi-web.files.markdownMode";
 const POLL_MS = 2000;
 const isMissing = (error: unknown): boolean => error instanceof HttpRequestError && /does not exist|not found/i.test(error.message);
@@ -36,6 +39,8 @@ export class WorkbenchFilesPane extends LitElement {
   @state() private dirty = false;
   @state() private deleted = false;
   @state() private hunkCount = 0;
+  /** An unresolved agent hunk holds the user's unsaved text as its old side. */
+  @state() private overlapPending = false;
   @state() private toast = "";
   @state() private copied = false;
   @state() private treeOpen = false;
@@ -66,9 +71,10 @@ export class WorkbenchFilesPane extends LitElement {
   /** Last disk text the editor is in sync with; agent edits are diffed against it. */
   private base = "";
   private version: string | undefined;
+  private eol = "\n";
 
   private get editable(): boolean { return this.loaded !== undefined && !this.loaded.binary && !this.loaded.truncated; }
-  private get unsaved(): boolean { return this.editable && (this.dirty || this.deleted); }
+  private get unsaved(): boolean { return this.editable && (this.dirty || this.deleted || this.overlapPending); }
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -250,16 +256,20 @@ export class WorkbenchFilesPane extends LitElement {
     ++this.diskSequence;
     this.loading = true;
     this.error = "";
+    const doc = this.view?.state.doc;
     try {
       const file = await api.workspaceFile(workspace.projectId, workspace.id, path, this.machineId);
       if (sequence !== this.readSequence) return false;
+      // Edits typed while the file was loading must not vanish with the switch.
+      if (this.view !== undefined && this.view.state.doc !== doc && !this.canClose()) return false;
       this.selectedPath = path;
       this.loaded = file;
       this.deleted = false;
       this.treeOpen = false;
       this.expandTo(path);
       await this.updateComplete;
-      this.resetEditor(file.binary ? "" : file.content, file);
+      this.eol = file.content.includes("\r\n") ? "\r\n" : "\n";
+      this.resetEditor(file.binary ? "" : toLf(file.content), file);
       const image = this.shadowRoot?.querySelector<HTMLImageElement>(".preview img");
       if (image !== null && image !== undefined) this.zoomImage(image, 1, 0, 0);
       this.shadowRoot?.querySelector(".preview")?.scrollTo(0, 0);
@@ -286,6 +296,7 @@ export class WorkbenchFilesPane extends LitElement {
     this.version = file?.version;
     this.dirty = false;
     this.hunkCount = 0;
+    this.overlapPending = false;
     this.toast = "";
     const host = this.shadowRoot?.querySelector<HTMLElement>(".editor");
     if (this.view === undefined) {
@@ -294,6 +305,7 @@ export class WorkbenchFilesPane extends LitElement {
     }
     this.view.setState(this.editorState(text, file));
     this.view.scrollDOM.scrollTop = 0;
+    this.requestUpdate(); // an SVG preview renders from the new doc
   }
 
   private editorState(text: string, file: FileContentResponse | undefined): EditorState {
@@ -303,9 +315,9 @@ export class WorkbenchFilesPane extends LitElement {
     return EditorState.create({
       doc: text,
       extensions: [
-        history(), drawSelection(),
+        editHistory(), drawSelection(),
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-        syntaxHighlighting(proseHighlight), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        filesHighlighting,
         hunkField, lineRangeHighlight,
         this.modeSlot.of(this.previewFor(file)),
         md ? [markdown({ base: markdownLanguage, codeLanguages: (info) => languageFor(info)?.language ?? null }), EditorView.lineWrapping]
@@ -324,14 +336,26 @@ export class WorkbenchFilesPane extends LitElement {
     const workspace = this.workspace;
     const base = workspace === undefined ? undefined : markdownWorkspaceContext(this.machineId, workspace, { id: "files", cwd: workspace.path });
     const context = base === undefined ? undefined : { ...base, sourcePath: file.path };
-    return livePreview((source) => toSafeMarkdownHtml(source, context));
+    return livePreview((source) => toSafeMarkdownHtml(source, context), (anchor) => { this.openLink(anchor); });
+  }
+
+  /** Opens a rendered link like a Chat does: workspace files here (at their lines), other URLs in a new tab. */
+  private openLink(anchor: Element): void {
+    const path = anchor.getAttribute("data-workspace-file");
+    const [start = 0, end = start] = (anchor.getAttribute("data-lines") ?? "").split("-").map(Number);
+    if (path !== null) { void this.openFile(path, false, start > 0 ? { start, end } : undefined); return; }
+    const href = anchor.getAttribute("href");
+    if (href !== null && href !== "") window.open(href, "_blank", "noopener,noreferrer");
   }
 
   private syncEditorState(): void {
     const view = this.view;
     if (view === undefined) return;
     this.dirty = view.state.doc.toString() !== this.base;
-    this.hunkCount = view.state.field(hunkField, false)?.length ?? 0;
+    const hunks = view.state.field(hunkField, false) ?? [];
+    this.hunkCount = hunks.length;
+    this.overlapPending = hunks.some((h) => h.overlaps);
+    if (isSvg(this.loaded)) this.requestUpdate();
   }
 
   private setMode(mode: "live" | "raw"): void {
@@ -355,12 +379,12 @@ export class WorkbenchFilesPane extends LitElement {
   }
 
   /** Applies the agent's disk text over the editor and shows what changed inline. */
-  private applyDisk(disk: string): void {
-    const view = this.view;
+  private applyDisk(content: string): void {
+    const view = this.view, disk = toLf(content);
     if (view === undefined || disk === this.base) return;
-    const { spec, overlaps } = diskChangeSpec(view.state, this.base, disk);
+    const base = this.base;
     this.base = disk;
-    view.dispatch(spec);
+    const overlaps = applyDiskChange(view, base, disk);
     this.syncEditorState();
     this.showToast(overlaps ? "Agent edited lines you changed" : "Agent edit applied");
   }
@@ -403,7 +427,7 @@ export class WorkbenchFilesPane extends LitElement {
     let written = false;
     try {
       // A file deleted on disk is recreated, but never over one that reappeared meanwhile.
-      await api.writeWorkspaceFile(workspace.projectId, workspace.id, file.path, text, this.deleted ? { overwrite: false } : { expectedVersion: this.version ?? "" }, this.machineId);
+      await api.writeWorkspaceFile(workspace.projectId, workspace.id, file.path, this.eol === "\n" ? text : text.replaceAll("\n", this.eol), this.deleted ? { overwrite: false } : { expectedVersion: this.version ?? "" }, this.machineId);
       written = true;
       const saved = await api.workspaceFile(workspace.projectId, workspace.id, file.path, this.machineId);
       if (saved.binary || saved.truncated || saved.version === undefined) throw new Error("Saved, but could not verify the new file version. Reload before saving again.");
@@ -500,16 +524,16 @@ export class WorkbenchFilesPane extends LitElement {
   /** Links in rendered tables open in this pane instead of downloading. */
   private onEditorClick(event: MouseEvent): void {
     const anchor = event.target instanceof Element ? event.target.closest("a[data-workspace-file]") : null;
-    const path = anchor?.getAttribute("data-workspace-file");
-    if (path === null || path === undefined) return;
+    if (anchor === null) return;
     event.preventDefault();
-    void this.openFile(path);
+    this.openLink(anchor);
   }
 
   override render() {
     const file = this.loaded;
     const workspace = this.workspace;
     const md = file !== undefined && isMarkdown(file.path) && !file.truncated && !file.binary;
+    const svgFile = isSvg(file) && file?.truncated !== true;
     const text = file !== undefined && !file.binary;
     const slash = this.selectedPath.lastIndexOf("/");
     const status = file === undefined ? "" : this.toast !== "" ? this.toast : !this.editable ? "Read-only" : this.saving ? "Saving…" : this.deleted ? "Deleted on disk" : this.dirty ? "Unsaved · ⌘S" : "Saved";
@@ -523,7 +547,7 @@ export class WorkbenchFilesPane extends LitElement {
             ${slash > 0 ? html`<span class="dir">${this.selectedPath.slice(0, slash + 1)}</span>` : nothing}<span class="leaf">${file === undefined ? "Files" : this.selectedPath.slice(slash + 1)}</span>
           </button>
           <span class=${`state ${statusClass}`} role="status">${this.loading ? "Opening…" : status}</span>
-          ${md ? html`<div class="seg" role="group" aria-label="Markdown view">
+          ${md || svgFile ? html`<div class="seg" role="group" aria-label=${md ? "Markdown view" : "SVG view"}>
             <button type="button" aria-pressed=${this.mode === "live" ? "true" : "false"} @click=${() => { this.setMode("live"); }}>Live</button>
             <button type="button" aria-pressed=${this.mode === "raw" ? "true" : "false"} @click=${() => { this.setMode("raw"); }}>Raw</button>
           </div>` : nothing}
@@ -538,12 +562,18 @@ export class WorkbenchFilesPane extends LitElement {
         <div class="body" @mousedown=${(event: MouseEvent) => { this.onBodyMouseDown(event); }}>
           ${workspace === undefined ? nothing : this.renderTree()}
           <div class="main">
-            ${file === undefined ? nothing : this.renderReadOnly(file)}
-            <div class="editor" ?hidden=${!text} @click=${(event: MouseEvent) => { this.onEditorClick(event); }}></div>
+            ${file === undefined ? nothing : svgFile && this.mode === "live" ? this.renderSvg(file) : this.renderReadOnly(file)}
+            <div class="editor" ?hidden=${!text || svgFile && this.mode === "live"} @click=${(event: MouseEvent) => { this.onEditorClick(event); }}></div>
           </div>
         </div>
       </section>
     `;
+  }
+
+  /** Live view of an SVG: the editor's current text as an image (scripts never run in an <img>). */
+  private renderSvg(file: FileContentResponse): TemplateResult {
+    const source = this.view?.state.doc.toString() ?? toLf(file.content);
+    return html`<div class="preview"><img alt=${`Preview of ${file.path}`} title="Pinch to zoom" @gesturestart=${this.onImageGesture} @gesturechange=${this.onImageGesture} @gestureend=${this.onImageGesture} @wheel=${this.onImageWheel} src=${`data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`}></div>`;
   }
 
   private renderReadOnly(file: FileContentResponse): TemplateResult | typeof nothing {
