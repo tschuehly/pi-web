@@ -92,7 +92,7 @@ export interface ChatLine {
   role: "user" | "assistant" | "tool" | "system" | "bash" | "skill";
   parts: ChatPart[];
   source?: "compaction" | "branch_summary";
-  severity?: "error";
+  severity?: "error" | "warning";
   meta?: {
     timestamp?: string;
     model?: { provider?: string; id?: string; responseId?: string };
@@ -407,6 +407,7 @@ export const chatStyles = css`
   .msg.user { background: color-mix(in srgb, var(--pi-accent) 10%, var(--pi-surface)); border-color: color-mix(in srgb, var(--pi-accent) 30%, var(--pi-border)); }
   .msg.tool, .msg.system { color: var(--pi-text); }
   .msg.error { color: var(--pi-danger); }
+  .msg.warning { color: var(--pi-warning); }
   .msg.tool-execution-shell, .msg.ask-user-record-shell { padding: 0 2px var(--pi-message-padding); color: var(--pi-text); }
   .msg.skill-read-shell { padding: 2px 2px var(--pi-message-padding); color: var(--pi-purple); }
   .msg.ask-user-record-shell ask-user-card { margin: 0 auto; }
@@ -436,6 +437,7 @@ export const chatStyles = css`
   .image-zoom-close:focus-visible { outline: 1px solid var(--pi-border); outline-offset: 2px; }
   .group-msg { max-width: 100%; min-width: 0; box-sizing: border-box; padding: 4px 2px; color: var(--pi-text); overflow: visible; overflow-wrap: anywhere; }
   .group-msg.error { color: var(--pi-danger); }
+  .group-msg.warning { color: var(--pi-warning); }
   .group-msg.tool-execution-shell { color: var(--pi-text); }
   .group-msg.bash { color: var(--pi-success); }
   .history-boundary { position: relative; z-index: 5; display: grid; gap: 3px; justify-items: center; margin: 0 0 14px; color: var(--pi-muted); font-size: 12px; text-align: center; }

@@ -98,6 +98,7 @@ import { createSpawnSessionToolDefinition, type SpawnSessionInvocation, type Spa
 import { createSubsessionToolDefinitions, type SpawnSubsessionInvocation, type SpawnSubsessionResult, type SubsessionCheckResult, type SubsessionReadQuery, type SubsessionReadResult, type SubsessionStatus, type SubsessionSummary, type SubsessionToolDeps } from "./spawnSubsessionTool.js";
 import { buildTranscriptView } from "./subsessionTranscript.js";
 import { annotateAssistantThinkingLevel, historyMessagesFromEntries } from "./transcriptMessages.js";
+import { cacheMissNoticesByEntryId, liveCacheMissNotice } from "./cacheMissNotices.js";
 import { planSessionCleanup, summarizeSessionCleanupExecution, type NormalizedSessionCleanupRequest, type SessionCleanupPlan } from "./sessionCleanup.js";
 import type { SpawnTargetDecision, SpawnTargetResolver } from "./spawnTargetResolver.js";
 import {
@@ -496,6 +497,8 @@ export interface PiAgentSession {
     getEnabledModels(): string[] | undefined;
     getProjectSettings?(): object;
     setEnabledModels(patterns: string[] | undefined): void;
+    /** Pi's `showCacheMissNotices`; absent means off, the SDK default. */
+    getShowCacheMissNotices?(): boolean;
   };
   sessionManager: PiSessionManager;
   scopedModels: readonly { model: AgentModel; thinkingLevel?: ClientThinkingLevel }[];
@@ -2515,6 +2518,18 @@ export class PiSessionService implements SessionRouteService {
     });
   }
 
+  /** History messages with Pi's cache-miss notices re-derived onto the assistant turns that paid for them. */
+  private historyWithCacheMissNotices(session: PiAgentSession, branch: readonly unknown[]): unknown[] {
+    const messages = historyMessagesFromEntries(branch);
+    if (session.settingsManager.getShowCacheMissNotices?.() !== true) return messages;
+    const notices = cacheMissNoticesByEntryId(branch, session.modelRuntime);
+    if (notices.size === 0) return messages;
+    return messages.map((message) => {
+      const cacheMissNotice = notices.get(getString(message, "entryId") ?? "");
+      return cacheMissNotice === undefined || !isRecord(message) ? message : { ...message, cacheMissNotice };
+    });
+  }
+
   async transcriptSnapshot(ref: PiSessionRef, page?: { limit?: number }): Promise<SessionTranscriptSnapshot> {
     const session = await this.getOrOpen(ref);
     const seqBeforeRead = this.events.currentSeq(session.sessionId);
@@ -2525,7 +2540,7 @@ export class PiSessionService implements SessionRouteService {
     const branch = diskBranch === undefined || this.hasActiveWork(session) || this.events.currentSeq(session.sessionId) !== seqBeforeRead
       ? session.sessionManager.getBranch()
       : diskBranch;
-    const messages = historyMessagesFromEntries(branch);
+    const messages = this.historyWithCacheMissNotices(session, branch);
     const userCount = messages.filter((message) => isRecord(message) && message["role"] === "user").length;
     const echoes = (this.pendingPromptEchoes.get(session) ?? []).filter((echo) => echo.userIndex >= userCount);
     messages.push(...echoes.map((echo) => echo.message));
@@ -2540,7 +2555,7 @@ export class PiSessionService implements SessionRouteService {
 
   async messages(ref: PiSessionRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
     const session = await this.getOrOpen(ref);
-    const result = pageMessagesAtSafeBoundary(historyMessagesFromEntries(await this.readableSessionBranch(ref, session)).map(displayPromptMessage), page);
+    const result = pageMessagesAtSafeBoundary(this.historyWithCacheMissNotices(session, await this.readableSessionBranch(ref, session)).map(displayPromptMessage), page);
     return { ...result, messages: result.messages.map((message) => this.browserTranscriptMessage(session, message)) };
   }
 
@@ -4487,6 +4502,10 @@ export class PiSessionService implements SessionRouteService {
     let queuedPublications = 0;
     let subscribed = true;
     const unsubscribe = session.subscribe((event) => {
+      // Detect before Pi persists the finalized message, as the TUI does.
+      const cacheMissNotice = getString(event, "type") === "message_end" && session.settingsManager.getShowCacheMissNotices?.() === true
+        ? liveCacheMissNotice(session.sessionManager.getBranch(), getProperty(event, "message"), session.modelRuntime)
+        : undefined;
       const publish = () => {
         const eventType = getString(event, "type");
         const message = getProperty(event, "message");
@@ -4503,8 +4522,13 @@ export class PiSessionService implements SessionRouteService {
           const clientEvent = toClientEvent(event, session.thinkingLevel, finalizedMessageEntryId(session, event));
           if ((clientEvent.type === "message.end" || clientEvent.type === "message.append") && clientEvent.message !== undefined) {
             clientEvent.message = this.browserTranscriptMessage(session, clientEvent.message);
+            if (cacheMissNotice !== undefined && isRecord(clientEvent.message)) clientEvent.message = { ...clientEvent.message, cacheMissNotice };
           }
           this.events.publish(session.sessionId, clientEvent, { id: session.sessionId, cwd: session.sessionManager.getCwd() });
+        }
+        const notificationGeneration = this.notificationGenerationBySession.get(session);
+        if (cacheMissNotice !== undefined && notificationGeneration !== undefined) {
+          this.publishNotificationMutations(this.notificationStore.addNotification(notificationGeneration, cacheMissNotice, "warning").mutations);
         }
         this.publishActivityForEvent(session, event);
         this.updateActiveToolExecutionsForEvent(session, event);
