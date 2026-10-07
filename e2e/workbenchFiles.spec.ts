@@ -23,6 +23,17 @@ async function shot(target: Page | Locator, name: string): Promise<void> {
   if (SHOTS !== undefined) await target.screenshot({ path: join(SHOTS, name) });
 }
 
+/** Waits until the tree drawer has finished sliding open or shut, so screenshots never catch it mid-transition. */
+async function drawerSettled(pane: Locator, open: boolean): Promise<void> {
+  await expect.poll(() => pane.evaluate((host, wantOpen) => {
+    const root = host.shadowRoot;
+    const aside = root?.querySelector("aside")?.getBoundingClientRect();
+    const body = root?.querySelector(".body")?.getBoundingClientRect();
+    if (aside === undefined || body === undefined) return false;
+    return wantOpen ? Math.abs(aside.left - body.left) < 1 : aside.right <= body.left + 1;
+  }, open)).toBe(true);
+}
+
 /** Opens `docs/<name>` through the Files tree. */
 async function openFromTree(page: Page, name: string): Promise<Locator> {
   await page.getByRole("button", { name: "Search files" }).click();
@@ -58,13 +69,18 @@ test("Markdown opens Live from the tree, toggles Raw, saves with ⌘S, and shows
   // Live preview: rendered table, checkboxes, hidden heading marks; the drawer is clipped to the pane.
   await expect(pane.locator(".cm-content.lp-on")).toBeVisible();
   await expect(pane.locator(".lp-check")).toHaveCount(2);
+  // The wide table stays inside the visible editor and scrolls sideways in its own box.
   const table = await pane.locator(".lp-table").boundingBox();
-  const content = await pane.locator(".cm-content").boundingBox();
-  expect(table !== null && content !== null && table.x + table.width <= content.x + content.width + 1).toBe(true);
+  const scroller = await pane.locator(".cm-scroller").boundingBox();
+  expect(table !== null && scroller !== null && table.x + table.width <= scroller.x + scroller.width + 1).toBe(true);
+  expect(await pane.locator(".lp-table").evaluate((box) => box.scrollWidth > box.clientWidth)).toBe(true);
   expect(await pane.locator(".body").evaluate((body) => getComputedStyle(body).overflow)).toBe("hidden");
+  await drawerSettled(pane, false);
   await shot(page, "a-markdown-live.png");
   await pane.getByRole("button", { name: "Files", exact: true }).click();
   await expect(pane.locator(".tree .row.sel")).toHaveAttribute("data-path", "docs/plan.md");
+  await drawerSettled(pane, true);
+  await expect(pane.locator(".tree .row.sel")).toBeInViewport();
   await shot(page, "b-tree-drawer.png");
   await page.keyboard.press("Escape");
   await expect(pane.locator(".tree-open")).toHaveCount(0);
@@ -105,6 +121,11 @@ test("Markdown opens Live from the tree, toggles Raw, saves with ⌘S, and shows
   const full = await pane.locator(".pane.full").boundingBox();
   expect(viewport !== null && full !== null && full.width > viewport.width - 80 && full.height > viewport.height - 80).toBe(true);
   expect((await pane.locator(".cm-content").boundingBox())?.width).toBeLessThanOrEqual(880);
+  // The modal body ends inside the modal and scrolls the rest of the file.
+  const editorBox = await pane.locator(".cm-scroller").boundingBox();
+  expect(editorBox !== null && full !== null && editorBox.y + editorBox.height <= full.y + full.height + 1).toBe(true);
+  expect(await pane.locator(".cm-scroller").evaluate((scroller) => { scroller.scrollTop = 120; return scroller.scrollTop; })).toBeGreaterThan(0);
+  await pane.locator(".cm-scroller").evaluate((scroller) => { scroller.scrollTop = 0; });
   await shot(page, "d-full-size.png");
   await page.keyboard.press("Escape");
   await expect(pane.locator(".pane.full")).toHaveCount(0);
@@ -114,6 +135,19 @@ test("Markdown opens Live from the tree, toggles Raw, saves with ⌘S, and shows
   await expect(pane.locator(".strip")).toHaveCount(0);
   await expect.poll(() => readFile(path, "utf8")).toContain("The launch is on Friday.");
   expect(await readFile(path, "utf8")).toContain("Escalate it on Tuesday.");
+});
+
+test("the Files pane follows the dark theme", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await openChat(page);
+  const pane = await openFromTree(page, "notes.md");
+  const background = () => pane.evaluate((host) => getComputedStyle(host).backgroundColor);
+  const light = await background();
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(background).not.toBe(light);
+  await drawerSettled(pane, false);
+  await expect(pane.locator(".cm-content.lp-on")).toBeVisible();
+  await shot(page, "e-dark.png");
 });
 
 test("a save after an unseen agent edit shows the agent's changes for review first", async ({ page }) => {
