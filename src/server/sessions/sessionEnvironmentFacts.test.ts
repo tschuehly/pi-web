@@ -64,6 +64,7 @@ describe("sessionEnvironmentFacts", () => {
     const facts = sessionEnvironmentFacts({ env: ENV });
 
     expect(facts).toContain("Write every file reference as a Markdown link");
+    expect(facts).toContain("append `#L<start>-L<end>`");
     expect(facts).toContain("`[LEDGER.md](.scratch/LEDGER.md)`");
     expect(facts).toContain("absolute path for files outside the working directory");
     expect(facts).toContain("never a `file://` URL");
