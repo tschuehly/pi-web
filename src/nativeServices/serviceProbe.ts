@@ -4,6 +4,7 @@ import { tmpdir, userInfo } from "node:os";
 import { posix as posixPath } from "node:path";
 import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
+import { launchdMaterializeDatalessFiles } from "./serviceRendering.js";
 import type {
   NativeServiceAuthoritativeProbe,
   NativeServicePrerequisite,
@@ -305,7 +306,7 @@ ${argumentsXml}
   </array>
 ${workingDirectoryXml}${environmentXml}  <key>RunAtLoad</key>
   <true/>
-  <key>HardResourceLimits</key>
+${launchdMaterializeDatalessFiles}  <key>HardResourceLimits</key>
   <dict>
     <key>FileSize</key>
     <integer>${String(maxLaunchdProbeFileBytes)}</integer>

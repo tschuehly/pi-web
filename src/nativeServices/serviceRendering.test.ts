@@ -39,6 +39,7 @@ describe("native service rendering", () => {
     expect(unit).toContain('Environment="PI_WEB_CONFIG=/home/user/config with \\"quote\\".json"');
     expect(unit).toContain('ExecStart=/usr/bin/env "/bin/zsh" -lc "exec /usr/bin/env bash -c \'trap \\"kill 0\\" EXIT;');
     expect(unit).toContain("Restart=no");
+    expect(unit).not.toContain("MaterializeDatalessFiles");
   });
 
   it("escapes systemd specifiers and line controls without changing directives", () => {
@@ -74,6 +75,7 @@ describe("native service rendering", () => {
     expect(plist.match(/<string>\/logs\/sessiond\.log<\/string>/gu)).toHaveLength(2);
     expect(plist).not.toContain("<string>\\logs\\sessiond.log</string>");
     expect(plist).not.toContain("<key>KeepAlive</key>");
+    expect(plist).toContain("<key>MaterializeDatalessFiles</key>\n  <true/>");
   });
 
   it("rejects a service from a different plan", () => {

@@ -49,10 +49,15 @@ export function renderLaunchdPlist(
 <dict>
 ${plistString("Label", service.manager.launchdLabel)}${plistProgramArguments(programArguments)}${workingDirectory}${plistEnvironment(service.environment)}  <key>RunAtLoad</key>
   <true/>
-${keepAlive}${plistString("StandardOutPath", logPath)}${plistString("StandardErrorPath", logPath)}</dict>
+${launchdMaterializeDatalessFiles}${keepAlive}${plistString("StandardOutPath", logPath)}${plistString("StandardErrorPath", logPath)}</dict>
 </plist>
 `;
 }
+
+// launchd otherwise starts agents with dataless-file materialization off, so reading
+// cloud-only (OneDrive/iCloud) files fails with EDEADLK in the service and its children.
+// See launchd.plist(5) MaterializeDatalessFiles and setiopolicy_np(3).
+export const launchdMaterializeDatalessFiles = "  <key>MaterializeDatalessFiles</key>\n  <true/>\n";
 
 function assertPlanService(plan: NativeServicePlan, service: NativeServicePlanService): void {
   if (!plan.services.includes(service)) {
