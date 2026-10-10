@@ -473,6 +473,7 @@ describe("probe service definitions", () => {
     expect(plist).not.toContain("<key>PATH</key>");
     expect(plist).toContain("<key>PI_WEB_CONFIG</key>");
     expect(plist).toContain("<key>HardResourceLimits</key>");
+    expect(plist).toContain("<key>MaterializeDatalessFiles</key>\n  <true/>");
   });
 
   it("escapes manager-side substitutions in the systemd probe payload", () => {
