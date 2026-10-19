@@ -10,14 +10,12 @@ const OWNER = "reply-quote";
 const LABEL_LENGTH = 40;
 let nextQuoteId = 0;
 
-/** `> [msg <entryId>] first line`; the anchor lets a reader (or ChatView) find the source message. */
+/**
+ * `> [msg <entryId>](#entry:<entryId>) first line`; ChatView reveals the source from that leading link.
+ * Excerpt lines starting with `>` or `[` are escaped so they cannot open a nested quote or a look-alike link.
+ */
 export function formatReplyQuote({ entryId, excerpt }: ReplyQuote): string {
-  return excerpt.trim().split(/\r?\n/).map((line, index) => `>${index === 0 ? ` [msg ${entryId}]` : ""}${line === "" ? "" : ` ${line}`}`).join("\n");
-}
-
-/** The source entry id of a quote written by formatReplyQuote, if `text` starts with one. */
-export function quotedEntryId(text: string): string | undefined {
-  return /^\s*\[msg ([^\]\s]+)\]/.exec(text)?.[1];
+  return excerpt.trim().split(/\r?\n/).map((line, index) => `>${index === 0 ? ` [msg ${entryId}](#entry:${entryId})` : ""}${line === "" ? "" : ` ${line.replace(/^(\s*)([>[])/, "$1\\$2")}`}`).join("\n");
 }
 
 export function addReplyQuote(store: PromptChipStore, target: PromptChipTarget, quote: ReplyQuote): void {

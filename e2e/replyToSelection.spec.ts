@@ -17,14 +17,23 @@ test("quotes selections from two messages and sends them ahead of the reply", as
   const reply = page.getByRole("button", { name: "Reply to selection" });
   const chips = page.locator("prompt-editor .prompt-chip");
 
-  await page.locator('chat-view article[data-entry-id="e2e00001"] formatted-text p').getByText("Where are the notes?").dblclick({ position: { x: 8, y: 6 } });
+  const question = page.locator('chat-view article[data-entry-id="e2e00001"] formatted-text p').getByText("Where are the notes?");
+  const answer = page.locator('chat-view article[data-entry-id="e2e00002"] formatted-text p');
+
+  // A selection extended by Shift-click into the next message belongs to neither.
+  await question.dblclick({ position: { x: 8, y: 6 } });
+  await answer.click({ modifiers: ["Shift"], position: { x: 8, y: 6 } });
+  await page.waitForTimeout(400);
+  await expect(reply).toHaveCount(0);
+
+  await question.dblclick({ position: { x: 8, y: 6 } });
   await reply.click();
   await expect(chips).toHaveCount(1);
-  await page.locator('chat-view article[data-entry-id="e2e00002"] formatted-text p').dblclick({ position: { x: 8, y: 6 } });
+  await answer.dblclick({ position: { x: 8, y: 6 } });
   await expect(reply).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(reply).toHaveCount(0);
-  await page.locator('chat-view article[data-entry-id="e2e00002"] formatted-text p').dblclick({ position: { x: 8, y: 6 } });
+  await answer.dblclick({ position: { x: 8, y: 6 } });
   if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-button.png") });
   await reply.click();
   await expect(chips.locator("span")).toHaveText(["“Where”", "“They”"]);
@@ -32,6 +41,6 @@ test("quotes selections from two messages and sends them ahead of the reply", as
   if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-to-selection.png") });
 
   await page.keyboard.press("Enter");
-  await expect.poll(() => sent).toMatchObject({ text: "> [msg e2e00001] Where\n\n> [msg e2e00002] They\n\nWhy there?" });
+  await expect.poll(() => sent).toMatchObject({ text: "> [msg e2e00001](#entry:e2e00001) Where\n\n> [msg e2e00002](#entry:e2e00002) They\n\nWhy there?" });
   await expect(chips).toHaveCount(0);
 });
