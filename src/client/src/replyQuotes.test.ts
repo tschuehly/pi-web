@@ -20,7 +20,7 @@ describe("reply quotes", () => {
     addReplyQuote(store, target, { entryId: "m2", excerpt: "A rather long second excerpt that will not fit in a chip label" });
     addReplyQuote(store, target, { entryId: "m3", excerpt: "dropped" });
     const chips = store.list(target);
-    expect(chips.map((chip) => chip.label)).toEqual(["“Use the cache”", "“A rather long second excerpt that will…”", "“dropped”"]);
+    expect(chips.map((chip) => chip.label)).toEqual(["Use the cache", "A rather long second excerpt that will…", "dropped"]);
     const dropped = chips[2];
     if (dropped === undefined) throw new Error("Missing third chip");
     store.removeByUser(dropped);

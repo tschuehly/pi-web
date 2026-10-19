@@ -60,3 +60,12 @@ export function renderContextRing(percent: number | undefined): TemplateResult {
     </svg>
   `;
 }
+
+export function renderRemoveIcon(): TemplateResult {
+  return svg`
+    <svg class="prompt-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M18 6 6 18"></path>
+      <path d="m6 6 12 12"></path>
+    </svg>
+  `;
+}

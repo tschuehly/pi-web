@@ -6,7 +6,7 @@ export interface ReplyQuote {
   readonly excerpt: string;
 }
 
-const OWNER = "reply-quote";
+export const REPLY_QUOTE_OWNER = "reply-quote";
 const LABEL_LENGTH = 40;
 let nextQuoteId = 0;
 
@@ -22,7 +22,7 @@ export function addReplyQuote(store: PromptChipStore, target: PromptChipTarget, 
   const excerpt = quote.excerpt.trim().replace(/\s+/g, " ");
   const label = excerpt.length > LABEL_LENGTH ? `${excerpt.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : excerpt;
   nextQuoteId += 1;
-  store.set(OWNER, target, { id: String(nextQuoteId), label: `“${label}”`, text: formatReplyQuote(quote) });
+  store.set(REPLY_QUOTE_OWNER, target, { id: String(nextQuoteId), label, text: formatReplyQuote(quote) });
 }
 
 /** Quotes lead, so the reply reads like an email answer. */

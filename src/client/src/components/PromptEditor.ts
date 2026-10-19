@@ -13,6 +13,7 @@ import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputMode
 import { machineSessionKey } from "../machineKeys";
 import { WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
 import type { StagedPromptChip } from "../promptChips";
+import { REPLY_QUOTE_OWNER } from "../replyQuotes";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
@@ -22,7 +23,7 @@ import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUs
 import { composerKeyboardSubmissionEnabled, composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
-import { renderAttachIcon, renderContextRing, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
+import { renderAttachIcon, renderContextRing, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
 import "./WorkingModeControls";
 import "./ModelEffortPicker";
 import { formatCost, formatTokenCount } from "../utils/format";
@@ -321,9 +322,9 @@ export class PromptEditor extends LitElement {
     return html`
       <div class="prompt-chips" aria-label="Pending context">
         ${this.promptChips.map((chip) => html`
-          <div class="prompt-chip" title=${chip.text}>
+          <div class=${chip.pluginId === REPLY_QUOTE_OWNER ? "prompt-chip prompt-chip-quote" : "prompt-chip"} title=${chip.text}>
             <span>${chip.label}</span>
-            <button type="button" aria-label=${`Remove ${chip.label}`} ?disabled=${this.disabled} @click=${() => this.onRemoveChip?.(chip)}>×</button>
+            <button type="button" aria-label=${`Remove ${chip.pluginId === REPLY_QUOTE_OWNER ? "quote " : ""}${chip.label}`} ?disabled=${this.disabled} @click=${() => this.onRemoveChip?.(chip)}>${renderRemoveIcon()}</button>
           </div>
         `)}
         ${this.chipError === undefined ? null : html`<div class="chip-error" role="alert">${this.chipError}</div>`}
