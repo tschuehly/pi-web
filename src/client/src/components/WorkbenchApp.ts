@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
-import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
+import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionStatus, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
@@ -26,6 +26,7 @@ import { workstreamOrientationDepth } from "../workstreamOrientation";
 import { hasRenderedModal } from "./modalLayerRegistry";
 import { readRoute, takeMessageAnchor, writeRoute, type ParsedAppRoute } from "../route";
 import { sessionTitle } from "../sessionLabels";
+import { sessionPersistenceState } from "../sessionPersistence";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
@@ -61,9 +62,14 @@ export function folderPanelError(error: unknown): string {
   return `Failed to choose a folder: ${message}${message.includes("did not respond") ? ". Quit and reopen Pi Workbench; the folder panel cannot open in an app that was updated while running." : ""}`;
 }
 
-/** Session id, folder and transcript file, one per line, for pasting into another Chat or tool. */
-export function sessionInfoText(session: SessionInfo): string {
-  const transcript = session.persisted === false || session.path === "" ? "not saved yet" : session.path;
+/**
+ * Session id, folder and transcript file, one per line, for pasting into another Chat or tool. The daemon assigns the
+ * transcript path before the file exists, so a known path is always shown; the live status, not the row snapshot taken
+ * when the Chat opened, says whether it is written yet.
+ */
+export function sessionInfoText(session: SessionInfo, status?: SessionStatus): string {
+  const transcript = session.path === "" ? "not known yet"
+    : sessionPersistenceState(session, status) === "transient" ? `${session.path} (written after the first reply)` : session.path;
   return `Session: ${session.id}\nFolder: ${session.cwd}\nTranscript: ${transcript}`;
 }
 
@@ -896,7 +902,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   private async copySessionInfo(session: SessionInfo): Promise<void> {
-    if (!await writeClipboardText(sessionInfoText(session))) { this.setApp({ error: "Could not copy the session info." }); return; }
+    if (!await writeClipboardText(sessionInfoText(session, this.app.status))) { this.setApp({ error: "Could not copy the session info." }); return; }
     this.sessionInfoCopied = true;
     window.setTimeout(() => { this.sessionInfoCopied = false; }, 1200);
   }
@@ -1180,7 +1186,7 @@ export class WorkbenchApp extends LitElement {
           <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("files")}</button>
           <button type="button" class="header-action" title="Search files (⌘P)" aria-label="Search files" ?disabled=${state.selectedWorkspace === undefined} @click=${() => { this.openFileSearch(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><span>Search files</span></button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
-          <button class="icon-button" type="button" title=${`${sessionInfoText(session)}\n\nClick to copy`} aria-label=${this.sessionInfoCopied ? "Copied session info" : "Copy session info"} @click=${() => { void this.copySessionInfo(session); }}>${this.sessionInfoCopied ? html`<span aria-hidden="true">✓</span>` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`}</button>
+          <button class="icon-button" type="button" title=${`${sessionInfoText(session, state.status)}\n\nClick to copy`} aria-label=${this.sessionInfoCopied ? "Copied session info" : "Copy session info"} @click=${() => { void this.copySessionInfo(session); }}>${this.sessionInfoCopied ? html`<span aria-hidden="true">✓</span>` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`}</button>
           ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}
         </header>

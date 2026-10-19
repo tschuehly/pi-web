@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type Machine, type Project, type SessionInfo, type Workspace } from "../api";
+import { api, type Machine, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
 import { ACTIVITY_STATUS_KEY, GOAL_STATUS_KEY } from "../extensionStatusSnapshots";
 import { DesktopNotificationController } from "../controllers/desktopNotificationController";
@@ -201,7 +201,14 @@ describe("session info", () => {
   it("lists id, folder and transcript, and never invents a path for an unsaved Chat", () => {
     const saved = { ...session("abc", ""), cwd: "/work", path: "/store/abc.jsonl" };
     expect(sessionInfoText(saved)).toBe("Session: abc\nFolder: /work\nTranscript: /store/abc.jsonl");
-    expect(sessionInfoText({ ...saved, persisted: false })).toContain("Transcript: not saved yet");
+    expect(sessionInfoText({ ...saved, path: "", persisted: false })).toContain("Transcript: not known yet");
+  });
+
+  it("shows the known transcript path of a new Chat, and trusts live status over the stale row", () => {
+    const fresh = { ...session("abc", ""), cwd: "/work", path: "/store/abc.jsonl", persisted: false };
+    expect(sessionInfoText(fresh)).toContain("Transcript: /store/abc.jsonl (written after the first reply)");
+    const written: SessionStatus = { sessionId: "abc", persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    expect(sessionInfoText(fresh, written)).toBe("Session: abc\nFolder: /work\nTranscript: /store/abc.jsonl");
   });
 });
 

@@ -303,8 +303,28 @@ describe("Workbench Files read-only files", () => {
       expect($(pane, ".editor")?.hidden).toBe(true);
       expect(pane.shadowRoot?.textContent).toContain("Download file");
       expect(status(pane)).toBe("Read-only");
+      expect(pane.shadowRoot?.textContent.split("Read-only").length).toBe(2);
     }
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it("undoes the interface zoom on the PDF and lays it out again when the scale changes", async () => {
+    // WebKit's PDF view ignores the root zoom and keeps its first layout.
+    expect(WorkbenchFilesPane.styles.cssText).toMatch(/\.preview iframe\s*\{[^}]*zoom:\s*calc\(1\s*\/\s*var\(--pi-interface-scale,\s*1\)\)/);
+    vi.spyOn(api, "workspaceFile").mockResolvedValue({ ...file("guide.pdf", "", "v1"), mediaType: "pdf" as const, binary: true, size: 42 });
+    const pane = await mount();
+    await pane.openFile("guide.pdf"); await pane.updateComplete;
+    const box = $(pane, ".preview.pdf");
+    Object.defineProperty(box, "clientWidth", { value: 400 });
+    const settle = async () => { await new Promise((resolve) => setTimeout(resolve, 200)); await pane.updateComplete; };
+    document.documentElement.style.setProperty("--pi-interface-scale", "1"); await settle();
+    const first = $(pane, ".preview iframe");
+    document.documentElement.style.setProperty("--pi-interface-scale", "1"); await settle();
+    expect($(pane, ".preview iframe")).toBe(first);
+    document.documentElement.style.setProperty("--pi-interface-scale", "1.25"); await settle();
+    expect($(pane, ".preview iframe")).not.toBeNull();
+    expect($(pane, ".preview iframe")).not.toBe(first);
+    document.documentElement.style.removeProperty("--pi-interface-scale");
   });
 
   it("previews an SVG as an image in Live and edits its source in Raw", async () => {
