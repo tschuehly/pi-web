@@ -18,6 +18,11 @@ export function formatReplyQuote({ entryId, excerpt }: ReplyQuote): string {
   return excerpt.trim().split(/\r?\n/).map((line, index) => `>${index === 0 ? ` [msg ${entryId}](#entry:${entryId})` : ""}${line === "" ? "" : ` ${line.replace(/^(\s*)([>[])/, "$1\\$2")}`}`).join("\n");
 }
 
+/** The quoted text back out of {@link formatReplyQuote}, for showing a staged quote in full. */
+export function replyQuoteExcerpt(text: string): string {
+  return text.split("\n").map((line) => line.replace(/^> ?(\[msg [^\]]*\]\(#entry:[^)]*\) ?)?/, "").replace(/^(\s*)\\([>[])/, "$1$2")).join("\n");
+}
+
 export function addReplyQuote(store: PromptChipStore, target: PromptChipTarget, quote: ReplyQuote): void {
   const excerpt = quote.excerpt.trim().replace(/\s+/g, " ");
   const label = excerpt.length > LABEL_LENGTH ? `${excerpt.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : excerpt;

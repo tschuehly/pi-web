@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { PromptChipStore } from "./promptChips";
-import { addReplyQuote, composeQuotedReply, formatReplyQuote } from "./replyQuotes";
+import { addReplyQuote, composeQuotedReply, formatReplyQuote, replyQuoteExcerpt } from "./replyQuotes";
 
 const target = { machineId: "local", sessionId: "session-1" };
 
 describe("reply quotes", () => {
+  it("recovers the full excerpt from a staged quote for display", () => {
+    const excerpt = "first line\n> not a nested quote\n\n[x] list";
+    expect(replyQuoteExcerpt(formatReplyQuote({ entryId: "e1", excerpt }))).toBe(excerpt);
+  });
+
   it("formats an excerpt as a blockquote anchored to its message", () => {
     expect(formatReplyQuote({ entryId: "a1b2", excerpt: "  Run the tests.  " })).toBe("> [msg a1b2](#entry:a1b2) Run the tests.");
     expect(formatReplyQuote({ entryId: "a1b2", excerpt: "first\n\n  indented\r\nlast" })).toBe("> [msg a1b2](#entry:a1b2) first\n>\n>   indented\n> last");
