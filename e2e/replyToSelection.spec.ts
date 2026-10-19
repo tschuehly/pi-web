@@ -36,7 +36,7 @@ test("quotes selections from two messages and sends them ahead of the reply", as
   await answer.dblclick({ position: { x: 8, y: 6 } });
   if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-button.png") });
   await reply.click();
-  await expect(chips.locator("span")).toHaveText(["“Where”", "“They”"]);
+  await expect(chips.locator("span")).toHaveText(["Where", "They"]);
   await page.keyboard.type("Why there?");
   if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-to-selection.png") });
 

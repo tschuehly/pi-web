@@ -630,9 +630,14 @@ export const promptEditorStyles = css`
   .markdown-editor .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground { background: color-mix(in srgb, var(--pi-accent) 32%, transparent); }
   .mode-hint { position: absolute; right: 0; bottom: 6px; max-width: 100%; border: 1px solid var(--pi-success-border); border-radius: 999px; background: var(--pi-success-surface); color: var(--pi-success); padding: 2px 8px; font-size: 12px; pointer-events: none; }
   .prompt-chips, .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
-  .prompt-chip { display: flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); padding: 3px 6px; }
-  .prompt-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .prompt-chip button { flex: none; padding: 0 5px; }
+  /* A compact one-line tag; the full staged text sits in the title. */
+  .prompt-chip { box-sizing: border-box; display: inline-flex; align-items: center; gap: 2px; max-width: min(240px, 100%); height: 22px; border: 1px solid var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); padding: 0 1px 0 7px; font-size: 12px; line-height: 1; }
+  .prompt-chip-quote::before { content: ""; flex: none; width: 2px; height: 12px; margin-right: 3px; border-radius: 1px; background: var(--pi-accent); }
+  .prompt-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prompt-chip button { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 4px; background: transparent; color: var(--pi-muted); padding: 0; }
+  .prompt-chip button:hover:not(:disabled), .prompt-chip button:focus-visible { background: var(--pi-surface-hover); color: var(--pi-text); }
+  .prompt-chip button:focus-visible { outline: 1px solid var(--pi-accent); outline-offset: 0; }
+  .prompt-chip .prompt-action-icon { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   .chip-error { flex-basis: 100%; color: var(--pi-danger); font-size: 12px; }
   .attachment-chip { position: relative; width: 56px; height: 56px; border: 1px solid var(--pi-border); border-radius: 8px; overflow: hidden; background: var(--pi-bg); }
   .attachment-chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
