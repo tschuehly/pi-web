@@ -86,7 +86,7 @@ describe("plugin context → composer → server submission", () => {
     const onRemove = vi.fn();
     prompt.setChip?.({ id: "note", label: "Selected note", text: "Context", onRemove });
     const editor = await host.refresh();
-    expect(editor.shadowRoot?.querySelector('[aria-label="Pending plugin context"]')?.textContent).toContain("Selected note");
+    expect(editor.shadowRoot?.querySelector('[aria-label="Pending context"]')?.textContent).toContain("Selected note");
     editor.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Remove Selected note"]')?.click();
     await host.refresh();
     expect(onRemove).toHaveBeenCalledExactlyOnceWith("user");

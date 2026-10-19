@@ -7,6 +7,7 @@ import { machineSessionKey } from "../machineKeys";
 import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
 import { latestWorkingModeDials, previewFromDetails, workingModeSummary } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
+import { quotedEntryId, type ReplyQuote } from "../replyQuotes";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
 import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
@@ -211,6 +212,22 @@ export function chatMessageMetadataLabel(message: ChatLine): string | undefined 
   return timestamp === undefined ? undefined : formatMessageTimestamp(timestamp);
 }
 
+function entryIdAt(event: Event): string | undefined {
+  return event.composedPath().find((node): node is HTMLElement => node instanceof HTMLElement && node.hasAttribute("data-entry-id"))?.getAttribute("data-entry-id") ?? undefined;
+}
+
+/** Chromium keeps shadow-DOM selections on the shadow root; WebKit and Gecko expose them on the document. */
+function selectedText(root: Node): string {
+  return ((root instanceof ShadowRoot ? root.getSelection?.() : undefined) ?? document.getSelection())?.toString() ?? "";
+}
+
+declare global {
+  interface ShadowRoot {
+    /** Non-standard, Chromium only. */
+    getSelection?(): Selection | null;
+  }
+}
+
 function formatMessageTimestamp(timestamp: string): string | undefined {
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) return undefined;
@@ -275,6 +292,10 @@ export class ChatView extends LitElement {
   @property({ attribute: false }) onLoadMore?: () => void;
   /** A message to scroll to and flash once; a new object reveals again. */
   @property({ attribute: false }) revealTarget: ChatRevealTarget | undefined;
+  /** Receives text selected inside one message; without it no Reply button appears. */
+  @property({ attribute: false }) onReplyToSelection?: (quote: ReplyQuote) => void;
+  @state() private replySelection: (ReplyQuote & { left: number; top: number; scrollTop: number }) | undefined;
+  private selectionStartEntryId: string | undefined;
   @query(".chat") private chat?: HTMLDivElement | null;
   @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement | null;
   @state() private pinnedToBottom = true;
@@ -355,6 +376,36 @@ export class ChatView extends LitElement {
   private readonly onPageHide = () => {
     this.saveScrollPosition();
   };
+  private readonly onSelectionStart = (event: PointerEvent): void => {
+    this.selectionStartEntryId = entryIdAt(event);
+    this.replySelection = undefined;
+  };
+  // ponytail: pointer-driven only; keyboard (Shift+arrow) and iOS handle-drag selections get no Reply button.
+  private readonly onSelectionEnd = (event: PointerEvent): void => {
+    const entryId = entryIdAt(event);
+    const excerpt = selectedText(this.renderRoot).trim();
+    const wrap = this.renderRoot.querySelector(".chat-wrap")?.getBoundingClientRect();
+    if (this.onReplyToSelection === undefined || entryId === undefined || entryId !== this.selectionStartEntryId || excerpt === "" || wrap === undefined) return;
+    this.replySelection = { entryId, excerpt, left: Math.max(0, Math.min(event.clientX - wrap.left, wrap.width - 96)), top: event.clientY - wrap.top + 12, scrollTop: this.chat?.scrollTop ?? 0 };
+  };
+  private readonly replyToSelection = (): void => {
+    const quote = this.replySelection;
+    this.replySelection = undefined;
+    if (quote === undefined) return;
+    document.getSelection()?.removeAllRanges();
+    this.onReplyToSelection?.({ entryId: quote.entryId, excerpt: quote.excerpt });
+  };
+  private readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape" && this.replySelection !== undefined) this.replySelection = undefined;
+  };
+  /** Clicking a sent quote (`> [msg id] …`) reveals its source message when it is loaded. */
+  private readonly onQuoteClick = (event: MouseEvent): void => {
+    if (selectedText(this.renderRoot) !== "") return;
+    const path = event.composedPath().filter((node): node is HTMLElement => node instanceof HTMLElement);
+    if (path.some((node) => node.tagName === "A" || node.tagName === "BUTTON")) return;
+    const entryId = quotedEntryId(path.find((node) => node.tagName === "BLOCKQUOTE")?.textContent ?? "");
+    if (entryId !== undefined) this.revealTarget = { machineId: this.machineId, sessionId: this.sessionId, anchor: `entry:${entryId}` };
+  };
   private readonly handleClearServerQueue = (): void => {
     this.onClearServerQueue?.();
   };
@@ -367,6 +418,7 @@ export class ChatView extends LitElement {
     window.addEventListener("resize", this.onViewportResize);
     window.addEventListener("pagehide", this.onPageHide);
     window.visualViewport?.addEventListener("resize", this.onViewportResize);
+    document.addEventListener("keydown", this.onDocumentKeyDown);
     this.observeChatResize();
   }
 
@@ -408,6 +460,7 @@ export class ChatView extends LitElement {
     window.removeEventListener("resize", this.onViewportResize);
     window.removeEventListener("pagehide", this.onPageHide);
     window.visualViewport?.removeEventListener("resize", this.onViewportResize);
+    document.removeEventListener("keydown", this.onDocumentKeyDown);
     super.disconnectedCallback();
   }
 
@@ -445,6 +498,7 @@ export class ChatView extends LitElement {
       this.savePreviousSessionScrollPosition(changed.get("sessionId"));
       this.transcriptFilter = "everything";
       this.filterMenuOpen = false;
+      this.replySelection = undefined;
       this.prepareSessionUiState();
     } else if (changed.has("notificationInbox") && this.notificationTargetChanged(changed.get("notificationInbox"))) {
       this.pendingNotificationFocus = undefined;
@@ -581,7 +635,7 @@ export class ChatView extends LitElement {
         </div>` : null}
         </div>
         ${this.renderConversationRail()}
-        <div class="chat" data-image-scroll-root @image-will-layout=${this.onImageWillLayout} @image-layout=${this.onImageLayout} @image-open=${(event: CustomEvent<ImageOpenDetail>) => { this.openImageZoom(event.detail.src, event.detail.alt); }} @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
+        <div class="chat" data-image-scroll-root @image-will-layout=${this.onImageWillLayout} @image-layout=${this.onImageLayout} @image-open=${(event: CustomEvent<ImageOpenDetail>) => { this.openImageZoom(event.detail.src, event.detail.alt); }} @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }} @pointerdown=${this.onSelectionStart} @pointerup=${this.onSelectionEnd} @click=${this.onQuoteClick}>
           ${this.renderHistoryBoundary()}
           ${this.renderTranscript()}
           ${this.renderQueuedMessages()}
@@ -590,6 +644,7 @@ export class ChatView extends LitElement {
           ${this.renderOpenAsk()}
           ${this.renderExtensionDialogs()}
         </div>
+        ${this.renderReplySelection()}
         ${this.pinnedToBottom ? null : html`
           <button type="button" class="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" @click=${() => { this.jumpToBottom(); }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
@@ -1389,7 +1444,18 @@ export class ChatView extends LitElement {
     return null;
   }
 
+  private renderReplySelection() {
+    const selection = this.replySelection;
+    if (selection === undefined) return null;
+    const top = selection.top - ((this.chat?.scrollTop ?? 0) - selection.scrollTop);
+    // Lucide "reply".
+    return html`<button type="button" class="reply-selection" aria-label="Reply to selection" title="Reply to selection" style=${`left: ${String(selection.left)}px; top: ${String(top)}px`} @mousedown=${(event: MouseEvent) => { event.preventDefault(); }} @click=${this.replyToSelection}>
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path><path d="m9 17-5-5 5-5"></path></svg><span>Reply</span>
+    </button>`;
+  }
+
   private onScroll() {
+    if (this.replySelection !== undefined) this.requestUpdate();
     this.imageLayoutScroll.reset();
     this.requestLoadMoreIfNeeded();
     this.updatePinnedToBottomFromScroll();
@@ -1773,6 +1839,9 @@ export class ChatView extends LitElement {
 
   static override styles = [chatStyles, css`
     [data-notification-reveal] { animation: notification-reveal 2s ease-out; }
+    .reply-selection { position: absolute; z-index: 23; display: flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); box-shadow: 0 2px 8px var(--pi-shadow); font: inherit; font-size: 12px; cursor: pointer; }
+    .reply-selection:hover, .reply-selection:focus-visible { border-color: var(--pi-accent); color: var(--pi-text-bright); outline: none; }
+    .reply-selection svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     @keyframes notification-reveal { from { box-shadow: 0 0 0 2px var(--pi-accent); background-color: var(--pi-selection-bg); } }
     @media (prefers-reduced-motion: reduce) { [data-notification-reveal] { animation: none; outline: 2px solid var(--pi-accent); } }
     .transcript-filter { position: absolute; z-index: 22; top: 8px; right: 8px; }
