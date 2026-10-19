@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, EXTENSION_DIALOG_TEXT_MAX_LENGTH, SESSION_NOTIFICATION_LIMIT, SESSION_NOTIFICATION_MESSAGE_BYTES, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../../shared/apiTypes";
+import { ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH, ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, EXTENSION_DIALOG_TEXT_MAX_LENGTH, SESSION_NOTIFICATION_LIMIT, SESSION_NOTIFICATION_MESSAGE_BYTES, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../../shared/apiTypes";
 import { parseAskUserCloseResponse, parseAuthProvidersResponse, parseCommandResult, parseExtensionDialogCloseResponse, parseFileContentResponse, parseFileSuggestion, parseMachineRuntime, parseMessagePage, parseOAuthFlowState, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseRealtimeStreamEvent, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionModelCatalogResponse, parseSessionNotificationInboxEvent, parseSessionNotificationInboxSnapshot, parseSessionStartupProgressEvent, parseSessionStatus, parseSessionStreamEvent, parseSessionStreamSnapshot, parseSessionTreeForkResult, parseSessionTreeNavigateResult, parseSessionTreeSnapshot, parseSessionUnreadCatalogSnapshot, parseSessionUnreadEvent, parseSlashCommand, parseWorkspace, parseWorkspaceProviderResolution } from "./parsers";
 
 const legacyActivityWarning = {
@@ -1107,21 +1107,45 @@ describe("API parsers", () => {
     })).toThrow("Invalid notification clear reason");
   });
 
-  it("parses an open ask", () => {
+  it("parses several open asks with their staleness and recommended options", () => {
+    const base = pendingAskWire();
+    const fresh = { ...base, askId: "ask-2", updatedAt: "2026-07-21T00:00:00.000Z", revision: "r4", turnsSinceUpdate: 6, questions: [{ id: "q1", question: "Which database?", options: [{ value: "pg", label: "Postgres" }, { value: "sqlite", label: "SQLite" }, { value: "duck", label: "DuckDB", recommended: true }] }] };
+    const parsed = parseSessionStatus({ ...statusWire(), pendingAsks: [pendingAskWire(), fresh] });
+
+    expect(parsed.pendingAsks?.map((ask) => [ask.askId, ask.updatedAt, ask.revision, ask.turnsSinceUpdate])).toEqual([
+      ["ask-1", "2026-07-20T00:00:00.000Z", "", 0],
+      ["ask-2", "2026-07-21T00:00:00.000Z", "r4", 6],
+    ]);
+    expect(parsed.pendingAsks?.[1]?.questions[0]?.options[2]).toEqual({ value: "duck", label: "DuckDB", recommended: true });
+  });
+
+  it("parses the single open ask of an older daemon", () => {
     const parsed = parseSessionStatus({ ...statusWire(), pendingAsk: pendingAskWire() });
 
-    expect(parsed.pendingAsk).toEqual({
+    expect(parsed.pendingAsks).toEqual([{
       askId: "ask-1",
       askedAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      revision: "",
+      turnsSinceUpdate: 0,
       questions: [
         { id: "q1", question: "Which database?", detail: "Pick the primary store", options: [{ value: "pg", label: "Postgres", detail: "Relational" }, { value: "sqlite", label: "SQLite" }] },
         { id: "q2", question: "Which extras?", options: [{ value: "metrics", label: "Metrics" }], multiple: true },
       ],
-    });
+    }]);
+  });
+
+  it("parses the ask context on open asks and closed outcomes, and bounds it", () => {
+    const context = "## Findings\nThe cache is **stale**.";
+    expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), context } }).pendingAsks?.[0]?.context).toBe(context);
+    expect(parseAskUserCloseResponse({ result: "closed", outcome: { ...askOutcomeWire(), context }, sessionStatus: statusWire() }).outcome?.context).toBe(context);
+    expect(parseAskUserCloseResponse({ result: "closed", outcome: askOutcomeWire(), sessionStatus: statusWire() }).outcome).not.toHaveProperty("context");
+    expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) } }))
+      .toThrow("String field exceeds limit: context");
   });
 
   it("omits the pending ask entirely when the field is absent", () => {
-    expect(parseSessionStatus(statusWire()).pendingAsk).toBeUndefined();
+    expect(parseSessionStatus(statusWire()).pendingAsks).toBeUndefined();
   });
 
   it("validates an ask before rendering it", () => {
@@ -1130,7 +1154,7 @@ describe("API parsers", () => {
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [] } })).toThrow("Pending ask has no questions");
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [first, first] } })).toThrow("Duplicate ask question id");
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, askId: "" } })).toThrow("Expected non-empty string field: askId");
-    expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [{ id: "q1", question: "Anything?", options: [] }] } }).pendingAsk?.questions[0])
+    expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [{ id: "q1", question: "Anything?", options: [] }] } }).pendingAsks?.[0]?.questions[0])
       .toEqual({ id: "q1", question: "Anything?", options: [] });
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [{ id: "q1", question: "Which?", options: [{ value: "a", label: "A" }, { value: "a", label: "Also A" }] }] } })).toThrow("Duplicate ask option value");
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [{ id: "q1", question: "x".repeat(ASK_USER_TEXT_MAX_LENGTH + 1), options: [{ value: "a", label: "A" }] }] } })).toThrow("String field exceeds limit: question");

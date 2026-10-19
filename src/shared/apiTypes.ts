@@ -731,8 +731,17 @@ export const ASK_USER_OPTION_LIMIT = 12;
 export const ASK_USER_ID_MAX_LENGTH = 128;
 /** Length bound for model-authored prose: questions, details, and option labels. */
 export const ASK_USER_TEXT_MAX_LENGTH = 1_000;
+/** Length bound for the Markdown context an ask shows above its questions. */
+export const ASK_USER_CONTEXT_MAX_LENGTH = 4_000;
 /** Length bound for the free text a user types as a custom answer. */
 export const ASK_USER_OTHER_TEXT_MAX_LENGTH = 4_000;
+/** Agent turns an open ask may go without an update before the browser marks it "may be stale". */
+export const ASK_USER_STALE_TURNS = 5;
+
+/** Stable short reference to one question: the first 3 characters of its ask id, a dot, the question id. */
+export function askQuestionRef(askId: string, questionId: string): string {
+  return `${askId.slice(0, 3)}.${questionId}`;
+}
 
 /** One selectable option of an {@link AskUserQuestion}. */
 export interface AskUserQuestionOption {
@@ -742,6 +751,8 @@ export interface AskUserQuestionOption {
   label: string;
   /** Optional clarifying line rendered under the label. */
   detail?: string;
+  /** The option the agent recommends. */
+  recommended?: boolean;
 }
 
 /**
@@ -763,18 +774,26 @@ export interface AskUserQuestion {
 }
 
 /**
- * The open, unanswered question set of a session. Daemon-owned and reported in
+ * One open, unanswered question set of a session. Daemon-owned and reported in
  * {@link SessionStatus}, so a reconnecting or reloading browser rehydrates it
  * without depending on having seen the `ask.opened` event.
  */
 export interface PendingAskUser {
   askId: string;
   askedAt: string;
+  /** When the agent last posted, revised, or confirmed the set. */
+  updatedAt: string;
+  /** Random id of the current revision; never reissued, even across branches, so a submit for any other revision is refused as stale. */
+  revision: string;
+  /** Agent turns started since {@link updatedAt}; drives the "may be stale" mark. */
+  turnsSinceUpdate: number;
+  /** Markdown the user needs to answer, shown above the questions. */
+  context?: string;
   questions: AskUserQuestion[];
 }
 
 /** Why an ask stopped being the session's open ask. */
-export type AskUserCloseReason = "submitted" | "superseded" | "cancelled";
+export type AskUserCloseReason = "submitted" | "superseded" | "cancelled" | "withdrawn";
 
 /**
  * What the user replied to one question. Absent from a submission means the
@@ -793,6 +812,8 @@ export interface AskUserAnswer {
 /** One submit of the open ask: answers for some or all of its questions. */
 export interface AskUserSubmission {
   answers: AskUserAnswer[];
+  /** {@link PendingAskUser.revision} the user answered; absent (older browsers) or mismatched makes the submit stale. */
+  revision?: string;
 }
 
 /**
@@ -817,6 +838,8 @@ export interface AskUserOutcome {
   reason: AskUserCloseReason;
   askedAt: string;
   closedAt: string;
+  /** The ask's {@link PendingAskUser.context}, so the record shows it too. */
+  context?: string;
   questions: AskUserQuestionRecord[];
   answeredCount: number;
   /** Ids of the questions left unanswered, in the order they were asked. */
@@ -1198,9 +1221,12 @@ export interface SessionStatus {
    */
   warnings?: SessionWarning[];
   /**
-   * The session's open `ask_user` question set, when one is waiting for the
-   * user. Daemon-owned, so it survives browser reload and web/API restarts.
+   * The session's open `ask_user` question sets, oldest first, when any are
+   * waiting for the user. Daemon-owned, so they survive browser reload and
+   * web/API restarts; a daemon restart rebuilds them from the transcript.
    */
+  pendingAsks?: PendingAskUser[];
+  /** Oldest of {@link pendingAsks}, for browsers older than the Questions pane. */
   pendingAsk?: PendingAskUser;
   /**
    * The session's open extension dialogs, oldest first, when any are waiting

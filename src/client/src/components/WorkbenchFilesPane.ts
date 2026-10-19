@@ -576,6 +576,7 @@ export class WorkbenchFilesPane extends LitElement {
       <section class=${`pane${this.full ? " full" : ""}${this.treeOpen ? " tree-open" : ""}${file === undefined ? " no-file" : ""}${md && this.mode === "live" ? " live" : ""}${text && !md ? " code" : ""}`} aria-label="Workspace files" @keydown=${(event: KeyboardEvent) => { this.onPaneKeyDown(event); }}>
         <div class="bar">
           <button type="button" class="icon tree-button" title="Files (⌘P)" aria-label="Files" aria-expanded=${this.treeOpen || file === undefined ? "true" : "false"} ?disabled=${workspace === undefined || file === undefined} @click=${() => { this.showTree(!this.treeOpen); }}>${FOLDER_ICON}</button>
+          <button type="button" class="icon" title="Search files (⌘P)" aria-label="Search files" ?disabled=${workspace === undefined} @click=${() => { void this.searchFiles(); }}>${SEARCH_ICON}</button>
           <button type="button" class="crumbs" title=${this.selectedPath || "Files"} ?disabled=${workspace === undefined} @click=${() => { this.showTree(true); }}>
             ${slash > 0 ? html`<span class="dir">${this.selectedPath.slice(0, slash + 1)}</span>` : nothing}<span class="leaf">${file === undefined ? "Files" : this.selectedPath.slice(slash + 1)}</span>
           </button>

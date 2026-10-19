@@ -34,19 +34,19 @@ it("opens a daemon-memory ask on an owned session through the normal status and 
   try {
     await expect(openControlledPendingAskFixture(sessions, { ...env, PI_WEB_DATA_DIR: tmpdir() })).rejects.toThrow("data dir must be strictly inside");
     const before = await app.inject({ url: `/sessions/019c8f10-1000-7000-8000-000000000001/status?cwd=${encodeURIComponent(cwd)}` });
-    expect(before.json()).not.toHaveProperty("pendingAsk");
+    expect(before.json()).not.toHaveProperty("pendingAsks");
     await openControlledPendingAskFixture(sessions, env);
     const during = await app.inject({ url: `/sessions/019c8f10-1000-7000-8000-000000000001/status?cwd=${encodeURIComponent(cwd)}` });
     expect(during.statusCode).toBe(200);
     const body: unknown = JSON.parse(during.body);
-    expect(body).toMatchObject({ pendingAsk: { questions: [{ id: "fixture-choice" }] } });
-    if (typeof body !== "object" || body === null || !("pendingAsk" in body)) throw new Error("Missing pending ask");
-    const ask: unknown = body.pendingAsk;
-    if (typeof ask !== "object" || ask === null || !("askId" in ask) || typeof ask.askId !== "string") throw new Error("Missing ask id");
-    const response = await app.inject({ method: "POST", url: "/sessions/019c8f10-1000-7000-8000-000000000001/ask/submit", payload: { cwd, askId: ask.askId, answers: [{ id: "fixture-choice", values: ["one"] }] } });
+    expect(body).toMatchObject({ pendingAsks: [{ questions: [{ id: "fixture-choice" }] }] });
+    if (typeof body !== "object" || body === null || !("pendingAsks" in body) || !Array.isArray(body.pendingAsks)) throw new Error("Missing pending ask");
+    const ask: unknown = body.pendingAsks[0];
+    if (typeof ask !== "object" || ask === null || !("askId" in ask) || typeof ask.askId !== "string" || !("revision" in ask) || typeof ask.revision !== "string") throw new Error("Missing ask id or revision");
+    const response = await app.inject({ method: "POST", url: "/sessions/019c8f10-1000-7000-8000-000000000001/ask/submit", payload: { cwd, askId: ask.askId, revision: ask.revision, answers: [{ id: "fixture-choice", values: ["one"] }] } });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ result: "closed" });
-    expect((await app.inject({ url: `/sessions/019c8f10-1000-7000-8000-000000000001/status?cwd=${encodeURIComponent(cwd)}` })).json()).not.toHaveProperty("pendingAsk");
+    expect((await app.inject({ url: `/sessions/019c8f10-1000-7000-8000-000000000001/status?cwd=${encodeURIComponent(cwd)}` })).json()).not.toHaveProperty("pendingAsks");
     expect(fake.calls.sendCustomMessage).toHaveLength(1);
   } finally {
     await app.close();

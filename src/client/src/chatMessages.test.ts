@@ -217,6 +217,16 @@ This block replaces every earlier <working-mode> block.
     expect(groupChatMessages(normalized).map((group) => group.kind)).toEqual(["group", "message"]);
   });
 
+  it("projects a withdrawn ask from its ask_user tool result as a record", () => {
+    const withdrawn = { ...supersededAskUserOutcome, reason: "withdrawn" as const };
+    const normalized = normalizeMessages([
+      { role: "assistant", content: [{ type: "toolCall", id: "ask-call", name: "ask_user", arguments: { withdraw: withdrawn.askId } }] },
+      { role: "toolResult", toolCallId: "ask-call", toolName: "ask_user", content: [{ type: "text", text: "Withdrew." }], details: { withdrawn }, isError: false },
+    ]);
+
+    expect(normalized[1]).toEqual({ role: "tool", parts: [{ type: "askUserRecord", outcome: withdrawn }] });
+  });
+
   it("normalizes tool calls and tool results", () => {
     expect(normalizeMessage({ role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: { command: "npm test" } }] })).toEqual([
       { role: "assistant", parts: [{ type: "toolCall", toolName: "bash", summary: "npm test", args: { command: "npm test" } }] },

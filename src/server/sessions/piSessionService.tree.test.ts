@@ -76,8 +76,9 @@ describe("PiSessionService session-tree behavior", () => {
       const { service, fake, hub } = treeHarness({ getLeafId: () => leafId }, { navigateTree });
       try {
         await service.status(sessionRef(SESSION_ID));
-        const { ask } = await service.openAsk({
+        const ask = await service.openAsk({
           sessionId: SESSION_ID,
+          context: "Which option fits?",
           questions: [{ id: "choice", question: "Which option?", options: [] }],
         });
         const navigation = service.navigateTree(sessionRef(SESSION_ID), navigationRequest(
@@ -90,7 +91,7 @@ describe("PiSessionService session-tree behavior", () => {
         const status = await service.status(sessionRef(SESSION_ID));
         const closedEvents = hub.sessionEvents.filter(({ event }) => event.type === "ask.closed");
         if (moved) {
-          expect(status).not.toHaveProperty("pendingAsk");
+          expect(status).not.toHaveProperty("pendingAsks");
           expect(closedEvents).toEqual([{
             sessionId: SESSION_ID,
             event: { type: "ask.closed", askId: ask.askId, reason: "cancelled" },
@@ -98,7 +99,7 @@ describe("PiSessionService session-tree behavior", () => {
           await expect(service.submitAsk(sessionRef(SESSION_ID), ask.askId, { answers: [] }))
             .resolves.toMatchObject({ result: "stale" });
         } else {
-          expect(status.pendingAsk).toEqual(ask);
+          expect(status.pendingAsks).toEqual([ask]);
           expect(closedEvents).toEqual([]);
         }
         expect(fake.calls.sendCustomMessage).toEqual([]);

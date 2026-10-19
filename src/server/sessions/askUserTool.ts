@@ -1,27 +1,34 @@
 import { Type, type Static } from "pi-web-typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import {
+  ASK_USER_CONTEXT_MAX_LENGTH,
   ASK_USER_ID_MAX_LENGTH,
   ASK_USER_OPTION_LIMIT,
   ASK_USER_QUESTION_LIMIT,
   ASK_USER_TEXT_MAX_LENGTH,
+  type AskUserOutcome,
   type AskUserQuestion,
   type AskUserQuestionOption,
+  type PendingAskUser,
+  askQuestionRef,
 } from "../../shared/apiTypes.js";
-import { renderSupersededAskText, type PendingAskOpenResult } from "./pendingAskStore.js";
-
-/** One `ask_user` call: the questions to post, for the session that called the tool. */
-export interface AskUserInvocation {
-  sessionId: string;
-  questions: AskUserQuestion[];
-}
+import type { PendingAskOpenInput, PendingAskUpdateInput } from "./pendingAskStore.js";
 
 export interface AskUserToolDeps {
-  /** Registers the ask as the session's open one; rejects malformed question sets. */
-  open(input: AskUserInvocation): Promise<PendingAskOpenResult>;
+  /** Opens a new ask; rejects malformed or incomplete question sets. */
+  open(input: PendingAskOpenInput): Promise<PendingAskUser>;
+  /** Revises or confirms an open ask; `undefined` when it is no longer open. */
+  update(input: PendingAskUpdateInput): Promise<PendingAskUser | undefined>;
+  /** Withdraws an open ask; `undefined` when it is no longer open. */
+  withdraw(sessionId: string, askId: string): Promise<AskUserOutcome | undefined>;
 }
 
-type AskUserToolDetails = PendingAskOpenResult;
+/**
+ * Tool-result details; the transcript rebuild of open asks reads them back.
+ * `sessionId` names the session that posted the ask, so a fork that copied the
+ * entry does not restore it.
+ */
+export type AskUserToolDetails = { ask: PendingAskUser; sessionId: string } | { withdrawn: AskUserOutcome };
 
 const AskUserOptionParams = Type.Object({
   value: Type.String({
@@ -35,6 +42,9 @@ const AskUserOptionParams = Type.Object({
   detail: Type.Optional(Type.String({
     maxLength: ASK_USER_TEXT_MAX_LENGTH,
     description: "Optional clarification shown under the label.",
+  })),
+  recommended: Type.Optional(Type.Boolean({
+    description: "Mark the option you recommend.",
   })),
 });
 
@@ -61,11 +71,23 @@ const AskUserQuestionParams = Type.Object({
 });
 
 const AskUserParams = Type.Object({
-  questions: Type.Array(AskUserQuestionParams, {
+  context: Type.Optional(Type.String({
+    maxLength: ASK_USER_CONTEXT_MAX_LENGTH,
+    description: "Required for a new set. Self-contained Markdown shown above the questions: the user must be able to answer without reading the Chat, so state the finding, the options and their consequences, and your recommendation.",
+  })),
+  questions: Type.Optional(Type.Array(AskUserQuestionParams, {
     minItems: 1,
     maxItems: ASK_USER_QUESTION_LIMIT,
-    description: "The questions to post, in the order the user should read them. Every question may be left unanswered.",
-  }),
+    description: "Required for a new set: the questions in reading order. Every question may be left unanswered.",
+  })),
+  update: Type.Optional(Type.String({
+    maxLength: ASK_USER_ID_MAX_LENGTH,
+    description: "askId of an open set to revise in place. Given context/questions replace the old ones; send neither to confirm the set is still current.",
+  })),
+  withdraw: Type.Optional(Type.String({
+    maxLength: ASK_USER_ID_MAX_LENGTH,
+    description: "askId of an open set to withdraw because it no longer matters. Send nothing else.",
+  })),
 });
 
 /** Shapes one schema question into the domain question; the store owns validation. */
@@ -81,50 +103,65 @@ function toQuestion(param: Static<typeof AskUserQuestionParams>): AskUserQuestio
 }
 
 function toOption(param: Static<typeof AskUserOptionParams>): AskUserQuestionOption {
-  const { detail } = param;
-  return { value: param.value, label: param.label, ...(detail === undefined ? {} : { detail }) };
+  const { detail, recommended } = param;
+  return { value: param.value, label: param.label, ...(detail === undefined ? {} : { detail }), ...(recommended === true ? { recommended } : {}) };
 }
 
-function postedText(result: PendingAskOpenResult): string {
-  const count = result.ask.questions.length;
-  const posted = `Posted ${count.toString()} question${count === 1 ? "" : "s"} to the user as ask ${result.ask.askId}. Ending this run; the answers arrive as a follow-up message that wakes you, naming every question the user left unanswered. Do not repost these questions.`;
-  return result.superseded === undefined ? posted : `${posted}\n\n${renderSupersededAskText(result.superseded)}`;
+function refs(ask: PendingAskUser): string {
+  return ask.questions.map((question) => askQuestionRef(ask.askId, question.id)).join(", ");
+}
+
+function postedText(ask: PendingAskUser): string {
+  const count = ask.questions.length;
+  return `Posted ${count.toString()} question${count === 1 ? "" : "s"} to the user's Questions pane as ask ${ask.askId} (${refs(ask)}). You are not paused: keep working on whatever does not depend on the answers, and end your turn if nothing does. The answers arrive later as a follow-up message. Do not repost these questions; revise them with update or drop them with withdraw.`;
+}
+
+function closedAskError(askId: string): Error {
+  return new Error(`No open question set ${askId}: it was already answered, withdrawn, or closed.`);
 }
 
 /**
- * Custom tool that posts a question set to the user's browser as interactive UI.
+ * Custom tool that posts, revises, or withdraws a question set in the user's
+ * Questions pane.
  *
- * It deliberately does **not** await the user. Awaiting would pin the agent run
- * for an unbounded human-scale wait, keep the session streaming, and leave a
- * dangling tool call if the runtime were replaced meanwhile. Instead the ask
- * becomes daemon-owned state, the tool terminates the run, and the submitted
- * answers return later as a follow-up message that wakes the session.
+ * It never awaits the user and never ends the run. Awaiting would pin the agent
+ * run for an unbounded human-scale wait; instead the ask becomes daemon-owned
+ * state and the agent keeps working. Submitted answers return later as a
+ * follow-up message that wakes or queues behind the session's work.
  *
- * Rejected question sets throw: the agent loop turns the thrown message into an
- * error tool result, so the model can fix the ask and post it again.
+ * Rejected calls throw: the agent loop turns the thrown message into an error
+ * tool result, so the model can fix the call and try again.
  */
 export function createAskUserToolDefinition(deps: AskUserToolDeps) {
   return defineTool<typeof AskUserParams, AskUserToolDetails>({
     name: "ask_user",
-    // Nested tools cannot terminate the outer agent run.
     exposure: "model-only",
     label: "Ask user",
-    description: "Post a set of questions to the user as a browser form and end this run. Answers arrive later as a follow-up message; the user may leave any question unanswered.",
-    promptSnippet: "ask_user: post a question set to the user; ends the run, answers return as a follow-up",
+    description: "Post a self-contained question set to the user's Questions pane and return immediately. Answers arrive later as a follow-up message; the user may leave any question unanswered. Pass update: <askId> to revise or confirm an open set, or withdraw: <askId> to drop one.",
+    promptSnippet: "ask_user: post, revise, or withdraw a self-contained question set for the user; returns immediately, answers arrive later as a follow-up",
     promptGuidelines: [
-      "When you need decisions from the user, post them together with ask_user instead of asking in prose one at a time. It ends the run and the answers, including the questions the user left unanswered, come back as a follow-up message that wakes you. Call it alone and last, and do not repost the same questions or poll for answers.",
+      "Use ask_user to batch the decisions you need from the user into one question set rather than asking in prose. It returns immediately: keep working on anything that does not depend on the answers, and end your turn if nothing does. The answers come back as a follow-up message that wakes you; do not poll or repost.",
+      "Make each ask_user set self-contained: its context must let the user answer without reading the Chat, covering the finding, the options and their consequences, and your recommendation (mark the recommended option).",
+      "Keep open ask_user sets current: when the facts change, call ask_user with update: <askId> (no other fields just confirms it) or withdraw: <askId>.",
     ],
     parameters: AskUserParams,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await deps.open({
-        sessionId: ctx.sessionManager.getSessionId(),
-        questions: params.questions.map(toQuestion),
-      });
-      return {
-        content: [{ type: "text", text: postedText(result) }],
-        details: result,
-        terminate: true,
-      };
+      const sessionId = ctx.sessionManager.getSessionId();
+      const content = params.context;
+      const questions = params.questions?.map(toQuestion);
+      if (params.withdraw !== undefined) {
+        if (params.update !== undefined || content !== undefined || questions !== undefined) throw new Error("withdraw takes no other parameters");
+        const withdrawn = await deps.withdraw(sessionId, params.withdraw);
+        if (withdrawn === undefined) throw closedAskError(params.withdraw);
+        return { content: [{ type: "text", text: `Withdrew question set ${withdrawn.askId}; it is gone from the user's Questions pane.` }], details: { withdrawn } };
+      }
+      if (params.update !== undefined) {
+        const ask = await deps.update({ sessionId, askId: params.update, context: content, questions });
+        if (ask === undefined) throw closedAskError(params.update);
+        return { content: [{ type: "text", text: `Updated open question set ${ask.askId} (${refs(ask)}). The answers still arrive later as a follow-up message.` }], details: { ask, sessionId } };
+      }
+      const ask = await deps.open({ sessionId, context: content, questions });
+      return { content: [{ type: "text", text: postedText(ask) }], details: { ask, sessionId } };
     },
   });
 }

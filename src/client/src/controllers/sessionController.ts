@@ -228,7 +228,7 @@ export class SessionController {
     // session must not cancel the in-flight upload indicator of the session
     // that is still sending; the per-session entry is cleared by send()'s
     // finally block when the request settles.
-    this.setState({ selectedSession: undefined, messages: [], messagePageStart: 0, messagePageEnd: 0, messagePageTotal: 0, isLoadingEarlierMessages: false, status: undefined, activity: undefined, pendingAsk: undefined, pendingDialogs: [], closedDialogs: [], availableThinkingLevels: [], treeDialog: undefined });
+    this.setState({ selectedSession: undefined, messages: [], messagePageStart: 0, messagePageEnd: 0, messagePageTotal: 0, isLoadingEarlierMessages: false, status: undefined, activity: undefined, pendingAsks: [], pendingDialogs: [], closedDialogs: [], availableThinkingLevels: [], treeDialog: undefined });
   }
 
   deselectSession(options?: { forgetRememberedSelection?: boolean | undefined; updateUrl?: boolean | undefined }) {
@@ -331,7 +331,7 @@ export class SessionController {
       ...(options?.preserveTreeDialog === true ? {} : { treeDialog: undefined }),
       status: session.archived === true ? undefined : this.getState().sessionStatuses[session.id],
       activity: session.archived === true ? undefined : this.getState().sessionActivities[session.id],
-      pendingAsk: session.archived === true ? undefined : this.getState().sessionStatuses[session.id]?.pendingAsk,
+      pendingAsks: session.archived === true ? [] : (this.getState().sessionStatuses[session.id]?.pendingAsks ?? []),
       pendingDialogs: session.archived === true ? [] : (this.getState().sessionStatuses[session.id]?.pendingDialogs ?? []),
       closedDialogs: [],
       availableThinkingLevels: [],
@@ -344,7 +344,7 @@ export class SessionController {
         if (seq !== this.selectionSeq || this.getState().selectedSession?.id !== session.id || !navigationIsCurrent(options?.navigation)) return;
         this.browserErrors.clearRecovered(recoveryError);
         const history = this.transcripts.mergeHistory(transcriptKey, page);
-        this.setState({ ...history, isLoadingEarlierMessages: false, status: undefined, activity: undefined, pendingAsk: undefined, pendingDialogs: [], closedDialogs: [] });
+        this.setState({ ...history, isLoadingEarlierMessages: false, status: undefined, activity: undefined, pendingAsks: [], pendingDialogs: [], closedDialogs: [] });
         this.onSelectedSessionReady?.({ machineId, session });
         if (options?.updateUrl !== false) this.updateUrl();
         return;
@@ -939,7 +939,7 @@ export class SessionController {
         sessions: nextSessions,
         sessionStatuses: omitKeys(state.sessionStatuses, affectedIds),
         sessionActivities: omitKeys(state.sessionActivities, affectedIds),
-        ...(selectedAffected ? { status: undefined, activity: undefined, pendingAsk: undefined, pendingDialogs: [], closedDialogs: [] } : {}),
+        ...(selectedAffected ? { status: undefined, activity: undefined, pendingAsks: [], pendingDialogs: [], closedDialogs: [] } : {}),
       });
       const expected = this.navigationSelection();
 
@@ -1401,10 +1401,11 @@ export class SessionController {
     const selectionSeq = this.selectionSeq;
     try {
       const response = await close(session, machineId);
-      // The ask is gone either way: this call closed it, or it was already
-      // closed elsewhere. Its draft has nothing left to protect, and the answers
-      // now live in the daemon-owned outcome.
-      clearAskDraft(machineSessionKey(machineId, session.id), askId);
+      // A closed ask's draft has nothing left to protect: the answers now live in
+      // the daemon-owned outcome. A stale submit of a still-open ask means it was
+      // revised; its card reloads the draft, dropping answers to changed questions.
+      const stillOpen = response.result === "stale" && response.sessionStatus.pendingAsks?.some((ask) => ask.askId === askId) === true;
+      if (!stillOpen) clearAskDraft(machineSessionKey(machineId, session.id), askId);
       // Both outcomes carry the recomputed status, so no follow-up status
       // request is needed to learn what the session's open ask is now.
       if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(response.sessionStatus);
@@ -1751,7 +1752,7 @@ export class SessionController {
       isLoadingEarlierMessages: false,
       status: undefined,
       activity,
-      pendingAsk: undefined,
+      pendingAsks: [],
       pendingDialogs: [],
       closedDialogs: [],
       availableThinkingLevels: [],
@@ -1801,7 +1802,7 @@ export class SessionController {
       sessionActivities: omitSessionActivity(state.sessionActivities, tempId),
       sendingPrompts: moveRecordKey(state.sendingPrompts, tempId, cachedSession.id),
       clientQueuedSessionMessages: moveRecordKey(state.clientQueuedSessionMessages, tempId, cachedSession.id),
-      ...(!useNavigation && wasSelected ? { selectedSession: cachedSession, status: state.sessionStatuses[cachedSession.id], activity: state.sessionActivities[cachedSession.id], pendingAsk: state.sessionStatuses[cachedSession.id]?.pendingAsk, pendingDialogs: state.sessionStatuses[cachedSession.id]?.pendingDialogs ?? [], closedDialogs: [] } : {}),
+      ...(!useNavigation && wasSelected ? { selectedSession: cachedSession, status: state.sessionStatuses[cachedSession.id], activity: state.sessionActivities[cachedSession.id], pendingAsks: state.sessionStatuses[cachedSession.id]?.pendingAsks ?? [], pendingDialogs: state.sessionStatuses[cachedSession.id]?.pendingDialogs ?? [], closedDialogs: [] } : {}),
       error: "",
     });
     this.applyReleasedCreatedSessions(releasedCreatedSessions, pending.machineId);
@@ -2085,9 +2086,9 @@ export class SessionController {
       ...(clearsStaleActivity ? { sessionActivities: omitSessionActivity(state.sessionActivities, status.sessionId) } : {}),
       status: isSelected ? status : state.status,
       activity: isSelected && clearsStaleActivity ? undefined : state.activity,
-      // The daemon owns whether an ask is open, so every status it publishes is
-      // authoritative for the selected session's card, including its removal.
-      ...(isSelected ? { pendingAsk: status.pendingAsk } : {}),
+      // The daemon owns which asks are open, so every status it publishes is
+      // authoritative for the selected session's cards, including their removal.
+      ...(isSelected ? { pendingAsks: status.pendingAsks ?? [] } : {}),
       // Same for extension dialogs: the status projection is authoritative for
       // the open list. Closed-card outcomes are event/response-driven instead,
       // so a status without the dialog simply drops it from the open list.
@@ -2130,19 +2131,18 @@ export class SessionController {
     this.setState({ closedDialogs: state.closedDialogs.filter((entry) => entry.dialog.dialogId !== dialogId) });
   }
 
+  /** Add a new ask, or replace an updated one in place so its card keeps its position and draft. */
   private applyOpenedAsk(ask: PendingAskUser): void {
     const state = this.getState();
     if (state.selectedSession === undefined) return;
-    // A superseded ask keeps its draft: the read-only record of an ask the user
-    // never submitted must still be able to show what they had typed.
-    this.setState({ pendingAsk: ask });
+    const known = state.pendingAsks.some((open) => open.askId === ask.askId);
+    this.setState({ pendingAsks: known ? state.pendingAsks.map((open) => open.askId === ask.askId ? ask : open) : [...state.pendingAsks, ask] });
   }
 
   private applyClosedAsk(askId: string): void {
-    // A close for an ask that is not the one on screen is already reflected here
-    // (typically the supersede half of an open), so it must not clear the card.
-    if (this.getState().pendingAsk?.askId !== askId) return;
-    this.setState({ pendingAsk: undefined });
+    const state = this.getState();
+    if (!state.pendingAsks.some((ask) => ask.askId === askId)) return;
+    this.setState({ pendingAsks: state.pendingAsks.filter((ask) => ask.askId !== askId) });
   }
 
   private applySessionName(sessionId: string, name: string | undefined) {

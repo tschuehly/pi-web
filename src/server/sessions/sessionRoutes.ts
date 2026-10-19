@@ -423,7 +423,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; revision?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
     try {
       const body = requireRecord(request.body);
       const askId = requireBoundedId(body["askId"], "askId");
@@ -718,7 +718,9 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   const answers = body["answers"];
   if (!Array.isArray(answers)) throw new Error("answers field must be an array");
   if (answers.length > ASK_USER_QUESTION_LIMIT) throw new Error("answers field has too many entries");
-  return { answers: answers.map(askUserAnswerFromValue) };
+  // An absent revision is not an error: the store refuses it as stale, so an older browser reloads.
+  const revision = body["revision"] === undefined ? undefined : requireBoundedId(body["revision"], "revision");
+  return { answers: answers.map(askUserAnswerFromValue), ...(revision === undefined ? {} : { revision }) };
 }
 
 function askUserAnswerFromValue(value: unknown): AskUserAnswer {

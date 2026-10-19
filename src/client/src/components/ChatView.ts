@@ -284,7 +284,7 @@ export class ChatView extends LitElement {
   @property({ attribute: false }) status?: SessionStatus;
   @property({ attribute: false }) onUseSuggestedInput: ((machineId: string, sessionId: string) => void) | undefined;
   @property({ attribute: false }) activity?: SessionActivity;
-  @property({ attribute: false }) pendingAsk?: PendingAskUser;
+  @property({ attribute: false }) pendingAsks: PendingAskUser[] = [];
   @property({ attribute: false }) askDraftSessionId = "";
   @property({ attribute: false }) onSubmitAsk?: (askId: string, submission: AskUserSubmission) => void | Promise<void>;
   @property({ attribute: false }) pendingDialogs: PendingExtensionDialog[] = [];
@@ -533,7 +533,7 @@ export class ChatView extends LitElement {
       if (this.restoreScrollFrame !== undefined) cancelAnimationFrame(this.restoreScrollFrame);
       this.restoreScrollFrame = undefined;
     }
-    if (changed.has("messages") || changed.has("pendingAsk") || changed.has("pendingDialogs") || changed.has("closedDialogs")) this.pinnedToBottom = this.pinnedToBottom && (this.didChatHeightChange() || this.isNearBottom());
+    if (changed.has("messages") || changed.has("pendingAsks") || changed.has("pendingDialogs") || changed.has("closedDialogs")) this.pinnedToBottom = this.pinnedToBottom && (this.didChatHeightChange() || this.isNearBottom());
   }
 
   protected override update(changed: Map<string, unknown>): void {
@@ -554,19 +554,19 @@ export class ChatView extends LitElement {
       if (this.transcriptFilter === "everything") this.requestLoadMoreIfNeeded();
       this.scheduleConversationRailUpdate();
     }
-    const openedAsk = changed.has("pendingAsk") && this.isNewPendingAsk(changed.get("pendingAsk"));
+    const openedAsk = changed.has("pendingAsks") && this.isNewPendingAsk(changed.get("pendingAsks"));
     const openedDialog = changed.has("pendingDialogs") && this.isNewOpenDialog(changed.get("pendingDialogs"));
     // The form uses the transcript scroller. Start a new long form at question
     // one rather than applying the usual live-tail scroll and landing at its end.
     if (!changed.has("sessionId") && openedAsk && this.pinnedToBottom) this.scrollToOpenAsk();
     else if (!changed.has("sessionId") && openedDialog && this.pinnedToBottom) this.scrollToOpenDialog();
-    else if (!changed.has("sessionId") && (changed.has("messages") || changed.has("pendingAsk") || changed.has("pendingDialogs") || changed.has("closedDialogs")) && this.pinnedToBottom) this.scrollToBottom();
+    else if (!changed.has("sessionId") && (changed.has("messages") || changed.has("pendingAsks") || changed.has("pendingDialogs") || changed.has("closedDialogs")) && this.pinnedToBottom) this.scrollToBottom();
     if (changed.has("messages") || changed.has("messageStart") || changed.has("messageTotal") || changed.has("hasMore") || changed.has("loadingMore")) this.scheduleConversationRailUpdate();
-    if (changed.has("messages") || changed.has("messageStart") || changed.has("hasMore") || changed.has("loadingMore") || changed.has("pendingAsk") || changed.has("pendingDialogs") || changed.has("closedDialogs")) this.continuePendingScrollRestore();
+    if (changed.has("messages") || changed.has("messageStart") || changed.has("hasMore") || changed.has("loadingMore") || changed.has("pendingAsks") || changed.has("pendingDialogs") || changed.has("closedDialogs")) this.continuePendingScrollRestore();
     if (changed.has("messages") || changed.has("hasMore") || changed.has("loadingMore")) this.requestLoadMoreIfNeeded();
     if (changed.has("notificationInbox") && this.pendingNotificationFocus !== undefined) this.focusPendingNotificationTarget();
     if (changed.has("zoomedImage")) this.syncImageZoomDialog();
-    if (changed.has("revealTarget") || changed.has("sessionId") || changed.has("messages") || changed.has("pendingAsk") || changed.has("pendingDialogs")) this.scheduleReveal();
+    if (changed.has("revealTarget") || changed.has("sessionId") || changed.has("messages") || changed.has("pendingAsks") || changed.has("pendingDialogs")) this.scheduleReveal();
   }
 
   /** Runs after scroll restoration, so the revealed message wins over the saved position. */
@@ -581,7 +581,7 @@ export class ChatView extends LitElement {
       const chat = this.chat;
       if (element === undefined || chat == null) {
         // ponytail: an anchor outside the loaded page keeps the usual restored position; page back to it if owners miss it.
-        if (this.messages.length > 0 || this.pendingAsk !== undefined || this.pendingDialogs.length > 0) this.revealedTarget = target;
+        if (this.messages.length > 0 || this.pendingAsks.length > 0 || this.pendingDialogs.length > 0) this.revealedTarget = target;
         return;
       }
       this.revealedTarget = target;
@@ -1023,15 +1023,14 @@ export class ChatView extends LitElement {
   }
 
   private renderOpenAsk() {
-    if (this.pendingAsk === undefined) return null;
-    return html`
+    return repeat(this.pendingAsks, (ask) => ask.askId, (ask) => html`
       <ask-user-card
-        data-scroll-anchor-id=${`ask:${this.pendingAsk.askId}`}
-        .ask=${this.pendingAsk}
+        data-scroll-anchor-id=${`ask:${ask.askId}`}
+        .ask=${ask}
         .draftSessionId=${this.askDraftSessionId}
         .onSubmit=${this.onSubmitAsk}
       ></ask-user-card>
-    `;
+    `);
   }
 
   private renderExtensionDialogs() {
@@ -1588,9 +1587,10 @@ export class ChatView extends LitElement {
     this.scrollToBottom();
   }
 
+  /** True when an ask appeared that the previous list did not hold. */
   private isNewPendingAsk(previous: unknown): boolean {
-    return this.pendingAsk !== undefined
-      && (typeof previous !== "object" || previous === null || Reflect.get(previous, "askId") !== this.pendingAsk.askId);
+    const known: unknown[] = Array.isArray(previous) ? previous : [];
+    return this.pendingAsks.some((ask) => !known.some((old) => typeof old === "object" && old !== null && "askId" in old && old.askId === ask.askId));
   }
 
   private isNewOpenDialog(previous: unknown): boolean {
@@ -1616,8 +1616,9 @@ export class ChatView extends LitElement {
   private alignOpenAskToTop(): boolean {
     const chat = this.chat;
     if (chat == null) return false;
-    const card = this.renderRoot.querySelector<HTMLElement>(".chat > ask-user-card");
-    if (card === null) return false;
+    // The newest card: a newly opened ask is the one to read first.
+    const card = [...this.renderRoot.querySelectorAll<HTMLElement>(".chat > ask-user-card")].at(-1);
+    if (card === undefined) return false;
     chat.scrollTop += card.getBoundingClientRect().top - chat.getBoundingClientRect().top;
     this.syncScrollMetrics();
     this.pinnedToBottom = this.isNearBottom();
@@ -1654,7 +1655,7 @@ export class ChatView extends LitElement {
       this.restoreScrollFrame = undefined;
       if (this.sessionId !== sessionId || this.transcriptFilter !== "everything") return;
       this.withSuppressedScrollSave(() => {
-        if (this.pendingAsk !== undefined && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenAskToTop()) return;
+        if (this.pendingAsks.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenAskToTop()) return;
         if (this.pendingDialogs.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenDialogToTop()) return;
         const chat = this.chat;
         const result = this.scrollController.restorePosition(sessionId, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });

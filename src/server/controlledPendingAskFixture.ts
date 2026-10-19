@@ -9,7 +9,7 @@ export async function openControlledPendingAskFixture(sessions: Pick<PiSessionSe
   // then share the same runtime and the service's daemon-memory ask store.
   const status = await sessions.status(ref);
   if (status.sessionId !== ref.id) throw new Error("Controlled fixture session identity mismatch");
-  await sessions.openAsk({ sessionId: ref.id, questions: [{ id: "fixture-choice", question: "Which controlled fixture answer?", options: [{ value: "one", label: "One" }, { value: "two", label: "Two" }] }] });
+  await sessions.openAsk({ sessionId: ref.id, context: "Controlled fixture question.", questions: [{ id: "fixture-choice", question: "Which controlled fixture answer?", options: [{ value: "one", label: "One" }, { value: "two", label: "Two" }] }] });
 }
 
 export async function validateControlledPendingAskFixture(env: NodeJS.ProcessEnv): Promise<{ id: string; cwd: string }> {
