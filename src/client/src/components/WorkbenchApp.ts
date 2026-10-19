@@ -15,6 +15,8 @@ import { selectedMachineId } from "../controllers/types";
 import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale, stepInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
 import { markdownWorkspaceContext, type LineRange, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { machineSessionKey } from "../machineKeys";
+import { PromptChipStore, type PromptChipTarget, type StagedPromptChip } from "../promptChips";
+import { addReplyQuote, composeQuotedReply, type ReplyQuote } from "../replyQuotes";
 import { nativeDirectoryPicker } from "../nativeHost";
 import { writeClipboardText } from "../clipboard";
 import { loadExternalPlugins } from "../plugins/external";
@@ -917,11 +919,34 @@ export class WorkbenchApp extends LitElement {
     }
   }
 
-  private readonly handleSend = (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string): Promise<boolean> => {
+  private readonly handleSend = async (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string, quotes: readonly StagedPromptChip[] = []): Promise<boolean> => {
     if (this.orientationPendingSessionId === this.app.selectedSession?.id) this.orientationPendingSessionId = undefined;
-    if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && this.auth.handleSlashCommand(text)) return Promise.resolve(true);
-    return this.sessions.send(text, streamingBehavior, attachments, delivery, folder);
+    const target = quotes[0]?.target;
+    if (target === undefined) {
+      if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && this.auth.handleSlashCommand(text)) return true;
+      return this.sessions.send(text, streamingBehavior, attachments, delivery, folder);
+    }
+    const accepted = await this.sessions.send(composeQuotedReply(text, quotes), streamingBehavior, attachments, delivery, folder, target);
+    if (accepted) this.replyQuotes.consume(quotes);
+    return accepted;
   };
+
+  private readonly replyQuotes = new PromptChipStore(() => { this.requestUpdate(); });
+  private visibleReplyQuotes: readonly StagedPromptChip[] = [];
+  private readonly removeReplyQuote = (chip: StagedPromptChip): void => { this.replyQuotes.removeByUser(chip); };
+  private readonly replyToSelection = (quote: ReplyQuote): void => {
+    const session = this.app.selectedSession;
+    if (session === undefined) return;
+    addReplyQuote(this.replyQuotes, { machineId: selectedMachineId(this.app), sessionId: session.id }, quote);
+    void this.focusChatComposer();
+  };
+
+  /** Same array while unchanged, so per-token status renders do not re-render the composer's chips. */
+  private replyQuoteChips(target: PromptChipTarget): readonly StagedPromptChip[] {
+    const chips = this.replyQuotes.list(target);
+    if (chips.length !== this.visibleReplyQuotes.length || chips.some((chip, index) => chip !== this.visibleReplyQuotes[index])) this.visibleReplyQuotes = chips;
+    return this.visibleReplyQuotes;
+  }
 
   private readonly loadModels = () => this.sessions.listModels();
   private readonly setModel = (provider: string, modelId: string) => this.sessions.setModel(provider, modelId);
@@ -1232,10 +1257,13 @@ export class WorkbenchApp extends LitElement {
           .onDismissAllNotifications=${() => { void this.notifications.dismissAll(); }}
           .onLoadMore=${() => { void this.sessions.loadEarlierMessages(); }}
           .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
+          .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
         ></chat-view>
         <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${() => { this.delegateRosterCollapsed = !this.delegateRosterCollapsed; }}></delegate-roster>
         <goal-status-chip .status=${state.status}></goal-status-chip>
         <prompt-editor
+          .promptChips=${this.replyQuoteChips({ machineId: selectedMachineId(state), sessionId: session.id })}
+          .onRemoveChip=${this.removeReplyQuote}
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
           .machineId=${selectedMachineId(state)}

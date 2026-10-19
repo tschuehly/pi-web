@@ -319,7 +319,7 @@ export class PromptEditor extends LitElement {
   private renderPromptChips() {
     if (this.promptChips.length === 0 && this.chipError === undefined) return null;
     return html`
-      <div class="prompt-chips" aria-label="Pending plugin context">
+      <div class="prompt-chips" aria-label="Pending context">
         ${this.promptChips.map((chip) => html`
           <div class="prompt-chip" title=${chip.text}>
             <span>${chip.label}</span>
