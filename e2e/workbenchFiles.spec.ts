@@ -36,7 +36,8 @@ async function drawerSettled(pane: Locator, open: boolean): Promise<void> {
 
 /** Opens `docs/<name>` through the Files tree. */
 async function openFromTree(page: Page, name: string): Promise<Locator> {
-  await page.getByRole("button", { name: "Search files" }).click();
+  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await page.locator("workbench-files-pane").getByRole("button", { name: "Search files" }).click();
   const pane = page.locator("workbench-files-pane");
   const docs = pane.locator(".tree .row.dir", { hasText: "docs" });
   if (await docs.getAttribute("aria-expanded") !== "true") await docs.click();
@@ -47,7 +48,8 @@ async function openFromTree(page: Page, name: string): Promise<Locator> {
 
 test("the file tree filter searches the workspace and loads the next page", async ({ page }) => {
   await openChat(page);
-  await page.getByRole("button", { name: "Search files" }).click();
+  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await page.locator("workbench-files-pane").getByRole("button", { name: "Search files" }).click();
   const pane = page.locator("workbench-files-pane");
   await expect(pane.getByRole("textbox", { name: "Filter files" })).toBeFocused();
   await pane.getByRole("textbox", { name: "Filter files" }).fill("entry-");

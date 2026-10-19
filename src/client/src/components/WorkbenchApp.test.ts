@@ -648,6 +648,53 @@ describe("Workbench Chat chooser", () => {
     expect(pane?.asks).toEqual([]);
   });
 
+  it("shows Files or Questions in one side-pane slot with a shared divider, width and close chevron", async () => {
+    const current = session("human", "Edit notes");
+    const app = await mountChooser([current]);
+    setState(app, { ...getState(app), selectedSession: current });
+    await app.updateComplete;
+    const container = app.shadowRoot?.querySelector<HTMLElement>(".chat-and-files");
+    if (!container) throw new Error("Missing Chat container");
+    Object.defineProperty(container, "clientWidth", { configurable: true, value: 1000 });
+    const $ = (selector: string) => app.shadowRoot?.querySelector(selector) ?? null;
+    const click = async (selector: string) => { app.shadowRoot?.querySelector<HTMLButtonElement>(selector)?.click(); await app.updateComplete; };
+
+    await click("header .questions-toggle");
+    expect($("workbench-questions-pane")).not.toBeNull();
+    const divider = $(".files-divider");
+    expect(divider?.getAttribute("aria-label")).toBe("Resize Questions pane");
+    expect(divider?.getAttribute("aria-controls")).toBe("workbench-questions");
+    expect($(".files-close")?.getAttribute("aria-label")).toBe("Close Questions");
+    expect(WorkbenchApp.styles.cssText).toMatch(/workbench-files-pane, workbench-questions-pane \{ flex: 0 0 min\(var\(--files-width\)/);
+    divider?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    await app.updateComplete;
+    expect($(".files-divider")?.getAttribute("aria-valuenow")).toBe("424");
+
+    await click(".files-toggle");
+    expect($("workbench-questions-pane")).toBeNull();
+    expect($("workbench-files-pane")).not.toBeNull();
+    expect(app.shadowRoot?.querySelectorAll(".files-divider")).toHaveLength(1);
+    expect($(".files-divider")?.getAttribute("aria-valuenow")).toBe("424");
+    expect($(".files-close")?.getAttribute("aria-label")).toBe("Close Files");
+    expect($(".files-toggle")?.getAttribute("aria-expanded")).toBe("true");
+    expect($("header .questions-toggle")?.getAttribute("aria-expanded")).toBe("false");
+
+    const files = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+    if (!files) throw new Error("Files pane was not mounted");
+    const canClose = vi.spyOn(files, "canClose").mockReturnValue(false);
+    await click("header .questions-toggle");
+    expect($("workbench-files-pane")).toBe(files);
+    expect($("workbench-questions-pane")).toBeNull();
+    canClose.mockReturnValue(true);
+    await click("header .questions-toggle");
+    expect($("workbench-files-pane")).toBeNull();
+    expect($("header .questions-toggle")?.getAttribute("aria-expanded")).toBe("true");
+
+    await click(".files-close");
+    expect($("workbench-questions-pane")).toBeNull();
+    expect($(".files-divider")).toBeNull();
+  });
+
   it("bounds Files resizing by available Chat width for pointer and keyboard input", async () => {
     const app = await mountChooser([session("human", "Edit notes")]);
     setState(app, { ...getState(app), selectedSession: session("human", "Edit notes") });
