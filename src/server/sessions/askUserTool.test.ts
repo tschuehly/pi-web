@@ -50,6 +50,8 @@ describe("createAskUserToolDefinition", () => {
     expect(tool.exposure).toBe("model-only");
     expect(advertised).toContain("returns immediately");
     expect(advertised).toContain("without reading the Chat");
+    expect(advertised).toContain("at most five short lines");
+    expect(advertised).toContain("consequence in `detail`");
     expect(advertised).toContain("update: <askId>");
     expect(advertised).toContain("withdraw: <askId>");
     expect(advertised).not.toMatch(/ends? (this|the) run|alone and last/);

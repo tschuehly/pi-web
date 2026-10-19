@@ -73,7 +73,7 @@ const AskUserQuestionParams = Type.Object({
 const AskUserParams = Type.Object({
   context: Type.Optional(Type.String({
     maxLength: ASK_USER_CONTEXT_MAX_LENGTH,
-    description: "Required for a new set. Self-contained Markdown shown above the questions: the user must be able to answer without reading the Chat, so state the finding, the options and their consequences, and your recommendation.",
+    description: "Required for a new set. Markdown shown above the questions, at most five short lines: only the finding the decision rests on, so the user can answer without reading the Chat. Put each option's consequence in its `detail` and mark the recommended option there; do not restate the options, the history, or check results here.",
   })),
   questions: Type.Optional(Type.Array(AskUserQuestionParams, {
     minItems: 1,
@@ -141,7 +141,7 @@ export function createAskUserToolDefinition(deps: AskUserToolDeps) {
     promptSnippet: "ask_user: post, revise, or withdraw a self-contained question set for the user; returns immediately, answers arrive later as a follow-up",
     promptGuidelines: [
       "Use ask_user to batch the decisions you need from the user into one question set rather than asking in prose. It returns immediately: keep working on anything that does not depend on the answers, and end your turn if nothing does. The answers come back as a follow-up message that wakes you; do not poll or repost.",
-      "Make each ask_user set self-contained: its context must let the user answer without reading the Chat, covering the finding, the options and their consequences, and your recommendation (mark the recommended option).",
+      "Keep each ask_user set self-contained and short: context is at most five short lines with only the finding the decision rests on; each option states its own consequence in `detail`, and the recommended option is marked. The user must be able to answer without reading the Chat.",
       "Keep open ask_user sets current: when the facts change, call ask_user with update: <askId> (no other fields just confirms it) or withdraw: <askId>.",
     ],
     parameters: AskUserParams,
