@@ -36,7 +36,13 @@ test("quotes selections from two messages and sends them ahead of the reply", as
   await answer.dblclick({ position: { x: 8, y: 6 } });
   if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-button.png") });
   await reply.click();
-  await expect(chips.locator("span")).toHaveText(["Where", "They"]);
+  await expect(chips.locator(".prompt-chip-label")).toHaveText(["Where", "They"]);
+  const first = chips.first().locator(".prompt-chip-label");
+  await first.click();
+  await expect(first).toHaveAttribute("aria-expanded", "true");
+  await first.click();
+  await expect(first).toHaveAttribute("aria-expanded", "false");
+  await page.locator("prompt-editor").evaluate((editor) => { (editor as HTMLElement & { focusInput(): void }).focusInput(); });
   await page.keyboard.type("Why there?");
   if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-to-selection.png") });
 

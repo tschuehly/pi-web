@@ -13,7 +13,7 @@ import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputMode
 import { machineSessionKey } from "../machineKeys";
 import { WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
 import type { StagedPromptChip } from "../promptChips";
-import { REPLY_QUOTE_OWNER } from "../replyQuotes";
+import { REPLY_QUOTE_OWNER, replyQuoteExcerpt } from "../replyQuotes";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
@@ -102,6 +102,7 @@ export class PromptEditor extends LitElement {
   @state() private attachmentError: string | undefined = undefined;
   @state() private chipSendingKey: string | undefined = undefined;
   @state() private chipError: string | undefined = undefined;
+  @state() private expandedChipKey: string | undefined = undefined;
   private attachmentSeq = 0;
   private nextImageReference = 1;
   private pendingImageReferences: readonly string[] = [];
@@ -321,12 +322,15 @@ export class PromptEditor extends LitElement {
     if (this.promptChips.length === 0 && this.chipError === undefined) return null;
     return html`
       <div class="prompt-chips" aria-label="Pending context">
-        ${this.promptChips.map((chip) => html`
-          <div class=${chip.pluginId === REPLY_QUOTE_OWNER ? "prompt-chip prompt-chip-quote" : "prompt-chip"} title=${chip.text}>
-            <span>${chip.label}</span>
+        ${this.promptChips.map((chip) => {
+          const expanded = this.expandedChipKey === chip.key;
+          return html`
+          <div class=${`prompt-chip${chip.pluginId === REPLY_QUOTE_OWNER ? " prompt-chip-quote" : ""}${expanded ? " expanded" : ""}`}>
+            <button type="button" class="prompt-chip-label" aria-expanded=${String(expanded)} title=${expanded ? "Collapse" : "Show full text"} @click=${() => { this.expandedChipKey = expanded ? undefined : chip.key; }}>${expanded ? (chip.pluginId === REPLY_QUOTE_OWNER ? replyQuoteExcerpt(chip.text) : chip.text) : chip.label}</button>
             <button type="button" aria-label=${`Remove ${chip.pluginId === REPLY_QUOTE_OWNER ? "quote " : ""}${chip.label}`} ?disabled=${this.disabled} @click=${() => this.onRemoveChip?.(chip)}>${renderRemoveIcon()}</button>
           </div>
-        `)}
+        `;
+        })}
         ${this.chipError === undefined ? null : html`<div class="chip-error" role="alert">${this.chipError}</div>`}
       </div>
     `;

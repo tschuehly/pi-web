@@ -633,10 +633,14 @@ export const promptEditorStyles = css`
   /* A compact one-line tag; the full staged text sits in the title. */
   .prompt-chip { box-sizing: border-box; display: inline-flex; align-items: center; gap: 2px; max-width: min(240px, 100%); height: 22px; border: 1px solid var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); padding: 0 1px 0 7px; font-size: 12px; line-height: 1; }
   .prompt-chip-quote::before { content: ""; flex: none; width: 2px; height: 12px; margin-right: 3px; border-radius: 1px; background: var(--pi-accent); }
-  .prompt-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .prompt-chip button { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 4px; background: transparent; color: var(--pi-muted); padding: 0; }
   .prompt-chip button:hover:not(:disabled), .prompt-chip button:focus-visible { background: var(--pi-surface-hover); color: var(--pi-text); }
   .prompt-chip button:focus-visible { outline: 1px solid var(--pi-accent); outline-offset: 0; }
+  .prompt-chip .prompt-chip-label { display: block; flex: 0 1 auto; width: auto; height: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pi-text); font: inherit; line-height: 1.2; text-align: start; cursor: pointer; }
+  .prompt-chip .prompt-chip-label:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+  .prompt-chip.expanded { height: auto; max-width: 100%; align-items: flex-start; padding-block: 4px; }
+  .prompt-chip.expanded .prompt-chip-label { overflow: auto; max-height: 12em; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .prompt-chip.expanded::before { align-self: stretch; height: auto; }
   .prompt-chip .prompt-action-icon { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   .chip-error { flex-basis: 100%; color: var(--pi-danger); font-size: 12px; }
   .attachment-chip { position: relative; width: 56px; height: 56px; border: 1px solid var(--pi-border); border-radius: 8px; overflow: hidden; background: var(--pi-bg); }
