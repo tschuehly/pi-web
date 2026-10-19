@@ -44,3 +44,21 @@ test("quotes selections from two messages and sends them ahead of the reply", as
   await expect.poll(() => sent).toMatchObject({ text: "> [msg e2e00001](#entry:e2e00001) Where\n\n> [msg e2e00002](#entry:e2e00002) They\n\nWhy there?" });
   await expect(chips).toHaveCount(0);
 });
+
+test("places the Reply button at the selection under a larger interface scale", async ({ page }) => {
+  const url = process.env["PI_WEB_E2E_CHAT_URL"];
+  if (url === undefined) throw new Error("Isolated PI WEB was not started");
+  await page.addInitScript(() => { localStorage.setItem("pi-web-app-scale", "1.5"); });
+  await page.goto(url);
+  const line = page.locator('chat-view article[data-entry-id="e2e00002"] formatted-text p');
+  await line.dblclick({ position: { x: 8, y: 6 } });
+  const reply = page.getByRole("button", { name: "Reply to selection" });
+  await expect(reply).toBeVisible();
+  // A double-click selects the paragraph's first word, so the button belongs just below its start.
+  const text = await line.boundingBox();
+  const button = await reply.boundingBox();
+  if (text === null || button === null) throw new Error("missing geometry");
+  expect(button.x - text.x).toBeGreaterThan(0);
+  expect(button.x - text.x).toBeLessThan(150);
+  expect(Math.abs(button.y - (text.y + text.height))).toBeLessThan(40);
+});
