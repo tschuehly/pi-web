@@ -84,6 +84,18 @@ describe("project tabs", () => {
     expect(rootProjectOf(realm, all).id).toBe("embabel");
     expect(rootProjectOf(other, all).id).toBe("other");
   });
+
+  it("groups a sibling repository named `<project>-<suffix>` under that project", () => {
+    const photo: Project = { ...project, id: "photo", name: "PhotoQuest", path: "/ideas/PhotoQuest" };
+    const studio: Project = { ...project, id: "studio", name: "PhotoQuest-studio", path: "/ideas/PhotoQuest-studio" };
+    const worktree: Project = { ...project, id: "wt", name: "PhotoQuest.eval", path: "/ideas/PhotoQuest.eval" };
+    const deeper: Project = { ...project, id: "deeper", name: "x", path: "/ideas/PhotoQuest-studio-old/x" };
+    const all = [studio, photo, worktree, deeper];
+    expect(rootProjectOf(studio, all).id).toBe("photo");
+    expect(rootProjectOf(worktree, all).id).toBe("wt");
+    expect(rootProjectOf(deeper, all).id).toBe("deeper");
+    expect(rootProjects(all).map((candidate) => candidate.id)).toEqual(["photo", "wt", "deeper"]);
+  });
 });
 
 describe("Chat in a folder", () => {
