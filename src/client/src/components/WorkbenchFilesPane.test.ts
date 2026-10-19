@@ -303,8 +303,19 @@ describe("Workbench Files read-only files", () => {
       expect($(pane, ".editor")?.hidden).toBe(true);
       expect(pane.shadowRoot?.textContent).toContain("Download file");
       expect(status(pane)).toBe("Read-only");
+      expect(pane.shadowRoot?.textContent.split("Read-only").length).toBe(2);
     }
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it("lays a PDF out again when the pane changes size", async () => {
+    vi.spyOn(api, "workspaceFile").mockResolvedValue({ ...file("guide.pdf", "", "v1"), mediaType: "pdf" as const, binary: true, size: 42 });
+    const pane = await mount();
+    await pane.openFile("guide.pdf"); await pane.updateComplete;
+    const first = $(pane, ".preview iframe");
+    $(pane, 'button[aria-label="Open full size"]')?.click(); await pane.updateComplete;
+    expect($(pane, ".preview iframe")).not.toBeNull();
+    expect($(pane, ".preview iframe")).not.toBe(first);
   });
 
   it("previews an SVG as an image in Live and edits its source in Raw", async () => {

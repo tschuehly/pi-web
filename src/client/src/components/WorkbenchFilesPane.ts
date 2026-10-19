@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues, type SVGTemplateResult, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { keyed } from "lit/directives/keyed.js";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, drawSelection, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -52,6 +53,15 @@ export class WorkbenchFilesPane extends LitElement {
   @state() private cursor: string | null = null;
   @state() private searching = false;
   @state() private treeNotice = "";
+  /** Pane width the PDF iframe was laid out at; WebKit's PDF plugin keeps its first layout, so a new width remounts it. */
+  @state() private pdfLayoutWidth = 0;
+  private pdfResizeTimer: number | undefined;
+  private readonly resizeObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(([entry]) => {
+    const width = Math.round(entry?.contentRect.width ?? 0);
+    window.clearTimeout(this.pdfResizeTimer);
+    if (this.loaded?.mediaType !== "pdf" || width === this.pdfLayoutWidth) return;
+    this.pdfResizeTimer = window.setTimeout(() => { this.pdfLayoutWidth = width; }, 150);
+  });
   // Image pinch zoom is applied to the element directly so a gesture never re-renders the pane.
   private imageZoom = 1;
   private imageFitWidth = 0;
@@ -80,6 +90,7 @@ export class WorkbenchFilesPane extends LitElement {
     super.connectedCallback();
     window.addEventListener("beforeunload", this.preventDirtyUnload);
     window.addEventListener("keydown", this.onWindowKeyDown);
+    this.resizeObserver?.observe(this);
     // ponytail: polling every 2s while a text file is open; swap for a push of file changes later.
     this.pollTimer = window.setInterval(() => { void this.syncWithDisk(); }, POLL_MS);
     // A re-attached pane rebuilds its editor from the last disk text.
@@ -90,6 +101,8 @@ export class WorkbenchFilesPane extends LitElement {
   override disconnectedCallback(): void {
     window.removeEventListener("beforeunload", this.preventDirtyUnload);
     window.removeEventListener("keydown", this.onWindowKeyDown);
+    this.resizeObserver?.disconnect();
+    window.clearTimeout(this.pdfResizeTimer);
     window.clearInterval(this.pollTimer);
     window.clearTimeout(this.searchTimer);
     window.clearTimeout(this.toastTimer);
@@ -586,12 +599,13 @@ export class WorkbenchFilesPane extends LitElement {
       : html`<a class="download" href=${workspaceFilePreviewUrl(workspace.projectId, workspace.id, file.path, { machineId: this.machineId, download: true })} download>Download file</a>`;
     const preview = workspaceFilePreviewUrl(workspace.projectId, workspace.id, file.path, { machineId: this.machineId, modifiedAt: file.modifiedAt });
     if (file.truncated) return html`<p class="note" role="note">Showing the first ${formatBytes(MAX_WORKSPACE_FILE_CONTENT_BYTES)} of ${formatBytes(file.size)}. The file is too large to edit here. ${action}</p>`;
-    return html`<div class="preview">
+    const pdf = file.mediaType === "pdf" && file.size <= MAX_INLINE_PREVIEW_BYTES;
+    return html`<div class=${pdf ? "preview pdf" : "preview"}>
       ${(file.mediaType === "image" || file.mediaType === "pdf") && file.size > MAX_INLINE_PREVIEW_BYTES ? html`<p>File too large to preview.</p>`
         : file.mediaType === "image" ? html`<img alt=${`Preview of ${file.path}`} title="Pinch to zoom" @gesturestart=${this.onImageGesture} @gesturechange=${this.onImageGesture} @gestureend=${this.onImageGesture} @wheel=${this.onImageWheel} src=${preview}>`
-        : file.mediaType === "pdf" ? html`<p>Inline PDF support varies. Use Open or Download if it does not display.</p><iframe title=${`Preview of ${file.path}`} src=${preview} allow="" referrerpolicy="no-referrer"></iframe>`
+        : pdf ? keyed(`${String(this.pdfLayoutWidth)}:${String(this.full)}`, html`<iframe title=${`Preview of ${file.path}`} src=${preview} allow="" referrerpolicy="no-referrer"></iframe>`)
         : html`<p>Preview unavailable: this file is binary.</p>`}
-      <p class="note">Read-only. ${action}</p>
+      <p class="note">${action}</p>
     </div>`;
   }
 
@@ -708,7 +722,8 @@ export class WorkbenchFilesPane extends LitElement {
     .preview p, .note { color: var(--pi-muted); }
     .note { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--pi-border-muted); }
     .preview img { max-width: 100%; max-height: 100%; touch-action: pan-x pan-y; }
-    .preview iframe { width: 100%; height: 100%; border: 0; }
+    .preview.pdf { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+    .preview iframe { flex: 1; width: 100%; min-width: 0; min-height: 0; border: 0; }
     .download { color: var(--pi-accent); }
 
     /* editor */
