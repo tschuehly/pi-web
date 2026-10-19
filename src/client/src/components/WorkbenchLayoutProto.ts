@@ -37,7 +37,8 @@ import "./WorkstreamChooser";
 
 /** One tab or tile. `groupId`/`group` = its Workstream, absent for a Chat without one. */
 interface Entry { id: string; sessionId: string; title: string; groupId?: string | undefined; group?: string | undefined; files?: boolean | undefined }
-interface Win { name: string; entries: Entry[]; focused?: string | undefined; layout: "grid" | "tabs"; maximized?: string | undefined }
+/** `recent`: Workstream id ("" = none) → its last-active Chat, so the top tab tier reopens it. */
+interface Win { name: string; entries: Entry[]; focused?: string | undefined; layout: "grid" | "tabs"; maximized?: string | undefined; recent?: Record<string, string> }
 type Store = Record<string, Win>;
 interface Live { streaming: boolean; needsOwner: boolean; unread: boolean; error: boolean }
 interface PaneState { title: string; streaming: boolean; needsOwner: boolean; error: boolean }
@@ -613,8 +614,11 @@ export class WorkbenchLayoutProto extends LitElement {
   /** Focus is never stolen: only owner actions call this. */
   private setFocused(id: string): void {
     if (this.live.get(id)?.unread === true) this.patchLive(id, { unread: false });
-    if (this.win.focused === id) return;
-    this.mutateWin((win) => { win.focused = id; if (win.maximized !== undefined) win.maximized = id; });
+    const groupOf = (target: string | undefined) => this.win.entries.find((entry) => entry.id === target)?.groupId ?? "";
+    const previous = this.win.focused;
+    if (previous === id && this.win.recent?.[groupOf(id)] === id) return;
+    // The Chat being left is recorded too: focus may have arrived without setFocused (move, close, restore).
+    this.mutateWin((win) => { win.focused = id; win.recent = { ...win.recent, ...(previous === undefined ? {} : { [groupOf(previous)]: previous }), [groupOf(id)]: id }; if (win.maximized !== undefined) win.maximized = id; });
   }
 
   /** Focus a Chat and put the caret in its composer. */
@@ -851,37 +855,56 @@ export class WorkbenchLayoutProto extends LitElement {
             </div>`}
         </div>
       </nav>
+      ${tabs ? this.renderChatTabs(win, focused) : nothing}
       <div class="stage" data-layout=${win.layout} data-maximized=${win.maximized !== undefined}>
         ${empty ? this.renderHome(false) : nothing}
         ${this.machine === undefined ? nothing : repeat(ordered, (entry) => entry.id, (entry) => this.renderTile(entry, ordered))}
       </div>
-      ${this.adding && !empty ? html`<div class="home-sheet">${this.renderHome(true)}</div>` : nothing}
+      ${this.adding && !empty ? html`<div class="home-sheet" data-tiers=${tabs}>${this.renderHome(true)}</div>` : nothing}
       ${this.renderMenu()}
     `;
   }
 
+  /** Top tier: one tab per Workstream (Chats without one last); selecting it reopens its last-active Chat. */
   private renderTabs(win: Win) {
+    const active = this.win.entries.find((entry) => entry.id === win.focused)?.groupId ?? "";
     return html`
-      <div class="tabs" role="tablist" aria-label=${`${win.name} Chats`}>
-        ${this.groups().map((group) => html`
-          <div class="group" role="group" aria-label=${group.title ?? "Without Workstream"}>
-            ${group.title === undefined ? nothing : html`<button class="chip" style=${wsStyle(group.id)} title=${`Workstream: ${group.title}`} draggable="true"
-              @click=${(event: MouseEvent) => { this.openMenu(event, group.entries.map((entry) => entry.id), group.title ?? ""); }}
-              @contextmenu=${(event: MouseEvent) => { this.openMenu(event, group.entries.map((entry) => entry.id), group.title ?? ""); }}
-              @dragstart=${(event: DragEvent) => { this.dragStart(event, group.entries.map((entry) => entry.id), group.title ?? ""); }}
-              @dragend=${(event: DragEvent) => { this.dragEnd(event, group.entries.map((entry) => entry.id)); }}>${group.title}</button>`}
-            ${group.entries.map((entry) => html`
-              <div role="tab" tabindex="0" class="tab" style=${wsStyle(entry.groupId)} data-status=${this.statusOf(entry)} draggable="true" data-id=${entry.id} aria-selected=${entry.id === win.focused} title=${entry.title}
-                @click=${() => { this.activate(entry.id); }}
-                @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.activate(entry.id); } }}
-                @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([entry.id]); }}
-                @contextmenu=${(event: MouseEvent) => { this.openMenu(event, [entry.id], entry.title); }}
-                @dragstart=${(event: DragEvent) => { this.dragStart(event, [entry.id], entry.title); }}
-                @dragend=${(event: DragEvent) => { this.dragEnd(event, [entry.id]); }}>
-                ${this.dot(entry)}
-                <span class="title">${entry.title}</span>
-                <button class="x" title="Close" aria-label=${`Close ${entry.title}`} @click=${(event: Event) => { event.stopPropagation(); this.close([entry.id]); }}>×</button>
-              </div>`)}
+      <div class="tabs" role="tablist" aria-label=${`${win.name} Workstreams`}>
+        ${this.groups().map((group) => {
+          const ids = group.entries.map((entry) => entry.id);
+          const label = group.title ?? "No Workstream";
+          const open = () => { this.activate(ids.find((id) => id === win.recent?.[group.id]) ?? ids[0] ?? ""); };
+          return html`
+            <div role="tab" tabindex="0" class="ws-tab" style=${wsStyle(group.id || undefined)} draggable="true" aria-selected=${group.id === active} title=${`Workstream: ${label}`}
+              @click=${open}
+              @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
+              @contextmenu=${(event: MouseEvent) => { this.openMenu(event, ids, label); }}
+              @dragstart=${(event: DragEvent) => { this.dragStart(event, ids, label); }}
+              @dragend=${(event: DragEvent) => { this.dragEnd(event, ids); }}>
+              <span class="title">${label}</span>
+              ${ids.length > 1 ? html`<span class="count">${String(ids.length)}</span>` : nothing}
+            </div>`;
+        })}
+      </div>`;
+  }
+
+  /** Second tier: the selected Workstream's Chats only. */
+  private renderChatTabs(win: Win, focused: Entry | undefined) {
+    const group = this.groups().find((candidate) => candidate.id === (focused?.groupId ?? "")) ?? this.groups()[0];
+    if (group === undefined) return nothing;
+    return html`
+      <div class="tabs chats" style=${wsStyle(group.id || undefined)} role="tablist" aria-label=${`${group.title ?? "No Workstream"} Chats`}>
+        ${group.entries.map((entry) => html`
+          <div role="tab" tabindex="0" class="tab" style=${wsStyle(entry.groupId)} data-status=${this.statusOf(entry)} draggable="true" data-id=${entry.id} aria-selected=${entry.id === focused?.id} title=${entry.title}
+            @click=${() => { this.activate(entry.id); }}
+            @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.activate(entry.id); } }}
+            @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([entry.id]); }}
+            @contextmenu=${(event: MouseEvent) => { this.openMenu(event, [entry.id], entry.title); }}
+            @dragstart=${(event: DragEvent) => { this.dragStart(event, [entry.id], entry.title); }}
+            @dragend=${(event: DragEvent) => { this.dragEnd(event, [entry.id]); }}>
+            ${this.dot(entry)}
+            <span class="title">${entry.title}</span>
+            <button class="x" title="Close" aria-label=${`Close ${entry.title}`} @click=${(event: Event) => { event.stopPropagation(); this.close([entry.id]); }}>×</button>
           </div>`)}
       </div>`;
   }
@@ -947,11 +970,20 @@ export class WorkbenchLayoutProto extends LitElement {
     .pager button:hover:not(:disabled) { background: var(--pi-surface-hover); }
     .pager button:disabled { opacity: .35; cursor: default; }
     .tabs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; overflow-x: auto; scrollbar-width: none; }
-    .group { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 2px; }
-    .group + .group { padding-left: 4px; }
+    /* Top tier: Workstream tabs, tinted by the home card's colour (--ws); the active one takes the stage's surface. */
+    .bar .tabs { align-self: stretch; align-items: flex-end; gap: 2px; }
+    .ws-tab { flex: 0 1 auto; min-width: 64px; max-width: 240px; display: flex; align-items: center; gap: 6px; height: 30px; box-sizing: border-box; padding: 0 10px; border-radius: 7px 7px 0 0; background: none; color: var(--pi-muted); font-weight: 600; cursor: pointer; user-select: none; box-shadow: inset 0 2px 0 color-mix(in srgb, var(--ws, var(--pi-dim)) 45%, transparent); }
+    .ws-tab:hover { background: color-mix(in srgb, var(--ws, transparent) 22%, var(--pi-surface-hover)); color: var(--pi-text); }
+    .ws-tab, .tabs.chats { --tier: color-mix(in srgb, var(--ws, var(--pi-accent)) 12%, var(--pi-bg)); }
+    .ws-tab[aria-selected="true"] { background: var(--tier); color: var(--pi-text); box-shadow: inset 0 3px 0 var(--ws, var(--pi-accent)); }
+    .ws-tab:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
+    .ws-tab .count { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; font-weight: 500; }
+    /* Second tier shares the active Workstream tab's tint, so it reads as that tab's contents. */
+    .tabs.chats { flex: 0 0 auto; gap: 2px; height: 34px; padding: 0 12px; background: var(--tier); }
+    .chats .tab { box-shadow: none; }
+    .chats .tab[aria-selected="true"] { background: var(--pi-surface); box-shadow: inset 0 -2px 0 var(--ws, var(--pi-accent)); }
     /* Workstream identity: the home card's colour (--ws), tinted like its marker so --pi-text keeps >= 4.5:1. */
     .chip { flex: 0 1 auto; min-width: 40px; max-width: 200px; overflow: hidden; padding: 2px 8px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--ws, transparent) 30%, var(--pi-surface)); color: var(--pi-text); font-size: 11px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
-    button.chip:hover { background: color-mix(in srgb, var(--ws, transparent) 18%, var(--pi-surface-hover)); }
     .chip.small { flex: 0 1 auto; min-width: 0; max-width: 40%; padding: 0 7px; font-weight: 500; }
     .tab { flex: 0 1 auto; min-width: 72px; max-width: 260px; display: flex; align-items: center; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 4px 0 9px; border-radius: 7px; color: var(--pi-muted); cursor: pointer; user-select: none; }
     .tab:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
@@ -998,6 +1030,7 @@ export class WorkbenchLayoutProto extends LitElement {
     /* The home fills an empty window, or sits as a sheet over a full one. */
     proto-home.empty { grid-area: 1 / 1 / 3 / 3; background: var(--pi-bg); }
     .home-sheet { position: fixed; z-index: 30; inset: 38px 0 0; background: var(--pi-overlay, rgb(0 0 0 / 40%)); }
+    .home-sheet[data-tiers="true"] { top: 72px; }
     .menu { position: fixed; z-index: 40; min-width: 220px; display: grid; padding: 4px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 10px 30px var(--pi-shadow); }
     .menu button { padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; }
     .menu button:hover { background: var(--pi-surface-hover); }
