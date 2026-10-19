@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  ASK_USER_CONTEXT_MAX_LENGTH,
   ASK_USER_ID_MAX_LENGTH,
   ASK_USER_OPTION_LIMIT,
   ASK_USER_OTHER_TEXT_MAX_LENGTH,
@@ -23,6 +24,7 @@ export interface PendingAskStoreOptions {
 /** A question set an agent wants to post to the user of one session. */
 export interface PendingAskOpenInput {
   sessionId: string;
+  context?: string;
   questions: AskUserQuestion[];
 }
 
@@ -89,11 +91,13 @@ export class PendingAskStore {
   open(input: PendingAskOpenInput): PendingAskOpenResult {
     const sessionId = requireSessionId(input.sessionId);
     const questions = validateQuestions(input.questions);
+    const context = validateContext(input.context);
     const askedAt = this.timestamp();
     const superseded = this.close(sessionId, "superseded", askedAt, new Map());
     const ask: PendingAskUser = {
       askId: requireId(this.createAskId(), "askId"),
       askedAt,
+      ...(context === undefined ? {} : { context }),
       questions,
     };
     this.openBySessionId.set(sessionId, ask);
@@ -208,6 +212,7 @@ function askUserOutcome(
     reason,
     askedAt: ask.askedAt,
     closedAt,
+    ...(ask.context === undefined ? {} : { context: ask.context }),
     questions,
     answeredCount,
     unansweredIds,
@@ -229,6 +234,13 @@ function questionRecord(question: AskUserQuestion, answer: AskUserAnswer | undef
 function summaryLine(total: number, answeredCount: number, unansweredIds: string[]): string {
   const answered = `Answered ${answeredCount.toString()} of ${total.toString()}`;
   return unansweredIds.length === 0 ? `${answered}; none left unanswered` : `${answered}; unanswered: ${unansweredIds.join(", ")}`;
+}
+
+/** Blank context is dropped rather than rejected: it is harmless, and a rejection costs the model a retry. */
+function validateContext(context: string | undefined): string | undefined {
+  if (context === undefined || context.trim() === "") return undefined;
+  if (context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new PendingAskValidationError("context exceeds its length limit");
+  return context;
 }
 
 function validateQuestions(questions: AskUserQuestion[]): AskUserQuestion[] {
@@ -317,7 +329,7 @@ function normalizeOtherText(question: AskUserQuestion, otherText: string | undef
 }
 
 function cloneAsk(ask: PendingAskUser): PendingAskUser {
-  return { askId: ask.askId, askedAt: ask.askedAt, questions: ask.questions.map(cloneQuestion) };
+  return { ...ask, questions: ask.questions.map(cloneQuestion) };
 }
 
 function cloneQuestion(question: AskUserQuestion): AskUserQuestion {

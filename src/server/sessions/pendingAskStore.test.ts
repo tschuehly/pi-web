@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ASK_USER_OPTION_LIMIT, ASK_USER_QUESTION_LIMIT, type AskUserQuestion } from "../../shared/apiTypes.js";
+import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_QUESTION_LIMIT, type AskUserQuestion } from "../../shared/apiTypes.js";
 import {
   PendingAskStore,
   PendingAskValidationError,
@@ -91,6 +91,25 @@ describe("PendingAskStore validation", () => {
     const store = testStore();
     const { ask } = store.open({ sessionId, questions: [question("q1", { options: [] })] });
     expect(ask.questions[0]).toEqual({ id: "q1", question: "Question q1?", options: [] });
+  });
+
+  it("keeps the ask's context through the pending ask and every close outcome", () => {
+    const store = testStore();
+    const { ask } = store.open({ sessionId, context: "Found **two** options.", questions: [question("q1")] });
+
+    expect(ask.context).toBe("Found **two** options.");
+    expect(store.pendingAsk(sessionId)?.context).toBe("Found **two** options.");
+    const superseded = store.open({ sessionId, questions: [question("q2")] }).superseded;
+    expect(superseded?.context).toBe("Found **two** options.");
+    expect(store.pendingAsk(sessionId)).not.toHaveProperty("context");
+  });
+
+  it("drops blank context and rejects context over its length limit", () => {
+    const store = testStore();
+
+    expect(store.open({ sessionId, context: "  ", questions: [question("q1")] }).ask).not.toHaveProperty("context");
+    expect(() => store.open({ sessionId, context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1), questions: [question("q1")] }))
+      .toThrow(/context exceeds its length limit/);
   });
 });
 

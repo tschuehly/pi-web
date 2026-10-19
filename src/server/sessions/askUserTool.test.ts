@@ -45,9 +45,9 @@ describe("createAskUserToolDefinition", () => {
     expect(tool.exposure).toBe("model-only");
     expect(tool.description).toBe("Post a set of questions to the user as a browser form and end this run. Answers arrive later as a follow-up message; the user may leave any question unanswered.");
     expect(tool.promptSnippet).toBe("ask_user: post a question set to the user; ends the run, answers return as a follow-up");
-    expect(tool.promptGuidelines).toEqual([
+    expect(tool.promptGuidelines?.[0]).toBe(
       "When you need decisions from the user, post them together with ask_user instead of asking in prose one at a time. It ends the run and the answers, including the questions the user left unanswered, come back as a follow-up message that wakes you. Call it alone and last, and do not repost the same questions or poll for answers.",
-    ]);
+    );
   });
 
   it("bounds the question set in its parameter schema", () => {
@@ -59,6 +59,23 @@ describe("createAskUserToolDefinition", () => {
       properties: { questions: { type: "array", minItems: 1, maxItems: 20 } },
     });
     expect(tool.parameters).not.toHaveProperty("properties.questions.items.properties.allowOther");
+  });
+
+  it("offers an optional, bounded Markdown context shown above the questions", () => {
+    const { tool } = toolOverStore();
+
+    expect(tool.parameters).toMatchObject({ properties: { context: { type: "string", maxLength: 4000 } } });
+    expect(tool.parameters).toHaveProperty("required", ["questions"]);
+    expect(tool.promptGuidelines?.join("\n")).toContain("context");
+  });
+
+  it("passes the context through to the posted ask", async () => {
+    const { open, tool } = toolOverStore();
+
+    const result = await tool.execute("call-ctx", { context: "**Finding:** the cache is stale.", ...twoQuestions }, undefined, undefined, ctxFor("session-1"));
+
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ context: "**Finding:** the cache is stale." }));
+    expect(result.details).toMatchObject({ ask: { askId: "ask-1", context: "**Finding:** the cache is stale." } });
   });
 
   it("opens the ask for the calling session and terminates the run instead of awaiting the user", async () => {

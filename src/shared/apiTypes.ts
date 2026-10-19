@@ -731,6 +731,8 @@ export const ASK_USER_OPTION_LIMIT = 12;
 export const ASK_USER_ID_MAX_LENGTH = 128;
 /** Length bound for model-authored prose: questions, details, and option labels. */
 export const ASK_USER_TEXT_MAX_LENGTH = 1_000;
+/** Length bound for the Markdown context an ask shows above its questions. */
+export const ASK_USER_CONTEXT_MAX_LENGTH = 4_000;
 /** Length bound for the free text a user types as a custom answer. */
 export const ASK_USER_OTHER_TEXT_MAX_LENGTH = 4_000;
 
@@ -770,6 +772,8 @@ export interface AskUserQuestion {
 export interface PendingAskUser {
   askId: string;
   askedAt: string;
+  /** Markdown the user needs to answer, shown above the questions. */
+  context?: string;
   questions: AskUserQuestion[];
 }
 
@@ -817,6 +821,8 @@ export interface AskUserOutcome {
   reason: AskUserCloseReason;
   askedAt: string;
   closedAt: string;
+  /** The ask's {@link PendingAskUser.context}, so the record shows it too. */
+  context?: string;
   questions: AskUserQuestionRecord[];
   answeredCount: number;
   /** Ids of the questions left unanswered, in the order they were asked. */

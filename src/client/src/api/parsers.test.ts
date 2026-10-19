@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, EXTENSION_DIALOG_TEXT_MAX_LENGTH, SESSION_NOTIFICATION_LIMIT, SESSION_NOTIFICATION_MESSAGE_BYTES, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../../shared/apiTypes";
+import { ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH, ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, EXTENSION_DIALOG_TEXT_MAX_LENGTH, SESSION_NOTIFICATION_LIMIT, SESSION_NOTIFICATION_MESSAGE_BYTES, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../../shared/apiTypes";
 import { parseAskUserCloseResponse, parseAuthProvidersResponse, parseCommandResult, parseExtensionDialogCloseResponse, parseFileContentResponse, parseFileSuggestion, parseMachineRuntime, parseMessagePage, parseOAuthFlowState, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseRealtimeStreamEvent, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionModelCatalogResponse, parseSessionNotificationInboxEvent, parseSessionNotificationInboxSnapshot, parseSessionStartupProgressEvent, parseSessionStatus, parseSessionStreamEvent, parseSessionStreamSnapshot, parseSessionTreeForkResult, parseSessionTreeNavigateResult, parseSessionTreeSnapshot, parseSessionUnreadCatalogSnapshot, parseSessionUnreadEvent, parseSlashCommand, parseWorkspace, parseWorkspaceProviderResolution } from "./parsers";
 
 const legacyActivityWarning = {
@@ -1118,6 +1118,15 @@ describe("API parsers", () => {
         { id: "q2", question: "Which extras?", options: [{ value: "metrics", label: "Metrics" }], multiple: true },
       ],
     });
+  });
+
+  it("parses the ask context on open asks and closed outcomes, and bounds it", () => {
+    const context = "## Findings\nThe cache is **stale**.";
+    expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), context } }).pendingAsk?.context).toBe(context);
+    expect(parseAskUserCloseResponse({ result: "closed", outcome: { ...askOutcomeWire(), context }, sessionStatus: statusWire() }).outcome?.context).toBe(context);
+    expect(parseAskUserCloseResponse({ result: "closed", outcome: askOutcomeWire(), sessionStatus: statusWire() }).outcome).not.toHaveProperty("context");
+    expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) } }))
+      .toThrow("String field exceeds limit: context");
   });
 
   it("omits the pending ask entirely when the field is absent", () => {

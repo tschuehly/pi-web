@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import type { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
 import { saveAskDraft } from "../askDrafts";
@@ -198,6 +199,44 @@ describe("ask-user-card live form", () => {
     });
   });
 });
+
+describe("ask-user-card context", () => {
+  it("renders the ask context as Markdown above the open questions", async () => {
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "The cache is **stale**." });
+    const context = await renderedContext(card);
+
+    expect(context.innerHTML).toContain("<strong>stale</strong>");
+    expect(renderRoot(card).querySelector(".ask-context + form .questions")).not.toBeNull();
+  });
+
+  it("renders the context above the questions of a closed ask record", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "cancelled", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      context: "Recommend **Postgres**.",
+      questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
+      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+    const context = await renderedContext(card);
+
+    expect(context.innerHTML).toContain("<strong>Postgres</strong>");
+    expect(renderRoot(card).querySelector(".ask-context ~ .record-questions")).not.toBeNull();
+  });
+
+  it("renders no context block when the ask carries none", async () => {
+    const card = await mountOpenAsk(openAsk([question("db", "Which database?", [])]));
+
+    expect(renderRoot(card).querySelector(".ask-context")).toBeNull();
+  });
+});
+
+async function renderedContext(card: AskUserCard): Promise<ShadowRoot> {
+  const formatted = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.ask-context"), "ask context");
+  await formatted.updateComplete;
+  return requiredElement(formatted.shadowRoot, "ask context shadow root");
+}
 
 describe("ask-user-card record mode", () => {
   it("has no answer controls and displays draft answers retained for a superseded ask", async () => {

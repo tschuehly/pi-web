@@ -1,6 +1,7 @@
 import { Type, type Static } from "pi-web-typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import {
+  ASK_USER_CONTEXT_MAX_LENGTH,
   ASK_USER_ID_MAX_LENGTH,
   ASK_USER_OPTION_LIMIT,
   ASK_USER_QUESTION_LIMIT,
@@ -13,6 +14,7 @@ import { renderSupersededAskText, type PendingAskOpenResult } from "./pendingAsk
 /** One `ask_user` call: the questions to post, for the session that called the tool. */
 export interface AskUserInvocation {
   sessionId: string;
+  context?: string;
   questions: AskUserQuestion[];
 }
 
@@ -61,6 +63,10 @@ const AskUserQuestionParams = Type.Object({
 });
 
 const AskUserParams = Type.Object({
+  context: Type.Optional(Type.String({
+    maxLength: ASK_USER_CONTEXT_MAX_LENGTH,
+    description: "Markdown the user needs to answer: findings, trade-offs, your recommendation. Shown above the questions.",
+  })),
   questions: Type.Array(AskUserQuestionParams, {
     minItems: 1,
     maxItems: ASK_USER_QUESTION_LIMIT,
@@ -113,11 +119,13 @@ export function createAskUserToolDefinition(deps: AskUserToolDeps) {
     promptSnippet: "ask_user: post a question set to the user; ends the run, answers return as a follow-up",
     promptGuidelines: [
       "When you need decisions from the user, post them together with ask_user instead of asking in prose one at a time. It ends the run and the answers, including the questions the user left unanswered, come back as a follow-up message that wakes you. Call it alone and last, and do not repost the same questions or poll for answers.",
+      "Put everything the user needs to answer (findings, trade-offs, your recommendation) in ask_user's context instead of text before the call; the context is always shown above the questions.",
     ],
     parameters: AskUserParams,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await deps.open({
         sessionId: ctx.sessionManager.getSessionId(),
+        ...(params.context === undefined ? {} : { context: params.context }),
         questions: params.questions.map(toQuestion),
       });
       return {

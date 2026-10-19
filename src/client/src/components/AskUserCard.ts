@@ -18,6 +18,7 @@ import {
   type AskDraftAnswer,
   type AskDraftAnswers,
 } from "../askDrafts";
+import "./FormattedText";
 
 // Lucide "pencil" (https://lucide.dev, ISC).
 const PENCIL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>`;
@@ -78,6 +79,7 @@ export class AskUserCard extends LitElement {
             ${count} of ${ask.questions.length} answered
           </span>
         </header>
+        ${this.renderContext(ask.context)}
         <form class="ask-form" @submit=${(event: SubmitEvent) => { this.handleSubmit(event, ask); }}>
           <div class="questions">
             ${ask.questions.map((question, index) => this.renderQuestion(ask, question, index))}
@@ -94,6 +96,11 @@ export class AskUserCard extends LitElement {
         </form>
       </article>
     `;
+  }
+
+  /** The model's explanation for the question set, rendered like Chat Markdown. */
+  private renderContext(context: string | undefined): TemplateResult | null {
+    return context === undefined ? null : html`<formatted-text class="ask-context" .text=${context}></formatted-text>`;
   }
 
   private renderQuestion(ask: PendingAskUser, question: AskUserQuestion, index: number): TemplateResult {
@@ -202,6 +209,7 @@ export class AskUserCard extends LitElement {
           <h2 id="ask-user-record-heading">Questions</h2>
           <span class=${`header-status ${outcome.reason}`}>${recordLabel}</span>
         </header>
+        ${this.renderContext(outcome.context)}
         <p class="record-summary">
           ${outcome.reason === "superseded"
             ? "A newer question set replaced this one. Draft answers shown below were not sent to the model."
@@ -457,6 +465,7 @@ export class AskUserCard extends LitElement {
     .header-status { flex: 0 1 auto; color: var(--pi-muted); font-size: 11px; text-align: end; }
     .header-status.submitted { color: var(--pi-success); }
     .header-status.superseded { color: var(--pi-warning); }
+    .ask-context { display: block; padding: 12px 16px 0; }
     .questions { display: grid; padding-top: 8px; }
     fieldset.question {
       min-width: 0;
@@ -583,7 +592,7 @@ export class AskUserCard extends LitElement {
     @container (max-width: 580px) {
       fieldset.question { padding: 0 12px 14px; }
       .record-question { padding: 14px 12px; }
-      .record-summary { padding-inline: 12px; }
+      .record-summary, .ask-context { padding-inline: 12px; }
       .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
       .partial-confirmation { align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }

@@ -383,7 +383,7 @@ In **Settings → Session daemon**, these keys are saved on the selected machine
 
 Use **Settings → Session daemon → Allow agents to ask questions** to change `askUser` on the selected machine. An environment override makes the toggle read-only.
 
-Agents can post a form with 1–20 questions, with free-text answers or up to 12 choices per question. Some questions allow multiple selections. A **Custom** free-text answer is always available, and you may leave any question unanswered.
+Agents can post a form with 1–20 questions, with free-text answers or up to 12 choices per question. Some questions allow multiple selections. A **Custom** free-text answer is always available, and you may leave any question unanswered. An optional Markdown `context` of up to 4,000 characters, such as findings, trade-offs, or a recommendation, appears above the questions on the form and on its transcript record.
 
 Calling `ask_user` posts the whole set as one browser form and ends the current agent run instead of waiting for the user. The open form is owned by the session daemon, so it survives a browser disconnect, browser reload, or web/API restart while that daemon keeps running. When the user submits, the answers arrive as a follow-up that wakes the session; each question is reported with its selected option values or free text, or explicitly as unanswered.
 
