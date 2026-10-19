@@ -978,7 +978,7 @@ export class ChatView extends LitElement {
     const total = this.conversationDisplayTotal();
     const position = this.conversationPositionPercent(total);
     const loadedPercent = this.hasMore ? clampPercent((this.messages.length / total) * 100) : 100;
-    return html`<conversation-meter .positionPercent=${position} .loadedPercent=${loadedPercent}></conversation-meter>`;
+    return html`<conversation-meter ?dense=${this.dense} .positionPercent=${position} .loadedPercent=${loadedPercent}></conversation-meter>`;
   }
 
   private conversationDisplayTotal(): number {
@@ -1784,6 +1784,9 @@ export class ChatView extends LitElement {
     :host([dense]) { --pi-paragraph-gap: 6px; --pi-tool-row-padding: 2px; }
     :host([dense]) .chat { padding: 4px 10px 24px 8px; }
     :host([dense]) .transcript-filter { top: 4px; right: 6px; opacity: 0; transition: opacity .12s ease; }
+    /* The position hairline only shows while the pointer is over the transcript, like an overlay scrollbar. */
+    :host([dense]) conversation-meter { opacity: 0; transition: opacity .15s ease; }
+    :host([dense]:hover) conversation-meter { opacity: .5; }
     :host([dense]:hover) .transcript-filter, :host([dense]) .transcript-filter:focus-within { opacity: 1; }
     :host([dense]) .filter-toggle, :host([dense]) .filter-options, :host([dense]) .filter-options button { border: 0; box-shadow: none; }
     :host([dense]) .filter-toggle, :host([dense]) .filter-options button { background: var(--pi-surface-hover); }

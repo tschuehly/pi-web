@@ -2,7 +2,7 @@
 // THROWAWAY layout prototype (`?layout=proto`), never merged. One shell per window; every tile or tab is a
 // `proto-chat-pane`: the real chat-view, composer and Files pane for one session, driven by its own
 // SessionController. The window shares one realtime socket; each pane keeps its session's event stream.
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, css, html, nothing, svg } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { styleMap } from "lit/directives/style-map.js";
@@ -57,6 +57,9 @@ const STATUS_LABELS = { needs: "Needs you", error: "Error", running: "Working", 
 const LAST_WORKSPACE_KEY = "pi-workbench.last-workspace";
 /** Workstream identity colour (same helper as the home card's marker). */
 const wsStyle = (groupId: string | undefined) => styleMap(groupId === undefined ? {} : { "--ws": workstreamAccentColor(groupId) });
+// Lucide "x" and "plus" (https://lucide.dev, ISC).
+const ICON_X = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>`;
+const ICON_PLUS = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>`;
 
 /** Whether a wheel starting at this event scrolls something horizontally (code block, table) instead of swiping. */
 function canScrollX(event: WheelEvent): boolean {
@@ -847,7 +850,7 @@ export class WorkbenchLayoutProto extends LitElement {
           </div>`}
         <div class="actions">
           ${tabs && focused !== undefined ? html`<button class="icon" title="Files" aria-label="Files" aria-pressed=${focused.files === true} @click=${() => { this.toggleFiles(focused.id); }}>${renderBuiltinTabIcon("files")}</button>` : nothing}
-          ${empty ? nothing : html`<button class="add" title="Add Chats (⌘T)" aria-haspopup="dialog" aria-expanded=${this.adding} @click=${() => { if (this.adding) this.adding = false; else this.openAdd(); }}>＋ Add</button>`}
+          ${empty ? nothing : html`<button class="add" title="Add Chats (⌘T)" aria-haspopup="dialog" aria-expanded=${this.adding} @click=${() => { if (this.adding) this.adding = false; else this.openAdd(); }}>${ICON_PLUS}Add</button>`}
           ${empty ? nothing : html`
             <div class="segmented" role="group" aria-label="Layout (⌃G)" title="Toggle layout (⌃G)">
               <button aria-pressed=${win.layout === "grid"} @click=${() => { if (win.layout !== "grid") this.toggleLayout(); }}>Grid</button>
@@ -904,7 +907,7 @@ export class WorkbenchLayoutProto extends LitElement {
             @dragend=${(event: DragEvent) => { this.dragEnd(event, [entry.id]); }}>
             ${this.dot(entry)}
             <span class="title">${entry.title}</span>
-            <button class="x" title="Close" aria-label=${`Close ${entry.title}`} @click=${(event: Event) => { event.stopPropagation(); this.close([entry.id]); }}>×</button>
+            <button class="x" title="Close" aria-label=${`Close ${entry.title}`} @click=${(event: Event) => { event.stopPropagation(); this.close([entry.id]); }}>${ICON_X}</button>
           </div>`)}
       </div>`;
   }
@@ -962,39 +965,44 @@ export class WorkbenchLayoutProto extends LitElement {
     /* No rules anywhere: chrome, tiles and gutters differ by tint. Focused tile = the brighter surface in either scheme. */
     /* Every bundled theme's surface is lighter than its bg, light or dark. */
     :host { --tile-focused: var(--pi-surface); --tile-rest: var(--pi-bg); --gutter: light-dark(color-mix(in srgb, var(--pi-bg) 94%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 85%, black)); }
-    .bar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-width: 0; height: 38px; padding: 0 8px 0 12px; background: var(--pi-surface); }
+    .bar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 8px 0 12px; background: var(--pi-surface); }
     .lead { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; }
     .win-name { color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
     .pager { display: flex; align-items: center; gap: 4px; color: var(--pi-muted); font-size: 12px; }
     .pager button { width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; }
     .pager button:hover:not(:disabled) { background: var(--pi-surface-hover); }
     .pager button:disabled { opacity: .35; cursor: default; }
-    .tabs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; overflow-x: auto; scrollbar-width: none; }
-    /* Top tier: Workstream tabs, tinted by the home card's colour (--ws); the active one takes the stage's surface. */
-    .bar .tabs { align-self: stretch; align-items: flex-end; gap: 2px; }
-    .ws-tab { flex: 0 1 auto; min-width: 64px; max-width: 240px; display: flex; align-items: center; gap: 6px; height: 30px; box-sizing: border-box; padding: 0 10px; border-radius: 7px 7px 0 0; background: none; color: var(--pi-muted); font-weight: 600; cursor: pointer; user-select: none; box-shadow: inset 0 2px 0 color-mix(in srgb, var(--ws, var(--pi-dim)) 45%, transparent); }
-    .ws-tab:hover { background: color-mix(in srgb, var(--ws, transparent) 22%, var(--pi-surface-hover)); color: var(--pi-text); }
-    .ws-tab, .tabs.chats { --tier: color-mix(in srgb, var(--ws, var(--pi-accent)) 12%, var(--pi-bg)); }
-    .ws-tab[aria-selected="true"] { background: var(--tier); color: var(--pi-text); box-shadow: inset 0 3px 0 var(--ws, var(--pi-accent)); }
-    .ws-tab:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
-    .ws-tab .count { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; font-weight: 500; }
-    /* Second tier shares the active Workstream tab's tint, so it reads as that tab's contents. */
-    .tabs.chats { flex: 0 0 auto; gap: 2px; height: 34px; padding: 0 12px; background: var(--tier); }
-    .chats .tab { box-shadow: none; }
-    .chats .tab[aria-selected="true"] { background: var(--pi-surface); box-shadow: inset 0 -2px 0 var(--ws, var(--pi-accent)); }
+    /*
+     * Two tiers, one language: quiet text tabs on the bar's surface, the active one in --pi-text with a 2px
+     * underline in its Workstream colour (--ws). The Chat tier is the same band, one step smaller, its text
+     * aligned under the top tier's. Tabs size to their content; in a full row, grid's track sizing shares the
+     * width out equally and lets each tab keep up to its full label, so only the longest titles truncate.
+     */
+    .tabs { flex: 1 1 auto; min-width: 0; align-self: stretch; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, max-content); justify-content: start; overflow-x: auto; scrollbar-width: none; }
+    .bar .tabs { margin-left: -10px; }
+    .ws-tab, .tab { position: relative; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 6px; box-sizing: border-box; color: var(--pi-muted); white-space: nowrap; cursor: pointer; user-select: none; transition: color .12s ease; }
+    .ws-tab::after, .tab::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--ws, var(--pi-accent)); opacity: 0; transition: opacity .12s ease; }
+    .ws-tab:hover, .tab:hover, .ws-tab[aria-selected="true"], .tab[aria-selected="true"] { color: var(--pi-text); }
+    .ws-tab:hover::after, .tab:hover::after { opacity: .35; }
+    .ws-tab[aria-selected="true"]::after, .tab[aria-selected="true"]::after { opacity: 1; }
+    .ws-tab:focus-visible, .tab:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -4px; border-radius: 6px; }
+    .ws-tab { padding: 0 10px; font-weight: 500; }
+    .ws-tab .count { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .tabs.chats { flex: 0 0 auto; height: 30px; padding: 0 8px 0 2px; background: var(--pi-surface); box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--pi-border) 60%, transparent); font-size: 12px; }
     /* Workstream identity: the home card's colour (--ws), tinted like its marker so --pi-text keeps >= 4.5:1. */
     .chip { flex: 0 1 auto; min-width: 40px; max-width: 200px; overflow: hidden; padding: 2px 8px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--ws, transparent) 30%, var(--pi-surface)); color: var(--pi-text); font-size: 11px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
     .chip.small { flex: 0 1 auto; min-width: 0; max-width: 40%; padding: 0 7px; font-weight: 500; }
-    .tab { flex: 0 1 auto; min-width: 72px; max-width: 260px; display: flex; align-items: center; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 4px 0 9px; border-radius: 7px; color: var(--pi-muted); cursor: pointer; user-select: none; }
-    .tab:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
-    .tab { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ws, transparent) 55%, transparent); }
-    .tab[aria-selected="true"] { background: var(--pi-bg); color: var(--pi-text); box-shadow: inset 0 -2px 0 var(--ws, var(--pi-accent)); }
-    .tab[data-status="needs"] { color: var(--pi-text); font-weight: 600; }
-    .tab:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
-    .tab .x { flex: 0 0 auto; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--pi-muted); line-height: 1; visibility: hidden; }
-    .tab:hover .x, .tab[aria-selected="true"] .x { visibility: visible; }
+    .tab { padding: 0 4px 0 10px; }
+    /* The Workstream colour marks the top tier; the Chat tier's indicator is neutral so the two never compete. */
+    .tab::after { right: 4px; background: var(--pi-text); }
+    .tab:not([aria-selected="true"]):hover::after { opacity: .25; }
+    .tab[data-status="needs"] { color: var(--pi-text); }
+    .tab .x { flex: 0 0 auto; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--pi-muted); visibility: hidden; }
+    .tab .x svg, .add svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .tab:hover .x, .tab[aria-selected="true"] .x, .tab .x:focus-visible { visibility: visible; }
     .tab .x:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .title { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .ws-tab .title, .tab .title { flex: 0 1 auto; }
     /* Status from theme tokens: working = success (as the home's live mark), needs you = warning with a halo, done = accent (as unread), error = danger. */
     .dot { flex: 0 0 auto; box-sizing: border-box; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--pi-dim); }
     .dot[data-status="running"] { border: 0; background: var(--pi-success); animation: pulse 1.2s ease-in-out infinite; }
@@ -1007,11 +1015,13 @@ export class WorkbenchLayoutProto extends LitElement {
     .icon:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .icon[aria-pressed="true"] { color: var(--pi-accent); background: var(--pi-selection-bg, var(--pi-surface-hover)); }
     .icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .add { height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--pi-surface-hover); white-space: nowrap; }
-    .add:hover, .add[aria-expanded="true"] { background: var(--pi-selection-bg, var(--pi-surface-hover)); }
-    .segmented { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--pi-surface-hover); }
-    .segmented button { height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); }
-    .segmented button[aria-pressed="true"] { background: var(--pi-bg); color: var(--pi-text); font-weight: 600; }
+    /* Bar actions as quiet as the tabs: text buttons, a background only on hover or when on. */
+    .add { display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); white-space: nowrap; }
+    .add:hover, .add[aria-expanded="true"] { background: var(--pi-surface-hover); color: var(--pi-text); }
+    .segmented { display: flex; gap: 2px; }
+    .segmented button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); }
+    .segmented button:hover { color: var(--pi-text); }
+    .segmented button[aria-pressed="true"] { background: var(--pi-surface-hover); color: var(--pi-text); }
     .stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 3px; background: var(--gutter); }
     .stage[data-layout="tabs"], .stage[data-maximized="true"] { display: block; background: var(--tile-focused); }
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--tile-rest); }
@@ -1029,8 +1039,8 @@ export class WorkbenchLayoutProto extends LitElement {
     proto-chat-pane { flex: 1 1 auto; }
     /* The home fills an empty window, or sits as a sheet over a full one. */
     proto-home.empty { grid-area: 1 / 1 / 3 / 3; background: var(--pi-bg); }
-    .home-sheet { position: fixed; z-index: 30; inset: 38px 0 0; background: var(--pi-overlay, rgb(0 0 0 / 40%)); }
-    .home-sheet[data-tiers="true"] { top: 72px; }
+    .home-sheet { position: fixed; z-index: 30; inset: 36px 0 0; background: var(--pi-overlay, rgb(0 0 0 / 40%)); }
+    .home-sheet[data-tiers="true"] { top: 66px; }
     .menu { position: fixed; z-index: 40; min-width: 220px; display: grid; padding: 4px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 10px 30px var(--pi-shadow); }
     .menu button { padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; }
     .menu button:hover { background: var(--pi-surface-hover); }
