@@ -327,6 +327,7 @@ function parseAskUserQuestionOption(value: unknown): AskUserQuestionOption {
     value: requireBoundedNonEmptyString(record, "value", ASK_USER_ID_MAX_LENGTH),
     label: requireBoundedNonEmptyString(record, "label", ASK_USER_TEXT_MAX_LENGTH),
     ...optionalField("detail", optionalBoundedNonEmptyString(record, "detail", ASK_USER_TEXT_MAX_LENGTH)),
+    ...(parseOptionalBoolean(record["recommended"], "recommended") === true ? { recommended: true } : {}),
   };
 }
 
@@ -354,17 +355,23 @@ function parsePendingAskUser(value: unknown): PendingAskUser {
   const questions = boundedArrayOf(record["questions"], parseAskUserQuestion, ASK_USER_QUESTION_LIMIT, "questions");
   if (questions.length === 0) throw new Error("Pending ask has no questions");
   assertUniqueStrings(questions.map((question) => question.id), "ask question id");
+  const askedAt = requireNonEmptyString(record, "askedAt");
+  // A daemon older than the Questions pane sends neither staleness field.
+  const turnsSinceUpdate = optionalNumber(record, "turnsSinceUpdate");
   return {
     askId: requireBoundedNonEmptyString(record, "askId", ASK_USER_ID_MAX_LENGTH),
-    askedAt: requireNonEmptyString(record, "askedAt"),
+    askedAt,
+    updatedAt: optionalString(record, "updatedAt") ?? askedAt,
+    turnsSinceUpdate: turnsSinceUpdate === undefined || !Number.isSafeInteger(turnsSinceUpdate) || turnsSinceUpdate < 0 ? 0 : turnsSinceUpdate,
     ...optionalField("context", optionalBoundedNonEmptyString(record, "context", ASK_USER_CONTEXT_MAX_LENGTH)),
     questions,
   };
 }
 
-function optionalPendingAsk(value: unknown): Pick<SessionStatus, "pendingAsk"> | object {
-  if (value === undefined) return {};
-  return { pendingAsk: parsePendingAskUser(value) };
+/** Open asks of a status; the single `pendingAsk` of a daemon older than the Questions pane reads as one. */
+function optionalPendingAsks(pendingAsks: unknown, legacyPendingAsk: unknown): Pick<SessionStatus, "pendingAsks"> | object {
+  if (pendingAsks !== undefined) return { pendingAsks: arrayOf(parsePendingAskUser)(pendingAsks) };
+  return legacyPendingAsk === undefined ? {} : { pendingAsks: [parsePendingAskUser(legacyPendingAsk)] };
 }
 
 export function parseSessionAskOpenedEvent(value: unknown): { type: "ask.opened"; ask: PendingAskUser } {
@@ -384,7 +391,7 @@ export function parseSessionAskClosedEvent(value: unknown): { type: "ask.closed"
 }
 
 function parseAskUserCloseReason(value: unknown): AskUserCloseReason {
-  if (value !== "submitted" && value !== "superseded" && value !== "cancelled") throw new Error("Invalid ask close reason");
+  if (value !== "submitted" && value !== "superseded" && value !== "cancelled" && value !== "withdrawn") throw new Error("Invalid ask close reason");
   return value;
 }
 
@@ -617,7 +624,7 @@ export function parseSessionStatus(value: unknown): SessionStatus {
     ...optionalContextUsage(record["contextUsage"]),
     ...optionalField("thinkingLevel", optionalString(record, "thinkingLevel")),
     ...optionalField("warnings", warnings?.filter((warning) => !isLegacyOtherInstanceActivityWarning(warning))),
-    ...optionalPendingAsk(record["pendingAsk"]),
+    ...optionalPendingAsks(record["pendingAsks"], record["pendingAsk"]),
     ...optionalPendingDialogs(record["pendingDialogs"]),
     ...optionalActiveToolExecutions(record["activeToolExecutions"]),
     ...optionalExtensionStatuses(record["extensionStatuses"]),

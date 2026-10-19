@@ -36,10 +36,10 @@ export interface AppState {
   status: SessionStatus | undefined;
   activity: SessionActivity | undefined;
   /**
-   * The selected session's open `ask_user` question set, derived from the
-   * daemon-owned {@link SessionStatus.pendingAsk} plus live ask events.
+   * The selected session's open `ask_user` question sets, oldest first, derived
+   * from the daemon-owned {@link SessionStatus.pendingAsks} plus live ask events.
    */
-  pendingAsk: PendingAskUser | undefined;
+  pendingAsks: PendingAskUser[];
   /**
    * The selected session's open extension dialogs, derived from the
    * daemon-owned {@link SessionStatus.pendingDialogs} plus live dialog events.
@@ -147,7 +147,7 @@ export function initialAppState(): AppState {
     selectedSession: undefined,
     status: undefined,
     activity: undefined,
-    pendingAsk: undefined,
+    pendingAsks: [],
     pendingDialogs: [],
     closedDialogs: [],
     availableThinkingLevels: [],

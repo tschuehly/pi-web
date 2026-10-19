@@ -69,7 +69,7 @@ function status(isStreaming: boolean): SessionStatus {
   };
 }
 
-const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-09-20T00:00:00Z", questions: [] };
+const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-09-20T00:00:00Z", updatedAt: "2026-09-20T00:00:00Z", turnsSinceUpdate: 0, questions: [] };
 const dialog: PendingExtensionDialog = { dialogId: "dialog-1", kind: "confirm", title: "Proceed?", askedAt: "2026-09-20T00:00:00Z", runScoped: true };
 const session: SessionInfo = { id: "session-1", name: "Build Chat", cwd: "/repo", path: "/sessions/1.jsonl", created: "2026-09-20T00:00:00Z", modified: "2026-09-20T00:00:00Z", messageCount: 1, firstMessage: "Hello" };
 
@@ -93,7 +93,7 @@ describe("DesktopNotificationController", () => {
 
   it("treats reconnect hydration as a baseline and deduplicates asks, dialogs, and errors", () => {
     const test = harness();
-    const hydrated = state({ status: status(false), pendingAsk: ask, pendingDialogs: [dialog] });
+    const hydrated = state({ status: status(false), pendingAsks: [ask], pendingDialogs: [dialog] });
     test.controller.sync(initialAppState(), hydrated);
     test.controller.activate(hydrated);
     test.controller.suspend();
@@ -103,7 +103,7 @@ describe("DesktopNotificationController", () => {
 
     const nextAsk = { ...ask, askId: "ask-2", questions: [{ id: "q", question: "Which branch?", options: [] }] };
     const nextDialog = { ...dialog, dialogId: "dialog-2" };
-    const attention = state({ pendingAsk: nextAsk, pendingDialogs: [dialog, nextDialog] });
+    const attention = state({ pendingAsks: [ask, nextAsk], pendingDialogs: [dialog, nextDialog] });
     test.controller.sync(hydrated, attention);
     test.controller.sync(attention, attention);
     test.controller.sessionError(attention, "terminal failed", 42);
@@ -165,7 +165,7 @@ describe("DesktopNotificationController", () => {
     test.controller.sync(initialAppState(), idle);
     test.controller.activate(state({ status: status(true) }));
     test.controller.sync(idle, idle);
-    test.controller.sync(idle, state({ pendingAsk: ask, pendingDialogs: [dialog] }));
+    test.controller.sync(idle, state({ pendingAsks: [ask], pendingDialogs: [dialog] }));
     test.controller.attention(idle, { type: "session.attention", sessionId: "session-2", cwd: "/other", kind: "ask", id: "unsafe id/../", detail: "?" }, "local");
     test.controller.sessionError(idle, "failed", 7);
 
@@ -228,7 +228,7 @@ describe("DesktopNotificationController", () => {
     test.controller.sessionError(selected, "terminal failed", 42);
     expect(test.notifications).toHaveLength(2);
     test.controller.sessionError(selected, "terminal failed", 42);
-    test.controller.sync(selected, state({ pendingAsk: { ...ask, askId: "ask-2" } }));
+    test.controller.sync(selected, state({ pendingAsks: [{ ...ask, askId: "ask-2" }] }));
     test.controller.attention(selected, { ...other, kind: "ask", sessionId: session.id }, "local");
     expect(test.notifications).toHaveLength(3);
   });
@@ -241,7 +241,7 @@ describe("DesktopNotificationController", () => {
     const other = { ...session, id: "session-2", name: "Other Chat" };
     const event = { type: "session.attention" as const, sessionId: other.id, cwd: other.cwd, kind: "ask" as const, id: "ask-2", detail: "Which branch?" };
     test.controller.attention(first, event, "local");
-    const second = state({ selectedSession: other, pendingAsk: { ...ask, askId: "ask-2" } });
+    const second = state({ selectedSession: other, pendingAsks: [{ ...ask, askId: "ask-2" }] });
     test.controller.sync(first, second);
     test.controller.activate(second);
     test.controller.sync(second, second);

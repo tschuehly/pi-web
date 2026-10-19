@@ -87,9 +87,9 @@ export class DesktopNotificationController {
     }
     this.streaming = nextStreaming;
 
-    const askId = next.pendingAsk?.askId;
-    if (askId !== undefined && this.mark(nextKey, "ask", askId)) {
-      this.notifySelected(next, "ask", `Question · ${next.pendingAsk?.questions[0]?.question ?? "Needs an answer"}`, `ask:${askId}`);
+    for (const ask of next.pendingAsks) {
+      if (!this.mark(nextKey, "ask", ask.askId)) continue;
+      this.notifySelected(next, "ask", `Question · ${ask.questions[0]?.question ?? "Needs an answer"}`, `ask:${ask.askId}`);
     }
     for (const dialog of next.pendingDialogs) {
       if (!this.mark(nextKey, "dialog", dialog.dialogId)) continue;
@@ -105,7 +105,7 @@ export class DesktopNotificationController {
     if (key !== this.sessionKey) this.reset(key);
     this.armed = key !== undefined;
     this.streaming = state.status?.isStreaming;
-    if (key !== undefined && state.pendingAsk !== undefined) this.mark(key, "ask", state.pendingAsk.askId);
+    if (key !== undefined) for (const ask of state.pendingAsks) this.mark(key, "ask", ask.askId);
     if (key !== undefined) for (const dialog of state.pendingDialogs) this.mark(key, "dialog", dialog.dialogId);
   }
 

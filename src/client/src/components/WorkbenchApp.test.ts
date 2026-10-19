@@ -576,7 +576,7 @@ describe("Workbench Chat chooser", () => {
     expect(pane()?.workspace).toBe(workspace);
   });
 
-  it("opens workspace file search with Cmd+P or the button without remounting Chat", async () => {
+  it("opens workspace file search with Cmd+P or the Files pane button without remounting Chat", async () => {
     const current = session("human", "Edit notes");
     const app = await mountChooser([current]);
     setState(app, { ...getState(app), selectedSession: current });
@@ -595,12 +595,38 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]')); });
     expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
     expect(WorkbenchApp.styles.cssText).toMatch(/header > button\s*\{[^}]*min-height:\s*32px;[^}]*border-color:\s*transparent/);
-    expect(app.shadowRoot?.querySelector<HTMLButtonElement>('header button[aria-label="Search files"]')?.classList.contains("header-action")).toBe(true);
+    // Search lives in the Files pane toolbar, not the Chat header.
+    expect(app.shadowRoot?.querySelector('header button[aria-label="Search files"]')).toBeNull();
     // happy-dom's ShadowRoot.activeElement throws while focus sits in another nested shadow root.
     pane()?.shadowRoot?.querySelector<HTMLInputElement>('input[aria-label="Filter files"]')?.blur();
-    app.shadowRoot?.querySelector<HTMLButtonElement>('header button[aria-label="Search files"]')?.click();
+    pane()?.shadowRoot?.querySelector<HTMLButtonElement>('.bar button[aria-label="Search files"]')?.click();
     await vi.waitFor(() => { expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]')); });
     pane()?.shadowRoot?.querySelector<HTMLInputElement>('input[aria-label="Filter files"]')?.blur();
+  });
+
+  it("toggles a Questions pane listing only this Chat's open question sets, with an open-count badge", async () => {
+    const current = session("human", "Edit notes");
+    const app = await mountChooser([current]);
+    const openAsk = (askId: string) => ({ askId, askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", turnsSinceUpdate: 0, context: "Why", questions: [{ id: "db", question: "Which database?", options: [] }] });
+    setState(app, { ...getState(app), selectedSession: current, pendingAsks: [openAsk("abc-1"), openAsk("def-2")] });
+    await app.updateComplete;
+    const toggle = () => app.shadowRoot?.querySelector<HTMLButtonElement>("header .questions-toggle");
+
+    expect(toggle()?.getAttribute("aria-label")).toBe("Questions, 2 open");
+    expect(toggle()?.querySelector(".badge")?.textContent).toBe("2");
+    expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.pendingAsk).toBeUndefined();
+    expect(app.shadowRoot?.querySelector("workbench-questions-pane")).toBeNull();
+
+    toggle()?.click();
+    await app.updateComplete;
+    const pane = app.shadowRoot?.querySelector("workbench-questions-pane");
+    expect(toggle()?.getAttribute("aria-expanded")).toBe("true");
+    expect(pane?.asks.map((ask) => ask.askId)).toEqual(["abc-1", "def-2"]);
+
+    setState(app, { ...getState(app), pendingAsks: [] });
+    await app.updateComplete;
+    expect(toggle()?.querySelector(".badge")).toBeNull();
+    expect(pane?.asks).toEqual([]);
   });
 
   it("bounds Files resizing by available Chat width for pointer and keyboard input", async () => {

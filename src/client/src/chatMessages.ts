@@ -356,10 +356,10 @@ function askUserRecordPart(message: unknown): Extract<ChatPart, { type: "askUser
   return parsedAskUserRecord(getProperty(message, "details"));
 }
 
-/** Project the superseded ask carried by an `ask_user` tool result, if any. */
+/** Project the withdrawn (or legacy superseded) ask carried by an `ask_user` tool result, if any. */
 export function askUserRecordFromToolDetails(toolName: string, details: unknown): Extract<ChatPart, { type: "askUserRecord" }> | undefined {
   if (toolName !== "ask_user") return undefined;
-  return parsedAskUserRecord(getProperty(details, "superseded"));
+  return parsedAskUserRecord(getProperty(details, "withdrawn") ?? getProperty(details, "superseded"));
 }
 
 function parsedAskUserRecord(value: unknown): Extract<ChatPart, { type: "askUserRecord" }> | undefined {

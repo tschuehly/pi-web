@@ -3,6 +3,8 @@ import { customElement, property, state } from "lit/decorators.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import {
   ASK_USER_OTHER_TEXT_MAX_LENGTH,
+  ASK_USER_STALE_TURNS,
+  askQuestionRef,
   type AskUserOutcome,
   type AskUserQuestion,
   type AskUserQuestionRecord,
@@ -22,6 +24,15 @@ import "./FormattedText";
 
 // Lucide "pencil" (https://lucide.dev, ISC).
 const PENCIL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>`;
+
+/** "updated 5 min ago"-style age of an ISO timestamp. */
+export function updatedAgo(iso: string, now = Date.now()): string {
+  const minutes = Math.floor((now - new Date(iso).getTime()) / 60_000);
+  if (!(minutes >= 1)) return "updated just now";
+  if (minutes < 60) return `updated ${String(minutes)} min ago`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `updated ${String(hours)} h ago` : `updated ${String(Math.floor(hours / 24))} d ago`;
+}
 
 export type AskUserSubmitCallback = (askId: string, submission: AskUserSubmission) => void | Promise<void>;
 
@@ -75,6 +86,10 @@ export class AskUserCard extends LitElement {
       <article class="card open-card" aria-labelledby="ask-user-heading">
         <header class="card-header">
           <h2 id="ask-user-heading">Questions</h2>
+          <span class="ask-meta">
+            <time datetime=${ask.updatedAt} title=${ask.updatedAt}>${updatedAgo(ask.updatedAt)}</time>
+            ${ask.turnsSinceUpdate > ASK_USER_STALE_TURNS ? html`<span class="stale" title=${`${String(ask.turnsSinceUpdate)} agent turns without an update`}>may be stale</span>` : null}
+          </span>
           <span class="header-status" role="status" aria-live="polite" aria-atomic="true">
             ${count} of ${ask.questions.length} answered
           </span>
@@ -119,7 +134,7 @@ export class AskUserCard extends LitElement {
       >
         <legend>
           <span class="question-number">${String(index + 1)}.</span>
-          <span>${question.question}</span>
+          <span>${question.question} <code class="question-ref" title="Reference for this question">${askQuestionRef(ask.askId, question.id)}</code></span>
         </legend>
         ${question.detail === undefined ? null : html`<p class="question-detail" id=${detailId}>${question.detail}</p>`}
         <div class="options">
@@ -134,7 +149,7 @@ export class AskUserCard extends LitElement {
                   @change=${(event: Event) => { this.changeOption(question, option.value, event); }}
                 />
                 <span class="option-copy">
-                  <span class="option-label">${option.label}</span>
+                  <span class="option-label">${option.label}${option.recommended === true ? html` <span class="recommended">Recommended</span>` : null}</span>
                   ${option.detail === undefined ? null : html`<span class="option-detail">${option.detail}</span>`}
                 </span>
               </label>
@@ -198,11 +213,7 @@ export class AskUserCard extends LitElement {
   }
 
   private renderRecord(outcome: AskUserOutcome): TemplateResult {
-    const recordLabel = outcome.reason === "submitted"
-      ? "Answers sent"
-      : outcome.reason === "superseded"
-        ? "Superseded"
-        : "Cancelled";
+    const recordLabel = { submitted: "Answers sent", superseded: "Superseded", cancelled: "Cancelled", withdrawn: "Withdrawn" }[outcome.reason];
     return html`
       <article class="card record-card" aria-labelledby="ask-user-record-heading">
         <header class="card-header">
@@ -213,7 +224,7 @@ export class AskUserCard extends LitElement {
         <p class="record-summary">
           ${outcome.reason === "superseded"
             ? "A newer question set replaced this one. Draft answers shown below were not sent to the model."
-            : outcome.summary}
+            : outcome.reason === "withdrawn" ? "The agent withdrew these questions." : outcome.summary}
         </p>
         <div class="record-questions">
           ${outcome.questions.map((record, index) => this.renderQuestionRecord(outcome, record, index))}
@@ -464,7 +475,11 @@ export class AskUserCard extends LitElement {
     }
     .header-status { flex: 0 1 auto; color: var(--pi-muted); font-size: 11px; text-align: end; }
     .header-status.submitted { color: var(--pi-success); }
-    .header-status.superseded { color: var(--pi-warning); }
+    .header-status.superseded, .header-status.withdrawn { color: var(--pi-warning); }
+    .ask-meta { flex: 1 1 auto; min-width: 0; display: flex; gap: 8px; color: var(--pi-muted); font-size: 11px; }
+    .stale { color: var(--pi-warning); font-weight: 650; }
+    .question-ref { color: var(--pi-muted); font-size: 11px; font-weight: 500; }
+    .recommended { margin-inline-start: 4px; padding: 1px 6px; border-radius: 999px; background: var(--pi-success-bg); color: var(--pi-success); font-size: 11px; font-weight: 650; }
     .ask-context { display: block; padding: 12px 16px 0; }
     .questions { display: grid; padding-top: 8px; }
     fieldset.question {

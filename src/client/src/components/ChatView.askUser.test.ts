@@ -24,6 +24,8 @@ describe("ChatView open ask_user form", () => {
     view.pendingAsk = {
       askId: "ask-open",
       askedAt: "2026-07-20T10:00:00.000Z",
+      updatedAt: "2026-07-20T10:00:00.000Z",
+      turnsSinceUpdate: 0,
       questions: [{ id: "editor", question: "Which editor?", options: [{ value: "vim", label: "Vim" }] }],
     };
     await view.updateComplete;

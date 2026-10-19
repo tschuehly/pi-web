@@ -1,8 +1,8 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { createAskUserToolDefinition, type AskUserInvocation } from "./askUserTool.js";
-import { PendingAskStore, PendingAskValidationError } from "./pendingAskStore.js";
+import { createAskUserToolDefinition } from "./askUserTool.js";
+import { PendingAskStore, PendingAskValidationError, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
 import { stubExtensionToolContext } from "./piSessionService.testSupport.js";
 
 function ctxFor(sessionId: string): ExtensionToolContext {
@@ -20,143 +20,146 @@ function firstText(content: readonly (TextContent | ImageContent)[]): string {
 }
 
 /** The tool over a real store, so the schema and the store's contract stay aligned. */
-function toolOverStore(askIds: string[] = ["ask-1", "ask-2"]) {
+function toolOverStore(askIds: string[] = ["abc-1", "def-2"]) {
   const remaining = [...askIds];
   const store = new PendingAskStore({
     now: () => new Date("2026-02-01T10:00:00.000Z"),
     createAskId: () => remaining.shift() ?? "ask-exhausted",
   });
-  const open = vi.fn((input: AskUserInvocation) => Promise.resolve(store.open(input)));
-  return { store, open, tool: createAskUserToolDefinition({ open }) };
+  const open = vi.fn((input: PendingAskOpenInput) => Promise.resolve(store.open(input)));
+  const update = vi.fn((input: PendingAskUpdateInput) => Promise.resolve(store.update(input)));
+  const withdraw = vi.fn((sessionId: string, askId: string) => Promise.resolve(store.withdraw(sessionId, askId)));
+  return { store, open, update, tool: createAskUserToolDefinition({ open, update, withdraw }) };
 }
 
+const context = "**Finding:** the cache is stale. Postgres keeps one store; SQLite is lighter. I recommend Postgres.";
 const twoQuestions = {
+  context,
   questions: [
-    { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }, { value: "sqlite", label: "SQLite" }] },
+    { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite" }] },
     { id: "why", question: "Why?", options: [] },
   ],
 };
 
 describe("createAskUserToolDefinition", () => {
-  it("advertises a non-blocking question set whose answers arrive as a follow-up", () => {
+  it("advertises an asynchronous, self-contained question set without claiming to end the run", () => {
     const { tool } = toolOverStore();
+    const advertised = [tool.description, tool.promptSnippet, ...(tool.promptGuidelines ?? [])].join("\n");
 
     expect(tool.name).toBe("ask_user");
     expect(tool.exposure).toBe("model-only");
-    expect(tool.description).toBe("Post a set of questions to the user as a browser form and end this run. Answers arrive later as a follow-up message; the user may leave any question unanswered.");
-    expect(tool.promptSnippet).toBe("ask_user: post a question set to the user; ends the run, answers return as a follow-up");
-    expect(tool.promptGuidelines?.[0]).toBe(
-      "When you need decisions from the user, post them together with ask_user instead of asking in prose one at a time. It ends the run and the answers, including the questions the user left unanswered, come back as a follow-up message that wakes you. Call it alone and last, and do not repost the same questions or poll for answers.",
-    );
+    expect(advertised).toContain("returns immediately");
+    expect(advertised).toContain("without reading the Chat");
+    expect(advertised).toContain("update: <askId>");
+    expect(advertised).toContain("withdraw: <askId>");
+    expect(advertised).not.toMatch(/ends? (this|the) run|alone and last/);
   });
 
-  it("bounds the question set in its parameter schema", () => {
+  it("makes every field optional in the schema so one tool can post, update, or withdraw", () => {
     const { tool } = toolOverStore();
 
     expect(tool.parameters).toMatchObject({
       type: "object",
-      required: ["questions"],
-      properties: { questions: { type: "array", minItems: 1, maxItems: 20 } },
+      properties: {
+        context: { type: "string", maxLength: 4000 },
+        questions: { type: "array", minItems: 1, maxItems: 20 },
+        update: { type: "string" },
+        withdraw: { type: "string" },
+      },
     });
-    expect(tool.parameters).not.toHaveProperty("properties.questions.items.properties.allowOther");
+    expect(tool.parameters).not.toHaveProperty("required");
+    expect(tool.parameters).toHaveProperty("properties.questions.items.properties.options.items.properties.recommended.type", "boolean");
   });
 
-  it("offers an optional, bounded Markdown context shown above the questions", () => {
-    const { tool } = toolOverStore();
-
-    expect(tool.parameters).toMatchObject({ properties: { context: { type: "string", maxLength: 4000 } } });
-    expect(tool.parameters).toHaveProperty("required", ["questions"]);
-    expect(tool.promptGuidelines?.join("\n")).toContain("context");
-  });
-
-  it("passes the context through to the posted ask", async () => {
-    const { open, tool } = toolOverStore();
-
-    const result = await tool.execute("call-ctx", { context: "**Finding:** the cache is stale.", ...twoQuestions }, undefined, undefined, ctxFor("session-1"));
-
-    expect(open).toHaveBeenCalledWith(expect.objectContaining({ context: "**Finding:** the cache is stale." }));
-    expect(result.details).toMatchObject({ ask: { askId: "ask-1", context: "**Finding:** the cache is stale." } });
-  });
-
-  it("opens the ask for the calling session and terminates the run instead of awaiting the user", async () => {
+  it("posts the set for the calling session and returns without terminating the run", async () => {
     const { open, tool } = toolOverStore();
 
     const result = await tool.execute("call-1", twoQuestions, undefined, undefined, ctxFor("session-1"));
 
     expect(open).toHaveBeenCalledWith({
       sessionId: "session-1",
+      context,
       questions: [
-        { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }, { value: "sqlite", label: "SQLite" }] },
+        { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite" }] },
         { id: "why", question: "Why?", options: [] },
       ],
     });
-    expect(result.terminate).toBe(true);
-    expect(result.details).toMatchObject({ ask: { askId: "ask-1", questions: [{ id: "db" }, { id: "why" }] } });
-    expect(firstText(result.content)).toBe("Posted 2 questions to the user as ask ask-1. Ending this run; the answers arrive as a follow-up message that wakes you, naming every question the user left unanswered. Do not repost these questions.");
+    expect(result).not.toHaveProperty("terminate");
+    expect(result.details).toMatchObject({ ask: { askId: "abc-1", context, questions: [{ id: "db" }, { id: "why" }] } });
+    expect(firstText(result.content)).toContain("Posted 2 questions to the user's Questions pane as ask abc-1 (abc.db, abc.why). You are not paused");
+  });
+
+  it("keeps earlier sets open when another is posted", async () => {
+    const { store, tool } = toolOverStore();
+    await tool.execute("call-1", twoQuestions, undefined, undefined, ctxFor("session-1"));
+
+    const result = await tool.execute("call-2", { context, questions: [{ id: "again", question: "Still there?" }] }, undefined, undefined, ctxFor("session-1"));
+
+    expect(result.details).not.toHaveProperty("superseded");
+    expect(store.pendingAsks("session-1").map((ask) => ask.askId)).toEqual(["abc-1", "def-2"]);
+  });
+
+  it("requires a self-contained context for a new set", async () => {
+    const { tool } = toolOverStore();
+
+    await expect(tool.execute("call-bare", { questions: twoQuestions.questions }, undefined, undefined, ctxFor("session-1")))
+      .rejects.toThrow(/context is required/);
+  });
+
+  it("revises an open set in place, or confirms it when nothing else is sent", async () => {
+    const { tool, update, store } = toolOverStore();
+    await tool.execute("call-1", twoQuestions, undefined, undefined, ctxFor("session-1"));
+
+    const revised = await tool.execute("call-2", { update: "abc-1", questions: [{ id: "db", question: "Which store now?" }] }, undefined, undefined, ctxFor("session-1"));
+    const confirmed = await tool.execute("call-3", { update: "abc-1" }, undefined, undefined, ctxFor("session-1"));
+
+    expect(update).toHaveBeenLastCalledWith({ sessionId: "session-1", askId: "abc-1", context: undefined, questions: undefined });
+    expect(firstText(revised.content)).toContain("Updated open question set abc-1 (abc.db)");
+    expect(confirmed.details).toMatchObject({ ask: { askId: "abc-1", context, questions: [{ question: "Which store now?" }] } });
+    expect(store.pendingAsks("session-1")).toHaveLength(1);
+    await expect(tool.execute("call-4", { update: "gone" }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(/No open question set gone/);
+  });
+
+  it("withdraws an open set, recording the outcome for the transcript", async () => {
+    const { tool, store } = toolOverStore();
+    await tool.execute("call-1", twoQuestions, undefined, undefined, ctxFor("session-1"));
+
+    const result = await tool.execute("call-2", { withdraw: "abc-1" }, undefined, undefined, ctxFor("session-1"));
+
+    expect(result.details).toMatchObject({ withdrawn: { askId: "abc-1", reason: "withdrawn", unansweredIds: ["db", "why"] } });
+    expect(store.pendingAsks("session-1")).toEqual([]);
+    await expect(tool.execute("call-3", { withdraw: "abc-1" }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(/No open question set abc-1/);
+    await expect(tool.execute("call-4", { withdraw: "abc-1", context }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(/withdraw takes no other parameters/);
   });
 
   it("defaults a question without options to an empty option list so free text alone is expressible", async () => {
     const { open, tool } = toolOverStore();
 
-    await tool.execute("call-free", { questions: [{ id: "note", question: "Anything else?" }] }, undefined, undefined, ctxFor("session-1"));
+    await tool.execute("call-free", { context, questions: [{ id: "note", question: "Anything else?" }] }, undefined, undefined, ctxFor("session-1"));
 
-    expect(open).toHaveBeenCalledWith({
-      sessionId: "session-1",
-      questions: [{ id: "note", question: "Anything else?", options: [] }],
-    });
+    expect(open).toHaveBeenCalledWith({ sessionId: "session-1", context, questions: [{ id: "note", question: "Anything else?", options: [] }] });
   });
 
-  it("adds custom answers while preserving detail, option detail, and multi-select", async () => {
+  it("preserves detail, option detail, and multi-select", async () => {
     const { open, tool } = toolOverStore();
+    const rich = {
+      id: "targets",
+      question: "Which targets?",
+      detail: "Pick every platform we should build for.",
+      options: [{ value: "web", label: "Web", detail: "Chromium and Firefox" }, { value: "cli", label: "CLI" }],
+      multiple: true,
+    };
 
-    await tool.execute("call-rich", {
-      questions: [{
-        id: "targets",
-        question: "Which targets?",
-        detail: "Pick every platform we should build for.",
-        options: [{ value: "web", label: "Web", detail: "Chromium and Firefox" }, { value: "cli", label: "CLI" }],
-        multiple: true,
-      }],
-    }, undefined, undefined, ctxFor("session-1"));
+    await tool.execute("call-rich", { context, questions: [rich] }, undefined, undefined, ctxFor("session-1"));
 
-    expect(open).toHaveBeenCalledWith({
-      sessionId: "session-1",
-      questions: [{
-        id: "targets",
-        question: "Which targets?",
-        detail: "Pick every platform we should build for.",
-        options: [{ value: "web", label: "Web", detail: "Chromium and Firefox" }, { value: "cli", label: "CLI" }],
-        multiple: true,
-      }],
-    });
-  });
-
-  it("tells the model which questions the superseded ask left unanswered", async () => {
-    const { tool } = toolOverStore();
-    await tool.execute("call-first", twoQuestions, undefined, undefined, ctxFor("session-1"));
-
-    const result = await tool.execute("call-second", { questions: [{ id: "again", question: "Still there?", options: [{ value: "yes", label: "Yes" }] }] }, undefined, undefined, ctxFor("session-1"));
-
-    expect(result.terminate).toBe(true);
-    expect(firstText(result.content)).toContain("Posted 1 question to the user as ask ask-2.");
-    expect(firstText(result.content)).toContain("This replaced an earlier question set (ask-1) that the user never submitted.");
-    expect(firstText(result.content)).toContain("Left unanswered: db, why.");
-    expect(result.details).toMatchObject({ superseded: { askId: "ask-1", reason: "superseded", unansweredIds: ["db", "why"] } });
-  });
-
-  it("says nothing about superseding when no earlier ask was open", async () => {
-    const { tool } = toolOverStore();
-
-    const result = await tool.execute("call-only", twoQuestions, undefined, undefined, ctxFor("session-1"));
-
-    expect(firstText(result.content)).not.toContain("replaced an earlier question set");
-    expect(result.details).not.toHaveProperty("superseded");
+    expect(open).toHaveBeenCalledWith({ sessionId: "session-1", context, questions: [rich] });
   });
 
   it("propagates a rejected question set so the agent loop reports it to the model", async () => {
     const { tool } = toolOverStore();
 
     await expect(tool.execute("call-dup", {
+      context,
       questions: [
         { id: "same", question: "First?", options: [{ value: "a", label: "A" }] },
         { id: "same", question: "Second?", options: [{ value: "b", label: "B" }] },

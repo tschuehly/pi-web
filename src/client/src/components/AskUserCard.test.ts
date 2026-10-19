@@ -274,6 +274,25 @@ describe("ask-user-card record mode", () => {
     expect(root.textContent).toContain("Deployment region");
     expect(root.textContent).toContain("Unanswered");
   });
+
+  it("labels a set the agent withdrew", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-gone",
+      reason: "withdrawn",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [unansweredRecord(question("region", "Deployment region", [option("eu", "Europe")]))],
+      answeredCount: 0,
+      unansweredIds: ["region"],
+      summary: "Answered 0 of 1; unanswered: region",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+
+    expect(renderRoot(card).textContent).toContain("Withdrawn");
+    expect(renderRoot(card).textContent).toContain("The agent withdrew these questions.");
+  });
 });
 
 async function mountOpenAsk(ask: PendingAskUser, onSubmit?: AskUserSubmitCallback): Promise<AskUserCard> {
@@ -306,7 +325,7 @@ function requiredElement<T>(value: T | null | undefined, label: string): T {
 }
 
 function openAsk(questions: AskUserQuestion[]): PendingAskUser {
-  return { askId: "ask-1", askedAt: "2026-07-20T10:00:00.000Z", questions };
+  return { askId: "ask-1", askedAt: "2026-07-20T10:00:00.000Z", updatedAt: "2026-07-20T10:00:00.000Z", turnsSinceUpdate: 0, questions };
 }
 
 function question(

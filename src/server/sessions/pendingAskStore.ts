@@ -14,6 +14,7 @@ import {
   type AskUserQuestionRecord,
   type AskUserSubmission,
   type PendingAskUser,
+  askQuestionRef,
 } from "../../shared/apiTypes.js";
 
 export interface PendingAskStoreOptions {
@@ -24,26 +25,19 @@ export interface PendingAskStoreOptions {
 /** A question set an agent wants to post to the user of one session. */
 export interface PendingAskOpenInput {
   sessionId: string;
-  context?: string;
-  questions: AskUserQuestion[];
+  context?: string | undefined;
+  questions?: AskUserQuestion[] | undefined;
 }
 
-/**
- * A freshly opened ask, plus the outcome of the ask it replaced. A session holds
- * at most one open ask, so opening while one is still unanswered supersedes it —
- * and the caller must report that outcome to the model, naming the questions the
- * user never got to answer.
- */
-export interface PendingAskOpenResult {
-  ask: PendingAskUser;
-  superseded?: AskUserOutcome;
+/** A revision of one open ask; omitted fields keep their value, so an empty revision only confirms it. */
+export interface PendingAskUpdateInput extends PendingAskOpenInput {
+  askId: string;
 }
 
 /**
  * Result of submitting or cancelling an ask. `"stale"` means the ask named by the
- * caller is no longer the session's open ask (already submitted, superseded, or
- * gone with its daemon-side session), which is an ordinary race a browser can
- * lose — not an error.
+ * caller is no longer open (already submitted, withdrawn, or gone with its
+ * daemon-side session), which is an ordinary race a browser can lose — not an error.
  */
 export type PendingAskCloseResult =
   | { status: "closed"; outcome: AskUserOutcome }
@@ -57,54 +51,68 @@ export class PendingAskValidationError extends Error {
   }
 }
 
+/** `customType` of the hidden context message that reminds the agent of its open asks. */
+export const ASK_USER_REMINDER_CUSTOM_TYPE = "pi-web.ask.reminder";
+
 type RecordedAnswers = ReadonlyMap<string, AskUserAnswer>;
 
 /**
- * Daemon-owned open-ask state: one unanswered question set per session.
+ * Daemon-owned open-ask state: any number of unanswered question sets per session.
  *
  * The store is pure domain logic — no Fastify, no Pi session, no I/O, no timers.
- * It validates asks and answers, owns the open/supersede/submit/cancel
- * transitions, and computes the answered-versus-unanswered outcome that both the
- * model-facing message and the browser record are rendered from. Callers publish
- * the returned asks and outcomes; the store never emits anything itself.
+ * It validates asks and answers, owns the open/update/withdraw/submit/cancel
+ * transitions, counts agent turns for staleness, and computes the
+ * answered-versus-unanswered outcome that both the model-facing message and the
+ * browser record are rendered from. Callers publish the returned asks and
+ * outcomes; the store never emits anything itself.
  *
- * State is deliberately daemon-lifetime and in-memory. An open ask is meaningful
- * only while the session runtime that posted it exists, and browsers rehydrate it
- * from `SessionStatus` rather than from disk.
+ * State is in-memory; the transcript is the durable record, and
+ * {@link openAsksFromTranscript} rebuilds it when a session runtime is opened.
  */
 export class PendingAskStore {
   private readonly now: () => Date;
   private readonly createAskId: () => string;
-  private readonly openBySessionId = new Map<string, PendingAskUser>();
+  private readonly openBySessionId = new Map<string, Map<string, PendingAskUser>>();
 
   constructor(options: PendingAskStoreOptions = {}) {
     this.now = options.now ?? (() => new Date());
     this.createAskId = options.createAskId ?? randomUUID;
   }
 
-  /** The session's open ask, for {@link SessionStatus} projection. */
-  pendingAsk(sessionId: string): PendingAskUser | undefined {
-    const ask = this.openBySessionId.get(requireSessionId(sessionId));
-    return ask === undefined ? undefined : cloneAsk(ask);
+  /** The session's open asks, oldest first, for {@link SessionStatus} projection. */
+  pendingAsks(sessionId: string): PendingAskUser[] {
+    return [...this.asksOf(sessionId).values()].map(cloneAsk);
   }
 
-  open(input: PendingAskOpenInput): PendingAskOpenResult {
+  open(input: PendingAskOpenInput): PendingAskUser {
     const sessionId = requireSessionId(input.sessionId);
-    const questions = validateQuestions(input.questions);
     const context = validateContext(input.context);
+    if (context === undefined) {
+      throw new PendingAskValidationError("context is required: explain the finding, the options, their consequences, and your recommendation so the user can answer without reading the Chat");
+    }
+    if (input.questions === undefined) throw new PendingAskValidationError("questions are required for a new question set");
+    const questions = validateQuestions(input.questions);
     const askedAt = this.timestamp();
-    const superseded = this.close(sessionId, "superseded", askedAt, new Map());
-    const ask: PendingAskUser = {
-      askId: requireId(this.createAskId(), "askId"),
-      askedAt,
-      ...(context === undefined ? {} : { context }),
-      questions,
-    };
-    this.openBySessionId.set(sessionId, ask);
-    return {
-      ask: cloneAsk(ask),
-      ...(superseded === undefined ? {} : { superseded }),
-    };
+    const ask: PendingAskUser = { askId: requireId(this.createAskId(), "askId"), askedAt, updatedAt: askedAt, turnsSinceUpdate: 0, context, questions };
+    this.setAsk(sessionId, ask);
+    return cloneAsk(ask);
+  }
+
+  /** Revise or confirm an open ask in place; `undefined` when it is not open. */
+  update(input: PendingAskUpdateInput): PendingAskUser | undefined {
+    const sessionId = requireSessionId(input.sessionId);
+    const ask = this.asksOf(sessionId).get(input.askId);
+    if (ask === undefined) return undefined;
+    const context = validateContext(input.context) ?? ask.context;
+    const questions = input.questions === undefined ? ask.questions : validateQuestions(input.questions);
+    const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
+    this.setAsk(sessionId, updated);
+    return cloneAsk(updated);
+  }
+
+  /** Close an open ask the agent no longer needs answered; `undefined` when it is not open. */
+  withdraw(sessionId: string, askId: string): AskUserOutcome | undefined {
+    return this.close(requireSessionId(sessionId), askId, "withdrawn", new Map());
   }
 
   /**
@@ -113,59 +121,71 @@ export class PendingAskStore {
    * rather than silently truncated; the ask stays open in that case.
    */
   submit(sessionId: string, askId: string, submission: AskUserSubmission): PendingAskCloseResult {
-    const ask = this.openBySessionId.get(requireSessionId(sessionId));
-    if (ask?.askId !== askId) return { status: "stale" };
-    // Validate before closing so a submission that does not fit its questions
-    // leaves the ask open for the browser to correct.
+    const ask = this.asksOf(requireSessionId(sessionId)).get(askId);
+    if (ask === undefined) return { status: "stale" };
     const answers = validateSubmission(ask, submission);
-    return { status: "closed", outcome: this.requireClose(sessionId, "submitted", answers) };
+    return closed(this.close(sessionId, askId, "submitted", answers));
   }
 
   /**
-   * Close the session's open ask without a submission. The outcome reports every question as
+   * Close one open ask without a submission. The outcome reports every question as
    * unanswered, because answers only ever reach the daemon through a submit.
    */
   cancel(sessionId: string, askId: string): PendingAskCloseResult {
-    const ask = this.openBySessionId.get(requireSessionId(sessionId));
-    if (ask?.askId !== askId) return { status: "stale" };
-    return { status: "closed", outcome: this.requireClose(sessionId, "cancelled", new Map()) };
+    return closed(this.close(requireSessionId(sessionId), askId, "cancelled", new Map()));
   }
 
-  /**
-   * Close whatever ask the session currently has open, e.g. because the user sent
-   * an ordinary chat message instead of answering the form. Returns the outcome,
-   * or `undefined` when the session has no open ask.
-   */
-  cancelOpen(sessionId: string): AskUserOutcome | undefined {
-    return this.close(requireSessionId(sessionId), "cancelled", this.timestamp(), new Map());
+  /** Close every open ask of the session, e.g. because the user moved to another branch. */
+  cancelAll(sessionId: string): AskUserOutcome[] {
+    const asks = [...this.asksOf(requireSessionId(sessionId)).keys()];
+    return asks.flatMap((askId) => this.close(sessionId, askId, "cancelled", new Map()) ?? []);
   }
 
-  /** Drop the open ask of a session that is going away, without reporting an outcome. */
+  /** Count one started agent turn against every open ask; true when the session has any. */
+  countAgentTurn(sessionId: string): boolean {
+    const asks = this.asksOf(requireSessionId(sessionId));
+    for (const ask of asks.values()) ask.turnsSinceUpdate += 1;
+    return asks.size > 0;
+  }
+
+  /** Adopt asks rebuilt from the transcript, unless the session already has live state. */
+  restore(sessionId: string, asks: readonly PendingAskUser[]): boolean {
+    if (this.asksOf(requireSessionId(sessionId)).size > 0 || asks.length === 0) return false;
+    for (const ask of asks) this.setAsk(sessionId, cloneAsk(ask));
+    return true;
+  }
+
+  /** Drop the open asks of a session that is going away, without reporting outcomes. */
   forgetSession(sessionId: string): void {
     this.openBySessionId.delete(requireSessionId(sessionId));
   }
 
-  private requireClose(sessionId: string, reason: AskUserCloseReason, answers: RecordedAnswers): AskUserOutcome {
-    const outcome = this.close(sessionId, reason, this.timestamp(), answers);
-    if (outcome === undefined) throw new Error(`Pending ask of session ${sessionId} disappeared while closing`);
-    return outcome;
+  private asksOf(sessionId: string): Map<string, PendingAskUser> {
+    return this.openBySessionId.get(sessionId) ?? new Map<string, PendingAskUser>();
   }
 
-  private close(
-    sessionId: string,
-    reason: AskUserCloseReason,
-    closedAt: string,
-    answers: RecordedAnswers,
-  ): AskUserOutcome | undefined {
-    const ask = this.openBySessionId.get(sessionId);
-    if (ask === undefined) return undefined;
-    this.openBySessionId.delete(sessionId);
-    return askUserOutcome(ask, answers, reason, closedAt);
+  private setAsk(sessionId: string, ask: PendingAskUser): void {
+    const asks = this.openBySessionId.get(sessionId) ?? new Map<string, PendingAskUser>();
+    asks.set(ask.askId, ask);
+    this.openBySessionId.set(sessionId, asks);
+  }
+
+  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers): AskUserOutcome | undefined {
+    const asks = this.openBySessionId.get(sessionId);
+    const ask = asks?.get(askId);
+    if (asks === undefined || ask === undefined) return undefined;
+    asks.delete(askId);
+    if (asks.size === 0) this.openBySessionId.delete(sessionId);
+    return askUserOutcome(ask, answers, reason, this.timestamp());
   }
 
   private timestamp(): string {
     return this.now().toISOString();
   }
+}
+
+function closed(outcome: AskUserOutcome | undefined): PendingAskCloseResult {
+  return outcome === undefined ? { status: "stale" } : { status: "closed", outcome };
 }
 
 /**
@@ -174,24 +194,26 @@ export class PendingAskStore {
  */
 export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
   const lead = outcome.reason === "submitted"
-    ? "The user submitted answers to your questions."
-    : `The question set was closed (${outcome.reason}) before it was fully answered.`;
-  return [lead, "", ...outcome.questions.map(questionLines).flat(), "", outcome.summary].join("\n");
+    ? `The user submitted answers to question set ${outcome.askId}.`
+    : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
+  return [lead, "", ...outcome.questions.map((record) => questionLines(outcome.askId, record)).flat(), "", outcome.summary].join("\n");
 }
 
 /**
- * Notice for the model when a new ask replaced one the user never answered, so a
- * supersede is never a silent loss of the earlier questions.
+ * One line per open ask, reminding the model to keep them current. Empty when
+ * nothing is open, so callers never inject a reminder about nothing.
  */
-export function renderSupersededAskText(outcome: AskUserOutcome): string {
+export function renderOpenAsksReminder(asks: readonly PendingAskUser[]): string {
+  if (asks.length === 0) return "";
   return [
-    `This replaced an earlier question set (${outcome.askId}) that the user never submitted.`,
-    `Left unanswered: ${outcome.unansweredIds.join(", ")}.`,
+    "Question sets still open for the user (answers arrive as a follow-up message):",
+    ...asks.map((ask) => `- ${ask.askId} (${ask.questions.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}; updated ${ask.updatedAt}, ${ask.turnsSinceUpdate.toString()} turns ago): ${ask.questions[0]?.question ?? ""}`),
+    "If one no longer matches the situation and ask_user is available, update or withdraw it; otherwise leave it.",
   ].join("\n");
 }
 
-function questionLines(record: AskUserQuestionRecord): string[] {
-  const header = `- ${record.question.id}: ${record.question.question}`;
+function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
+  const header = `- ${askQuestionRef(askId, record.question.id)}: ${record.question.question}`;
   if (!record.answered) return [header, "  Unanswered."];
   const parts = [...record.values.map((value) => `selected ${value}`)];
   if (record.otherText !== undefined) parts.push(`custom: ${JSON.stringify(record.otherText)}`);
@@ -236,7 +258,7 @@ function summaryLine(total: number, answeredCount: number, unansweredIds: string
   return unansweredIds.length === 0 ? `${answered}; none left unanswered` : `${answered}; unanswered: ${unansweredIds.join(", ")}`;
 }
 
-/** Blank context is dropped rather than rejected: it is harmless, and a rejection costs the model a retry. */
+/** Blank context reads as absent; a new ask then rejects it as missing. */
 function validateContext(context: string | undefined): string | undefined {
   if (context === undefined || context.trim() === "") return undefined;
   if (context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new PendingAskValidationError("context exceeds its length limit");
@@ -284,6 +306,7 @@ function validateOption(option: AskUserQuestionOption, value: string, questionId
     value,
     label: requireText(option.label, `label of option ${value} in question ${questionId}`),
     ...(detail === undefined ? {} : { detail: requireText(detail, `detail of option ${value} in question ${questionId}`) }),
+    ...(option.recommended === true ? { recommended: true } : {}),
   };
 }
 
