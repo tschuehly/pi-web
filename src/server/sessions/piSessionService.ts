@@ -1204,6 +1204,11 @@ export class PiSessionService implements SessionRouteService {
    * on full readiness.
    */
   private readonly startupSessions = new Map<string, PiAgentSession>();
+  /**
+   * Creation tokens of live sessions, so rows carry them through browser reconnects; dropped when the session closes or
+   * fails to start. ponytail: persist tokens if recovery across daemon restarts is needed.
+   */
+  private readonly startupTokens = new Map<string, string>();
   private readonly activities = new Map<string, { phase: "active" | "idle" | "error"; label: string; detail?: string; at: string }>();
   private readonly extensionStatuses = new WeakMap<PiAgentSession, Map<string, string>>();
   private readonly activeToolExecutions = new WeakMap<PiAgentSession, Map<string, ActiveToolExecution>>();
@@ -1503,6 +1508,7 @@ export class PiSessionService implements SessionRouteService {
     this.active.clear();
     this.pendingSessionOpens.clear();
     this.startupSessions.clear();
+    this.startupTokens.clear();
     this.suggestedInputs.clear();
     this.activities.clear();
     this.compactionPromptQueues.clear();
@@ -1541,7 +1547,7 @@ export class PiSessionService implements SessionRouteService {
       .filter((session) => !archived.has(`${session.cwd}\0${session.id}`))
       .sort((a, b) => b.modified.getTime() - a.modified.getTime())
       .slice(0, limit)
-      .map(clientSessionFromListEntry);
+      .map((session) => this.withStartupToken(clientSessionFromListEntry(session)));
   }
 
   async list(cwd: string, options?: { sessionId?: string }): Promise<ClientSession[]> {
@@ -1570,7 +1576,7 @@ export class PiSessionService implements SessionRouteService {
       .map((record) => clientSessionFromArchivedRecord(record, sessionsById.get(record.sessionId)))
       .filter(isDefined)
       .sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified));
-    return [...unarchivedSessions, ...archivedSessions];
+    return [...unarchivedSessions, ...archivedSessions].map((session) => this.withStartupToken(session));
   }
 
   /**
@@ -1588,13 +1594,18 @@ export class PiSessionService implements SessionRouteService {
     const record = archivedRecords.find((candidate) => candidate.cwd === cwd && candidate.sessionId === sessionId);
     if (record !== undefined) {
       const archived = clientSessionFromArchivedRecord(record, listed);
-      return archived === undefined ? [] : [archived];
+      return archived === undefined ? [] : [this.withStartupToken(archived)];
     }
     const active = this.active.get(sessionId);
     if (active?.runtime.session.sessionId === sessionId && cwdPathsEqual(active.runtime.cwd, cwd) && !sessionFileExists(active.runtime.session.sessionFile)) {
-      return [{ ...clientSessionFromActiveSession(active.runtime.session), cwd }];
+      return [this.withStartupToken({ ...clientSessionFromActiveSession(active.runtime.session), cwd })];
     }
-    return listed === undefined ? [] : [clientSessionFromListEntry(listed)];
+    return listed === undefined ? [] : [this.withStartupToken(clientSessionFromListEntry(listed))];
+  }
+
+  private withStartupToken(session: ClientSession): ClientSession {
+    const startupToken = this.startupTokens.get(session.id);
+    return startupToken === undefined ? session : { ...session, startupToken };
   }
 
   async start(cwd: string, options: StartSessionOptions = {}): Promise<ClientSession> {
@@ -1692,7 +1703,7 @@ export class PiSessionService implements SessionRouteService {
   ): ClientSession {
     const { session } = active.runtime;
     const created: ClientSession = {
-      ...clientSessionFromActiveSession(session),
+      ...this.withStartupToken(clientSessionFromActiveSession(session)),
       cwd,
       ...(parentSession === undefined ? {} : { parentSessionPath: parentSession }),
     };
@@ -3809,6 +3820,7 @@ export class PiSessionService implements SessionRouteService {
     // Promises inside the dying runtime: settle them rather than dropping them.
     this.endSessionExtensionDialogs(sessionId);
     this.active.delete(sessionId);
+    this.startupTokens.delete(sessionId);
     this.events.mediaIndex.forgetSession({ id: sessionId, cwd: active.runtime.session.sessionManager.getCwd() });
     this.activities.delete(sessionId);
     this.workspaceActivity?.removeSession(sessionId, active.runtime.session.sessionManager.getCwd());
@@ -4033,6 +4045,7 @@ export class PiSessionService implements SessionRouteService {
     cwd: string,
     options: CreateSessionRuntimeOptions = {},
   ): Promise<ActiveSession<PiSessionRuntime>> {
+    if (options.startupToken !== undefined) this.startupTokens.set(sessionManager.getSessionId(), options.startupToken);
     const startup = this.startupProgress(sessionManager, options.startupIntent ?? "open", options.startupToken);
     const key = JSON.stringify([canonicalizeStoredCwd(cwd), sessionManager.getSessionId()]);
     // Early native observation must not admit ordinary operations before
@@ -4040,7 +4053,10 @@ export class PiSessionService implements SessionRouteService {
     // close/dispose wait for startup before tearing down its runtime.
     const pending: PendingSessionOpen = {
       sessionId: sessionManager.getSessionId(),
-      promise: this.createSessionRuntime(sessionManager, cwd, options, startup),
+      promise: this.createSessionRuntime(sessionManager, cwd, options, startup).catch((error: unknown) => {
+        this.startupTokens.delete(sessionManager.getSessionId());
+        throw error;
+      }),
     };
     pending.promise = pending.promise.finally(() => {
       startup.end();

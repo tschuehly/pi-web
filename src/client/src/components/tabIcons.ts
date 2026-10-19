@@ -4,7 +4,7 @@ export function renderNavigationMenuIcon(): TemplateResult {
   return svg`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`;
 }
 
-export type AppTabBuiltinIcon = "navigation" | "bell" | "chat" | "chat-plus" | "chevron" | "files" | "folder-plus" | "git" | "terminal";
+export type AppTabBuiltinIcon = "navigation" | "bell" | "chat" | "chat-plus" | "chevron" | "chevron-left" | "files" | "folder-plus" | "git" | "maximize" | "minimize" | "plus" | "terminal" | "x";
 export type AppTabIcon = AppTabBuiltinIcon | TemplateResult;
 
 export function renderAppTabIcon(icon: AppTabIcon): TemplateResult {
@@ -54,6 +54,12 @@ export function renderBuiltinTabIcon(icon: AppTabBuiltinIcon): TemplateResult {
           <path d="M9 18l6-6-6-6"></path>
         </svg>
       `;
+    case "chevron-left":
+      return svg`
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="m15 18-6-6 6-6"></path>
+        </svg>
+      `;
     case "files":
       return svg`
         <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -77,6 +83,38 @@ export function renderBuiltinTabIcon(icon: AppTabBuiltinIcon): TemplateResult {
           <path d="M8 6h6"></path>
           <path d="M6 8v2a6 6 0 0 0 6 6"></path>
           <path d="M18 8v2a6 6 0 0 1-6 6"></path>
+        </svg>
+      `;
+    case "maximize":
+      return svg`
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M15 3h6v6"></path>
+          <path d="m21 3-7 7"></path>
+          <path d="m3 21 7-7"></path>
+          <path d="M9 21H3v-6"></path>
+        </svg>
+      `;
+    case "minimize":
+      return svg`
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="m14 10 7-7"></path>
+          <path d="M20 10h-6V4"></path>
+          <path d="m3 21 7-7"></path>
+          <path d="M4 14h6v6"></path>
+        </svg>
+      `;
+    case "plus":
+      return svg`
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M5 12h14"></path>
+          <path d="M12 5v14"></path>
+        </svg>
+      `;
+    case "x":
+      return svg`
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M18 6 6 18"></path>
+          <path d="m6 6 12 12"></path>
         </svg>
       `;
     case "terminal":

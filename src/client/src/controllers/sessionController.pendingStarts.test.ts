@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
 import { browserErrorScopeKey, visibleBrowserErrors, workspaceBrowserErrorScope } from "../browserErrors";
 import { isCachedNewSessionInfo, loadCachedNewSessions } from "../cachedNewSessions";
@@ -266,6 +266,132 @@ describe("SessionController pending starts", () => {
     expect(state.clientQueuedSessionMessages[temporaryId]).toBeUndefined();
   });
 
+  it("retires the temporary Chat once completion begins, while its queued prompt still flushes", async () => {
+    const started: SessionInfo = { ...oldSession, id: "started-session", path: "/tmp/started-session.jsonl" };
+    const startRequest = deferred<SessionInfo>();
+    const promptRequest = deferred<{ accepted: true }>();
+    let prompted = false;
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      {
+        api: { ...defaultApi, startSession: () => startRequest.promise, messages: () => Promise.resolve(emptyPage), status: (session) => Promise.resolve(status(sessionLookupId(session))), prompt: () => { prompted = true; return promptRequest.promise; } },
+        socket: new FakeSocket(),
+        claimSession: () => Promise.resolve(true),
+      },
+    );
+
+    const start = controller.startSession();
+    await vi.waitFor(() => { expect(state.selectedSession?.id).toMatch(/^creating:/); });
+    await controller.send("queued first prompt");
+    startRequest.resolve(started);
+    await vi.waitFor(() => { expect(prompted).toBe(true); });
+    await controller.selectSession(oldSession);
+
+    // A tab click on the new Chat during the flush must open it, not revive the temporary composer.
+    expect(controller.pendingSession(started.id, started.startupToken)).toBeUndefined();
+    promptRequest.resolve({ accepted: true });
+    await start;
+  });
+
+  it("claims a completed Chat without focus while another Chat is on screen", async () => {
+    const started: SessionInfo = { ...oldSession, id: "started-session", path: "/tmp/started-session.jsonl" };
+    const startRequest = deferred<SessionInfo>();
+    const claims: [string, boolean | undefined][] = [];
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      {
+        api: { ...defaultApi, startSession: () => startRequest.promise, messages: () => Promise.resolve(emptyPage), status: (session) => Promise.resolve(status(sessionLookupId(session))) },
+        socket: new FakeSocket(),
+        claimSession: (session, _context, focus) => { claims.push([session.id, focus]); return Promise.resolve(true); },
+      },
+    );
+
+    const start = controller.startSession();
+    await vi.waitFor(() => { expect(state.selectedSession?.id).toMatch(/^creating:/); });
+    await controller.selectSession(oldSession);
+    startRequest.resolve(started);
+    await start;
+    expect(claims.find(([id]) => id === started.id)?.[1]).toBe(false);
+  });
+
+  it("reselecting a pending Chat from another workspace commits its context, so completion and the next send land there", async () => {
+    const started: SessionInfo = { ...oldSession, id: "started-session", path: "/tmp/started-session.jsonl" };
+    const other = { ...workspace, id: "workspace-2", projectId: "project-2", path: "/other" };
+    const elsewhere: SessionInfo = { ...oldSession, id: "elsewhere", cwd: "/other" };
+    const startRequest = deferred<SessionInfo>();
+    const prompts: string[] = [];
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      {
+        api: { ...defaultApi, startSession: () => startRequest.promise, messages: () => Promise.resolve(emptyPage), status: (session) => Promise.resolve(status(sessionLookupId(session))), prompt: (session) => { prompts.push(session.id); return Promise.resolve({ accepted: true }); } },
+        socket: new FakeSocket(),
+        claimSession: () => Promise.resolve(true),
+      },
+    );
+
+    const start = controller.startSession();
+    await vi.waitFor(() => { expect(state.selectedSession?.id).toMatch(/^creating:/); });
+    const pending = state.selectedSession;
+    if (pending === undefined) throw new Error("no pending Chat");
+    await controller.selectSession(elsewhere, { context: { selectedWorkspace: other, sessions: [elsewhere] } });
+    expect(state.selectedWorkspace?.id).toBe("workspace-2");
+    await controller.selectSession(pending, { context: { selectedWorkspace: workspace, sessions: [pending] } });
+    expect(state.selectedWorkspace?.id).toBe("workspace-1");
+    startRequest.resolve(started);
+    await start;
+
+    expect(state.selectedSession?.id).toBe(started.id);
+    await expect(controller.send("lands in the started Chat")).resolves.toBe(true);
+    expect(prompts).toEqual([started.id]);
+  });
+
+  it("refuses a send to a pending Chat whose creation is gone, so the composer keeps its text", async () => {
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api: { ...defaultApi, startSession: () => Promise.reject(new Error("down")) }, socket: new FakeSocket() },
+    );
+
+    await controller.startSession();
+    expect(state.selectedSession?.id).toMatch(/^creating:/);
+    await expect(controller.send("keep me")).resolves.toBe(false);
+  });
+
+  it("claims a completed Chat with focus while its temporary Chat is on screen", async () => {
+    const started: SessionInfo = { ...oldSession, id: "started-session", path: "/tmp/started-session.jsonl" };
+    const claims: [string, boolean | undefined][] = [];
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      {
+        api: { ...defaultApi, startSession: () => Promise.resolve(started), messages: () => Promise.resolve(emptyPage), status: (session) => Promise.resolve(status(sessionLookupId(session))) },
+        socket: new FakeSocket(),
+        claimSession: (session, _context, focus) => { claims.push([session.id, focus]); return Promise.resolve(true); },
+      },
+    );
+
+    await controller.startSession();
+    expect(claims.find(([id]) => id === started.id)?.[1]).toBe(true);
+  });
+
   it("keeps overlapping pending completions in list order when the newer start resolves first", async () => {
     const firstStarted: SessionInfo = { ...oldSession, id: "started-session-1", path: "/tmp/started-session-1.jsonl" };
     const secondStarted: SessionInfo = { ...oldSession, id: "started-session-2", path: "/tmp/started-session-2.jsonl" };
@@ -326,9 +452,9 @@ describe("SessionController pending starts", () => {
     const socket = new FakeSocket();
     const api: typeof defaultApi = {
       ...defaultApi,
-      startSession: () => {
+      startSession: (_cwd, _machineId, startupToken) => {
         // Simulate the broadcast arriving before the HTTP response resolves.
-        controller.applyGlobalEvent({ type: "session.created", session: started });
+        controller.applyGlobalEvent({ type: "session.created", session: { ...started, startupToken } });
         return startRequest.promise;
       },
       messages: () => Promise.resolve(emptyPage),
@@ -354,7 +480,7 @@ describe("SessionController pending starts", () => {
     expect(isCachedNewSessionInfo(state.sessions[0])).toBe(true);
   });
 
-  it("releases unrelated created-session broadcasts after pending starts settle", async () => {
+  it("shows unrelated created sessions immediately rather than guessing which start owns them",  async () => {
     const started: SessionInfo = { ...oldSession, id: "started-session", path: "/tmp/started-session.jsonl" };
     const otherClientSession: SessionInfo = { ...oldSession, id: "other-client-session", path: "/tmp/other-client-session.jsonl" };
     const startRequest = deferred<SessionInfo>();
@@ -375,10 +501,10 @@ describe("SessionController pending starts", () => {
 
     const start = controller.startSession();
     const temporaryId = state.selectedSession?.id;
-    controller.applyGlobalEvent({ type: "session.created", session: started });
+    controller.applyGlobalEvent({ type: "session.created", session: { ...started, startupToken: temporaryId } });
     controller.applyGlobalEvent({ type: "session.created", session: otherClientSession });
 
-    expect(state.sessions.map((session) => session.id)).toEqual([temporaryId]);
+    expect(state.sessions.map((session) => session.id)).toEqual([otherClientSession.id, temporaryId]);
 
     startRequest.resolve(started);
     await start;

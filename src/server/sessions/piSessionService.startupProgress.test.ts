@@ -186,6 +186,39 @@ describe("PiSessionService session startup progress", () => {
     await service.dispose();
   });
 
+  it("r8: exposes the creation token on rows even when a client missed every startup event", async () => {
+    const { hub, service } = startupService();
+    try {
+      const row = await service.start("/workspace", { startupToken: "creating:reserved" });
+      expect(row.startupToken).toBe("creating:reserved");
+      expect(await service.list("/workspace")).toEqual([expect.objectContaining({ id: row.id, startupToken: "creating:reserved" })]);
+      expect(await service.list("/workspace", { sessionId: row.id })).toEqual([expect.objectContaining({ id: row.id, startupToken: "creating:reserved" })]);
+      expect(hub.globalEvents.find((event) => event.type === "session.created")).toMatchObject({ session: { startupToken: "creating:reserved" } });
+    } finally { await service.dispose(); }
+  });
+
+  it("forgets a creation token once its session closes or fails to start", async () => {
+    const failure = new Error("runtime unavailable");
+    let fail = false;
+    const fake = fakeRuntime();
+    const { service } = startupService({ createAgentRuntime: () => fail ? Promise.reject(failure) : Promise.resolve(fake.runtime) });
+    // The token map is daemon-lifetime state; it must not grow with every Chat ever created.
+    const tokens = (): Map<unknown, unknown> => {
+      const map: unknown = Reflect.get(service, "startupTokens");
+      if (!(map instanceof Map)) throw new Error("startupTokens map is missing");
+      return map;
+    };
+    try {
+      const row = await service.start("/workspace", { startupToken: "creating:closed" });
+      expect([...tokens().values()]).toEqual(["creating:closed"]);
+      await service.stop({ id: row.id, cwd: "/workspace" });
+      expect(tokens().size).toBe(0);
+      fail = true;
+      await expect(service.start("/workspace", { startupToken: "creating:failed" })).rejects.toBe(failure);
+      expect(tokens().size).toBe(0);
+    } finally { await service.dispose(); }
+  });
+
   it("reserves Workstream launches before startup and reconciles exact persisted evidence without relaunch", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-web-launch-service-"));
     const storePath = join(root, "launches");

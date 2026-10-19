@@ -36,6 +36,7 @@ const snapshot: WorkstreamSnapshot = {
 afterEach(() => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("workstreamForSession", () => {
@@ -93,6 +94,8 @@ describe("WorkstreamContextDrawer", () => {
   }
 
   it("prefills, validates, cancels with discard confirmation, and saves owner records once", async () => {
+    // Plain-http LAN origins have no crypto.randomUUID.
+    vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => { throw new TypeError("crypto.randomUUID is not a function"); });
     const calls: unknown[] = [];
     const element = await editor((operation, input) => {
       if (operation === "inspect") return snapshot;

@@ -157,7 +157,7 @@ export class ToolExecutionView extends LitElement {
     .tool-card.running .status-icon, .tool-card.pending .status-icon { color: var(--pi-warning); }
     .tool-card.success .status-icon { color: var(--pi-success); }
     .tool-card.error .status-icon, .tool-card.error .status-label { color: var(--pi-danger); }
-    .tool-row { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 5px 0; overflow: hidden; list-style: none; cursor: pointer; }
+    .tool-row { display: flex; align-items: center; gap: 7px; min-width: 0; padding: var(--pi-tool-row-padding, 5px) 0; overflow: hidden; list-style: none; cursor: pointer; }
     .tool-row::-webkit-details-marker { display: none; }
     .chevron { flex: 0 0 auto; display: inline-grid; color: var(--pi-muted); transition: transform .12s ease; }
     .chevron .tab-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

@@ -263,6 +263,8 @@ function formatToolCallArguments(args: unknown): string {
 @customElement("chat-view")
 export class ChatView extends LitElement {
   @property({ attribute: false }) messages: ChatLine[] = [];
+  /** A grid tile's compact transcript: colour instead of borders, half the spacing, inline role and time, filter on hover. */
+  @property({ type: Boolean, reflect: true }) dense = false;
   @property() sessionId = "";
   @property() sessionCwd = "";
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
@@ -1101,7 +1103,7 @@ export class ChatView extends LitElement {
     const total = this.conversationDisplayTotal();
     const position = this.conversationPositionPercent(total);
     const loadedPercent = this.hasMore ? clampPercent((this.messages.length / total) * 100) : 100;
-    return html`<conversation-meter .positionPercent=${position} .loadedPercent=${loadedPercent}></conversation-meter>`;
+    return html`<conversation-meter ?dense=${this.dense} .positionPercent=${position} .loadedPercent=${loadedPercent}></conversation-meter>`;
   }
 
   private conversationDisplayTotal(): number {
@@ -1922,5 +1924,40 @@ export class ChatView extends LitElement {
     .subagent-completion > summary { width: fit-content; cursor: pointer; }
     .subagent-completion > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .subagent-completion-instruction { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text); }
+    /* Dense (a grid tile): tints separate user / assistant / thinking / tool rows; no outlines; spacing halved. */
+    :host([dense]) { --pi-paragraph-gap: 6px; --pi-tool-row-padding: 2px; }
+    :host([dense]) .chat { padding: 4px 10px 24px 8px; }
+    :host([dense]) .transcript-filter { top: 4px; right: 6px; opacity: 0; transition: opacity .12s ease; }
+    /* The position hairline only shows while the pointer is over the transcript, like an overlay scrollbar. */
+    :host([dense]) conversation-meter { opacity: 0; transition: opacity .15s ease; }
+    :host([dense]:hover) conversation-meter { opacity: .5; }
+    :host([dense]:hover) .transcript-filter, :host([dense]) .transcript-filter:focus-within { opacity: 1; }
+    :host([dense]) .filter-toggle, :host([dense]) .filter-options, :host([dense]) .filter-options button { border: 0; box-shadow: none; }
+    :host([dense]) .filter-toggle, :host([dense]) .filter-options button { background: var(--pi-surface-hover); }
+    :host([dense]) .filter-options { box-shadow: 0 6px 20px var(--pi-shadow); }
+    :host([dense]) .filter-options button[aria-pressed="true"], :host([dense]) .filter-toggle[data-filter-active="true"] { background: var(--pi-selection-bg); color: var(--pi-accent); }
+    :host([dense]) .scroll-to-bottom { border: 0; background: var(--pi-surface-hover); box-shadow: 0 2px 8px var(--pi-shadow-soft, transparent); }
+    :host([dense]) .msg, :host([dense]) .event-group { margin: 0 0 5px; }
+    :host([dense]) .msg { position: relative; }
+    :host([dense]) .msg.user, :host([dense]) .msg.assistant { padding: 3px 8px; border: 0; border-radius: 6px; }
+    :host([dense]) .msg.assistant { background: transparent; }
+    :host([dense]) .msg.user { background: color-mix(in srgb, var(--pi-accent) 12%, transparent); }
+    /* Role and time sit inline before the first line instead of a header band. */
+    :host([dense]) .msg > .msg-header { position: static; float: left; min-height: 0; height: 21px; margin: 0 8px 0 0; padding: 0; background: none; }
+    :host([dense]) .msg-header .label { font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+    :host([dense]) .msg-meta { font-size: 10px; }
+    :host([dense]) .msg-actions { position: absolute; z-index: 4; top: 2px; right: 4px; }
+    :host([dense]) .msg-action { border: 0; background: var(--pi-surface-hover); }
+    :host([dense]) .part + .part { margin-top: 4px; }
+    :host([dense]) .part > formatted-text { margin-top: 4px; }
+    :host([dense]) .thinking, :host([dense]) .thinking-group { padding: 2px 8px; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--pi-text) 5%, transparent); }
+    :host([dense]) .thinking-group > summary { padding: 0 0 2px; }
+    :host([dense]) .activity-group > summary { padding: 2px; }
+    :host([dense]) .msg.tool-execution-shell, :host([dense]) .msg.ask-user-record-shell, :host([dense]) .msg.skill-read-shell { padding: 0; }
+    :host([dense]) tool-execution-view { box-sizing: border-box; padding: 0 6px; border-radius: 5px; background: color-mix(in srgb, var(--pi-text) 3%, transparent); }
+    :host([dense]) .history-summary-group { border: 0; border-left: 3px solid var(--pi-accent); }
+    :host([dense]) .history-summary-group > .group-body { border-top: 0; }
+    :host([dense]) .history-load-button, :host([dense]) .session-activity, :host([dense]) .suggested-input { border: 0; }
+    :host([dense]) .session-activity, :host([dense]) .suggested-input { padding: 6px 8px; margin-bottom: 6px; }
   `];
 }

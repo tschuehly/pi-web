@@ -280,6 +280,7 @@ export function parseSessionInfo(value: unknown): SessionInfo {
     path: requireString(record, "path"),
     cwd: requireString(record, "cwd"),
     ...(persisted === undefined ? {} : { persisted }),
+    ...optionalField("startupToken", optionalString(record, "startupToken")),
     ...(name === undefined ? {} : { name }),
     created: requireString(record, "created"),
     modified: requireString(record, "modified"),

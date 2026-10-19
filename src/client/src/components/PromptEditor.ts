@@ -16,7 +16,7 @@ import type { StagedPromptChip } from "../promptChips";
 import { REPLY_QUOTE_OWNER, replyQuoteExcerpt } from "../replyQuotes";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
-import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
+import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "../promptDraftStorage";
 import { clearStagedAttachments, emptyStagedAttachmentDraft, loadStagedAttachmentDraft, resolveStagedAttachmentKey, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
@@ -29,6 +29,14 @@ import "./ModelEffortPicker";
 import { formatCost, formatTokenCount } from "../utils/format";
 import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import "./AutocompleteMenu";
+import { renderBuiltinTabIcon } from "./tabIcons";
+
+/** Composer keys whose send the server has not yet answered, in this window; a failure restores the prompt here. */
+const unacknowledgedSends = new Map<string, number>();
+
+export function hasUnacknowledgedSend(machineId: string, sessionId: string): boolean {
+  return unacknowledgedSends.has(resolveStagedAttachmentKey(machineSessionKey(machineId, sessionId)));
+}
 
 export const PROMPT_EDITOR_MIN_HEIGHT = 44;
 export const PROMPT_EDITOR_MAX_HEIGHT = 640;
@@ -55,6 +63,7 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean }) disabled = false;
   @property({ attribute: false }) shortcuts: ShortcutPreferenceConfig = {};
   @property() sessionId?: string;
+  @property({ attribute: false }) draftStorage?: DraftStorage;
   @property() cwd?: string;
   @property() machineId = "local";
   @property() projectId?: string;
@@ -72,6 +81,11 @@ export class PromptEditor extends LitElement {
   @property({ attribute: false }) workingModeTranscriptSelection?: WorkingModeState;
   @property({ type: Boolean, reflect: true, attribute: "show-usage" }) showUsage = false;
   @property({ type: Number }) warningCount = 0;
+  /**
+   * A grid tile's compact composer: at most two rows. Row 1 = attachment chips, a one-line input that grows, and attach/send/stop;
+   * row 2 = one meta line (model · effort, context, cost, mode), dropped entirely when `showUsage` is false.
+   */
+  @property({ type: Boolean, reflect: true }) dense = false;
   @property({ type: Boolean }) sending = false;
   @property({ attribute: false }) promptChips: readonly StagedPromptChip[] = [];
   @property({ attribute: false }) onRemoveChip?: (chip: StagedPromptChip) => void;
@@ -103,6 +117,7 @@ export class PromptEditor extends LitElement {
   @state() private chipSendingKey: string | undefined = undefined;
   @state() private chipError: string | undefined = undefined;
   @state() private expandedChipKey: string | undefined = undefined;
+  @state() private attachmentMenuOpen = false;
   private attachmentSeq = 0;
   private nextImageReference = 1;
   private pendingImageReferences: readonly string[] = [];
@@ -115,6 +130,7 @@ export class PromptEditor extends LitElement {
   private editor: EditorView | undefined;
   private readonly editableCompartment = new Compartment();
   private readonly readOnlyCompartment = new Compartment();
+  private readonly placeholderCompartment = new Compartment();
   private readonly mobilePromptEnterMedia = createMobilePromptEnterMedia();
   private explicitShiftKeyActive = false;
   // Manual size belongs only to this mounted Chat composer: sends and in-place
@@ -127,13 +143,7 @@ export class PromptEditor extends LitElement {
 
   protected override willUpdate(changed: PropertyValues<this>) {
     if (!changed.has("sessionId") && !changed.has("machineId")) return;
-    const previousSessionId = changed.has("sessionId") ? changed.get("sessionId") : this.sessionId;
-    const previousMachineId = changed.has("machineId") ? changed.get("machineId") : this.machineId;
-    const previousKey = draftStorageKey(previousMachineId, previousSessionId);
-    if (previousKey !== undefined) {
-      saveDraft(previousKey, this.draft);
-      saveStagedAttachments(previousKey, this.stagedAttachmentDraft());
-    }
+    // Every edit already wrote through; saving again on leave would overwrite what another window stored meanwhile.
     const currentKey = draftStorageKey(this.machineId, this.sessionId);
     const staged = currentKey !== undefined ? loadStagedAttachmentDraft(currentKey) : emptyStagedAttachmentDraft();
     this.attachments = staged.attachments;
@@ -141,8 +151,7 @@ export class PromptEditor extends LitElement {
     this.nextImageReference = staged.nextImageReference;
     this.pendingImageReferences = staged.pendingImageReferences;
     this.draftGeneration = staged.generation;
-    this.draft = sanitizeDraftImageReferences(currentKey !== undefined ? loadDraft(currentKey) : "", this.attachments, this.pendingImageReferences);
-    if (currentKey !== undefined) saveDraft(currentKey, this.draft);
+    this.draft = sanitizeDraftImageReferences(currentKey !== undefined ? loadDraft(currentKey, this.draftStorage) : "", this.attachments, this.pendingImageReferences);
     this.attachmentError = undefined;
     this.knownCommandNames.clear();
     this.commandCatalogRequest = undefined;
@@ -177,6 +186,7 @@ export class PromptEditor extends LitElement {
 
   protected override updated(changed: PropertyValues) {
     if (changed.has("disabled")) this.updateEditorDisabledState();
+    if (changed.has("dense")) this.editor?.dispatch({ effects: this.placeholderCompartment.reconfigure(this.placeholder()) });
     if (changed.has("sessionId") || changed.has("machineId")) this.syncEditorDoc();
   }
 
@@ -202,8 +212,7 @@ export class PromptEditor extends LitElement {
     const maximumHeight = this.maximumEditorHeight();
     const currentHeight = this.currentEditorHeight(maximumHeight);
     const editorHeightStyle = `--prompt-editor-maximum-height: ${String(maximumHeight)}px${this.manualEditorHeight === undefined ? "" : `; --prompt-editor-manual-height: ${String(this.manualEditorHeight)}px`}`;
-    return html`
-      <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => { void this.handlePaste(event); }} @dragover=${(event: DragEvent) => { this.handleDragOver(event); }} @drop=${(event: DragEvent) => { void this.handleDrop(event); }}>
+    const resizeHandle = html`
         <div
           class="editor-resize-handle"
           role="separator"
@@ -222,26 +231,36 @@ export class PromptEditor extends LitElement {
           @dblclick=${() => { this.resetEditorHeight(); }}
           @keydown=${(event: KeyboardEvent) => { this.handleEditorResizeKey(event); }}
         ></div>
+      `;
+    const editor = html`
         <div class="editor-wrap">
           <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${editorHeightStyle} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
           ${this.renderPromptChips()}
-          ${this.renderAttachments()}
+          ${this.dense ? null : this.renderAttachments()}
           <autocomplete-menu .items=${this.currentCompletions()} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
         </div>
-        <div class="actions">
-          ${this.renderCompactStatus()}
-          ${this.showUsage ? this.renderUsage() : null}
-          <working-mode-controls .status=${this.status} .transcriptSelection=${this.workingModeTranscriptSelection} .onRunCommand=${this.onRunCommand}></working-mode-controls>
+      `;
+    const composerActions = html`
           <div class="composer-actions">
             <button class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
             <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
             ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
             <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
           </div>
-        </div>
+      `;
+    const meta = html`
+          ${this.renderCompactStatus()}
+          ${this.showUsage ? this.renderUsage() : null}
+          <working-mode-controls .status=${this.status} .transcriptSelection=${this.workingModeTranscriptSelection} .onRunCommand=${this.onRunCommand}></working-mode-controls>
+      `;
+    return html`
+      <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => { void this.handlePaste(event); }} @dragover=${(event: DragEvent) => { this.handleDragOver(event); }} @drop=${(event: DragEvent) => { void this.handleDrop(event); }}>
+        ${resizeHandle}
+        <div class="input-row">${this.dense ? this.renderDenseAttachments() : null}${editor}${this.dense ? composerActions : null}</div>
+        ${this.dense ? (this.showUsage ? html`<div class="actions">${meta}</div>` : null) : html`<div class="actions">${meta}${composerActions}</div>`}
       </footer>
     `;
   }
@@ -257,7 +276,7 @@ export class PromptEditor extends LitElement {
   replaceText(text: string): void {
     this.draft = text;
     const key = draftStorageKey(this.machineId, this.sessionId);
-    if (key !== undefined) saveDraft(key, text);
+    if (key !== undefined) saveDraft(key, text, this.draftStorage);
 
     const editor = this.editor;
     if (editor !== undefined) {
@@ -348,15 +367,41 @@ export class PromptEditor extends LitElement {
             <button type="button" class="attachment-remove" title=${attachment.kind === "image" ? `Remove ${attachment.reference} image` : "Remove attachment"} aria-label=${attachment.kind === "image" ? `Remove ${attachment.reference} image ${attachment.name}` : `Remove ${attachment.name}`} @click=${() => { this.removeAttachment(attachment.id); }}>×</button>
           </div>
         `)}
-        ${this.attachments.length > 0 ? html`
-          <label class="attachment-delivery" title=${canUseInlineDelivery ? "How attachments are delivered to the agent" : "General files are saved and mentioned from the workspace"}>
-            <select .value=${delivery} @change=${(event: Event) => { this.changeDelivery(event); }}>
-              <option value="inline" ?disabled=${!canUseInlineDelivery}>Attach to message${canUseInlineDelivery ? "" : " (images only)"}</option>
-              <option value="folder">${attachmentFolderDeliveryLabel(this.attachmentsFolder)}</option>
-            </select>
-          </label>
-        ` : null}
+        ${this.attachments.length > 0 ? this.renderDeliverySelect(canUseInlineDelivery, delivery) : null}
         ${this.attachmentError !== undefined ? html`<div class="attachment-error">${this.attachmentError}</div>` : null}
+      </div>
+    `;
+  }
+
+  private renderDeliverySelect(canUseInlineDelivery: boolean, delivery: PromptAttachmentDelivery) {
+    return html`
+      <label class="attachment-delivery" title=${canUseInlineDelivery ? "How attachments are delivered to the agent" : "General files are saved and mentioned from the workspace"}>
+        <select .value=${delivery} @change=${(event: Event) => { this.changeDelivery(event); }}>
+          <option value="inline" ?disabled=${!canUseInlineDelivery}>Attach to message${canUseInlineDelivery ? "" : " (images only)"}</option>
+          <option value="folder">${attachmentFolderDeliveryLabel(this.attachmentsFolder)}</option>
+        </select>
+      </label>
+    `;
+  }
+
+  /** Dense: ~24px chips inline before the input; a chip opens the delivery choice. */
+  private renderDenseAttachments() {
+    if (this.attachments.length === 0 && this.attachmentError === undefined) return null;
+    const open = this.attachmentMenuOpen && this.attachments.length > 0;
+    return html`
+      <div class="attachments" aria-label="Pending attachments" @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape" && open) { event.stopPropagation(); this.attachmentMenuOpen = false; } }}>
+        ${this.attachments.map((attachment) => html`
+          <span class="attachment-chip">
+            <button type="button" class="attachment-open" aria-haspopup="true" aria-expanded=${String(open)} title=${`${attachment.kind === "image" ? `${attachment.reference} ` : ""}${attachment.name} · delivery options`} @click=${() => { this.attachmentMenuOpen = !this.attachmentMenuOpen; }}>
+              ${attachment.kind === "image" && isInlinePromptAttachment(attachment)
+                ? html`<img src=${`data:${attachment.mimeType};base64,${attachment.data}`} alt=${`${attachment.reference} image ${attachment.name}`} />`
+                : html`<span class="attachment-file-preview">${fileExtensionLabel(attachment.name)}</span>`}
+            </button>
+            <button type="button" class="attachment-remove" title="Remove attachment" aria-label=${attachment.kind === "image" ? `Remove ${attachment.reference} image ${attachment.name}` : `Remove ${attachment.name}`} @click=${() => { this.removeAttachment(attachment.id); }}>${renderBuiltinTabIcon("x")}</button>
+          </span>
+        `)}
+        ${open ? html`<div class="attachment-menu" role="group" aria-label="Attachment delivery">${this.renderDeliverySelect(promptAttachmentsCanUseInlineDelivery(this.attachments), this.effectiveAttachmentDelivery())}</div>` : null}
+        ${this.attachmentError !== undefined ? html`<div class="attachment-error" role="alert" title=${this.attachmentError}>!</div>` : null}
       </div>
     `;
   }
@@ -458,7 +503,7 @@ export class PromptEditor extends LitElement {
       const attachments = [...staged.attachments, ...additions].sort((a, b) => attachmentIdSequence(a.id) - attachmentIdSequence(b.id));
       const pendingImageReferences = staged.pendingImageReferences.filter((reference) => !references.includes(reference));
       saveStagedAttachments(targetKey, { ...staged, attachments, pendingImageReferences });
-      if (failedReferences.length > 0) saveDraft(targetKey, removeImageReferenceTokensFromText(loadDraft(targetKey), failedReferences));
+      if (failedReferences.length > 0) saveDraft(targetKey, removeImageReferenceTokensFromText(loadDraft(targetKey, this.draftStorage), failedReferences), this.draftStorage);
       return;
     }
     if (generation !== this.draftGeneration) return;
@@ -539,7 +584,7 @@ export class PromptEditor extends LitElement {
             keyup: (event) => this.handleEditorKeyUp(event),
             blur: () => this.resetEditorModifierState(),
           }),
-          placeholder("Message pi... Use / for commands, @ for tracked files, @ space for all files, # for models"),
+          this.placeholderCompartment.of(this.placeholder()),
           promptArgumentHintExtension,
           this.editableCompartment.of(EditorView.editable.of(!this.disabled)),
           this.readOnlyCompartment.of(EditorState.readOnly.of(this.disabled)),
@@ -568,6 +613,10 @@ export class PromptEditor extends LitElement {
       this.editorHeightObserver = observer;
     }
     this.reconcileEditorHeight();
+  }
+
+  private placeholder() {
+    return placeholder(this.dense ? "Message…" : "Message pi... Use / for commands, @ for tracked files, @ space for all files, # for models");
   }
 
   private interfaceScale(): number {
@@ -702,7 +751,7 @@ export class PromptEditor extends LitElement {
   private updateDraft(value: string) {
     this.draft = value;
     const key = draftStorageKey(this.machineId, this.sessionId);
-    if (key !== undefined) saveDraft(key, this.draft);
+    if (key !== undefined) saveDraft(key, this.draft, this.draftStorage);
     const nextInputMode = inputModeForDraft(this.draft);
     if (!inputModesEqual(nextInputMode, this.currentInputMode)) this.currentInputMode = nextInputMode;
     void this.refreshCompletions();
@@ -946,19 +995,29 @@ export class PromptEditor extends LitElement {
     delivery: PromptAttachmentDelivery | undefined,
     folder: string | undefined,
   ): Promise<void> {
+    const key = snapshot.key;
+    if (key !== undefined) unacknowledgedSends.set(key, (unacknowledgedSends.get(key) ?? 0) + 1);
     try {
-      const delivered = await this.onSend?.(text, behavior, attachments, delivery, folder);
-      if (delivered !== false) return;
-    } catch {
-      // The controller owns the visible request error; the composer owns retry state.
+      try {
+        const delivered = await this.onSend?.(text, behavior, attachments, delivery, folder);
+        if (delivered !== false) return;
+      } catch {
+        // The controller owns the visible request error; the composer owns retry state.
+      }
+      this.restoreComposer(snapshot, resetGeneration);
+    } finally {
+      if (key !== undefined) {
+        const count = (unacknowledgedSends.get(key) ?? 1) - 1;
+        if (count > 0) unacknowledgedSends.set(key, count);
+        else unacknowledgedSends.delete(key);
+      }
     }
-    this.restoreComposer(snapshot, resetGeneration);
   }
 
   private restoreComposer(snapshot: ReturnType<PromptEditor["composerSnapshot"]>, resetGeneration: number): void {
     const key = snapshot.key === undefined ? undefined : resolveStagedAttachmentKey(snapshot.key);
     if (key !== undefined) {
-      saveDraft(key, snapshot.draft);
+      saveDraft(key, snapshot.draft, this.draftStorage);
       saveStagedAttachments(key, {
         attachments: snapshot.attachments,
         nextImageReference: snapshot.nextImageReference,
@@ -1016,7 +1075,7 @@ export class PromptEditor extends LitElement {
     const key = draftStorageKey(this.machineId, this.sessionId);
     this.draftGeneration += 1;
     if (key !== undefined) {
-      clearDraft(key);
+      clearDraft(key, this.draftStorage);
       clearStagedAttachments(key);
     }
     this.completions = [];
@@ -1062,7 +1121,7 @@ function isPrimaryModifierEnter(event: KeyboardEvent): boolean {
 function draftStorageKey(machineId: unknown, sessionId: unknown): string | undefined {
   if (typeof machineId !== "string" || machineId === "") return undefined;
   if (typeof sessionId !== "string" || sessionId === "") return undefined;
-  return machineSessionKey(machineId, sessionId);
+  return resolveStagedAttachmentKey(machineSessionKey(machineId, sessionId));
 }
 
 function emptySlashCommands(): SlashCommand[] {

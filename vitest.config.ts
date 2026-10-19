@@ -13,7 +13,7 @@ export default defineConfig({
     maxWorkers: 2,
     // Node 26 exposes a disabled localStorage accessor unless a backing file is provided.
     execArgv: [`--localstorage-file=${join(tmpdir(), `pi-web-vitest-${randomUUID()}.json`)}`],
-    setupFiles: ["./src/test/localStorageIsolation.ts"],
+    setupFiles: ["./src/test/localStorageIsolation.ts", "./src/test/happyDomShadowFocus.ts"],
     include: ["src/**/*.test.ts", "pi-web-plugins/**/*.test.ts", "pi-packages/**/*.test.ts", "scripts/**/*.test.mjs"],
   },
 });

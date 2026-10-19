@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { appendWorkstream, inspectWorkstream, WorkstreamServiceError, type WorkstreamAppendInput, type WorkstreamServiceContext, type WorkstreamSnapshot, type WorkstreamWaitingOn } from "./WorkstreamChooser";
 import { PluginBackendRequestUnavailableError } from "../api/pluginBackends";
 import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor } from "../workstreamColor";
+import { randomHex } from "../randomHex";
 
 const checkpointFields: { name: "whatChanged" | "remains" | "next"; label: string; max: number }[] = [
   { name: "whatChanged", label: "What changed", max: 4000 },
@@ -124,8 +125,8 @@ export class WorkstreamContextDrawer extends LitElement {
       if (current.revision !== this.base.revision) { this.conflict = true; this.message = "Workstream changed elsewhere. Reload to review the latest version; your draft is preserved."; return; }
       const records: WorkstreamAppendInput["records"] = [];
       if (d.title !== this.base.title) records.push({ type: "title.set", producer: "owner", ...(this.sessionId ? { sourceSessionId: this.sessionId } : {}), payload: { title: d.title } });
-      if (checkpointChanged && source) records.push({ type: "checkpoint.replaced", producer: "owner", sourceSessionId: source.id, payload: { sessionId: source.id, checkpoint: { id: crypto.randomUUID(), whatChanged: d.whatChanged, remains: d.remains, next: d.next, ...(d.waitingOn === "" ? {} : { waitingOn: d.waitingOn }), ...(old?.references ? { references: old.references } : {}) } } });
-      this.pending ??= { workstreamId: this.base.id, expectedRevision: this.base.revision, idempotencyKey: crypto.randomUUID(), records };
+      if (checkpointChanged && source) records.push({ type: "checkpoint.replaced", producer: "owner", sourceSessionId: source.id, payload: { sessionId: source.id, checkpoint: { id: randomHex(16), whatChanged: d.whatChanged, remains: d.remains, next: d.next, ...(d.waitingOn === "" ? {} : { waitingOn: d.waitingOn }), ...(old?.references ? { references: old.references } : {}) } } });
+      this.pending ??= { workstreamId: this.base.id, expectedRevision: this.base.revision, idempotencyKey: randomHex(16), records };
       await appendWorkstream(this.serviceContext, this.pending);
       appended = true;
       this.pending = undefined;
