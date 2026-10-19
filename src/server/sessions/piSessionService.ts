@@ -4613,6 +4613,8 @@ export class PiSessionService implements SessionRouteService {
 
   private async redeliverAskOutcomes(session: PiAgentSession, outcomes: readonly AskUserOutcome[]): Promise<void> {
     for (const outcome of outcomes) {
+      // A stopped or replaced runtime must not start turns; the next open redelivers what is left.
+      if (this.active.get(session.sessionId)?.runtime.session !== session) return;
       try {
         await this.deliverAskOutcome(session, outcome);
       } catch (error: unknown) {

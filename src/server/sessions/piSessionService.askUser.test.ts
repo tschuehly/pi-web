@@ -344,6 +344,26 @@ describe("PiSessionService.submitAsk", () => {
     await service.dispose();
   });
 
+  it("stops redelivering once the runtime is disposed", async () => {
+    const closed = (askId: string) => ({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: { askId, reason: "submitted", askedAt: T0, closedAt: T0, context, questions: [], answeredCount: 0, unansweredIds: [], summary: "Answered 0 of 0" } });
+    const branch: unknown[] = [postedAsk("ask-1"), postedAsk("bsk-2"), closed("ask-1"), closed("bsk-2")];
+    const { service, fake } = askService({ withActiveSession: true, branch });
+    let release: () => void = () => undefined;
+    const deliver = fake.session.sendCustomMessage.bind(fake.session);
+    fake.session.sendCustomMessage = async (message, options) => {
+      await deliver(message, options);
+      await new Promise<void>((resolve) => { release = resolve; });
+    };
+
+    await service.status(sessionRef(ACTIVE_SESSION_ID));
+    await vi.waitFor(() => { expect(fake.calls.sendCustomMessage).toHaveLength(1); });
+    await service.dispose();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(fake.calls.sendCustomMessage).toHaveLength(1);
+  });
+
   it("refuses answers to an older revision of a revised ask as stale", async () => {
     const { service, store, fake } = askService({ withActiveSession: true });
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
