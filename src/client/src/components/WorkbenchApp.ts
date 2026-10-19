@@ -78,9 +78,11 @@ export function sessionInfoText(session: SessionInfo, status?: SessionStatus): s
 
 export const adHocWorkspace = (path: string): Workspace => ({ id: adHocFolderWorkspaceId(path), projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
 
-/** A project whose path lies inside another registered project belongs to that project's tab. */
+/** A project inside another registered project, or its sibling `<project>-<suffix>` repository, belongs to that project's tab. */
 export function rootProjectOf(project: Project, projects: readonly Project[]): Project {
-  const parent = projects.find((candidate) => candidate.id !== project.id && project.path.startsWith(`${candidate.path}/`));
+  const belongsTo = (candidate: Project): boolean => project.path.startsWith(`${candidate.path}/`)
+    || project.path.startsWith(`${candidate.path}-`) && !project.path.slice(candidate.path.length).includes("/");
+  const parent = projects.find((candidate) => candidate.id !== project.id && belongsTo(candidate));
   return parent === undefined ? project : rootProjectOf(parent, projects);
 }
 export const rootProjects = (projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === project.id);
