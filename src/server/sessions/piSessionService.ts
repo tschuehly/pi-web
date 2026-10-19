@@ -92,7 +92,7 @@ import { readSessionHeaderSummary } from "./sessionFileHeader.js";
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
 import { createAskUserToolDefinition, type AskUserToolDeps } from "./askUserTool.js";
 import { openAsksFromTranscript } from "./openAsksFromTranscript.js";
-import { ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
+import { ASK_USER_CLOSED_CUSTOM_TYPE, ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
 import { PendingExtensionDialogStore, type ExtensionDialogCancelReason } from "./pendingExtensionDialogStore.js";
 import { ExtensionDialogWaiters, effectiveExtensionDialogTimeoutMs, extensionDialogCancelValue } from "./extensionDialogWaiters.js";
 import { DEFAULT_EXTENSION_DIALOGS_TIMEOUT_MS } from "../../config.js";
@@ -1987,7 +1987,7 @@ export class PiSessionService implements SessionRouteService {
     // Checked before the store closes the ask so a refused delivery cannot
     // discard answers the user already submitted.
     this.assertTreeNavigationInactive(session, "answer questions");
-    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission));
+    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission, (outcome) => { this.recordAskClosed(session, outcome); }));
   }
 
   /**
@@ -1999,7 +1999,17 @@ export class PiSessionService implements SessionRouteService {
     await this.assertWritable(ref);
     const session = await this.getOrOpen(ref);
     this.assertTreeNavigationInactive(session, "dismiss questions");
-    return this.closeAsk(session, this.pendingAskStore.cancel(session.sessionId, askId));
+    return this.closeAsk(session, this.pendingAskStore.cancel(session.sessionId, askId, (outcome) => { this.recordAskClosed(session, outcome); }));
+  }
+
+  /**
+   * Persist a closing ask's outcome before the browser hears it closed. While a
+   * run streams, the answers message only waits in Pi's in-memory follow-up
+   * queue; this entry is what keeps the ask closed and its answers deliverable
+   * after a daemon restart. It is a custom entry, so the model never reads it.
+   */
+  private recordAskClosed(session: PiAgentSession, outcome: AskUserOutcome): void {
+    session.sessionManager.appendCustomEntry?.(ASK_USER_CLOSED_CUSTOM_TYPE, outcome);
   }
 
   /**
@@ -2012,14 +2022,18 @@ export class PiSessionService implements SessionRouteService {
     if (result.status === "stale") return { result: "stale", sessionStatus: this.statusFromSession(session) };
     const { outcome } = result;
     this.publishAskClosed(session.sessionId, outcome);
+    await this.deliverAskOutcome(session, outcome);
+    this.publishStatus(session);
+    return { result: "closed", outcome, sessionStatus: this.statusFromSession(session) };
+  }
+
+  private deliverAskOutcome(session: PiAgentSession, outcome: AskUserOutcome): Promise<void> {
     const reminder = renderOpenAsksReminder(this.pendingAskStore.pendingAsks(session.sessionId));
     const content = [renderAskUserAnswersText(outcome), ...(reminder === "" ? [] : [reminder])].join("\n\n");
-    await this.runSessionEntryMutation(session, "deliver answers to your questions", () => session.sendCustomMessage(
+    return this.runSessionEntryMutation(session, "deliver answers to your questions", () => session.sendCustomMessage(
       { customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content, display: true, details: outcome },
       { triggerTurn: true, deliverAs: "followUp" },
     ));
-    this.publishStatus(session);
-    return { result: "closed", outcome, sessionStatus: this.statusFromSession(session) };
   }
 
   private publishAskClosed(sessionId: string, outcome: AskUserOutcome): void {
@@ -3121,10 +3135,13 @@ export class PiSessionService implements SessionRouteService {
       }
 
       if (session.sessionManager.getLeafId() !== oldLeafId) {
-        // Questions belong to the position we left. Close them for every browser
-        // without appending a cancellation message or waking the rewound session.
-        // The sibling branch left behind is what keeps a rebuild from reopening them.
-        for (const outcome of this.pendingAskStore.cancelAll(session.sessionId)) this.publishAskClosed(session.sessionId, outcome);
+        // Open questions are those of the selected branch, exactly as a reload
+        // rebuilds them. Asks left behind close for every browser without a
+        // cancellation message or waking the session.
+        const left = this.pendingAskStore.cancelAll(session.sessionId);
+        this.restoreOpenAsks(session, { redeliver: false });
+        const reopened = new Set(this.pendingAskStore.pendingAsks(session.sessionId).map((ask) => ask.askId));
+        for (const outcome of left) if (!reopened.has(outcome.askId)) this.publishAskClosed(session.sessionId, outcome);
       }
 
       if (result.summaryEntry !== undefined) {
@@ -4543,7 +4560,7 @@ export class PiSessionService implements SessionRouteService {
         }
         this.publishActivityForEvent(session, event);
         this.updateActiveToolExecutionsForEvent(session, event);
-        if (eventType === "agent_start") this.pendingAskStore.countAgentTurn(session.sessionId);
+        if (eventType === "turn_start") this.pendingAskStore.countAgentTurn(session.sessionId);
         if (eventType === "message_start" && getString(message, "role") === "user") this.suggestedInputs.delete(session.sessionId);
         if (eventType === "queue_update") this.pruneRuntimePromptProvenance(session);
         if (eventType === "agent_end") this.abortRunScopedExtensionDialogs(session.sessionId);
@@ -4578,14 +4595,23 @@ export class PiSessionService implements SessionRouteService {
       this.publishedAssistantPartials.delete(session);
     };
     this.active.set(session.sessionId, active);
-    this.restoreOpenAsks(session);
+    this.restoreOpenAsks(session, { redeliver: true });
   }
 
-  /** Rebuild open asks from the transcript when a runtime opens without live ask state, e.g. after a daemon restart. */
-  private restoreOpenAsks(session: PiAgentSession): void {
-    const branch = session.sessionManager.getBranch();
-    const asks = openAsksFromTranscript(branch, session.sessionManager.getEntries?.() ?? branch);
-    if (this.pendingAskStore.restore(session.sessionId, asks)) this.publishStatus(session);
+  /**
+   * Rebuild open asks from the current branch when the session has no live ask
+   * state, e.g. after a daemon restart. On runtime open, answers recorded but
+   * never delivered (a follow-up lost with the old daemon) are delivered again.
+   */
+  private restoreOpenAsks(session: PiAgentSession, options: { redeliver: boolean }): void {
+    const { open, undelivered } = openAsksFromTranscript(session.sessionManager.getBranch(), session.sessionId);
+    if (this.pendingAskStore.restore(session.sessionId, open)) this.publishStatus(session);
+    if (!options.redeliver) return;
+    for (const outcome of undelivered) {
+      void this.deliverAskOutcome(session, outcome).catch((error: unknown) => {
+        this.publishSessionError(session, error instanceof Error ? error.message : String(error));
+      });
+    }
   }
 
   private trackRuntimePrompt(session: PiAgentSession, prompt: QueuedPrompt): void {
@@ -5150,7 +5176,7 @@ export class PiSessionService implements SessionRouteService {
       cost: stats.cost,
       ...(contextUsage === undefined ? {} : { contextUsage }),
       ...(warnings.length === 0 ? {} : { warnings }),
-      ...(pendingAsks.length === 0 ? {} : { pendingAsks }),
+      ...(pendingAsks[0] === undefined ? {} : { pendingAsks, pendingAsk: pendingAsks[0] }),
       ...(pendingDialogs.length === 0 ? {} : { pendingDialogs }),
       ...(activeToolExecutions.length === 0 ? {} : { activeToolExecutions }),
       ...(extensionStatuses === undefined || extensionStatuses.size === 0 ? {} : { extensionStatuses: Object.fromEntries(extensionStatuses) }),

@@ -783,6 +783,8 @@ export interface PendingAskUser {
   askedAt: string;
   /** When the agent last posted, revised, or confirmed the set. */
   updatedAt: string;
+  /** Starts at 1 and grows with every revision, so a submit for an older revision is refused as stale. */
+  revision: number;
   /** Agent turns started since {@link updatedAt}; drives the "may be stale" mark. */
   turnsSinceUpdate: number;
   /** Markdown the user needs to answer, shown above the questions. */
@@ -810,6 +812,8 @@ export interface AskUserAnswer {
 /** One submit of the open ask: answers for some or all of its questions. */
 export interface AskUserSubmission {
   answers: AskUserAnswer[];
+  /** {@link PendingAskUser.revision} the user answered; a mismatch makes the submit stale. Absent from older browsers. */
+  revision?: number;
 }
 
 /**
@@ -1222,6 +1226,8 @@ export interface SessionStatus {
    * web/API restarts; a daemon restart rebuilds them from the transcript.
    */
   pendingAsks?: PendingAskUser[];
+  /** Oldest of {@link pendingAsks}, for browsers older than the Questions pane. */
+  pendingAsk?: PendingAskUser;
   /**
    * The session's open extension dialogs, oldest first, when any are waiting
    * for the user. Daemon-owned, so they survive browser reload and web/API

@@ -23,8 +23,12 @@ export interface AskUserToolDeps {
   withdraw(sessionId: string, askId: string): Promise<AskUserOutcome | undefined>;
 }
 
-/** Tool-result details; the transcript rebuild of open asks reads them back. */
-export type AskUserToolDetails = { ask: PendingAskUser } | { withdrawn: AskUserOutcome };
+/**
+ * Tool-result details; the transcript rebuild of open asks reads them back.
+ * `sessionId` names the session that posted the ask, so a fork that copied the
+ * entry does not restore it.
+ */
+export type AskUserToolDetails = { ask: PendingAskUser; sessionId: string } | { withdrawn: AskUserOutcome };
 
 const AskUserOptionParams = Type.Object({
   value: Type.String({
@@ -154,10 +158,10 @@ export function createAskUserToolDefinition(deps: AskUserToolDeps) {
       if (params.update !== undefined) {
         const ask = await deps.update({ sessionId, askId: params.update, context: content, questions });
         if (ask === undefined) throw closedAskError(params.update);
-        return { content: [{ type: "text", text: `Updated open question set ${ask.askId} (${refs(ask)}). The answers still arrive later as a follow-up message.` }], details: { ask } };
+        return { content: [{ type: "text", text: `Updated open question set ${ask.askId} (${refs(ask)}). The answers still arrive later as a follow-up message.` }], details: { ask, sessionId } };
       }
       const ask = await deps.open({ sessionId, context: content, questions });
-      return { content: [{ type: "text", text: postedText(ask) }], details: { ask } };
+      return { content: [{ type: "text", text: postedText(ask) }], details: { ask, sessionId } };
     },
   });
 }

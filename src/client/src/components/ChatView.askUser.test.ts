@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AskUserOutcome } from "../../../shared/apiTypes";
+import type { AskUserOutcome, PendingAskUser } from "../../../shared/apiTypes";
 import type { ChatLine } from "./shared";
 import { AskUserCard } from "./AskUserCard";
 import { ChatView } from "./ChatView";
@@ -21,20 +21,36 @@ describe("ChatView open ask_user form", () => {
     if (!Reflect.set(view, "scrollToOpenAsk", () => { askStartScrolls += 1; })) throw new Error("Could not observe ChatView.scrollToOpenAsk");
     if (!Reflect.set(view, "scrollToBottom", () => { bottomScrolls += 1; })) throw new Error("Could not observe ChatView.scrollToBottom");
 
-    view.pendingAsk = {
-      askId: "ask-open",
-      askedAt: "2026-07-20T10:00:00.000Z",
-      updatedAt: "2026-07-20T10:00:00.000Z",
-      turnsSinceUpdate: 0,
-      questions: [{ id: "editor", question: "Which editor?", options: [{ value: "vim", label: "Vim" }] }],
-    };
+    view.pendingAsks = [openAsk("ask-open")];
     await view.updateComplete;
 
     expect(askStartScrolls).toBe(1);
     expect(bottomScrolls).toBe(0);
     expect(view.shadowRoot?.querySelector("ask-user-card")?.getAttribute("data-scroll-anchor-id")).toBe("ask:ask-open");
   });
+
+  it("renders every open question set of the classic Chat, oldest first", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.pendingAsks = [openAsk("abc-1"), openAsk("def-2")];
+    document.body.append(view);
+    await view.updateComplete;
+
+    const cards = [...(view.shadowRoot?.querySelectorAll<AskUserCard>("ask-user-card") ?? [])];
+    expect(cards.map((card) => card.ask?.askId)).toEqual(["abc-1", "def-2"]);
+  });
 });
+
+function openAsk(askId: string): PendingAskUser {
+  return {
+    askId,
+    askedAt: "2026-07-20T10:00:00.000Z",
+    updatedAt: "2026-07-20T10:00:00.000Z",
+    revision: 1,
+    turnsSinceUpdate: 0,
+    questions: [{ id: "editor", question: "Which editor?", options: [{ value: "vim", label: "Vim" }] }],
+  };
+}
 
 describe("ChatView current-exchange history", () => {
   it("keeps history expanded when capturing a prepend scroll anchor", async () => {

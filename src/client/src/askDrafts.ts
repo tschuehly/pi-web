@@ -8,6 +8,13 @@ import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserAnswer, type AskUserQuestio
 export interface AskDraftAnswer {
   values: string[];
   otherText?: string;
+  /** {@link askedFingerprint} of the question as the user saw it; a revised question drops the answer. */
+  asked?: string;
+}
+
+/** Identity of a question's wording and options, so an answer is never carried over to a changed question. */
+export function askedFingerprint(question: AskUserQuestion): string {
+  return JSON.stringify(question);
 }
 
 /** Draft answers of one ask, keyed by question id. */
@@ -30,12 +37,16 @@ function browserStorage(): Storage | undefined {
 /**
  * Read the stored draft. Any unreadable or malformed payload yields an empty
  * draft: a half-typed answer set is a convenience, never a reason to fail
- * rendering the questions.
+ * rendering the questions. Given the ask's current questions, answers made for
+ * a different wording of their question are dropped.
  */
-export function loadAskDraft(sessionId: string, askId: string, storage = browserStorage()): AskDraftAnswers {
+export function loadAskDraft(sessionId: string, askId: string, storage = browserStorage(), questions?: readonly AskUserQuestion[]): AskDraftAnswers {
   try {
     const stored = storage?.getItem(draftStorageKey(sessionId, askId));
-    return stored === null || stored === undefined ? {} : draftAnswersFromJson(stored);
+    const answers = stored === null || stored === undefined ? {} : draftAnswersFromJson(stored);
+    if (questions === undefined) return answers;
+    const current = new Map(questions.map((question) => [question.id, askedFingerprint(question)]));
+    return Object.fromEntries(Object.entries(answers).filter(([id, answer]) => answer.asked !== undefined && answer.asked === current.get(id)));
   } catch {
     return {};
   }
@@ -75,9 +86,10 @@ function draftAnswerFromValue(value: unknown): AskDraftAnswer | undefined {
   const record: Record<string, unknown> = { ...value };
   const values = record["values"];
   const otherText = record["otherText"];
+  const asked = record["asked"];
   if (!Array.isArray(values) || !values.every((entry) => typeof entry === "string")) return undefined;
   if (otherText !== undefined && typeof otherText !== "string") return undefined;
-  return { values: [...values], ...(otherText === undefined ? {} : { otherText }) };
+  return { values: [...values], ...(otherText === undefined ? {} : { otherText }), ...(typeof asked === "string" ? { asked } : {}) };
 }
 
 /**

@@ -607,14 +607,14 @@ describe("Workbench Chat chooser", () => {
   it("toggles a Questions pane listing only this Chat's open question sets, with an open-count badge", async () => {
     const current = session("human", "Edit notes");
     const app = await mountChooser([current]);
-    const openAsk = (askId: string) => ({ askId, askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", turnsSinceUpdate: 0, context: "Why", questions: [{ id: "db", question: "Which database?", options: [] }] });
+    const openAsk = (askId: string) => ({ askId, askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: 1, turnsSinceUpdate: 0, context: "Why", questions: [{ id: "db", question: "Which database?", options: [] }] });
     setState(app, { ...getState(app), selectedSession: current, pendingAsks: [openAsk("abc-1"), openAsk("def-2")] });
     await app.updateComplete;
     const toggle = () => app.shadowRoot?.querySelector<HTMLButtonElement>("header .questions-toggle");
 
     expect(toggle()?.getAttribute("aria-label")).toBe("Questions, 2 open");
     expect(toggle()?.querySelector(".badge")?.textContent).toBe("2");
-    expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.pendingAsk).toBeUndefined();
+    expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.pendingAsks).toEqual([]);
     expect(app.shadowRoot?.querySelector("workbench-questions-pane")).toBeNull();
 
     toggle()?.click();

@@ -9,7 +9,7 @@ const databaseQuestion: AskUserQuestion = { id: "q1", question: "Which database?
 const extrasQuestion: AskUserQuestion = { id: "q2", question: "Which extras?", options: [{ value: "metrics", label: "Metrics" }], multiple: true };
 
 function ask(askId: string): PendingAskUser {
-  return { askId, askedAt: "2026-07-20T00:00:00.000Z", updatedAt: "2026-07-20T00:00:00.000Z", turnsSinceUpdate: 0, questions: [databaseQuestion, extrasQuestion] };
+  return { askId, askedAt: "2026-07-20T00:00:00.000Z", updatedAt: "2026-07-20T00:00:00.000Z", revision: 1, turnsSinceUpdate: 0, questions: [databaseQuestion, extrasQuestion] };
 }
 
 function statusWithAsk(sessionId: string, ...pendingAsks: PendingAskUser[]): SessionStatus {
@@ -204,6 +204,28 @@ describe("SessionController ask submission", () => {
 
     expect(state.error).toBe("");
     expect(state.pendingAsks).toEqual([supersedingAsk]);
+  });
+
+  it("keeps the draft of an ask whose submit was stale because the ask was revised", async () => {
+    const revised = { ...ask("ask-1"), revision: 2 };
+    let state = selectedSessionState({ pendingAsks: [ask("ask-1")] });
+    const api: typeof defaultApi = {
+      ...defaultApi,
+      submitAsk: () => Promise.resolve({ result: "stale", sessionStatus: statusWithAsk(oldSession.id, revised) }),
+    };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api, socket: new FakeSocket() },
+    );
+    saveAskDraft(sessionKey(oldSession.id), "ask-1", { q1: { values: ["pg"] } });
+
+    await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }], revision: 1 });
+
+    expect(state.pendingAsks).toEqual([revised]);
+    expect(loadAskDraft(sessionKey(oldSession.id), "ask-1")).toEqual({ q1: { values: ["pg"] } });
   });
 
   it("keeps the draft and reports the failure when the submit request fails", async () => {

@@ -64,6 +64,7 @@ describe("ask-user-card live form", () => {
     await Promise.resolve();
 
     expect(onSubmit).toHaveBeenCalledWith("ask-1", {
+      revision: 1,
       answers: [{ id: "platforms", values: ["web", "desktop"] }],
     });
   });
@@ -93,6 +94,7 @@ describe("ask-user-card live form", () => {
     await Promise.resolve();
 
     expect(onSubmit).toHaveBeenCalledWith("ask-1", {
+      revision: 1,
       answers: [{ id: "stack", values: ["lit"], otherText: "Svelte" }],
     });
   });
@@ -142,6 +144,7 @@ describe("ask-user-card live form", () => {
     buttonWithText(root, "Send answers").click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenCalledWith("ask-1", {
+      revision: 1,
       answers: [
         { id: "editor", values: [], otherText: "VS Code Insiders" },
         { id: "stack", values: ["lit"], otherText: "React" },
@@ -166,6 +169,7 @@ describe("ask-user-card live form", () => {
     await Promise.resolve();
 
     expect(onSubmit).toHaveBeenCalledWith("ask-1", {
+      revision: 1,
       answers: [{ id: "notes", values: [], otherText: "Keep the first version small." }],
     });
   });
@@ -195,8 +199,32 @@ describe("ask-user-card live form", () => {
     buttonWithText(root, "Send anyway").click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenCalledWith("ask-1", {
+      revision: 1,
       answers: [{ id: "editor", values: ["vim"] }],
     });
+  });
+});
+
+describe("ask-user-card revisions", () => {
+  it("drops draft answers to questions a revision changed, keeps the rest, and submits the revision answered", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const editor = question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")]);
+    const shell = question("shell", "Choose a shell", [option("zsh", "Zsh"), option("fish", "Fish")]);
+    const card = await mountOpenAsk(openAsk([editor, shell]), onSubmit);
+    inputWithValue(renderRoot(card), "vim").click();
+    inputWithValue(renderRoot(card), "zsh").click();
+    await card.updateComplete;
+
+    card.ask = { ...openAsk([question("editor", "Choose a primary editor", [option("vim", "Vim"), option("code", "VS Code")]), shell]), revision: 2 };
+    await card.updateComplete;
+
+    expect(inputWithValue(renderRoot(card), "vim").checked).toBe(false);
+    expect(inputWithValue(renderRoot(card), "zsh").checked).toBe(true);
+    inputWithValue(renderRoot(card), "code").click();
+    await card.updateComplete;
+    buttonWithText(renderRoot(card), "Send answers").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: 2, answers: [{ id: "editor", values: ["code"] }, { id: "shell", values: ["zsh"] }] });
   });
 });
 
@@ -325,7 +353,7 @@ function requiredElement<T>(value: T | null | undefined, label: string): T {
 }
 
 function openAsk(questions: AskUserQuestion[]): PendingAskUser {
-  return { askId: "ask-1", askedAt: "2026-07-20T10:00:00.000Z", updatedAt: "2026-07-20T10:00:00.000Z", turnsSinceUpdate: 0, questions };
+  return { askId: "ask-1", askedAt: "2026-07-20T10:00:00.000Z", updatedAt: "2026-07-20T10:00:00.000Z", revision: 1, turnsSinceUpdate: 0, questions };
 }
 
 function question(

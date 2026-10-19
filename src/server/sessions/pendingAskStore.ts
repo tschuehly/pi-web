@@ -54,7 +54,21 @@ export class PendingAskValidationError extends Error {
 /** `customType` of the hidden context message that reminds the agent of its open asks. */
 export const ASK_USER_REMINDER_CUSTOM_TYPE = "pi-web.ask.reminder";
 
+/**
+ * `customType` of the transcript entry that records a submitted or cancelled ask
+ * (its data is the {@link AskUserOutcome}). It is written before the browser is
+ * told the ask closed, so the outcome survives even when the delivery to the
+ * model is still queued in memory.
+ */
+export const ASK_USER_CLOSED_CUSTOM_TYPE = "pi-web.ask.closed";
+
+/** Attempts at an ask id whose question-ref prefix no open ask of the session uses. */
+const ASK_ID_ATTEMPTS = 20;
+
 type RecordedAnswers = ReadonlyMap<string, AskUserAnswer>;
+
+/** Durably records a closing ask's outcome; throwing keeps the ask open. */
+export type RecordOutcome = (outcome: AskUserOutcome) => void;
 
 /**
  * Daemon-owned open-ask state: any number of unanswered question sets per session.
@@ -93,7 +107,7 @@ export class PendingAskStore {
     if (input.questions === undefined) throw new PendingAskValidationError("questions are required for a new question set");
     const questions = validateQuestions(input.questions);
     const askedAt = this.timestamp();
-    const ask: PendingAskUser = { askId: requireId(this.createAskId(), "askId"), askedAt, updatedAt: askedAt, turnsSinceUpdate: 0, context, questions };
+    const ask: PendingAskUser = { askId: this.distinctAskId(sessionId), askedAt, updatedAt: askedAt, revision: 1, turnsSinceUpdate: 0, context, questions };
     this.setAsk(sessionId, ask);
     return cloneAsk(ask);
   }
@@ -105,7 +119,7 @@ export class PendingAskStore {
     if (ask === undefined) return undefined;
     const context = validateContext(input.context) ?? ask.context;
     const questions = input.questions === undefined ? ask.questions : validateQuestions(input.questions);
-    const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
+    const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), revision: ask.revision + 1, turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
     this.setAsk(sessionId, updated);
     return cloneAsk(updated);
   }
@@ -118,21 +132,23 @@ export class PendingAskStore {
   /**
    * Record what the user replied and close the ask. Answers are validated against
    * the open ask, so a submission that does not fit its questions is rejected
-   * rather than silently truncated; the ask stays open in that case.
+   * rather than silently truncated; the ask stays open in that case. A submission
+   * for an older revision is stale: the user answered questions that changed.
+   * `record` runs before the ask closes; when it throws, the ask stays open.
    */
-  submit(sessionId: string, askId: string, submission: AskUserSubmission): PendingAskCloseResult {
+  submit(sessionId: string, askId: string, submission: AskUserSubmission, record?: RecordOutcome): PendingAskCloseResult {
     const ask = this.asksOf(requireSessionId(sessionId)).get(askId);
-    if (ask === undefined) return { status: "stale" };
+    if (ask === undefined || (submission.revision !== undefined && submission.revision !== ask.revision)) return { status: "stale" };
     const answers = validateSubmission(ask, submission);
-    return closed(this.close(sessionId, askId, "submitted", answers));
+    return closed(this.close(sessionId, askId, "submitted", answers, record));
   }
 
   /**
    * Close one open ask without a submission. The outcome reports every question as
    * unanswered, because answers only ever reach the daemon through a submit.
    */
-  cancel(sessionId: string, askId: string): PendingAskCloseResult {
-    return closed(this.close(requireSessionId(sessionId), askId, "cancelled", new Map()));
+  cancel(sessionId: string, askId: string, record?: RecordOutcome): PendingAskCloseResult {
+    return closed(this.close(requireSessionId(sessionId), askId, "cancelled", new Map(), record));
   }
 
   /** Close every open ask of the session, e.g. because the user moved to another branch. */
@@ -164,19 +180,30 @@ export class PendingAskStore {
     return this.openBySessionId.get(sessionId) ?? new Map<string, PendingAskUser>();
   }
 
+  /** A fresh ask id whose 3-character question-ref prefix no open ask of the session shares. */
+  private distinctAskId(sessionId: string): string {
+    const taken = new Set([...this.asksOf(sessionId).keys()].map((askId) => askId.slice(0, 3)));
+    let askId = requireId(this.createAskId(), "askId");
+    // ponytail: bounded retries, then a colliding prefix is accepted rather than failing the agent's ask.
+    for (let attempt = 1; attempt < ASK_ID_ATTEMPTS && taken.has(askId.slice(0, 3)); attempt += 1) askId = requireId(this.createAskId(), "askId");
+    return askId;
+  }
+
   private setAsk(sessionId: string, ask: PendingAskUser): void {
     const asks = this.openBySessionId.get(sessionId) ?? new Map<string, PendingAskUser>();
     asks.set(ask.askId, ask);
     this.openBySessionId.set(sessionId, asks);
   }
 
-  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers): AskUserOutcome | undefined {
+  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome): AskUserOutcome | undefined {
     const asks = this.openBySessionId.get(sessionId);
     const ask = asks?.get(askId);
     if (asks === undefined || ask === undefined) return undefined;
+    const outcome = askUserOutcome(ask, answers, reason, this.timestamp());
+    record?.(outcome);
     asks.delete(askId);
     if (asks.size === 0) this.openBySessionId.delete(sessionId);
-    return askUserOutcome(ask, answers, reason, this.timestamp());
+    return outcome;
   }
 
   private timestamp(): string {

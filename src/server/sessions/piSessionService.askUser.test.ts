@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes.js";
 import { createPiWebCustomToolDefinitions, PiSessionService } from "./piSessionService.js";
-import { ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, PendingAskValidationError } from "./pendingAskStore.js";
+import { ASK_USER_CLOSED_CUSTOM_TYPE, ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, PendingAskValidationError } from "./pendingAskStore.js";
+import type { PiSessionManager } from "./piSessionService.js";
 import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
@@ -10,25 +11,32 @@ const ACTIVE_SESSION_ID = "session-1";
 const questions = [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] }];
 const context = "Postgres is already deployed; I recommend it.";
 const T0 = "2026-02-01T10:00:00.000Z";
-const openedAsk = (askId: string, overrides: Record<string, unknown> = {}) => ({ askId, askedAt: T0, updatedAt: T0, turnsSinceUpdate: 0, context, questions, ...overrides });
+const openedAsk = (askId: string, overrides: Record<string, unknown> = {}) => ({ askId, askedAt: T0, updatedAt: T0, revision: 1, turnsSinceUpdate: 0, context, questions, ...overrides });
+const postedAsk = (askId: string, sessionId = ACTIVE_SESSION_ID) => ({ type: "message", message: { role: "toolResult", toolName: "ask_user", details: { ask: openedAsk(askId), sessionId } } });
 
 /**
  * Service over a clocked store with sequential ask ids, so asks are named
- * `ask-1`, `ask-2`, … and timestamps are fixed. Pass `withActiveSession` when the
- * test needs a live runtime to deliver answers into.
+ * `ask-1`, `bsk-2`, … (distinct ref prefixes) and timestamps are fixed. Pass
+ * `withActiveSession` when the test needs a live runtime to deliver answers
+ * into, and `branch` for a transcript the runtime reads and appends to.
  */
-function askService(options: { withActiveSession?: boolean; branch?: unknown[] } = {}) {
+function askService(options: { withActiveSession?: boolean; branch?: unknown[]; manager?: Partial<PiSessionManager> } = {}) {
   const store = new PendingAskStore({
     now: () => new Date("2026-02-01T10:00:00.000Z"),
     createAskId: (() => {
       let next = 0;
-      return () => { next += 1; return `ask-${next.toString()}`; };
+      return () => { next += 1; return `${"abcdefghij".charAt(next - 1)}sk-${next.toString()}`; };
     })(),
   });
   const fake = fakeRuntime(ACTIVE_SESSION_ID);
   if (options.branch !== undefined) {
     const branch = options.branch;
-    fake.session.sessionManager = fakeSessionManager("/workspace", { getBranch: () => branch, getEntries: () => branch });
+    fake.session.sessionManager = fakeSessionManager("/workspace", {
+      getBranch: () => branch,
+      getEntries: () => branch,
+      appendCustomEntry: (customType, data) => { branch.push({ type: "custom", customType, data }); return `e${branch.length.toString()}`; },
+      ...options.manager,
+    });
   }
   const events = new CapturingSessionEventHub();
   const service = new PiSessionService(events, {
@@ -89,7 +97,7 @@ describe("PiSessionService.openAsk", () => {
     await service.openAsk({ sessionId: "session-2", context, questions });
 
     expect(store.pendingAsks("session-1").map((ask) => ask.askId)).toEqual(["ask-1"]);
-    expect(store.pendingAsks("session-2").map((ask) => ask.askId)).toEqual(["ask-2"]);
+    expect(store.pendingAsks("session-2").map((ask) => ask.askId)).toEqual(["bsk-2"]);
     await service.dispose();
   });
 
@@ -124,7 +132,7 @@ describe("PiSessionService ask update and withdraw", () => {
     expect(withdrawn).toMatchObject({ askId: "ask-1", reason: "withdrawn" });
     expect(askEvents(events).map(({ event }) => event)).toEqual([
       { type: "ask.opened", ask: openedAsk("ask-1") },
-      { type: "ask.opened", ask: openedAsk("ask-1", { context: "New finding." }) },
+      { type: "ask.opened", ask: openedAsk("ask-1", { context: "New finding.", revision: 2 }) },
       { type: "ask.closed", askId: "ask-1", reason: "withdrawn" },
     ]);
     expect(store.pendingAsks(ACTIVE_SESSION_ID)).toEqual([]);
@@ -147,21 +155,39 @@ describe("PiSessionService ask status projection", () => {
     expect(before).not.toHaveProperty("pendingAsks");
     expect(during.pendingAsks).toEqual([openedAsk("ask-1")]);
     expect(after).not.toHaveProperty("pendingAsks");
+    expect(after).not.toHaveProperty("pendingAsk");
     await service.dispose();
   });
 
-  it("counts each started agent turn against the open asks", async () => {
-    const { service, fake } = askService({ withActiveSession: true });
-    await service.status(sessionRef(ACTIVE_SESSION_ID));
+  it("keeps reporting the oldest open ask as the legacy pendingAsk for older browsers", async () => {
+    const { service } = askService({ withActiveSession: true });
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
 
-    fake.emit({ type: "agent_start" });
-    fake.emit({ type: "turn_start" });
-    fake.emit({ type: "agent_end", messages: [] });
-    fake.emit({ type: "agent_start" });
+    const status = await service.status(sessionRef(ACTIVE_SESSION_ID));
 
-    expect((await service.status(sessionRef(ACTIVE_SESSION_ID))).pendingAsks?.[0]?.turnsSinceUpdate).toBe(2);
+    expect(status.pendingAsks?.map((ask) => ask.askId)).toEqual(["ask-1", "bsk-2"]);
+    expect(status.pendingAsk).toEqual(openedAsk("ask-1"));
     await service.dispose();
+  });
+
+  it("counts every agent turn of a run against the open asks, matching a rebuild", async () => {
+    const branch: unknown[] = [postedAsk("ask-1")];
+    const { service, fake } = askService({ withActiveSession: true, branch });
+    await service.status(sessionRef(ACTIVE_SESSION_ID));
+
+    fake.emit({ type: "agent_start" });
+    for (let turn = 0; turn < 3; turn += 1) {
+      fake.emit({ type: "turn_start" });
+      branch.push({ type: "message", message: { role: "assistant", content: [] } });
+    }
+    fake.emit({ type: "agent_end", messages: [] });
+
+    expect((await service.status(sessionRef(ACTIVE_SESSION_ID))).pendingAsks?.[0]?.turnsSinceUpdate).toBe(3);
+    const rebuilt = askService({ withActiveSession: true, branch });
+    expect((await rebuilt.service.status(sessionRef(ACTIVE_SESSION_ID))).pendingAsks?.[0]?.turnsSinceUpdate).toBe(3);
+    await service.dispose();
+    await rebuilt.service.dispose();
   });
 
   it("drops the open asks when the runtime that posted them is closed", async () => {
@@ -176,20 +202,45 @@ describe("PiSessionService ask status projection", () => {
   });
 
   it("rebuilds still-open asks from the transcript when a session is opened, e.g. after a daemon restart", async () => {
-    const toolResult = (details: unknown) => ({ type: "message", message: { role: "toolResult", toolName: "ask_user", details } });
     const branch = [
-      { id: "e1", parentId: null, ...toolResult({ ask: openedAsk("kept") }) },
-      { id: "e2", parentId: "e1", ...toolResult({ ask: openedAsk("answered") }) },
-      { id: "e3", parentId: "e2", type: "custom_message", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, details: { askId: "answered" } },
-      { id: "e4", parentId: "e3", type: "message", message: { role: "user", content: "go on" } },
+      postedAsk("kept"),
+      postedAsk("answered"),
+      { type: "custom_message", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, details: { askId: "answered" } },
+      { type: "message", message: { role: "assistant", content: [] } },
     ];
-    const { service } = askService({ withActiveSession: true, branch });
+    const { service, fake } = askService({ withActiveSession: true, branch });
 
     const status = await service.status(sessionRef(ACTIVE_SESSION_ID));
 
     expect(status.pendingAsks).toEqual([openedAsk("kept", { turnsSinceUpdate: 1 })]);
+    expect(fake.calls.sendCustomMessage).toEqual([]);
     await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "kept", { answers: [] })).resolves.toMatchObject({ result: "closed" });
     await service.dispose();
+  });
+
+  it("does not restore a parent's asks into a fork", async () => {
+    const { service } = askService({ withActiveSession: true, branch: [postedAsk("parent-ask", "parent-session")] });
+
+    expect(await service.status(sessionRef(ACTIVE_SESSION_ID))).not.toHaveProperty("pendingAsks");
+    await service.dispose();
+  });
+
+  it("closes an ask a tree rewind leaves behind, and a reload does not restore it", async () => {
+    const user = { type: "message", message: { role: "user", content: "start" } };
+    const branch: unknown[] = [user, postedAsk("ask-x")];
+    let leafId = "leaf-1";
+    const { service, events, fake } = askService({ withActiveSession: true, branch, manager: { getLeafId: () => leafId } });
+    fake.session.navigateTree = () => { leafId = "target-1"; branch.splice(1); return Promise.resolve({ cancelled: false }); };
+    expect((await service.status(sessionRef(ACTIVE_SESSION_ID))).pendingAsks).toHaveLength(1);
+
+    await service.navigateTree(sessionRef(ACTIVE_SESSION_ID), { targetId: "target-1", expectedLeafId: "leaf-1", summary: { mode: "none" } });
+
+    expect(await service.status(sessionRef(ACTIVE_SESSION_ID))).not.toHaveProperty("pendingAsks");
+    expect(askEvents(events).map(({ event }) => event)).toEqual([{ type: "ask.closed", askId: "ask-x", reason: "cancelled" }]);
+    const reloaded = askService({ withActiveSession: true, branch });
+    expect(await reloaded.service.status(sessionRef(ACTIVE_SESSION_ID))).not.toHaveProperty("pendingAsks");
+    await service.dispose();
+    await reloaded.service.dispose();
   });
 });
 
@@ -224,12 +275,56 @@ describe("PiSessionService.submitAsk", () => {
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions: [{ id: "cache", question: "Which cache?", options: [] }] });
 
-    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-2", { answers: [] });
+    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "bsk-2", { answers: [] });
 
-    expect(response.outcome).toMatchObject({ askId: "ask-2", answeredCount: 0, unansweredIds: ["cache"] });
+    expect(response.outcome).toMatchObject({ askId: "bsk-2", answeredCount: 0, unansweredIds: ["cache"] });
     expect(fake.calls.sendCustomMessage[0]?.message.content).toContain("Answered 0 of 1; unanswered: cache");
     expect(fake.calls.sendCustomMessage[0]?.message.content).toContain("- ask-1 (ask.db;");
     expect(store.pendingAsks(ACTIVE_SESSION_ID).map((ask) => ask.askId)).toEqual(["ask-1"]);
+    await service.dispose();
+  });
+
+  it("persists the answers before acknowledging a submit while the agent streams, so a rebuild neither reopens nor loses them", async () => {
+    const branch: unknown[] = [];
+    const { service, fake } = askService({ withActiveSession: true, branch });
+    await service.status(sessionRef(ACTIVE_SESSION_ID));
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
+    branch.push(postedAsk("ask-1"));
+    fake.session.isStreaming = true;
+    const recordedBeforeDelivery: boolean[] = [];
+    const deliver = fake.session.sendCustomMessage.bind(fake.session);
+    fake.session.sendCustomMessage = (message, options) => {
+      recordedBeforeDelivery.push(branch.some((entry) => typeof entry === "object" && entry !== null && Reflect.get(entry, "customType") === ASK_USER_CLOSED_CUSTOM_TYPE));
+      return deliver(message, options);
+    };
+
+    // The follow-up only waits in Pi's memory and never reaches the branch before the daemon goes away.
+    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: 1 });
+    expect(response.result).toBe("closed");
+    expect(recordedBeforeDelivery).toEqual([true]);
+    await service.dispose();
+
+    const restarted = askService({ withActiveSession: true, branch });
+    expect(await restarted.service.status(sessionRef(ACTIVE_SESSION_ID))).not.toHaveProperty("pendingAsks");
+    await vi.waitFor(() => { expect(restarted.fake.calls.sendCustomMessage).toHaveLength(1); });
+    const [redelivered] = restarted.fake.calls.sendCustomMessage;
+    expect(redelivered?.message).toMatchObject({ customType: ASK_USER_ANSWERS_CUSTOM_TYPE, details: { askId: "ask-1", reason: "submitted" } });
+    expect(redelivered?.message.content).toContain("Answered: selected pg");
+    expect(redelivered?.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+    await restarted.service.dispose();
+  });
+
+  it("refuses answers to an older revision of a revised ask as stale", async () => {
+    const { service, store, fake } = askService({ withActiveSession: true });
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
+    await service.updateAsk({ sessionId: ACTIVE_SESSION_ID, askId: "ask-1", questions: [{ id: "db", question: "Which cache?", options: [{ value: "pg", label: "Redis" }] }] });
+
+    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: 1 });
+
+    expect(response.result).toBe("stale");
+    expect(response.sessionStatus.pendingAsks?.[0]).toMatchObject({ askId: "ask-1", revision: 2 });
+    expect(store.pendingAsks(ACTIVE_SESSION_ID)).toHaveLength(1);
+    expect(fake.calls.sendCustomMessage).toEqual([]);
     await service.dispose();
   });
 

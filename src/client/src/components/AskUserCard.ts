@@ -13,6 +13,7 @@ import {
 } from "../../../shared/apiTypes";
 import {
   answeredCount,
+  askedFingerprint,
   loadAskDraft,
   saveAskDraft,
   toSubmission,
@@ -310,7 +311,7 @@ export class AskUserCard extends LitElement {
   private setAnswer(question: AskUserQuestion, answer: AskDraftAnswer): void {
     const next: AskDraftAnswers = answer.values.length === 0 && answer.otherText === undefined
       ? Object.fromEntries(Object.entries(this.answers).filter(([id]) => id !== question.id))
-      : { ...this.answers, [question.id]: answer };
+      : { ...this.answers, [question.id]: { ...answer, asked: askedFingerprint(question) } };
     this.answers = next;
     this.confirmingPartialSubmit = false;
     if (this.ask !== undefined && this.draftSessionId !== "") saveAskDraft(this.draftSessionId, this.ask.askId, next);
@@ -336,7 +337,7 @@ export class AskUserCard extends LitElement {
     }
     const askId = ask.askId;
     void Promise.resolve()
-      .then(() => callback(askId, toSubmission(ask.questions, this.answers)))
+      .then(() => callback(askId, { ...toSubmission(ask.questions, this.answers), revision: ask.revision }))
       .catch(() => {
         // The parent controller owns the visible transport error. Keeping this
         // card and its draft intact is the only recovery needed at this boundary.
@@ -403,14 +404,15 @@ export class AskUserCard extends LitElement {
 
   private currentModelIdentity(): string | undefined {
     if (this.outcome !== undefined) return `record:${this.draftSessionId}:${this.outcome.askId}`;
-    if (this.ask !== undefined) return `open:${this.draftSessionId}:${this.ask.askId}`;
+    // A revision reloads the draft, which drops answers to questions it changed.
+    if (this.ask !== undefined) return `open:${this.draftSessionId}:${this.ask.askId}:${String(this.ask.revision)}`;
     return undefined;
   }
 
   private loadCurrentDraft(): AskDraftAnswers {
     const askId = this.outcome?.askId ?? this.ask?.askId;
     if (askId === undefined || this.draftSessionId === "") return {};
-    return loadAskDraft(this.draftSessionId, askId);
+    return loadAskDraft(this.draftSessionId, askId, undefined, this.outcome === undefined ? this.ask?.questions : undefined);
   }
 
   private questionGroupName(ask: PendingAskUser, question: AskUserQuestion): string {

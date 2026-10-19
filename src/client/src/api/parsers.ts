@@ -362,6 +362,8 @@ function parsePendingAskUser(value: unknown): PendingAskUser {
     askId: requireBoundedNonEmptyString(record, "askId", ASK_USER_ID_MAX_LENGTH),
     askedAt,
     updatedAt: optionalString(record, "updatedAt") ?? askedAt,
+    // 0 marks a daemon without revisions; it ignores the revision a submit echoes.
+    revision: optionalNumber(record, "revision") ?? 0,
     turnsSinceUpdate: turnsSinceUpdate === undefined || !Number.isSafeInteger(turnsSinceUpdate) || turnsSinceUpdate < 0 ? 0 : turnsSinceUpdate,
     ...optionalField("context", optionalBoundedNonEmptyString(record, "context", ASK_USER_CONTEXT_MAX_LENGTH)),
     questions,
