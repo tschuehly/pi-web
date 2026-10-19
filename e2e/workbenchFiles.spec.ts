@@ -13,6 +13,13 @@ async function openChat(page: Page): Promise<void> {
   await expect(page.getByRole("link", { name: "the notes" })).toBeVisible();
 }
 
+/** The page URL without the window id the Workbench adds on load, so the macOS app restores the window's Chats. */
+function withoutWindowId(href: string): string {
+  const url = new URL(href);
+  url.searchParams.delete("win");
+  return url.toString();
+}
+
 function projectFile(path: string): string {
   const root = process.env["PI_WEB_E2E_PROJECT_DIR"];
   if (root === undefined) throw new Error("Isolated PI WEB was not started");
@@ -191,7 +198,7 @@ test("a Markdown file link in Chat opens that file in the Files pane", async ({ 
   const pane = page.locator("workbench-files-pane");
   await expect(pane.locator(".crumbs")).toHaveAttribute("title", "docs/notes.md");
   await expect(pane.getByText(E2E_NOTES_BODY)).toBeVisible();
-  expect(page.url()).toBe(process.env["PI_WEB_E2E_CHAT_URL"]);
+  expect(withoutWindowId(page.url())).toBe(process.env["PI_WEB_E2E_CHAT_URL"]);
 });
 
 test("a file link in a Chat outside every registered project opens in the Files pane", async ({ page }) => {
@@ -203,7 +210,7 @@ test("a file link in a Chat outside every registered project opens in the Files 
   await expect(pane.locator(".crumbs")).toHaveAttribute("title", "report.md");
   await expect(pane.getByText(E2E_REPORT_BODY)).toBeVisible();
   await expect(pane.getByText("registered workspaces")).toHaveCount(0);
-  expect(page.url()).toBe(url);
+  expect(withoutWindowId(page.url())).toBe(url);
 });
 
 test("a ../sibling file link in Chat opens that file, editable, in the Files pane", async ({ page }) => {

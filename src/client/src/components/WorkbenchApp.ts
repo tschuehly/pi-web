@@ -1,4 +1,6 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
+import { styleMap } from "lit/directives/style-map.js";
 import { customElement, query, state } from "lit/decorators.js";
 import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionStatus, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
@@ -9,12 +11,16 @@ import { latestWorkingModeSelection } from "../chatMessages";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { AuthController } from "../controllers/authController";
 import { desktopNotifications, DesktopNotificationController, NATIVE_NOTIFICATION_OPEN_EVENT, NOTIFICATION_ANCHOR } from "../controllers/desktopNotificationController";
-import { SessionController } from "../controllers/sessionController";
+import { SessionController, type PromptEditorTextReplacement, type SessionSelectionOptions } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
+import { TabSwipeController } from "../controllers/tabSwipeController";
+import { WINDOW_URL_PARAM, WorkbenchWindowController, type WindowRequest } from "../controllers/workbenchWindowController";
+import { resolveAppUrl } from "../appUrl";
 import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale, stepInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
 import { markdownWorkspaceContext, type LineRange, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { machineSessionKey } from "../machineKeys";
+import { loadStagedAttachmentDraft, resolveStagedAttachmentKey } from "../promptAttachmentStaging";
 import { PromptChipStore, type PromptChipTarget, type StagedPromptChip } from "../promptChips";
 import { addReplyQuote, composeQuotedReply, type ReplyQuote } from "../replyQuotes";
 import { nativeDirectoryPicker } from "../nativeHost";
@@ -26,14 +32,16 @@ import { applyPresentationProfile, builtInPresentationProfile, readStoredPresent
 import { applyCheckpointSessionTitle } from "../workstreamCheckpointTitle";
 import { workstreamOrientationDepth } from "../workstreamOrientation";
 import { hasRenderedModal } from "./modalLayerRegistry";
-import { readRoute, takeMessageAnchor, writeRoute, type ParsedAppRoute } from "../route";
+import { isCreatingSessionId, readRoute, takeMessageAnchor, writeRoute, type ParsedAppRoute } from "../route";
 import { sessionTitle } from "../sessionLabels";
 import { sessionPersistenceState } from "../sessionPersistence";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
+import { closeChats, focusChat, gridTiles, moveChats, orderedChats, toggleLayout, toggleMaximized, updateChat, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
+import { workstreamAccentColor } from "../workstreamColor";
 import type { ChatRevealTarget, ChatView } from "./ChatView";
-import type { PromptEditor } from "./PromptEditor";
+import { hasUnacknowledgedSend, type PromptEditor } from "./PromptEditor";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import "./AllSessions";
 import "./AuthDialog";
@@ -49,8 +57,12 @@ import "./WorkstreamContextDrawer";
 import "./WorkbenchSettingsPanel";
 import "./WorkbenchFilesPane";
 import { QUESTIONS_ICON } from "./WorkbenchQuestionsPane";
+import { carriesChats, chatStatusDotStyles, chatTabStatus, droppedChats, endedOutside, renderChatStatusDot, startChatDrag, type ChatTabCloseDetail, type ChatTabMenuDetail, type ChatTabSelectDetail, type ChatTabStatus, type DraggedChats } from "./WorkbenchWindowTabs";
+import type { WorkbenchChatPane } from "./WorkbenchChatPane";
+import "./WorkbenchChatPane";
 import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, watchWorkstreams, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamServiceContext, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
+import { randomHex } from "../randomHex";
 
 /** A folder used for one Chat without registering a project. */
 /** The machine's ~/IdeaProjects as an absolute path, or undefined when it does not exist. */
@@ -89,11 +101,14 @@ export const rootProjects = (projects: readonly Project[]): Project[] => project
 const subprojectsOf = (root: Project, projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === root.id);
 /** Never-saved blank or pending Chats in this folder: no listing returns them yet, so opening another Chat from its row keeps them. */
 const unsavedChatsIn = (rows: readonly SessionInfo[], cwd: string, openedId: string): SessionInfo[] => rows.filter((row) => row.persisted === false && row.cwd === cwd && row.id !== openedId);
+/** A window asked to hand over dropped Chats may first ask its owner about unsaved file edits. */
+const MOVE_REPLY_MS = 60_000;
 
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
   @state() private app: AppState = initialAppState();
-  @state() private loading = true;
+  /** The navigation still loading; a newer navigation ends its Loading. */
+  @state() private loadingAt: number | undefined = 0;
   @state() private showAgentSessions = false;
   @state() private showAllSessions = false;
   @state() private sessionInfoCopied = false;
@@ -111,7 +126,36 @@ export class WorkbenchApp extends LitElement {
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
   private realtimeMachineId: string | undefined;
-  private loadSequence = 0;
+  /** This window's open Chats, shared with the other windows through localStorage. */
+  private readonly windows = new WorkbenchWindowController(() => { this.followWindowChange(); }, undefined, (request, from, expires) => this.answerWindow(request, from, expires));
+  /** Open Chats that finished working while another Chat was on screen. */
+  private readonly unreadChats = new Set<string>();
+  /** Right-click menu of a tab, Workstream tab or tile, in CSS pixels. */
+  @state() private windowMenu: { sessionIds: string[]; label: string; left: number; top: number } | undefined;
+  /** The neighbour sliding in during a trackpad swipe. */
+  @state() private swipePeek: string | undefined;
+  private readonly swipe = new TabSwipeController({
+    track: () => {
+      const window = this.windows.window;
+      const current = this.app.selectedSession?.id;
+      if (window === undefined || current === undefined || window.layout === "grid" && !window.maximized || !window.chats.some((chat) => chat.sessionId === current)) return undefined;
+      return { order: orderedChats(window).map((chat) => chat.sessionId), current };
+    },
+    surfaces: () => {
+      const current = this.shadowRoot?.querySelector<HTMLElement>(".grid[data-single] > .tile");
+      return current === null || current === undefined ? undefined : { current, peek: this.shadowRoot?.querySelector<HTMLElement>(".swipe-peek") ?? null };
+    },
+    peek: (sessionId) => { this.swipePeek = sessionId; },
+    commit: (sessionId) => this.showWindowChat(sessionId),
+  });
+  /** One generation for every navigation, New Chat and selection included: only the newest may commit. */
+  private get loadSequence(): number {
+    return this.sessions.navigationGeneration;
+  }
+
+  private get loading(): boolean {
+    return this.loadingAt === this.loadSequence;
+  }
   private workstreamOpenSequence = 0;
   private workstreamLoadSequence = 0;
   private workstreamWatchSequence: number | undefined;
@@ -155,8 +199,70 @@ export class WorkbenchApp extends LitElement {
 
   private openNotificationChat(machineId: string, sessionId: string, anchor: string | undefined): void {
     this.revealTarget = anchor === undefined ? undefined : { machineId, sessionId, anchor };
-    writeRoute({ machineId, sessionId, projectId: undefined, workspaceId: undefined, tool: undefined, view: undefined });
-    void this.load(readRoute(), { reuseLoaded: true });
+    void this.load({ machineId, sessionId, projectId: undefined, workspaceId: undefined, tool: undefined, view: undefined }, { reuseLoaded: true, push: true });
+  }
+
+  /**
+   * Every Chat this window opens from outside its own tabs (chooser, All sessions, Workstream, history, link or
+   * notification) asks here first: one another live window holds opens there, which keeps it; one a closed window holds
+   * is freed to open here. True when this window must not open it, also when a newer navigation took over meanwhile.
+   */
+  private async openedElsewhere(sessionId: string, release = true): Promise<boolean> {
+    if (this.windows.window?.chats.some((chat) => chat.sessionId === sessionId) === true) return false;
+    const navigation = this.loadSequence;
+    const reveal = this.revealTarget?.sessionId === sessionId ? this.revealTarget : undefined;
+    const outcome = await this.windows.showInOwner(sessionId, reveal?.anchor);
+    if (outcome !== "here" && reveal !== undefined && this.revealTarget === reveal) this.revealTarget = undefined;
+    if (navigation !== this.loadSequence) return true;
+    if (outcome === "unanswered") this.setApp({ error: "This Chat is open in another window, which does not respond. Try again in a moment." });
+    // Only a fresh navigation frees a closed holder; a refused delayed claim never takes a moved Chat back.
+    if (outcome === "here" && release) await this.windows.releaseClosed(sessionId).catch((error: unknown) => { this.setApp({ error: error instanceof Error ? error.message : String(error) }); });
+    return outcome !== "here";
+  }
+
+  /** Every selection of a Chat commits only once the shared store gives it to this window; else its holder shows it. */
+  private readonly claimGridChat = (session: SessionInfo, context: Partial<AppState>): Promise<boolean> => this.claimChat(session, context, false);
+
+  private async claimChat(session: SessionInfo, context: Partial<AppState>, focus = true): Promise<boolean> {
+    let claimed: boolean;
+    try {
+      claimed = await this.windows.claim(this.windowChat(session, context.selectedWorkspace ?? this.app.selectedWorkspace, context.selectedMachine?.id), focus);
+    } catch (error) {
+      // Unrecorded, other windows could claim it too: refuse it here.
+      this.setApp({ error: error instanceof Error ? error.message : String(error) });
+      return false;
+    }
+    this.requestUpdate();
+    if (!claimed) void this.openedElsewhere(this.windows.reservationId(session.id, session.startupToken), false);
+    return claimed;
+  }
+
+  /** A Chat as this window records it, in the workspace it shows it in. */
+  private windowChat(session: SessionInfo, workspace: Workspace | undefined, machineId = selectedMachineId(this.app)): WindowChat {
+    const registered = workspace !== undefined && workspace.projectId !== "";
+    return { sessionId: session.id, startupToken: session.startupToken, title: sessionTitle(session), machineId, projectId: registered ? workspace.projectId : undefined, workspaceId: registered ? workspace.id : undefined };
+  }
+
+  /** Another window asks this one to show one of its Chats, or to hand Chats dropped there over to it. */
+  private answerWindow(request: WindowRequest, from: string, expires: number): boolean | Promise<boolean> {
+    const chats = this.windows.window?.chats ?? [];
+    if (request.kind === "move") {
+      const { sessionIds } = request;
+      const holds = () => this.windows.window?.chats.some((chat) => sessionIds.includes(chat.sessionId)) === true;
+      return holds() ? this.moveWindowChats(sessionIds, from, expires)?.then(() => !holds()) ?? false : false;
+    }
+    const chat = chats.find((candidate) => candidate.sessionId === request.sessionId);
+    if (chat === undefined) return false;
+    if (request.anchor !== undefined) this.revealTarget = { machineId: chat.machineId, sessionId: chat.sessionId, anchor: request.anchor };
+    window.focus();
+    void this.showWindowChat(chat.sessionId);
+    return true;
+  }
+
+  /** The window claims its id first, so the Chat it opens joins its own tabs. */
+  private async startWindow(route: ParsedAppRoute): Promise<void> {
+    await this.windows.start();
+    await this.load(route);
   }
 
   private readonly onPageAttention = (): void => { this.desktopNotifications.clearVisible(this.app); };
@@ -184,22 +290,27 @@ export class WorkbenchApp extends LitElement {
     undefined,
     {
       notifications: this.notifications,
+      draftStorage: () => this.windows.draftStorage,
       onSelectedSessionReady: () => {
         this.desktopNotifications.activate(this.app);
         void this.loadCurrentWorkstream();
       },
       onSessionError: (message, eventId) => { this.desktopNotifications.sessionError(this.app, message, eventId); },
-      replacePromptEditorText: async ({ machineId, sessionId, text, mode }) => {
-        await this.updateComplete;
-        const editor = this.promptEditor;
-        if (editor === undefined) return;
-        await editor.updateComplete;
-        if (selectedMachineId(this.app) !== machineId || this.app.selectedSession?.id !== sessionId || editor.sessionId !== sessionId) return;
-        if (mode === "prepend") editor.prependText(text);
-        else editor.replaceText(text);
-      },
+      claimSession: (session, context, focus) => this.claimChat(session, context, focus),
+      replacePromptEditorText: (replacement) => this.replacePromptEditorText(replacement),
     },
   );
+
+  private async replacePromptEditorText({ machineId, sessionId, text, mode }: PromptEditorTextReplacement): Promise<void> {
+    await this.updateComplete;
+    // An unrendered composer queries as null.
+    const editor = this.promptEditor ?? undefined;
+    if (editor === undefined) return;
+    await editor.updateComplete;
+    if (selectedMachineId(this.app) !== machineId || this.app.selectedSession?.id !== sessionId || editor.sessionId !== sessionId) return;
+    if (mode === "prepend") editor.prependText(text);
+    else editor.replaceText(text);
+  }
 
   private readonly auth = new AuthController(
     () => this.app,
@@ -217,8 +328,21 @@ export class WorkbenchApp extends LitElement {
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape" && this.windowMenu !== undefined) {
+      event.stopPropagation();
+      this.windowMenu = undefined;
+      return;
+    }
     if (!(event.metaKey || event.ctrlKey)) return;
-    if (event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "p" && !event.altKey && !event.shiftKey && this.app.selectedSession !== undefined
+    if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && this.windowLayoutKey(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "t" && !event.altKey && !event.shiftKey) {
+      event.preventDefault();
+      this.goHome();
+    } else if (event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "p" && !event.altKey && !event.shiftKey && this.app.selectedSession !== undefined
       && this.app.selectedWorkspace !== undefined
       && !hasRenderedModal(this.ownerDocument)) {
       event.preventDefault();
@@ -227,6 +351,25 @@ export class WorkbenchApp extends LitElement {
     else if (event.key === "-") { event.preventDefault(); this.stepScale(-1); }
     else if (event.key === "0") { event.preventDefault(); this.setScale(DEFAULT_INTERFACE_SCALE); }
   };
+
+  /** ⌃G switches Grid and Tabs; ⌃↩ outside a text field toggles the focused tile's full size. */
+  private windowLayoutKey(event: KeyboardEvent): boolean {
+    const window = this.windows.window;
+    if (window === undefined || window.chats.length === 0) return false;
+    if (event.key.toLowerCase() === "g") {
+      this.toggleWindowLayout();
+      return true;
+    }
+    const typing = event.composedPath().some((target) => target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement));
+    if (event.key !== "Enter" || window.layout !== "grid" || typing || this.app.selectedSession === undefined) return false;
+    void this.updateWindow(toggleMaximized);
+    return true;
+  }
+
+  private toggleWindowLayout(): void {
+    void this.updateWindow(toggleLayout);
+    if (this.app.selectedSession !== undefined) void this.focusChatComposer();
+  }
 
   private stepScale(direction: 1 | -1): void {
     this.setScale(stepInterfaceScale(readStoredInterfaceScale(), direction));
@@ -247,13 +390,16 @@ export class WorkbenchApp extends LitElement {
     document.addEventListener("visibilitychange", this.onPageAttention);
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
     window.addEventListener("resize", this.onWindowResize);
+    window.addEventListener("wheel", this.swipe.onWheel, { passive: false, capture: true });
+    window.addEventListener("pointerdown", this.closeWindowMenu, { capture: true });
     applyPresentationProfile(readStoredPresentationProfile() ?? builtInPresentationProfile("comfortable"));
     this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
     void this.initializeThemes();
     const anchor = takeMessageAnchor();
     const route = readRoute();
-    if (anchor !== undefined && NOTIFICATION_ANCHOR.test(anchor) && route.sessionId !== undefined) this.revealTarget = { machineId: route.machineId ?? "local", sessionId: route.sessionId, anchor };
-    void this.load(route);
+    const revealed = anchor !== undefined && NOTIFICATION_ANCHOR.test(anchor) && route.sessionId !== undefined ? anchor : undefined;
+    if (revealed !== undefined && route.sessionId !== undefined) this.revealTarget = { machineId: route.machineId ?? "local", sessionId: route.sessionId, anchor: revealed };
+    void this.startWindow(route);
   }
 
   private async initializeThemes(): Promise<void> {
@@ -288,10 +434,14 @@ export class WorkbenchApp extends LitElement {
     document.removeEventListener("visibilitychange", this.onPageAttention);
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
     window.removeEventListener("resize", this.onWindowResize);
+    window.removeEventListener("wheel", this.swipe.onWheel, { capture: true });
+    window.removeEventListener("pointerdown", this.closeWindowMenu, { capture: true });
+    this.swipe.cancel();
     this.finishFilesResize();
     this.systemLightThemeMedia?.removeEventListener("change", this.onSystemLightThemeChange);
     this.realtime.close();
     this.realtimeMachineId = undefined;
+    this.windows.dispose();
     window.clearTimeout(this.workstreamWatchTimer);
     this.auth.dispose();
     this.sessions.dispose();
@@ -311,11 +461,257 @@ export class WorkbenchApp extends LitElement {
     }
     this.notifications.syncEnvironment(previous, this.app);
     this.desktopNotifications.sync(previous, this.app);
+    this.trackWindowChats(previous);
   }
 
-  /** `reuseLoaded`: Back and notification clicks keep this window's machines, projects, and realtime socket on the same machine. */
-  private async load(route: ParsedAppRoute, options?: { reuseLoaded?: boolean }): Promise<void> {
-    const sequence = ++this.loadSequence;
+  /** Keeps this window's open Chats in step with the Chat on screen, and marks the ones that finished out of view. */
+  private trackWindowChats(previous: AppState): void {
+    const session = this.app.selectedSession;
+    for (const chat of this.windows.window?.chats ?? []) {
+      if (chat.sessionId !== session?.id && previous.sessionStatuses[chat.sessionId]?.isStreaming === true && this.app.sessionStatuses[chat.sessionId]?.isStreaming !== true) this.unreadChats.add(chat.sessionId);
+    }
+    if (session === undefined || isCreatingSessionId(session.id)) return;
+    this.unreadChats.delete(session.id);
+    const title = sessionTitle(session);
+    // Every newly selected Chat was claimed before it showed; only a changed session row can change its title.
+    if (previous.selectedSession !== session && previous.selectedSession?.id === session.id && this.windows.window?.chats.find((chat) => chat.sessionId === session.id)?.title !== title) void this.updateWindow((store, id) => updateChat(store, id, session.id, { title }));
+  }
+
+  private updateWindow(change: (store: WindowStore, windowId: string) => WindowStore): Promise<void> {
+    return this.windows.update(change).then((changed) => { if (changed) this.requestUpdate(); }, (error: unknown) => {
+      // An unstored move keeps the Chats here: the window shows what the store still holds.
+      this.setApp({ error: error instanceof Error ? error.message : String(error) });
+    });
+  }
+
+  /** Another window holds the Chat on screen: retire it at once. Chats moved here: show what this window now focuses. */
+  private followWindowChange(): void {
+    this.requestUpdate();
+    const window = this.windows.window;
+    const selected = this.app.selectedSession?.id;
+    if (window === undefined || selected === undefined || isCreatingSessionId(selected) || window.focused === selected) return;
+    const lost = Object.entries(this.windows.store).some(([id, other]) => id !== this.windows.id && other.chats.some((chat) => chat.sessionId === selected));
+    if (lost) this.retireSelected();
+    this.showNext(lost);
+  }
+
+  /** Takes the Chat on screen down at once, its composer saved and unmounted; the URL follows what shows next. */
+  private retireSelected(): void {
+    if (this.sidePane === "files") this.sidePane = undefined;
+    this.sessions.deselectSession({ updateUrl: false });
+  }
+
+  /** Shows the Chat this window focuses, or its home once nothing is on screen. */
+  private showNext(discardConfirmed: boolean): void {
+    const next = this.windows.window?.focused;
+    if (next === undefined) { if (this.app.selectedSession === undefined) this.updateUrl(); }
+    else if (next !== this.app.selectedSession?.id) void this.showWindowChat(next, discardConfirmed);
+  }
+
+  private filesPaneCanClose(): boolean {
+    return this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false;
+  }
+
+  /** Shows one of this window's Chats, in its recorded workspace, without leaving the Chat on screen first. */
+  private async showWindowChat(sessionId: string, discardConfirmed = false): Promise<void> {
+    const chat = this.windows.window?.chats.find((candidate) => candidate.sessionId === sessionId);
+    if (chat === undefined || sessionId === this.app.selectedSession?.id || !discardConfirmed && !this.filesPaneCanClose()) return;
+    if (this.sidePane === "files") this.sidePane = undefined;
+    void this.updateWindow((store, id) => focusChat(store, id, sessionId));
+    const machineId = selectedMachineId(this.app);
+    if (chat.machineId !== machineId) {
+      writeRoute({ machineId: chat.machineId, projectId: chat.projectId, workspaceId: chat.workspaceId, sessionId, tool: undefined, view: "chat" });
+      await this.load(readRoute(), { reuseLoaded: true });
+      return;
+    }
+    const sequence = this.sessions.beginNavigation();
+    const isCurrent = () => sequence === this.loadSequence && selectedMachineId(this.app) === machineId;
+    try {
+      const { project, workspace, workspaces } = await this.windowChatWorkspace(chat);
+      const session = isCurrent() ? this.sessions.pendingSession(sessionId, chat.startupToken) ?? await this.knownSession(sessionId, workspace.path, machineId, isCurrent) : undefined;
+      if (!isCurrent()) return;
+      if (session === undefined) throw new Error("This Chat is no longer available.");
+      await this.sessions.selectSession(session, this.inWorkspace(session, sequence, { selectedProject: project, workspaces, selectedWorkspace: workspace, sessions: [...unsavedChatsIn(this.app.sessions, workspace.path, session.id), session], error: "" }));
+    } catch (error) {
+      if (isCurrent()) this.setApp({ error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  /** The registered workspace a window Chat was opened in while its project still lists it, else the Chat's folder. */
+  private readonly windowChatWorkspace = async (chat: WindowChat): Promise<{ project: Project | undefined; workspace: Workspace; workspaces: Workspace[] }> => {
+    const project = this.app.projects.find((candidate) => candidate.id === chat.projectId);
+    if (project !== undefined && chat.workspaceId !== undefined) {
+      const loaded = this.app.workspaces.some((candidate) => candidate.id === chat.workspaceId && candidate.projectId === project.id);
+      const workspaces = loaded ? this.app.workspaces : await api.workspaces(project.id, chat.machineId).catch((): Workspace[] => []);
+      const workspace = workspaces.find((candidate) => candidate.id === chat.workspaceId);
+      if (workspace !== undefined) return { project, workspace, workspaces };
+    }
+    const pending = this.sessions.pendingSession(chat.sessionId, chat.startupToken);
+    const folder = adHocWorkspace(pending?.cwd ?? (await api.locate(chat.sessionId, chat.machineId)).cwd);
+    return { project: undefined, workspace: folder, workspaces: [folder] };
+  };
+
+  /** Closes Chats in this window; closing the one on screen shows the next, or the home after the last. */
+  private closeWindowChats(sessionIds: readonly string[]): void {
+    void this.removeWindowChats(sessionIds, (store, id) => closeChats(store, id, sessionIds));
+  }
+
+  /**
+   * Moves Chats to another window, which shows the first of them; settles once stored, undefined when they stay here.
+   * A move another window asked for and gave up on by `expires` (ms) does not happen.
+   */
+  private moveWindowChats(sessionIds: readonly string[], targetWindowId: string, expires = Number.POSITIVE_INFINITY): Promise<void> | undefined {
+    if (!this.windows.shared || !this.canMoveWindowChats(sessionIds)) return undefined;
+    return this.removeWindowChats(sessionIds, (store, id) => Date.now() > expires ? store : moveChats(store, id, targetWindowId, sessionIds));
+  }
+
+  /** Staged attachments and quotes live in this window only, so a Chat holding any stays here until they are sent or removed. */
+  private canMoveWindowChats(sessionIds: readonly string[]): boolean {
+    const held = this.windows.window?.chats.find((chat) => sessionIds.includes(chat.sessionId) && this.holdsComposerState(chat));
+    if (held === undefined) return true;
+    this.windowMenu = undefined;
+    this.setApp({ error: `Send or remove the attachments and quotes staged in "${held.title}" before moving it to another window.` });
+    return false;
+  }
+
+  private holdsComposerState({ machineId, sessionId }: WindowChat): boolean {
+    const staged = loadStagedAttachmentDraft(resolveStagedAttachmentKey(machineSessionKey(machineId, sessionId)));
+    return staged.attachments.length > 0 || staged.pendingImageReferences.length > 0 || this.replyQuotes.list({ machineId, sessionId }).length > 0;
+  }
+
+  /** Dragging a Chat out starts the move in the window that holds it; one with staged composer state does not lift. */
+  private readonly guardChatDrag = (event: DragEvent): void => {
+    const dragged = droppedChats(event);
+    if (dragged !== undefined && (!this.windows.shared || !this.canMoveWindowChats(dragged.sessionIds))) event.preventDefault();
+  };
+
+  /**
+   * Settles once stored; undefined when the owner kept unsaved file edits of the Chat on screen, which then stays. The
+   * Chat on screen retires (its composer gone) before the store lets another window claim it; one the store still keeps
+   * here returns with its composer text, which full storage may not have saved.
+   */
+  private removeWindowChats(sessionIds: readonly string[], change: (store: WindowStore, windowId: string) => WindowStore): Promise<void> | undefined {
+    this.windowMenu = undefined;
+    // A creation reservation cannot leave its window until completion has retired the temporary composer.
+    if (sessionIds.some((id) => this.sessions.pendingSession(id, undefined, true) !== undefined)) {
+      this.setApp({ error: "This Chat is still being created. Try again once creation finishes." });
+      return undefined;
+    }
+    // Only this window can restore a prompt the server refuses, so the Chat stays until its send is answered.
+    if (this.windows.window?.chats.some((chat) => sessionIds.includes(chat.sessionId) && hasUnacknowledgedSend(chat.machineId, chat.sessionId)) === true) {
+      this.setApp({ error: "A message in this Chat is still being sent. Try again once it is delivered." });
+      return undefined;
+    }
+    const selected = this.app.selectedSession?.id;
+    const leaving = selected !== undefined && sessionIds.includes(selected) ? selected : undefined;
+    if (leaving !== undefined && !this.filesPaneCanClose()) return undefined;
+    const text = leaving === undefined ? undefined : this.promptEditor?.view?.state.doc.toString();
+    const machineId = selectedMachineId(this.app);
+    // The owner already chose to discard any unsaved file edits; do not ask again.
+    if (leaving !== undefined) this.retireSelected();
+    return this.updateComplete.then(() => this.updateWindow(change)).then(async () => {
+      if (leaving === undefined) return;
+      if (this.windows.window?.chats.some((chat) => chat.sessionId === leaving) !== true) { this.showNext(true); return; }
+      const { error } = this.app;
+      await this.showWindowChat(leaving, true);
+      if (text !== undefined) await this.replacePromptEditorText({ machineId, sessionId: leaving, text });
+      this.setApp({ error });
+    });
+  }
+
+  /** Opens a new window (a native window in the macOS app) on the moved Chats; it restores like any other. */
+  private moveToNewWindow(sessionIds: readonly string[]): void {
+    const first = this.windows.window?.chats.find((chat) => chat.sessionId === sessionIds[0]);
+    if (first === undefined) return;
+    const target = this.windows.newWindowId();
+    if (this.moveWindowChats(sessionIds, target) === undefined) return;
+    const params = new URLSearchParams({ [WINDOW_URL_PARAM]: target });
+    if (first.machineId !== "local") params.set("machine", first.machineId);
+    if (first.projectId !== undefined && first.workspaceId !== undefined) { params.set("project", first.projectId); params.set("workspace", first.workspaceId); }
+    params.set("session", first.sessionId);
+    params.set("view", "chat");
+    window.open(resolveAppUrl(`?${params.toString()}`), "_blank");
+  }
+
+  /** Chats dragged here from another window's tabs or tiles: that window hands them over once its own guards allow. */
+  private async takeDroppedChats({ windowId, sessionIds }: DraggedChats): Promise<void> {
+    if (windowId === this.windows.id || !this.windows.shared || !await this.windows.ask(windowId, { kind: "move", sessionIds }, MOVE_REPLY_MS)) return;
+    // Re-reads the store the other window just wrote, whose storage event may still be on its way.
+    await this.updateWindow((store) => store);
+    const focused = this.windows.window?.focused;
+    if (focused !== undefined) void this.showWindowChat(focused);
+  }
+
+  private readonly closeWindowMenu = (event: Event): void => {
+    if (this.windowMenu !== undefined && !event.composedPath().some((target) => target instanceof HTMLElement && target.classList.contains("window-menu"))) this.windowMenu = undefined;
+  };
+
+  /** Interface scale zooms the page, so pointer positions arrive scaled while the menu is placed in CSS pixels. */
+  private openWindowMenu({ sessionIds, label, clientX, clientY }: ChatTabMenuDetail): void {
+    const scale = readStoredInterfaceScale();
+    this.windowMenu = { sessionIds, label, left: Math.min(clientX / scale, globalThis.innerWidth / scale - 240), top: clientY / scale };
+  }
+
+  private renderWindowMenu() {
+    const menu = this.windowMenu;
+    if (menu === undefined) return nothing;
+    const shared = this.windows.shared;
+    const others = shared ? Object.entries(this.windows.store).filter(([id]) => id !== this.windows.id) : [];
+    const window = this.windows.window;
+    const single = menu.sessionIds.length === 1 ? menu.sessionIds[0] : undefined;
+    const sizing = single !== undefined && single === this.app.selectedSession?.id && window?.layout === "grid" && window.chats.length > 1;
+    return html`
+      <div class="window-menu" role="menu" aria-label=${menu.label} style=${styleMap({ left: `${String(menu.left)}px`, top: `${String(menu.top)}px` })}>
+        ${shared ? html`<button role="menuitem" @click=${() => { this.moveToNewWindow(menu.sessionIds); }}>Move to new window</button>` : nothing}
+        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id); }}>Move to ${other.name}${this.windows.isAlive(id) ? "" : " (closed)"}</button>`)}
+        ${shared ? html`<hr>` : nothing}
+        ${sizing ? html`<button role="menuitem" @click=${() => { this.windowMenu = undefined; void this.updateWindow(toggleMaximized); }}>${window.maximized ? "Restore grid" : "Full size"}</button>` : nothing}
+        <button role="menuitem" @click=${() => { this.closeWindowChats(menu.sessionIds); }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>
+      </div>
+    `;
+  }
+
+  /** The home: projects, Workstreams and All sessions, with this window's tabs still above it. */
+  private goHome(discardConfirmed = false): void {
+    if (this.app.selectedSession === undefined || !discardConfirmed && !this.filesPaneCanClose()) return;
+    if (this.sidePane === "files") this.sidePane = undefined;
+    this.sessions.deselectSession();
+  }
+
+  private chatTabStatuses(): Record<string, ChatTabStatus> {
+    const selected = this.app.selectedSession?.id;
+    return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, chatTabStatus(chat.sessionId === selected ? this.app.status : this.app.sessionStatuses[chat.sessionId], this.unreadChats.has(chat.sessionId))]));
+  }
+
+  /** The Chat's Workstream names its tab group once known; an unreachable Workstream service keeps the last name. */
+  protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
+    const session = this.app.selectedSession;
+    if (!changed.has("currentWorkstream") || session === undefined || this.currentWorkstream === undefined || this.currentWorkstreamError !== "") return;
+    const snapshot = this.currentWorkstream;
+    void this.updateWindow((store, id) => updateChat(store, id, session.id, { workstream: snapshot === null ? undefined : { id: snapshot.id, title: snapshot.title } }));
+  }
+
+  /**
+   * `reuseLoaded`: Back and notification clicks keep this window's machines, projects, and realtime socket on the same
+   * machine. `push`: the route becomes a new history entry, unless the Chat opens in the other window holding it. That
+   * leaves a window showing something as it is; a window still starting shows its own last Chat, else its home.
+   */
+  private async load(route: ParsedAppRoute, options?: { reuseLoaded?: boolean; push?: boolean }): Promise<void> {
+    const navigation = this.loadSequence;
+    if (route.sessionId !== undefined && await this.openedElsewhere(route.sessionId)) {
+      if (navigation !== this.loadSequence) return;
+      if (this.app.selectedMachine !== undefined) {
+        if (options?.push !== true) this.updateUrl({ replace: true });
+        return;
+      }
+      const window = this.windows.window;
+      const own = window?.chats.find((chat) => chat.sessionId === window.focused);
+      route = own === undefined
+        ? { ...route, sessionId: undefined, tool: undefined, view: undefined }
+        : { machineId: own.machineId, projectId: own.projectId, workspaceId: own.workspaceId, sessionId: own.sessionId, tool: undefined, view: "chat" };
+      writeRoute(route, { replace: true });
+    } else if (options?.push === true) writeRoute(route);
+    const sequence = this.sessions.beginNavigation();
     const previous = this.app;
     const selectedWorkspace = this.app.selectedWorkspace;
     const retainSelection = completeChatRoute(route)
@@ -324,7 +720,7 @@ export class WorkbenchApp extends LitElement {
       && route.workspaceId === selectedWorkspace?.id
       && (route.machineId ?? "local") === selectedMachineId(this.app);
     if (retainSelection) this.desktopNotifications.suspend();
-    this.loading = true;
+    this.loadingAt = sequence;
     if (!retainSelection) this.sessions.clearActiveSession();
     try {
       const reuse = options?.reuseLoaded === true && previous.selectedMachine?.id === (route.machineId ?? "local");
@@ -364,16 +760,16 @@ export class WorkbenchApp extends LitElement {
       const session = await this.knownSession(route.sessionId, workspace.path, machine.id, isCurrent);
       if (sequence !== this.loadSequence) return;
       if (session === undefined) throw new Error("The selected session is no longer available.");
-      this.setApp({ selectedProject: project, workspaces, selectedWorkspace: workspace, sessions: keepSelection ? this.app.sessions : [...unsavedChatsIn(previousRows, workspace.path, session.id), session] });
-      void this.loadCatalogBehind(session.id, workspace, machine.id, sequence);
-      await this.sessions.selectSession(session, { updateUrl: false });
+      await this.sessions.selectSession(session, { updateUrl: false, ...this.inWorkspace(session, sequence, { selectedProject: project, workspaces, selectedWorkspace: workspace, sessions: keepSelection ? this.app.sessions : [...unsavedChatsIn(previousRows, workspace.path, session.id), session] }) });
+      // A reservation resolved to its created Chat: the address names that Chat from now on.
+      if (route.sessionId !== session.id && this.app.selectedSession?.id === session.id) this.updateUrl({ replace: true });
     } catch (error) {
       if (sequence === this.loadSequence) {
         if (retainSelection) this.sessions.clearActiveSession();
         this.setApp({ error: error instanceof Error ? error.message : String(error) });
       }
     } finally {
-      if (sequence === this.loadSequence) this.loading = false;
+      if (sequence === this.loadSequence) this.loadingAt = undefined;
     }
   }
 
@@ -412,9 +808,13 @@ export class WorkbenchApp extends LitElement {
     const session = workspace === undefined ? undefined : await this.knownSession(sessionId, workspace.path, machineId, () => sequence === this.loadSequence);
     if (sequence !== this.loadSequence) return;
     if (workspace === undefined || session === undefined) throw new Error("The selected session is no longer available.");
-    this.setApp({ selectedProject: undefined, workspaces: [workspace], selectedWorkspace: workspace, sessions: [...unsavedChatsIn(previousRows, workspace.path, session.id), session] });
-    void this.loadCatalogBehind(session.id, workspace, machineId, sequence);
-    await this.sessions.selectSession(session, { updateUrl: false });
+    await this.sessions.selectSession(session, { updateUrl: false, ...this.inWorkspace(session, sequence, { selectedProject: undefined, workspaces: [workspace], selectedWorkspace: workspace, sessions: [...unsavedChatsIn(previousRows, workspace.path, session.id), session] }) });
+  }
+
+  /** Commits a Chat with its workspace for navigation `generation`, once claimed; that workspace's catalog loads behind it. */
+  private inWorkspace(session: SessionInfo, generation: number, context: Partial<AppState> & { selectedWorkspace: Workspace }): SessionSelectionOptions {
+    const machineId = selectedMachineId(this.app);
+    return { generation, context, onCommit: () => { void this.loadCatalogBehind(session.id, context.selectedWorkspace, machineId, generation); } };
   }
 
   /**
@@ -423,6 +823,11 @@ export class WorkbenchApp extends LitElement {
    * whole catalog; only there may a missing row be a blank Chat rebuilt from status, and only while `isCurrent` holds.
    */
   private async knownSession(id: string, cwd: string, machineId: string, isCurrent: () => boolean = () => true): Promise<SessionInfo | undefined> {
+    if (isCreatingSessionId(id)) {
+      // A reload mid-creation leaves only this window's reservation; the daemon lists the Chat it became by its token.
+      const token = this.windows.window?.chats.find((chat) => chat.sessionId === id)?.startupToken;
+      return token === undefined ? undefined : (await api.sessions(cwd, machineId)).find((row) => row.startupToken === token);
+    }
     let listed: SessionInfo[];
     try {
       listed = await api.sessions(cwd, machineId, { sessionId: id });
@@ -487,13 +892,14 @@ export class WorkbenchApp extends LitElement {
       return;
     }
     if (event.type !== "sessions.unread" && event.type !== "notices.updated" && event.type !== "machine.status") this.sessions.applyGlobalEvent(event);
+    for (const pane of this.shadowRoot?.querySelectorAll<WorkbenchChatPane>("workbench-chat-pane") ?? []) pane.applyGlobalEvent(event);
   }
 
   private async chooseMachine(machineId: string): Promise<void> {
     const machine = this.app.machines.find((candidate) => candidate.id === machineId);
     if (machine === undefined || machine.id === this.app.selectedMachine?.id) return;
-    const sequence = ++this.loadSequence;
-    this.loading = true;
+    const sequence = this.sessions.beginNavigation();
+    this.loadingAt = sequence;
     this.sessions.clearActiveSession();
     this.setApp({ ...initialAppState(), machines: this.app.machines, selectedMachine: machine });
     this.connectRealtime();
@@ -503,17 +909,17 @@ export class WorkbenchApp extends LitElement {
     } catch (error) {
       if (sequence === this.loadSequence) this.setApp({ error: String(error) });
     } finally {
-      if (sequence === this.loadSequence) this.loading = false;
+      if (sequence === this.loadSequence) this.loadingAt = undefined;
     }
   }
 
   private async chooseProject(projectId: string, preferredWorkspaceId?: string): Promise<void> {
     const project = this.app.projects.find((candidate) => candidate.id === projectId);
-    const sequence = ++this.loadSequence;
+    const sequence = this.sessions.beginNavigation();
     this.sessions.clearActiveSession();
     this.setApp({ selectedProject: project, selectedWorkspace: undefined, workspaces: [], sessions: [], error: "" });
     if (project === undefined) return;
-    this.loading = true;
+    this.loadingAt = sequence;
     try {
       const machineId = selectedMachineId(this.app);
       const workspaces = (await Promise.all(subprojectsOf(project, this.app.projects).map((member) => api.workspaces(member.id, machineId)))).flat();
@@ -525,41 +931,46 @@ export class WorkbenchApp extends LitElement {
     } catch (error) {
       if (sequence === this.loadSequence) this.setApp({ error: String(error) });
     } finally {
-      if (sequence === this.loadSequence) this.loading = false;
+      if (sequence === this.loadSequence) this.loadingAt = undefined;
     }
   }
 
   private async chooseWorkspace(workspaceId: string): Promise<void> {
     const workspace = this.app.workspaces.find((candidate) => candidate.id === workspaceId);
-    const sequence = ++this.loadSequence;
+    const sequence = this.sessions.beginNavigation();
     this.sessions.clearActiveSession();
     const owner = this.app.projects.find((candidate) => candidate.id === workspace?.projectId) ?? this.app.selectedProject;
     this.setApp({ selectedProject: owner, selectedWorkspace: workspace, sessions: [], error: "" });
     if (workspace === undefined) return;
-    this.loading = true;
+    this.loadingAt = sequence;
     try {
       const sessions = await api.sessions(workspace.path, selectedMachineId(this.app));
       if (sequence === this.loadSequence) { this.setApp({ sessions }); this.rememberWorkspace(); }
     } catch (error) {
       if (sequence === this.loadSequence) this.setApp({ error: String(error) });
     } finally {
-      if (sequence === this.loadSequence) this.loading = false;
+      if (sequence === this.loadSequence) this.loadingAt = undefined;
     }
   }
 
   private async openSession(session: SessionInfo): Promise<void> {
-    await this.sessions.selectSession(session);
+    if (!await this.openedElsewhere(session.id)) await this.showOpenedSession(session);
+  }
+
+  private async showOpenedSession(session: SessionInfo, options?: SessionSelectionOptions): Promise<void> {
+    await this.sessions.selectSession(session, options);
     await this.updateComplete;
     this.promptEditor?.focusInput();
   }
 
   private async openAllSession(session: SessionInfo): Promise<void> {
+    if (await this.openedElsewhere(session.id)) return;
+    const generation = this.sessions.beginNavigation();
     this.setApp({ error: "" });
     try {
       const registered = await this.registeredWorkspaceForCwd(session.cwd, selectedMachineId(this.app));
       const workspace = registered?.workspace ?? adHocWorkspace(session.cwd);
-      this.setApp({ selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] });
-      await this.openSession(session);
+      await this.showOpenedSession(session, { generation, context: { selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] } });
     } catch (error) {
       this.setApp({ error: error instanceof Error ? error.message : String(error) });
     }
@@ -605,29 +1016,27 @@ export class WorkbenchApp extends LitElement {
 
   /** Open the session that wrote a Workstream's newest checkpoint, wherever it lives. */
   private async openWorkstreamSession(detail: OpenWorkstreamSessionDetail): Promise<void> {
+    if (await this.openedElsewhere(detail.sessionId)) return;
     const machineId = selectedMachineId(this.app);
     const open = ++this.workstreamOpenSequence;
     let navigation = this.loadSequence;
     // A newer open, any navigation, or a machine switch supersedes this lookup. A lookup leaves in-flight navigation alone.
     const isCurrent = () => open === this.workstreamOpenSequence && navigation === this.loadSequence && selectedMachineId(this.app) === machineId;
     // Applying the Chat takes over navigation: in-flight chooser and boot loads are dropped, so their Loading ends here.
-    const apply = (session: SessionInfo, project: Project | undefined, workspace: Workspace, workspaces: Workspace[]): number => {
+    const apply = (session: SessionInfo, project: Project | undefined, workspace: Workspace, workspaces: Workspace[]) => {
       const projectsPending = this.loading && this.app.projects.length === 0;
-      navigation = ++this.loadSequence;
-      this.loading = false;
-      this.setApp({ selectedProject: project, selectedWorkspace: workspace, workspaces, sessions: [...unsavedChatsIn(this.app.sessions, workspace.path, session.id), session] });
+      navigation = this.sessions.beginNavigation();
       // ponytail: re-asks for the projects of an interrupted machine boot; resuming the dropped request would need per-step sequences.
       if (projectsPending) void api.projects(machineId).then((projects) => { if (selectedMachineId(this.app) === machineId && this.app.projects.length === 0) this.setApp({ projects }); }, () => undefined);
-      return navigation;
+      return { selectedProject: project, selectedWorkspace: workspace, workspaces, sessions: [...unsavedChatsIn(this.app.sessions, workspace.path, session.id), session] };
     };
     this.setApp({ error: "" });
     try {
       const anchored = await this.anchoredWorkstreamSession(detail, machineId, isCurrent);
       if (!isCurrent()) return;
       if (anchored !== undefined) {
-        const sequence = apply(anchored.session, anchored.project, anchored.workspace, anchored.workspaces);
-        void this.loadCatalogBehind(anchored.session.id, anchored.workspace, machineId, sequence);
-        await this.openSession(anchored.session);
+        const context = apply(anchored.session, anchored.project, anchored.workspace, anchored.workspaces);
+        await this.showOpenedSession(anchored.session, this.inWorkspace(anchored.session, navigation, context));
         return;
       }
       const { cwd } = await api.locate(detail.sessionId, machineId);
@@ -640,8 +1049,8 @@ export class WorkbenchApp extends LitElement {
       if (!isCurrent()) return;
       if (session === undefined) throw new Error(`Session ${detail.sessionId} is unavailable under ${cwd}.`);
       const workspace = registered?.workspace ?? adHocWorkspace(cwd);
-      apply(session, registered?.project, workspace, registered?.workspaces ?? [workspace]);
-      await this.openSession(session);
+      const context = apply(session, registered?.project, workspace, registered?.workspaces ?? [workspace]);
+      await this.showOpenedSession(session, { generation: navigation, context });
     } catch (error) {
       if (isCurrent()) this.setApp({ error: `${error instanceof Error ? error.message : String(error)} Start a new session for this Workstream instead.` });
     }
@@ -680,7 +1089,7 @@ export class WorkbenchApp extends LitElement {
       this.setApp({ error: this.app.selectedProject === undefined ? "A registered project with a workspace is needed to access Workstreams." : "Choose a registered workspace before starting this Workstream." });
       return;
     }
-    const associationKey = `pi-web:${globalThis.crypto.randomUUID()}`;
+    const associationKey = `pi-web:${randomHex(16)}`;
     const anchor: WorkstreamSessionAnchor = match === undefined ? {} : { machineId, projectId: workspace.projectId, workspaceId: workspace.id };
     try {
       const snapshot = await inspectWorkstream(workstreamContext, detail.workstreamId);
@@ -990,7 +1399,88 @@ export class WorkbenchApp extends LitElement {
   }
 
   override render() {
-    return this.app.selectedSession === undefined ? this.renderChooser() : this.renderChat();
+    const selected = this.app.selectedSession?.id;
+    return html`
+      <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()}
+        @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { void this.showWindowChat(event.detail.sessionId); }}
+        @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { this.closeWindowChats(event.detail.sessionIds); }}
+        @window-home=${() => { this.goHome(); }}
+        @window-layout=${() => { this.toggleWindowLayout(); }}
+        @chat-tab-menu=${(event: CustomEvent<ChatTabMenuDetail>) => { this.openWindowMenu(event.detail); }}
+        @chat-tab-drop=${(event: CustomEvent<DraggedChats>) => { void this.takeDroppedChats(event.detail); }}
+        @chat-tab-drag-out=${(event: CustomEvent<DraggedChats>) => { this.moveToNewWindow(event.detail.sessionIds); }}
+        @dragstart=${this.guardChatDrag}></workbench-window-tabs>
+      <div class="stage">${this.app.selectedSession === undefined ? this.renderChooser() : this.renderWindowChats()}${this.renderSwipePeek()}</div>
+      ${this.renderWindowMenu()}
+    `;
+  }
+
+  /**
+   * Tabs, or a maximized tile: the focused Chat alone. Grid: its page of up to four tiles, only those live. Every layout
+   * renders the focused Chat as the same first tile, so ⌃G and full size never remount it with its composer and Files edits.
+   */
+  private renderWindowChats() {
+    const window = this.windows.window;
+    const selected = this.app.selectedSession?.id;
+    const tiles = window?.layout === "grid" && !window.maximized && window.focused === selected ? gridTiles(window) : [];
+    const focused = tiles.length < 2 ? undefined : tiles.find((tile) => tile.chat.sessionId === selected);
+    const statuses = this.chatTabStatuses();
+    return html`
+      <div class="grid" ?data-single=${focused === undefined} @dragover=${(event: DragEvent) => { if (carriesChats(event)) event.preventDefault(); }} @drop=${(event: DragEvent) => { const dropped = droppedChats(event); if (dropped !== undefined) { event.preventDefault(); void this.takeDroppedChats(dropped); } }}>
+        <section class="tile" data-focused="true" style=${this.tileStyle(focused)}>${this.renderChat(focused !== undefined)}</section>
+        ${repeat(focused === undefined ? [] : tiles.filter((tile) => tile !== focused), (tile) => tile.chat.sessionId, (tile) => this.renderTile(tile, statuses[tile.chat.sessionId] ?? "idle"))}
+      </div>
+    `;
+  }
+
+  private renderSwipePeek() {
+    const chat = this.windows.window?.chats.find((candidate) => candidate.sessionId === this.swipePeek);
+    if (chat === undefined) return nothing;
+    return html`<div class="swipe-peek" aria-hidden="true">${renderChatStatusDot(this.chatTabStatuses()[chat.sessionId] ?? "idle")}<strong>${chat.title}</strong>${chat.workstream === undefined ? nothing : html`<span>${chat.workstream.title}</span>`}</div>`;
+  }
+
+  /** Without a tile, the focused Chat fills the window. */
+  private tileStyle(tile: GridTile | undefined) {
+    const workstream = tile?.chat.workstream;
+    return styleMap({ gridArea: tile?.area ?? "1 / 1 / 3 / 3", ...(workstream === undefined ? {} : { "--ws": workstreamAccentColor(workstream.id) }) });
+  }
+
+  /** A tile beside the focused one; any press or focus inside hands its Chat to the shell. */
+  private renderTile(tile: GridTile, status: ChatTabStatus) {
+    const { chat } = tile;
+    const focus = (event: Event) => {
+      if (event.composedPath().some((target) => target instanceof HTMLElement && target.classList.contains("tile-actions"))) return;
+      void this.showWindowChat(chat.sessionId).then(() => this.focusChatComposer());
+    };
+    const maximize = () => { void this.showWindowChat(chat.sessionId).then(() => this.updateWindow(toggleMaximized)); };
+    return html`
+      <section class="tile" data-session=${chat.sessionId} style=${this.tileStyle(tile)} @pointerdown=${focus} @focusin=${focus}>
+        <div class="tile-bar" draggable="true" @dblclick=${maximize}
+          @contextmenu=${(event: MouseEvent) => { event.preventDefault(); this.openWindowMenu({ sessionIds: [chat.sessionId], label: chat.title, clientX: event.clientX, clientY: event.clientY }); }}
+          @dragstart=${(event: DragEvent) => { startChatDrag(event, { windowId: this.windows.id, sessionIds: [chat.sessionId] }, chat.title); this.guardChatDrag(event); }}
+          @dragend=${(event: DragEvent) => { if (event.dataTransfer?.dropEffect === "none" && endedOutside(event, window)) this.moveToNewWindow([chat.sessionId]); }}>
+          ${renderChatStatusDot(status)}
+          <span class="tile-title" title=${chat.title}>${chat.title}</span>
+          ${status === "needs" ? html`<span class="needs">Needs you</span>` : nothing}
+          ${chat.workstream === undefined ? nothing : html`<span class="workstream-chip" title=${`Workstream: ${chat.workstream.title}`}>${chat.workstream.title}</span>`}
+          <span class="tile-actions">
+            <button type="button" class="icon-button" title="Full size (⌃↩)" aria-label=${`Full size ${chat.title}`} @click=${maximize}>${renderBuiltinTabIcon("maximize")}</button>
+            <button type="button" class="icon-button" title="Close" aria-label=${`Close ${chat.title}`} @click=${() => { this.closeWindowChats([chat.sessionId]); }}>${renderBuiltinTabIcon("x")}</button>
+          </span>
+        </div>
+        <workbench-chat-pane .chat=${chat} .claimSession=${this.claimGridChat} .draftStorage=${this.windows.draftStorage} .machines=${this.app.machines} .resolveWorkspace=${this.windowChatWorkspace} .contentRendering=${this.contentRendering}></workbench-chat-pane>
+      </section>
+    `;
+  }
+
+  /** Grid only: full size and close for the focused tile, in its own header. */
+  private renderGridActions(sessionId: string) {
+    const window = this.windows.window;
+    if (window?.layout !== "grid" || window.chats.length < 2) return nothing;
+    return html`
+      <button type="button" class="icon-button" title=${window.maximized ? "Restore grid (⌃↩)" : "Full size (⌃↩)"} aria-label=${window.maximized ? "Restore grid" : "Full size"} @click=${() => { void this.updateWindow(toggleMaximized); }}>${renderBuiltinTabIcon(window.maximized ? "minimize" : "maximize")}</button>
+      <button type="button" class="icon-button" title="Close" aria-label="Close Chat" @click=${() => { this.closeWindowChats([sessionId]); }}>${renderBuiltinTabIcon("x")}</button>
+    `;
   }
 
   private renderSettingsPanel() {
@@ -1205,7 +1695,8 @@ export class WorkbenchApp extends LitElement {
     return { workspace: adHocWorkspace(file.slice(0, slash) || "/"), path: file.slice(slash + 1) };
   }
 
-  private renderChat() {
+  /** `tile`: the focused tile of a grid, with the tiles' compact transcript and composer. */
+  private renderChat(tile = false) {
     const state = this.app;
     const session = state.selectedSession;
     if (session === undefined) return null;
@@ -1214,7 +1705,7 @@ export class WorkbenchApp extends LitElement {
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${selectedMachineId(state)} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         <header>
-          <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { if (this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false) { if (this.sidePane === "files") this.sidePane = undefined; this.sessions.deselectSession(); } }}>←</button>
+          <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { this.goHome(); }}>←</button>
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${state.selectedWorkspace?.label}</span>
           <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.sidePane === "files"} aria-controls="workbench-files" @click=${() => { this.toggleSidePane("files"); }}>${renderBuiltinTabIcon("files")}</button>
@@ -1223,12 +1714,14 @@ export class WorkbenchApp extends LitElement {
           <button class="icon-button" type="button" title=${`${sessionInfoText(session, state.status)}\n\nClick to copy`} aria-label=${this.sessionInfoCopied ? "Copied session info" : "Copy session info"} @click=${() => { void this.copySessionInfo(session); }}>${this.sessionInfoCopied ? html`<span aria-hidden="true">✓</span>` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`}</button>
           ${this.renderSettingsPanel()}
           ${this.renderDesktopNotificationButton()}
+          ${this.renderGridActions(session.id)}
         </header>
         ${this.renderDesktopNotificationDiagnostic()}
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
         <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>
           <div class="chat-column">
         <chat-view
+          .dense=${tile}
           .contentRendering=${this.contentRendering}
           @workspace-file-open=${this.openWorkspaceFile}
           @outside-file-open=${this.openOutsideFile}
@@ -1270,6 +1763,8 @@ export class WorkbenchApp extends LitElement {
         <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${() => { this.delegateRosterCollapsed = !this.delegateRosterCollapsed; }}></delegate-roster>
         <goal-status-chip .status=${state.status}></goal-status-chip>
         <prompt-editor
+          .draftStorage=${this.windows.draftStorage}
+          .dense=${tile}
           .promptChips=${this.replyQuoteChips({ machineId: selectedMachineId(state), sessionId: session.id })}
           .onRemoveChip=${this.removeReplyQuote}
           .sessionId=${session.id}
@@ -1321,10 +1816,40 @@ export class WorkbenchApp extends LitElement {
   }
 
   static override styles = css`
-    :host { --pi-app-safe-area-bottom: 0px; --pi-workbench-viewport-height: calc(100dvh / var(--pi-interface-scale, 1)); --pi-workbench-viewport-width: calc(100dvw / var(--pi-interface-scale, 1)); position: fixed; top: 0; right: 0; left: 0; display: block; height: var(--pi-workbench-viewport-height); box-sizing: border-box; overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) var(--pi-app-safe-area-bottom) env(safe-area-inset-left); background: var(--pi-bg); color: var(--pi-text); font: 14px system-ui, sans-serif; }
+    ${chatStatusDotStyles}
+    :host { --pi-app-safe-area-bottom: 0px; --pi-workbench-viewport-height: calc(100dvh / var(--pi-interface-scale, 1)); --pi-workbench-viewport-width: calc(100dvw / var(--pi-interface-scale, 1)); position: fixed; top: 0; right: 0; left: 0; display: flex; flex-direction: column; height: var(--pi-workbench-viewport-height); box-sizing: border-box; overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) var(--pi-app-safe-area-bottom) env(safe-area-inset-left); background: var(--pi-bg); color: var(--pi-text); font: 14px system-ui, sans-serif; }
     @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
       :host { --pi-app-safe-area-bottom: env(safe-area-inset-bottom); }
     }
+    .stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; }
+    /* No rules between tiles: the focused tile is the brighter surface, the others rest on the background, the gutter is darker. */
+    .grid { height: 100%; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 3px; background: light-dark(color-mix(in srgb, var(--pi-bg) 94%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 85%, black)); }
+    .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pi-bg); }
+    .tile { container-type: inline-size; }
+    .grid:not([data-single]) > .tile[data-focused="true"] { background: var(--pi-surface); outline: 2px solid color-mix(in srgb, var(--pi-accent) 70%, transparent); outline-offset: -2px; }
+    /* A tile too narrow for the full Chat header keeps its title: Back and the workspace label give way. */
+    @container (max-width: 640px) {
+      .grid:not([data-single]) .chat-shell > header { gap: 2px; padding: 2px 6px; }
+      .grid:not([data-single]) .chat-shell > header > .back, .grid:not([data-single]) .chat-shell > header > span { display: none; }
+      .grid:not([data-single]) .chat-shell > header > .icon-button { width: 28px; height: 28px; min-height: 28px; padding: 5px; }
+    }
+    .tile .chat-shell { flex: 1 1 auto; height: auto; min-height: 0; }
+    .tile-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 4px 0 8px; border-left: 3px solid var(--ws, transparent); color: var(--pi-muted); font-size: 12px; user-select: none; }
+    .tile-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .workstream-chip { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--ws, transparent) 30%, var(--pi-surface)); color: var(--pi-text); font-size: 11px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+    .needs { flex: 0 0 auto; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--pi-warning) 28%, transparent); color: var(--pi-text); font-size: 11px; font-weight: 700; line-height: 18px; }
+    .tile-actions { flex: 0 0 auto; margin-left: auto; display: flex; gap: 2px; opacity: 0; }
+    .tile-bar:hover .tile-actions, .tile-actions:focus-within { opacity: 1; }
+    .tile-actions .icon-button { width: 24px; height: 24px; padding: 4px; }
+    .grid:not([data-single]) > .tile[data-focused="true"] .chat-shell > header { border-left: 3px solid var(--ws, transparent); }
+    workbench-chat-pane { flex: 1 1 auto; }
+    .grid[data-single] > .tile { z-index: 1; }
+    .swipe-peek { position: absolute; inset: 0; z-index: 2; visibility: hidden; display: flex; align-items: center; justify-content: center; gap: 10px; background: var(--pi-bg); color: var(--pi-muted); font-size: 14px; pointer-events: none; }
+    .swipe-peek strong { color: var(--pi-text); font-weight: 600; }
+    .window-menu { position: fixed; z-index: 40; min-width: 220px; display: grid; padding: 4px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 10px 30px var(--pi-shadow); }
+    .window-menu button { min-height: 0; padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; font-size: 13px; }
+    .window-menu button:hover, .window-menu button:focus-visible { background: var(--pi-surface-hover); }
+    .window-menu hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--pi-border-muted); }
     .chooser { box-sizing: border-box; height: 100%; overflow: auto; display: grid; place-items: start center; padding: min(10vh, 72px) 24px 32px; }
     .chooser > section { box-sizing: border-box; width: min(960px, 100%); display: grid; gap: 16px; padding: 24px; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 18px 50px var(--pi-shadow); }
     h1, p { margin: 0; }

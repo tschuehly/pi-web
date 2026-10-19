@@ -232,7 +232,7 @@ describe("Pi package API", () => {
 
 describe("session API compatibility", () => {
   it("keeps the catalog URL unchanged and encodes a targeted session id as one query value", async () => {
-    const row = { id: "s /?&x", cwd: "/repo", path: "/s.jsonl", persisted: true, created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:00:00.000Z", messageCount: 1, firstMessage: "Hi" };
+    const row = { id: "s /?&x", startupToken: "creating:reserved", cwd: "/repo", path: "/s.jsonl", persisted: true, created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:00:00.000Z", messageCount: 1, firstMessage: "Hi" };
     const fetchMock = stubSequenceFetch([jsonResponse([row]), jsonResponse([row])]);
 
     await expect(sessionsApi.sessions("/repo a", "remote a")).resolves.toEqual([row]);

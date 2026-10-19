@@ -102,13 +102,21 @@ describe("PromptEditor folder delivery sends the displayed folder", () => {
   });
 });
 
+/** Stages attachments the way adding them does: in the composer and, at once, in its session's storage. */
+function stageAttachments(editor: PromptEditor, attachments: readonly unknown[]): void {
+  Reflect.set(editor, "attachments", attachments);
+  const save: unknown = Reflect.get(editor, "saveCurrentStaging");
+  if (typeof save !== "function") throw new Error("PromptEditor.saveCurrentStaging was unavailable");
+  Reflect.apply(save, editor, []);
+}
+
 describe("PromptEditor pending attachments across session switches", () => {
   it("does not carry pending attachments from one session into another", () => {
     const editor = new PromptEditor();
     editor.machineId = "local";
     editor.sessionId = "session-a";
     const attachment = { id: "attachment-1", kind: "file" as const, name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 };
-    Reflect.set(editor, "attachments", [attachment]);
+    stageAttachments(editor, [attachment]);
 
     // Switch to a different session: the pending attachment must not follow.
     editor.sessionId = "session-b";
@@ -122,7 +130,7 @@ describe("PromptEditor pending attachments across session switches", () => {
     editor.machineId = "local";
     editor.sessionId = "session-a";
     const attachment = { id: "attachment-1", kind: "file" as const, name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 };
-    Reflect.set(editor, "attachments", [attachment]);
+    stageAttachments(editor, [attachment]);
 
     editor.sessionId = "session-b";
     triggerSessionSwitch(editor, { machineId: "local", sessionId: "session-a" });
@@ -138,7 +146,7 @@ describe("PromptEditor pending attachments across session switches", () => {
     const editor = new PromptEditor();
     editor.machineId = "local";
     editor.sessionId = "session-a";
-    Reflect.set(editor, "attachments", [{ id: "attachment-1", kind: "file" as const, name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 }]);
+    stageAttachments(editor, [{ id: "attachment-1", kind: "file" as const, name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 }]);
 
     // Leave session-a with the attachment pending, then come back to it.
     editor.sessionId = "session-b";

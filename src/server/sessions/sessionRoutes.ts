@@ -76,6 +76,8 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       // startup reports. Optional: only a browser row waiting for a session id
       // has anything to correlate.
       const startupToken = body["startupToken"] === undefined ? undefined : requireNonEmptyString(body, "startupToken");
+      // The daemon keeps and lists the token, so it must stay a short, plain label.
+      if (startupToken !== undefined && !/^[A-Za-z0-9:._-]{1,128}$/.test(startupToken)) throw new Error("startupToken field must be at most 128 letters, digits, or : . _ -");
       return await sessions.start(normalizeRequestCwd(requireString(body, "cwd")), optionalField("startupToken", startupToken));
     } catch (error) {
       return reply.code(400).send({ error: errorMessage(error) });

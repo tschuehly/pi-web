@@ -1,14 +1,15 @@
 // @vitest-environment happy-dom
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { api, type Machine, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
 import { ACTIVITY_STATUS_KEY, GOAL_STATUS_KEY } from "../extensionStatusSnapshots";
-import { DesktopNotificationController } from "../controllers/desktopNotificationController";
+import { DesktopNotificationController, NATIVE_NOTIFICATION_OPEN_EVENT } from "../controllers/desktopNotificationController";
 import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
+import { clearStagedAttachments, saveStagedAttachments } from "../promptAttachmentStaging";
 import { readStoredThemePreference } from "../theme";
 import type { ChatView } from "./ChatView";
 import { transcriptImageSource, type TranscriptImage } from "./TranscriptImage";
@@ -16,12 +17,17 @@ import { DelegateRoster } from "./DelegateRoster";
 import type { FormattedText } from "./FormattedText";
 import { GoalStatusChip } from "./GoalStatusChip";
 import { PromptEditor } from "./PromptEditor";
-import { WorkbenchApp, rootProjectOf, rootProjects, sessionInfoText } from "./WorkbenchApp";
+import { WorkbenchApp, adHocWorkspace, rootProjectOf, rootProjects, sessionInfoText } from "./WorkbenchApp";
 import { HttpRequestError } from "../api/http";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import { EditorView } from "@codemirror/view";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
+import { WorkbenchChatPane } from "./WorkbenchChatPane";
+import { SessionController } from "../controllers/sessionController";
+import { WINDOW_CHANNEL, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY } from "../controllers/workbenchWindowController";
+import { FakeLocks } from "../controllers/webLocks.testSupport";
+import { moveChats, openChat, parseWindowStore } from "../workbenchWindows";
 
 // Browser plugin modules load by URL import; serve the bundled Mermaid source instead.
 vi.mock("../plugins/external", async (importOriginal) => {
@@ -29,7 +35,12 @@ vi.mock("../plugins/external", async (importOriginal) => {
   return { ...actual, loadExternalPlugins: (url: string, options: Parameters<typeof actual.loadExternalPlugins>[1] = {}) => actual.loadExternalPlugins(url, { ...options, moduleLoader: () => import("../../../../pi-web-plugins/mermaid/pi-web-plugin") }) };
 });
 
+/** happy-dom has no Web Locks; windows share their store only with them, as in a secure-context browser. */
+let locks: FakeLocks;
+
 beforeEach(() => {
+  locks = new FakeLocks();
+  Object.defineProperty(navigator, "locks", { value: locks, configurable: true });
   vi.spyOn(api, "machines").mockResolvedValue([machine]);
   vi.spyOn(api, "projects").mockResolvedValue([]);
   // Session selection loads one transcript snapshot; compose it from the per-test messages/status/stream mocks.
@@ -51,9 +62,20 @@ beforeEach(() => {
   window.history.replaceState({}, "", "/");
 });
 
+/** Plain-http origins lack crypto.randomUUID; ids then come from getRandomValues, filled here with `byte`. */
+function plainHttpRandomKey(byte: number): string {
+  vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => { throw new TypeError("crypto.randomUUID is not a function"); });
+  vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(<T extends ArrayBufferView | null>(array: T): T => {
+    if (array instanceof Uint8Array) array.fill(byte);
+    return array;
+  });
+  return byte.toString(16).padStart(2, "0").repeat(16);
+}
+
 afterEach(() => {
   document.body.replaceChildren();
   localStorage.clear();
+  Reflect.deleteProperty(navigator, "locks");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -167,7 +189,7 @@ describe("Chat in a folder", () => {
     app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="New Chat without a project"]')?.dispatchEvent(new MouseEvent("click", { altKey: true }));
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("adhoc"); });
     expect(getState(app).selectedWorkspace?.path).toBe("/anywhere/notes");
-    expect(window.location.search).toBe("?session=adhoc&view=chat");
+    expect(window.location.search).toMatch(/^\?win=[^&]+&session=adhoc&view=chat$/u);
 
     document.body.replaceChildren();
     const reopened = new WorkbenchApp();
@@ -408,10 +430,10 @@ describe("Workbench Chat chooser", () => {
 
     expect(getState(app).selectedSession?.id).toBe(current.id);
     expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).toBeNull();
+    await vi.waitFor(() => { expect(status.mock.calls.length).toBeGreaterThan(statusCalls); });
     await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
     expect(getState(app).selectedSession?.id).toBe(current.id);
     expect(app.shadowRoot?.querySelector('[data-view="chat"]')).not.toBeNull();
-    expect(status.mock.calls.length).toBeGreaterThan(statusCalls);
     expect(notifications.mock.calls.length).toBeGreaterThan(notificationCalls);
   });
 
@@ -893,7 +915,7 @@ describe("Workbench Chat chooser", () => {
       protocol.push("append");
       return { ok: true, value: { acceptedRevision: typeof body.input["expectedRevision"] === "number" ? body.input["expectedRevision"] + 1 : 0 } };
     }, protocol);
-    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
+    const key = plainHttpRandomKey(1);
     const startSession = vi.spyOn(api, "startSession").mockImplementation(() => { protocol.push("start"); return Promise.resolve(started); });
     const locate = vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
@@ -911,26 +933,26 @@ describe("Workbench Chat chooser", () => {
     expect(pending).toEqual({
       workstreamId: "workstream",
       expectedRevision: 70,
-      idempotencyKey: "pi-web:00000000-0000-4000-8000-000000000001:pending",
+      idempotencyKey: `pi-web:${key}:pending`,
       records: [{
         type: "session.pending",
         producer: "pi-web",
         sourceSessionId: "previous",
-        payload: { associationKey: "pi-web:00000000-0000-4000-8000-000000000001", derivationKind: "checkpoint", machineId: "local", projectId: "project", workspaceId: "workspace" },
+        payload: { associationKey: `pi-web:${key}`, derivationKind: "checkpoint", machineId: "local", projectId: "project", workspaceId: "workspace" },
       }],
     });
     expect(confirmed).toEqual({
       workstreamId: "workstream",
       expectedRevision: 71,
-      idempotencyKey: "pi-web:00000000-0000-4000-8000-000000000001:confirmed",
+      idempotencyKey: `pi-web:${key}:confirmed`,
       records: [{
         type: "session.confirmed",
         producer: "pi-web",
         sourceSessionId: "new-session",
-        payload: { sessionId: "new-session", associationKey: "pi-web:00000000-0000-4000-8000-000000000001", machineId: "local", projectId: "project", workspaceId: "workspace" },
+        payload: { sessionId: "new-session", associationKey: `pi-web:${key}`, machineId: "local", projectId: "project", workspaceId: "workspace" },
       }],
     });
-    expect(startSession).toHaveBeenCalledWith(workspace.path, "local", "pi-web:00000000-0000-4000-8000-000000000001");
+    expect(startSession).toHaveBeenCalledWith(workspace.path, "local", `pi-web:${key}`);
     expect(prompt).not.toHaveBeenCalled();
     // No linked Chat shows recent user input, so orientation is full.
     await vi.waitFor(() => { expect(command).toHaveBeenCalledWith(expect.objectContaining({ id: "new-session" }), "/skill:orient full", "local"); });
@@ -1040,7 +1062,7 @@ describe("Workbench Chat chooser", () => {
     stubWorkstreamService(calls, (body) => body.operation === "inspect"
       ? { ok: true, value: { id: "empty-workstream", revision: inspectCount++ === 0 ? 1 : 2, sessions: [], humanTasks: [] } }
       : { ok: true, value: { acceptedRevision: typeof body.input["expectedRevision"] === "number" ? body.input["expectedRevision"] + 1 : 0 } });
-    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000003");
+    const key = plainHttpRandomKey(3);
     const locate = vi.spyOn(api, "locate");
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const startSession = vi.spyOn(api, "startSession").mockResolvedValue(started);
@@ -1055,10 +1077,10 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(command).toHaveBeenCalledWith(expect.objectContaining({ id: "first-session" }), "/skill:orient full", "local"); });
     expect(loadDraft(machineSessionKey("local", "first-session"))).toBe("");
     expect(locate).not.toHaveBeenCalled();
-    expect(startSession).toHaveBeenCalledWith(workspace.path, "local", "pi-web:00000000-0000-4000-8000-000000000003");
+    expect(startSession).toHaveBeenCalledWith(workspace.path, "local", `pi-web:${key}`);
     expect(calls.find((call) => call.operation === "append")?.input).toMatchObject({
       records: [{ payload: {
-        associationKey: "pi-web:00000000-0000-4000-8000-000000000003",
+        associationKey: `pi-web:${key}`,
         machineId: "local",
         projectId: project.id,
         workspaceId: workspace.id,
@@ -1152,7 +1174,7 @@ describe("Workbench Chat chooser", () => {
     stubWorkstreamService(calls, (body) => body.operation === "inspect"
       ? { ok: true, value: { id: "workstream", revision: 12, sessions: [], humanTasks: [] } }
       : { ok: false, error: { message: "store unavailable" } });
-    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000002");
+    const key = plainHttpRandomKey(2);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/loose/folder" });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const startSession = vi.spyOn(api, "startSession");
@@ -1166,7 +1188,7 @@ describe("Workbench Chat chooser", () => {
     expect(startSession).not.toHaveBeenCalled();
     expect(calls.find((call) => call.operation === "append")?.input).toMatchObject({
       expectedRevision: 12,
-      records: [{ sourceSessionId: "previous", payload: { associationKey: "pi-web:00000000-0000-4000-8000-000000000002", derivationKind: "checkpoint" } }],
+      records: [{ sourceSessionId: "previous", payload: { associationKey: `pi-web:${key}`, derivationKind: "checkpoint" } }],
     });
     const records = calls.find((call) => call.operation === "append")?.input["records"];
     if (!Array.isArray(records) || typeof records[0] !== "object" || records[0] === null) throw new Error("pending record missing");
@@ -1495,6 +1517,9 @@ describe("Workbench request waterfalls", () => {
   });
 
   it("UI-002: ignores a late targeted row after navigation moved to another Chat, in each of two windows", async () => {
+    // Both shells live in one document; without Web Locks neither proves the other alive, so neither routes the other's Chat.
+    Reflect.deleteProperty(navigator, "locks");
+    onTestFinished(() => { sessionStorage.clear(); });
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const first = deferred<SessionInfo[]>();
@@ -2099,6 +2124,942 @@ function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: W
     if (body.operation === "inspect") protocol?.push("inspect");
     return Promise.resolve(new Response(JSON.stringify(respond(body)), { status: 200 }));
   }));
+}
+
+describe("window tabs", () => {
+  const workstreams: Record<string, { id: string; title: string }> = { a1: { id: "release", title: "Release" }, a2: { id: "release", title: "Release" }, b1: { id: "docs", title: "Docs" } };
+
+  async function mountWithWorkstreamChats(): Promise<WorkbenchApp> {
+    const rows = [session("a1", "Plan", "Plan the release"), session("a2", "Notes", "Release notes"), session("b1", "Guide", "Install guide")];
+    stubWorkstreamService([], ({ operation, input }) => {
+      if (operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: 1 } };
+      const sessionId = typeof input["sessionId"] === "string" ? input["sessionId"] : "";
+      if (operation === "list") return { ok: true, value: workstreams[sessionId] === undefined ? [] : [{ id: workstreams[sessionId].id }] };
+      const owner = Object.values(workstreams).find((candidate) => candidate.id === input["workstreamId"]);
+      return { ok: true, value: { id: owner?.id, title: owner?.title, revision: 1, sessions: [], humanTasks: [], links: [], overview: null, closed: false } };
+    }, undefined, true);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => Promise.resolve(rows.filter((row) => options?.sessionId === undefined || row.id === options.sessionId)));
+    stubSelectedChat();
+    window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a1&view=chat");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(async () => { await app.updateComplete; expect(workstreamTabs(app)).toEqual(["Release"]); });
+    for (const title of ["Release notes", "Install guide"]) {
+      tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
+      await vi.waitFor(() => { expect(sessionTitles(app)).toContain(title); });
+      [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? [])].find((button) => button.textContent.includes(title))?.click();
+      await vi.waitFor(() => { expect(chatTabs(app)).toContain(title); });
+    }
+    await vi.waitFor(async () => { await app.updateComplete; expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]); });
+    return app;
+  }
+
+  it("opens each Chat as a tab under its Workstream, and a Workstream tab reopens its last-active Chat", async () => {
+    const app = await mountWithWorkstreamChats();
+    expect(getState(app).selectedSession?.id).toBe("b1");
+
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await app.updateComplete;
+    expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
+    expect(window.location.search).toContain("win=w1");
+    expect(window.location.search).toContain("session=a2");
+
+    workstreamTab(app, "Docs").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    workstreamTab(app, "Release").dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+  });
+
+  it("closing the Chat on screen shows the next tab, and closing the last one shows the home", async () => {
+    const app = await mountWithWorkstreamChats();
+
+    closeButton(app, "Install guide").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await app.updateComplete;
+    expect(workstreamTabs(app)).toEqual(["Release2"]);
+    closeButton(app, "Plan the release").click();
+    await app.updateComplete;
+    expect(getState(app).selectedSession?.id).toBe("a2");
+    closeButton(app, "Release notes").click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
+    expect(tabsRoot(app).querySelector("nav")).toBeNull();
+  });
+
+  it("switches to a grid with \u2303G, keeps only the visible tiles live, and hands a pressed tile to the shell", async () => {
+    // happy-dom loses a removed shadow root's focus; focusing the composer is not what this test checks.
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    const press = (key: string) => window.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true }));
+
+    press("g");
+    await settled(app);
+    const tiles = () => [...(app.shadowRoot?.querySelectorAll<HTMLElement>(".grid > .tile") ?? [])];
+    expect(tiles()).toHaveLength(3);
+    expect(tiles().filter((tile) => tile.dataset["focused"] === "true").map((tile) => tile.querySelector(".chat-shell")?.getAttribute("data-session"))).toEqual(["b1"]);
+    expect(paneChats(app)).toEqual(["a1", "a2"]);
+    expect(tabsRoot(app).querySelector(".workstream-tab")).toBeNull();
+
+    app.shadowRoot?.querySelector('.tile[data-session="a1"]')?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector('.tile[data-focused="true"] .chat-shell')?.getAttribute("data-session")).toBe("a1");
+    expect(paneChats(app)).toEqual(["a2", "b1"]);
+
+    app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-focused="true"] header button[aria-label="Full size"]')?.click();
+    await settled(app);
+    expect(tiles()).toHaveLength(1);
+    expect(app.shadowRoot?.querySelectorAll("workbench-chat-pane")).toHaveLength(0);
+    expect(app.shadowRoot?.querySelector<HTMLButtonElement>('header button[aria-label="Restore grid"]')).not.toBeNull();
+
+    press("g");
+    await settled(app);
+    expect(tiles()).toHaveLength(1);
+    expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]);
+    expect(app.shadowRoot?.querySelector('header button[aria-label="Full size"]')).toBeNull();
+  });
+
+  it("keeps the Chat on screen and its Files pane mounted across \u2303G and full size", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle")?.click();
+    await app.updateComplete;
+    const pane = app.shadowRoot?.querySelector("workbench-files-pane");
+    const composer = app.shadowRoot?.querySelector("prompt-editor");
+    expect(pane).not.toBeNull();
+    const press = async (key: string) => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true }));
+      await settled(app);
+      expect(app.shadowRoot?.querySelector("workbench-files-pane")).toBe(pane);
+      expect(app.shadowRoot?.querySelector("prompt-editor")).toBe(composer);
+    };
+
+    await press("g");
+    const panes = [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])];
+    expect(panes).toHaveLength(2);
+    // Removing a tile mid-load leaks its composer's editor in happy-dom.
+    await vi.waitFor(() => { expect(panes.every((tile) => tile.shadowRoot?.querySelector("prompt-editor") !== null)).toBe(true); });
+    await press("Enter");
+    expect(app.shadowRoot?.querySelectorAll("workbench-chat-pane")).toHaveLength(0);
+    await press("g");
+  });
+
+  it("loads a tile's Chat from its own machine, not the focused Chat's", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const remote: Machine = { ...machine, id: "remote", name: "Remote", kind: "remote" };
+    vi.spyOn(api, "machines").mockResolvedValue([machine, remote]);
+    await mountWithWorkstreamChats();
+    const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+    const w1 = stored["w1"];
+    if (w1 === undefined) throw new Error("missing window");
+    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify({ ...stored, w1: { ...w1, chats: w1.chats.map((chat) => chat.sessionId === "a1" ? { ...chat, machineId: "remote" } : chat) } }));
+    window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
+    const snapshot = vi.mocked(api.transcriptSnapshot);
+    snapshot.mockClear();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
+
+    await vi.waitFor(() => { expect(snapshot.mock.calls.find(([selected]) => selected.id === "a1")?.[2]).toBe("remote"); });
+    expect(snapshot.mock.calls.find(([selected]) => selected.id === "a2")?.[2]).toBe("local");
+  });
+
+  it("moves a Chat to a new window from its tab's menu, and this window shows its next tab", async () => {
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
+    const app = await mountWithWorkstreamChats();
+
+    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true, clientX: 30, clientY: 40 }));
+    await app.updateComplete;
+    const menu = app.shadowRoot?.querySelector<HTMLElement>('.window-menu[aria-label="Install guide"]');
+    expect([...(menu?.querySelectorAll("button") ?? [])].map((item) => item.textContent.trim())).toEqual(["Move to new window", "Close"]);
+    menu?.querySelector<HTMLButtonElement>("button")?.click();
+
+    const url = new URL(String(opened.mock.calls[0]?.[0]));
+    const target = url.searchParams.get("win") ?? "";
+    expect(url.pathname).toBe("/");
+    expect(Object.fromEntries(url.searchParams)).toEqual({ win: target, project: "project", workspace: "workspace", session: "b1", view: "chat" });
+    await vi.waitFor(() => { expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]).toMatchObject({ name: "Window 2", focused: "b1" }); });
+    const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+    expect(stored[target]?.chats.map((chat) => chat.workstream?.title)).toEqual(["Docs"]);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector(".window-menu")).toBeNull();
+    expect(workstreamTabs(app)).toEqual(["Release2"]);
+
+    tabsRoot(app).querySelector(".workstream-tab")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    await app.updateComplete;
+    const items = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])];
+    expect(items.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Window 2 (closed)", "Close 2 Chats"]);
+    items[1]?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]?.chats.map((chat) => chat.sessionId)).toEqual(["b1", "a1", "a2"]);
+  });
+
+  it("keeps the Chat and opens no window when moving it would discard unsaved file edits", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
+    const app = await mountWithWorkstreamChats();
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle")?.click();
+    await app.updateComplete;
+    const pane = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+    if (pane === null || pane === undefined) throw new Error("Files pane was not mounted");
+    const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
+
+    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
+    await app.updateComplete;
+
+    expect(opened).not.toHaveBeenCalled();
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
+    expect(getState(app).selectedSession?.id).toBe("b1");
+
+    canClose.mockClear().mockReturnValue(true);
+    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    expect(opened).toHaveBeenCalledTimes(1);
+    expect(canClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a Chat with staged quotes or attachments in this window and says why", async () => {
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
+    const app = await mountWithWorkstreamChats();
+    const moveToNewWindow = async (tab: Element | null) => {
+      tab?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+      await app.updateComplete;
+      app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
+      await app.updateComplete;
+    };
+    app.shadowRoot?.querySelector<ChatView>("chat-view")?.onReplyToSelection?.({ entryId: "e1", excerpt: "Quoted line" });
+    await moveToNewWindow(tabsRoot(app).querySelector('.chat-tab[data-session="b1"]'));
+    expect(app.shadowRoot?.querySelector(".chat-error")?.textContent).toContain("Install guide");
+
+    saveStagedAttachments(machineSessionKey("local", "a1"), { attachments: [{ id: "att-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGk=", size: 2 }], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
+    await moveToNewWindow(workstreamTab(app, "Release"));
+
+    expect(opened).not.toHaveBeenCalled();
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId).sort()).toEqual(["a1", "a2", "b1"]);
+    expect(app.shadowRoot?.querySelector(".chat-error")?.textContent).toContain("Plan the release");
+    clearStagedAttachments(machineSessionKey("local", "a1"));
+  });
+
+  it("takes Chats dropped from another window once that window hands them over, and none while it keeps them", async () => {
+    const app = await mountWithWorkstreamChats();
+    const moved = { sessionId: "c1", title: "Elsewhere", machineId: "local", projectId: "project", workspaceId: "workspace" };
+    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w9", moved)));
+    vi.spyOn(api, "sessions").mockResolvedValue([session("c1", "Else", "Elsewhere")]);
+    let handOver = false;
+    const asked: unknown[] = [];
+    const source = otherWindow("w9", (request, from) => {
+      asked.push(request);
+      if (handOver && request.kind === "move") localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(moveChats(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w9", from, request.sessionIds)));
+      return handOver;
+    });
+    const drop = () => tabsRoot(app).querySelector("nav")?.dispatchEvent(new CustomEvent("chat-tab-drop", { bubbles: true, composed: true, detail: { windowId: "w9", sessionIds: ["c1"] } }));
+    try {
+      drop();
+      await vi.waitFor(() => { expect(asked).toEqual([{ kind: "move", sessionIds: ["c1"] }]); });
+      await settled(app);
+      expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w9"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
+      expect(getState(app).selectedSession?.id).toBe("b1");
+
+      handOver = true;
+      drop();
+      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("c1"); });
+      const after = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+      expect(after["w9"]?.chats).toEqual([]);
+      expect(after["w1"]?.focused).toBe("c1");
+    } finally {
+      source.close();
+    }
+  });
+
+  it("hands Chats dropped in another window over only once its owner gives up unsaved file edits", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle")?.click();
+    await app.updateComplete;
+    const pane = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+    if (pane === null || pane === undefined) throw new Error("Files pane was not mounted");
+    const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
+    const target = otherWindow("w9", () => false);
+    try {
+      target.ask("w1", { kind: "move", sessionIds: ["b1"] });
+      await vi.waitFor(() => { expect(target.answers).toEqual([false]); });
+      expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
+      expect(getState(app).selectedSession?.id).toBe("b1");
+
+      canClose.mockReturnValue(true);
+      target.ask("w1", { kind: "move", sessionIds: ["b1"] });
+      await vi.waitFor(() => { expect(target.answers).toEqual([false, true]); });
+      const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+      expect(stored["w9"]?.chats.map((chat) => chat.sessionId)).toEqual(["b1"]);
+      expect(stored["w1"]?.chats.map((chat) => chat.sessionId)).not.toContain("b1");
+      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    } finally {
+      target.close();
+    }
+  });
+
+  it("routes a notification for a Chat another live window holds to that window once it answers, and that window keeps it", async () => {
+    const app = await mountWithWorkstreamChats();
+    const elsewhere = { sessionId: "c1", title: "Elsewhere", machineId: "local", projectId: "project", workspaceId: "workspace" };
+    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w2", elsewhere)));
+    const release = locks.hold(`${WINDOW_ID_LOCK_PREFIX}w2`);
+    const received: unknown[] = [];
+    // The holder reloads as the first request arrives, and answers the next.
+    const owner = otherWindow("w2", (request) => { received.push(request); return received.length > 1 ? true : new Promise<boolean>(() => undefined); });
+    try {
+      window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "c1", message: "entry:e1" } }));
+
+      await vi.waitFor(() => { expect(received).toHaveLength(2); }, { timeout: 2_000 });
+      expect(received[0]).toEqual({ kind: "select", sessionId: "c1", anchor: "entry:e1" });
+      await settled(app);
+      const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+      expect(stored["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
+      expect(stored["w1"]?.chats.map((chat) => chat.sessionId)).not.toContain("c1");
+      expect(getState(app).selectedSession?.id).toBe("b1");
+      expect(app.shadowRoot?.querySelector(".chat-error")).toBeNull();
+
+      owner.ask("w1", { kind: "select", sessionId: "a2" });
+      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+      await vi.waitFor(() => { expect(owner.answers).toEqual([true]); });
+    } finally {
+      owner.close();
+      release();
+    }
+  });
+
+  it("shows a Chat another live window holds there when Back or the chooser opens it, and stays as it is", async () => {
+    const app = await mountWithWorkstreamChats();
+    const elsewhere = { sessionId: "c1", title: "Elsewhere", machineId: "local", projectId: "project", workspaceId: "workspace" };
+    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w2", elsewhere)));
+    const release = locks.hold(`${WINDOW_ID_LOCK_PREFIX}w2`);
+    const received: unknown[] = [];
+    const owner = otherWindow("w2", (request) => { received.push(request); return true; });
+    const held = () => parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+    try {
+      window.history.pushState({}, "", "/?win=w1&project=project&workspace=workspace&session=c1&view=chat");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      await vi.waitFor(() => { expect(received).toEqual([{ kind: "select", sessionId: "c1" }]); });
+      await settled(app);
+      expect(getState(app).selectedSession?.id).toBe("b1");
+      expect(new URLSearchParams(window.location.search).get("session")).toBe("b1");
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "t", metaKey: true, bubbles: true, cancelable: true }));
+      await vi.waitFor(() => { expect(app.shadowRoot?.querySelector("workstream-chooser")).not.toBeNull(); });
+      openFromWorkstream(app, { sessionId: "c1", projectId: "project", workspaceId: "workspace" });
+      await vi.waitFor(() => { expect(received).toHaveLength(2); });
+      await settled(app);
+      expect(getState(app).selectedSession).toBeUndefined();
+      expect(held()["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
+      expect(held()["w1"]?.chats.map((chat) => chat.sessionId)).not.toContain("c1");
+    } finally {
+      owner.close();
+      release();
+    }
+  });
+
+  it("without Web Locks keeps this window's Chats to itself and offers no moves", async () => {
+    Reflect.deleteProperty(navigator, "locks");
+    try {
+      const app = await mountWithWorkstreamChats();
+      expect(localStorage.getItem(WINDOW_STORE_KEY)).toBeNull();
+      expect(parseWindowStore(sessionStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats).toHaveLength(3);
+
+      tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+      await app.updateComplete;
+      expect([...(app.shadowRoot?.querySelectorAll(".window-menu button") ?? [])].map((item) => item.textContent.trim())).toEqual(["Close"]);
+    } finally {
+      sessionStorage.clear();
+    }
+  });
+
+  it("follows another window that takes the Chat on screen, retiring it before the next Chat loads", async () => {
+    const app = await mountWithWorkstreamChats();
+    const successor = holdLookup("a2");
+    const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(stored, "w2", { sessionId: "b1", title: "Install guide", machineId: "local" })));
+    window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
+
+    await settled(app);
+    expect(getState(app).selectedSession).toBeUndefined();
+    expect(app.shadowRoot?.querySelector("prompt-editor")).toBeNull();
+    successor.release();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await app.updateComplete;
+    expect(workstreamTabs(app)).toEqual(["Release2"]);
+  });
+
+  it("drops a delayed open of a Chat another live window opened meanwhile, and shows it there", async () => {
+    const app = await mountWithWorkstreamChats();
+    const lookup = holdLookup("c1");
+    const release = locks.hold(`${WINDOW_ID_LOCK_PREFIX}w2`);
+    const received: unknown[] = [];
+    const owner = otherWindow("w2", (request) => { received.push(request); return true; });
+    try {
+      window.history.pushState({}, "", "/?win=w1&project=project&workspace=workspace&session=c1&view=chat");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      await vi.waitFor(() => { expect(lookup.asked()).toBe(true); });
+      const elsewhere = { sessionId: "c1", title: "Elsewhere", machineId: "local", projectId: "project", workspaceId: "workspace" };
+      localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w2", elsewhere)));
+      lookup.release();
+
+      await vi.waitFor(() => { expect(received).toEqual([{ kind: "select", sessionId: "c1" }]); });
+      await settled(app);
+      const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+      expect(stored["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
+      expect(stored["w1"]?.chats.map((chat) => chat.sessionId)).not.toContain("c1");
+      expect(getState(app).selectedSession?.id).not.toBe("c1");
+    } finally {
+      owner.close();
+      release();
+    }
+  });
+
+  it("drops a delayed tab activation of a Chat moved to another window meanwhile", async () => {
+    const app = await mountWithWorkstreamChats();
+    const lookup = holdLookup("a2");
+    const target = otherWindow("w2", () => false);
+    try {
+      app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
+      await vi.waitFor(() => { expect(lookup.asked()).toBe(true); });
+      target.ask("w1", { kind: "move", sessionIds: ["a2"] });
+      await vi.waitFor(() => { expect(target.answers).toEqual([true]); });
+      lookup.release();
+
+      await settled(app);
+      await settled(app);
+      const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+      expect(stored["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["a2"]);
+      expect(stored["w1"]?.chats.map((chat) => chat.sessionId)).not.toContain("a2");
+      expect(getState(app).selectedSession?.id).toBe("b1");
+    } finally {
+      target.close();
+    }
+  });
+
+  it("retires the moved Chat's composer before the store hands the Chat on, while its successor still loads", async () => {
+    vi.spyOn(window, "open").mockReturnValue(null);
+    const app = await mountWithWorkstreamChats();
+    const successor = holdLookup("a2");
+    const writable: (string | undefined)[] = [];
+    const setItem = localStorage.setItem.bind(localStorage);
+    vi.spyOn(localStorage, "setItem").mockImplementation((key: string, value: string) => {
+      if (key === WINDOW_STORE_KEY && parseWindowStore(value)["w1"]?.chats.some((chat) => chat.sessionId === "b1") === false) {
+        writable.push(app.shadowRoot?.querySelector<PromptEditor>("prompt-editor")?.sessionId);
+      }
+      setItem(key, value);
+    });
+
+    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    await app.updateComplete;
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
+    await vi.waitFor(() => { expect(writable).not.toEqual([]); });
+    await settled(app);
+
+    expect(writable.every((sessionId) => sessionId === undefined)).toBe(true);
+    expect(app.shadowRoot?.querySelector("prompt-editor")).toBeNull();
+    successor.release();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+  });
+
+  it("keeps Chats whose hand-over the asking window gave up on while their owner decided", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle")?.click();
+    await app.updateComplete;
+    const pane = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
+    if (pane === null || pane === undefined) throw new Error("Files pane was not mounted");
+    const now = Date.now();
+    // The owner confirms discarding file edits only after the asking window stopped waiting.
+    vi.spyOn(pane, "canClose").mockImplementation(() => { vi.spyOn(Date, "now").mockReturnValue(now + 61_000); return true; });
+    const target = otherWindow("w9", () => false);
+    try {
+      target.ask("w1", { kind: "move", sessionIds: ["b1"] });
+      await vi.waitFor(() => { expect(target.answers).toEqual([false]); });
+      expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
+      expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w9"]).toBeUndefined();
+      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    } finally {
+      target.close();
+    }
+  });
+
+  it("keeps the workspace and Files of the Chat on screen when a delayed tab in another workspace was moved away", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    const original = getState(app).selectedWorkspace;
+    const otherWorkspace = { ...workspace, id: "other-workspace", path: "/other-repository" };
+    const lookup = deferred<SessionInfo[]>();
+    let asked = false;
+    const listed = vi.mocked(api.sessions).getMockImplementation();
+    vi.mocked(api.sessions).mockImplementation((cwd, machineId, options) => {
+      if (options?.sessionId === "a2") { asked = true; return lookup.promise; }
+      return listed?.(cwd, machineId, options) ?? Promise.resolve([]);
+    });
+    vi.mocked(api.workspaces).mockResolvedValue([workspace, otherWorkspace]);
+    const saved = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+    const own = saved["w1"];
+    if (own !== undefined) saved["w1"] = { ...own, chats: own.chats.map((chat) => chat.sessionId === "a2" ? { ...chat, workspaceId: otherWorkspace.id } : chat) };
+    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(saved));
+    window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
+    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
+    await vi.waitFor(() => { expect(asked).toBe(true); });
+    const target = otherWindow("w2", () => true);
+    const release = locks.hold(`${WINDOW_ID_LOCK_PREFIX}w2`);
+    try {
+      target.ask("w1", { kind: "move", sessionIds: ["a2"] });
+      await vi.waitFor(() => { expect(target.answers).toEqual([true]); });
+      lookup.resolve([{ ...session("a2", "Notes"), cwd: otherWorkspace.path }]);
+      await settled(app);
+      await settled(app);
+
+      expect(getState(app).selectedSession?.id).toBe("b1");
+      expect(getState(app).selectedWorkspace?.path).toBe(original?.path);
+      app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle")?.click();
+      await app.updateComplete;
+      expect(app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.workspace?.path).toBe(original?.path);
+    } finally {
+      target.close();
+      release();
+    }
+  });
+
+  it("lets New Chat in the chooser a close exposed win over the closed Chat's delayed successor", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    const successor = holdLookup("a2");
+    const created = deferred<SessionInfo>();
+    vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    closeButton(app, "Install guide").click();
+    await vi.waitFor(() => { expect(successor.asked()).toBe(true); });
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".new-chat button")?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id.startsWith("creating:")).toBe(true); });
+    successor.release();
+    await settled(app);
+    await settled(app);
+    created.resolve({ ...session("new-chat", "Fresh"), persisted: false });
+    await settled(app);
+    await settled(app);
+
+    expect(getState(app).selectedSession?.id).toBe("new-chat");
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("new-chat");
+  });
+
+  it("does not let a selection queued behind the window store overwrite a later New Chat", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    const release = locks.hold("pi-workbench.windows.store");
+    const started = deferred<SessionInfo>();
+    vi.spyOn(api, "startSession").mockReturnValue(started.promise);
+    const sessions: unknown = Reflect.get(app, "sessions");
+    if (!(sessions instanceof SessionController)) throw new Error("Session controller missing");
+    const selecting = sessions.selectSession(session("c1", "Claimed"));
+    const creating = sessions.startSession();
+    // New Chat must reserve its identity before publishing a writable composer.
+    expect(getState(app).selectedSession?.id).toBe("b1");
+    release();
+    await selecting;
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id.startsWith("creating:")).toBe(true); });
+    started.resolve({ ...session("new-chat", "Fresh"), persisted: false });
+    await creating;
+    await settled(app);
+    expect(getState(app).selectedSession?.id).toBe("new-chat");
+  });
+
+  it("shows a created Chat only in the window holding it when another window claimed its id before the creation answered", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const source = await mountWithWorkstreamChats();
+    const created = deferred<SessionInfo>();
+    const row = { ...session("new-chat", "Fresh"), persisted: false };
+    vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    tabsRoot(source).querySelector<HTMLButtonElement>("button.add")?.click();
+    await source.updateComplete;
+    source.shadowRoot?.querySelector<HTMLButtonElement>(".new-chat button")?.click();
+    await vi.waitFor(() => { expect(getState(source).selectedSession?.id.startsWith("creating:")).toBe(true); });
+    vi.mocked(api.sessions).mockResolvedValue([row]);
+    // The daemon exposes the created id to another live window before the creator's HTTP response returns.
+    window.history.replaceState({}, "", "/?win=w2&project=project&workspace=workspace&session=new-chat&view=chat");
+    const target = new WorkbenchApp();
+    document.body.append(target);
+    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("new-chat"); });
+    await settled(target);
+    window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
+    await settled(source);
+    expect(getState(source).selectedSession?.id.startsWith("creating:")).toBe(true);
+    // Store writes reach the other window at once, as storage events do between real windows.
+    const windows: unknown = Reflect.get(source, "windows");
+    const environment: unknown = typeof windows === "object" && windows !== null ? Reflect.get(windows, "environment") : undefined;
+    if (typeof environment !== "object" || environment === null) throw new Error("Window environment missing");
+    Reflect.set(environment, "storage", {
+      getItem: localStorage.getItem.bind(localStorage),
+      setItem: (key: string, value: string) => {
+        localStorage.setItem(key, value);
+        if (key === WINDOW_STORE_KEY) queueMicrotask(() => window.dispatchEvent(new StorageEvent("storage", { key })));
+      },
+    });
+    created.resolve(row);
+    await settled(source);
+    await settled(target);
+    await settled(source);
+    await settled(target);
+
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w2"]?.chats.map((chat) => chat.sessionId)).toContain("new-chat");
+    const writable = [source, target].map((app) => app.shadowRoot?.querySelector<PromptEditor>("prompt-editor")).filter((editor) => editor?.sessionId === "new-chat" && !editor.disabled);
+    expect(writable).toHaveLength(1);
+  });
+
+  it("keeps a legacy daemon's unreserved first prompt separate instead of overwriting a new owner's draft", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const source = await mountWithWorkstreamChats();
+    const created = deferred<SessionInfo>();
+    const row = { ...session("new-chat", ""), persisted: false, messageCount: 0 };
+    vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    const sessions: unknown = Reflect.get(source, "sessions");
+    if (!(sessions instanceof SessionController)) throw new Error("Session controller missing");
+    const creating = sessions.startSession();
+    await settled(source);
+    const tempId = getState(source).selectedSession?.id ?? "";
+    promptEditor(source).replaceText("important first prompt");
+    vi.mocked(api.sessions).mockResolvedValue([row, session("another", "Another")]);
+    window.history.replaceState({}, "", "/?win=w2&project=project&workspace=workspace&session=another&view=chat");
+    const target = new WorkbenchApp();
+    document.body.append(target);
+    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("another"); });
+    await settled(target);
+    tabsRoot(target).querySelector<HTMLButtonElement>("button.add")?.click();
+    await settled(target);
+    [...(target.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? [])].find((button) => !button.textContent.includes("Another"))?.click();
+    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("new-chat"); });
+    await settled(target);
+    await promptEditor(target).updateComplete;
+    promptEditor(target).replaceText("new owner's draft");
+    created.resolve(row);
+    await creating;
+    await settled(source);
+    await settled(target);
+    expect(loadDraft(machineSessionKey("local", tempId))).toBe("important first prompt");
+    expect(loadDraft(machineSessionKey("local", "new-chat"))).toBe("new owner's draft");
+
+    target.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "another" } }));
+    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("another"); });
+    await settled(target);
+    expect(loadDraft(machineSessionKey("local", tempId))).toBe("important first prompt");
+    expect(loadDraft(machineSessionKey("local", "new-chat"))).toBe("new owner's draft");
+  });
+
+  it.each(["home", "history", "notification", "slow-tab", "remote"])("r5: %s during creation keeps its draft and sends to its original Chat", async (mode) => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    vi.mocked(api.machines).mockResolvedValue([machine, { ...machine, id: "remote", name: "Remote", kind: "remote" }]);
+    const app = await mountWithWorkstreamChats();
+    const created = deferred<SessionInfo>();
+    vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    const sent = vi.spyOn(api, "prompt").mockResolvedValue({ accepted: true });
+    const sessions = sessionsOf(app);
+    const creating = sessions.startSession();
+    await settled(app);
+    promptEditor(app).replaceText("draft before navigation");
+    await sessions.send("queued first message");
+    const slow = mode === "slow-tab" ? holdLookup("a2") : undefined;
+    if (mode === "home") tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
+    else if (mode === "slow-tab") app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
+    else if (mode === "history") {
+      window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    } else {
+      vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+      window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: mode === "remote" ? "remote" : "local", sessionId: "a2" } }));
+    }
+    if (slow !== undefined) await vi.waitFor(() => { expect(slow.asked()).toBe(true); });
+    else if (mode !== "home") await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await settled(app);
+    const row = { ...session("created-after-navigation", ""), persisted: false, messageCount: 0 };
+    created.resolve(row);
+    await creating;
+    await settled(app);
+    expect(sent.mock.calls.map(([target, text, , machineId]) => [target.id, text, machineId])).toEqual([[row.id, "queued first message", "local"]]);
+    expect(loadDraft(machineSessionKey("local", row.id))).toBe("draft before navigation");
+    expect(getState(app).selectedSession?.id).toBe(mode === "home" || mode === "slow-tab" ? undefined : "a2");
+    slow?.release();
+    if (slow !== undefined) await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.find((chat) => chat.sessionId === row.id)?.machineId).toBe("local");
+  });
+
+  it("keeps edits and sends made while creation completion waits for the store lock", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    const created = deferred<SessionInfo>();
+    vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    const sent = vi.spyOn(api, "prompt").mockResolvedValue({ accepted: true });
+    const sessions = sessionsOf(app);
+    const creating = sessions.startSession();
+    await settled(app);
+    await sessions.send("before response");
+    const release = locks.hold("pi-workbench.windows.store");
+    created.resolve({ ...session("created-after-lock", ""), persisted: false });
+    await settled(app);
+    promptEditor(app).replaceText("edited while completion waited");
+    await sessions.send("during completion");
+    release();
+    await creating;
+    await settled(app);
+    expect(sent.mock.calls.map(([, text]) => text)).toEqual(["before response", "during completion"]);
+    expect(promptEditor(app).view?.state.doc.toString()).toBe("edited while completion waited");
+  });
+
+  it("r5: same-Chat reload completion cannot cancel a newer slow tab navigation", async () => {
+    const app = await mountWithWorkstreamChats();
+    const reloaded = deferred<Awaited<ReturnType<typeof api.reloadSession>>>();
+    vi.spyOn(api, "reloadSession").mockReturnValue(reloaded.promise);
+    const sessions = sessionsOf(app);
+    const reloading = sessions.reloadSession();
+    const next = holdLookup("a2");
+    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
+    await vi.waitFor(() => { expect(next.asked()).toBe(true); });
+    const generation = sessions.navigationGeneration;
+    reloaded.resolve({ reloaded: true });
+    await reloading;
+    expect(sessions.navigationGeneration).toBe(generation);
+    next.release();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+  });
+
+  it.each([false, true])("r5–r8: reserves the creator's draft before any startup event (missed=%s)", async (missed) => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const source = await mountWithWorkstreamChats();
+    const created = deferred<SessionInfo>();
+    const start = vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    const sessions = sessionsOf(source);
+    const creating = sessions.startSession();
+    await settled(source);
+    const tempId = getState(source).selectedSession?.id ?? "";
+    const row = { ...session("reserved-chat", ""), persisted: false, messageCount: 0, startupToken: start.mock.calls[0]?.[2] ?? "" };
+    promptEditor(source).replaceText("important first prompt");
+    if (!missed) sessions.applyGlobalEvent({ type: "session.startup", startupToken: row.startupToken, activity: { sessionId: row.id, phase: "active", label: "Creating session", at: "now", startup: true } });
+    vi.mocked(api.sessions).mockResolvedValue([row, session("another", "Another")]);
+    window.history.replaceState({}, "", "/?win=w2&project=project&workspace=workspace&session=another&view=chat");
+    const target = new WorkbenchApp();
+    document.body.append(target);
+    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("another"); });
+    const targetSessions = sessionsOf(target);
+    await targetSessions.selectSession(row);
+    await settled(target);
+    expect(getState(target).selectedSession?.id).toBe("another");
+    expect(getState(source).selectedSession?.id).toBe(tempId);
+    created.resolve(row);
+    await creating;
+    await settled(source);
+    expect(promptEditor(source).view?.state.doc.toString()).toBe("important first prompt");
+    expect(loadDraft(machineSessionKey("local", row.id))).toBe("important first prompt");
+    await sessions.selectSession(session("a2", "Notes"));
+    await sessions.selectSession(row);
+    await settled(source);
+    expect(promptEditor(source).view?.state.doc.toString()).toBe("important first prompt");
+  });
+
+  it.each([false, true])("r8: Add and reselect returns to the same pending draft (ad-hoc=%s)", async (adHoc) => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    if (adHoc) setState(app, { ...getState(app), selectedProject: undefined, selectedWorkspace: adHocWorkspace(workspace.path) });
+    const created = deferred<SessionInfo>();
+    const start = vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    const sessions = sessionsOf(app);
+    const creating = sessions.startSession();
+    await settled(app);
+    const tempId = getState(app).selectedSession?.id ?? "";
+    const row = { ...session("reserved-chat", ""), persisted: false, startupToken: start.mock.calls[0]?.[2] ?? "" };
+    promptEditor(app).replaceText("first prompt");
+    sessions.applyGlobalEvent({ type: "session.startup", startupToken: row.startupToken, activity: { sessionId: row.id, phase: "active", label: "Creating session", at: "now", startup: true } });
+    await settled(app);
+    tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
+    await settled(app);
+    // A pending tab and a chooser/notification row carrying the real id are the same Chat.
+    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: tempId } }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(tempId); });
+    await sessions.selectSession(row);
+    await settled(app);
+    expect(getState(app).selectedSession?.id).toBe(tempId);
+    expect(promptEditor(app).view?.state.doc.toString()).toBe("first prompt");
+    promptEditor(app).replaceText("first prompt and edits");
+    created.resolve(row);
+    await creating;
+    await settled(app);
+    expect(promptEditor(app).view?.state.doc.toString()).toBe("first prompt and edits");
+  });
+
+  it("r8: a pending tab cannot move or close its reservation before creation settles", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
+    const app = await mountWithWorkstreamChats();
+    const created = deferred<SessionInfo>();
+    vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    const sessions = sessionsOf(app);
+    const creating = sessions.startSession();
+    await settled(app);
+    const tempId = getState(app).selectedSession?.id ?? "";
+    promptEditor(app).replaceText("first prompt");
+    sessions.applyGlobalEvent({ type: "session.startup", startupToken: tempId, activity: { sessionId: "reserved-chat", phase: "active", label: "Creating session", at: "now", startup: true } });
+    await settled(app);
+    const tabs = tabsRoot(app);
+    const tab = tabs.querySelector(`[data-session="reserved-chat"]`) ?? tabs.querySelector(`[data-session="${tempId}"]`);
+    expect(tab).not.toBeNull();
+    tab?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    await app.updateComplete;
+    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((button) => button.textContent === "Move to new window")?.click();
+    await settled(app);
+    expect(opened).not.toHaveBeenCalled();
+    expect(promptEditor(app).view?.state.doc.toString()).toBe("first prompt");
+    created.resolve({ ...session("reserved-chat", ""), persisted: false });
+    await creating;
+  });
+
+  it("sends a second window opening a Chat still being created to the window creating it, which keeps its composer", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const source = await mountWithWorkstreamChats();
+    const created = deferred<SessionInfo>();
+    const row = { ...session("new-chat", ""), persisted: false, messageCount: 0 };
+    vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    const sessions: unknown = Reflect.get(source, "sessions");
+    if (!(sessions instanceof SessionController)) throw new Error("Session controller missing");
+    const creating = sessions.startSession();
+    await settled(source);
+    promptEditor(source).replaceText("first prompt");
+    const startupToken = getState(source).selectedSession?.id ?? "";
+    sessions.applyGlobalEvent({ type: "session.startup", startupToken, activity: { sessionId: "new-chat", phase: "active", label: "Creating session", at: "now", startup: true } });
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain(startupToken);
+    vi.mocked(api.sessions).mockResolvedValue([{ ...row, startupToken }]);
+    window.history.replaceState({}, "", "/?win=w2&project=project&workspace=workspace&session=new-chat&view=chat");
+    const target = new WorkbenchApp();
+    document.body.append(target);
+    await vi.waitFor(() => { expect(target.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
+    await settled(target);
+    expect(getState(target).selectedSession).toBeUndefined();
+    expect(target.shadowRoot?.querySelector("prompt-editor")).toBeNull();
+    expect(getState(source).selectedSession?.id).toBe(startupToken);
+
+    created.resolve(row);
+    await creating;
+    await settled(source);
+    expect(getState(source).selectedSession?.id).toBe("new-chat");
+    expect(promptEditor(source).view?.state.doc.toString()).toBe("first prompt");
+    const store = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+    expect(store["w1"]?.chats.map((chat) => chat.sessionId)).toContain("new-chat");
+    expect(store["w2"]?.chats.map((chat) => chat.sessionId) ?? []).not.toContain("new-chat");
+  });
+
+  it("brings a Chat whose move storage refused back with the composer text storage could not save", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    vi.spyOn(window, "open").mockReturnValue(null);
+    const app = await mountWithWorkstreamChats();
+    await settled(app);
+    promptEditor(app).replaceText("saved draft");
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => { throw new DOMException("full", "QuotaExceededError"); });
+    promptEditor(app).replaceText("saved draft plus unsaved edits");
+    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    await app.updateComplete;
+    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((item) => item.textContent.trim() === "Move to new window")?.click();
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("b1");
+      expect(getState(app).error).toContain("storage is full");
+      expect(promptEditor(app).view?.state.doc.toString()).toBe("saved draft plus unsaved edits");
+    });
+    // Another window's heartbeat leaves the text alone, though storage still holds the older draft.
+    window.dispatchEvent(new StorageEvent("storage", { key: "pi-workbench.windows.alive.v1" }));
+    expect(promptEditor(app).view?.state.doc.toString()).toBe("saved draft plus unsaved edits");
+  });
+
+  it("tries a title change full storage refused once, not again on its own error", async () => {
+    const app = await mountWithWorkstreamChats();
+    await settled(app);
+    const sessions: unknown = Reflect.get(app, "sessions");
+    if (!(sessions instanceof SessionController)) throw new Error("Session controller missing");
+    const store = localStorage.setItem.bind(localStorage);
+    let attempts = 0;
+    vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+      if (key !== WINDOW_STORE_KEY) { store(key, value); return; }
+      attempts += 1;
+      throw new DOMException("full", "QuotaExceededError");
+    });
+    sessions.applyGlobalEvent({ type: "session.name", sessionId: "b1", name: "A longer auto-generated Chat title" });
+    await vi.waitFor(() => { expect(getState(app).error).toContain("storage is full"); });
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    expect(attempts).toBe(1);
+  });
+});
+
+function sessionsOf(app: WorkbenchApp): SessionController {
+  const sessions: unknown = Reflect.get(app, "sessions");
+  if (!(sessions instanceof SessionController)) throw new Error("Session controller missing");
+  return sessions;
+}
+
+/** Holds the targeted row lookup of `sessionId` until released; other lookups answer at once. */
+function holdLookup(sessionId: string) {
+  const held = deferred<undefined>();
+  let asked = false;
+  const listed = vi.mocked(api.sessions).getMockImplementation();
+  vi.mocked(api.sessions).mockImplementation(async (cwd, machineId, options) => {
+    if (options?.sessionId === sessionId) { asked = true; await held.promise; return [session(sessionId, sessionId)]; }
+    return listed === undefined ? [] : await listed(cwd, machineId, options);
+  });
+  return { asked: () => asked, release: () => { held.resolve(undefined); } };
+}
+
+type OtherWindowRequest = { kind: "select"; sessionId: string; anchor?: string } | { kind: "move"; sessionIds: string[] };
+
+function isOtherWindowMessage(message: unknown): message is { id: string; to: string; from: string; request?: OtherWindowRequest; ok?: boolean } {
+  return typeof message === "object" && message !== null && typeof Reflect.get(message, "to") === "string" && typeof Reflect.get(message, "from") === "string";
+}
+
+/** Another window on the shared channel: answers requests sent to `windowId`, and asks windows itself. */
+function otherWindow(windowId: string, answer: (request: OtherWindowRequest, from: string) => boolean | Promise<boolean>) {
+  const channel = new BroadcastChannel(WINDOW_CHANNEL);
+  const answers: boolean[] = [];
+  let asked = 0;
+  channel.onmessage = (event: MessageEvent<unknown>) => {
+    const message = event.data;
+    if (!isOtherWindowMessage(message) || message.to !== windowId) return;
+    const request = message.request;
+    if (request === undefined) { answers.push(message.ok === true); return; }
+    void Promise.resolve(answer(request, message.from)).then((ok) => { channel.postMessage({ id: message.id, to: message.from, from: windowId, ok }); });
+  };
+  return {
+    answers,
+    ask: (to: string, request: OtherWindowRequest, timeoutMs = 60_000) => { asked += 1; channel.postMessage({ id: `${windowId}:${String(asked)}`, to, from: windowId, request, expires: Date.now() + timeoutMs }); },
+    close: () => { channel.close(); },
+  };
+}
+
+/** A window store write settles before the render it causes. */
+async function settled(app: WorkbenchApp): Promise<void> {
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  await app.updateComplete;
+}
+
+function tabsRoot(app: WorkbenchApp): ShadowRoot {
+  const root = app.shadowRoot?.querySelector("workbench-window-tabs")?.shadowRoot;
+  if (root === null || root === undefined) throw new Error("Window tabs were not rendered");
+  return root;
+}
+
+const paneChats = (app: WorkbenchApp): (string | undefined)[] => [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])].map((pane) => pane instanceof WorkbenchChatPane ? pane.chat?.sessionId : undefined);
+const workstreamTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".workstream-tab")].map((tab) => tab.textContent.replace(/\s+/gu, ""));
+const chatTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".chat-tab .title")].map((title) => title.textContent);
+
+function workstreamTab(app: WorkbenchApp, title: string): HTMLElement {
+  const tab = [...tabsRoot(app).querySelectorAll<HTMLElement>(".workstream-tab")].find((candidate) => candidate.querySelector(".title")?.textContent === title);
+  if (tab === undefined) throw new Error(`No Workstream tab ${title}`);
+  return tab;
+}
+
+function closeButton(app: WorkbenchApp, title: string): HTMLButtonElement {
+  const button = tabsRoot(app).querySelector<HTMLButtonElement>(`button[aria-label="Close ${title}"]`);
+  if (button === null) throw new Error(`No close button for ${title}`);
+  return button;
 }
 
 describe("Workbench interface scale shortcuts", () => {

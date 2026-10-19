@@ -36,6 +36,11 @@ export class ConversationMeter extends LitElement {
     .track { position: relative; height: 4px; margin-top: 4px; border-radius: 999px; background: color-mix(in srgb, var(--pi-border-muted) 34%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--pi-bg) 55%, transparent); }
     .progress { position: absolute; left: 0; width: var(--position); top: 0; bottom: 0; border-radius: 999px; background: color-mix(in srgb, var(--pi-accent) 42%, var(--pi-border-muted)); }
     .marker { position: absolute; left: var(--position); top: 50%; width: 10px; height: 10px; border: 2px solid var(--pi-bg); border-radius: 50%; background: var(--pi-accent); box-shadow: 0 2px 8px var(--pi-shadow); transform: translate(-50%, -50%); }
+    /* Dense pane: a full-width hairline flush with the pane's top edge instead of a floating 4px bar. */
+    :host([dense]) { left: 0; right: 0; }
+    :host([dense]) .track { height: 2px; border-radius: 0; box-shadow: none; }
+    :host([dense]) .progress { border-radius: 0; }
+    :host([dense]) .marker { width: 6px; height: 6px; border: 0; box-shadow: none; }
   `;
 }
 

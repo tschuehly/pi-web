@@ -1450,6 +1450,10 @@ describe("session routes", () => {
       // An older browser, or any non-browser caller, sends no token; and a
       // malformed one must not reach the service as a label it would echo.
       const malformedToken = await routeApp.inject({ method: "POST", url: "/sessions", payload: { cwd: requestCwd, startupToken: 7 } });
+      // The daemon keeps and lists the token, so only short, plain labels are accepted.
+      const oversizedToken = await routeApp.inject({ method: "POST", url: "/sessions", payload: { cwd: requestCwd, startupToken: "x".repeat(129) } });
+      const unsafeToken = await routeApp.inject({ method: "POST", url: "/sessions", payload: { cwd: requestCwd, startupToken: "creating:<script>" } });
+      expect([oversizedToken.statusCode, unsafeToken.statusCode]).toEqual([400, 400]);
 
       expect(withToken.statusCode).toBe(200);
       expect(withoutToken.statusCode).toBe(200);

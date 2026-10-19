@@ -611,6 +611,8 @@ export interface SessionNotificationSummaryEvent {
 
 export interface SessionInfo extends SessionRef {
   path: string;
+  /** Creation identity, also present on listings so reconnects need no startup event replay. */
+  startupToken?: string | undefined;
   /** True when the server has verified a backing session file exists; false when known transient. */
   persisted?: boolean;
   name?: string;
