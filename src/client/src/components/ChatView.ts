@@ -396,14 +396,17 @@ export class ChatView extends LitElement {
   private showReplyForSelection(): void {
     const selected = this.onReplyToSelection === undefined || this.shadowRoot === null ? undefined : messageSelection(this.shadowRoot);
     const excerpt = selected?.range.toString().trim() ?? "";
-    const wrap = this.renderRoot.querySelector(".chat-wrap")?.getBoundingClientRect();
-    if (selected === undefined || excerpt === "" || wrap === undefined) {
+    const wrapElement = this.renderRoot.querySelector<HTMLElement>(".chat-wrap");
+    const wrap = wrapElement?.getBoundingClientRect();
+    if (selected === undefined || excerpt === "" || wrapElement === null || wrap === undefined) {
       this.replySelection = undefined;
       return;
     }
     const rects = selected.range.getClientRects();
     const end = rects.item(rects.length - 1) ?? selected.range.getBoundingClientRect();
-    this.replySelection = { entryId: selected.entryId, excerpt, left: Math.max(0, Math.min(end.right - wrap.left, wrap.width - 96)), top: end.bottom - wrap.top + 6, scrollTop: this.chat?.scrollTop ?? 0 };
+    // Client rects are zoomed screen pixels under the interface scale (CSS zoom); `left`/`top` are layout pixels.
+    const scale = wrapElement.offsetWidth > 0 ? wrap.width / wrapElement.offsetWidth : 1;
+    this.replySelection = { entryId: selected.entryId, excerpt, left: Math.max(0, Math.min((end.right - wrap.left) / scale, wrapElement.offsetWidth - 96)), top: (end.bottom - wrap.top) / scale + 6, scrollTop: this.chat?.scrollTop ?? 0 };
   }
   private readonly replyToSelection = (): void => {
     const quote = this.replySelection;
