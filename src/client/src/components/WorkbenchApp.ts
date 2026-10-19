@@ -99,8 +99,8 @@ export class WorkbenchApp extends LitElement {
   @state() private currentWorkstream: WorkstreamSnapshot | null | undefined;
   @state() private currentWorkstreamError = "";
   @state() private delegateRosterCollapsed = false;
-  @state() private showFiles = false;
-  @state() private showQuestions = false;
+  /** Files and Questions share one right-hand slot: divider, width and close chevron. */
+  @state() private sidePane: "files" | "questions" | undefined;
   /** A workspace the Files pane shows instead of the Chat's, after a link to a file outside the Chat's folder. */
   @state() private filesTarget: { sessionId: string; workspace: Workspace } | undefined;
   @state() private filesWidth = 400;
@@ -210,7 +210,7 @@ export class WorkbenchApp extends LitElement {
       this.updateUrl({ replace: true });
       return;
     }
-    this.showFiles = false;
+    if (this.sidePane === "files") this.sidePane = undefined;
     void this.load(readRoute(), { reuseLoaded: true });
   };
 
@@ -1133,18 +1133,22 @@ export class WorkbenchApp extends LitElement {
 
   private openFileSearch(): void {
     if (this.app.selectedWorkspace === undefined) return;
-    this.showFiles = true;
+    this.sidePane = "files";
     void this.updateComplete.then(async () => {
       const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
       if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.searchFiles(); }
     });
   }
 
-  private readonly toggleFiles = (): void => {
-    if (this.showFiles && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
-    if (this.showFiles) { this.finishFilesResize(); this.filesTarget = undefined; }
-    this.showFiles = !this.showFiles;
-  };
+  /** Opens `pane` in the side slot, replacing the other, or closes it if already shown. Leaving Files respects unsaved edits. */
+  private toggleSidePane(pane: "files" | "questions"): void {
+    if (this.sidePane === "files") {
+      if (this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
+      this.filesTarget = undefined;
+    }
+    this.finishFilesResize();
+    this.sidePane = this.sidePane === pane ? undefined : pane;
+  }
 
   private filesWorkspace(): Workspace | undefined {
     const target = this.filesTarget;
@@ -1159,7 +1163,7 @@ export class WorkbenchApp extends LitElement {
     if (switching && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
     const session = this.app.selectedSession;
     this.filesTarget = workspace === undefined || session === undefined ? undefined : { sessionId: session.id, workspace };
-    this.showFiles = true;
+    this.sidePane = "files";
     void this.updateComplete.then(async () => {
       const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
       if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.openFile(path, false, lines); }
@@ -1204,14 +1208,15 @@ export class WorkbenchApp extends LitElement {
     const session = state.selectedSession;
     if (session === undefined) return null;
     const warningCount = state.status?.warnings?.length ?? 0;
+    const sidePaneName = this.sidePane === "questions" ? "Questions" : "Files";
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${selectedMachineId(state)} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         <header>
-          <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { if (this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false) { this.showFiles = false; this.sessions.deselectSession(); } }}>←</button>
+          <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { if (this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false) { if (this.sidePane === "files") this.sidePane = undefined; this.sessions.deselectSession(); } }}>←</button>
           <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
           <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${state.selectedWorkspace?.label}</span>
-          <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.showFiles} aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("files")}</button>
-          <button type="button" class="icon-button questions-toggle" title="Questions" aria-label=${`Questions, ${String(state.pendingAsks.length)} open`} aria-expanded=${this.showQuestions} aria-controls="workbench-questions" @click=${() => { this.showQuestions = !this.showQuestions; }}>${QUESTIONS_ICON}${state.pendingAsks.length === 0 ? null : html`<small class="badge" aria-hidden="true">${state.pendingAsks.length}</small>`}</button>
+          <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.sidePane === "files"} aria-controls="workbench-files" @click=${() => { this.toggleSidePane("files"); }}>${renderBuiltinTabIcon("files")}</button>
+          <button type="button" class="icon-button questions-toggle" title="Questions" aria-label=${`Questions, ${String(state.pendingAsks.length)} open`} aria-expanded=${this.sidePane === "questions"} aria-controls="workbench-questions" @click=${() => { this.toggleSidePane("questions"); }}>${QUESTIONS_ICON}${state.pendingAsks.length === 0 ? null : html`<small class="badge" aria-hidden="true">${state.pendingAsks.length}</small>`}</button>
           <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
           <button class="icon-button" type="button" title=${`${sessionInfoText(session, state.status)}\n\nClick to copy`} aria-label=${this.sessionInfoCopied ? "Copied session info" : "Copy session info"} @click=${() => { void this.copySessionInfo(session); }}>${this.sessionInfoCopied ? html`<span aria-hidden="true">✓</span>` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`}</button>
           ${this.renderSettingsPanel()}
@@ -1288,12 +1293,12 @@ export class WorkbenchApp extends LitElement {
           .onRunCommand=${(command: string) => this.sessions.runCommand(command)}
         ></prompt-editor>
           </div>
-          ${this.showFiles ? html`
-            <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
+          ${this.sidePane === undefined ? null : html`
+            <div class="files-divider" role="separator" tabindex="0" aria-label=${`Resize ${sidePaneName} pane`} title=${`Resize ${sidePaneName} pane`} aria-orientation="vertical" aria-controls=${`workbench-${this.sidePane}`} aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
               @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
-            <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${this.toggleFiles}>${renderBuiltinTabIcon("chevron")}</button></div>
-            <workbench-files-pane id="workbench-files" .workspace=${this.filesWorkspace()} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
-          ${this.showQuestions ? html`<workbench-questions-pane id="workbench-questions" .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(selectedMachineId(state), session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => this.sessions.submitAsk(askId, submission)}></workbench-questions-pane>` : null}
+            <div class="files-close-anchor"><button type="button" class="files-close" title=${`Close ${sidePaneName}`} aria-label=${`Close ${sidePaneName}`} aria-controls=${`workbench-${this.sidePane}`} @click=${() => { if (this.sidePane !== undefined) this.toggleSidePane(this.sidePane); }}>${renderBuiltinTabIcon("chevron")}</button></div>`}
+          ${this.sidePane === "files" ? html`<workbench-files-pane id="workbench-files" .workspace=${this.filesWorkspace()} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
+          ${this.sidePane === "questions" ? html`<workbench-questions-pane id="workbench-questions" .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(selectedMachineId(state), session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => this.sessions.submitAsk(askId, submission)}></workbench-questions-pane>` : null}
         </div>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
         ${this.renderSessionTreeNavigator(state)}
@@ -1369,7 +1374,6 @@ export class WorkbenchApp extends LitElement {
     .files-toggle[aria-expanded="true"], .questions-toggle[aria-expanded="true"] { color: var(--pi-accent); background: var(--pi-selection-bg); }
     .questions-toggle { position: relative; }
     .questions-toggle .badge { position: absolute; top: 1px; right: 0; min-width: 14px; height: 14px; box-sizing: border-box; padding: 0 3px; border-radius: 7px; background: var(--pi-accent); color: var(--pi-accent-contrast, white); font: 700 10px/14px system-ui, sans-serif; text-align: center; }
-    workbench-questions-pane { flex: 0 1 420px; min-width: 280px; box-sizing: border-box; }
     .files-divider { position: relative; z-index: 2; flex: 0 0 8px; background: var(--pi-border-muted); cursor: col-resize; touch-action: none; }
     .files-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: var(--pi-border); }
     .files-divider:hover::after, .files-divider:focus-visible::after { background: var(--pi-accent); }
@@ -1380,7 +1384,7 @@ export class WorkbenchApp extends LitElement {
     .files-close:hover { border-color: var(--pi-accent); background: var(--pi-surface-hover); }
     .files-close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .files-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    workbench-files-pane { flex: 0 0 min(var(--files-width), max(240px, calc(100% - 328px))); box-sizing: border-box; }
+    workbench-files-pane, workbench-questions-pane { flex: 0 0 min(var(--files-width), max(240px, calc(100% - 328px))); box-sizing: border-box; }
     @media (max-width: 760px) {
       .chat-and-files { flex-direction: column; }
       .files-divider, .files-close-anchor { display: none; }
