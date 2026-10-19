@@ -405,7 +405,7 @@ export class AskUserCard extends LitElement {
   private currentModelIdentity(): string | undefined {
     if (this.outcome !== undefined) return `record:${this.draftSessionId}:${this.outcome.askId}`;
     // A revision reloads the draft, which drops answers to questions it changed.
-    if (this.ask !== undefined) return `open:${this.draftSessionId}:${this.ask.askId}:${String(this.ask.revision)}`;
+    if (this.ask !== undefined) return `open:${this.draftSessionId}:${this.ask.askId}:${this.ask.revision}`;
     return undefined;
   }
 

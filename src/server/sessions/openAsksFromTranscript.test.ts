@@ -6,7 +6,7 @@ import { ASK_USER_CLOSED_CUSTOM_TYPE } from "./pendingAskStore.js";
 const SESSION = "session-1";
 const questions = [{ id: "db", question: "Which database?", options: [] }];
 
-function ask(askId: string, revision = 1) {
+function ask(askId: string, revision = "r1") {
   return { askId, askedAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", revision, turnsSinceUpdate: 0, context: "Why", questions };
 }
 
@@ -18,10 +18,10 @@ const closedRecord = (askId: string) => ({ type: "custom", customType: ASK_USER_
 
 describe("openAsksFromTranscript", () => {
   it("rebuilds every posted ask at its latest revision and counts the agent turns since", () => {
-    const branch = [user, assistant, posted({ ask: ask("a1") }), assistant, posted({ ask: ask("a2") }), user, assistant, posted({ ask: { ...ask("a1", 2), context: "New" } }), assistant, assistant];
+    const branch = [user, assistant, posted({ ask: ask("a1") }), assistant, posted({ ask: ask("a2") }), user, assistant, posted({ ask: { ...ask("a1", "r2"), context: "New" } }), assistant, assistant];
 
     expect(openAsksFromTranscript(branch, SESSION).open).toEqual([
-      { ...ask("a1", 2), context: "New", turnsSinceUpdate: 2 },
+      { ...ask("a1", "r2"), context: "New", turnsSinceUpdate: 2 },
       { ...ask("a2"), turnsSinceUpdate: 3 },
     ]);
   });

@@ -1109,12 +1109,12 @@ describe("API parsers", () => {
 
   it("parses several open asks with their staleness and recommended options", () => {
     const base = pendingAskWire();
-    const fresh = { ...base, askId: "ask-2", updatedAt: "2026-07-21T00:00:00.000Z", revision: 4, turnsSinceUpdate: 6, questions: [{ id: "q1", question: "Which database?", options: [{ value: "pg", label: "Postgres" }, { value: "sqlite", label: "SQLite" }, { value: "duck", label: "DuckDB", recommended: true }] }] };
+    const fresh = { ...base, askId: "ask-2", updatedAt: "2026-07-21T00:00:00.000Z", revision: "r4", turnsSinceUpdate: 6, questions: [{ id: "q1", question: "Which database?", options: [{ value: "pg", label: "Postgres" }, { value: "sqlite", label: "SQLite" }, { value: "duck", label: "DuckDB", recommended: true }] }] };
     const parsed = parseSessionStatus({ ...statusWire(), pendingAsks: [pendingAskWire(), fresh] });
 
     expect(parsed.pendingAsks?.map((ask) => [ask.askId, ask.updatedAt, ask.revision, ask.turnsSinceUpdate])).toEqual([
-      ["ask-1", "2026-07-20T00:00:00.000Z", 0, 0],
-      ["ask-2", "2026-07-21T00:00:00.000Z", 4, 6],
+      ["ask-1", "2026-07-20T00:00:00.000Z", "", 0],
+      ["ask-2", "2026-07-21T00:00:00.000Z", "r4", 6],
     ]);
     expect(parsed.pendingAsks?.[1]?.questions[0]?.options[2]).toEqual({ value: "duck", label: "DuckDB", recommended: true });
   });
@@ -1126,7 +1126,7 @@ describe("API parsers", () => {
       askId: "ask-1",
       askedAt: "2026-07-20T00:00:00.000Z",
       updatedAt: "2026-07-20T00:00:00.000Z",
-      revision: 0,
+      revision: "",
       turnsSinceUpdate: 0,
       questions: [
         { id: "q1", question: "Which database?", detail: "Pick the primary store", options: [{ value: "pg", label: "Postgres", detail: "Relational" }, { value: "sqlite", label: "SQLite" }] },

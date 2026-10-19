@@ -69,7 +69,7 @@ function status(isStreaming: boolean): SessionStatus {
   };
 }
 
-const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-09-20T00:00:00Z", updatedAt: "2026-09-20T00:00:00Z", revision: 1, turnsSinceUpdate: 0, questions: [] };
+const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-09-20T00:00:00Z", updatedAt: "2026-09-20T00:00:00Z", revision: "r1", turnsSinceUpdate: 0, questions: [] };
 const dialog: PendingExtensionDialog = { dialogId: "dialog-1", kind: "confirm", title: "Proceed?", askedAt: "2026-09-20T00:00:00Z", runScoped: true };
 const session: SessionInfo = { id: "session-1", name: "Build Chat", cwd: "/repo", path: "/sessions/1.jsonl", created: "2026-09-20T00:00:00Z", modified: "2026-09-20T00:00:00Z", messageCount: 1, firstMessage: "Hello" };
 

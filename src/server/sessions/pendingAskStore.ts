@@ -20,6 +20,7 @@ import {
 export interface PendingAskStoreOptions {
   now?: (() => Date) | undefined;
   createAskId?: (() => string) | undefined;
+  createRevision?: (() => string) | undefined;
 }
 
 /** A question set an agent wants to post to the user of one session. */
@@ -86,11 +87,13 @@ export type RecordOutcome = (outcome: AskUserOutcome) => void;
 export class PendingAskStore {
   private readonly now: () => Date;
   private readonly createAskId: () => string;
+  private readonly createRevision: () => string;
   private readonly openBySessionId = new Map<string, Map<string, PendingAskUser>>();
 
   constructor(options: PendingAskStoreOptions = {}) {
     this.now = options.now ?? (() => new Date());
     this.createAskId = options.createAskId ?? randomUUID;
+    this.createRevision = options.createRevision ?? randomUUID;
   }
 
   /** The session's open asks, oldest first, for {@link SessionStatus} projection. */
@@ -107,7 +110,7 @@ export class PendingAskStore {
     if (input.questions === undefined) throw new PendingAskValidationError("questions are required for a new question set");
     const questions = validateQuestions(input.questions);
     const askedAt = this.timestamp();
-    const ask: PendingAskUser = { askId: this.distinctAskId(sessionId), askedAt, updatedAt: askedAt, revision: 1, turnsSinceUpdate: 0, context, questions };
+    const ask: PendingAskUser = { askId: this.distinctAskId(sessionId), askedAt, updatedAt: askedAt, revision: this.createRevision(), turnsSinceUpdate: 0, context, questions };
     this.setAsk(sessionId, ask);
     return cloneAsk(ask);
   }
@@ -119,7 +122,7 @@ export class PendingAskStore {
     if (ask === undefined) return undefined;
     const context = validateContext(input.context) ?? ask.context;
     const questions = input.questions === undefined ? ask.questions : validateQuestions(input.questions);
-    const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), revision: ask.revision + 1, turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
+    const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), revision: this.createRevision(), turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
     this.setAsk(sessionId, updated);
     return cloneAsk(updated);
   }
@@ -133,12 +136,13 @@ export class PendingAskStore {
    * Record what the user replied and close the ask. Answers are validated against
    * the open ask, so a submission that does not fit its questions is rejected
    * rather than silently truncated; the ask stays open in that case. A submission
-   * for an older revision is stale: the user answered questions that changed.
+   * naming no revision or another one is stale: the user answered questions that
+   * changed, or a browser too old to say which questions it answered.
    * `record` runs before the ask closes; when it throws, the ask stays open.
    */
   submit(sessionId: string, askId: string, submission: AskUserSubmission, record?: RecordOutcome): PendingAskCloseResult {
     const ask = this.asksOf(requireSessionId(sessionId)).get(askId);
-    if (ask === undefined || (submission.revision !== undefined && submission.revision !== ask.revision)) return { status: "stale" };
+    if (ask === undefined || submission.revision !== ask.revision) return { status: "stale" };
     const answers = validateSubmission(ask, submission);
     return closed(this.close(sessionId, askId, "submitted", answers, record));
   }

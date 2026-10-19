@@ -783,8 +783,8 @@ export interface PendingAskUser {
   askedAt: string;
   /** When the agent last posted, revised, or confirmed the set. */
   updatedAt: string;
-  /** Starts at 1 and grows with every revision, so a submit for an older revision is refused as stale. */
-  revision: number;
+  /** Random id of the current revision; never reissued, even across branches, so a submit for any other revision is refused as stale. */
+  revision: string;
   /** Agent turns started since {@link updatedAt}; drives the "may be stale" mark. */
   turnsSinceUpdate: number;
   /** Markdown the user needs to answer, shown above the questions. */
@@ -812,8 +812,8 @@ export interface AskUserAnswer {
 /** One submit of the open ask: answers for some or all of its questions. */
 export interface AskUserSubmission {
   answers: AskUserAnswer[];
-  /** {@link PendingAskUser.revision} the user answered; a mismatch makes the submit stale. Absent from older browsers. */
-  revision?: number;
+  /** {@link PendingAskUser.revision} the user answered; absent (older browsers) or mismatched makes the submit stale. */
+  revision?: string;
 }
 
 /**

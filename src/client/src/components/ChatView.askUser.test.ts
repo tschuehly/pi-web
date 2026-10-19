@@ -46,7 +46,7 @@ function openAsk(askId: string): PendingAskUser {
     askId,
     askedAt: "2026-07-20T10:00:00.000Z",
     updatedAt: "2026-07-20T10:00:00.000Z",
-    revision: 1,
+    revision: "r1",
     turnsSinceUpdate: 0,
     questions: [{ id: "editor", question: "Which editor?", options: [{ value: "vim", label: "Vim" }] }],
   };

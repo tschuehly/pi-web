@@ -55,7 +55,7 @@ export function openAsksFromTranscript(branch: readonly unknown[], sessionId: st
 // Shape checks only: PI WEB itself wrote these entries.
 function isPendingAsk(value: unknown): value is PendingAskUser {
   return isRecord(value) && typeof value["askId"] === "string" && typeof value["askedAt"] === "string" && typeof value["updatedAt"] === "string"
-    && typeof value["revision"] === "number" && Array.isArray(value["questions"]);
+    && typeof value["revision"] === "string" && Array.isArray(value["questions"]);
 }
 
 function isOutcome(value: unknown): value is AskUserOutcome {

@@ -718,9 +718,9 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   const answers = body["answers"];
   if (!Array.isArray(answers)) throw new Error("answers field must be an array");
   if (answers.length > ASK_USER_QUESTION_LIMIT) throw new Error("answers field has too many entries");
-  const revision = body["revision"];
-  if (revision !== undefined && !Number.isSafeInteger(revision)) throw new Error("revision field must be an integer");
-  return { answers: answers.map(askUserAnswerFromValue), ...(typeof revision === "number" ? { revision } : {}) };
+  // An absent revision is not an error: the store refuses it as stale, so an older browser reloads.
+  const revision = body["revision"] === undefined ? undefined : requireBoundedId(body["revision"], "revision");
+  return { answers: answers.map(askUserAnswerFromValue), ...(revision === undefined ? {} : { revision }) };
 }
 
 function askUserAnswerFromValue(value: unknown): AskUserAnswer {

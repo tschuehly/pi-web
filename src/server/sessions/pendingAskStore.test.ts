@@ -10,12 +10,14 @@ import {
 const sessionId = "session-1";
 const context = "Found two options; I recommend yes.";
 
-/** Ask ids `ask-1`, `bsk-2`, `csk-3`, …: distinct question-ref prefixes, as the store requires. */
+/** Ask ids `ask-1`, `bsk-2`, `csk-3`, …: distinct question-ref prefixes, as the store requires. Revisions `r1`, `r2`, …. */
 function testStore() {
   let askCount = 0;
+  let revisionCount = 0;
   let tick = 0;
   return new PendingAskStore({
     createAskId: () => `${"abcdefghij".charAt(askCount)}sk-${(++askCount).toString()}`,
+    createRevision: () => `r${(++revisionCount).toString()}`,
     now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)),
   });
 }
@@ -57,7 +59,7 @@ describe("PendingAskStore validation", () => {
       askId: "ask-1",
       askedAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
-      revision: 1,
+      revision: "r1",
       turnsSinceUpdate: 0,
       context,
       questions: [
@@ -136,7 +138,7 @@ describe("PendingAskStore submit", () => {
       questions: [question("q1"), question("q2"), question("q3")],
     });
 
-    const result = store.submit(sessionId, ask.askId, { answers: [{ id: "q2", values: ["no"] }] });
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q2", values: ["no"] }] });
 
     expect(result).toEqual({
       status: "closed",
@@ -164,6 +166,7 @@ describe("PendingAskStore submit", () => {
     const ask = openTwoQuestions(store);
 
     const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
       answers: [{ id: "q1", values: ["yes"] }, { id: "q2", values: ["no"] }],
     });
 
@@ -178,6 +181,7 @@ describe("PendingAskStore submit", () => {
     const ask = store.open({ sessionId, context, questions: [question("q1"), question("q2")] });
 
     const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
       answers: [{ id: "q1", values: [] }, { id: "q2", values: [], otherText: "   " }],
     });
 
@@ -188,7 +192,7 @@ describe("PendingAskStore submit", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
 
-    expect(() => store.submit(sessionId, ask.askId, { answers: [{ id: "q1", values: ["yes", "no"] }] }))
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes", "no"] }] }))
       .toThrow(/Question q1 accepts a single answer/);
     expect(store.pendingAsks(sessionId)[0]?.askId).toBe(ask.askId);
   });
@@ -202,6 +206,7 @@ describe("PendingAskStore submit", () => {
     });
 
     const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
       answers: [{ id: "q1", values: ["yes", "no"], otherText: "  maybe later  " }],
     });
 
@@ -218,7 +223,7 @@ describe("PendingAskStore submit", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
 
-    const result = store.submit(sessionId, ask.askId, { answers: [{ id: "q1", values: [], otherText: "custom" }] });
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: [], otherText: "custom" }] });
 
     expect(result).toMatchObject({ status: "closed", outcome: { answeredCount: 1 } });
     if (result.status !== "closed") throw new Error("expected the ask to close");
@@ -229,7 +234,7 @@ describe("PendingAskStore submit", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("q1", { options: [] })] });
 
-    const result = store.submit(sessionId, ask.askId, { answers: [{ id: "q1", values: [], otherText: "a note" }] });
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: [], otherText: "a note" }] });
 
     expect(result).toMatchObject({ status: "closed", outcome: { questions: [{ answered: true, values: [], otherText: "a note" }] } });
   });
@@ -237,7 +242,7 @@ describe("PendingAskStore submit", () => {
   it("rejects unknown, duplicated, and unoffered answers", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
-    const reject = (answers: Parameters<typeof store.submit>[2]["answers"]) => () => store.submit(sessionId, ask.askId, { answers });
+    const reject = (answers: Parameters<typeof store.submit>[2]["answers"]) => () => store.submit(sessionId, ask.askId, { revision: ask.revision, answers });
 
     expect(reject([{ id: "q9", values: ["yes"] }])).toThrow(/Unknown question id q9/);
     expect(reject([{ id: "q1", values: ["yes"] }, { id: "q1", values: ["no"] }])).toThrow(/Duplicate answer for question q1/);
@@ -251,9 +256,30 @@ describe("PendingAskStore submit", () => {
     const ask = openTwoQuestions(store);
     store.update({ sessionId, askId: ask.askId, questions: [question("q1", { question: "Changed q1?" }), question("q2")] });
 
-    expect(store.submit(sessionId, ask.askId, { answers: [{ id: "q1", values: ["yes"] }], revision: 1 })).toEqual({ status: "stale" });
-    expect(store.pendingAsks(sessionId).map((open) => open.revision)).toEqual([2]);
-    expect(store.submit(sessionId, ask.askId, { answers: [{ id: "q1", values: ["yes"] }], revision: 2 })).toMatchObject({ status: "closed" });
+    expect(store.submit(sessionId, ask.askId, { answers: [{ id: "q1", values: ["yes"] }], revision: "r1" })).toEqual({ status: "stale" });
+    expect(store.pendingAsks(sessionId).map((open) => open.revision)).toEqual(["r2"]);
+    expect(store.submit(sessionId, ask.askId, { answers: [{ id: "q1", values: ["yes"] }], revision: "r2" })).toMatchObject({ status: "closed" });
+  });
+
+  it("refuses a submit without a revision as stale, so an old browser cannot answer a revised ask", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    store.update({ sessionId, askId: ask.askId, questions: [question("q1", { question: "Delete production database?" })] });
+
+    expect(store.submit(sessionId, ask.askId, { answers: [{ id: "q1", values: ["yes"] }] })).toEqual({ status: "stale" });
+    expect(store.pendingAsks(sessionId)).toHaveLength(1);
+  });
+
+  it("never reissues a revision after a rewind restores an older one, so an answer from the abandoned branch stays stale", () => {
+    const store = testStore();
+    const posted = openTwoQuestions(store);
+    const branchA = store.update({ sessionId, askId: posted.askId, questions: [question("q1", { question: "Keep staging?" })] });
+    store.cancelAll(sessionId);
+    store.restore(sessionId, [posted]);
+    const branchB = store.update({ sessionId, askId: posted.askId, questions: [question("q1", { question: "Delete production database?" })] });
+
+    expect(branchB?.revision).not.toEqual(branchA?.revision);
+    expect(store.submit(sessionId, posted.askId, { answers: [{ id: "q1", values: ["yes"] }], revision: branchA?.revision ?? "" })).toEqual({ status: "stale" });
   });
 
   it("keeps the ask open when recording its outcome fails", () => {
@@ -261,7 +287,7 @@ describe("PendingAskStore submit", () => {
     const ask = openTwoQuestions(store);
     const recorded: string[] = [];
 
-    expect(() => store.submit(sessionId, ask.askId, { answers: [] }, () => { throw new Error("disk full"); })).toThrow("disk full");
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [] }, () => { throw new Error("disk full"); })).toThrow("disk full");
     expect(store.pendingAsks(sessionId)).toHaveLength(1);
     store.cancel(sessionId, ask.askId, (outcome) => { recorded.push(outcome.askId); });
     expect(recorded).toEqual([ask.askId]);
@@ -273,10 +299,10 @@ describe("PendingAskStore submit", () => {
 
     expect(store.submit(sessionId, "ask-other", { answers: [] })).toEqual({ status: "stale" });
     expect(store.cancel(sessionId, "ask-other")).toEqual({ status: "stale" });
-    expect(store.submit("session-2", ask.askId, { answers: [] })).toEqual({ status: "stale" });
+    expect(store.submit("session-2", ask.askId, { revision: ask.revision, answers: [] })).toEqual({ status: "stale" });
 
-    store.submit(sessionId, ask.askId, { answers: [] });
-    expect(store.submit(sessionId, ask.askId, { answers: [] })).toEqual({ status: "stale" });
+    store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [] });
+    expect(store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [] })).toEqual({ status: "stale" });
   });
 });
 
@@ -287,7 +313,7 @@ describe("PendingAskStore open asks", () => {
     const second = store.open({ sessionId, context, questions: [question("q3")] });
 
     expect(store.pendingAsks(sessionId).map((ask) => ask.askId)).toEqual([first.askId, second.askId]);
-    expect(store.submit(sessionId, first.askId, { answers: [] })).toMatchObject({ status: "closed" });
+    expect(store.submit(sessionId, first.askId, { revision: first.revision, answers: [] })).toMatchObject({ status: "closed" });
     expect(store.pendingAsks(sessionId).map((ask) => ask.askId)).toEqual([second.askId]);
   });
 
@@ -308,9 +334,9 @@ describe("PendingAskStore open asks", () => {
 
     const reworded = store.update({ sessionId, askId: ask.askId, questions: [question("q1", { question: "Still q1?" })] });
 
-    expect(reworded).toEqual({ ...ask, updatedAt: "2026-01-01T00:00:01.000Z", revision: 2, turnsSinceUpdate: 0, questions: [question("q1", { question: "Still q1?" })] });
+    expect(reworded).toEqual({ ...ask, updatedAt: "2026-01-01T00:00:01.000Z", revision: "r2", turnsSinceUpdate: 0, questions: [question("q1", { question: "Still q1?" })] });
     const confirmed = store.update({ sessionId, askId: ask.askId });
-    expect(confirmed).toMatchObject({ askId: ask.askId, context, updatedAt: "2026-01-01T00:00:02.000Z", revision: 3, questions: reworded?.questions });
+    expect(confirmed).toMatchObject({ askId: ask.askId, context, updatedAt: "2026-01-01T00:00:02.000Z", revision: "r3", questions: reworded?.questions });
     expect(store.update({ sessionId, askId: "ask-other" })).toBeUndefined();
     expect(() => store.update({ sessionId, askId: ask.askId, questions: [] })).toThrow(PendingAskValidationError);
   });
@@ -349,7 +375,7 @@ describe("PendingAskStore open asks", () => {
   it("regenerates an ask id whose 3-character ref prefix an open ask already uses", () => {
     const ids = ["abc-1", "abd-2", "abd-3", "abe-4"];
     const store = new PendingAskStore({ createAskId: () => ids.shift() ?? "never" });
-    store.restore(sessionId, [{ askId: "abc-rebuilt", askedAt: "t0", updatedAt: "t0", revision: 1, turnsSinceUpdate: 0, context, questions: [question("q1")] }]);
+    store.restore(sessionId, [{ askId: "abc-rebuilt", askedAt: "t0", updatedAt: "t0", revision: "r1", turnsSinceUpdate: 0, context, questions: [question("q1")] }]);
 
     const first = store.open({ sessionId, context, questions: [question("q1")] });
     const second = store.open({ sessionId, context, questions: [question("q1")] });
@@ -360,7 +386,7 @@ describe("PendingAskStore open asks", () => {
 
   it("restores rebuilt asks only into a session without live asks", () => {
     const store = testStore();
-    const rebuilt = { askId: "old", askedAt: "t0", updatedAt: "t1", revision: 2, turnsSinceUpdate: 3, context, questions: [question("q1")] };
+    const rebuilt = { askId: "old", askedAt: "t0", updatedAt: "t1", revision: "r2", turnsSinceUpdate: 3, context, questions: [question("q1")] };
 
     expect(store.restore(sessionId, [rebuilt])).toBe(true);
     expect(store.pendingAsks(sessionId)).toEqual([rebuilt]);
@@ -384,6 +410,7 @@ describe("ask outcome rendering", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("q1"), question("q2"), question("q3")] });
     const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
       answers: [{ id: "q1", values: ["yes"] }, { id: "q2", values: [], otherText: "something else" }],
     });
     if (result.status !== "closed") throw new Error("expected the ask to close");

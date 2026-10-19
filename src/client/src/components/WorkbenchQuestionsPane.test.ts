@@ -17,7 +17,7 @@ function ask(askId: string, patch: Partial<PendingAskUser> = {}): PendingAskUser
     askId,
     askedAt: "2026-10-19T10:00:00.000Z",
     updatedAt: "2026-10-19T10:00:00.000Z",
-    revision: 1,
+    revision: "r1",
     turnsSinceUpdate: 0,
     context: "**Finding:** the cache is stale.",
     questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite" }] }],
@@ -67,7 +67,7 @@ describe("WorkbenchQuestionsPane", () => {
 
     second?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
 
-    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledWith("def-2", { answers: [{ id: "db", values: ["pg"] }], revision: 1 }); });
+    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledWith("def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1" }); });
   });
 
   it("drops an answered set while keeping the other card and its draft", async () => {

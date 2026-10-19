@@ -11,11 +11,11 @@ const ACTIVE_SESSION_ID = "session-1";
 const questions = [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] }];
 const context = "Postgres is already deployed; I recommend it.";
 const T0 = "2026-02-01T10:00:00.000Z";
-const openedAsk = (askId: string, overrides: Record<string, unknown> = {}) => ({ askId, askedAt: T0, updatedAt: T0, revision: 1, turnsSinceUpdate: 0, context, questions, ...overrides });
+const openedAsk = (askId: string, overrides: Record<string, unknown> = {}) => ({ askId, askedAt: T0, updatedAt: T0, revision: "r1", turnsSinceUpdate: 0, context, questions, ...overrides });
 const postedAsk = (askId: string, sessionId = ACTIVE_SESSION_ID) => ({ type: "message", message: { role: "toolResult", toolName: "ask_user", details: { ask: openedAsk(askId), sessionId } } });
 
 /**
- * Service over a clocked store with sequential ask ids, so asks are named
+ * Service over a clocked store with sequential ask ids and revisions (`r1`, …), so asks are named
  * `ask-1`, `bsk-2`, … (distinct ref prefixes) and timestamps are fixed. Pass
  * `withActiveSession` when the test needs a live runtime to deliver answers
  * into, and `branch` for a transcript the runtime reads and appends to.
@@ -26,6 +26,10 @@ function askService(options: { withActiveSession?: boolean; branch?: unknown[]; 
     createAskId: (() => {
       let next = 0;
       return () => { next += 1; return `${"abcdefghij".charAt(next - 1)}sk-${next.toString()}`; };
+    })(),
+    createRevision: (() => {
+      let next = 0;
+      return () => { next += 1; return `r${next.toString()}`; };
     })(),
   });
   const fake = fakeRuntime(ACTIVE_SESSION_ID);
@@ -132,7 +136,7 @@ describe("PiSessionService ask update and withdraw", () => {
     expect(withdrawn).toMatchObject({ askId: "ask-1", reason: "withdrawn" });
     expect(askEvents(events).map(({ event }) => event)).toEqual([
       { type: "ask.opened", ask: openedAsk("ask-1") },
-      { type: "ask.opened", ask: openedAsk("ask-1", { context: "New finding.", revision: 2 }) },
+      { type: "ask.opened", ask: openedAsk("ask-1", { context: "New finding.", revision: "r2" }) },
       { type: "ask.closed", askId: "ask-1", reason: "withdrawn" },
     ]);
     expect(store.pendingAsks(ACTIVE_SESSION_ID)).toEqual([]);
@@ -149,7 +153,7 @@ describe("PiSessionService ask status projection", () => {
     const before = await service.status(sessionRef(ACTIVE_SESSION_ID));
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
     const during = await service.status(sessionRef(ACTIVE_SESSION_ID));
-    await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }] });
+    await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { revision: "r1", answers: [{ id: "db", values: ["pg"] }] });
     const after = await service.status(sessionRef(ACTIVE_SESSION_ID));
 
     expect(before).not.toHaveProperty("pendingAsks");
@@ -214,7 +218,7 @@ describe("PiSessionService ask status projection", () => {
 
     expect(status.pendingAsks).toEqual([openedAsk("kept", { turnsSinceUpdate: 1 })]);
     expect(fake.calls.sendCustomMessage).toEqual([]);
-    await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "kept", { answers: [] })).resolves.toMatchObject({ result: "closed" });
+    await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "kept", { revision: "r1", answers: [] })).resolves.toMatchObject({ result: "closed" });
     await service.dispose();
   });
 
@@ -251,6 +255,7 @@ describe("PiSessionService.submitAsk", () => {
 
     const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", {
       answers: [{ id: "db", values: [], otherText: "DuckDB" }],
+      revision: "r1",
     });
 
     expect(response).toMatchObject({ result: "closed", outcome: { askId: "ask-1", reason: "submitted", answeredCount: 1, unansweredIds: [] } });
@@ -275,7 +280,7 @@ describe("PiSessionService.submitAsk", () => {
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions: [{ id: "cache", question: "Which cache?", options: [] }] });
 
-    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "bsk-2", { answers: [] });
+    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "bsk-2", { revision: "r2", answers: [] });
 
     expect(response.outcome).toMatchObject({ askId: "bsk-2", answeredCount: 0, unansweredIds: ["cache"] });
     expect(fake.calls.sendCustomMessage[0]?.message.content).toContain("Answered 0 of 1; unanswered: cache");
@@ -299,7 +304,7 @@ describe("PiSessionService.submitAsk", () => {
     };
 
     // The follow-up only waits in Pi's memory and never reaches the branch before the daemon goes away.
-    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: 1 });
+    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: "r1" });
     expect(response.result).toBe("closed");
     expect(recordedBeforeDelivery).toEqual([true]);
     await service.dispose();
@@ -314,15 +319,40 @@ describe("PiSessionService.submitAsk", () => {
     await restarted.service.dispose();
   });
 
+  it("redelivers several recorded closes one at a time on runtime start, each exactly once", async () => {
+    const closed = (askId: string) => ({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: { askId, reason: "submitted", askedAt: T0, closedAt: T0, context, questions: [], answeredCount: 0, unansweredIds: [], summary: "Answered 0 of 0" } });
+    const branch: unknown[] = [postedAsk("ask-1"), postedAsk("bsk-2"), closed("ask-1"), closed("bsk-2")];
+    const { service, events, fake } = askService({ withActiveSession: true, branch });
+    // Pi refuses a second triggered turn while the first still runs, as an idle runtime does on start.
+    let running = false;
+    const deliver = fake.session.sendCustomMessage.bind(fake.session);
+    fake.session.sendCustomMessage = async (message, options) => {
+      if (running) throw new Error("Agent is already processing a prompt.");
+      running = true;
+      await deliver(message, options);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      branch.push({ type: "custom_message", customType: message.customType, details: message.details });
+      running = false;
+    };
+
+    await service.status(sessionRef(ACTIVE_SESSION_ID));
+
+    await vi.waitFor(() => { expect(fake.calls.sendCustomMessage).toHaveLength(2); });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(fake.calls.sendCustomMessage.map(({ message }) => message.details)).toMatchObject([{ askId: "ask-1" }, { askId: "bsk-2" }]);
+    expect(events.sessionEvents.filter(({ event }) => event.type === "session.error")).toEqual([]);
+    await service.dispose();
+  });
+
   it("refuses answers to an older revision of a revised ask as stale", async () => {
     const { service, store, fake } = askService({ withActiveSession: true });
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
     await service.updateAsk({ sessionId: ACTIVE_SESSION_ID, askId: "ask-1", questions: [{ id: "db", question: "Which cache?", options: [{ value: "pg", label: "Redis" }] }] });
 
-    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: 1 });
+    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: "r1" });
 
     expect(response.result).toBe("stale");
-    expect(response.sessionStatus.pendingAsks?.[0]).toMatchObject({ askId: "ask-1", revision: 2 });
+    expect(response.sessionStatus.pendingAsks?.[0]).toMatchObject({ askId: "ask-1", revision: "r2" });
     expect(store.pendingAsks(ACTIVE_SESSION_ID)).toHaveLength(1);
     expect(fake.calls.sendCustomMessage).toEqual([]);
     await service.dispose();
@@ -347,7 +377,7 @@ describe("PiSessionService.submitAsk", () => {
     const { service, store, fake } = askService({ withActiveSession: true });
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
 
-    await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "nope", values: [] }] }))
+    await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { revision: "r1", answers: [{ id: "nope", values: [] }] }))
       .rejects.toThrow(PendingAskValidationError);
 
     expect(store.pendingAsks(ACTIVE_SESSION_ID)).toHaveLength(1);
@@ -411,7 +441,7 @@ describe("PiSessionService prompts and commands with open asks", () => {
 
     expect(store.pendingAsks(ACTIVE_SESSION_ID)).toHaveLength(1);
     expect(fake.calls.sendCustomMessage).toEqual([]);
-    await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }] }))
+    await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { revision: "r1", answers: [{ id: "db", values: ["pg"] }] }))
       .resolves.toMatchObject({ result: "closed", outcome: { reason: "submitted" } });
     expect(fake.calls.prompt.map((call) => call.text)).toEqual(["/mode alignment plan", "/discuss alternatives"]);
     await service.dispose();

@@ -4601,16 +4601,23 @@ export class PiSessionService implements SessionRouteService {
   /**
    * Rebuild open asks from the current branch when the session has no live ask
    * state, e.g. after a daemon restart. On runtime open, answers recorded but
-   * never delivered (a follow-up lost with the old daemon) are delivered again.
+   * never delivered (a follow-up lost with the old daemon) are delivered again,
+   * one at a time: an idle Pi refuses a second triggered turn while the first
+   * runs. A failed delivery stays recorded as undelivered for the next open.
    */
   private restoreOpenAsks(session: PiAgentSession, options: { redeliver: boolean }): void {
     const { open, undelivered } = openAsksFromTranscript(session.sessionManager.getBranch(), session.sessionId);
     if (this.pendingAskStore.restore(session.sessionId, open)) this.publishStatus(session);
-    if (!options.redeliver) return;
-    for (const outcome of undelivered) {
-      void this.deliverAskOutcome(session, outcome).catch((error: unknown) => {
+    if (options.redeliver) void this.redeliverAskOutcomes(session, undelivered);
+  }
+
+  private async redeliverAskOutcomes(session: PiAgentSession, outcomes: readonly AskUserOutcome[]): Promise<void> {
+    for (const outcome of outcomes) {
+      try {
+        await this.deliverAskOutcome(session, outcome);
+      } catch (error: unknown) {
         this.publishSessionError(session, error instanceof Error ? error.message : String(error));
-      });
+      }
     }
   }
 
