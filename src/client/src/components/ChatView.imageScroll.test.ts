@@ -139,8 +139,13 @@ describe("ChatView image history anchoring", () => {
       view.machineId = previousMachine;
       await view.updateComplete;
     }
+    // The returning session's own scroll restore is not the stale image capture this checks.
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    restore.mockClear();
+    bottom.mockClear();
     scroller.dispatchEvent(layoutEvent("image-layout"));
     expect(restore).not.toHaveBeenCalled();
-    expect(bottom).not.toHaveBeenCalled();
+    // A session change restores that session's place, pinned to the bottom here, which an image layout then keeps.
+    if (change !== "session") expect(bottom).not.toHaveBeenCalled();
   });
 });

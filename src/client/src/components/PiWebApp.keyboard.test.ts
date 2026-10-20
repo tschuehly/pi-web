@@ -119,8 +119,9 @@ describe("PiWebApp global shortcut modality boundary", () => {
     Object.defineProperty(app, "promptEditor", { configurable: true, value: { focusInput } });
     Object.defineProperty(app, "updateComplete", { configurable: true, value: Promise.resolve(true) });
     let frameCallback: FrameRequestCallback | undefined;
+    // The focus's frame is the first one asked for; later frames (another view settling its scroll) are not it.
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      frameCallback = callback;
+      frameCallback ??= callback;
       return 1;
     });
 

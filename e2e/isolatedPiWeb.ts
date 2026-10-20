@@ -20,7 +20,7 @@ export const E2E_SESSION_ID = "019ef4c0-0000-7000-8000-00000000e2e1";
 export const E2E_SEARCH_MATCHES = 150;
 export const E2E_NOTES_BODY = "Seeded notes body for the file-link check.";
 export const E2E_ADHOC_SESSION_ID = "019ef4c0-0000-7000-8000-00000000e2e2";
-/** More finished Chats in the fixture project, for multi-Chat layouts. */
+/** More finished Chats in the fixture project, for multi-Chat layouts; long enough to scroll. */
 export const E2E_MORE_CHATS = [
   { id: "019ef4c0-0000-7000-8000-00000000e2e3", question: "Draft the release notes" },
   { id: "019ef4c0-0000-7000-8000-00000000e2e4", question: "Review the install guide" },
@@ -63,7 +63,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await mkdir(dirname(siblingFile), { recursive: true });
     await writeFile(siblingFile, `${E2E_SIBLING_BODY}\n`);
     await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md). The generator is [the sibling file](../sibling/src/generator.ts). See [the lines](docs/long.md#L40-L42).");
-    for (const chat of E2E_MORE_CHATS) await seedChat(sessionDir, project, chat.id, "Done.", chat.question);
+    for (const chat of E2E_MORE_CHATS) await seedChat(sessionDir, project, chat.id, "Done.", chat.question, 24);
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
@@ -122,18 +122,24 @@ async function seedProject(project: string): Promise<void> {
   git("commit", "-q", "-m", "fixture");
 }
 
-async function seedChat(sessionDir: string, cwd: string, sessionId: string, answer: string, question = "Where are the notes?"): Promise<void> {
+/** A finished Chat of `turns` exchanges: `question` first, `answer` last, filler paragraphs between. */
+async function seedChat(sessionDir: string, cwd: string, sessionId: string, answer: string, question = "Where are the notes?", turns = 1): Promise<void> {
   const ms = Date.now();
   const at = (offset: number) => new Date(ms + offset).toISOString();
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-  const entries = [
-    { type: "session", version: 3, id: sessionId, timestamp: at(0), cwd },
-    { type: "message", id: "e2e00001", parentId: null, timestamp: at(1000), message: { role: "user", content: [{ type: "text", text: question }], timestamp: ms + 1000 } },
-    {
-      type: "message", id: "e2e00002", parentId: "e2e00001", timestamp: at(2000),
-      message: { role: "assistant", content: [{ type: "text", text: answer }], api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason: "stop", timestamp: ms + 2000 },
-    },
-  ];
+  const id = (index: number) => `e2e${String(index + 1).padStart(5, "0")}`;
+  const filler = (turn: number) => `Step ${String(turn + 1)}. ${"This paragraph only makes the transcript long enough to scroll. ".repeat(4)}`;
+  const entries: object[] = [{ type: "session", version: 3, id: sessionId, timestamp: at(0), cwd }];
+  for (let turn = 0; turn < turns; turn += 1) {
+    const [asked, answered] = [2 * turn, 2 * turn + 1];
+    entries.push(
+      { type: "message", id: id(asked), parentId: turn === 0 ? null : id(asked - 1), timestamp: at(1000 * (asked + 1)), message: { role: "user", content: [{ type: "text", text: turn === 0 ? question : `Continue with step ${String(turn + 1)}.` }], timestamp: ms + 1000 * (asked + 1) } },
+      {
+        type: "message", id: id(answered), parentId: id(asked), timestamp: at(1000 * (answered + 1)),
+        message: { role: "assistant", content: [{ type: "text", text: turn === turns - 1 ? answer : filler(turn) }], api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason: "stop", timestamp: ms + 1000 * (answered + 1) },
+      },
+    );
+  }
   await writeFile(join(sessionDir, `${at(0).replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 }
 

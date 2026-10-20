@@ -346,6 +346,15 @@ export class SessionController {
       && (pending.tempId === sessionId || pending.backendSessionId === sessionId || startupToken !== undefined && pending.startupToken === startupToken))?.session;
   }
 
+  /** Fetches the latest page of a saved Chat with no cached transcript, so selecting it next paints that transcript at once. */
+  async prefetchTranscript(session: SessionInfo, machineId: string): Promise<void> {
+    const key = machineSessionKey(machineId, session.id);
+    if (session.persisted === false || session.archived === true || this.transcripts.cachedView(key).messages.length > 0) return;
+    // A failed read leaves selection to load and report it as usual.
+    const page = await this.api.messages(session, { limit: MESSAGE_PAGE_SIZE }, machineId).catch(() => undefined);
+    if (page !== undefined && this.transcripts.cachedView(key).messages.length === 0) this.transcripts.mergeHistory(key, page);
+  }
+
   async selectSession(session: SessionInfo, options?: SessionSelectionOptions) {
     if (this.disposed || !navigationIsCurrent(options?.navigation)) return;
     session = this.pendingSession(session.id, session.startupToken) ?? session;

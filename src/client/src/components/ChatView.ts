@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, ReactiveElement, css, html, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { guard } from "lit/directives/guard.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -1653,19 +1653,29 @@ export class ChatView extends LitElement {
     return true;
   }
 
+  /**
+   * Restores the session's saved place once the messages' own elements rendered, still before the first paint, and
+   * again on the next frame for content that lays out later.
+   */
   restoreScrollPosition() {
     const sessionId = this.sessionId;
     if (this.restoreScrollFrame !== undefined) cancelAnimationFrame(this.restoreScrollFrame);
+    const rendered = this.chat == null ? [] : [...this.renderRoot.querySelectorAll("*")].filter((element) => element instanceof ReactiveElement).map((element) => element.updateComplete);
+    void Promise.all(rendered).then(() => { if (this.restoreScrollFrame !== undefined) this.restoreScrollNow(sessionId); });
     this.restoreScrollFrame = requestAnimationFrame(() => {
       this.restoreScrollFrame = undefined;
-      if (this.sessionId !== sessionId || this.transcriptFilter !== "everything") return;
-      this.withSuppressedScrollSave(() => {
-        if (this.pendingAsks.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenAskToTop()) return;
-        if (this.pendingDialogs.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenDialogToTop()) return;
-        const chat = this.chat;
-        const result = this.scrollController.restorePosition(sessionId, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
-        this.handleScrollRestoreResult(sessionId, result);
-      });
+      this.restoreScrollNow(sessionId);
+    });
+  }
+
+  private restoreScrollNow(sessionId: string): void {
+    if (this.sessionId !== sessionId || this.transcriptFilter !== "everything") return;
+    this.withSuppressedScrollSave(() => {
+      if (this.pendingAsks.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenAskToTop()) return;
+      if (this.pendingDialogs.length > 0 && this.scrollController.readPosition(sessionId) === undefined && this.alignOpenDialogToTop()) return;
+      const chat = this.chat;
+      const result = this.scrollController.restorePosition(sessionId, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
+      this.handleScrollRestoreResult(sessionId, result);
     });
   }
 

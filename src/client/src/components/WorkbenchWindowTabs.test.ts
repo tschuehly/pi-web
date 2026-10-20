@@ -67,6 +67,30 @@ describe("window tabs", () => {
     expect(events).toEqual(["close a2", "close a1", "home"]);
   });
 
+  it("keeps Chat tabs, the slotted Chat tools and the actions in one row, adding a Workstream row only for two or more", async () => {
+    const releaseOnly = [chat("a1", release), chat("a2", release)].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") })["w"];
+    const { root } = await mount("a1", releaseOnly);
+    const bar = root.querySelector(".bar");
+
+    expect(root.querySelector(".workstreams")).toBeNull();
+    expect([...bar?.children ?? []].map((child) => child.matches("slot") ? `slot ${child.getAttribute("name") ?? ""}` : child.className)).toEqual(["tabs chats", "slot tools", "actions"]);
+
+    const mixed = await mount("a1");
+    expect(mixed.root.querySelectorAll(".workstreams .workstream-tab")).toHaveLength(2);
+    expect(mixed.root.querySelector(".bar .tabs.chats")).not.toBeNull();
+  });
+
+  it("caps every tab between 120px and 200px, its full title as the tooltip, with the dot and \u00d7 always shown", async () => {
+    const { root } = await mount("a1");
+    const css = [WorkbenchWindowTabs.styles].flat().map((style) => "cssText" in style ? style.cssText : "").join("\n");
+
+    expect(css).toMatch(/\.workstream-tab, \.chat-tab \{[^}]*min-width: 120px; max-width: 200px;[^}]*overflow: hidden/);
+    expect(css).toMatch(/\.title \{[^}]*text-overflow: ellipsis/);
+    expect(css).not.toMatch(/visibility: hidden/);
+    expect(root.querySelector(".chat-tab")?.getAttribute("title")).toBe("Chat a1");
+    expect(root.querySelector(".workstream-tab")?.getAttribute("title")).toBe("Workstream: Release");
+  });
+
   it("shows nothing for a window without Chats, and no selected tab while the home shows", async () => {
     expect((await mount(undefined, emptyWindow("Window 1"))).root.querySelector("nav")).toBeNull();
     const { root } = await mount(undefined, workingSet("a1"));

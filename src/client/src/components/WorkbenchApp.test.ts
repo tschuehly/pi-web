@@ -142,7 +142,7 @@ describe("Chat in a folder", () => {
     await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Source learning"); });
     expect(getState(app).selectedProject).toBeUndefined();
     expect(getState(app).selectedWorkspace?.path).toBe(current.cwd);
-    expect(app.shadowRoot?.querySelector(".chat-shell header > span")?.textContent.trim()).toBe("nested");
+    expect(app.shadowRoot?.querySelector(".files-toggle")?.getAttribute("title")).toBe("Files \u2014 nested (/outside/nested)");
     expect(workspaces).toHaveBeenCalledWith(project.id, machine.id);
     expect(calls.some(({ operation, input }) => operation === "list" && input["sessionId"] === current.id)).toBe(true);
     const drawer = app.shadowRoot?.querySelector<WorkstreamContextDrawer>("workstream-context-drawer");
@@ -154,7 +154,7 @@ describe("Chat in a folder", () => {
     expect(workspaces).toHaveBeenCalledOnce();
   });
 
-  it("keeps the Chat title with a tooltip when no registered project can provide Workstream access", async () => {
+  it("shows no Workstream drawer when no registered project can provide Workstream access, the Chat title staying on its tab", async () => {
     const current = { ...session("adhoc", "Investigate", "Nested chat"), cwd: "/outside/nested" };
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: current.cwd });
     vi.spyOn(api, "sessions").mockResolvedValue([current]);
@@ -165,10 +165,10 @@ describe("Chat in a folder", () => {
     window.history.replaceState({}, "", `/?session=${current.id}&view=chat`);
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Nested chat"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
-    const drawer = app.shadowRoot?.querySelector<WorkstreamContextDrawer>("workstream-context-drawer");
-    await drawer?.updateComplete;
-    expect(drawer?.shadowRoot?.querySelector(".tab")?.getAttribute("title")).toContain("registered project");
+    await vi.waitFor(() => { expect(Reflect.get(app, "currentWorkstreamError")).toContain("registered project"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector("workstream-context-drawer")).toBeNull();
+    expect(chatTabs(app)).toEqual(["Nested chat"]);
   });
   it("starts a Chat in a picked folder without a project and reopens it from the session id alone", async () => {
     vi.spyOn(api, "projects").mockResolvedValue([]);
@@ -498,7 +498,7 @@ describe("Workbench Chat chooser", () => {
     const composer = app.shadowRoot?.querySelector("prompt-editor");
     const toggle = app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle?.title).toBe("Files");
+    expect(toggle?.title).toBe("Files \u2014 Project \u00b7 main (/repo)");
     expect(toggle?.getAttribute("aria-label")).toBe("Files");
     expect(toggle?.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     expect(toggle?.textContent.trim()).toBe("");
@@ -635,7 +635,7 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(tree.mock.calls[0]?.slice(0, 4)).toEqual([project.id, workspace.id, "", "local"]); });
     await vi.waitFor(() => { expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]')); });
     expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
-    expect(WorkbenchApp.styles.cssText).toMatch(/header > button\s*\{[^}]*min-height:\s*32px;[^}]*border-color:\s*transparent/);
+    expect(WorkbenchApp.styles.cssText).toMatch(/:is\(header, \.chat-tools\) > button\s*\{[^}]*min-height:\s*32px;[^}]*border-color:\s*transparent/);
     // Search lives in the Files pane toolbar, not the Chat header.
     expect(app.shadowRoot?.querySelector('header button[aria-label="Search files"]')).toBeNull();
     // happy-dom's ShadowRoot.activeElement throws while focus sits in another nested shadow root.
@@ -787,7 +787,7 @@ describe("Workbench Chat chooser", () => {
     window.history.replaceState({}, "", "/?project=project&workspace=workspace&session=human&view=chat");
     await app.updateComplete;
 
-    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Back"]')?.click();
+    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("window-home"));
     await app.updateComplete;
 
     expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull();
@@ -1701,7 +1701,7 @@ describe("Workstream open versus in-flight navigation", () => {
     await Promise.resolve(Reflect.apply(fn, app, args));
   };
   const loadingText = (app: WorkbenchApp) => app.shadowRoot?.querySelector('p[role="status"]')?.textContent ?? null;
-  const back = (app: WorkbenchApp) => { app.shadowRoot?.querySelector<HTMLButtonElement>("button.back")?.click(); };
+  const back = (app: WorkbenchApp) => { app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("window-home")); };
   const blankRow = (id: string, cwd = workspace.path): SessionInfo => ({ ...session(id, ""), cwd, path: "", persisted: false, messageCount: 0 });
   const ids = (app: WorkbenchApp) => getState(app).sessions.map((candidate) => candidate.id);
   const isLoading = (app: WorkbenchApp): unknown => Reflect.get(app, "loading");
@@ -2145,7 +2145,7 @@ describe("window tabs", () => {
     window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a1&view=chat");
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(async () => { await app.updateComplete; expect(workstreamTabs(app)).toEqual(["Release"]); });
+    await vi.waitFor(async () => { await app.updateComplete; expect(chatTabs(app)).toEqual(["Plan the release"]); });
     for (const title of ["Release notes", "Install guide"]) {
       tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
       await vi.waitFor(() => { expect(sessionTitles(app)).toContain(title); });
@@ -2173,13 +2173,44 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
   });
 
+  it("puts the Chat's tools in the tab row, naming its folder in the Files tooltip, and gives them back to the tile in a grid", async () => {
+    const app = await mountWithWorkstreamChats();
+    const tools = () => app.shadowRoot?.querySelector('workbench-window-tabs > .chat-tools[slot="tools"]');
+
+    expect(app.shadowRoot?.querySelector(".chat-shell > header")).toBeNull();
+    expect(tools()?.querySelector(".files-toggle")?.getAttribute("title")).toBe("Files \u2014 Project \u00b7 main (/repo)");
+    expect(tools()?.querySelector(".questions-toggle")).not.toBeNull();
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Docs"); });
+    expect(tools()?.querySelector("workstream-context-drawer")).not.toBeNull();
+    expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]);
+
+    closeButton(app, "Install guide").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await app.updateComplete;
+    expect(workstreamTabs(app)).toEqual([]);
+    expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
+
+    const toggleLayout = () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
+    toggleLayout();
+    await settled(app);
+    expect(tools()).toBeNull();
+    expect(app.shadowRoot?.querySelector('.tile[data-focused="true"] .chat-shell > header .files-toggle')).not.toBeNull();
+    toggleLayout();
+    await settled(app);
+    expect(tools()).not.toBeNull();
+
+    tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
+    expect(tools()).toBeNull();
+  });
+
   it("closing the Chat on screen shows the next tab, and closing the last one shows the home", async () => {
     const app = await mountWithWorkstreamChats();
 
     closeButton(app, "Install guide").click();
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
     await app.updateComplete;
-    expect(workstreamTabs(app)).toEqual(["Release2"]);
+    expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
     closeButton(app, "Plan the release").click();
     await app.updateComplete;
     expect(getState(app).selectedSession?.id).toBe("a2");
@@ -2285,9 +2316,10 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector(".window-menu")).toBeNull();
-    expect(workstreamTabs(app)).toEqual(["Release2"]);
+    expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
 
-    tabsRoot(app).querySelector(".workstream-tab")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    // One Workstream left, so no Workstream row: its menu comes from the tab component's own event.
+    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2"], label: "Release", clientX: 0, clientY: 0 } }));
     await app.updateComplete;
     const items = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])];
     expect(items.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Window 2 (closed)", "Close 2 Chats"]);
@@ -2487,7 +2519,8 @@ describe("window tabs", () => {
     successor.release();
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
     await app.updateComplete;
-    expect(workstreamTabs(app)).toEqual(["Release2"]);
+    expect(workstreamTabs(app)).toEqual([]);
+    expect(chatTabs(app)).toHaveLength(2);
   });
 
   it("drops a delayed open of a Chat another live window opened meanwhile, and shows it there", async () => {
@@ -3218,7 +3251,7 @@ describe("Workbench Chat controls", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("current"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
     await vi.waitFor(() => { expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined(); });
     await app.updateComplete;
-    expect(drawerTitle(app)).toBe("Named chat");
+    expect(drawerTitle(app)).toBeUndefined();
 
     associated = true;
     revision = 1;
@@ -3230,14 +3263,14 @@ describe("Workbench Chat controls", () => {
 
     associated = false;
     revision = 3;
-    await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Named chat"); }, { timeout: 3_000 });
+    await vi.waitFor(() => { expect(drawerTitle(app)).toBeUndefined(); }, { timeout: 3_000 });
     const watchCalls = calls.filter((call) => call.operation === "watch");
     expect(watchCalls.length).toBeGreaterThanOrEqual(4);
     expect(watchCalls[0]?.input).toEqual({ afterSequence: Number.MAX_SAFE_INTEGER });
     expect(getState(app).selectedSession?.id).toBe("current");
   }, 10_000);
 
-  it("keeps identity in the header and mounts status controls beside the composer", async () => {
+  it("keeps the Chat tools in the header, the Workstream drawer only with a Workstream, and status controls beside the composer", async () => {
     const current = session("current", "Build the UI");
     const app = await mountChooser([current]);
     setState(app, {
@@ -3257,6 +3290,10 @@ describe("Workbench Chat controls", () => {
 
     const shell = app.shadowRoot?.querySelector(".chat-shell");
     if (shell === null || shell === undefined) throw new Error("Chat shell was not rendered");
+    expect(shell.querySelector("header > .files-toggle")).not.toBeNull();
+    expect(shell.querySelector("header > workstream-context-drawer")).toBeNull();
+    Reflect.set(app, "currentWorkstream", { id: "ws", title: "Release", revision: 1, sessions: [], humanTasks: [], links: [], overview: null, closed: false });
+    await app.updateComplete;
     const drawer = shell.querySelector("header > workstream-context-drawer");
     if (!(drawer instanceof WorkstreamContextDrawer)) throw new Error("Workstream context drawer was not rendered");
     expect(drawer.fallbackTitle).toBe("Build the UI");
