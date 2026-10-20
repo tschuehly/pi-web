@@ -57,6 +57,8 @@ export const E2E_CROWDED_ASK_CHAT = {
   },
 };
 type SeededAsk = { askId: string; context: string; questions: readonly unknown[] };
+/** A Chat shaped like daily use: more raw messages than one page, with thinking, tool output, code blocks and late-loading images. */
+export const E2E_LONG_CHAT = { id: "019ef4c0-0000-7000-8000-00000000e2e7", question: "Migrate the build", turns: 60 } as const;
 export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
 export const E2E_SIBLING_BODY = "export const seededSiblingBody = true;";
 export const E2E_PLAN = [
@@ -98,6 +100,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     for (const chat of E2E_MORE_CHATS) await seedChat(sessionDir, project, chat.id, "Done.", chat.question, 24);
     await seedChat(sessionDir, project, E2E_ASK_CHAT.id, "One question on how they go live.", E2E_ASK_CHAT.question, 3, E2E_ASK_CHAT.ask);
     await seedChat(sessionDir, project, E2E_CROWDED_ASK_CHAT.id, "Twelve questions before it starts.", E2E_CROWDED_ASK_CHAT.question, 3, E2E_CROWDED_ASK_CHAT.ask);
+    await seedLongChat(sessionDir, project);
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
@@ -186,6 +189,35 @@ async function seedChat(sessionDir: string, cwd: string, sessionId: string, answ
     );
   }
   await writeFile(join(sessionDir, `${at(0).replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+}
+
+/** Each turn: a question, thinking and a bash call, its output, then a markdown answer with a code block; every sixth turn reads an image. */
+async function seedLongChat(sessionDir: string, cwd: string): Promise<void> {
+  const { id: sessionId, question, turns } = E2E_LONG_CHAT;
+  const ms = Date.now();
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const image = (await readFile(join(REPO_ROOT, "docs", "assets", "pi-web-mobile.png"))).toString("base64");
+  const entries: object[] = [{ type: "session", version: 3, id: sessionId, timestamp: new Date(ms).toISOString(), cwd }];
+  let parentId: string | null = null;
+  const push = (message: object) => {
+    const id = `long${String(entries.length).padStart(5, "0")}`;
+    const at = ms + 1000 * entries.length;
+    entries.push({ type: "message", id, parentId, timestamp: new Date(at).toISOString(), message: { ...message, timestamp: at } });
+    parentId = id;
+  };
+  const assistant = (content: object[], stopReason: string) => ({ role: "assistant", content, api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason });
+  for (let turn = 0; turn < turns; turn += 1) {
+    const step = String(turn + 1);
+    push({ role: "user", content: [{ type: "text", text: turn === 0 ? question : `Continue with step ${step}.` }] });
+    push(assistant([{ type: "thinking", thinking: `Step ${step} needs the build checked first.` }, { type: "toolCall", id: `call-${step}`, name: "bash", arguments: { command: `npm run check -- --step ${step}` } }], "toolUse"));
+    push({ role: "toolResult", toolCallId: `call-${step}`, toolName: "bash", content: [{ type: "text", text: Array.from({ length: 12 }, (_, line) => `step ${step} line ${String(line + 1)}: ok`).join("\n") }], isError: false });
+    if (turn % 6 === 3) {
+      push(assistant([{ type: "toolCall", id: `read-${step}`, name: "read", arguments: { path: "docs/assets/pi-web-mobile.png" } }], "toolUse"));
+      push({ role: "toolResult", toolCallId: `read-${step}`, toolName: "read", content: [{ type: "text", text: "Read image file [image/png]" }, { type: "image", data: image, mimeType: "image/png" }], isError: false });
+    }
+    push(assistant([{ type: "text", text: `## Step ${step}\n\nThe check passed. Changes:\n\n- updated the config\n- **renamed** the \`build\` script\n\n\`\`\`ts\n${Array.from({ length: 8 }, (_, line) => `export const step${step}Line${String(line + 1)} = ${String(line)};`).join("\n")}\n\`\`\`` }], "stop"));
+  }
+  await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 }
 
 function mainWorkspaceId(listing: unknown): string {
