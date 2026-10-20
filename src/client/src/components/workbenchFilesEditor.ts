@@ -9,6 +9,7 @@ import { go } from "@codemirror/lang-go";
 import { html } from "@codemirror/lang-html";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
@@ -29,6 +30,9 @@ const languages: Record<string, LanguageSupport> = {
 export function languageFor(name: string | undefined): LanguageSupport | undefined {
   return name === undefined ? undefined : languages[name.trim().toLowerCase()];
 }
+
+/** GitHub-flavored Markdown with fenced code highlighted by its info string; shared by the Files editor and the composer. */
+export const markdownWithCodeLanguages = (): LanguageSupport => markdown({ base: markdownLanguage, codeLanguages: (info) => languageFor(info)?.language ?? null });
 
 // ---------------- live preview ----------------
 class Widget extends WidgetType {

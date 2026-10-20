@@ -159,6 +159,24 @@ describe("PromptEditor command completions", () => {
     expect(editor.view?.state.doc.toString()).toBe("List /skill:review ");
   });
 
+  it("accepts a skill on Enter inside a list line under a reply quote, leaving the quote's directive literal", async () => {
+    vi.spyOn(api, "commands").mockResolvedValue([{ name: "skill:review", source: "skill" }, { name: "skill:deploy", source: "skill" }]);
+    const onSend = vi.fn();
+    const editor = new PromptEditor();
+    editor.sessionId = "session-1";
+    editor.cwd = "/repo";
+    editor.onSend = onSend;
+    document.body.append(editor);
+    await editor.updateComplete;
+    const quote = "> [msg e1](#entry:e1) try /skill:de\n\n";
+    const draft = `${quote}- use /re`;
+    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.length } });
+    await vi.waitFor(() => { expect(currentCompletions(editor)).toHaveLength(1); });
+    editor.view?.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(editor.view?.state.doc.toString()).toBe(`${quote}- use /skill:review `);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("filters commands by the typed query", async () => {
     vi.spyOn(api, "commands").mockResolvedValue([
       { name: "pr", source: "prompt", argumentHint: "<PR-URL>" },

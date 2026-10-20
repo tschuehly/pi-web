@@ -13,7 +13,6 @@ import { clearAskDraft } from "../askDrafts";
 import { ChatTranscriptStore } from "../chatTranscriptStore";
 import { isHistoryTailSlice } from "../chatHistoryCache";
 import { isShellInput } from "../inputModes";
-import { fileCompletionInsertText } from "../promptCompletions";
 import { SessionSocket, type GlobalSessionEvent, type SessionUiEvent } from "../sessionSocket";
 import { isArchivableSessionInfo, isTransientNewSessionInfo } from "../sessionPersistence";
 import { isSessionActive } from "../../../shared/activity";
@@ -597,7 +596,7 @@ export class SessionController {
         // the save destination matches the label for every workspace of the
         // project; the server only re-resolves config when folder is omitted.
         const saved = await this.api.saveAttachments(session, attachments, machineId, folder);
-        const references = saved.map((file) => `${file.reference === undefined ? "" : `${file.reference} `}${fileCompletionInsertText(file.path, false)}`).join(" ");
+        const references = saved.map((file) => `${file.reference === undefined ? "" : `${file.reference} `}${fileReference(file.path)}`).join(" ");
         const body = text === "" ? references : `${text}\n\n${references}`;
         await this.api.prompt(session, body, streamingBehavior, machineId);
       } else {
@@ -2614,3 +2613,7 @@ function isSessionNotFoundError(error: unknown): boolean {
   return error instanceof Error && error.message.toLowerCase().includes("session not found");
 }
 
+/** An `@path` reference to a saved attachment, quoted when the path has spaces. */
+function fileReference(path: string): string {
+  return path.includes(" ") ? `@"${path}"` : `@${path}`;
+}

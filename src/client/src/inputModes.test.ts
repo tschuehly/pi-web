@@ -21,21 +21,7 @@ describe("input mode helpers", () => {
     expect(inputModesEqual({ kind: "shell", excludeFromContext: false }, { kind: "shell", excludeFromContext: true })).toBe(false);
   });
 
-  it("collapses file completion triggers to file mode", () => {
-    expect(inputModeForDraft("open @src/main.ts")).toEqual({ kind: "file" });
-    expect(inputModeForDraft("open @ ")).toEqual({ kind: "file" });
-    expect(inputModeForDraft("open @ A FILE")).toEqual({ kind: "file" });
-    expect(inputModeForDraft("open !@vendor/file.ts")).toEqual({ kind: "file" });
-    expect(inputModeForDraft("!@vendor/file.ts")).toEqual({ kind: "file" });
-    expect(inputModeForDraft("open @ \"src/main.ts")).toEqual({ kind: "file" });
-    expect(inputModeForDraft("open !@\"vendor/file.ts")).toEqual({ kind: "file" });
-    expect(inputModeForDraft("open \"src/main.ts")).toEqual({ kind: "normal" });
-  });
-
-  it("collapses # model completion tokens to model mode", () => {
-    expect(inputModeForDraft("#anthropic/claude-opus")).toEqual({ kind: "model" });
-    expect(inputModeForDraft("use #gpt-5.2")).toEqual({ kind: "model" });
-    expect(inputModeForDraft("use #gpt-5.2 please")).toEqual({ kind: "normal" });
-    expect(inputModeForDraft("# ")).toEqual({ kind: "normal" });
+  it("keeps @ and # tokens in normal mode", () => {
+    for (const draft of ["open @src/main.ts", "open @ A FILE", "use #gpt-5.2", "# Title"]) expect(inputModeForDraft(draft)).toEqual({ kind: "normal" });
   });
 });

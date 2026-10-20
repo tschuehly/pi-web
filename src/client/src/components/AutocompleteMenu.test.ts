@@ -53,11 +53,11 @@ describe("AutocompleteMenu", () => {
 
   it("omits the hint element for items without an argument hint", async () => {
     const menu = new AutocompleteMenu();
-    menu.items = [{ kind: "file", replaceFrom: 0, replaceTo: 1, insertText: "@src/index.ts", detail: "tracked" }];
+    menu.items = [{ kind: "command", replaceFrom: 0, replaceTo: 1, insertText: "/tree", detail: "builtin" }];
     document.body.append(menu);
     await menu.updateComplete;
 
     expect(menu.shadowRoot?.querySelector(".argument-hint")).toBeNull();
-    expect(menu.shadowRoot?.querySelector(".label strong")?.textContent).toBe("@src/index.ts");
+    expect(menu.shadowRoot?.querySelector(".label strong")?.textContent).toBe("/tree");
   });
 });
