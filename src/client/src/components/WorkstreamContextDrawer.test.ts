@@ -290,6 +290,17 @@ describe("WorkstreamContextDrawer", () => {
     expect(details?.open).toBe(false);
   });
 
+  it("exposes the Workstream colour on the compact tab-row control", async () => {
+    const element = new WorkstreamContextDrawer();
+    element.compact = true;
+    element.snapshot = snapshot;
+    document.body.append(element);
+    await element.updateComplete;
+
+    expect(element.hasAttribute("compact")).toBe(true);
+    expect(element.shadowRoot?.querySelector("details")?.style.getPropertyValue("--workstream-color")).toBe(workstreamAccentColor(snapshot.id));
+  });
+
   it("shows the Chat title in the existing status tab when no Workstream is associated", async () => {
     const element = new WorkstreamContextDrawer();
     element.fallbackTitle = "Named Chat";

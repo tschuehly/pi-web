@@ -31,6 +31,16 @@ describe("Workstream identity presentation contracts", () => {
     }
   });
 
+  it("keeps the Workstream colour in the compact tab-row control on the contrast-checked drawer surfaces", () => {
+    const drawer = styleText(WorkstreamContextDrawer.styles);
+    const resting = rule(drawer, ":host([compact]) summary");
+    // The tab row paints --pi-surface, so these are exactly the drawer surfaces the hue sweep above holds at AA.
+    expect(resting).toContain(`background: color-mix(in srgb, var(--workstream-color) ${String(WORKSTREAM_TINT_PERCENTAGES.drawer)}%, var(--pi-surface))`);
+    expect(resting).toContain("color: var(--pi-text)");
+    expect(rule(drawer, ":host([compact]) details[open] summary")).toContain(`background: color-mix(in srgb, var(--workstream-color) ${String(WORKSTREAM_TINT_PERCENTAGES.drawerActive)}%, var(--pi-surface-hover))`);
+    expect(rule(drawer, ":host([compact]) summary::before")).toContain("background: var(--workstream-color)");
+  });
+
   it("declares --pi-text foreground on every recolored label", () => {
     const chooser = styleText(WorkstreamChooser.styles);
     const drawer = styleText(WorkstreamContextDrawer.styles);

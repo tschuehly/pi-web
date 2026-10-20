@@ -219,8 +219,10 @@ export class WorkstreamContextDrawer extends LitElement {
     summary::-webkit-details-marker { display: none; }
     summary::after { content: "↓"; flex: 0 0 auto; color: var(--pi-text); }
     details[open] summary::after { content: "↑"; }
-    :host([compact]) summary { gap: 4px; padding: 0 6px 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--pi-muted); }
-    :host([compact]) summary:hover, :host([compact]) details[open] summary { background: var(--pi-surface-hover); color: var(--pi-text); }
+    /* Compact keeps the Workstream colour as a low tint plus a dot; the tints are the contrast-checked drawer surfaces. */
+    :host([compact]) summary { gap: 6px; padding: 0 6px 0 8px; border: 0; border-radius: 7px; background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.drawer}%, var(--pi-surface)); color: var(--pi-text); }
+    :host([compact]) summary:hover, :host([compact]) details[open] summary { background: color-mix(in srgb, var(--workstream-color) ${WORKSTREAM_TINT_PERCENTAGES.drawerActive}%, var(--pi-surface-hover)); }
+    :host([compact]) summary::before { content: ""; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--workstream-color); }
     :host([compact]) summary::after { content: none; }
     :host([compact]) summary strong { font-size: inherit; font-weight: inherit; }
     .chevron { flex: 0 0 auto; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
