@@ -89,7 +89,7 @@ describe("createAskUserToolDefinition", () => {
     expect(result).not.toHaveProperty("terminate");
     // The posting session id lets a rebuild skip asks a fork copied from its parent.
     expect(result.details).toMatchObject({ ask: { askId: "abc-1", context, questions: [{ id: "db" }, { id: "why" }] }, sessionId: "session-1" });
-    expect(firstText(result.content)).toContain("Posted 2 questions to the user's Questions pane as ask abc-1 (abc.db, abc.why). You are not paused");
+    expect(firstText(result.content)).toContain("Posted 2 questions to the user as question chips above their composer, ask abc-1 (abc.db, abc.why). You are not paused");
   });
 
   it("keeps earlier sets open when another is posted", async () => {

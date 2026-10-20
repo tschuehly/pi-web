@@ -3,7 +3,6 @@ import type { WriteWorkspaceFileOptions } from "../shared/apiTypes.js";
 import type { PiWebConfigService } from "./configRoutes.js";
 import type { ProjectService } from "./projects/projectService.js";
 import { deleteWorkspaceFile, moveWorkspaceFile, readWorkspaceFile, writeWorkspaceFile, WorkspaceFileConflictError, WorkspaceFileOutcomeUnknownError } from "./workspaces/fileContentService.js";
-import { isAbsoluteishFileSuggestionQuery, listFileSuggestions, listPathSuggestions } from "./workspaces/fileSuggestions.js";
 import { listWorkspaceTree, searchWorkspaceFiles } from "./workspaces/fileTreeService.js";
 import { isAbsoluteishPath } from "./workspaces/pathAccessPolicy.js";
 import { readWorkspaceFilePreview } from "./workspaces/filePreviewService.js";
@@ -111,18 +110,6 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
         .send(preview.body);
     } catch (error) {
       applyWorkspaceFilePreviewErrorResponsePolicy(reply);
-      return sendWorkspaceRequestError(reply, error, 400);
-    }
-  });
-
-  app.get<{ Params: { projectId: string; workspaceId: string }; Querystring: { q?: string; kind?: "tracked" | "untracked" | "other"; mode?: "file" | "path"; scope?: "tracked" | "all" } }>(`${prefix}/projects/:projectId/workspaces/:workspaceId/files`, async (request, reply) => {
-    try {
-      const context = await resolveContext(request.params);
-      const query = request.query.q ?? "";
-      const pathAccess = isAbsoluteishFileSuggestionQuery(query) ? await pathAccessForWorkspaceContext(context, options.config) : undefined;
-      if (request.query.mode === "path") return await listPathSuggestions(context.root, query, pathAccess);
-      return await listFileSuggestions(context.root, query, { kind: request.query.kind, scope: request.query.scope, pathAccess });
-    } catch (error) {
       return sendWorkspaceRequestError(reply, error, 400);
     }
   });

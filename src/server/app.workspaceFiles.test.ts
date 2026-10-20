@@ -230,29 +230,6 @@ describe("buildApp workspace file routes", () => {
     }
   });
 
-  it("keeps normal file suggestions workspace-local when path access config is invalid", async () => {
-    const addResponse = await appTestContext.app.inject({
-      method: "POST",
-      url: "/api/projects",
-      payload: { name: "Local Suggestions", path: appTestContext.projectDir, create: true },
-    });
-    expect(addResponse.statusCode).toBe(200);
-    const project = addResponse.json<Project>();
-    await writeFile(join(appTestContext.projectDir, "sdk.md"), "local sdk\n");
-
-    const workspacesResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
-    const workspace = workspacesResponse.json<WorkspaceProviderResolution>().workspaces[0];
-    if (workspace === undefined) throw new Error("Expected workspace");
-
-    await mkdir(join(appTestContext.projectDir, ".pi-web"), { recursive: true });
-    await writeFile(join(appTestContext.projectDir, ".pi-web", "config.json"), `${JSON.stringify({ version: 1, pathAccess: { allowedPaths: [""] } }, null, 2)}\n`);
-
-    const response = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/files?q=sdk&scope=all` });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual([{ path: "sdk.md", kind: "other" }]);
-  });
-
   it("keeps relative tree, file, and preview access independent of invalid project path-access config", async () => {
     const add = await appTestContext.app.inject({ method: "POST", url: "/api/projects", payload: { name: "Local Files", path: appTestContext.projectDir, create: true } });
     const project = add.json<Project>();
@@ -278,7 +255,7 @@ describe("buildApp workspace file routes", () => {
     expect(absolute.statusCode).toBe(400);
   });
 
-  it("uses the owning project config for suggestions from an authoritative linked workspace", async () => {
+  it("uses the owning project config for file access from an authoritative linked workspace", async () => {
     const addResponse = await appTestContext.app.inject({
       method: "POST",
       url: "/api/projects",
@@ -304,11 +281,11 @@ describe("buildApp workspace file routes", () => {
 
     const response = await appTestContext.app.inject({
       method: "GET",
-      url: `/api/projects/${project.id}/workspaces/linked/files?q=${encodeURIComponent(join(externalDir, "s"))}&scope=all`,
+      url: `/api/projects/${project.id}/workspaces/linked/file?path=${encodeURIComponent(join(externalDir, "sdk.md"))}`,
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual([{ path: join(externalDir, "sdk.md"), kind: "other" }]);
+    expect(response.json()).toMatchObject({ path: join(externalDir, "sdk.md"), content: "external sdk\n" });
   });
 
   it("serves project-configured allowed external files through the workspace explorer", async () => {
@@ -332,8 +309,6 @@ describe("buildApp workspace file routes", () => {
 
     const fileResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent(join(externalDir, "sdk.md"))}` });
     const treeResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/tree?path=${encodeURIComponent(externalDir)}` });
-    const suggestionResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/files?q=${encodeURIComponent(join(externalDir, "s"))}` });
-    const localSuggestionResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/files?q=sdk` });
     const deniedResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent(deniedFile)}` });
 
     expect(fileResponse.statusCode).toBe(200);
@@ -344,10 +319,6 @@ describe("buildApp workspace file routes", () => {
       entries: [expect.objectContaining({ name: "sdk.md", path: join(externalDir, "sdk.md"), type: "file" })],
       truncated: false,
     });
-    expect(suggestionResponse.statusCode).toBe(200);
-    expect(suggestionResponse.json()).toEqual([{ path: join(externalDir, "sdk.md"), kind: "other" }]);
-    expect(localSuggestionResponse.statusCode).toBe(200);
-    expect(localSuggestionResponse.json()).toEqual([]);
     expect(deniedResponse.statusCode).toBe(400);
     expect(deniedResponse.json()).toEqual({ error: "Path is outside allowed paths" });
   });

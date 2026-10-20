@@ -113,7 +113,7 @@ function refs(ask: PendingAskUser): string {
 
 function postedText(ask: PendingAskUser): string {
   const count = ask.questions.length;
-  return `Posted ${count.toString()} question${count === 1 ? "" : "s"} to the user's Questions pane as ask ${ask.askId} (${refs(ask)}). You are not paused: keep working on whatever does not depend on the answers, and end your turn if nothing does. The answers arrive later as a follow-up message. Do not repost these questions; revise them with update or drop them with withdraw.`;
+  return `Posted ${count.toString()} question${count === 1 ? "" : "s"} to the user as question chips above their composer, ask ${ask.askId} (${refs(ask)}). You are not paused: keep working on whatever does not depend on the answers, and end your turn if nothing does. The answers arrive later as a follow-up message. Do not repost these questions; revise them with update or drop them with withdraw.`;
 }
 
 function closedAskError(askId: string): Error {
@@ -121,8 +121,8 @@ function closedAskError(askId: string): Error {
 }
 
 /**
- * Custom tool that posts, revises, or withdraws a question set in the user's
- * Questions pane.
+ * Custom tool that posts, revises, or withdraws a question set shown to the
+ * user as question chips above the composer.
  *
  * It never awaits the user and never ends the run. Awaiting would pin the agent
  * run for an unbounded human-scale wait; instead the ask becomes daemon-owned
@@ -137,7 +137,7 @@ export function createAskUserToolDefinition(deps: AskUserToolDeps) {
     name: "ask_user",
     exposure: "model-only",
     label: "Ask user",
-    description: "Post a self-contained question set to the user's Questions pane and return immediately. Answers arrive later as a follow-up message; the user may leave any question unanswered. Pass update: <askId> to revise or confirm an open set, or withdraw: <askId> to drop one.",
+    description: "Post a self-contained question set, shown as question chips above the user's composer, and return immediately. Answers arrive later as a follow-up message; the user may leave any question unanswered. Pass update: <askId> to revise or confirm an open set, or withdraw: <askId> to drop one.",
     promptSnippet: "ask_user: post, revise, or withdraw a self-contained question set for the user; returns immediately, answers arrive later as a follow-up",
     promptGuidelines: [
       "Use ask_user to batch the decisions you need from the user into one question set rather than asking in prose. It returns immediately: keep working on anything that does not depend on the answers, and end your turn if nothing does. The answers come back as a follow-up message that wakes you; do not poll or repost.",
@@ -153,7 +153,7 @@ export function createAskUserToolDefinition(deps: AskUserToolDeps) {
         if (params.update !== undefined || content !== undefined || questions !== undefined) throw new Error("withdraw takes no other parameters");
         const withdrawn = await deps.withdraw(sessionId, params.withdraw);
         if (withdrawn === undefined) throw closedAskError(params.withdraw);
-        return { content: [{ type: "text", text: `Withdrew question set ${withdrawn.askId}; it is gone from the user's Questions pane.` }], details: { withdrawn } };
+        return { content: [{ type: "text", text: `Withdrew question set ${withdrawn.askId}; its question chips are gone from the user's composer.` }], details: { withdrawn } };
       }
       if (params.update !== undefined) {
         const ask = await deps.update({ sessionId, askId: params.update, context: content, questions });
