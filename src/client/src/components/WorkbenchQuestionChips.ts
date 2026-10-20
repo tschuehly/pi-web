@@ -47,8 +47,8 @@ export class WorkbenchQuestionChips extends LitElement {
         </section>` : nothing}
       <div class="chips" role="group" aria-label="Open questions" @keydown=${this.onKeydown}>
         ${this.asks.flatMap((ask) => ask.questions.map((question, index) => html`
-          <button type="button" class="chip" title=${question.question} aria-expanded=${String(this.open)} aria-controls="question-drawer"
-            @click=${(event: Event) => { void this.show(event.currentTarget, ask.askId, index); }}>${QUESTION_ICON}<span>${question.question}</span></button>`))}
+          <button type="button" class="chip" data-ask=${ask.askId} data-question=${String(index)} title=${question.question} aria-expanded=${String(this.open)} aria-controls="question-drawer"
+            @click=${(event: Event) => { if (event.currentTarget instanceof HTMLElement) this.opener = event.currentTarget; void this.openQuestion(ask.askId, index); }}>${QUESTION_ICON}<span>${question.question}</span></button>`))}
       </div>
     `;
   }
@@ -60,13 +60,15 @@ export class WorkbenchQuestionChips extends LitElement {
     this.close();
   };
 
-  private async show(chip: EventTarget | null, askId: string, questionIndex: number): Promise<void> {
-    if (chip instanceof HTMLElement) this.opener = chip;
+  /** Opens the drawer at one question, as its chip does; false when no open set asks it. */
+  async openQuestion(askId: string, questionIndex: number): Promise<boolean> {
+    if (this.asks.find((ask) => ask.askId === askId)?.questions[questionIndex] === undefined) return false;
     this.open = true;
     await this.updateComplete;
     const card = this.renderRoot.querySelector<AskUserCard>(`ask-user-card[data-ask="${CSS.escape(askId)}"]`);
     await card?.updateComplete;
     card?.focusQuestion(questionIndex);
+    return true;
   }
 
   private close(): void {
@@ -76,16 +78,19 @@ export class WorkbenchQuestionChips extends LitElement {
   }
 
   static override styles = css`
-    :host { display: flex; flex: 0 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
+    /* Never shrinks: the transcript above gives up the room, so chips and drawer never overlap the composer. */
+    :host { display: flex; flex: 0 0 auto; flex-direction: column; min-width: 0; }
     svg { flex: 0 0 auto; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .chips { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; padding: 6px var(--pi-panel-padding, 10px) 2px; }
-    .chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: min(320px, 100%); height: 28px; padding: 0 11px 0 9px; border: 1px solid color-mix(in srgb, var(--pi-warning) 55%, transparent); border-radius: 999px; background: var(--pi-warning-surface); color: var(--pi-text); font: 12.5px system-ui, sans-serif; cursor: pointer; }
+    /* One row however many questions are open: it scrolls sideways, and the drawer lists every question anyway. */
+    .chips { flex: 0 0 auto; display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 6px var(--pi-panel-padding, 10px) 2px; }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: min(320px, 100%); height: 28px; padding: 0 11px 0 9px; border: 1px solid color-mix(in srgb, var(--pi-warning) 55%, transparent); border-radius: 999px; background: var(--pi-warning-surface); color: var(--pi-text); font: 12.5px system-ui, sans-serif; cursor: pointer; }
     .chip svg { color: var(--pi-warning); }
     .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .chip:hover, .chip[aria-expanded="true"] { border-color: var(--pi-warning); }
     .chip:focus-visible, .close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    /* Rises from the composer: the transcript above gives up the room. */
-    .drawer { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; max-height: min(62vh, 640px); margin: 6px var(--pi-panel-padding, 10px) 0; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 -10px 30px var(--pi-shadow-soft); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
+    /* Rises from the composer, as tall as its forms up to 60% of the tile (cqh), then scrolls them. */
+    .drawer { flex: 0 0 auto; display: flex; flex-direction: column; max-height: min(60cqh, 640px); margin: 6px var(--pi-panel-padding, 10px) 0; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 -10px 30px var(--pi-shadow-soft); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
     header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); font: 12px system-ui, sans-serif; }
     .close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); cursor: pointer; }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }

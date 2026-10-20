@@ -659,6 +659,8 @@ describe("Workbench Chat chooser", () => {
     expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.pendingAsks).toEqual([]);
     expect(app.shadowRoot?.querySelector(".questions-toggle, workbench-questions-pane, #workbench-questions")).toBeNull();
     expect(WorkbenchApp.styles.cssText).not.toContain("questions");
+    // Each tile contains its size, so the question drawer can take 60% of the tile's height (cqh).
+    expect(WorkbenchApp.styles.cssText).toMatch(/\.tile \{ container-type: size; \}/);
 
     const submit = vi.spyOn(api, "submitAsk").mockResolvedValue({ result: "closed", sessionStatus: idleStatus(current.id) });
     await chips?.onSubmit?.("def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" });
@@ -2183,6 +2185,30 @@ describe("window tabs", () => {
     await vi.waitFor(async () => { await app.updateComplete; expect(count(other)).toBeNull(); });
   });
 
+  it("asks once for each restored Chat's status as the window connects, so an idle Chat's tab counts its questions after a reload", async () => {
+    await mountWithWorkstreamChats();
+    document.body.replaceChildren();
+    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "a", question: "A?", options: [] }, { id: "b", question: "B?", options: [] }] };
+    const status = vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { ...idleStatus("a1"), pendingAsks: [ask] } : idleStatus(ref.id)));
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    const count = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"] .questions`)?.textContent ?? null;
+    expect(count("a1")).toBeNull();
+    status.mockClear();
+
+    // Opened twice before the first answers: each other Chat is asked once; the Chat on screen not at all.
+    const realtime = sockets.at(-1);
+    realtime?.onopen?.();
+    realtime?.onopen?.();
+    await vi.waitFor(async () => { await app.updateComplete; expect(count("a1")).toBe("2"); });
+    expect(status.mock.calls.map(([ref]) => ref.id).sort()).toEqual(["a1", "b1"]);
+  });
+
   it("puts the Chat's tools in the tab row, naming its folder in the Files tooltip, and gives them back to the tile in a grid", async () => {
     const app = await mountWithWorkstreamChats();
     const tools = () => app.shadowRoot?.querySelector('workbench-window-tabs > .chat-tools[slot="tools"]');
@@ -2274,6 +2300,23 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(tile("a2")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([ask]); });
     expect(tile("a2")?.querySelector("workbench-question-chips")?.nextElementSibling?.localName).toBe("prompt-editor");
     expect(tile("a1")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([]);
+  });
+
+  it("opens a side tile's question in one press: the tile takes the shell and the drawer opens at that question", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "db", question: "Which database?", options: [] }, { id: "why", question: "Why now?", options: [] }] };
+    vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(ref.id === "a2" ? { ...idleStatus("a2"), pendingAsks: [ask] } : idleStatus(ref.id)));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
+    await settled(app);
+    const sideChips = () => app.shadowRoot?.querySelector('.tile[data-session="a2"] workbench-chat-pane')?.shadowRoot?.querySelector<WorkbenchQuestionChips>("workbench-question-chips");
+    await vi.waitFor(async () => { await sideChips()?.updateComplete; expect(sideChips()?.shadowRoot?.querySelectorAll(".chip")).toHaveLength(2); });
+
+    sideChips()?.shadowRoot?.querySelectorAll(".chip")[1]?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    const shellChips = () => app.shadowRoot?.querySelector<WorkbenchQuestionChips>('.tile[data-focused="true"] .chat-column > workbench-question-chips');
+    await vi.waitFor(async () => { await shellChips()?.updateComplete; expect(shellChips()?.shadowRoot?.querySelector('.drawer ask-user-card[data-ask="abc-1"]')).not.toBeNull(); });
   });
 
   it("keeps the Chat on screen and its Files pane mounted across \u2303G and full size", async () => {

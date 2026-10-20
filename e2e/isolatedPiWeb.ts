@@ -46,6 +46,17 @@ export const E2E_ASK_CHAT = {
     ],
   },
 } as const;
+/** A Chat whose open set asks twelve questions at once, for a crowded grid. */
+export const E2E_CROWDED_ASK_CHAT = {
+  id: "019ef4c0-0000-7000-8000-00000000e2e6",
+  question: "Plan the migration",
+  ask: {
+    askId: "m12-1",
+    context: "Twelve choices decide the migration.",
+    questions: Array.from({ length: 12 }, (_, index) => ({ id: `step${String(index + 1)}`, question: `Migration step ${String(index + 1)}: run it now or later?`, options: [{ value: "now", label: "Now", recommended: true }, { value: "later", label: "Later" }] })),
+  },
+};
+type SeededAsk = { askId: string; context: string; questions: readonly unknown[] };
 export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
 export const E2E_SIBLING_BODY = "export const seededSiblingBody = true;";
 export const E2E_PLAN = [
@@ -86,6 +97,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md). The generator is [the sibling file](../sibling/src/generator.ts). See [the lines](docs/long.md#L40-L42).");
     for (const chat of E2E_MORE_CHATS) await seedChat(sessionDir, project, chat.id, "Done.", chat.question, 24);
     await seedChat(sessionDir, project, E2E_ASK_CHAT.id, "One question on how they go live.", E2E_ASK_CHAT.question, 3, E2E_ASK_CHAT.ask);
+    await seedChat(sessionDir, project, E2E_CROWDED_ASK_CHAT.id, "Twelve questions before it starts.", E2E_CROWDED_ASK_CHAT.question, 3, E2E_CROWDED_ASK_CHAT.ask);
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
@@ -145,7 +157,7 @@ async function seedProject(project: string): Promise<void> {
 }
 
 /** A finished Chat of `turns` exchanges: `question` first, `answer` last, filler paragraphs between; `ask` stays open before the answer. */
-async function seedChat(sessionDir: string, cwd: string, sessionId: string, answer: string, question = "Where are the notes?", turns = 1, ask?: typeof E2E_ASK_CHAT.ask): Promise<void> {
+async function seedChat(sessionDir: string, cwd: string, sessionId: string, answer: string, question = "Where are the notes?", turns = 1, ask?: SeededAsk): Promise<void> {
   const ms = Date.now();
   const at = (offset: number) => new Date(ms + offset).toISOString();
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };

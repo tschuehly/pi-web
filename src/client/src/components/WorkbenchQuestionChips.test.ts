@@ -97,6 +97,28 @@ describe("WorkbenchQuestionChips", () => {
     expect(focus.mock.contexts[0]).toBe(cards(chips)[1]);
   });
 
+  it("opens a question for a caller, as its chip would, and refuses one no open set asks", async () => {
+    const { chips } = await mount([ask("abc-1"), twoQuestions]);
+    const focus = vi.spyOn(AskUserCard.prototype, "focusQuestion");
+
+    expect(await chips.openQuestion("def-2", 5)).toBe(false);
+    expect(drawer(chips)).toBeNull();
+    expect(await chips.openQuestion("def-2", 1)).toBe(true);
+
+    expect(drawer(chips)).not.toBeNull();
+    expect(focus).toHaveBeenCalledWith(1);
+    expect(chipButtons(chips).map((chip) => [chip.dataset["ask"], chip.dataset["question"]])).toEqual([["abc-1", "0"], ["def-2", "0"], ["def-2", "1"]]);
+  });
+
+  it("keeps the chips to one sideways-scrolling row and the drawer at its forms' height up to 60% of the tile, never shrinking for the transcript", () => {
+    const styles = WorkbenchQuestionChips.styles.cssText;
+    expect(styles).toMatch(/:host \{[^}]*flex: 0 0 auto;/);
+    expect(styles).toMatch(/\.chips \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/);
+    expect(styles).toMatch(/\.chip \{ flex: 0 0 auto;/);
+    expect(styles).toMatch(/\.drawer \{[^}]*max-height: min\(60cqh, 640px\);/);
+    expect(styles).not.toMatch(/\.drawer \{[^}]*min-height: 0/);
+  });
+
   it("sends one set's answers through the submit callback", async () => {
     const { chips, onSubmit } = await mount([ask("abc-1"), ask("def-2")]);
     await openWith(chips, chipButtons(chips)[0]);

@@ -56,7 +56,7 @@ import "./WorkstreamChooser";
 import "./WorkstreamContextDrawer";
 import "./WorkbenchSettingsPanel";
 import "./WorkbenchFilesPane";
-import { openQuestionCount } from "./WorkbenchQuestionChips";
+import { openQuestionCount, type WorkbenchQuestionChips } from "./WorkbenchQuestionChips";
 import { carriesChats, chatStatusDotStyles, chatTabStatus, droppedChats, endedOutside, renderChatStatusDot, startChatDrag, type ChatTabCloseDetail, type ChatTabMenuDetail, type ChatTabSelectDetail, type ChatTabStatus, type DraggedChats } from "./WorkbenchWindowTabs";
 import type { WorkbenchChatPane } from "./WorkbenchChatPane";
 import "./WorkbenchChatPane";
@@ -892,7 +892,32 @@ export class WorkbenchApp extends LitElement {
     this.realtime.close();
     const machineId = selectedMachineId(this.app);
     this.realtimeMachineId = machineId;
-    this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, undefined, machineId);
+    this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, () => { this.refreshWindowChatStatuses(machineId); }, machineId);
+  }
+
+  /** The question chip last pressed in a side tile, opened once that tile's Chat is on screen. */
+  private tileQuestion: { sessionId: string; askId: string; questionIndex: number } | undefined;
+
+  /** Status requests in flight for this window's other Chats, by machine-scoped session key. */
+  private readonly statusRequests = new Set<string>();
+
+  /**
+   * On every (re)connect, asks once for the status of each other Chat this window holds on the machine, so a restored
+   * idle Chat's tab counts its open questions before anything streams. Live updates take over from there.
+   */
+  private refreshWindowChatStatuses(machineId: string): void {
+    for (const chat of this.windows.window?.chats ?? []) {
+      const key = machineSessionKey(machineId, chat.sessionId);
+      if (chat.machineId !== machineId || chat.sessionId === this.app.selectedSession?.id || this.statusRequests.has(key)) continue;
+      this.statusRequests.add(key);
+      const known = this.app.sessionStatuses[chat.sessionId];
+      void this.windowChatWorkspace(chat)
+        .then(({ workspace }) => api.status({ id: chat.sessionId, cwd: workspace.path }, machineId))
+        // A live update that arrived meanwhile is newer; a switched machine no longer shows this Chat's status.
+        .then((status) => { if (selectedMachineId(this.app) === machineId && this.app.sessionStatuses[chat.sessionId] === known) this.sessions.applyGlobalEvent({ type: "status.update", status }); })
+        .catch(() => undefined)
+        .finally(() => { this.statusRequests.delete(key); });
+    }
   }
 
   private handleRealtimeEvent(event: BrowserRealtimeEvent): void {
@@ -1379,6 +1404,16 @@ export class WorkbenchApp extends LitElement {
     this.promptEditor?.focusInput();
   }
 
+  /** A tile's Chat now on screen: its pressed question opens in the drawer, else (or once it is gone) its composer takes focus. A superseded switch does neither. */
+  private async focusTileChat(sessionId: string): Promise<void> {
+    if (this.app.selectedSession?.id !== sessionId) return;
+    const question = this.tileQuestion?.sessionId === sessionId ? this.tileQuestion : undefined;
+    this.tileQuestion = undefined;
+    await this.updateComplete;
+    const chips = question === undefined ? undefined : this.shadowRoot?.querySelector<WorkbenchQuestionChips>('.tile[data-focused="true"] .chat-column > workbench-question-chips');
+    if (question === undefined || chips === null || chips === undefined || !await chips.openQuestion(question.askId, question.questionIndex)) await this.focusChatComposer();
+  }
+
   private async navigateSessionTree(targetId: string, summaryChoice: SessionTreeSummaryChoice): Promise<SessionTreeNavigateResult> {
     const result = await this.sessions.navigateTree(targetId, summaryChoice);
     if (!result.cancelled) await this.focusChatComposer();
@@ -1454,12 +1489,16 @@ export class WorkbenchApp extends LitElement {
     return styleMap({ gridArea: tile?.area ?? "1 / 1 / 3 / 3", ...(workstream === undefined ? {} : { "--ws": workstreamAccentColor(workstream.id) }) });
   }
 
-  /** A tile beside the focused one; any press or focus inside hands its Chat to the shell. */
+  /** A tile beside the focused one; any press or focus inside hands its Chat to the shell, a question chip opening its question there. */
   private renderTile(tile: GridTile, status: ChatTabStatus) {
     const { chat } = tile;
     const focus = (event: Event) => {
-      if (event.composedPath().some((target) => target instanceof HTMLElement && target.classList.contains("tile-actions"))) return;
-      void this.showWindowChat(chat.sessionId).then(() => this.focusChatComposer());
+      const path = event.composedPath();
+      if (path.some((target) => target instanceof HTMLElement && target.classList.contains("tile-actions"))) return;
+      // A press and the focus it causes (WebKit focuses no button on click) both switch; the chip pressed is kept for the switch that lands.
+      const chip = path.find((target): target is HTMLElement => target instanceof HTMLElement && target.dataset["ask"] !== undefined && target.dataset["question"] !== undefined);
+      if (chip !== undefined) this.tileQuestion = { sessionId: chat.sessionId, askId: chip.dataset["ask"] ?? "", questionIndex: Number(chip.dataset["question"]) };
+      void this.showWindowChat(chat.sessionId).then(() => this.focusTileChat(chat.sessionId));
     };
     const maximize = () => { void this.showWindowChat(chat.sessionId).then(() => this.updateWindow(toggleMaximized)); };
     return html`
@@ -1846,7 +1885,8 @@ export class WorkbenchApp extends LitElement {
     /* No rules between tiles: the focused tile is the brighter surface, the others rest on the background, the gutter is darker. */
     .grid { height: 100%; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 3px; background: light-dark(color-mix(in srgb, var(--pi-bg) 94%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 85%, black)); }
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pi-bg); }
-    .tile { container-type: inline-size; }
+    /* Grid tracks size every tile, so it can contain its size: the question drawer measures its height against it (cqh). */
+    .tile { container-type: size; }
     .grid:not([data-single]) > .tile[data-focused="true"] { background: var(--pi-surface); outline: 2px solid color-mix(in srgb, var(--pi-accent) 70%, transparent); outline-offset: -2px; }
     /* A tile too narrow for the full Chat header packs its buttons tighter. */
     @container (max-width: 640px) {
