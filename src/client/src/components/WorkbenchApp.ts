@@ -1749,8 +1749,6 @@ export class WorkbenchApp extends LitElement {
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
           .machineId=${selectedMachineId(state)}
-          .projectId=${state.selectedProject?.id}
-          .workspaceId=${state.selectedWorkspace?.id}
           .disabled=${session.archived === true}
           .canSteer=${state.status?.isStreaming === true}
           .isCompacting=${state.status?.isCompacting === true}

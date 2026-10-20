@@ -102,7 +102,7 @@ export interface ChatLine {
 }
 
 export interface CompletionItem {
-  kind: "command" | "file" | "model";
+  kind: "command";
   replaceFrom: number;
   replaceTo: number;
   insertText: string;
@@ -110,7 +110,6 @@ export interface CompletionItem {
   description?: string;
   /** Pi-style argument hint (e.g. `<PR-URL>`) for commands that declare one. */
   argumentHint?: string;
-  cursorOffset?: number;
 }
 
 export const appStyles = css`

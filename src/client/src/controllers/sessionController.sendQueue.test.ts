@@ -114,7 +114,7 @@ describe("SessionController send queue", () => {
     const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const api: typeof defaultApi = {
       ...defaultApi,
-      saveAttachments: (_session, _sent, _machineId, folder) => { savedFolder = folder; return Promise.resolve([{ path: "project-attachments/shot.png", mimeType: "image/png", size: 3, reference: "[PIC_1]" }]); },
+      saveAttachments: (_session, _sent, _machineId, folder) => { savedFolder = folder; return Promise.resolve([{ path: "project attachments/shot.png", mimeType: "image/png", size: 3, reference: "[PIC_1]" }]); },
       prompt: (_session, text) => { promptText = text; return Promise.resolve({ accepted: true }); },
     };
     const controller = new SessionController(
@@ -131,7 +131,7 @@ describe("SessionController send queue", () => {
     await controller.send("check this", undefined, attachments, "folder", "project-attachments");
 
     expect(savedFolder).toBe("project-attachments");
-    expect(promptText).toBe("check this\n\n[PIC_1] @project-attachments/shot.png");
+    expect(promptText).toBe("check this\n\n[PIC_1] @\"project attachments/shot.png\"");
   });
 
   it("does not set the sending state for plain text messages", async () => {

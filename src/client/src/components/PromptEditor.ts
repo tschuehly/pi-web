@@ -5,7 +5,7 @@ import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view
 import { indentOnInput, indentUnit } from "@codemirror/language";
 import { LitElement, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
-import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type FileSuggestion, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
+import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE } from "../promptAttachmentCapture";
 import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
@@ -14,7 +14,7 @@ import { machineSessionKey } from "../machineKeys";
 import { WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
 import type { StagedPromptChip } from "../promptChips";
 import { editOutsideReplyQuotes, replyQuoteFolding, replyQuoteInsertion, type ReplyQuote } from "../replyQuotes";
-import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
+import { detectPromptCompletionTrigger, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "../promptDraftStorage";
 import { clearStagedAttachments, emptyStagedAttachmentDraft, loadStagedAttachmentDraft, resolveStagedAttachmentKey, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
@@ -67,8 +67,6 @@ export class PromptEditor extends LitElement {
   @property({ attribute: false }) draftStorage?: DraftStorage;
   @property() cwd?: string;
   @property() machineId = "local";
-  @property() projectId?: string;
-  @property() workspaceId?: string;
   /**
    * Workspace-effective folder for the "save to folder" attachment delivery.
    * Shown in the delivery label and sent explicitly with the save request, so
@@ -624,7 +622,7 @@ export class PromptEditor extends LitElement {
   }
 
   private placeholder() {
-    return placeholder(this.dense ? "Message…" : "Message pi... Use / for commands, @ for tracked files, @ space for all files, # for models");
+    return placeholder(this.dense ? "Message…" : "Message pi… / for commands and skills");
   }
 
   private interfaceScale(): number {
@@ -775,7 +773,7 @@ export class PromptEditor extends LitElement {
       this.setCompletions(version, triggerKey, []);
       return;
     }
-    if (trigger.kind === "command" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
+    if (this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
       const commands = await this.commandCatalog();
       if (version !== this.requestVersion) return;
       this.knownCommandNames = new Set(commands.map((command) => command.name));
@@ -790,33 +788,6 @@ export class PromptEditor extends LitElement {
           ...(command.description === undefined ? {} : { description: command.description }),
           ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
         })));
-      return;
-    }
-    if (trigger.kind === "file" && this.projectId !== undefined && this.workspaceId !== undefined) {
-      const files = await api.files(trigger.query, { scope: trigger.fileScope, machineId: this.machineId, projectId: this.projectId, workspaceId: this.workspaceId }).catch(emptyFileSuggestions);
-      this.setCompletions(version, triggerKey, files
-        .slice(0, 12)
-        .map((file) => {
-          const insertText = fileCompletionInsertText(file.path, trigger.quoted === true, file.path.endsWith("/") ? trigger.allPrefix : undefined);
-          return {
-            kind: "file",
-            replaceFrom: trigger.from,
-            replaceTo: trigger.to,
-            insertText,
-            detail: file.kind,
-            ...(file.path.endsWith("/") && insertText.endsWith("\"") ? { cursorOffset: insertText.length - 1 } : {}),
-          };
-        }));
-      return;
-    }
-    if (trigger.kind === "model" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
-      const models = await api.models({ id: this.sessionId, cwd: this.cwd }, this.machineId).then((response) => response.models).catch(emptySessionModels);
-      this.setCompletions(version, triggerKey, modelCompletionChoices(models, trigger.query).map((choice) => ({
-        kind: "model",
-        replaceFrom: trigger.from,
-        replaceTo: trigger.to,
-        ...choice,
-      })));
       return;
     }
     this.setCompletions(version, triggerKey, []);
@@ -919,11 +890,6 @@ export class PromptEditor extends LitElement {
       this.pick(completion);
       return true;
     }
-    const trigger = this.currentTrigger();
-    if (trigger?.kind === "file") {
-      void this.refreshCompletions();
-      return true;
-    }
     return indentWithTab.run?.(view) ?? false;
   }
 
@@ -943,11 +909,10 @@ export class PromptEditor extends LitElement {
   private pick(item: CompletionItem) {
     const editor = this.editor;
     if (!editor || !this.completionsAreCurrent() || !this.completions.includes(item)) return;
-    const suffix = item.kind === "file" && (item.insertText.endsWith("/") || item.cursorOffset !== undefined) || item.kind === "command" && (/\s/.test(this.draft[item.replaceTo] ?? "") || item.insertText.startsWith("/skill:") && /[,.!?;:]/.test(this.draft[item.replaceTo] ?? "")) ? "" : " ";
-    const cursor = item.replaceFrom + (item.cursorOffset ?? item.insertText.length) + suffix.length;
-    const replaceTo = item.insertText.endsWith("\"") && this.draft.slice(item.replaceTo).startsWith("\"") ? item.replaceTo + 1 : item.replaceTo;
+    const suffix = /\s/.test(this.draft[item.replaceTo] ?? "") || item.insertText.startsWith("/skill:") && /[,.!?;:]/.test(this.draft[item.replaceTo] ?? "") ? "" : " ";
+    const cursor = item.replaceFrom + item.insertText.length + suffix.length;
     editor.dispatch({
-      changes: { from: item.replaceFrom, to: replaceTo, insert: `${item.insertText}${suffix}` },
+      changes: { from: item.replaceFrom, to: item.replaceTo, insert: `${item.insertText}${suffix}` },
       selection: EditorSelection.cursor(cursor),
       scrollIntoView: true,
       ...(item.argumentHint === undefined || item.argumentHint === "" ? {} : { effects: setPromptArgumentHint.of({ pos: cursor, text: item.argumentHint }) }),
@@ -1133,14 +1098,6 @@ function draftStorageKey(machineId: unknown, sessionId: unknown): string | undef
 }
 
 function emptySlashCommands(): SlashCommand[] {
-  return [];
-}
-
-function emptyFileSuggestions(): FileSuggestion[] {
-  return [];
-}
-
-function emptySessionModels(): SessionModel[] {
   return [];
 }
 

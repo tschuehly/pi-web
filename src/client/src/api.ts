@@ -1,4 +1,4 @@
-export { api, configApi, filesApi, machinesApi, machineStatusApi, noticesApi, piPackagesApi, piWebApi, pluginsApi, projectsApi, SessionTreeForkUnavailableError, sessionsApi, trustApi, workspacesApi } from "./api/clients";
+export { api, configApi, machinesApi, machineStatusApi, noticesApi, piPackagesApi, piWebApi, pluginsApi, projectsApi, SessionTreeForkUnavailableError, sessionsApi, trustApi, workspacesApi } from "./api/clients";
 export {
   openPairedPluginBackendChannel,
   pairedPluginBackendChannelPath,

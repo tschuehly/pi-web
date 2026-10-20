@@ -373,7 +373,7 @@ A tracked subsession always runs in the spawning session's working directory, so
 
 The parent can continue independent work or wait for its tracked children. Completion notices arrive automatically and wake an idle parent; no polling is needed. Child output is available to the parent when the child stops.
 
-Both `spawn_session` and `spawn_subsession` accept an optional `model` parameter, given as an exact `provider/model-id` such as `anthropic/claude-sonnet-4-5`. When set, the new session starts on that model instead of inheriting the dispatching session's model. The match is strict: an unknown or malformed value is rejected with an error. A `#provider/model-id` reference in the prompt (see [Prompt completions](#prompt-completions)) is how users ask for a specific model; agents forward that reference as this parameter. The new session also inherits the dispatching session's thinking level, clamped to its model's capabilities.
+Both `spawn_session` and `spawn_subsession` accept an optional `model` parameter, given as an exact `provider/model-id` such as `anthropic/claude-sonnet-4-5`. When set, the new session starts on that model instead of inheriting the dispatching session's model. The match is strict: an unknown or malformed value is rejected with an error. A `#provider/model-id` reference typed in the prompt is how users ask for a specific model; agents forward that reference as this parameter. The new session also inherits the dispatching session's thinking level, clamped to its model's capabilities.
 
 In **Settings → Session daemon**, these keys are saved on the selected machine. Restart the session daemon on that machine after changing them.
 
@@ -505,12 +505,4 @@ Existing browser-local Enter preferences remain the fallback until the correspon
 
 ## Prompt completions
 
-The chat composer opens completion menus on three trigger characters:
-
-- `/` at the very start of the draft completes session commands.
-- `@` completes file paths: `@` for tracked files, `@ ` (at, then space) or `!@` for all files. Picking one inserts an `@path` reference into the draft, quoted automatically when the path contains spaces.
-- `#` completes the models available to the session, filtered case-insensitively as you type (at most 12 entries). Picking one inserts a `#provider/model-id` reference into the draft, which tells agents the request should run on that model — for example as the `model` parameter of `spawn_session`.
-
-## Optional completion tools
-
-File and path `@` completions work without extra tools. If `fzf` is available on the PI WEB server's `PATH`, PI WEB uses it to improve completion filtering/ranking; otherwise it falls back to built-in ranking.
+The chat composer opens a completion menu for `/`: at the very start of the draft it completes session commands, and after whitespace anywhere in the draft `/skill:` completes skills. `@` and `#` are plain text, so a line starting with `#` is a Markdown heading.
