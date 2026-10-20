@@ -1,8 +1,8 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab, insertNewlineAndIndent } from "@codemirror/commands";
-import { markdown, deleteMarkupBackward, insertNewlineContinueMarkup } from "@codemirror/lang-markdown";
+import { deleteMarkupBackward, insertNewlineContinueMarkup } from "@codemirror/lang-markdown";
 import { EditorSelection, EditorState, Compartment } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
-import { defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
+import { indentOnInput, indentUnit } from "@codemirror/language";
 import { LitElement, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type FileSuggestion, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
@@ -30,6 +30,7 @@ import { formatCost, formatTokenCount } from "../utils/format";
 import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import "./AutocompleteMenu";
 import { renderBuiltinTabIcon } from "./tabIcons";
+import { filesHighlighting, markdownWithCodeLanguages } from "./workbenchFilesEditor";
 
 /** Composer keys whose send the server has not yet answered, in this window; a failure restores the prompt here. */
 const unacknowledgedSends = new Map<string, number>();
@@ -577,10 +578,12 @@ export class PromptEditor extends LitElement {
         selection: EditorSelection.cursor(this.draft.length),
         extensions: [
           history(),
-          markdown(),
+          // Formatted like the Files editor's Markdown, without its live preview: that would hide the brackets of
+          // `[PIC_n]` placeholders and the raw source of an expanded reply quote, both of which parse as links.
+          markdownWithCodeLanguages(),
           indentOnInput(),
           indentUnit.of("  "),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          filesHighlighting,
           EditorView.lineWrapping,
           drawSelection(),
           EditorView.contentAttributes.of((view) => inputAssistanceContentAttributes(view.state.sliceDoc(0, view.state.selection.main.head))),

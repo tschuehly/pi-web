@@ -84,6 +84,30 @@ test("puts text typed right of a collapsed quote on its own visible line", async
     .toBe("> [msg e2e00002](#entry:e2e00002) They are in the docs folder next to the install guide and the release plan\n\nTyped\n\n");
 });
 
+test("formats the composer's Markdown like the Files editor next to a collapsed quote, in light and dark", async ({ page }) => {
+  const url = process.env["PI_WEB_E2E_CHAT_URL"];
+  if (url === undefined) throw new Error("Isolated PI WEB was not started");
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto(url);
+  await page.locator("prompt-editor").evaluate((element) => {
+    const editor = element as HTMLElement & { insertReplyQuote(quote: { entryId: string; excerpt: string }): void; replaceText(text: string): void };
+    editor.replaceText("# Release check\n\n- run `npm test` first\n- then tag\n\n```ts\nconst ready: boolean = true;\n```\n\n");
+    editor.insertReplyQuote({ entryId: "e2e00002", excerpt: "They are in the docs folder next to the install guide and the release plan" });
+  });
+  await page.keyboard.type("Is that still right?");
+  const content = page.locator("prompt-editor .cm-content");
+  await expect(page.locator("prompt-editor .cm-reply-quote")).toHaveAttribute("aria-expanded", "false");
+  const color = (text: string) => content.getByText(text, { exact: true }).evaluate((span) => getComputedStyle(span).color);
+  const plain = await content.evaluate((element) => getComputedStyle(element).color);
+  expect(await color("const")).not.toBe(plain);
+  expect(await content.getByText("Release check").evaluate((span) => getComputedStyle(span).fontWeight)).toBe("650");
+  if (SHOTS !== undefined) await page.locator("prompt-editor").screenshot({ path: join(SHOTS, "composer-light.png") });
+  const lightKeyword = await color("const");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(() => color("const")).not.toBe(lightKeyword);
+  if (SHOTS !== undefined) await page.locator("prompt-editor").screenshot({ path: join(SHOTS, "composer-dark.png") });
+});
+
 test("places the Reply button at the selection under a larger interface scale", async ({ page }) => {
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (url === undefined) throw new Error("Isolated PI WEB was not started");
