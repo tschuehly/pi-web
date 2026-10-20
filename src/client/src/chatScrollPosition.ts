@@ -79,6 +79,10 @@ export class ChatScrollController {
     this.clearScheduledSave();
   }
 
+  get savePending(): boolean {
+    return this.saveTimer !== undefined;
+  }
+
   clearScheduledSave(): void {
     if (this.saveTimer === undefined) return;
     this.scheduler.clearTimeout(this.saveTimer);

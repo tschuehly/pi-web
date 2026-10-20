@@ -68,7 +68,7 @@ describe("Workbench zoom-compensated viewport contracts", () => {
   });
 
   it("compensates the WorkstreamContextDrawer sheet height", () => {
-    expect(rule(WorkstreamContextDrawer.styles, ".sheet")).toContain(`max-height: calc(${viewportHeight} - 56px)`);
+    expect(rule(WorkstreamContextDrawer.styles, ".sheet")).toContain(`max-height: min(calc(${viewportHeight} - 56px), calc(100cqh - 40px))`);
   });
 
   it("bounds the whole PromptEditor against half the compensated viewport", () => {

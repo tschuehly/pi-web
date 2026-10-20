@@ -14,13 +14,15 @@ import type { BrowserRealtimeEvent } from "../sessionSocket";
 import type { WindowChat } from "../workbenchWindows";
 import "./ChatView";
 import "./CommandPicker";
+import "./DelegateRoster";
+import "./GoalStatusChip";
 import "./PromptEditor";
 import "./WorkbenchQuestionChips";
 
 /**
- * A grid tile's Chat beside the focused one: its live transcript and a compact composer, driven by its own
- * SessionController, with its open questions as chips above the composer. Focusing the tile hands the Chat to the full
- * Workbench shell, so everything else (Files, goal, delegates, quotes) stays with the focused Chat.
+ * A grid tile's Chat beside the focused one, laid out exactly like the focused tile: its transcript, Activity, goal,
+ * question chips, composer and status line, driven by its own SessionController. Focusing the tile hands the Chat to the
+ * Workbench shell, which renders the same layout, so nothing moves; Files and quotes stay with the focused Chat.
  */
 @customElement("workbench-chat-pane")
 export class WorkbenchChatPane extends LitElement {
@@ -32,6 +34,9 @@ export class WorkbenchChatPane extends LitElement {
   /** Where the Chat lives: its recorded workspace, else its folder. */
   @property({ attribute: false }) resolveWorkspace: ((chat: WindowChat) => Promise<{ project: Project | undefined; workspace: Workspace }>) | undefined;
   @property({ attribute: false }) contentRendering: PluginRegistry["chatContentRendering"] | undefined;
+  /** The window's one Activity fold state, shared with the focused tile. */
+  @property({ type: Boolean }) rosterCollapsed = false;
+  @property({ attribute: false }) onToggleRoster: (() => void) | undefined;
   @state() private app: AppState = initialAppState();
   @state() private loadError = "";
   private readonly sessions = new SessionController(() => this.app, (patch) => { this.app = { ...this.app, ...patch }; }, () => undefined, undefined, {
@@ -117,6 +122,8 @@ export class WorkbenchChatPane extends LitElement {
         .onLoadMore=${() => { void this.sessions.loadEarlierMessages(); }}
         .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
       ></chat-view>
+      <delegate-roster .status=${state.status} .collapsed=${this.rosterCollapsed} .onToggleCollapsed=${this.onToggleRoster}></delegate-roster>
+      <goal-status-chip .status=${state.status}></goal-status-chip>
       <workbench-question-chips .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => this.sessions.submitAsk(askId, submission)}></workbench-question-chips>
       <prompt-editor
         .draftStorage=${this.draftStorage}
@@ -130,7 +137,7 @@ export class WorkbenchChatPane extends LitElement {
         .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0}
         .status=${state.status}
         .workingModeTranscriptSelection=${latestWorkingModeSelection(state.messages)}
-        .showUsage=${false}
+        .showUsage=${true}
         .warningCount=${state.status?.warnings?.length ?? 0}
         .sending=${state.sendingPrompts[session.id] === true}
         .onSend=${this.handleSend}
@@ -146,12 +153,11 @@ export class WorkbenchChatPane extends LitElement {
   }
 
   static override styles = css`
-    /* Half the comfortable profile's spacing inside a tile. */
-    :host { --pi-panel-padding: 5px; --pi-message-padding: 5px; --pi-toolbar-gap: 3px; display: flex; flex-direction: column; min-width: 0; min-height: 0; color: var(--pi-text); font: 14px system-ui, sans-serif; }
+    :host { display: flex; flex-direction: column; min-width: 0; min-height: 0; color: var(--pi-text); font: 14px system-ui, sans-serif; }
     .placeholder { margin: auto; color: var(--pi-muted); }
     .error { flex: 0 0 auto; padding: 4px 10px; background: color-mix(in srgb, var(--pi-danger) 12%, transparent); color: var(--pi-danger); }
     /* Zero basis: the transcript takes what is left, so the question chips and drawer never shrink for it. */
     chat-view { flex: 1 1 0; min-height: 0; overflow: hidden; }
-    prompt-editor { flex: 0 0 auto; }
+    delegate-roster, prompt-editor { flex: 0 0 auto; }
   `;
 }

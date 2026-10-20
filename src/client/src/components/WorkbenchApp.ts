@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing } from "lit";
-import { repeat } from "lit/directives/repeat.js";
+import { keyed } from "lit/directives/keyed.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { customElement, query, state } from "lit/decorators.js";
 import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionStatus, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
@@ -87,6 +87,9 @@ export function sessionInfoText(session: SessionInfo, status?: SessionStatus): s
   return `Session: ${session.id}\nFolder: ${session.cwd}\nTranscript: ${transcript}`;
 }
 
+/** Which workspace Files shows, on which machine: the scope Files resets for. */
+const filesKey = ({ machineId, workspace }: { machineId: string; workspace: Workspace | undefined }): string => `${machineId}:${workspace?.projectId ?? ""}:${workspace?.id ?? ""}`;
+
 export const adHocWorkspace = (path: string): Workspace => ({ id: adHocFolderWorkspaceId(path), projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
 
 /** A project inside another registered project, or its sibling `<project>-<suffix>` repository, belongs to that project's tab. */
@@ -119,6 +122,12 @@ export class WorkbenchApp extends LitElement {
   @state() private sidePane: "files" | undefined;
   /** A workspace the Files pane shows instead of the Chat's, after a link to a file outside the Chat's folder. */
   @state() private filesTarget: { sessionId: string; workspace: Workspace } | undefined;
+  /** What the Files pane shows; only `guardFilesTarget` changes it. */
+  @state() private filesShown: { machineId: string; workspace: Workspace | undefined } = { machineId: "local", workspace: undefined };
+  /** The target the owner refused to discard Files edits for; Files keeps its own until they ask again or it changes. */
+  @state() private filesDeclined: string | undefined;
+  /** Files shows another machine or workspace than the one on screen; set by `guardFilesTarget` before each render. */
+  private filesElsewhere = false;
   @state() private filesWidth = 400;
   private filesResize: { pointerId: number; startX: number; startWidth: number; handle: HTMLElement } | undefined;
   @query("chat-view") private chatView?: ChatView;
@@ -220,6 +229,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** Every selection of a Chat commits only once the shared store gives it to this window; else its holder shows it. */
+  private readonly toggleDelegateRoster = () => { this.delegateRosterCollapsed = !this.delegateRosterCollapsed; };
   private readonly claimGridChat = (session: SessionInfo, context: Partial<AppState>): Promise<boolean> => this.claimChat(session, context, false);
 
   private async claimChat(session: SessionInfo, context: Partial<AppState>, focus = true): Promise<boolean> {
@@ -505,7 +515,7 @@ export class WorkbenchApp extends LitElement {
     if (window === undefined || selected === undefined || isCreatingSessionId(selected) || window.focused === selected) return;
     const lost = Object.entries(this.windows.store).some(([id, other]) => id !== this.windows.id && other.chats.some((chat) => chat.sessionId === selected));
     if (lost) this.retireSelected();
-    this.showNext(lost);
+    this.showNext();
   }
 
   /** Takes the Chat on screen down at once, its composer saved and unmounted; the URL follows what shows next. */
@@ -515,21 +525,20 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** Shows the Chat this window focuses, or its home once nothing is on screen. */
-  private showNext(discardConfirmed: boolean): void {
+  private showNext(): void {
     const next = this.windows.window?.focused;
     if (next === undefined) { if (this.app.selectedSession === undefined) this.updateUrl(); }
-    else if (next !== this.app.selectedSession?.id) void this.showWindowChat(next, discardConfirmed);
+    else if (next !== this.app.selectedSession?.id) void this.showWindowChat(next);
   }
 
   private filesPaneCanClose(): boolean {
     return this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false;
   }
 
-  /** Shows one of this window's Chats, in its recorded workspace, without leaving the Chat on screen first. */
-  private async showWindowChat(sessionId: string, discardConfirmed = false): Promise<void> {
+  /** Shows one of this window's Chats, in its recorded workspace, without leaving the Chat on screen first; Files stays open. */
+  private async showWindowChat(sessionId: string): Promise<void> {
     const chat = this.windows.window?.chats.find((candidate) => candidate.sessionId === sessionId);
-    if (chat === undefined || sessionId === this.app.selectedSession?.id || !discardConfirmed && !this.filesPaneCanClose()) return;
-    if (this.sidePane === "files") this.sidePane = undefined;
+    if (chat === undefined || sessionId === this.app.selectedSession?.id) return;
     void this.updateWindow((store, id) => focusChat(store, id, sessionId));
     const machineId = selectedMachineId(this.app);
     if (chat.machineId !== machineId) {
@@ -623,13 +632,12 @@ export class WorkbenchApp extends LitElement {
     if (leaving !== undefined && !this.filesPaneCanClose()) return undefined;
     const text = leaving === undefined ? undefined : this.promptEditor?.view?.state.doc.toString();
     const machineId = selectedMachineId(this.app);
-    // The owner already chose to discard any unsaved file edits; do not ask again.
     if (leaving !== undefined) this.retireSelected();
     return this.updateComplete.then(() => this.updateWindow(change)).then(async () => {
       if (leaving === undefined) return;
-      if (this.windows.window?.chats.some((chat) => chat.sessionId === leaving) !== true) { this.showNext(true); return; }
+      if (this.windows.window?.chats.some((chat) => chat.sessionId === leaving) !== true) { this.showNext(); return; }
       const { error } = this.app;
-      await this.showWindowChat(leaving, true);
+      await this.showWindowChat(leaving);
       if (text !== undefined) await this.replacePromptEditorText({ machineId, sessionId: leaving, text });
       this.setApp({ error });
     });
@@ -712,6 +720,7 @@ export class WorkbenchApp extends LitElement {
 
   /** The Chat's Workstream names its tab group once known; an unreachable Workstream service keeps the last name. */
   protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
+    this.guardFilesTarget();
     const session = this.app.selectedSession;
     if (!changed.has("currentWorkstream") || session === undefined || this.currentWorkstream === undefined || this.currentWorkstreamError !== "") return;
     const snapshot = this.currentWorkstream;
@@ -915,6 +924,8 @@ export class WorkbenchApp extends LitElement {
 
   /** The question chip last pressed in a side tile, opened once that tile's Chat is on screen. */
   private tileQuestion: { sessionId: string; askId: string; questionIndex: number } | undefined;
+  /** Where a click on a still unfocused tile's tools landed, replayed once the tile is focused. */
+  private tileClick: { sessionId: string; x: number; y: number } | undefined;
 
   /** Open asks read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
   @state() private restoredAsks: Record<string, readonly PendingAskUser[]> = {};
@@ -1412,6 +1423,9 @@ export class WorkbenchApp extends LitElement {
     const question = this.tileQuestion?.sessionId === sessionId ? this.tileQuestion : undefined;
     this.tileQuestion = undefined;
     await this.updateComplete;
+    const click = this.tileClick?.sessionId === sessionId ? this.tileClick : undefined;
+    this.tileClick = undefined;
+    if (click !== undefined) { deepElementAt(this.shadowRoot, click.x, click.y)?.closest<HTMLElement>("button, summary")?.click(); return; }
     const chips = question === undefined ? undefined : this.shadowRoot?.querySelector<WorkbenchQuestionChips>('.tile[data-focused="true"] .chat-column > workbench-question-chips');
     if (question === undefined || chips === null || chips === undefined || !await chips.openQuestion(question.askId, question.questionIndex)) await this.focusChatComposer();
   }
@@ -1456,7 +1470,7 @@ export class WorkbenchApp extends LitElement {
         @chat-tab-drop=${(event: CustomEvent<DraggedChats>) => { void this.takeDroppedChats(event.detail); }}
         @chat-tab-drag-out=${(event: CustomEvent<DraggedChats>) => { this.moveToNewWindow(event.detail.sessionIds); }}
         @dragstart=${this.guardChatDrag}>${this.chatToolsInTabRow() ? html`<div class="chat-tools" slot="tools">${this.renderChatTools()}</div>` : nothing}</workbench-window-tabs>
-      <div class="stage">${this.app.selectedSession === undefined ? this.renderChooser() : this.renderWindowChats()}${this.renderSwipePeek()}</div>
+      <div class="stage">${this.renderStage()}${this.renderSwipePeek()}</div>
       ${this.renderWindowMenu()}
     `;
   }
@@ -1464,7 +1478,19 @@ export class WorkbenchApp extends LitElement {
   /**
    * Tabs, or a maximized tile: the focused Chat alone. Grid: its page of up to four tiles, only those live. Every layout
    * renders the focused Chat as the same first tile, so ⌃G and full size never remount it with its composer and Files edits.
+   * The other tiles each keep their grid position's slot, so a focus switch never moves one (a moved tile loses its scroll).
+   * Window-wide notices sit above the grid and Files beside it, so focus never reshapes a tile.
+   * Files keeps one place beside the chooser too: a Chat taken down by a load, a machine switch or a failed start leaves
+   * it mounted, edits and all, until `guardFilesTarget` settles what replaces it.
    */
+  private renderStage() {
+    const selected = this.app.selectedSession;
+    return html`
+      ${selected === undefined ? nothing : html`${this.renderDesktopNotificationDiagnostic()}${this.app.error === "" ? null : html`<div class="chat-error" role="alert">${this.app.error}</div>`}`}
+      <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>${selected === undefined ? this.renderChooser() : this.renderWindowChats()}${this.renderFiles()}</div>
+    `;
+  }
+
   private renderWindowChats() {
     const window = this.windows.window;
     const selected = this.app.selectedSession?.id;
@@ -1473,10 +1499,10 @@ export class WorkbenchApp extends LitElement {
     const focused = tiles.length < 2 ? undefined : tiles.find((tile) => tile.chat.sessionId === selected);
     const statuses = this.chatTabStatuses();
     return html`
-      <div class="grid" ?data-single=${focused === undefined} @dragover=${(event: DragEvent) => { if (carriesChats(event)) event.preventDefault(); }} @drop=${(event: DragEvent) => { const dropped = droppedChats(event); if (dropped !== undefined) { event.preventDefault(); void this.takeDroppedChats(dropped); } }}>
-        <section class="tile" data-focused="true" style=${this.tileStyle(focused)}>${this.renderChat(focused !== undefined)}</section>
-        ${repeat(focused === undefined ? [] : tiles.filter((tile) => tile !== focused), (tile) => tile.chat.sessionId, (tile) => this.renderTile(tile, statuses[tile.chat.sessionId] ?? "idle"))}
-      </div>
+        <div class="grid" ?data-single=${focused === undefined} @dragover=${(event: DragEvent) => { if (carriesChats(event)) event.preventDefault(); }} @drop=${(event: DragEvent) => { const dropped = droppedChats(event); if (dropped !== undefined) { event.preventDefault(); void this.takeDroppedChats(dropped); } }}>
+          <section class="tile" data-focused="true" style=${this.tileStyle(focused)}>${focused === undefined ? nothing : this.renderTileBar(focused, statuses[focused.chat.sessionId] ?? "idle", true)}${this.renderChat(focused !== undefined)}</section>
+          ${(focused === undefined ? [] : tiles).map((tile) => tile === focused ? nothing : keyed(tile.chat.sessionId, this.renderTile(tile, statuses[tile.chat.sessionId] ?? "idle")))}
+        </div>
     `;
   }
 
@@ -1501,30 +1527,54 @@ export class WorkbenchApp extends LitElement {
       // A press and the focus it causes (WebKit focuses no button on click) both switch; the chip pressed is kept for the switch that lands.
       const chip = path.find((target): target is HTMLElement => target instanceof HTMLElement && target.dataset["ask"] !== undefined && target.dataset["question"] !== undefined);
       if (chip !== undefined) this.tileQuestion = { sessionId: chat.sessionId, askId: chip.dataset["ask"] ?? "", questionIndex: Number(chip.dataset["question"]) };
+      // The outgoing Chat's place, saved while its tile still has its size: a scroll still settling would save it after the move.
+      this.shadowRoot?.querySelector<ChatView>('.tile[data-focused="true"] chat-view')?.saveScrollPosition();
       void this.showWindowChat(chat.sessionId).then(() => this.focusTileChat(chat.sessionId));
     };
-    const maximize = () => { void this.showWindowChat(chat.sessionId).then(() => this.updateWindow(toggleMaximized)); };
+    // A click on the tile bar's inert Workstream or tools, still unfocused, acts once focused: the focused bar has them at the same point.
+    const replay = (event: MouseEvent) => {
+      const { clientX: x, clientY: y } = event;
+      const section = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined;
+      if ([...section?.querySelectorAll(".tile-bar [inert]") ?? []].some((inert) => { const box = inert.getBoundingClientRect(); return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom; })) this.tileClick = { sessionId: chat.sessionId, x, y };
+    };
     return html`
-      <section class="tile" data-session=${chat.sessionId} style=${this.tileStyle(tile)} @pointerdown=${focus} @focusin=${focus}>
-        <div class="tile-bar" draggable="true" @dblclick=${maximize}
-          @contextmenu=${(event: MouseEvent) => { event.preventDefault(); this.openWindowMenu({ sessionIds: [chat.sessionId], label: chat.title, clientX: event.clientX, clientY: event.clientY }); }}
-          @dragstart=${(event: DragEvent) => { startChatDrag(event, { windowId: this.windows.id, sessionIds: [chat.sessionId] }, chat.title); this.guardChatDrag(event); }}
-          @dragend=${(event: DragEvent) => { if (event.dataTransfer?.dropEffect === "none" && endedOutside(event, window)) this.moveToNewWindow([chat.sessionId]); }}>
-          ${renderChatStatusDot(status)}
-          <span class="tile-title" title=${chat.title}>${chat.title}</span>
-          ${status === "needs" ? html`<span class="needs">Needs you</span>` : nothing}
-          ${chat.workstream === undefined ? nothing : html`<span class="workstream-chip" title=${`Workstream: ${chat.workstream.title}`}>${chat.workstream.title}</span>`}
-          <span class="tile-actions">
-            <button type="button" class="icon-button" title="Full size (⌃↩)" aria-label=${`Full size ${chat.title}`} @click=${maximize}>${renderBuiltinTabIcon("maximize")}</button>
-            <button type="button" class="icon-button" title="Close" aria-label=${`Close ${chat.title}`} @click=${() => { this.closeWindowChats([chat.sessionId]); }}>${renderBuiltinTabIcon("x")}</button>
-          </span>
-        </div>
-        <workbench-chat-pane .chat=${chat} .claimSession=${this.claimGridChat} .draftStorage=${this.windows.draftStorage} .machines=${this.app.machines} .resolveWorkspace=${this.windowChatWorkspace} .contentRendering=${this.contentRendering}></workbench-chat-pane>
+      <section class="tile" data-session=${chat.sessionId} style=${this.tileStyle(tile)} @pointerdown=${focus} @focusin=${focus} @click=${replay}>
+        ${this.renderTileBar(tile, status, false)}
+        <workbench-chat-pane .chat=${chat} .claimSession=${this.claimGridChat} .draftStorage=${this.windows.draftStorage} .machines=${this.app.machines} .resolveWorkspace=${this.windowChatWorkspace} .contentRendering=${this.contentRendering}
+          .rosterCollapsed=${this.delegateRosterCollapsed} .onToggleRoster=${this.toggleDelegateRoster}></workbench-chat-pane>
       </section>
     `;
   }
 
-  /** Grid only: full size and close for the focused tile, in its own header. */
+  /**
+   * Every Grid tile's one header row, focused or not, so focusing a tile moves nothing: its Workstream, its Chat, the
+   * Chat's tools, full size and close. Only the focused (`live`) tile's Workstream and tools act; elsewhere they are
+   * inert, so a press falls through to the tile, focuses it, and then acts in the focused bar.
+   */
+  private renderTileBar({ chat }: GridTile, status: ChatTabStatus, live: boolean) {
+    const session = this.app.selectedSession;
+    const workstream = chat.workstream;
+    const loaded = live && this.currentWorkstream?.id === workstream?.id ? this.currentWorkstream : undefined;
+    const maximize = () => { void this.showWindowChat(chat.sessionId).then(() => this.updateWindow(toggleMaximized)); };
+    return html`
+      <div class="tile-bar" draggable="true" @dblclick=${maximize}
+        @contextmenu=${(event: MouseEvent) => { event.preventDefault(); this.openWindowMenu({ sessionIds: [chat.sessionId], label: chat.title, clientX: event.clientX, clientY: event.clientY }); }}
+        @dragstart=${(event: DragEvent) => { startChatDrag(event, { windowId: this.windows.id, sessionIds: [chat.sessionId] }, chat.title); this.guardChatDrag(event); }}
+        @dragend=${(event: DragEvent) => { if (event.dataTransfer?.dropEffect === "none" && endedOutside(event, window)) this.moveToNewWindow([chat.sessionId]); }}>
+        ${workstream === undefined ? nothing : html`<workstream-context-drawer compact ?inert=${!live} .snapshot=${loaded ?? { ...workstream, revision: 0, updatedAt: "", closed: false, sessions: [], humanTasks: [], links: [], overview: null }} .serviceContext=${loaded === undefined ? undefined : this.workstreamServiceContext} .sessionId=${chat.sessionId} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>`}
+        ${renderChatStatusDot(status)}
+        <span class="tile-title" title=${chat.title}>${chat.title}</span>
+        ${status === "needs" ? html`<span class="needs">Needs you</span>` : nothing}
+        <span class="tile-tools" ?inert=${!live}>${session === undefined ? nothing : this.renderChatToolButtons(session)}</span>
+        <span class="tile-actions">
+          <button type="button" class="icon-button" title="Full size (⌃↩)" aria-label=${`Full size ${chat.title}`} @click=${maximize}>${renderBuiltinTabIcon("maximize")}</button>
+          <button type="button" class="icon-button" title="Close" aria-label=${`Close ${chat.title}`} @click=${() => { this.closeWindowChats([chat.sessionId]); }}>${renderBuiltinTabIcon("x")}</button>
+        </span>
+      </div>
+    `;
+  }
+
+  /** A maximized Grid tile: restore and close, in its header. */
   private renderGridActions(sessionId: string) {
     const window = this.windows.window;
     if (window?.layout !== "grid" || window.chats.length < 2) return nothing;
@@ -1698,18 +1748,41 @@ export class WorkbenchApp extends LitElement {
     return target !== undefined && target.sessionId === this.app.selectedSession?.id ? target.workspace : this.app.selectedWorkspace;
   }
 
-  /** Show `path` in the Files pane, in `workspace` or else the Chat's own workspace. */
+  /**
+   * Every change of what Files shows lands here, on the update that would show it: with unsaved edits in Files the
+   * owner chooses between discarding them and keeping Files as it is, beside a Chat of another workspace.
+   */
+  private guardFilesTarget(): void {
+    const next = { machineId: selectedMachineId(this.app), workspace: this.filesWorkspace() };
+    const key = filesKey(next);
+    this.filesElsewhere = key !== filesKey(this.filesShown);
+    if (!this.filesElsewhere) { this.filesDeclined = undefined; return; }
+    // No Chat on screen (a chooser, a load or a machine switch in flight): Files keeps what it shows, and says so.
+    if (this.app.selectedSession === undefined) return;
+    if (this.sidePane !== undefined && (key === this.filesDeclined || !this.filesPaneCanClose())) { this.filesDeclined = key; return; }
+    this.filesShown = next;
+    this.filesDeclined = undefined;
+    this.filesElsewhere = false;
+  }
+
+  /** Where Files reads and saves: its workspace, after its machine's name when that is not the one on screen. */
+  private filesShownLabel(): string {
+    const { machineId, workspace } = this.filesShown;
+    const label = workspace?.label ?? "another workspace";
+    if (machineId === selectedMachineId(this.app)) return label;
+    return `${this.app.machines.find((machine) => machine.id === machineId)?.name ?? machineId} · ${label}`;
+  }
+
+  /** Show `path` in the Files pane, in `workspace` or else the Chat's own workspace, unless Files keeps its edits. */
   private openInFiles(workspace: Workspace | undefined, path: string, lines?: LineRange): void {
-    const current = this.filesWorkspace();
-    const next = workspace ?? this.app.selectedWorkspace;
-    const switching = current !== undefined && (next?.projectId !== current.projectId || next.id !== current.id);
-    if (switching && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
     const session = this.app.selectedSession;
     this.filesTarget = workspace === undefined || session === undefined ? undefined : { sessionId: session.id, workspace };
+    this.filesDeclined = undefined;
     this.sidePane = "files";
+    const wanted = filesKey({ machineId: selectedMachineId(this.app), workspace: workspace ?? this.app.selectedWorkspace });
     void this.updateComplete.then(async () => {
       const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
-      if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.openFile(path, false, lines); }
+      if (pane !== null && pane !== undefined && filesKey(this.filesShown) === wanted) { await pane.updateComplete; await pane.openFile(path, false, lines); }
     });
   }
 
@@ -1752,25 +1825,44 @@ export class WorkbenchApp extends LitElement {
     return this.app.selectedSession !== undefined && window?.layout === "tabs" && window.chats.length > 0;
   }
 
-  /** The selected Chat's Workstream and tools; its folder is the Files tooltip. */
+  /** The selected Chat's Workstream and tools. */
   private renderChatTools() {
-    const state = this.app;
-    const session = state.selectedSession;
+    const session = this.app.selectedSession;
     if (session === undefined) return nothing;
+    return html`
+      ${this.currentWorkstream ? html`<workstream-context-drawer ?compact=${this.chatToolsInTabRow()} .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>` : nothing}
+      ${this.renderChatToolButtons(session)}
+      ${this.renderGridActions(session.id)}
+    `;
+  }
+
+  /** Files, session tree, session info, settings, notifications; the Chat's folder is the Files tooltip. */
+  private renderChatToolButtons(session: SessionInfo) {
+    const state = this.app;
     const workspace = state.selectedWorkspace;
     const folder = workspace === undefined ? "" : ` — ${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${workspace.label} (${workspace.path})`;
     return html`
-      ${this.currentWorkstream ? html`<workstream-context-drawer ?compact=${this.chatToolsInTabRow()} .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>` : nothing}
       <button type="button" class="icon-button files-toggle" title=${`Files${folder}`} aria-label="Files" aria-expanded=${this.sidePane === "files"} aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("files")}</button>
       <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></button>
       <button class="icon-button" type="button" title=${`${sessionInfoText(session, state.status)}\n\nClick to copy`} aria-label=${this.sessionInfoCopied ? "Copied session info" : "Copy session info"} @click=${() => { void this.copySessionInfo(session); }}>${this.sessionInfoCopied ? html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`}</button>
       ${this.renderSettingsPanel()}
       ${this.renderDesktopNotificationButton()}
-      ${this.renderGridActions(session.id)}
     `;
   }
 
-  /** `tile`: the focused tile of a grid, with the tiles' compact transcript and composer. */
+  /** Files beside the grid, outside every tile: a focus switch keeps it open and leaves every tile its size. */
+  private renderFiles() {
+    if (this.sidePane === undefined) return nothing;
+    return html`
+      <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
+        @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
+      <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("chevron")}</button></div>
+      <workbench-files-pane id="workbench-files" .workspace=${this.filesShown.workspace} .machineId=${this.filesShown.machineId}>${this.filesElsewhere ? html`
+        <p class="files-elsewhere" role="status">Files still shows ${this.filesShownLabel()}.${this.filesDeclined === undefined ? nothing : html` <button type="button" @click=${() => { this.filesDeclined = undefined; }}>Show this Chat's files</button>`}</p>` : nothing}</workbench-files-pane>
+    `;
+  }
+
+  /** `tile`: the focused tile of a grid, laid out like every other tile under its tile bar. */
   private renderChat(tile = false) {
     const state = this.app;
     const session = state.selectedSession;
@@ -1778,11 +1870,8 @@ export class WorkbenchApp extends LitElement {
     const warningCount = state.status?.warnings?.length ?? 0;
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${selectedMachineId(state)} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
-        ${this.chatToolsInTabRow() ? nothing : html`<header>${this.renderChatTools()}</header>`}
-        ${this.renderDesktopNotificationDiagnostic()}
-        ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
-        <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>
-          <div class="chat-column">
+        ${this.chatToolsInTabRow() || tile ? nothing : html`<header>${this.renderChatTools()}</header>`}
+        <div class="chat-column">
         <chat-view
           .dense=${tile}
           .contentRendering=${this.contentRendering}
@@ -1823,7 +1912,7 @@ export class WorkbenchApp extends LitElement {
           .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
           .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
         ></chat-view>
-        <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${() => { this.delegateRosterCollapsed = !this.delegateRosterCollapsed; }}></delegate-roster>
+        <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${this.toggleDelegateRoster}></delegate-roster>
         <goal-status-chip .status=${state.status}></goal-status-chip>
         <workbench-question-chips .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(selectedMachineId(state), session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => this.sessions.submitAsk(askId, submission)}></workbench-question-chips>
         <prompt-editor
@@ -1849,12 +1938,6 @@ export class WorkbenchApp extends LitElement {
           .onSetThinkingLevel=${this.setThinkingLevel}
           .onRunCommand=${(command: string) => this.sessions.runCommand(command)}
         ></prompt-editor>
-          </div>
-          ${this.sidePane === undefined ? null : html`
-            <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
-              @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
-            <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("chevron")}</button></div>`}
-          ${this.sidePane === "files" ? html`<workbench-files-pane id="workbench-files" .workspace=${this.filesWorkspace()} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
         </div>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
         ${this.renderSessionTreeNavigator(state)}
@@ -1880,27 +1963,25 @@ export class WorkbenchApp extends LitElement {
     @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
       :host { --pi-app-safe-area-bottom: env(safe-area-inset-bottom); }
     }
-    .stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; }
-    /* No rules between tiles: the focused tile is the brighter surface, the others rest on the background, the gutter is darker. */
-    .grid { height: 100%; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 3px; background: light-dark(color-mix(in srgb, var(--pi-bg) 94%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 85%, black)); }
+    .stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    /* No rules between tiles: every tile rests on the background, the gutter is darker, the focused tile is outlined. */
+    .grid { flex: 1 1 0; min-width: 0; min-height: 0; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 3px; background: light-dark(color-mix(in srgb, var(--pi-bg) 94%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 85%, black)); }
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pi-bg); }
     /* Grid tracks size every tile, so it can contain its size: the question drawer measures its height against it (cqh). */
     .tile { container-type: size; }
-    .grid:not([data-single]) > .tile[data-focused="true"] { background: var(--pi-surface); outline: 2px solid color-mix(in srgb, var(--pi-accent) 70%, transparent); outline-offset: -2px; }
-    /* A tile too narrow for the full Chat header packs its buttons tighter. */
-    @container (max-width: 640px) {
-      .grid:not([data-single]) .chat-shell > header { gap: 2px; padding: 2px 6px; }
-      .grid:not([data-single]) .chat-shell > header > .icon-button { width: 28px; height: 28px; min-height: 28px; padding: 5px; }
-    }
+    /* Half the comfortable profile's spacing inside a tile; focus is only the outline, so it moves nothing. */
+    .grid:not([data-single]) > .tile { --pi-panel-padding: 5px; --pi-message-padding: 5px; --pi-toolbar-gap: 3px; }
+    .grid:not([data-single]) > .tile[data-focused="true"] { outline: 2px solid var(--ws, color-mix(in srgb, var(--pi-accent) 70%, transparent)); outline-offset: -2px; }
     .tile .chat-shell { flex: 1 1 auto; height: auto; min-height: 0; }
-    .tile-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 4px 0 8px; border-left: 3px solid var(--ws, transparent); color: var(--pi-muted); font-size: 12px; user-select: none; }
+    .tile-bar { position: relative; z-index: 6; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 4px 0 8px; border-left: 3px solid var(--ws, transparent); color: var(--pi-muted); font-size: 12px; user-select: none; }
     .tile-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .workstream-chip { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--ws, transparent) 30%, var(--pi-surface)); color: var(--pi-text); font-size: 11px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+    .tile-bar workstream-context-drawer { flex: 0 1 auto; min-width: 60px; max-width: 40%; }
     .needs { flex: 0 0 auto; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--pi-warning) 28%, transparent); color: var(--pi-text); font-size: 11px; font-weight: 700; line-height: 18px; }
-    .tile-actions { flex: 0 0 auto; margin-left: auto; display: flex; gap: 2px; opacity: 0; }
+    .tile-tools { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: 2px; }
+    .tile-tools workbench-settings-panel { zoom: 0.75; }
+    .tile-actions { flex: 0 0 auto; display: flex; gap: 2px; opacity: 0; }
     .tile-bar:hover .tile-actions, .tile-actions:focus-within { opacity: 1; }
-    .tile-actions .icon-button { width: 24px; height: 24px; padding: 4px; }
-    .grid:not([data-single]) > .tile[data-focused="true"] .chat-shell > header { border-left: 3px solid var(--ws, transparent); }
+    .tile-bar .icon-button { width: 24px; height: 24px; min-height: 0; padding: 4px; }
     workbench-chat-pane { flex: 1 1 auto; }
     .grid[data-single] > .tile { z-index: 1; }
     .swipe-peek { position: absolute; inset: 0; z-index: 2; visibility: hidden; display: flex; align-items: center; justify-content: center; gap: 10px; background: var(--pi-bg); color: var(--pi-muted); font-size: 14px; pointer-events: none; }
@@ -1909,7 +1990,7 @@ export class WorkbenchApp extends LitElement {
     .window-menu button { min-height: 0; padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; font-size: 13px; }
     .window-menu button:hover, .window-menu button:focus-visible { background: var(--pi-surface-hover); }
     .window-menu hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--pi-border-muted); }
-    .chooser { box-sizing: border-box; height: 100%; overflow: auto; display: grid; place-items: start center; padding: min(10vh, 72px) 24px 32px; }
+    .chooser { flex: 1 1 0; min-width: 0; box-sizing: border-box; height: 100%; overflow: auto; display: grid; place-items: start center; padding: min(10vh, 72px) 24px 32px; }
     .chooser > section { box-sizing: border-box; width: min(960px, 100%); display: grid; gap: 16px; padding: 24px; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 18px 50px var(--pi-shadow); }
     h1, p { margin: 0; }
     h1 { font-size: 24px; }
@@ -1974,6 +2055,8 @@ export class WorkbenchApp extends LitElement {
     .files-close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .files-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     workbench-files-pane { flex: 0 0 min(var(--files-width), max(240px, calc(100% - 328px))); box-sizing: border-box; }
+    .files-elsewhere { margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--pi-border); color: var(--pi-warning); font-size: 12px; }
+    .files-elsewhere button { font: inherit; }
     @media (max-width: 760px) {
       .chat-and-files { flex-direction: column; }
       .files-divider, .files-close-anchor { display: none; }
@@ -1991,6 +2074,17 @@ export class WorkbenchApp extends LitElement {
       .link { min-height: max(44px, var(--pi-control-min-size)); }
     }
   `;
+}
+
+/** The innermost element at a point, through open shadow roots. */
+function deepElementAt(root: ShadowRoot | null, x: number, y: number): Element | undefined {
+  let element = root?.elementFromPoint(x, y) ?? undefined;
+  while (element?.shadowRoot) {
+    const inner = element.shadowRoot.elementFromPoint(x, y);
+    if (inner === null || inner === element) break;
+    element = inner;
+  }
+  return element;
 }
 
 function completeChatRoute(route: ParsedAppRoute): route is ParsedAppRoute & { projectId: string; workspaceId: string; sessionId: string } {

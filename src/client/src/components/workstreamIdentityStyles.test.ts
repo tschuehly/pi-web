@@ -31,6 +31,16 @@ describe("Workstream identity presentation contracts", () => {
     }
   });
 
+  it("keeps the Workstream colour in the compact tab-row control on the contrast-checked drawer surfaces", () => {
+    const drawer = styleText(WorkstreamContextDrawer.styles);
+    const resting = rule(drawer, ":host([compact]) summary");
+    // The tab row paints --pi-surface, so these are exactly the drawer surfaces the hue sweep above holds at AA.
+    expect(resting).toContain(`background: color-mix(in srgb, var(--workstream-color) ${String(WORKSTREAM_TINT_PERCENTAGES.drawer)}%, var(--pi-surface))`);
+    expect(resting).toContain("color: var(--pi-text)");
+    expect(rule(drawer, ":host([compact]) details[open] summary")).toContain(`background: color-mix(in srgb, var(--workstream-color) ${String(WORKSTREAM_TINT_PERCENTAGES.drawerActive)}%, var(--pi-surface-hover))`);
+    expect(rule(drawer, ":host([compact]) summary::before")).toContain("background: var(--workstream-color)");
+  });
+
   it("declares --pi-text foreground on every recolored label", () => {
     const chooser = styleText(WorkstreamChooser.styles);
     const drawer = styleText(WorkstreamContextDrawer.styles);
@@ -65,7 +75,7 @@ describe("Workstream identity presentation contracts", () => {
     expect(drawer).toContain("summary { border-color: ButtonText; border-left-color: LinkText; background: Canvas; }");
     expect(drawer).toMatch(/@media \(max-width: 520px\)[^{]*\{[^}]*\.sheet\s*\{\s*padding:\s*12px 16px/u);
     expect(rule(drawer, "summary:focus-visible")).toContain("outline: 2px solid var(--pi-accent)");
-    expect(rule(drawer, ".sheet")).toContain("max-height: calc(var(--pi-workbench-viewport-height, 100vh) - 56px)");
+    expect(rule(drawer, ".sheet")).toContain("max-height: min(calc(var(--pi-workbench-viewport-height, 100vh) - 56px), calc(100cqh - 40px))");
     // Status indicator must declare --pi-text outline for visibility across all surfaces
     expect(chooser).toContain(".row .activity-indicator, .session-row .activity-indicator { box-shadow: 0 0 0 1px var(--pi-text);");
   });

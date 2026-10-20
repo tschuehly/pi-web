@@ -587,6 +587,7 @@ export class WorkbenchFilesPane extends LitElement {
           ${text ? html`<button type="button" class=${`icon${this.copied ? " done" : ""}`} title=${this.copied ? "Copied" : "Copy file contents"} aria-label=${this.copied ? "Copied" : "Copy file contents"} @click=${() => { void this.copy(); }}>${this.copied ? CHECK_ICON : COPY_ICON}</button>` : nothing}
           ${file !== undefined ? html`<button type="button" class="icon" title=${this.full ? "Back to panel (Esc)" : "Open full size (⌘⇧F)"} aria-label=${this.full ? "Back to panel" : "Open full size"} aria-pressed=${this.full ? "true" : "false"} @click=${() => { this.full = !this.full; }}>${this.full ? COLLAPSE_ICON : EXPAND_ICON}</button>` : nothing}
         </div>
+        <slot></slot>
         ${this.hunkCount > 0 ? html`<div class="strip" role="region" aria-label="Agent changes"><b>${this.hunkCount} agent change${this.hunkCount > 1 ? "s" : ""}</b><span class="actions">
           <button type="button" @click=${() => { if (this.view) bulkHunkAction(this.view, "next"); }}>Next</button>
           <button type="button" class="approve" @click=${() => { if (this.view) bulkHunkAction(this.view, "approve"); }}>${CHECK_ICON}Approve all</button>

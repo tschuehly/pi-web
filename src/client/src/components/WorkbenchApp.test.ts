@@ -355,7 +355,9 @@ describe("Workbench Chat chooser", () => {
     expect(app.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("browser's site settings");
     setState(app, { ...getState(app), selectedSession: session("denied", "Chat") });
     await app.updateComplete;
-    expect(app.shadowRoot?.querySelector('[data-view="chat"] [role="alert"]')?.textContent).toContain("browser's site settings");
+    // Window-wide guidance sits above the Chat, outside it, so it never moves with a Grid tile's focus.
+    expect(app.shadowRoot?.querySelector('.stage > [role="alert"]')?.textContent).toContain("browser's site settings");
+    expect(app.shadowRoot?.querySelector('[data-view="chat"] [role="alert"]')).toBeNull();
   });
 
   it("shows a native permission failure in the chooser without hiding the retry control", async () => {
@@ -2240,7 +2242,9 @@ describe("window tabs", () => {
     toggleLayout();
     await settled(app);
     expect(tools()).toBeNull();
-    expect(app.shadowRoot?.querySelector('.tile[data-focused="true"] .chat-shell > header .files-toggle')).not.toBeNull();
+    // A Grid tile keeps its tools in the tile bar every tile shares, not in a Chat header of its own.
+    expect(app.shadowRoot?.querySelector('.tile[data-focused="true"] > .tile-bar .files-toggle')).not.toBeNull();
+    expect(app.shadowRoot?.querySelector(".chat-shell > header")).toBeNull();
     toggleLayout();
     await settled(app);
     expect(tools()).not.toBeNull();
@@ -2278,6 +2282,9 @@ describe("window tabs", () => {
     expect(tiles().filter((tile) => tile.dataset["focused"] === "true").map((tile) => tile.querySelector(".chat-shell")?.getAttribute("data-session"))).toEqual(["b1"]);
     expect(paneChats(app)).toEqual(["a1", "a2"]);
     expect(tabsRoot(app).querySelector(".workstream-tab")).toBeNull();
+    // One tile bar for every tile: its Workstream in colour and the Chat's tools, which act only in the focused tile.
+    expect(tiles().map((tile) => tile.querySelector(":scope > .tile-bar workstream-context-drawer[compact]") !== null)).toEqual([true, true, true]);
+    expect(tiles().map((tile) => tile.querySelector(":scope > .tile-bar .tile-tools")?.hasAttribute("inert"))).toEqual([false, true, true]);
 
     app.shadowRoot?.querySelector('.tile[data-session="a1"]')?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
@@ -2285,7 +2292,7 @@ describe("window tabs", () => {
     expect(app.shadowRoot?.querySelector('.tile[data-focused="true"] .chat-shell')?.getAttribute("data-session")).toBe("a1");
     expect(paneChats(app)).toEqual(["a2", "b1"]);
 
-    app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-focused="true"] header button[aria-label="Full size"]')?.click();
+    app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-focused="true"] > .tile-bar .tile-actions button[title^="Full size"]')?.click();
     await settled(app);
     expect(tiles()).toHaveLength(1);
     expect(app.shadowRoot?.querySelectorAll("workbench-chat-pane")).toHaveLength(0);
