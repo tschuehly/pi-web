@@ -96,6 +96,28 @@ test("counts an idle Chat's open questions on its tab right after a reload, with
   expect(reads.filter((path) => path.includes(`/sessions/${ASKING}/`)).map((path) => path.split("/").at(-1))).toEqual(["asks"]);
 });
 
+test("keeps a long set's send action in view at the drawer's bottom while its questions scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 820 });
+  await openAskingWindow(page);
+  await chips(page).first().click();
+  await expect(drawer(page)).toBeVisible();
+  // A long context and many questions: the drawer must scroll, or the check below proves nothing.
+  await shownChat(page).locator("workbench-question-chips").evaluate((element: HTMLElement & { asks: { context: string; questions: unknown[] }[] }) => {
+    const [ask] = element.asks;
+    if (ask !== undefined) element.asks = [{ ...ask, context: `${ask.context}\n\n`.repeat(6), questions: [...ask.questions, ...ask.questions, ...ask.questions] }];
+  });
+  const sets = drawer(page).locator(".sets");
+  expect(await sets.evaluate((element) => element.scrollHeight > element.clientHeight + 100)).toBe(true);
+  const send = drawer(page).getByRole("button", { name: "Send answers" });
+  const within = async () => {
+    const [area, button] = await Promise.all([sets.boundingBox(), send.boundingBox()]);
+    expect(area !== null && button !== null && button.y >= area.y && button.y + button.height <= area.y + area.height + 1).toBe(true);
+  };
+  await within();
+  await sets.evaluate((element) => { element.scrollTop = element.scrollHeight / 2; });
+  await within();
+});
+
 test("keeps twelve questions to one row of chips in a crowded grid, opens a side tile's question in one click, and answers through a drawer with room", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 820 });
   await openCrowdedGrid(page);
