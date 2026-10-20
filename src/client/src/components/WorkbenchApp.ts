@@ -1468,7 +1468,8 @@ export class WorkbenchApp extends LitElement {
   private renderWindowChats() {
     const window = this.windows.window;
     const selected = this.app.selectedSession?.id;
-    const tiles = window?.layout === "grid" && !window.maximized && window.focused === selected ? gridTiles(window) : [];
+    // Laid out around the Chat on screen: a focus switch keeps the outgoing grid until the selection lands, so no tile remounts.
+    const tiles = window?.layout === "grid" && !window.maximized ? gridTiles({ ...window, focused: selected }) : [];
     const focused = tiles.length < 2 ? undefined : tiles.find((tile) => tile.chat.sessionId === selected);
     const statuses = this.chatTabStatuses();
     return html`

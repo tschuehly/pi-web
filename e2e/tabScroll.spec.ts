@@ -62,3 +62,41 @@ test("keeps a long Chat's reading place across tab switches, and a bottom-pinned
     expect(await transcript(page).evaluate(readingPlace), `LONG reading place, round ${String(round)}`).toEqual(before);
   }
 });
+
+/** A Chat's transcript in Grid, whether its tile is the focused one or rests beside it. */
+const tileTranscript = (page: Page, session: string) => page.locator(`.tile[data-session="${session}"]`)
+  .or(page.locator('.tile[data-focused="true"]').filter({ has: page.locator(`main.chat-shell[data-session="${session}"]`) }))
+  .locator("chat-view .chat");
+
+test("keeps each Grid tile's reading place when focus moves between tiles", async ({ page }) => {
+  await openWindow(page);
+  await page.keyboard.press("Control+g");
+  await expect(page.locator("workbench-chat-pane")).toHaveCount(1);
+  const long = tileTranscript(page, LONG);
+  await expect(long.locator("article").first()).toBeVisible();
+  await expect(tileTranscript(page, RELEASE).locator("article").first()).toBeVisible();
+  await long.hover();
+  for (let step = 0; step < 4; step += 1) { await page.mouse.wheel(0, -1200); await page.waitForTimeout(200); }
+  await page.waitForTimeout(800);
+  const place = async () => ({ long: await long.evaluate(readingPlace), release: await tileTranscript(page, RELEASE).evaluate(readingPlace) });
+  const near = (actual: Awaited<ReturnType<typeof place>>, expected: typeof actual, label: string) => {
+    for (const key of ["long", "release"] as const) {
+      // A bottom-pinned Chat stays at its bottom, whatever height its tile's chrome leaves the transcript.
+      if (expected[key].atBottom) { expect(actual[key].atBottom, `${label}: ${key} at bottom`).toBe(true); continue; }
+      expect(actual[key].anchor, `${label}: ${key} anchor`).toBe(expected[key].anchor);
+      expect(Math.abs(actual[key].offset - expected[key].offset), `${label}: ${key} offset ${String(actual[key].offset)} vs ${String(expected[key].offset)}`).toBeLessThanOrEqual(2);
+    }
+  };
+  const before = await place();
+  expect(before.long.atBottom).toBe(false);
+
+  await page.locator(`.tile[data-session="${RELEASE}"] .tile-bar .tile-title`).click();
+  await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", RELEASE);
+  await page.waitForTimeout(1200);
+  near(await place(), before, "RELEASE focused");
+
+  await page.locator(`.tile[data-session="${LONG}"] .tile-bar .tile-title`).click();
+  await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", LONG);
+  await page.waitForTimeout(1200);
+  near(await place(), before, "LONG focused again");
+});
