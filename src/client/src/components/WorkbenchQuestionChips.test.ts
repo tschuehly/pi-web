@@ -110,13 +110,29 @@ describe("WorkbenchQuestionChips", () => {
     expect(chipButtons(chips).map((chip) => [chip.dataset["ask"], chip.dataset["question"]])).toEqual([["abc-1", "0"], ["def-2", "0"], ["def-2", "1"]]);
   });
 
-  it("keeps the chips to one sideways-scrolling row and the drawer at its forms' height up to 60% of the tile, never shrinking for the transcript", () => {
+  it("keeps the chips to one sideways-scrolling row and the drawer at its forms' height up to 60% of the tile, shrinking only once the transcript is gone", () => {
     const styles = WorkbenchQuestionChips.styles.cssText;
-    expect(styles).toMatch(/:host \{[^}]*flex: 0 0 auto;/);
+    expect(styles).toMatch(/:host \{[^}]*flex: 0 1 auto;[^}]*min-height: 0;/);
+    expect(styles).toMatch(/\.chips \{ flex: 0 0 auto;/);
     expect(styles).toMatch(/\.chips \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/);
     expect(styles).toMatch(/\.chip \{ flex: 0 0 auto;/);
     expect(styles).toMatch(/\.drawer \{[^}]*max-height: min\(60cqh, 640px\);/);
-    expect(styles).not.toMatch(/\.drawer \{[^}]*min-height: 0/);
+    expect(styles).toMatch(/\.drawer \{ flex: 0 1 auto;[^}]*min-height: 0;/);
+  });
+
+  it("frames one set flat under a single header line carrying the count and close button; several sets keep a drawer header", async () => {
+    const { chips } = await mount([twoQuestions]);
+    await openWith(chips, chipButtons(chips)[0]);
+    const [card] = cards(chips);
+    expect(card?.hasAttribute("flat")).toBe(true);
+    expect(drawer(chips)?.querySelector("header")).toBeNull();
+    expect(card?.querySelector('[slot="title"]')?.textContent).toBe("2 open questions");
+    expect(card?.querySelector('[slot="actions"]')?.getAttribute("aria-label")).toBe("Close questions");
+
+    chips.asks = [ask("abc-1"), twoQuestions];
+    await chips.updateComplete;
+    expect(drawer(chips)?.querySelector("header")?.textContent).toContain("3 open questions");
+    expect(cards(chips).every((each) => each.hasAttribute("flat") && each.children.length === 0)).toBe(true);
   });
 
   it("sends one set's answers through the submit callback", async () => {

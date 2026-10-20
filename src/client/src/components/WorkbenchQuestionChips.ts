@@ -34,15 +34,16 @@ export class WorkbenchQuestionChips extends LitElement {
   override render() {
     if (this.asks.length === 0) return nothing;
     const count = openQuestionCount(this.asks);
+    const title = `${String(count)} open ${count === 1 ? "question" : "questions"}`;
+    const closeButton = html`<button type="button" class="close" slot="actions" title="Close questions (Esc)" aria-label="Close questions" @click=${() => { this.close(); }}>${CHEVRON_DOWN_ICON}</button>`;
+    // One set lends its header line the drawer's title and close button; several keep a drawer header above them.
+    const single = this.asks.length === 1;
     return html`
       ${this.open ? html`
         <section id="question-drawer" class="drawer" aria-label="Open questions" @keydown=${this.onKeydown}>
-          <header>
-            <span>${count} open ${count === 1 ? "question" : "questions"}</span>
-            <button type="button" class="close" title="Close questions (Esc)" aria-label="Close questions" @click=${() => { this.close(); }}>${CHEVRON_DOWN_ICON}</button>
-          </header>
+          ${single ? nothing : html`<header><span>${title}</span>${closeButton}</header>`}
           <div class="sets">
-            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card context-beside data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .onSubmit=${this.onSubmit}></ask-user-card>`)}
+            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat context-beside data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
           </div>
         </section>` : nothing}
       <div class="chips" role="group" aria-label="Open questions" @keydown=${this.onKeydown}>
@@ -78,8 +79,8 @@ export class WorkbenchQuestionChips extends LitElement {
   }
 
   static override styles = css`
-    /* Never shrinks: the transcript above gives up the room, so chips and drawer never overlap the composer. */
-    :host { display: flex; flex: 0 0 auto; flex-direction: column; min-width: 0; }
+    /* The transcript above gives up its room first; past that the drawer shrinks and scrolls, so chips and composer stay whole. */
+    :host { display: flex; flex: 0 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
     svg { flex: 0 0 auto; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     /* One row however many questions are open: it scrolls sideways, and the drawer lists every question anyway. */
     .chips { flex: 0 0 auto; display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 6px var(--pi-panel-padding, 10px) 2px; }
@@ -97,13 +98,13 @@ export class WorkbenchQuestionChips extends LitElement {
     .chip:hover, .chip[aria-expanded="true"] { border-color: var(--pi-warning); }
     .chip:focus-visible, .close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     /* Rises from the composer, as tall as its forms up to 60% of the tile (cqh), then scrolls them. */
-    .drawer { flex: 0 0 auto; display: flex; flex-direction: column; max-height: min(60cqh, 640px); margin: 6px var(--pi-panel-padding, 10px) 0; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 -10px 30px var(--pi-shadow-soft); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
+    .drawer { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; max-height: min(60cqh, 640px); overflow: hidden; margin: 6px var(--pi-panel-padding, 10px) 0; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 -10px 30px var(--pi-shadow-soft); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
     header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); font: 12px system-ui, sans-serif; }
     .close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); cursor: pointer; }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .close svg { width: 16px; height: 16px; }
-    .sets { min-height: 0; overflow: auto; display: grid; gap: 10px; padding: 10px; }
-    ask-user-card { margin: 0; }
+    .sets { min-height: 0; overflow: auto; }
+    ask-user-card + ask-user-card { border-top: 1px solid var(--pi-border); }
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
     @media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
   `;
