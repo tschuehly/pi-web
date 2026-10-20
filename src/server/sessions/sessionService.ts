@@ -3,6 +3,7 @@ import type {
   AskUserSubmission,
   ExtensionDialogAnswer,
   ExtensionDialogCloseResponse,
+  PendingAskUser,
   SavedPromptAttachment,
   SessionBulkArchiveResponse,
   SessionBulkDeleteArchivedResponse,
@@ -64,6 +65,8 @@ export interface SessionRouteService {
   /** Resolve image bytes without modifying the Pi transcript or runtime. */
   media(ref: SessionRouteRef, mediaId: string): Promise<SessionMedia | undefined>;
   status(ref: SessionRouteRef): Promise<ClientSessionStatus>;
+  /** Open asks read without opening the session, so a cold one never starts. */
+  openAsks(ref: SessionRouteRef): Promise<PendingAskUser[]>;
   streamSnapshot(ref: SessionRouteRef): Promise<SessionStreamSnapshot>;
   transcriptSnapshot(ref: SessionRouteRef, page?: { limit?: number }): Promise<SessionTranscriptSnapshot>;
   notificationCatalog(): SessionNotificationCatalogSnapshot | Promise<SessionNotificationCatalogSnapshot>;

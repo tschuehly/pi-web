@@ -4,7 +4,7 @@ import { styleMap } from "lit/directives/style-map.js";
 import { customElement, query, state } from "lit/decorators.js";
 import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Project, type PromptAttachment, type QueuedSessionMessage, type SessionInfo, type SessionStatus, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSummaryChoice, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
-import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
+import type { PendingAskUser, PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
 import { latestWorkingModeSelection } from "../chatMessages";
@@ -699,10 +699,15 @@ export class WorkbenchApp extends LitElement {
     return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, chatTabStatus(chat.sessionId === selected ? this.app.status : this.app.sessionStatuses[chat.sessionId], this.unreadChats.has(chat.sessionId))]));
   }
 
-  /** The selected Chat's live open asks, and every other Chat's as its last status reported them. */
+  /** The selected Chat's live open asks, and every other Chat's as its last status reported them, else as read when the window connected. */
   private chatQuestionCounts(): Record<string, number> {
     const selected = this.app.selectedSession?.id;
-    return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, openQuestionCount(chat.sessionId === selected ? this.app.pendingAsks : this.app.sessionStatuses[chat.sessionId]?.pendingAsks)]));
+    const asks = (chat: WindowChat) => {
+      if (chat.sessionId === selected) return this.app.pendingAsks;
+      const status = this.app.sessionStatuses[chat.sessionId];
+      return status === undefined ? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)] : status.pendingAsks;
+    };
+    return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, openQuestionCount(asks(chat))]));
   }
 
   /** The Chat's Workstream names its tab group once known; an unreachable Workstream service keeps the last name. */
@@ -905,31 +910,33 @@ export class WorkbenchApp extends LitElement {
     this.realtime.close();
     const machineId = selectedMachineId(this.app);
     this.realtimeMachineId = machineId;
-    this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, () => { this.refreshWindowChatStatuses(machineId); }, machineId);
+    this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, () => { this.refreshWindowChatAsks(machineId); }, machineId);
   }
 
   /** The question chip last pressed in a side tile, opened once that tile's Chat is on screen. */
   private tileQuestion: { sessionId: string; askId: string; questionIndex: number } | undefined;
 
-  /** Status requests in flight for this window's other Chats, by machine-scoped session key. */
-  private readonly statusRequests = new Set<string>();
+  /** Open asks read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
+  @state() private restoredAsks: Record<string, readonly PendingAskUser[]> = {};
+
+  /** Open-ask reads in flight, by machine-scoped session key. */
+  private readonly askRequests = new Set<string>();
 
   /**
-   * On every (re)connect, asks once for the status of each other Chat this window holds on the machine, so a restored
-   * idle Chat's tab counts its open questions before anything streams. Live updates take over from there.
+   * On every (re)connect, reads once the open asks of each other Chat this window holds on the machine, so a restored
+   * idle Chat's tab counts its questions before anything streams. The read never opens a Chat: opening a cold one would
+   * redeliver its recorded answers and start a turn nobody asked for. Live status updates take over from there.
    */
-  private refreshWindowChatStatuses(machineId: string): void {
+  private refreshWindowChatAsks(machineId: string): void {
     for (const chat of this.windows.window?.chats ?? []) {
       const key = machineSessionKey(machineId, chat.sessionId);
-      if (chat.machineId !== machineId || chat.sessionId === this.app.selectedSession?.id || this.statusRequests.has(key)) continue;
-      this.statusRequests.add(key);
-      const known = this.app.sessionStatuses[chat.sessionId];
+      if (chat.machineId !== machineId || chat.sessionId === this.app.selectedSession?.id || this.askRequests.has(key)) continue;
+      this.askRequests.add(key);
       void this.windowChatWorkspace(chat)
-        .then(({ workspace }) => api.status({ id: chat.sessionId, cwd: workspace.path }, machineId))
-        // A live update that arrived meanwhile is newer; a switched machine no longer shows this Chat's status.
-        .then((status) => { if (selectedMachineId(this.app) === machineId && this.app.sessionStatuses[chat.sessionId] === known) this.sessions.applyGlobalEvent({ type: "status.update", status }); })
+        .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, machineId))
+        .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: asks }; })
         .catch(() => undefined)
-        .finally(() => { this.statusRequests.delete(key); });
+        .finally(() => { this.askRequests.delete(key); });
     }
   }
 

@@ -86,9 +86,14 @@ test("captures the question chips and drawer for review", async ({ browser }) =>
 });
 
 test("counts an idle Chat's open questions on its tab right after a reload, without opening it", async ({ page }) => {
+  // Anything but the read-only asks read would open the cold Chat in the daemon.
+  const reads: string[] = [];
+  page.on("request", (request) => { reads.push(new URL(request.url()).pathname); });
+  page.on("websocket", (socket) => { reads.push(new URL(socket.url()).pathname); });
   await openAskingWindow(page, NOTES);
   await expect(tabCount(page, ASKING)).toHaveText("2");
   await expect(chips(page)).toHaveCount(0);
+  expect(reads.filter((path) => path.includes(`/sessions/${ASKING}/`)).map((path) => path.split("/").at(-1))).toEqual(["asks"]);
 });
 
 test("keeps twelve questions to one row of chips in a crowded grid, opens a side tile's question in one click, and answers through a drawer with room", async ({ page }) => {

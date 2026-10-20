@@ -2185,12 +2185,15 @@ describe("window tabs", () => {
     await vi.waitFor(async () => { await app.updateComplete; expect(count(other)).toBeNull(); });
   });
 
-  it("asks once for each restored Chat's status as the window connects, so an idle Chat's tab counts its questions after a reload", async () => {
+  it("reads each restored Chat's open asks as the window connects without ever opening it, and the count survives later selections", async () => {
     await mountWithWorkstreamChats();
     document.body.replaceChildren();
     await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
     const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "a", question: "A?", options: [] }, { id: "b", question: "B?", options: [] }] };
-    const status = vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { ...idleStatus("a1"), pendingAsks: [ask] } : idleStatus(ref.id)));
+    vi.clearAllMocks();
+    const status = vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
+    let answerA1: (asks: typeof ask[]) => void = () => undefined;
+    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => ref.id === "a1" ? new Promise((resolve) => { answerA1 = resolve; }) : Promise.resolve([]));
     const sockets: SilentWebSocket[] = [];
     vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
     window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
@@ -2199,14 +2202,22 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
     const count = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"] .questions`)?.textContent ?? null;
     expect(count("a1")).toBeNull();
-    status.mockClear();
+    openAsks.mockClear();
 
     // Opened twice before the first answers: each other Chat is asked once; the Chat on screen not at all.
     const realtime = sockets.at(-1);
     realtime?.onopen?.();
     realtime?.onopen?.();
+    await vi.waitFor(() => { expect(openAsks.mock.calls.map(([ref]) => ref.id).sort()).toEqual(["a1", "b1"]); });
+    // A selection that lands as the answer arrives does not drop it.
+    answerA1([ask]);
+    workstreamTab(app, "Docs").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
     await vi.waitFor(async () => { await app.updateComplete; expect(count("a1")).toBe("2"); });
-    expect(status.mock.calls.map(([ref]) => ref.id).sort()).toEqual(["a1", "b1"]);
+    // Status and transcript reads open a cold Chat in the daemon, which would replay its recorded answers.
+    for (const read of [status, vi.mocked(api.messages), vi.mocked(api.transcriptSnapshot), vi.mocked(api.streamSnapshot)]) expect(read.mock.calls.map(([ref]) => ref.id)).not.toContain("a1");
   });
 
   it("puts the Chat's tools in the tab row, naming its folder in the Files tooltip, and gives them back to the tile in a grid", async () => {

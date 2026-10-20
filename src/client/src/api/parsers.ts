@@ -377,6 +377,11 @@ function optionalPendingAsks(pendingAsks: unknown, legacyPendingAsk: unknown): P
   return legacyPendingAsk === undefined ? {} : { pendingAsks: [parsePendingAskUser(legacyPendingAsk)] };
 }
 
+/** A session's open asks, read without opening it. */
+export function parseOpenAsks(value: unknown): PendingAskUser[] {
+  return arrayOf(parsePendingAskUser)(requireRecord(value)["pendingAsks"]);
+}
+
 export function parseSessionAskOpenedEvent(value: unknown): { type: "ask.opened"; ask: PendingAskUser } {
   const record = requireRecord(value);
   if (record["type"] !== "ask.opened") throw new Error("Invalid ask opened event type");

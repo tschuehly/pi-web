@@ -1036,6 +1036,25 @@ describe("session routes", () => {
     }
   });
 
+  it("reads a session's open asks through the asks route, never through status", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+
+    try {
+      const requestCwd = resolve("/repo");
+      const response = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ pendingAsks: [] });
+      expect(routeService.calls).toEqual([{ openAsks: { id: "session-1", cwd: requestCwd } }]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
   it("reloads a session through the reload route, forwarding workspace context", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1695,6 +1714,11 @@ class CapturingRouteSessionService implements SessionRouteService {
   media(lookup: SessionRouteRef, mediaId: string): Promise<SessionMedia | undefined> {
     this.mediaCalls.push({ lookup, mediaId });
     return this.mediaError === undefined ? Promise.resolve(this.mediaResponse) : Promise.reject(this.mediaError);
+  }
+
+  openAsks(lookup: SessionRouteRef) {
+    this.calls.push({ openAsks: lookup });
+    return Promise.resolve([]);
   }
 
   status(lookup: SessionRouteRef) {
