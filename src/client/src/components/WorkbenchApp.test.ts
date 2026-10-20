@@ -2324,7 +2324,7 @@ describe("window tabs", () => {
     expect(canClose).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps a Chat with staged quotes or attachments in this window and says why", async () => {
+  it("keeps a Chat with staged attachments in this window and says why", async () => {
     const opened = vi.spyOn(window, "open").mockReturnValue(null);
     const app = await mountWithWorkstreamChats();
     const moveToNewWindow = async (tab: Element | null) => {
@@ -2333,10 +2333,6 @@ describe("window tabs", () => {
       app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
       await app.updateComplete;
     };
-    app.shadowRoot?.querySelector<ChatView>("chat-view")?.onReplyToSelection?.({ entryId: "e1", excerpt: "Quoted line" });
-    await moveToNewWindow(tabsRoot(app).querySelector('.chat-tab[data-session="b1"]'));
-    expect(app.shadowRoot?.querySelector(".chat-error")?.textContent).toContain("Install guide");
-
     saveStagedAttachments(machineSessionKey("local", "a1"), { attachments: [{ id: "att-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGk=", size: 2 }], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
     await moveToNewWindow(workstreamTab(app, "Release"));
 

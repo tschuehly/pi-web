@@ -1,11 +1,11 @@
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
-// Set PI_WEB_E2E_SCREENSHOTS to a folder to keep review screenshots of the Reply button and staged quotes.
+// Set PI_WEB_E2E_SCREENSHOTS to a folder to keep review screenshots of the Reply button and inline quotes.
 const SHOTS = process.env["PI_WEB_E2E_SCREENSHOTS"];
 
 // Real selections inside nested shadow roots differ per engine, so this needs a browser.
-test("quotes selections from two messages and sends them ahead of the reply", async ({ page }) => {
+test("quotes selections from two messages inline and sends them with the reply", async ({ page }) => {
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (url === undefined) throw new Error("Isolated PI WEB was not started");
   let sent: unknown;
@@ -15,7 +15,7 @@ test("quotes selections from two messages and sends them ahead of the reply", as
   });
   await page.goto(url);
   const reply = page.getByRole("button", { name: "Reply to selection" });
-  const chips = page.locator("prompt-editor .prompt-chip");
+  const quotes = page.locator("prompt-editor .cm-reply-quote");
 
   const question = page.locator('chat-view article[data-entry-id="e2e00001"] formatted-text p').getByText("Where are the notes?");
   const answer = page.locator('chat-view article[data-entry-id="e2e00002"] formatted-text p');
@@ -28,7 +28,7 @@ test("quotes selections from two messages and sends them ahead of the reply", as
 
   await question.dblclick({ position: { x: 8, y: 6 } });
   await reply.click();
-  await expect(chips).toHaveCount(1);
+  await expect(quotes).toHaveCount(1);
   await answer.dblclick({ position: { x: 8, y: 6 } });
   await expect(reply).toBeVisible();
   await page.keyboard.press("Escape");
@@ -36,19 +36,18 @@ test("quotes selections from two messages and sends them ahead of the reply", as
   await answer.dblclick({ position: { x: 8, y: 6 } });
   if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-button.png") });
   await reply.click();
-  await expect(chips.locator(".prompt-chip-label")).toHaveText(["Where", "They"]);
-  const first = chips.first().locator(".prompt-chip-label");
-  await first.click();
-  await expect(first).toHaveAttribute("aria-expanded", "true");
-  await first.click();
-  await expect(first).toHaveAttribute("aria-expanded", "false");
-  await page.locator("prompt-editor").evaluate((editor) => { (editor as HTMLElement & { focusInput(): void }).focusInput(); });
+  await expect(quotes).toHaveText(["> Where", "> They"]);
+  for (const quote of await quotes.all()) await expect(quote).toHaveAttribute("aria-expanded", "false");
   await page.keyboard.type("Why there?");
-  if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-to-selection.png") });
+  if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-quotes-collapsed.png") });
+  await quotes.first().click();
+  await expect(page.locator("prompt-editor .cm-content")).toContainText("> [msg e2e00001](#entry:e2e00001) Where");
+  if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-quotes-expanded.png") });
 
+  await page.locator("prompt-editor").evaluate((editor) => { (editor as HTMLElement & { focusInput(): void }).focusInput(); });
   await page.keyboard.press("Enter");
   await expect.poll(() => sent).toMatchObject({ text: "> [msg e2e00001](#entry:e2e00001) Where\n\n> [msg e2e00002](#entry:e2e00002) They\n\nWhy there?" });
-  await expect(chips).toHaveCount(0);
+  await expect(quotes).toHaveCount(0);
 });
 
 test("places the Reply button at the selection under a larger interface scale", async ({ page }) => {

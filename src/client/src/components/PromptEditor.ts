@@ -13,7 +13,7 @@ import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputMode
 import { machineSessionKey } from "../machineKeys";
 import { WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
 import type { StagedPromptChip } from "../promptChips";
-import { REPLY_QUOTE_OWNER, replyQuoteExcerpt } from "../replyQuotes";
+import { replyQuoteFolding, replyQuoteInsertion, type ReplyQuote } from "../replyQuotes";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "../promptDraftStorage";
@@ -116,7 +116,6 @@ export class PromptEditor extends LitElement {
   @state() private attachmentError: string | undefined = undefined;
   @state() private chipSendingKey: string | undefined = undefined;
   @state() private chipError: string | undefined = undefined;
-  @state() private expandedChipKey: string | undefined = undefined;
   @state() private attachmentMenuOpen = false;
   private attachmentSeq = 0;
   private nextImageReference = 1;
@@ -269,6 +268,12 @@ export class PromptEditor extends LitElement {
     this.editor?.focus();
   }
 
+  /** Reply to a Chat selection: the quote lands at the cursor as its own collapsed blockquote, ready for the answer below it. */
+  insertReplyQuote(quote: ReplyQuote): void {
+    const at = this.editor?.state.selection.main.head ?? this.draft.length;
+    this.dispatchDraftChange(at, at, replyQuoteInsertion(this.draft.slice(0, at), quote));
+  }
+
   prependText(text: string): void {
     this.replaceText(this.draft === "" ? text : `${text}\n\n${this.draft}`);
   }
@@ -341,15 +346,12 @@ export class PromptEditor extends LitElement {
     if (this.promptChips.length === 0 && this.chipError === undefined) return null;
     return html`
       <div class="prompt-chips" aria-label="Pending context">
-        ${this.promptChips.map((chip) => {
-          const expanded = this.expandedChipKey === chip.key;
-          return html`
-          <div class=${`prompt-chip${chip.pluginId === REPLY_QUOTE_OWNER ? " prompt-chip-quote" : ""}${expanded ? " expanded" : ""}`}>
-            <button type="button" class="prompt-chip-label" aria-expanded=${String(expanded)} title=${expanded ? "Collapse" : "Show full text"} @click=${() => { this.expandedChipKey = expanded ? undefined : chip.key; }}>${expanded ? (chip.pluginId === REPLY_QUOTE_OWNER ? replyQuoteExcerpt(chip.text) : chip.text) : chip.label}</button>
-            <button type="button" aria-label=${`Remove ${chip.pluginId === REPLY_QUOTE_OWNER ? "quote " : ""}${chip.label}`} ?disabled=${this.disabled} @click=${() => this.onRemoveChip?.(chip)}>${renderRemoveIcon()}</button>
+        ${this.promptChips.map((chip) => html`
+          <div class="prompt-chip" title=${chip.text}>
+            <span>${chip.label}</span>
+            <button type="button" aria-label=${`Remove ${chip.label}`} ?disabled=${this.disabled} @click=${() => this.onRemoveChip?.(chip)}>${renderRemoveIcon()}</button>
           </div>
-        `;
-        })}
+        `)}
         ${this.chipError === undefined ? null : html`<div class="chip-error" role="alert">${this.chipError}</div>`}
       </div>
     `;
@@ -586,6 +588,7 @@ export class PromptEditor extends LitElement {
           }),
           this.placeholderCompartment.of(this.placeholder()),
           promptArgumentHintExtension,
+          replyQuoteFolding,
           this.editableCompartment.of(EditorView.editable.of(!this.disabled)),
           this.readOnlyCompartment.of(EditorState.readOnly.of(this.disabled)),
           EditorView.updateListener.of((update) => {
