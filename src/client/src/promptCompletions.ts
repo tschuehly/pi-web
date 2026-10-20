@@ -32,10 +32,11 @@ export function detectPromptCompletionTrigger(draft: string, cursor = draft.leng
   return undefined;
 }
 
-// Match Pi's literal-context and token rules without loading its filesystem skill scanner.
+// `/skill:name` anywhere, or a bare `/name` after the start, picks a skill;
+// a bare leading `/` falls through to the full command picker.
 function activeSkillDirective(draft: string, cursor: number, knownNames?: ReadonlySet<string>): PromptCompletionTrigger | undefined {
   for (const mention of promptSlashMentions(draft, knownNames)) {
-    if (!mention.skill) continue;
+    if (!mention.skill && mention.from === 0) continue;
     if (cursor < mention.nameFrom || cursor > mention.nameTo + (mention.nameTo < mention.tokenTo ? 1 : 0)) continue;
     return { kind: "command", query: draft.slice(mention.from + 1, Math.min(cursor, mention.nameTo)), from: mention.from, to: mention.nameTo };
   }

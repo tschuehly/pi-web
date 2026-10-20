@@ -771,13 +771,17 @@ export class PromptEditor extends LitElement {
       const commands = await this.commandCatalog();
       if (version !== this.requestVersion) return;
       this.knownCommandNames = new Set(commands.map((command) => command.name));
+      // Past the start only skills apply; a bare `/name` matches and shows the skill name.
+      const bareSkill = trigger.from !== 0 && !trigger.query.startsWith("skill:");
+      const query = trigger.query.toLowerCase();
       this.setCompletions(version, triggerKey, commands
-        .filter((command) => (trigger.from === 0 || command.source === "skill") && command.name.toLowerCase().includes(trigger.query.toLowerCase()))
+        .filter((command) => trigger.from === 0 ? command.name.toLowerCase().includes(query) : command.source === "skill" && (bareSkill ? command.name.slice(6) : command.name).toLowerCase().includes(query))
         .map((command) => ({
           kind: "command",
           replaceFrom: trigger.from,
           replaceTo: trigger.to,
           insertText: `/${command.name}`,
+          ...(bareSkill ? { label: command.name.slice(6) } : {}),
           detail: command.source,
           ...(command.description === undefined ? {} : { description: command.description }),
           ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
