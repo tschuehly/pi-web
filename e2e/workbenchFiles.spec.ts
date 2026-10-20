@@ -214,7 +214,7 @@ test("a file link in a Chat outside every registered project opens in the Files 
 });
 
 /** A Tabs window of the notes Chat, the release Chat in the same workspace, and the report Chat in an unregistered folder. */
-async function openTabsWindow(page: Page): Promise<void> {
+async function openTabsWindow(page: Page, { remote = false } = {}): Promise<void> {
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
@@ -223,12 +223,26 @@ async function openTabsWindow(page: Page): Promise<void> {
     { sessionId: E2E_SESSION_ID, title: "Notes", machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream },
     { sessionId: E2E_MORE_CHATS[0].id, title: "Release", machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream },
     { sessionId: E2E_ADHOC_SESSION_ID, title: "Report", machineId: "local", workstream },
+    ...remote ? [{ sessionId: E2E_MORE_CHATS[1].id, title: "Remote", machineId: "remote", projectId: E2E_PROJECT_ID, workspaceId, workstream }] : [],
   ];
   await page.addInitScript((value) => { localStorage.setItem("pi-workbench.windows.v1", value); }, JSON.stringify({ e2e: { name: "Window 1", layout: "tabs", maximized: false, focused: E2E_SESSION_ID, lastActive: {}, chats } }));
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
   await page.goto(target.toString());
   await expect(page.getByRole("link", { name: "the notes" })).toBeVisible();
+}
+
+/** Serves the isolated machine a second time as "remote", so a window can hold a Chat on another machine. */
+async function addRemoteMachine(page: Page): Promise<void> {
+  await page.route((url) => url.pathname.endsWith("/api/machines"), async (route) => {
+    const response = await route.fetch();
+    const { machines } = await response.json() as { machines: { id: string; name: string }[] };
+    const local = machines.find((machine) => machine.id === "local");
+    await route.fulfill({ response, json: { machines: [...machines, { ...local, id: "remote", name: "Remote" }] } });
+  });
+  await page.route((url) => url.pathname.includes("/api/machines/remote/"), async (route) => {
+    await route.continue({ url: route.request().url().replace("/api/machines/remote/", "/api/machines/local/") });
+  });
 }
 
 const chatTab = (page: Page, sessionId: string) => page.locator(`workbench-window-tabs .chat-tab[data-session="${sessionId}"]`);
@@ -295,6 +309,22 @@ test("edits made in Files while another workspace's Chat loads are asked about w
   await expect(page.locator(".files-elsewhere")).toHaveCount(0);
   await pane.getByRole("button", { name: "Search files" }).click();
   await expect(pane.locator('.tree .row.file[data-path="report.md"]')).toBeVisible();
+});
+
+test("a Chat on another machine asks before replacing Files edits, and Cancel keeps them", async ({ page }) => {
+  const asked = keepEdits(page);
+  await addRemoteMachine(page);
+  await openTabsWindow(page, { remote: true });
+  await page.getByRole("button", { name: "Files", exact: true }).click();
+  const pane = await editNotesInFiles(page);
+  await chatTab(page, E2E_MORE_CHATS[1].id).click();
+  await expect(shownChat(page)).toHaveAttribute("data-session", E2E_MORE_CHATS[1].id);
+  await expect.poll(() => asked).toEqual(["Discard unsaved file edits?"]);
+  await expect(pane.locator(".crumbs")).toHaveAttribute("title", "docs/notes.md");
+  await expect(pane.locator(".state")).toHaveText("Unsaved · ⌘S");
+  await expect(pane.getByText("Edited in Files.")).toBeVisible();
+  await expect(page.locator(".files-elsewhere")).toBeVisible();
+  expect(asked).toHaveLength(1);
 });
 
 test("a ../sibling file link in Chat opens that file, editable, in the Files pane", async ({ page }) => {

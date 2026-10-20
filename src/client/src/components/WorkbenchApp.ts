@@ -1468,7 +1468,7 @@ export class WorkbenchApp extends LitElement {
         @chat-tab-drop=${(event: CustomEvent<DraggedChats>) => { void this.takeDroppedChats(event.detail); }}
         @chat-tab-drag-out=${(event: CustomEvent<DraggedChats>) => { this.moveToNewWindow(event.detail.sessionIds); }}
         @dragstart=${this.guardChatDrag}>${this.chatToolsInTabRow() ? html`<div class="chat-tools" slot="tools">${this.renderChatTools()}</div>` : nothing}</workbench-window-tabs>
-      <div class="stage">${this.app.selectedSession === undefined ? this.renderChooser() : this.renderWindowChats()}${this.renderSwipePeek()}</div>
+      <div class="stage">${this.renderStage()}${this.renderSwipePeek()}</div>
       ${this.renderWindowMenu()}
     `;
   }
@@ -1478,7 +1478,17 @@ export class WorkbenchApp extends LitElement {
    * renders the focused Chat as the same first tile, so ⌃G and full size never remount it with its composer and Files edits.
    * The other tiles each keep their grid position's slot, so a focus switch never moves one (a moved tile loses its scroll).
    * Window-wide notices sit above the grid and Files beside it, so focus never reshapes a tile.
+   * Files keeps one place beside the chooser too: a Chat taken down by a load, a machine switch or a failed start leaves
+   * it mounted, edits and all, until `guardFilesTarget` settles what replaces it.
    */
+  private renderStage() {
+    const selected = this.app.selectedSession;
+    return html`
+      ${selected === undefined ? nothing : html`${this.renderDesktopNotificationDiagnostic()}${this.app.error === "" ? null : html`<div class="chat-error" role="alert">${this.app.error}</div>`}`}
+      <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>${selected === undefined ? this.renderChooser() : this.renderWindowChats()}${this.renderFiles()}</div>
+    `;
+  }
+
   private renderWindowChats() {
     const window = this.windows.window;
     const selected = this.app.selectedSession?.id;
@@ -1487,15 +1497,10 @@ export class WorkbenchApp extends LitElement {
     const focused = tiles.length < 2 ? undefined : tiles.find((tile) => tile.chat.sessionId === selected);
     const statuses = this.chatTabStatuses();
     return html`
-      ${this.renderDesktopNotificationDiagnostic()}
-      ${this.app.error === "" ? null : html`<div class="chat-error" role="alert">${this.app.error}</div>`}
-      <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>
         <div class="grid" ?data-single=${focused === undefined} @dragover=${(event: DragEvent) => { if (carriesChats(event)) event.preventDefault(); }} @drop=${(event: DragEvent) => { const dropped = droppedChats(event); if (dropped !== undefined) { event.preventDefault(); void this.takeDroppedChats(dropped); } }}>
           <section class="tile" data-focused="true" style=${this.tileStyle(focused)}>${focused === undefined ? nothing : this.renderTileBar(focused, statuses[focused.chat.sessionId] ?? "idle", true)}${this.renderChat(focused !== undefined)}</section>
           ${(focused === undefined ? [] : tiles).map((tile) => tile === focused ? nothing : keyed(tile.chat.sessionId, this.renderTile(tile, statuses[tile.chat.sessionId] ?? "idle")))}
         </div>
-        ${this.renderFiles()}
-      </div>
     `;
   }
 
@@ -1746,6 +1751,8 @@ export class WorkbenchApp extends LitElement {
    * owner chooses between discarding them and keeping Files as it is, beside a Chat of another workspace.
    */
   private guardFilesTarget(): void {
+    // No Chat on screen yet (a load or machine switch in flight): nothing replaces Files, which keeps what it shows.
+    if (this.app.selectedSession === undefined) return;
     const next = { machineId: selectedMachineId(this.app), workspace: this.filesWorkspace() };
     const key = filesKey(next);
     if (key === filesKey(this.filesShown)) { this.filesDeclined = undefined; return; }
@@ -1971,7 +1978,7 @@ export class WorkbenchApp extends LitElement {
     .window-menu button { min-height: 0; padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; font-size: 13px; }
     .window-menu button:hover, .window-menu button:focus-visible { background: var(--pi-surface-hover); }
     .window-menu hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--pi-border-muted); }
-    .chooser { box-sizing: border-box; height: 100%; overflow: auto; display: grid; place-items: start center; padding: min(10vh, 72px) 24px 32px; }
+    .chooser { flex: 1 1 0; min-width: 0; box-sizing: border-box; height: 100%; overflow: auto; display: grid; place-items: start center; padding: min(10vh, 72px) 24px 32px; }
     .chooser > section { box-sizing: border-box; width: min(960px, 100%); display: grid; gap: 16px; padding: 24px; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 18px 50px var(--pi-shadow); }
     h1, p { margin: 0; }
     h1 { font-size: 24px; }
