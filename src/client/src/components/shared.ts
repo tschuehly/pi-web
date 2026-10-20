@@ -106,6 +106,8 @@ export interface CompletionItem {
   replaceFrom: number;
   replaceTo: number;
   insertText: string;
+  /** Shown instead of `insertText` when the typed text differs from what is inserted. */
+  label?: string;
   detail: string;
   description?: string;
   /** Pi-style argument hint (e.g. `<PR-URL>`) for commands that declare one. */

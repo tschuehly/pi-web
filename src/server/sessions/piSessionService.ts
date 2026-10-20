@@ -40,6 +40,7 @@ import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import { clientSessionFirstMessagePreview } from "./clientSessionPreview.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 import { BUILTIN_COMMANDS } from "./builtinCommands.js";
+import { expandInlineSkillMentions } from "./inlineSkills.js";
 import { SessionCommandService } from "./sessionCommandService.js";
 import { SessionActivityMarker } from "./sessionActivityMarker.js";
 import { projectSessionTree, type ProjectableSessionTreeNode } from "./sessionTreeProjection.js";
@@ -531,7 +532,7 @@ export interface PiAgentSession {
     setUIContext(uiContext?: ExtensionUIContext, mode?: "rpc"): void;
   };
   promptTemplates: readonly { name: string; description?: string; argumentHint?: string }[];
-  resourceLoader: { getSkills(): { skills: readonly { name: string; description?: string }[] } };
+  resourceLoader: { getSkills(): { skills: readonly { name: string; description?: string; filePath: string; baseDir: string }[] } };
   subscribe(listener: (event: unknown) => void): () => void;
   bindExtensions(bindings: PiExtensionBindings): Promise<void>;
   compact(instructions?: string): Promise<{ summary: string; tokensBefore: number }>;
@@ -2894,12 +2895,18 @@ export class PiSessionService implements SessionRouteService {
     return this.beginPromptSubmission(session, text, behavior, images, echoUserMessage, providerText).catch(() => undefined);
   }
 
-  private beginPromptSubmission(session: PiAgentSession, text: string, behavior: QueuedPromptKind | undefined, images: ImageContent[] = [], echoUserMessage = true, providerText = text): Promise<void> {
+  private beginPromptSubmission(session: PiAgentSession, text: string, behavior: QueuedPromptKind | undefined, images: ImageContent[] = [], echoUserMessage = true, rawProviderText = text): Promise<void> {
+    // Extension commands and templates receive raw arguments; prose and leading skills get inline skills.
+    const skills = session.resourceLoader.getSkills().skills;
+    const expandsSkills = rawProviderText.startsWith("/skill:") || !isLeadingSessionCommand(session, rawProviderText);
+    const providerText = expandsSkills ? expandInlineSkillMentions(rawProviderText, skills) : rawProviderText;
+    // Echo the expanded form Pi persists, so the echo reconciles with it instead of showing twice.
+    const echoText = expandsSkills && providerText !== rawProviderText ? expandInlineSkillMentions(text, skills) : text;
     this.publishActivity(session, behavior === "steer" ? "steering queued" : behavior === "followUp" ? "message queued" : "prompt accepted", "active");
     const echoes = this.pendingPromptEchoes.get(session) ?? [];
     const userCount = historyMessagesFromEntries(session.sessionManager.getBranch()).filter((message) => isRecord(message) && message["role"] === "user").length;
     const echo = behavior === undefined && echoUserMessage
-      ? { userIndex: Math.max(userCount, ...echoes.map((pending) => pending.userIndex + 1)), message: userMessage(text, images) }
+      ? { userIndex: Math.max(userCount, ...echoes.map((pending) => pending.userIndex + 1)), message: userMessage(echoText, images) }
       : undefined;
     if (echo !== undefined) {
       // SDK input hooks may await before appending the user message. Keep the

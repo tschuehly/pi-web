@@ -110,6 +110,7 @@ export class PromptEditor extends LitElement {
   @state() private currentInputMode: InputMode = { kind: "normal" };
   @state() private completions: CompletionItem[] = [];
   @state() private selectedIndex = 0;
+  private completionNavigated = false;
   @state() private attachments: readonly PendingAttachment[] = [];
   @state() private attachmentDelivery: PromptAttachmentDelivery = loadAttachmentDelivery();
   @state() private attachmentError: string | undefined = undefined;
@@ -771,6 +772,7 @@ export class PromptEditor extends LitElement {
     const version = ++this.requestVersion;
     this.completions = [];
     this.selectedIndex = 0;
+    this.completionNavigated = false;
     if (trigger === undefined) {
       this.setCompletions(version, triggerKey, []);
       return;
@@ -779,13 +781,17 @@ export class PromptEditor extends LitElement {
       const commands = await this.commandCatalog();
       if (version !== this.requestVersion) return;
       this.knownCommandNames = new Set(commands.map((command) => command.name));
+      // Past the start only skills apply; a bare `/name` matches and shows the skill name.
+      const bareSkill = trigger.from !== 0 && !trigger.query.startsWith("skill:");
+      const query = trigger.query.toLowerCase();
       this.setCompletions(version, triggerKey, commands
-        .filter((command) => (trigger.from === 0 || command.source === "skill") && command.name.toLowerCase().includes(trigger.query.toLowerCase()))
+        .filter((command) => trigger.from === 0 ? command.name.toLowerCase().includes(query) : command.source === "skill" && (bareSkill ? command.name.slice(6) : command.name).toLowerCase().includes(query))
         .map((command) => ({
           kind: "command",
           replaceFrom: trigger.from,
           replaceTo: trigger.to,
           insertText: `/${command.name}`,
+          ...(bareSkill ? { label: command.name.slice(6) } : {}),
           detail: command.source,
           ...(command.description === undefined ? {} : { description: command.description }),
           ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
@@ -817,6 +823,7 @@ export class PromptEditor extends LitElement {
     const completions = this.currentCompletions();
     if (!completions.length) return false;
     this.selectedIndex = (this.selectedIndex + delta + completions.length) % completions.length;
+    this.completionNavigated = true;
     return true;
   }
 
@@ -857,7 +864,10 @@ export class PromptEditor extends LitElement {
     const plainEnter = event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey
       && !shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia);
     const completion = this.selectedCompletion();
-    if (plainEnter && completion !== undefined) {
+    // A bare mid-prompt `/` is usually prose; Enter accepts only after typing or arrowing.
+    const trigger = completion === undefined ? undefined : this.currentTrigger();
+    const bareInlineSlash = trigger?.kind === "command" && trigger.from !== 0 && trigger.query === "" && !this.completionNavigated;
+    if (plainEnter && completion !== undefined && !bareInlineSlash) {
       this.pick(completion);
       return true;
     }
