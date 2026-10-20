@@ -1759,7 +1759,7 @@ export class WorkbenchApp extends LitElement {
     const workspace = state.selectedWorkspace;
     const folder = workspace === undefined ? "" : ` — ${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${workspace.label} (${workspace.path})`;
     return html`
-      ${this.currentWorkstream ? html`<workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>` : nothing}
+      ${this.currentWorkstream ? html`<workstream-context-drawer ?compact=${this.chatToolsInTabRow()} .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>` : nothing}
       <button type="button" class="icon-button files-toggle" title=${`Files${folder}`} aria-label="Files" aria-expanded=${this.sidePane === "files"} aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("files")}</button>
       <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></button>
       <button class="icon-button" type="button" title=${`${sessionInfoText(session, state.status)}\n\nClick to copy`} aria-label=${this.sessionInfoCopied ? "Copied session info" : "Copy session info"} @click=${() => { void this.copySessionInfo(session); }}>${this.sessionInfoCopied ? html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`}</button>
@@ -1945,13 +1945,15 @@ export class WorkbenchApp extends LitElement {
     .chat-shell { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     header { position: relative; z-index: 6; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
     /* In the tab row the tools keep their natural width, the drawer up to its cap: only the Chat tabs shrink and scroll. */
-    .chat-tools { flex: none; display: flex; align-items: center; gap: 4px; }
+    .chat-tools { flex: none; display: flex; align-items: center; gap: var(--pi-toolbar-gap, 6px); }
+    /* A hairline, centred in the row's gap, sets the window's Add and layout actions apart from the Chat's tools. */
+    .chat-tools::after { content: ""; flex: 0 0 auto; width: 1px; height: 16px; margin-left: calc(12px - var(--pi-toolbar-gap, 6px)); background: var(--pi-border); }
     :is(header, .chat-tools) > button { flex: 0 0 auto; min-height: 32px; border-color: transparent; background: transparent; }
     :is(header, .chat-tools) > button:hover:not(:disabled) { background: var(--pi-surface-hover); }
     :is(header, .chat-tools) > .icon-button:hover { border-color: transparent; }
     header workstream-context-drawer { flex: 1 1 auto; min-width: 0; }
     header > .files-toggle { margin-left: auto; }
-    .chat-tools workstream-context-drawer { flex: 0 1 auto; min-width: 80px; max-width: 280px; margin-right: 4px; }
+    .chat-tools workstream-context-drawer { flex: 0 1 auto; min-width: 80px; max-width: 280px; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     .chat-and-files { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
     .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }

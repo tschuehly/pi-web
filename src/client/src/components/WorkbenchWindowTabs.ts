@@ -246,7 +246,8 @@ export class WorkbenchWindowTabs extends LitElement {
     :host { position: relative; z-index: 6; display: block; flex: 0 0 auto; min-width: 0; background: var(--pi-surface); color: var(--pi-text); font: 13px system-ui, sans-serif; user-select: none; }
     button { font: inherit; color: inherit; cursor: pointer; }
     svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .bar { display: flex; align-items: center; gap: 12px; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 8px 0 2px; }
+    /* One row, one type size; --pi-toolbar-gap spaces the controls within the Chat's tools and within the window actions. */
+    .bar { display: flex; align-items: center; gap: 12px; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 8px 0 2px; font-size: 12px; }
     /*
      * Two rows, one language: quiet text tabs on the surface, the selected one in --pi-text with a 2px underline,
      * the Workstream colour (--ws) on top and neutral beneath so the two never compete. A tab sizes to its label
@@ -255,6 +256,8 @@ export class WorkbenchWindowTabs extends LitElement {
      * width change.
      */
     .tabs { flex: 1 1 auto; min-width: 0; align-self: stretch; display: flex; overflow-x: auto; scrollbar-width: none; }
+    /* WebKit before scrollbar-width would reserve a scrollbar's height and clip the selected tab's underline. */
+    .tabs::-webkit-scrollbar { display: none; }
     .workstream-tab, .chat-tab { position: relative; flex: 0 1 auto; min-width: 120px; max-width: 200px; overflow: hidden; display: flex; align-items: center; gap: 6px; box-sizing: border-box; color: var(--pi-muted); white-space: nowrap; cursor: pointer; }
     .workstream-tab::after, .chat-tab::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--ws, var(--pi-accent)); opacity: 0; }
     .workstream-tab:hover, .chat-tab:hover, [aria-selected="true"] { color: var(--pi-text); }
@@ -273,12 +276,12 @@ export class WorkbenchWindowTabs extends LitElement {
     .title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .close { flex: 0 0 auto; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--pi-muted); }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
-    .actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
-    .add { display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); white-space: nowrap; }
+    .actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--pi-toolbar-gap, 6px); }
+    .add { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); white-space: nowrap; }
     .add:hover, .add[aria-pressed="true"] { background: var(--pi-surface-hover); color: var(--pi-text); }
     .add:focus-visible, .segmented button:focus-visible, .pager button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .segmented { display: flex; gap: 2px; }
-    .segmented button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); }
+    .segmented { display: flex; gap: var(--pi-toolbar-gap, 6px); }
+    .segmented button { height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); }
     .segmented button:hover { color: var(--pi-text); }
     .segmented button[aria-pressed="true"] { background: var(--pi-surface-hover); color: var(--pi-text); }
     .lead { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding-left: 10px; }

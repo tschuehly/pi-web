@@ -19,6 +19,8 @@ export class WorkstreamContextDrawer extends LitElement {
   @property() fallbackTitle = "";
   @property({ attribute: false }) serviceContext: WorkstreamServiceContext | undefined;
   @property() sessionId = "";
+  /** In the window's tab row: a quiet toolbar control instead of the tinted Workstream pill. */
+  @property({ type: Boolean, reflect: true }) compact = false;
   @state() private editing = false;
   @state() private saving = false;
   @state() private message = "";
@@ -159,7 +161,7 @@ export class WorkstreamContextDrawer extends LitElement {
     const checkpoint = this.checkpoint(this.snapshot);
     return html`
       <details style=${`--workstream-color:${workstreamAccentColor(this.snapshot.id)}`}>
-        <summary><span class="visually-hidden">Workstream: </span><strong>${this.snapshot.title}</strong></summary>
+        <summary title=${this.snapshot.title}><span class="visually-hidden">Workstream: </span><strong>${this.snapshot.title}</strong>${this.compact ? html`<svg class="chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>` : nothing}</summary>
         <div class="sheet">
           <section class="row goal-row">
             <span class="label">Goal</span>
@@ -217,6 +219,12 @@ export class WorkstreamContextDrawer extends LitElement {
     summary::-webkit-details-marker { display: none; }
     summary::after { content: "↓"; flex: 0 0 auto; color: var(--pi-text); }
     details[open] summary::after { content: "↑"; }
+    :host([compact]) summary { gap: 4px; padding: 0 6px 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--pi-muted); }
+    :host([compact]) summary:hover, :host([compact]) details[open] summary { background: var(--pi-surface-hover); color: var(--pi-text); }
+    :host([compact]) summary::after { content: none; }
+    :host([compact]) summary strong { font-size: inherit; font-weight: inherit; }
+    .chevron { flex: 0 0 auto; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    details[open] .chevron { transform: rotate(180deg); }
     .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     summary strong { flex: 1 1 auto; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
     .tab { overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
