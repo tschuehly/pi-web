@@ -56,13 +56,13 @@ describe("detectPromptCompletionTrigger", () => {
     expect(detectPromptCompletionTrigger("/model")).toEqual({ kind: "command", query: "model", from: 0, to: 6 });
   });
 
-  it("completes only skill directives at whitespace boundaries throughout a prompt", () => {
+  it("completes skill directives at whitespace boundaries throughout a prompt", () => {
     for (const draft of ["/skill:a /skill:rev", "/template task /skill:rev", "Please\t/skill:rev", "Please\n/skill:rev"]) {
       const from = draft.lastIndexOf("/skill:rev");
       expect(detectPromptCompletionTrigger(draft)).toEqual({ kind: "command", query: "skill:rev", from, to: draft.length });
     }
-    expect(detectPromptCompletionTrigger("review /template")).toBeUndefined();
-    expect(detectPromptCompletionTrigger("review /model")).toBeUndefined();
+    // A bare mid-prompt slash is a skill-name query; the editor offers only skills there.
+    expect(detectPromptCompletionTrigger("review /model")).toEqual({ kind: "command", query: "model", from: 7, to: 13 });
     expect(detectPromptCompletionTrigger("https://host/skill:rev")).toBeUndefined();
     expect(detectPromptCompletionTrigger("review src/skill:rev")).toBeUndefined();
     expect(detectPromptCompletionTrigger("review `/skill:rev")).toBeUndefined();
@@ -83,7 +83,7 @@ describe("detectPromptCompletionTrigger", () => {
   it("leaves literal examples alone across lines but accepts later real directives", () => {
     for (const example of [
       'say "/skill:rev"', "say '/skill:rev'", "say `/skill:rev`",
-      "> /skill:rev", "```ts\n/skill:rev\n```", "~~~\n/skill:rev\n~~~",
+      "> /skill:rev", "```ts\n/skill:rev\n```", "~~~\n/skill:rev\n~~~", "x\n\n    /skill:rev",
     ]) {
       const inside = example.indexOf("/skill:rev");
       expect(detectPromptCompletionTrigger(example, inside + 10)).toBeUndefined();
@@ -127,6 +127,16 @@ describe("detectPromptCompletionTrigger", () => {
     expect(detectPromptCompletionTrigger("/skill:rev!!", 10)).toBeUndefined();
     expect(detectPromptCompletionTrigger("/skill:Rev_Name", 15, new Set(["skill:Rev_Name"]))).toEqual({ kind: "command", query: "skill:Rev_Name", from: 0, to: 15 });
     expect(detectPromptCompletionTrigger("/skill:legacy.name", 18, new Set(["skill:legacy.name"]))).toEqual({ kind: "command", query: "skill:legacy.name", from: 0, to: 18 });
+  });
+
+  it("opens the skill picker for a bare slash after whitespace or at a later line start", () => {
+    expect(detectPromptCompletionTrigger("please /")).toEqual({ kind: "command", query: "", from: 7, to: 8 });
+    expect(detectPromptCompletionTrigger("please /rev")).toEqual({ kind: "command", query: "rev", from: 7, to: 11 });
+    expect(detectPromptCompletionTrigger("first\n/re")).toEqual({ kind: "command", query: "re", from: 6, to: 9 });
+    expect(detectPromptCompletionTrigger("ask /rev, later", 8)).toEqual({ kind: "command", query: "rev", from: 4, to: 8 });
+    for (const draft of ["and/or", "see https://host/rev", "open /usr/bin", "run `/rev", "```\n/rev", "say \"/rev\" ok"]) {
+      expect(detectPromptCompletionTrigger(draft)).toBeUndefined();
+    }
   });
 
   it("replaces the entire active skill token even with the cursor in its middle", () => {

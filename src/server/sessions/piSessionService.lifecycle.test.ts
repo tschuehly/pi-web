@@ -785,7 +785,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
   it("surfaces notifications when an extension command shares a bare name with a skill", async () => {
     const hub = new CapturingSessionEventHub();
     const fake = fakeRuntime("extension-command-session", {
-      resourceLoader: { getSkills: () => ({ skills: [{ name: "ctx-stats" }] }) },
+      resourceLoader: { getSkills: () => ({ skills: [{ name: "ctx-stats", filePath: "/skills/ctx-stats/SKILL.md", baseDir: "/skills/ctx-stats" }] }) },
     });
     let extensionNotify: ((message: string, type?: "info" | "warning" | "error") => void) | undefined;
     let extensionMode: string | undefined;
