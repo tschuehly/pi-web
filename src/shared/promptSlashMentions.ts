@@ -10,7 +10,7 @@ export interface PromptSlashMention {
 
 /**
  * Slash tokens at line start or after whitespace, outside code spans, fences,
- * quotes, and blockquotes. One trailing prose mark is not part of the name
+ * indented code blocks, quotes, and blockquotes. One trailing prose mark is not part of the name
  * unless `knownNames` (`skill:<name>` entries) says it is. Shared by composer
  * completion and server-side inline skill expansion so both agree on what counts.
  */
@@ -19,14 +19,20 @@ export function promptSlashMentions(text: string, knownNames?: ReadonlySet<strin
   let fence: { marker: string; length: number } | undefined;
   let inlineCodeRun = 0;
   let offset = 0;
+  // Indented code starts after a blank line (or the text start) and cannot interrupt a paragraph.
+  let indentedCode = false;
+  let previousBlank = true;
   for (const line of text.split("\n")) {
+    const blank = /^\s*$/.test(line);
+    indentedCode = fence === undefined && inlineCodeRun === 0 && (blank ? indentedCode : /^( {4}|\t)/.test(line) && (previousBlank || indentedCode));
+    previousBlank = blank;
     const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
     if (fenceMatch && (fence !== undefined || inlineCodeRun === 0)) {
       const marker = fenceMatch[1]?.charAt(0) ?? "";
       const length = fenceMatch[1]?.length ?? 0;
       if (fence === undefined) fence = { marker, length };
       else if (fence.marker === marker && length >= fence.length && /^\s*$/.test(line.slice(fenceMatch[0].length))) fence = undefined;
-    } else if (fence === undefined && !/^\s*>/.test(line)) {
+    } else if (fence === undefined && !indentedCode && !/^\s*>/.test(line)) {
       let quote: "'" | '"' | undefined;
       for (let i = 0; i < line.length; i++) {
         const char = line.charAt(i);

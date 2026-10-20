@@ -83,7 +83,7 @@ describe("detectPromptCompletionTrigger", () => {
   it("leaves literal examples alone across lines but accepts later real directives", () => {
     for (const example of [
       'say "/skill:rev"', "say '/skill:rev'", "say `/skill:rev`",
-      "> /skill:rev", "```ts\n/skill:rev\n```", "~~~\n/skill:rev\n~~~",
+      "> /skill:rev", "```ts\n/skill:rev\n```", "~~~\n/skill:rev\n~~~", "x\n\n    /skill:rev",
     ]) {
       const inside = example.indexOf("/skill:rev");
       expect(detectPromptCompletionTrigger(example, inside + 10)).toBeUndefined();

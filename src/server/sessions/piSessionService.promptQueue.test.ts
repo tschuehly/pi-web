@@ -235,7 +235,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
 
     expect(fake.calls.prompt.map(({ text }) => text)).toEqual([`please ${block} this`, "/skill:review now", "/handoff /skill:review"]);
     const echoed = hub.sessionEvents.filter(({ event }) => event.type === "message.append").map(({ event }) => JSON.stringify(event));
-    expect(echoed[0]).toContain("please /skill:review this");
+    expect(echoed[0]).toContain(JSON.stringify(`please ${block} this`));
     await service.dispose();
     await rm(dir, { recursive: true, force: true });
   });

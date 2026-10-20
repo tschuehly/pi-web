@@ -46,5 +46,16 @@ describe("expandInlineSkillMentions", () => {
     expect(expandInlineSkillMentions("/skill:review with /skill:deploy and /skill:review", skills))
       .toBe(`/skill:review with ${block("deploy")} and /skill:review`);
   });
-});
 
+  it("expands a leading mention Pi core rejects because no space or end follows it", () => {
+    expect(expandInlineSkillMentions("/skill:review\nthen /skill:review", skills)).toBe(`${block("review")}\nthen /skill:review`);
+    expect(expandInlineSkillMentions("/skill:review, then go", skills)).toBe(`${block("review")}, then go`);
+  });
+
+  it("keeps mentions in indented code blocks literal but expands indented paragraph continuations", () => {
+    for (const text of ["    /skill:review", "x\n\n    run /skill:review\n\n\tthen /skill:deploy"]) {
+      expect(expandInlineSkillMentions(text, skills)).toBe(text);
+    }
+    expect(expandInlineSkillMentions("x\n    /skill:review", skills)).toBe(`x\n    ${block("review")}`);
+  });
+});

@@ -10,9 +10,9 @@ export interface InlineSkill {
 
 /**
  * Expand known `/skill:name` mentions past the start of a prompt into Pi's
- * skill block, in place. Pi core expands only a leading mention, so that one is
- * left for core; each skill expands at most once and unreadable or unknown
- * skills stay literal.
+ * skill block, in place. Pi core expands only a leading mention followed by a
+ * space or the end, so that one is left for core; each skill expands at most
+ * once and unreadable or unknown skills stay literal.
  */
 export function expandInlineSkillMentions(text: string, skills: readonly InlineSkill[]): string {
   const byName = new Map(skills.map((skill) => [`skill:${skill.name}`, skill]));
@@ -23,7 +23,7 @@ export function expandInlineSkillMentions(text: string, skills: readonly InlineS
     const skill = mention.skill ? byName.get(`skill:${mention.name}`) : undefined;
     if (skill === undefined || expanded.has(skill)) continue;
     expanded.add(skill);
-    if (mention.from === 0) continue;
+    if (mention.from === 0 && (mention.nameTo === text.length || text.charAt(mention.nameTo) === " ")) continue;
     let body: string;
     try {
       body = stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim();

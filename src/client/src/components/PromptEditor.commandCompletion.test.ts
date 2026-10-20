@@ -125,6 +125,40 @@ describe("PromptEditor command completions", () => {
     expect(editor.view?.state.doc.toString()).toBe("please /skill:review now");
   });
 
+  it("does not accept a skill on Enter for a bare mid-prompt slash until the user types or arrows", async () => {
+    vi.spyOn(api, "commands").mockResolvedValue([{ name: "skill:review", source: "skill" }, { name: "skill:deploy", source: "skill" }]);
+    const onSend = vi.fn();
+    const editor = new PromptEditor();
+    editor.sessionId = "session-1";
+    editor.cwd = "/repo";
+    editor.onSend = onSend;
+    document.body.append(editor);
+    await editor.updateComplete;
+    const type = async (draft: string) => {
+      editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.length } });
+      await vi.waitFor(() => { expect(currentCompletions(editor)).not.toEqual([]); });
+    };
+    const key = (name: string) => editor.view?.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+
+    await type("List /");
+    key("Enter");
+    expect(editor.view?.state.doc.toString()).not.toContain("/skill:");
+    expect(onSend).toHaveBeenCalledWith("List /", undefined, undefined, undefined, undefined);
+
+    await type("List /");
+    key("ArrowDown");
+    key("Enter");
+    expect(editor.view?.state.doc.toString()).toBe("List /skill:deploy ");
+
+    await type("List /");
+    key("Tab");
+    expect(editor.view?.state.doc.toString()).toBe("List /skill:review ");
+
+    await type("List /r");
+    key("Enter");
+    expect(editor.view?.state.doc.toString()).toBe("List /skill:review ");
+  });
+
   it("filters commands by the typed query", async () => {
     vi.spyOn(api, "commands").mockResolvedValue([
       { name: "pr", source: "prompt", argumentHint: "<PR-URL>" },
