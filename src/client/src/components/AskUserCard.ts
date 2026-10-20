@@ -359,7 +359,8 @@ export class AskUserCard extends LitElement {
     if (first !== undefined) this.focusQuestion(ask.questions.indexOf(first));
   }
 
-  private focusQuestion(index: number): void {
+  /** Focus the `index`th question's first control, as a chip opening this set does. */
+  focusQuestion(index: number): void {
     if (index < 0) return;
     void this.updateComplete.then(() => {
       const fieldset = this.renderRoot.querySelector<HTMLElement>(`#${this.questionFieldsetId(index)}`);
@@ -483,6 +484,10 @@ export class AskUserCard extends LitElement {
     .question-ref { color: var(--pi-muted); font-size: 11px; font-weight: 500; }
     .recommended { margin-inline-start: 4px; padding: 1px 6px; border-radius: 999px; background: var(--pi-success-bg); color: var(--pi-success); font-size: 11px; font-weight: 650; }
     .ask-context { display: block; padding: 12px 16px 0; }
+    /* In the question drawer: the set's context beside its questions, stacked again when narrow. */
+    :host([context-beside]) .open-card:has(.ask-context) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
+    :host([context-beside]) .open-card .card-header { grid-column: 1 / -1; }
+    :host([context-beside]) .open-card .ask-context { align-self: start; position: sticky; top: 40px; max-height: 60vh; overflow: auto; padding: 12px 16px; border-right: 1px solid var(--pi-border-muted); font-size: 13px; }
     .questions { display: grid; padding-top: 8px; }
     fieldset.question {
       min-width: 0;
@@ -607,6 +612,8 @@ export class AskUserCard extends LitElement {
     .unanswered-record { margin: 0; color: var(--pi-muted); font-style: italic; }
     .draft-note { margin: 7px 0 0; color: var(--pi-warning); font-size: 11px; }
     @container (max-width: 580px) {
+      :host([context-beside]) .open-card:has(.ask-context) { display: block; }
+      :host([context-beside]) .open-card .ask-context { position: static; max-height: none; padding: 12px 12px 0; border-right: 0; }
       fieldset.question { padding: 0 12px 14px; }
       .record-question { padding: 14px 12px; }
       .record-summary, .ask-context { padding-inline: 12px; }

@@ -25,6 +25,38 @@ export const E2E_MORE_CHATS = [
   { id: "019ef4c0-0000-7000-8000-00000000e2e3", question: "Draft the release notes" },
   { id: "019ef4c0-0000-7000-8000-00000000e2e4", question: "Review the install guide" },
 ] as const;
+/** A Chat in the fixture project whose transcript leaves one `ask_user` set open; the daemon rebuilds it on open. */
+export const E2E_ASK_CHAT = {
+  id: "019ef4c0-0000-7000-8000-00000000e2e5",
+  question: "Make question contexts shorter",
+  ask: {
+    askId: "q7k-1",
+    context: "The short-context rule for `ask_user` is ready in two parts. Context is now at most five short lines of finding; each option states its own consequence and the recommended one is marked.\n- Workbench 14477be: the Switching guidance. Tests 17/17.\n- PI WEB 14a067f7: the tool's instructions. The new test failed on the old code and now passes 10/10.",
+    questions: [
+      { id: "golive", question: "How should the short-context rule go live?", options: [
+        { value: "wb-now", label: "Workbench now, PI WEB with the next daemon restart", recommended: true, detail: "No interruption now; the tool's own instructions update at the next planned restart." },
+        { value: "both-now", label: "Both now, with a full switch", detail: "Restarts the session daemon: every running session is interrupted." },
+        { value: "later", label: "Not yet", detail: "Both branches stay pushed and unmerged." },
+      ] },
+      { id: "checks", question: "Which checks should run before it goes live?", multiple: true, options: [
+        { value: "unit", label: "Unit tests", recommended: true },
+        { value: "e2e", label: "End-to-end tests" },
+        { value: "dogfood", label: "A day of dogfooding", detail: "Delays go-live by a day." },
+      ] },
+    ],
+  },
+} as const;
+/** A Chat whose open set asks twelve questions at once, for a crowded grid. */
+export const E2E_CROWDED_ASK_CHAT = {
+  id: "019ef4c0-0000-7000-8000-00000000e2e6",
+  question: "Plan the migration",
+  ask: {
+    askId: "m12-1",
+    context: "Twelve choices decide the migration.",
+    questions: Array.from({ length: 12 }, (_, index) => ({ id: `step${String(index + 1)}`, question: `Migration step ${String(index + 1)}: run it now or later?`, options: [{ value: "now", label: "Now", recommended: true }, { value: "later", label: "Later" }] })),
+  },
+};
+type SeededAsk = { askId: string; context: string; questions: readonly unknown[] };
 export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
 export const E2E_SIBLING_BODY = "export const seededSiblingBody = true;";
 export const E2E_PLAN = [
@@ -64,6 +96,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await writeFile(siblingFile, `${E2E_SIBLING_BODY}\n`);
     await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md). The generator is [the sibling file](../sibling/src/generator.ts). See [the lines](docs/long.md#L40-L42).");
     for (const chat of E2E_MORE_CHATS) await seedChat(sessionDir, project, chat.id, "Done.", chat.question, 24);
+    await seedChat(sessionDir, project, E2E_ASK_CHAT.id, "One question on how they go live.", E2E_ASK_CHAT.question, 3, E2E_ASK_CHAT.ask);
+    await seedChat(sessionDir, project, E2E_CROWDED_ASK_CHAT.id, "Twelve questions before it starts.", E2E_CROWDED_ASK_CHAT.question, 3, E2E_CROWDED_ASK_CHAT.ask);
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
@@ -122,8 +156,8 @@ async function seedProject(project: string): Promise<void> {
   git("commit", "-q", "-m", "fixture");
 }
 
-/** A finished Chat of `turns` exchanges: `question` first, `answer` last, filler paragraphs between. */
-async function seedChat(sessionDir: string, cwd: string, sessionId: string, answer: string, question = "Where are the notes?", turns = 1): Promise<void> {
+/** A finished Chat of `turns` exchanges: `question` first, `answer` last, filler paragraphs between; `ask` stays open before the answer. */
+async function seedChat(sessionDir: string, cwd: string, sessionId: string, answer: string, question = "Where are the notes?", turns = 1, ask?: SeededAsk): Promise<void> {
   const ms = Date.now();
   const at = (offset: number) => new Date(ms + offset).toISOString();
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -138,6 +172,17 @@ async function seedChat(sessionDir: string, cwd: string, sessionId: string, answ
         type: "message", id: id(answered), parentId: id(asked), timestamp: at(1000 * (answered + 1)),
         message: { role: "assistant", content: [{ type: "text", text: turn === turns - 1 ? answer : filler(turn) }], api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason: "stop", timestamp: ms + 1000 * (answered + 1) },
       },
+    );
+  }
+  if (ask !== undefined) {
+    // ask_user's own call and result, as askUserTool.ts records them, inserted before the final answer.
+    const final = entries.pop() as { parentId: string };
+    const asked = 1000 * (2 * turns - 1);
+    const posted = { ...ask, askedAt: at(asked + 300), updatedAt: at(asked + 300), revision: "r1", turnsSinceUpdate: 0 };
+    entries.push(
+      { type: "message", id: "e2eask01", parentId: final.parentId, timestamp: at(asked + 300), message: { role: "assistant", content: [{ type: "toolCall", id: "call-ask", name: "ask_user", arguments: { context: ask.context, questions: ask.questions } }], api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason: "toolUse", timestamp: ms + asked + 300 } },
+      { type: "message", id: "e2eask02", parentId: "e2eask01", timestamp: at(asked + 600), message: { role: "toolResult", toolCallId: "call-ask", toolName: "ask_user", content: [{ type: "text", text: `Posted ask ${ask.askId}.` }], details: { ask: posted, sessionId }, isError: false, timestamp: ms + asked + 600 } },
+      { ...final, parentId: "e2eask02" },
     );
   }
   await writeFile(join(sessionDir, `${at(0).replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);

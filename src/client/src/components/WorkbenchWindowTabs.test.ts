@@ -46,6 +46,26 @@ describe("window tabs", () => {
       .toEqual([["Chat a1", "false", "Working"], ["Chat a2", "true", "Needs you"]]);
   });
 
+  it("shows a Chat's open-question count in place of its dot, updating live", async () => {
+    const { tabs, root } = await mount("a1");
+    tabs.questionCounts = { a2: 3 };
+    await tabs.updateComplete;
+
+    const count = () => root.querySelector('.chat-tab[data-session="a2"] .questions');
+    expect(count()?.textContent).toBe("3");
+    expect(count()?.getAttribute("aria-label")).toBe("3 open questions");
+    expect(root.querySelector('.chat-tab[data-session="a2"] .dot')).toBeNull();
+    expect(root.querySelector('.chat-tab[data-session="a1"] .questions')).toBeNull();
+
+    tabs.questionCounts = { a2: 1 };
+    await tabs.updateComplete;
+    expect(count()?.getAttribute("aria-label")).toBe("1 open question");
+    tabs.questionCounts = {};
+    await tabs.updateComplete;
+    expect(count()).toBeNull();
+    expect(root.querySelector('.chat-tab[data-session="a2"] .dot')?.getAttribute("aria-label")).toBe("Needs you");
+  });
+
   it("opens with Enter or Space, reopening a Workstream's last-active Chat", async () => {
     const { root, events } = await mount("x", workingSet("a2"));
 

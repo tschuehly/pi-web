@@ -222,6 +222,35 @@ describe("PiSessionService ask status projection", () => {
     await service.dispose();
   });
 
+  it("reads a cold session's open asks from its transcript without opening it, and a live one's from its runtime", async () => {
+    const closed = { type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: { askId: "answered", reason: "submitted", askedAt: T0, closedAt: T0, context, questions: [], answeredCount: 0, unansweredIds: [], summary: "Answered 0 of 0" } };
+    const branch: unknown[] = [postedAsk("kept"), postedAsk("answered"), closed, { type: "message", message: { role: "assistant", content: [] } }];
+    const fake = fakeRuntime(ACTIVE_SESSION_ID);
+    fake.session.sessionManager = fakeSessionManager("/workspace", { getBranch: () => branch, getEntries: () => branch });
+    const createAgentRuntime = vi.fn(runtimeCreator(fake.runtime));
+    const record = sessionRecord(ACTIVE_SESSION_ID);
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      sessionManager: { ...sessionGateway([record]), readBranch: (path) => Promise.resolve(path === record.path ? branch : undefined) },
+      archiveStore: emptyArchiveStore(),
+      createAgentRuntime,
+      askUserEnabled: true,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    // The undelivered answer to "answered" would start a turn if the session were opened.
+    expect(await service.openAsks(sessionRef(ACTIVE_SESSION_ID))).toEqual([openedAsk("kept", { turnsSinceUpdate: 1 })]);
+    expect(await service.openAsks(sessionRef("missing"))).toEqual([]);
+    expect(createAgentRuntime).not.toHaveBeenCalled();
+    expect(fake.calls.sendCustomMessage).toEqual([]);
+
+    await service.status(sessionRef(ACTIVE_SESSION_ID));
+    await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "kept", { revision: "r1", answers: [] });
+    expect(await service.openAsks(sessionRef(ACTIVE_SESSION_ID))).toEqual([]);
+    await service.dispose();
+  });
+
   it("does not restore a parent's asks into a fork", async () => {
     const { service } = askService({ withActiveSession: true, branch: [postedAsk("parent-ask", "parent-session")] });
 

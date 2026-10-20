@@ -2624,6 +2624,18 @@ export class PiSessionService implements SessionRouteService {
     return entries === undefined ? undefined : index.find(scope, mediaId, entries);
   }
 
+  /**
+   * A session's open asks without opening it: from the runtime while one runs, else read from its transcript on
+   * disk. Opening would redeliver recorded answers and start a turn, so a cold session must stay cold here.
+   */
+  async openAsks(ref: PiSessionRef): Promise<PendingAskUser[]> {
+    const live = this.activeForRef(ref)?.runtime.session ?? this.startupSessionForRef(ref);
+    if (live !== undefined) return this.pendingAskStore.pendingAsks(live.sessionId);
+    const match = await this.sessionManager.resolveSessionFile(ref.cwd, ref.id);
+    const branch = match === undefined ? undefined : await this.sessionManager.readBranch?.(match.path);
+    return match === undefined || branch === undefined ? [] : openAsksFromTranscript(branch, match.id).open;
+  }
+
   async status(ref: PiSessionRef): Promise<ClientSessionStatus> {
     const session = await this.sessionForStatusOrDialogClose(ref);
     await this.activityMarker.refresh(session.sessionFile, this.hasActiveWork(session));
