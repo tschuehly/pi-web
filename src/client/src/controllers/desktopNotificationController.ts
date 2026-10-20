@@ -205,6 +205,8 @@ function preview(text: string): string {
 
 /** The native app accepts the same anchors and drops the notification otherwise. */
 export const NATIVE_NOTIFICATION_OPEN_EVENT = "pi-web:notification-open";
+/** The macOS app asks every window whether it holds a notification's Chat; the holder cancels the event. */
+export const NATIVE_NOTIFICATION_HOLDS_EVENT = "pi-web:notification-holds";
 export const NOTIFICATION_ANCHOR = /^(?:entry|ask|dialog):[A-Za-z0-9._-]{1,120}$/u;
 const NATIVE_NOTIFICATION_PERMISSION_KEY = "pi-web:native-notifications:permission";
 const BROWSER_PERMISSION_DENIED = "Desktop notification permission was denied. Enable notifications for PI WEB in your browser's site settings (and System Settings if needed), then reload.";
