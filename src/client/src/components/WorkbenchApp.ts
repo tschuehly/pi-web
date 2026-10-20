@@ -145,7 +145,7 @@ export class WorkbenchApp extends LitElement {
       const current = this.shadowRoot?.querySelector<HTMLElement>(".grid[data-single] > .tile");
       return current === null || current === undefined ? undefined : { current, peek: this.shadowRoot?.querySelector<HTMLElement>(".swipe-peek") ?? null };
     },
-    peek: (sessionId) => { this.swipePeek = sessionId; },
+    peek: (sessionId) => { this.swipePeek = sessionId; return this.updateComplete; },
     commit: (sessionId) => this.showWindowChat(sessionId),
   });
   /** One generation for every navigation, New Chat and selection included: only the newest may commit. */
@@ -1405,7 +1405,7 @@ export class WorkbenchApp extends LitElement {
     const selected = this.app.selectedSession?.id;
     return html`
       <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()}
-        @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { void this.showWindowChat(event.detail.sessionId); }}
+        @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { this.swipe.cancel(); void this.showWindowChat(event.detail.sessionId); }}
         @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { this.closeWindowChats(event.detail.sessionIds); }}
         @window-home=${() => { this.goHome(); }}
         @window-layout=${() => { this.toggleWindowLayout(); }}
@@ -1902,8 +1902,8 @@ export class WorkbenchApp extends LitElement {
     .error, .chat-error { color: var(--pi-danger); }
     .chat-shell { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     header { position: relative; z-index: 6; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
-    /* In the tab row: the Chat tabs scroll and the tools keep their room; only a long Workstream title truncates. */
-    .chat-tools { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; }
+    /* In the tab row the tools keep their natural width, the drawer up to its cap: only the Chat tabs shrink and scroll. */
+    .chat-tools { flex: none; display: flex; align-items: center; gap: 4px; }
     :is(header, .chat-tools) > button { flex: 0 0 auto; min-height: 32px; border-color: transparent; background: transparent; }
     :is(header, .chat-tools) > button:hover:not(:disabled) { background: var(--pi-surface-hover); }
     :is(header, .chat-tools) > .icon-button:hover { border-color: transparent; }

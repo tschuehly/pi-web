@@ -130,9 +130,34 @@ export class WorkbenchWindowTabs extends LitElement {
     if (dropped.windowId !== this.windowId) this.emit("chat-tab-drop", dropped);
   };
 
-  /** A crowded row scrolls: keep the Chat on screen in view. */
+  /** A crowded row scrolls: the Chat on screen stays in view as the selection or the row's room changes. */
+  private readonly keepSelectedInView = (): void => {
+    const strip = this.renderRoot.querySelector<HTMLElement>(".tabs.chats");
+    const tab = strip?.querySelector<HTMLElement>('[aria-selected="true"]') ?? null;
+    if (strip === null || tab === null) return;
+    // Only the strip scrolls, never the page around it.
+    const room = strip.getBoundingClientRect();
+    const bounds = tab.getBoundingClientRect();
+    if (bounds.left < room.left) strip.scrollLeft -= room.left - bounds.left;
+    else if (bounds.right > room.right) strip.scrollLeft += Math.min(bounds.right - room.right, bounds.left - room.left);
+  };
+  private readonly stripResizes = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(this.keepSelectedInView);
+  private observedStrip: Element | null = null;
+
   protected override updated(changed: PropertyValues<this>): void {
-    if (changed.has("selected")) this.renderRoot.querySelector('.chat-tab[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const strip = this.renderRoot.querySelector(".tabs.chats");
+    if (strip !== this.observedStrip) {
+      this.stripResizes?.disconnect();
+      if (strip !== null) this.stripResizes?.observe(strip);
+      this.observedStrip = strip;
+    }
+    if (changed.has("selected")) this.keepSelectedInView();
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.stripResizes?.disconnect();
+    this.observedStrip = null;
   }
 
   private status(chat: WindowChat): ChatTabStatus {

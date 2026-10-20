@@ -163,6 +163,48 @@ describe("tab swipe", () => {
     expect(host.committed).toEqual([]);
   });
 
+  it("puts the Chat back once a slow move lands, though a vertical scroll began meanwhile, and swallows sideways gestures until then", async () => {
+    let land!: () => void;
+    host.commit = (sessionId) => { host.committed.push(sessionId); return new Promise<void>((resolve) => { land = resolve; }); };
+    const controller = new TabSwipeController(host, () => time);
+    swipe(controller, 40);
+    expect(host.committed).toEqual(["c"]);
+    expect(current.style.transform).toBe("translateX(-1000px)");
+    await vi.advanceTimersByTimeAsync(300);
+    // A new sideways gesture while the move is pending neither moves the Chat nor moves on again.
+    for (let step = 0; step < 10; step += 1) expect(swipe(controller, 40).defaultPrevented).toBe(true);
+    expect(host.committed).toEqual(["c"]);
+    expect(current.style.transform).toBe("translateX(-1000px)");
+    await vi.advanceTimersByTimeAsync(300);
+    for (let step = 0; step < 5; step += 1) swipe(controller, 0, 20);
+    land();
+    for (let step = 0; step < 5; step += 1) swipe(controller, 0, 20);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(current.style.transform).toBe("");
+    expect(host.peeked.at(-1)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(300);
+    play(controller, [10, 20, 30]);
+    expect(host.committed).toEqual(["c", "c"]);
+  });
+
+  it("shows the neighbour's preview before the Chat slides away, while moving on at once", async () => {
+    // The host renders the preview on its next update, as Lit does.
+    host.peek = (sessionId) => {
+      host.peeked.push(sessionId);
+      return Promise.resolve().then(() => { peek = sessionId === undefined ? null : document.createElement("div"); });
+    };
+    const controller = new TabSwipeController(host, () => time);
+    swipe(controller, 40);
+    expect(host.committed).toEqual(["c"]);
+    expect(current.style.transform).not.toBe("translateX(-1000px)");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(peek?.style.visibility).toBe("visible");
+    expect(peek?.style.transform).toBe("translateX(0)");
+    expect(current.style.transform).toBe("translateX(-1000px)");
+    await vi.advanceTimersByTimeAsync(200);
+    expect(current.style.transform).toBe("");
+  });
+
   it("ignores vertical scrolling, and swipes only where the host allows", () => {
     const controller = new TabSwipeController(host, () => time);
     expect(swipe(controller, 5, 40).defaultPrevented).toBe(false);
