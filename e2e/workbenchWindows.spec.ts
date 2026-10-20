@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { E2E_MORE_CHATS, E2E_PROJECT_ID, E2E_SESSION_ID } from "./isolatedPiWeb";
+import { E2E_LONG_CHAT, E2E_MORE_CHATS, E2E_PROJECT_ID, E2E_SESSION_ID } from "./isolatedPiWeb";
 
 // Set PI_WEB_E2E_SCREENSHOTS to a folder to keep review screenshots of the window tabs and grid.
 const SHOTS = process.env["PI_WEB_E2E_SCREENSHOTS"];
@@ -78,7 +78,7 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await expect(page.locator("workbench-chat-pane")).toHaveCount(2);
   await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", RELEASE);
   await expect(tabRowTools(page)).toHaveCount(0);
-  await expect(page.locator('.tile[data-focused="true"] main.chat-shell > header .files-toggle')).toBeVisible();
+  await expect(page.locator('.tile[data-focused="true"] > .tile-bar .files-toggle')).toBeVisible();
   await expect(page.locator(`.tile[data-session="${GUIDE}"] workbench-chat-pane chat-view`)).toContainText("Done.");
   await page.locator(`.tile[data-session="${NOTES}"] .tile-bar`).click();
   await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", NOTES);
@@ -229,6 +229,74 @@ for (const scale of ["1", "1.25"]) {
     const summary = tabRowTools(page).locator("workstream-context-drawer summary");
     await expect(summary).toHaveAttribute("title", "Pi Workbench UI dogfooding and two-tier tab layout review");
     expect(await summary.evaluate((element) => getComputedStyle(element).fontSize)).toBe(await chatTab(page, "Where are the notes?").evaluate((element) => getComputedStyle(element).fontSize));
+  });
+}
+
+/** Each Grid tile, by Chat: its box, its transcript's box, its first visible message and where it sits, and its outline. */
+function gridLayout() {
+  const app = document.querySelector("pi-workbench-app")?.shadowRoot;
+  const rect = (element: Element | null | undefined) => { const box = element?.getBoundingClientRect(); return box === undefined ? [] : [box.x, box.y, box.width, box.height].map(Math.round); };
+  return [...app?.querySelectorAll<HTMLElement>(".grid > .tile") ?? []].map((tile) => {
+    const view = tile.querySelector("main.chat-shell chat-view") ?? tile.querySelector("workbench-chat-pane")?.shadowRoot?.querySelector("chat-view");
+    const chat = view?.shadowRoot?.querySelector(".chat");
+    const top = chat?.getBoundingClientRect().top ?? 0;
+    const first = [...chat?.querySelectorAll<HTMLElement>("[data-scroll-anchor-id]") ?? []].find((element) => element.getBoundingClientRect().bottom > top + 1);
+    return {
+      session: tile.dataset["session"] ?? tile.querySelector<HTMLElement>("main.chat-shell")?.dataset["session"] ?? "",
+      focused: tile.dataset["focused"] === "true",
+      outlined: getComputedStyle(tile).outlineStyle !== "none",
+      tile: rect(tile),
+      transcript: rect(chat),
+      anchor: first?.dataset["scrollAnchorId"] ?? "none",
+      message: Math.round(first?.getBoundingClientRect().top ?? -1),
+    };
+  }).sort((a, b) => a.session.localeCompare(b.session));
+}
+
+for (const count of [2, 4]) {
+  test(`every Grid tile looks the same focused or not: focusing another of ${String(count)} tiles only moves the outline`, async ({ page }) => {
+    const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
+    const url = process.env["PI_WEB_E2E_CHAT_URL"];
+    if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
+    const workstreams = [{ id: "ws-dogfooding", title: "Dogfooding" }, { id: "ws-docs", title: "Docs" }, { id: "ws-grid", title: "Grid focus" }];
+    const sessions = [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id].slice(0, count);
+    const chats = sessions.map((sessionId, index) => ({ sessionId, title: `Chat ${String(index + 1)}`, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream: workstreams[index % workstreams.length] }));
+    await page.addInitScript(([key, value]) => { localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify({ e2e: { name: "Window 1", layout: "grid", maximized: false, focused: NOTES, lastActive: {}, chats } })] as const);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const target = new URL(url);
+    target.searchParams.set("win", "e2e");
+    await page.goto(target.toString());
+    await expect(page.locator(".grid > .tile")).toHaveCount(count);
+    const settled = async () => {
+      const layout = await page.evaluate(gridLayout);
+      return layout.every((tile) => tile.anchor !== "none") ? layout : undefined;
+    };
+    await expect.poll(settled, { timeout: 10_000 }).toBeDefined();
+    await page.waitForTimeout(600);
+    const before = await page.evaluate(gridLayout);
+    // Within a pixel: every tile's box, its transcript's box, and its first visible message and that message's top.
+    const moved = (after: typeof before) => before.flatMap((was, index) => {
+      const now = after[index];
+      const numbers = [...was.tile, ...was.transcript, was.message];
+      const nowNumbers = now === undefined ? [] : [...now.tile, ...now.transcript, now.message];
+      return now?.session === was.session && now.anchor === was.anchor && numbers.every((value, at) => Math.abs(value - (nowNumbers[at] ?? NaN)) <= 1) ? [] : [{ was, now }];
+    });
+    for (const session of [...sessions.slice(1), NOTES]) {
+      const chosen = page.locator(`.grid > .tile[data-session="${session}"]`);
+      const box = await chosen.boundingBox();
+      if (box === null) throw new Error(`tile ${session} is not on screen`);
+      // Anywhere in the tile focuses it: here, the middle of its transcript.
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 3);
+      await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", session);
+      await page.waitForTimeout(800);
+      const after = await page.evaluate(gridLayout);
+      expect(moved(after), `tiles that moved after focusing ${session}`).toEqual([]);
+      expect(after.filter((tile) => tile.outlined).map((tile) => tile.session), "only the focused tile is outlined").toEqual([session]);
+      await page.keyboard.type("typed here");
+      await expect(page.locator('.tile[data-focused="true"] .cm-content')).toHaveText("typed here");
+      await page.keyboard.press("Meta+a");
+      await page.keyboard.press("Backspace");
+    }
   });
 }
 
