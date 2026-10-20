@@ -175,7 +175,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const fake = fakeRuntime("slash-image-session");
     fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "command" }];
     fake.session.promptTemplates = [{ name: "template-name" }];
-    fake.session.resourceLoader.getSkills = () => ({ skills: [{ name: "skill-name" }] });
+    fake.session.resourceLoader.getSkills = () => ({ skills: [{ name: "skill-name", filePath: "/skills/skill-name/SKILL.md", baseDir: "/skills/skill-name" }] });
     const hub = new CapturingSessionEventHub();
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
@@ -212,9 +212,37 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     await service.dispose();
   });
 
+  it("expands mid-prompt skill mentions for the provider, leaving leading skills and extension arguments to Pi", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-web-inline-skill-"));
+    const filePath = join(dir, "SKILL.md");
+    await writeFile(filePath, "---\nname: review\n---\nReview body\n");
+    const fake = fakeRuntime("inline-skill-session");
+    fake.session.resourceLoader.getSkills = () => ({ skills: [{ name: "review", filePath, baseDir: dir }] });
+    fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "handoff" }];
+    const hub = new CapturingSessionEventHub();
+    const service = new PiSessionService(hub, {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("inline-skill-session")]),
+      heartbeatIntervalMs: 60_000,
+    });
+    const block = `<skill name="review" location="${filePath}">\nReferences are relative to ${dir}.\n\nReview body\n</skill>`;
+
+    await service.prompt(sessionRef("inline-skill-session"), "please /skill:review this");
+    await service.prompt(sessionRef("inline-skill-session"), "/skill:review now");
+    await service.prompt(sessionRef("inline-skill-session"), "/handoff /skill:review");
+
+    expect(fake.calls.prompt.map(({ text }) => text)).toEqual([`please ${block} this`, "/skill:review now", "/handoff /skill:review"]);
+    const echoed = hub.sessionEvents.filter(({ event }) => event.type === "message.append").map(({ event }) => JSON.stringify(event));
+    expect(echoed[0]).toContain(JSON.stringify(`please ${block} this`));
+    await service.dispose();
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("echoes the user message for direct prompts but not command-forwarded ones", async () => {
     const fake = fakeRuntime("echo-session", {
-      resourceLoader: { getSkills: () => ({ skills: [{ name: "skill-creator" }] }) },
+      resourceLoader: { getSkills: () => ({ skills: [{ name: "skill-creator", filePath: "/skills/skill-creator/SKILL.md", baseDir: "/skills/skill-creator" }] }) },
     });
     const hub = new CapturingSessionEventHub();
     const service = new PiSessionService(hub, {

@@ -7,11 +7,18 @@ const SHOTS = process.env["PI_WEB_E2E_SCREENSHOTS"];
 const STORE_KEY = "pi-workbench.windows.v1";
 const [NOTES, RELEASE, GUIDE] = [E2E_SESSION_ID, E2E_MORE_CHATS[0].id, E2E_MORE_CHATS[1].id];
 
-/** One window holding the three fixture Chats: two in a long-named Workstream, one in another (or all in one). */
-function seededWindow(workspaceId: string, oneWorkstream = false) {
+/**
+ * One window holding the three fixture Chats: two in a long-named Workstream, one in another (or all in one).
+ * Crowded: one Workstream of eight long-titled tabs, five of them placeholders, NOTES last.
+ */
+function seededWindow(workspaceId: string, oneWorkstream = false, crowded = false) {
   const chat = (sessionId: string, title: string, workstream: { id: string; title: string }) => ({ sessionId, title, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream });
   const dogfooding = { id: "ws-dogfooding", title: "Pi Workbench UI dogfooding and two-tier tab layout review" };
   const docs = { id: "ws-docs", title: "Docs" };
+  if (crowded) {
+    const filler = Array.from({ length: 5 }, (_, index) => chat(`crowded-${String(index)}`, `A long Chat title that has to ellipsize ${String(index)}`, dogfooding));
+    return { e2e: { name: "Window 1", layout: "tabs", maximized: false, focused: NOTES, lastActive: {}, chats: [...filler, chat(RELEASE, "Draft the release notes", dogfooding), chat(GUIDE, "Review the install guide", dogfooding), chat(NOTES, "Where are the notes?", dogfooding)] } };
+  }
   return {
     e2e: {
       name: "Window 1", layout: "tabs", maximized: false, focused: NOTES, lastActive: {},
@@ -20,12 +27,12 @@ function seededWindow(workspaceId: string, oneWorkstream = false) {
   };
 }
 
-async function openSeededWindow(page: Page, oneWorkstream = false): Promise<void> {
+async function openSeededWindow(page: Page, oneWorkstream = false, crowded = false): Promise<void> {
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
   // Only the first page seeds: a window this test opens later must find the store as the first one left it.
-  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify(seededWindow(workspaceId, oneWorkstream))] as const);
+  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify(seededWindow(workspaceId, oneWorkstream, crowded))] as const);
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
   await page.goto(target.toString());
@@ -163,6 +170,67 @@ test("switches tabs steadily: same tab widths, one selected tab, never a blank C
   const again = frames.filter((frame) => frame.phase === "again");
   expect(new Set(again.filter((frame) => frame.shown === RELEASE).map((frame) => Math.round(frame.scrollTop))), "RELEASE scroll in every frame").toEqual(new Set([Math.round(releaseTop)]));
   expect(frames.filter((frame) => frame.shown === GUIDE && !frame.atBottom).length, "GUIDE frames off its bottom").toBe(0);
+});
+
+test("a crowded tab row keeps every tool clickable: only the Chat tabs shrink and scroll, the selected one in view", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 820 });
+  await openSeededWindow(page, true, true);
+  const controls = page.locator("workbench-window-tabs > .chat-tools").locator("button, summary").or(page.locator("workbench-window-tabs .actions button"));
+  const expectClickable = async () => {
+    await expect(tabRowTools(page).locator(".files-toggle")).toBeVisible();
+    for (const control of await controls.all()) {
+      // A trial click fails when another element (the tab strip) covers the control's centre.
+      await control.click({ trial: true, timeout: 2000 });
+      const box = await control.boundingBox();
+      expect(box !== null && box.x >= 0 && box.x + box.width <= 900, `${await control.getAttribute("aria-label") ?? await control.innerText()} inside the window`).toBe(true);
+    }
+    const strip = await page.locator("workbench-window-tabs .tabs.chats").evaluate((tabs) => {
+      const selected = tabs.querySelector('[aria-selected="true"]')?.getBoundingClientRect();
+      const bounds = tabs.getBoundingClientRect();
+      return { scrolls: tabs.scrollWidth > tabs.clientWidth, inView: selected !== undefined && selected.left >= bounds.left - 1 && selected.right <= bounds.right + 1, widths: [...tabs.children].map((tab) => tab.getBoundingClientRect().width) };
+    });
+    expect(strip.scrolls).toBe(true);
+    expect(strip.inView).toBe(true);
+    expect(Math.min(...strip.widths)).toBeGreaterThanOrEqual(120);
+  };
+  await expectClickable();
+  // A Workstream's drawer joins the tools: it takes its room from the tabs, not from the tools beside it.
+  await page.locator("pi-workbench-app").evaluate((app) => { Reflect.set(app, "currentWorkstream", { id: "ws-dogfooding", title: "Pi Workbench UI dogfooding and two-tier tab layout review", sessions: [], closed: false }); });
+  await expect(tabRowTools(page).locator("workstream-context-drawer")).toBeVisible();
+  await expectClickable();
+  if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "tabs-crowded-900.png") });
+});
+
+/** The Chat tile and the neighbour preview beside it during a swipe. */
+const swipeStage = (page: Page) => page.locator("pi-workbench-app").evaluate((app) => {
+  const tile = app.shadowRoot?.querySelector<HTMLElement>(".grid > .tile");
+  const peek = app.shadowRoot?.querySelector<HTMLElement>(".swipe-peek");
+  return { tileLeft: tile?.getBoundingClientRect().left, transform: tile?.style.transform, peekLeft: peek === null || peek === undefined ? undefined : peek.getBoundingClientRect().left, peekVisible: peek === null || peek === undefined ? false : getComputedStyle(peek).visibility === "visible" };
+});
+
+test("a swipe to a Chat that loads slowly shows its preview, and a vertical scroll meanwhile never strands the Chat offscreen", async ({ page }) => {
+  await openSeededWindow(page, true);
+  await expect(shownChat(page).locator("chat-view article").first()).toBeVisible();
+  let arrive = () => {};
+  const arrived = new Promise<void>((resolve) => { arrive = resolve; });
+  await page.route((url) => url.pathname.includes(RELEASE) && url.pathname.includes("/messages"), async (route) => { await arrived; await route.continue(); });
+  await shownChat(page).locator("chat-view .chat").hover();
+  // One big sample is a flick: it moves on at once, and the neighbour's preview fills the stage while its Chat loads.
+  await page.mouse.wheel(40, 0);
+  await page.waitForTimeout(300);
+  const pending = await swipeStage(page);
+  await page.screenshot({ path: test.info().outputPath("swipe-pending.png") });
+  expect(pending.peekVisible, "preview shows while the Chat loads").toBe(true);
+  expect(pending.peekLeft).toBe(0);
+  await expect(shownChat(page)).toHaveAttribute("data-session", NOTES);
+  await page.mouse.wheel(0, 20);
+  arrive();
+  for (let step = 0; step < 12; step += 1) { await page.waitForTimeout(40); await page.mouse.wheel(0, 20); }
+  await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
+  await expect.poll(() => swipeStage(page)).toMatchObject({ tileLeft: 0, transform: "", peekVisible: false });
+  await chatTab(page, "Review the install guide").click();
+  await expect(shownChat(page)).toHaveAttribute("data-session", GUIDE);
+  await expect.poll(() => swipeStage(page)).toMatchObject({ tileLeft: 0, transform: "" });
 });
 
 test("a second page opened on a live window's id gets a window of its own", async ({ page, context }) => {

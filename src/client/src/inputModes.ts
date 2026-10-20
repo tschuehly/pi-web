@@ -1,20 +1,12 @@
-import { detectPromptCompletionTrigger } from "./promptCompletions";
-
 export type InputMode =
   | { kind: "normal" }
   | { kind: "command" }
-  | { kind: "file" }
-  | { kind: "model" }
   | { kind: "shell"; excludeFromContext: boolean };
 
 export function inputModeForDraft(draft: string): InputMode {
   const trimmed = draft.trimStart();
-  if (trimmed.startsWith("!@")) return { kind: "file" };
   if (trimmed.startsWith("!")) return { kind: "shell", excludeFromContext: trimmed.startsWith("!!") };
   if (currentToken(draft).startsWith("/")) return { kind: "command" };
-  const trigger = detectPromptCompletionTrigger(draft);
-  if (trigger?.kind === "file") return { kind: "file" };
-  if (trigger?.kind === "model") return { kind: "model" };
   return { kind: "normal" };
 }
 

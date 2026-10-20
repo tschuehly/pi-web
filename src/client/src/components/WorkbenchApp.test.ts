@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { api, type Machine, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
 import { ACTIVITY_STATUS_KEY, GOAL_STATUS_KEY } from "../extensionStatusSnapshots";
-import { DesktopNotificationController, NATIVE_NOTIFICATION_OPEN_EVENT } from "../controllers/desktopNotificationController";
+import { DesktopNotificationController, NATIVE_NOTIFICATION_HOLDS_EVENT, NATIVE_NOTIFICATION_OPEN_EVENT } from "../controllers/desktopNotificationController";
 import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
@@ -2423,7 +2423,7 @@ describe("window tabs", () => {
     expect(canClose).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps a Chat with staged quotes or attachments in this window and says why", async () => {
+  it("keeps a Chat with staged attachments in this window and says why", async () => {
     const opened = vi.spyOn(window, "open").mockReturnValue(null);
     const app = await mountWithWorkstreamChats();
     const moveToNewWindow = async (tab: Element | null) => {
@@ -2432,10 +2432,6 @@ describe("window tabs", () => {
       app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
       await app.updateComplete;
     };
-    app.shadowRoot?.querySelector<ChatView>("chat-view")?.onReplyToSelection?.({ entryId: "e1", excerpt: "Quoted line" });
-    await moveToNewWindow(tabsRoot(app).querySelector('.chat-tab[data-session="b1"]'));
-    expect(app.shadowRoot?.querySelector(".chat-error")?.textContent).toContain("Install guide");
-
     saveStagedAttachments(machineSessionKey("local", "a1"), { attachments: [{ id: "att-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGk=", size: 2 }], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
     await moveToNewWindow(workstreamTab(app, "Release"));
 
@@ -2530,6 +2526,28 @@ describe("window tabs", () => {
       owner.close();
       release();
     }
+  });
+
+  it("tells the macOS app which Chats this window holds, so a notification goes to their window and none other changes", async () => {
+    const app = await mountWithWorkstreamChats();
+    const elsewhere = { sessionId: "c1", title: "Elsewhere", machineId: "local", projectId: "project", workspaceId: "workspace" };
+    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w2", elsewhere)));
+    const holds = (machineId: string, sessionId: string) => !window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_HOLDS_EVENT, { cancelable: true, detail: { machineId, sessionId } }));
+    const before = localStorage.getItem(WINDOW_STORE_KEY);
+
+    expect(holds("local", "a2")).toBe(true);
+    expect(holds("local", "c1")).toBe(false);
+    expect(holds("remote", "a2")).toBe(false);
+    expect(holds("local", "unknown")).toBe(false);
+    await settled(app);
+    expect(localStorage.getItem(WINDOW_STORE_KEY)).toBe(before);
+    expect(getState(app).selectedSession?.id).toBe("b1");
+
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "a2" } }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    expect(new URLSearchParams(window.location.search).get("win")).toBe("w1");
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
   });
 
   it("shows a Chat another live window holds there when Back or the chooser opens it, and stays as it is", async () => {

@@ -4,7 +4,6 @@ import { keyed } from "lit/directives/keyed.js";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, drawSelection, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { api, type FileContentResponse, type FileTreeEntry, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
 import { markdownWorkspaceContext, type LineRange } from "../formatting/workspaceLinks";
@@ -13,7 +12,7 @@ import { workspaceFilePreviewUrl } from "../api/urls";
 import { writeClipboardText } from "../clipboard";
 import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import { MAX_INLINE_PREVIEW_BYTES, MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../../shared/workspaceFiles";
-import { applyDiskChange, bulkHunkAction, clearHunks, editHistory, filesHighlighting, hunkField, languageFor, lineRangeHighlight, lineRangeSpec, livePreview } from "./workbenchFilesEditor";
+import { applyDiskChange, bulkHunkAction, clearHunks, editHistory, filesHighlighting, hunkField, languageFor, lineRangeHighlight, lineRangeSpec, livePreview, markdownWithCodeLanguages } from "./workbenchFilesEditor";
 
 const isMarkdown = (path: string): boolean => /\.(?:md|markdown|mdx)$/i.test(path);
 /** SVG is text the editor can change and an image the pane can preview. */
@@ -353,7 +352,7 @@ export class WorkbenchFilesPane extends LitElement {
         filesHighlighting,
         hunkField, lineRangeHighlight,
         this.modeSlot.of(this.previewFor(file)),
-        md ? [markdown({ base: markdownLanguage, codeLanguages: (info) => languageFor(info)?.language ?? null }), EditorView.lineWrapping]
+        md ? [markdownWithCodeLanguages(), EditorView.lineWrapping]
           : [languageFor(extension) ?? [], lineNumbers(), highlightActiveLineGutter()],
         file.truncated ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
         EditorView.contentAttributes.of({ "aria-label": "File source" }),

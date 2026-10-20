@@ -1,11 +1,11 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab, insertNewlineAndIndent } from "@codemirror/commands";
-import { markdown, deleteMarkupBackward, insertNewlineContinueMarkup } from "@codemirror/lang-markdown";
-import { EditorSelection, EditorState, Compartment } from "@codemirror/state";
+import { deleteMarkupBackward, insertNewlineContinueMarkup } from "@codemirror/lang-markdown";
+import { EditorSelection, EditorState, Compartment, Prec } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
-import { defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
+import { indentOnInput, indentUnit } from "@codemirror/language";
 import { LitElement, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
-import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type FileSuggestion, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
+import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE } from "../promptAttachmentCapture";
 import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
@@ -13,8 +13,8 @@ import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputMode
 import { machineSessionKey } from "../machineKeys";
 import { WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
 import type { StagedPromptChip } from "../promptChips";
-import { REPLY_QUOTE_OWNER, replyQuoteExcerpt } from "../replyQuotes";
-import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
+import { editOutsideReplyQuotes, replyQuoteFolding, replyQuoteInsertion, type ReplyQuote } from "../replyQuotes";
+import { detectPromptCompletionTrigger, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "../promptDraftStorage";
 import { clearStagedAttachments, emptyStagedAttachmentDraft, loadStagedAttachmentDraft, resolveStagedAttachmentKey, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
@@ -30,6 +30,7 @@ import { formatCost, formatTokenCount } from "../utils/format";
 import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import "./AutocompleteMenu";
 import { renderBuiltinTabIcon } from "./tabIcons";
+import { filesHighlighting, markdownWithCodeLanguages } from "./workbenchFilesEditor";
 
 /** Composer keys whose send the server has not yet answered, in this window; a failure restores the prompt here. */
 const unacknowledgedSends = new Map<string, number>();
@@ -66,8 +67,6 @@ export class PromptEditor extends LitElement {
   @property({ attribute: false }) draftStorage?: DraftStorage;
   @property() cwd?: string;
   @property() machineId = "local";
-  @property() projectId?: string;
-  @property() workspaceId?: string;
   /**
    * Workspace-effective folder for the "save to folder" attachment delivery.
    * Shown in the delivery label and sent explicitly with the save request, so
@@ -111,12 +110,12 @@ export class PromptEditor extends LitElement {
   @state() private currentInputMode: InputMode = { kind: "normal" };
   @state() private completions: CompletionItem[] = [];
   @state() private selectedIndex = 0;
+  private completionNavigated = false;
   @state() private attachments: readonly PendingAttachment[] = [];
   @state() private attachmentDelivery: PromptAttachmentDelivery = loadAttachmentDelivery();
   @state() private attachmentError: string | undefined = undefined;
   @state() private chipSendingKey: string | undefined = undefined;
   @state() private chipError: string | undefined = undefined;
-  @state() private expandedChipKey: string | undefined = undefined;
   @state() private attachmentMenuOpen = false;
   private attachmentSeq = 0;
   private nextImageReference = 1;
@@ -269,6 +268,12 @@ export class PromptEditor extends LitElement {
     this.editor?.focus();
   }
 
+  /** Reply to a Chat selection: the quote lands at the cursor as its own collapsed blockquote, ready for the answer below it. */
+  insertReplyQuote(quote: ReplyQuote): void {
+    const at = this.editor?.state.selection.main.head ?? this.draft.length;
+    this.dispatchDraftChange(at, at, replyQuoteInsertion(this.draft.slice(0, at), quote));
+  }
+
   prependText(text: string): void {
     this.replaceText(this.draft === "" ? text : `${text}\n\n${this.draft}`);
   }
@@ -341,15 +346,12 @@ export class PromptEditor extends LitElement {
     if (this.promptChips.length === 0 && this.chipError === undefined) return null;
     return html`
       <div class="prompt-chips" aria-label="Pending context">
-        ${this.promptChips.map((chip) => {
-          const expanded = this.expandedChipKey === chip.key;
-          return html`
-          <div class=${`prompt-chip${chip.pluginId === REPLY_QUOTE_OWNER ? " prompt-chip-quote" : ""}${expanded ? " expanded" : ""}`}>
-            <button type="button" class="prompt-chip-label" aria-expanded=${String(expanded)} title=${expanded ? "Collapse" : "Show full text"} @click=${() => { this.expandedChipKey = expanded ? undefined : chip.key; }}>${expanded ? (chip.pluginId === REPLY_QUOTE_OWNER ? replyQuoteExcerpt(chip.text) : chip.text) : chip.label}</button>
-            <button type="button" aria-label=${`Remove ${chip.pluginId === REPLY_QUOTE_OWNER ? "quote " : ""}${chip.label}`} ?disabled=${this.disabled} @click=${() => this.onRemoveChip?.(chip)}>${renderRemoveIcon()}</button>
+        ${this.promptChips.map((chip) => html`
+          <div class="prompt-chip" title=${chip.text}>
+            <span>${chip.label}</span>
+            <button type="button" aria-label=${`Remove ${chip.label}`} ?disabled=${this.disabled} @click=${() => this.onRemoveChip?.(chip)}>${renderRemoveIcon()}</button>
           </div>
-        `;
-        })}
+        `)}
         ${this.chipError === undefined ? null : html`<div class="chip-error" role="alert">${this.chipError}</div>`}
       </div>
     `;
@@ -503,7 +505,7 @@ export class PromptEditor extends LitElement {
       const attachments = [...staged.attachments, ...additions].sort((a, b) => attachmentIdSequence(a.id) - attachmentIdSequence(b.id));
       const pendingImageReferences = staged.pendingImageReferences.filter((reference) => !references.includes(reference));
       saveStagedAttachments(targetKey, { ...staged, attachments, pendingImageReferences });
-      if (failedReferences.length > 0) saveDraft(targetKey, removeImageReferenceTokensFromText(loadDraft(targetKey, this.draftStorage), failedReferences), this.draftStorage);
+      if (failedReferences.length > 0) saveDraft(targetKey, removeUnquotedImageReferenceTokens(loadDraft(targetKey, this.draftStorage), failedReferences), this.draftStorage);
       return;
     }
     if (generation !== this.draftGeneration) return;
@@ -521,7 +523,7 @@ export class PromptEditor extends LitElement {
   }
 
   private removeImageReferenceTokens(reference: string): void {
-    const text = removeImageReferenceTokensFromText(this.draft, [reference]);
+    const text = removeUnquotedImageReferenceTokens(this.draft, [reference]);
     if (text === this.draft) return;
     const editor = this.editor;
     if (editor !== undefined) {
@@ -571,12 +573,16 @@ export class PromptEditor extends LitElement {
       parent: this.editorHost,
       state: EditorState.create({
         doc: this.draft,
+        // At the end, so focusing a restored draft and pressing Enter sends rather than acting on a quote at its start.
+        selection: EditorSelection.cursor(this.draft.length),
         extensions: [
           history(),
-          markdown(),
+          // Formatted like the Files editor's Markdown, without its live preview: that would hide the brackets of
+          // `[PIC_n]` placeholders and the raw source of an expanded reply quote, both of which parse as links.
+          markdownWithCodeLanguages(),
           indentOnInput(),
           indentUnit.of("  "),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          filesHighlighting,
           EditorView.lineWrapping,
           drawSelection(),
           EditorView.contentAttributes.of((view) => inputAssistanceContentAttributes(view.state.sliceDoc(0, view.state.selection.main.head))),
@@ -586,13 +592,16 @@ export class PromptEditor extends LitElement {
           }),
           this.placeholderCompartment.of(this.placeholder()),
           promptArgumentHintExtension,
+          replyQuoteFolding,
           this.editableCompartment.of(EditorView.editable.of(!this.disabled)),
           this.readOnlyCompartment.of(EditorState.readOnly.of(this.disabled)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) this.updateDraft(update.state.doc.toString());
             else if (update.selectionSet) void this.refreshCompletions();
           }),
-          keymap.of([
+          // Above the Markdown language's own Prec.high keymap, so Enter on a list line sends or accepts a completion; after
+          // replyQuoteFolding, so Enter at a collapsed quote's edge still expands it.
+          Prec.highest(keymap.of([
             { any: (view, event) => this.handleEditorKeyDown(event, view) },
             { key: "ArrowDown", run: () => this.moveCompletion(1) },
             { key: "ArrowUp", run: () => this.moveCompletion(-1) },
@@ -602,7 +611,7 @@ export class PromptEditor extends LitElement {
             { key: "Backspace", run: (view) => deleteMarkupBackward(view) },
             ...historyKeymap,
             ...defaultKeymap,
-          ]),
+          ])),
         ],
       }),
     });
@@ -616,7 +625,7 @@ export class PromptEditor extends LitElement {
   }
 
   private placeholder() {
-    return placeholder(this.dense ? "Message…" : "Message pi... Use / for commands, @ for tracked files, @ space for all files, # for models");
+    return placeholder(this.dense ? "Message…" : "Message pi… / for commands and skills");
   }
 
   private interfaceScale(): number {
@@ -763,52 +772,30 @@ export class PromptEditor extends LitElement {
     const version = ++this.requestVersion;
     this.completions = [];
     this.selectedIndex = 0;
+    this.completionNavigated = false;
     if (trigger === undefined) {
       this.setCompletions(version, triggerKey, []);
       return;
     }
-    if (trigger.kind === "command" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
+    if (this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
       const commands = await this.commandCatalog();
       if (version !== this.requestVersion) return;
       this.knownCommandNames = new Set(commands.map((command) => command.name));
+      // Past the start only skills apply; a bare `/name` matches and shows the skill name.
+      const bareSkill = trigger.from !== 0 && !trigger.query.startsWith("skill:");
+      const query = trigger.query.toLowerCase();
       this.setCompletions(version, triggerKey, commands
-        .filter((command) => (trigger.from === 0 || command.source === "skill") && command.name.toLowerCase().includes(trigger.query.toLowerCase()))
+        .filter((command) => trigger.from === 0 ? command.name.toLowerCase().includes(query) : command.source === "skill" && (bareSkill ? command.name.slice(6) : command.name).toLowerCase().includes(query))
         .map((command) => ({
           kind: "command",
           replaceFrom: trigger.from,
           replaceTo: trigger.to,
           insertText: `/${command.name}`,
+          ...(bareSkill ? { label: command.name.slice(6) } : {}),
           detail: command.source,
           ...(command.description === undefined ? {} : { description: command.description }),
           ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
         })));
-      return;
-    }
-    if (trigger.kind === "file" && this.projectId !== undefined && this.workspaceId !== undefined) {
-      const files = await api.files(trigger.query, { scope: trigger.fileScope, machineId: this.machineId, projectId: this.projectId, workspaceId: this.workspaceId }).catch(emptyFileSuggestions);
-      this.setCompletions(version, triggerKey, files
-        .slice(0, 12)
-        .map((file) => {
-          const insertText = fileCompletionInsertText(file.path, trigger.quoted === true, file.path.endsWith("/") ? trigger.allPrefix : undefined);
-          return {
-            kind: "file",
-            replaceFrom: trigger.from,
-            replaceTo: trigger.to,
-            insertText,
-            detail: file.kind,
-            ...(file.path.endsWith("/") && insertText.endsWith("\"") ? { cursorOffset: insertText.length - 1 } : {}),
-          };
-        }));
-      return;
-    }
-    if (trigger.kind === "model" && this.sessionId !== undefined && this.sessionId !== "" && this.cwd !== undefined && this.cwd !== "") {
-      const models = await api.models({ id: this.sessionId, cwd: this.cwd }, this.machineId).then((response) => response.models).catch(emptySessionModels);
-      this.setCompletions(version, triggerKey, modelCompletionChoices(models, trigger.query).map((choice) => ({
-        kind: "model",
-        replaceFrom: trigger.from,
-        replaceTo: trigger.to,
-        ...choice,
-      })));
       return;
     }
     this.setCompletions(version, triggerKey, []);
@@ -836,6 +823,7 @@ export class PromptEditor extends LitElement {
     const completions = this.currentCompletions();
     if (!completions.length) return false;
     this.selectedIndex = (this.selectedIndex + delta + completions.length) % completions.length;
+    this.completionNavigated = true;
     return true;
   }
 
@@ -876,7 +864,10 @@ export class PromptEditor extends LitElement {
     const plainEnter = event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey
       && !shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia);
     const completion = this.selectedCompletion();
-    if (plainEnter && completion !== undefined) {
+    // A bare mid-prompt `/` is usually prose; Enter accepts only after typing or arrowing.
+    const trigger = completion === undefined ? undefined : this.currentTrigger();
+    const bareInlineSlash = trigger?.kind === "command" && trigger.from !== 0 && trigger.query === "" && !this.completionNavigated;
+    if (plainEnter && completion !== undefined && !bareInlineSlash) {
       this.pick(completion);
       return true;
     }
@@ -911,11 +902,6 @@ export class PromptEditor extends LitElement {
       this.pick(completion);
       return true;
     }
-    const trigger = this.currentTrigger();
-    if (trigger?.kind === "file") {
-      void this.refreshCompletions();
-      return true;
-    }
     return indentWithTab.run?.(view) ?? false;
   }
 
@@ -935,11 +921,10 @@ export class PromptEditor extends LitElement {
   private pick(item: CompletionItem) {
     const editor = this.editor;
     if (!editor || !this.completionsAreCurrent() || !this.completions.includes(item)) return;
-    const suffix = item.kind === "file" && (item.insertText.endsWith("/") || item.cursorOffset !== undefined) || item.kind === "command" && (/\s/.test(this.draft[item.replaceTo] ?? "") || item.insertText.startsWith("/skill:") && /[,.!?;:]/.test(this.draft[item.replaceTo] ?? "")) ? "" : " ";
-    const cursor = item.replaceFrom + (item.cursorOffset ?? item.insertText.length) + suffix.length;
-    const replaceTo = item.insertText.endsWith("\"") && this.draft.slice(item.replaceTo).startsWith("\"") ? item.replaceTo + 1 : item.replaceTo;
+    const suffix = /\s/.test(this.draft[item.replaceTo] ?? "") || item.insertText.startsWith("/skill:") && /[,.!?;:]/.test(this.draft[item.replaceTo] ?? "") ? "" : " ";
+    const cursor = item.replaceFrom + item.insertText.length + suffix.length;
     editor.dispatch({
-      changes: { from: item.replaceFrom, to: replaceTo, insert: `${item.insertText}${suffix}` },
+      changes: { from: item.replaceFrom, to: item.replaceTo, insert: `${item.insertText}${suffix}` },
       selection: EditorSelection.cursor(cursor),
       scrollIntoView: true,
       ...(item.argumentHint === undefined || item.argumentHint === "" ? {} : { effects: setPromptArgumentHint.of({ pos: cursor, text: item.argumentHint }) }),
@@ -1128,14 +1113,6 @@ function emptySlashCommands(): SlashCommand[] {
   return [];
 }
 
-function emptyFileSuggestions(): FileSuggestion[] {
-  return [];
-}
-
-function emptySessionModels(): SessionModel[] {
-  return [];
-}
-
 function filesFromDataTransfer(data: DataTransfer | null): File[] {
   if (data === null) return [];
   return Array.from(data.files);
@@ -1150,7 +1127,12 @@ function dataTransferHasFiles(data: DataTransfer): boolean {
 export function sanitizeDraftImageReferences(text: string, attachments: readonly { kind: string; reference?: string }[], pendingReferences: readonly string[] = []): string {
   const references = new Set([...pendingReferences, ...attachments.flatMap((attachment) => attachment.kind === "image" ? [attachment.reference] : [])]);
   const dangling = Array.from(text.matchAll(/\[PIC_[1-9]\d*\]/g), (match) => match[0]).filter((reference) => !references.has(reference));
-  return removeImageReferenceTokensFromText(text, dangling);
+  return removeUnquotedImageReferenceTokens(text, dangling);
+}
+
+/** Quoted messages keep their own `[PIC_n]` text; only the composer's placeholders are attachment tokens. */
+function removeUnquotedImageReferenceTokens(text: string, references: readonly string[]): string {
+  return editOutsideReplyQuotes(text, (outside) => removeImageReferenceTokensFromText(outside, references));
 }
 
 export function isLeadingKnownCommandDraft(draft: string, knownCommandNames: ReadonlySet<string>): boolean {

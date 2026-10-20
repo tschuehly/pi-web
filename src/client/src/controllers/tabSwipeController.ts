@@ -42,8 +42,8 @@ export interface TabSwipeHost {
   track(): { order: readonly string[]; current: string } | undefined;
   /** The Chat on screen and the neighbour preview beside it, once rendered. */
   surfaces(): { current: HTMLElement; peek: HTMLElement | null } | undefined;
-  /** Show (or with undefined hide) the neighbour preview. */
-  peek(sessionId: string | undefined): void;
+  /** Show (or with undefined hide) the neighbour preview; settles once it rendered. */
+  peek(sessionId: string | undefined): Promise<unknown> | undefined;
   /** Show the neighbour; the preview stays in place until this settles. */
   commit(sessionId: string): Promise<void>;
 }
@@ -59,8 +59,9 @@ interface Swipe {
   travel: { x: number; y: number };
   /** Over something that scrolls sideways itself: the gesture is left alone. */
   ignore: boolean;
-  /** The direction whose neighbour preview shows. */
+  /** The direction whose neighbour preview shows, and when it rendered. */
   peeked: number;
+  preview: Promise<unknown> | undefined;
   /** Moved on or snapping back: the rest of the gesture, momentum included, is swallowed. */
   decided: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
@@ -82,6 +83,8 @@ function released(samples: readonly SwipeSample[]): boolean {
  */
 export class TabSwipeController {
   private swipe: Swipe | undefined;
+  /** The swipe whose move is still landing: its transforms stay until then, and gestures meanwhile are swallowed. */
+  private settling: Swipe | undefined;
 
   constructor(private readonly host: TabSwipeHost, private readonly now: () => number = () => performance.now()) {}
 
@@ -90,7 +93,9 @@ export class TabSwipeController {
     if (this.swipe === undefined) {
       const track = this.host.track();
       if (track === undefined) return;
-      this.swipe = { order: track.order, index: track.order.indexOf(track.current), distance: 0, samples: [], axis: "pending", travel: { x: 0, y: 0 }, ignore: false, peeked: 0, decided: false, timer: undefined };
+      // A new gesture starts from a Chat at rest, unless a move is still landing.
+      if (this.settling === undefined) this.rest();
+      this.swipe = { order: track.order, index: track.order.indexOf(track.current), distance: 0, samples: [], axis: "pending", travel: { x: 0, y: 0 }, ignore: false, peeked: 0, preview: undefined, decided: this.settling !== undefined, timer: undefined };
     }
     const swipe = this.swipe;
     clearTimeout(swipe.timer);
@@ -114,7 +119,7 @@ export class TabSwipeController {
     if (swipe.decided) return;
     if (Math.sign(swipe.distance) !== swipe.peeked) {
       swipe.peeked = Math.sign(swipe.distance);
-      this.host.peek(this.neighbour(swipe));
+      swipe.preview = this.host.peek(this.neighbour(swipe));
     }
     const surfaces = this.host.surfaces();
     if (surfaces === undefined) return;
@@ -127,6 +132,7 @@ export class TabSwipeController {
   cancel(): void {
     const swipe = this.swipe;
     this.swipe = undefined;
+    this.settling = undefined;
     if (swipe !== undefined) clearTimeout(swipe.timer);
     this.reset();
   }
@@ -154,11 +160,28 @@ export class TabSwipeController {
     if (swipe.axis === "horizontal" && !swipe.ignore && !swipe.decided) this.settle(swipe, undefined);
   }
 
-  /** Slides to `target` and shows it at once, or with undefined slides back; the preview stays until both are done, unless a new swipe took over. */
+  /**
+   * Moves on to `target` at once, or with undefined slides back. The Chat slides away only once the neighbour's preview
+   * rendered, so the stage never shows blank. When the move landed, the Chat is put back in place whatever came meanwhile.
+   */
   private settle(swipe: Swipe, target: string | undefined): void {
     swipe.decided = true;
+    this.settling = swipe;
+    const committed = target === undefined ? undefined : this.host.commit(target);
+    const preview = target === undefined || this.host.surfaces()?.peek !== null ? undefined : swipe.preview;
+    const slid = preview === undefined ? this.slide(swipe, target) : preview.then(() => this.slide(swipe, target));
+    void Promise.all([slid, committed]).finally(() => {
+      if (this.settling === swipe) this.settling = undefined;
+      this.reset();
+    });
+  }
+
+  private slide(swipe: Swipe, target: string | undefined): Promise<unknown> {
     const surfaces = this.host.surfaces();
-    if (surfaces === undefined) { this.reset(); return; }
+    if (surfaces === undefined) return Promise.resolve();
+    this.paint(swipe, surfaces);
+    // Start from where the fingers left it: a preview rendered just now is placed before it eases in.
+    surfaces.peek?.getBoundingClientRect();
     const width = surfaces.current.offsetWidth;
     const direction = Math.sign(swipe.distance);
     const ease = `transform ${String(SETTLE_MS)}ms cubic-bezier(.2,.8,.2,1)`;
@@ -168,15 +191,20 @@ export class TabSwipeController {
       surfaces.peek.style.transition = ease;
       surfaces.peek.style.transform = target === undefined ? `translateX(${String(direction * width)}px)` : "translateX(0)";
     }
-    const slid = new Promise((resolve) => { setTimeout(resolve, SETTLE_MS); });
-    void Promise.all([slid, target === undefined ? undefined : this.host.commit(target)]).finally(() => { if (this.swipe === undefined || this.swipe === swipe) this.reset(); });
+    return new Promise((resolve) => { setTimeout(resolve, SETTLE_MS); });
   }
+
+  /** Idempotent: the Chat at rest, no preview; a gesture still running shows its preview again on its next event. */
   private reset(): void {
-    const surfaces = this.host.surfaces();
-    if (surfaces !== undefined) {
-      surfaces.current.style.transition = "";
-      surfaces.current.style.transform = "";
-    }
-    this.host.peek(undefined);
+    this.rest();
+    void this.host.peek(undefined);
+    if (this.swipe !== undefined) this.swipe.peeked = 0;
+  }
+
+  private rest(): void {
+    const current = this.host.surfaces()?.current;
+    if (current === undefined) return;
+    current.style.transition = "";
+    current.style.transform = "";
   }
 }

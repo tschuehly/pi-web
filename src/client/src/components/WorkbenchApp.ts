@@ -10,7 +10,7 @@ import { initialAppState, type AppState } from "../appState";
 import { latestWorkingModeSelection } from "../chatMessages";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { AuthController } from "../controllers/authController";
-import { desktopNotifications, DesktopNotificationController, NATIVE_NOTIFICATION_OPEN_EVENT, NOTIFICATION_ANCHOR } from "../controllers/desktopNotificationController";
+import { desktopNotifications, DesktopNotificationController, NATIVE_NOTIFICATION_HOLDS_EVENT, NATIVE_NOTIFICATION_OPEN_EVENT, NOTIFICATION_ANCHOR } from "../controllers/desktopNotificationController";
 import { SessionController, type PromptEditorTextReplacement, type SessionSelectionOptions } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
@@ -21,8 +21,7 @@ import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale,
 import { markdownWorkspaceContext, type LineRange, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { machineSessionKey } from "../machineKeys";
 import { loadStagedAttachmentDraft, resolveStagedAttachmentKey } from "../promptAttachmentStaging";
-import { PromptChipStore, type PromptChipTarget, type StagedPromptChip } from "../promptChips";
-import { addReplyQuote, composeQuotedReply, type ReplyQuote } from "../replyQuotes";
+import type { ReplyQuote } from "../replyQuotes";
 import { nativeDirectoryPicker } from "../nativeHost";
 import { writeClipboardText } from "../clipboard";
 import { loadExternalPlugins } from "../plugins/external";
@@ -145,7 +144,7 @@ export class WorkbenchApp extends LitElement {
       const current = this.shadowRoot?.querySelector<HTMLElement>(".grid[data-single] > .tile");
       return current === null || current === undefined ? undefined : { current, peek: this.shadowRoot?.querySelector<HTMLElement>(".swipe-peek") ?? null };
     },
-    peek: (sessionId) => { this.swipePeek = sessionId; },
+    peek: (sessionId) => { this.swipePeek = sessionId; return this.updateComplete; },
     commit: (sessionId) => this.showWindowChat(sessionId),
   });
   /** One generation for every navigation, New Chat and selection included: only the newest may commit. */
@@ -278,6 +277,18 @@ export class WorkbenchApp extends LitElement {
     this.openNotificationChat(machineId, sessionId, typeof message === "string" && NOTIFICATION_ANCHOR.test(message) ? message : undefined);
   };
 
+  /**
+   * The macOS app asks each window before routing a notification click, since a window on another Space may be
+   * suspended and miss other windows' requests; it then brings the holder forward and opens the Chat there.
+   */
+  private readonly onNativeNotificationHolds = (event: Event): void => {
+    const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+    if (typeof detail !== "object" || detail === null) return;
+    const machineId: unknown = Reflect.get(detail, "machineId");
+    const sessionId: unknown = Reflect.get(detail, "sessionId");
+    if (typeof machineId === "string" && typeof sessionId === "string" && this.windows.holds(machineId, sessionId)) event.preventDefault();
+  };
+
   private readonly notifications = new SessionNotificationController(
     () => this.app,
     (patch) => { this.setApp(patch); },
@@ -386,6 +397,7 @@ export class WorkbenchApp extends LitElement {
     this.notifications.resume();
     window.addEventListener("popstate", this.onPopState);
     window.addEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
+    window.addEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
     window.addEventListener("focus", this.onPageAttention);
     document.addEventListener("visibilitychange", this.onPageAttention);
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
@@ -430,6 +442,7 @@ export class WorkbenchApp extends LitElement {
   override disconnectedCallback(): void {
     window.removeEventListener("popstate", this.onPopState);
     window.removeEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
+    window.removeEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
     window.removeEventListener("focus", this.onPageAttention);
     document.removeEventListener("visibilitychange", this.onPageAttention);
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
@@ -568,18 +581,18 @@ export class WorkbenchApp extends LitElement {
     return this.removeWindowChats(sessionIds, (store, id) => Date.now() > expires ? store : moveChats(store, id, targetWindowId, sessionIds));
   }
 
-  /** Staged attachments and quotes live in this window only, so a Chat holding any stays here until they are sent or removed. */
+  /** Staged attachments live in this window only, so a Chat holding any stays here until they are sent or removed. */
   private canMoveWindowChats(sessionIds: readonly string[]): boolean {
     const held = this.windows.window?.chats.find((chat) => sessionIds.includes(chat.sessionId) && this.holdsComposerState(chat));
     if (held === undefined) return true;
     this.windowMenu = undefined;
-    this.setApp({ error: `Send or remove the attachments and quotes staged in "${held.title}" before moving it to another window.` });
+    this.setApp({ error: `Send or remove the attachments staged in "${held.title}" before moving it to another window.` });
     return false;
   }
 
   private holdsComposerState({ machineId, sessionId }: WindowChat): boolean {
     const staged = loadStagedAttachmentDraft(resolveStagedAttachmentKey(machineSessionKey(machineId, sessionId)));
-    return staged.attachments.length > 0 || staged.pendingImageReferences.length > 0 || this.replyQuotes.list({ machineId, sessionId }).length > 0;
+    return staged.attachments.length > 0 || staged.pendingImageReferences.length > 0;
   }
 
   /** Dragging a Chat out starts the move in the window that holds it; one with staged composer state does not lift. */
@@ -1366,34 +1379,16 @@ export class WorkbenchApp extends LitElement {
     }
   }
 
-  private readonly handleSend = async (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string, quotes: readonly StagedPromptChip[] = []): Promise<boolean> => {
+  private readonly handleSend = (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string): Promise<boolean> => {
     if (this.orientationPendingSessionId === this.app.selectedSession?.id) this.orientationPendingSessionId = undefined;
-    const target = quotes[0]?.target;
-    if (target === undefined) {
-      if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && this.auth.handleSlashCommand(text)) return true;
-      return this.sessions.send(text, streamingBehavior, attachments, delivery, folder);
-    }
-    const accepted = await this.sessions.send(composeQuotedReply(text, quotes), streamingBehavior, attachments, delivery, folder, target);
-    if (accepted) this.replyQuotes.consume(quotes);
-    return accepted;
+    if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && this.auth.handleSlashCommand(text)) return Promise.resolve(true);
+    return this.sessions.send(text, streamingBehavior, attachments, delivery, folder);
   };
 
-  private readonly replyQuotes = new PromptChipStore(() => { this.requestUpdate(); });
-  private visibleReplyQuotes: readonly StagedPromptChip[] = [];
-  private readonly removeReplyQuote = (chip: StagedPromptChip): void => { this.replyQuotes.removeByUser(chip); };
   private readonly replyToSelection = (quote: ReplyQuote): void => {
-    const session = this.app.selectedSession;
-    if (session === undefined) return;
-    addReplyQuote(this.replyQuotes, { machineId: selectedMachineId(this.app), sessionId: session.id }, quote);
+    this.promptEditor?.insertReplyQuote(quote);
     void this.focusChatComposer();
   };
-
-  /** Same array while unchanged, so per-token status renders do not re-render the composer's chips. */
-  private replyQuoteChips(target: PromptChipTarget): readonly StagedPromptChip[] {
-    const chips = this.replyQuotes.list(target);
-    if (chips.length !== this.visibleReplyQuotes.length || chips.some((chip, index) => chip !== this.visibleReplyQuotes[index])) this.visibleReplyQuotes = chips;
-    return this.visibleReplyQuotes;
-  }
 
   private readonly loadModels = () => this.sessions.listModels();
   private readonly setModel = (provider: string, modelId: string) => this.sessions.setModel(provider, modelId);
@@ -1446,7 +1441,7 @@ export class WorkbenchApp extends LitElement {
     const selected = this.app.selectedSession?.id;
     return html`
       <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()}
-        @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { void this.showWindowChat(event.detail.sessionId); }}
+        @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { this.swipe.cancel(); void this.showWindowChat(event.detail.sessionId); }}
         @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { this.closeWindowChats(event.detail.sessionIds); }}
         @window-home=${() => { this.goHome(); }}
         @window-layout=${() => { this.toggleWindowLayout(); }}
@@ -1826,13 +1821,9 @@ export class WorkbenchApp extends LitElement {
         <prompt-editor
           .draftStorage=${this.windows.draftStorage}
           .dense=${tile}
-          .promptChips=${this.replyQuoteChips({ machineId: selectedMachineId(state), sessionId: session.id })}
-          .onRemoveChip=${this.removeReplyQuote}
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
           .machineId=${selectedMachineId(state)}
-          .projectId=${state.selectedProject?.id}
-          .workspaceId=${state.selectedWorkspace?.id}
           .disabled=${session.archived === true}
           .canSteer=${state.status?.isStreaming === true}
           .isCompacting=${state.status?.isCompacting === true}
@@ -1946,8 +1937,8 @@ export class WorkbenchApp extends LitElement {
     .error, .chat-error { color: var(--pi-danger); }
     .chat-shell { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     header { position: relative; z-index: 6; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
-    /* In the tab row: the Chat tabs scroll and the tools keep their room; only a long Workstream title truncates. */
-    .chat-tools { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; }
+    /* In the tab row the tools keep their natural width, the drawer up to its cap: only the Chat tabs shrink and scroll. */
+    .chat-tools { flex: none; display: flex; align-items: center; gap: 4px; }
     :is(header, .chat-tools) > button { flex: 0 0 auto; min-height: 32px; border-color: transparent; background: transparent; }
     :is(header, .chat-tools) > button:hover:not(:disabled) { background: var(--pi-surface-hover); }
     :is(header, .chat-tools) > .icon-button:hover { border-color: transparent; }

@@ -1,68 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { SessionModel } from "../../shared/apiTypes";
-import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices } from "./promptCompletions";
+import { detectPromptCompletionTrigger } from "./promptCompletions";
 
 describe("detectPromptCompletionTrigger", () => {
-  it("keeps all-file suggestions active when an @ space query contains spaces", () => {
-    expect(detectPromptCompletionTrigger("open @ A FILE")).toEqual({
-      kind: "file",
-      query: "A FILE",
-      from: 5,
-      to: 13,
-      fileScope: "all",
-      allPrefix: "@ ",
-    });
-  });
-
-  it("keeps !@ all-file suggestions active when the query contains spaces", () => {
-    expect(detectPromptCompletionTrigger("open !@A FILE")).toEqual({
-      kind: "file",
-      query: "A FILE",
-      from: 5,
-      to: 13,
-      fileScope: "all",
-      allPrefix: "!@",
-    });
-  });
-
-  it("detects quoted all-file and tracked-file queries", () => {
-    expect(detectPromptCompletionTrigger("open @ \"A F")).toEqual({
-      kind: "file",
-      query: "A F",
-      from: 5,
-      to: 11,
-      fileScope: "all",
-      allPrefix: "@ ",
-      quoted: true,
-    });
-    expect(detectPromptCompletionTrigger("open @\"src/main")).toEqual({
-      kind: "file",
-      query: "src/main",
-      from: 5,
-      to: 15,
-      fileScope: "tracked",
-      quoted: true,
-    });
-  });
-
-  it("detects normal tracked file and leading slash command queries", () => {
-    expect(detectPromptCompletionTrigger("open @src/main")).toEqual({
-      kind: "file",
-      query: "src/main",
-      from: 5,
-      to: 14,
-      fileScope: "tracked",
-    });
+  it("detects leading slash command queries and leaves @ and # as plain text", () => {
     expect(detectPromptCompletionTrigger("/model")).toEqual({ kind: "command", query: "model", from: 0, to: 6 });
+    for (const draft of ["open @src/main", "open @ A FILE", "open !@A", "open @\"src", "#", "use #claude", "# Title"]) expect(detectPromptCompletionTrigger(draft)).toBeUndefined();
   });
 
-  it("completes only skill directives at whitespace boundaries throughout a prompt", () => {
+  it("completes skill directives at whitespace boundaries throughout a prompt", () => {
     for (const draft of ["/skill:a /skill:rev", "/template task /skill:rev", "Please\t/skill:rev", "Please\n/skill:rev"]) {
       const from = draft.lastIndexOf("/skill:rev");
       expect(detectPromptCompletionTrigger(draft)).toEqual({ kind: "command", query: "skill:rev", from, to: draft.length });
     }
-    expect(detectPromptCompletionTrigger("review /template")).toBeUndefined();
-    expect(detectPromptCompletionTrigger("review /model")).toBeUndefined();
+    // A bare mid-prompt slash is a skill-name query; the editor offers only skills there.
+    expect(detectPromptCompletionTrigger("review /model")).toEqual({ kind: "command", query: "model", from: 7, to: 13 });
     expect(detectPromptCompletionTrigger("https://host/skill:rev")).toBeUndefined();
     expect(detectPromptCompletionTrigger("review src/skill:rev")).toBeUndefined();
     expect(detectPromptCompletionTrigger("review `/skill:rev")).toBeUndefined();
@@ -83,7 +34,7 @@ describe("detectPromptCompletionTrigger", () => {
   it("leaves literal examples alone across lines but accepts later real directives", () => {
     for (const example of [
       'say "/skill:rev"', "say '/skill:rev'", "say `/skill:rev`",
-      "> /skill:rev", "```ts\n/skill:rev\n```", "~~~\n/skill:rev\n~~~",
+      "> /skill:rev", "```ts\n/skill:rev\n```", "~~~\n/skill:rev\n~~~", "x\n\n    /skill:rev",
     ]) {
       const inside = example.indexOf("/skill:rev");
       expect(detectPromptCompletionTrigger(example, inside + 10)).toBeUndefined();
@@ -129,86 +80,18 @@ describe("detectPromptCompletionTrigger", () => {
     expect(detectPromptCompletionTrigger("/skill:legacy.name", 18, new Set(["skill:legacy.name"]))).toEqual({ kind: "command", query: "skill:legacy.name", from: 0, to: 18 });
   });
 
+  it("opens the skill picker for a bare slash after whitespace or at a later line start", () => {
+    expect(detectPromptCompletionTrigger("please /")).toEqual({ kind: "command", query: "", from: 7, to: 8 });
+    expect(detectPromptCompletionTrigger("please /rev")).toEqual({ kind: "command", query: "rev", from: 7, to: 11 });
+    expect(detectPromptCompletionTrigger("first\n/re")).toEqual({ kind: "command", query: "re", from: 6, to: 9 });
+    expect(detectPromptCompletionTrigger("ask /rev, later", 8)).toEqual({ kind: "command", query: "rev", from: 4, to: 8 });
+    for (const draft of ["and/or", "see https://host/rev", "open /usr/bin", "run `/rev", "```\n/rev", "say \"/rev\" ok"]) {
+      expect(detectPromptCompletionTrigger(draft)).toBeUndefined();
+    }
+  });
+
   it("replaces the entire active skill token even with the cursor in its middle", () => {
     expect(detectPromptCompletionTrigger("/skill:a /skill:rev later", 17)).toEqual({ kind: "command", query: "skill:r", from: 9, to: 19 });
     expect(detectPromptCompletionTrigger("/template later", 4)).toEqual({ kind: "command", query: "tem", from: 0, to: 9 });
-  });
-
-  it("detects model queries for tokens starting with #", () => {
-    expect(detectPromptCompletionTrigger("#")).toEqual({ kind: "model", query: "", from: 0, to: 1 });
-    expect(detectPromptCompletionTrigger("use #anthropic/claude-opus")).toEqual({ kind: "model", query: "anthropic/claude-opus", from: 4, to: 26 });
-  });
-
-  it("detects model queries at any cursor position but not inside other tokens or quotes", () => {
-    expect(detectPromptCompletionTrigger("use #claude now", 10)).toEqual({ kind: "model", query: "claud", from: 4, to: 10 });
-    expect(detectPromptCompletionTrigger("say hello#world")).toBeUndefined();
-    expect(detectPromptCompletionTrigger('say "#claude')).toBeUndefined();
-  });
-
-  it("shows model completion for a markdown header only on the bare # keystroke", () => {
-    expect(detectPromptCompletionTrigger("#")).toEqual({ kind: "model", query: "", from: 0, to: 1 });
-    expect(detectPromptCompletionTrigger("# ")).toBeUndefined();
-    expect(detectPromptCompletionTrigger("# Title")).toBeUndefined();
-  });
-});
-
-describe("modelCompletionChoices", () => {
-  const models: SessionModel[] = [
-    { provider: "anthropic", id: "claude-opus-4-5", name: "Claude Opus 4.5" },
-    { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
-    { provider: "openai", id: "gpt-5.2", name: "GPT-5.2" },
-    { provider: "google", id: "gemini-3-pro" },
-  ];
-
-  it("lists all models for an empty query, mapped to #provider/id insert texts", () => {
-    expect(modelCompletionChoices(models, "")).toEqual([
-      { insertText: "#anthropic/claude-opus-4-5", detail: "anthropic", description: "Claude Opus 4.5" },
-      { insertText: "#anthropic/claude-sonnet-4-5", detail: "anthropic", description: "Claude Sonnet 4.5" },
-      { insertText: "#openai/gpt-5.2", detail: "openai", description: "GPT-5.2" },
-      { insertText: "#google/gemini-3-pro", detail: "google" },
-    ]);
-  });
-
-  it("filters case-insensitively across provider/id, id, and display name", () => {
-    expect(modelCompletionChoices(models, "OPUS-4")).toEqual([
-      { insertText: "#anthropic/claude-opus-4-5", detail: "anthropic", description: "Claude Opus 4.5" },
-    ]);
-    expect(modelCompletionChoices(models, "openai")).toEqual([
-      { insertText: "#openai/gpt-5.2", detail: "openai", description: "GPT-5.2" },
-    ]);
-    expect(modelCompletionChoices(models, "sonnet 4.5")).toEqual([
-      { insertText: "#anthropic/claude-sonnet-4-5", detail: "anthropic", description: "Claude Sonnet 4.5" },
-    ]);
-  });
-
-  it("omits the description when the display name matches the id", () => {
-    expect(modelCompletionChoices([{ provider: "ollama", id: "qwen3", name: "qwen3" }], "")).toEqual([
-      { insertText: "#ollama/qwen3", detail: "ollama" },
-    ]);
-  });
-
-  it("skips models without a provider or id since they cannot form a #provider/id reference", () => {
-    expect(modelCompletionChoices([{ id: "orphan" }, { provider: "ghost" }, { provider: "openai", id: "gpt-5.2" }], "")).toEqual([
-      { insertText: "#openai/gpt-5.2", detail: "openai" },
-    ]);
-  });
-
-  it("caps the list at 12 models, preserving server order", () => {
-    const many = Array.from({ length: 20 }, (_, index) => ({ provider: "p", id: `m${String(index)}` }));
-    const choices = modelCompletionChoices(many, "");
-    expect(choices).toHaveLength(12);
-    expect(choices[0]?.insertText).toBe("#p/m0");
-    expect(choices[11]?.insertText).toBe("#p/m11");
-  });
-});
-
-describe("fileCompletionInsertText", () => {
-  it("quotes completed file paths that contain spaces", () => {
-    expect(fileCompletionInsertText("A FILE", false)).toBe('@"A FILE"');
-  });
-
-  it("preserves all-file prefixes for directories so completion can continue in that scope", () => {
-    expect(fileCompletionInsertText("dir with space/", false, "@ ")).toBe('@ "dir with space/"');
-    expect(fileCompletionInsertText("vendor/", false, "!@")).toBe("!@vendor/");
   });
 });

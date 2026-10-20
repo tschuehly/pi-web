@@ -124,8 +124,6 @@ export class WorkbenchChatPane extends LitElement {
         .sessionId=${session.id}
         .cwd=${state.selectedWorkspace?.path}
         .machineId=${machineId}
-        .projectId=${state.selectedProject?.id}
-        .workspaceId=${state.selectedWorkspace?.id}
         .disabled=${session.archived === true}
         .canSteer=${state.status?.isStreaming === true}
         .isCompacting=${state.status?.isCompacting === true}

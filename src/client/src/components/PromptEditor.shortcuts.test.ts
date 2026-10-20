@@ -5,7 +5,7 @@ import { machineSessionKey } from "../machineKeys";
 import { saveDraft } from "../promptDraftStorage";
 import { PROMPT_ENTER_PREFERENCE_STORAGE_KEY, type PromptEnterPreference } from "../promptEnterBehavior";
 import { PromptEditor } from "./PromptEditor";
-import { api, type SessionModel } from "../api";
+import { api, type SlashCommand } from "../api";
 
 beforeEach(() => {
   localStorage.clear();
@@ -39,7 +39,7 @@ function press(editor: PromptEditor, key: string, modifiers: KeyboardEventInit =
   return event;
 }
 
-const sonnet: SessionModel = { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" };
+const tree: SlashCommand = { name: "tree", source: "builtin" };
 
 async function completionEditor(draft: string): Promise<PromptEditor> {
   const editor = await mount(undefined);
@@ -48,7 +48,7 @@ async function completionEditor(draft: string): Promise<PromptEditor> {
   await editor.updateComplete;
   editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.length } });
   await vi.waitFor(() => {
-    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain(sonnet.id);
+    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/tree");
   });
   return editor;
 }
@@ -323,93 +323,55 @@ describe("composer keyboard handling", () => {
     });
   });
 
-  it("hides stale suggestions before Enter handles a changed query", async () => {
-    const pending = deferred<{ models: SessionModel[] }>();
-    vi.spyOn(api, "models")
-      .mockResolvedValueOnce({ models: [sonnet] })
-      .mockReturnValueOnce(pending.promise);
-    const editor = await completionEditor("#cla");
-
-    editor.view?.dispatch({ changes: { from: 4, insert: "u" }, selection: { anchor: 5 } });
-    await editor.updateComplete;
-    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("#anthropic/claude-sonnet-4-5");
-    press(editor, "ArrowDown");
-    await editor.updateComplete;
-    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("#anthropic/claude-sonnet-4-5");
-    press(editor, "Enter");
-    expect(editor.onSend).toHaveBeenCalledWith("#clau", undefined, undefined, undefined, undefined);
-
-    pending.resolve({ models: [sonnet] });
-    await pending.promise;
-  });
-
-  it("hides and rejects a stale completion click while the current query loads", async () => {
-    const pending = deferred<{ models: SessionModel[] }>();
-    vi.spyOn(api, "models")
-      .mockResolvedValueOnce({ models: [sonnet] })
-      .mockReturnValueOnce(pending.promise);
-    const editor = await completionEditor("#cla");
-    const staleChoice = editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.querySelector<HTMLButtonElement>("button");
-
-    editor.view?.dispatch({ changes: { from: 4, insert: "u" }, selection: { anchor: 5 } });
-    await editor.updateComplete;
-    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("#anthropic/claude-sonnet-4-5");
-    staleChoice?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-    expect(editor.view?.state.doc.toString()).toBe("#clau");
-
-    pending.resolve({ models: [sonnet] });
-    await pending.promise;
-  });
-
   it("refreshes completions when only the cursor moves", async () => {
-    vi.spyOn(api, "models").mockResolvedValue({ models: [sonnet] });
-    const editor = await completionEditor("#cla");
+    vi.spyOn(api, "commands").mockResolvedValue([tree]);
+    const editor = await completionEditor("/tr");
 
     editor.view?.dispatch({ selection: { anchor: 0 } });
     await editor.updateComplete;
 
-    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("#anthropic/claude-sonnet-4-5");
+    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("/tree");
   });
 
   it("keeps Escape from allowing a late completion response to reopen the menu", async () => {
-    const pending = deferred<{ models: SessionModel[] }>();
-    vi.spyOn(api, "models").mockReturnValue(pending.promise);
+    const pending = deferred<SlashCommand[]>();
+    vi.spyOn(api, "commands").mockReturnValue(pending.promise);
     const editor = await mount(undefined);
     editor.sessionId = "test-session";
     editor.cwd = "/repo";
     await editor.updateComplete;
-    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: "#cla" }, selection: { anchor: 4 } });
-    await vi.waitFor(() => { expect(api.models).toHaveBeenCalledOnce(); });
+    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: "/tr" }, selection: { anchor: 3 } });
+    await vi.waitFor(() => { expect(api.commands).toHaveBeenCalledOnce(); });
 
     press(editor, "Escape");
-    pending.resolve({ models: [sonnet] });
+    pending.resolve([tree]);
     await pending.promise;
     await Promise.resolve();
     await Promise.resolve();
     await editor.updateComplete;
 
-    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("#anthropic/claude-sonnet-4-5");
+    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("/tree");
   });
 
   it("invalidates an in-flight completion request when the session changes", async () => {
-    const pending = deferred<{ models: SessionModel[] }>();
-    vi.spyOn(api, "models").mockReturnValue(pending.promise);
+    const pending = deferred<SlashCommand[]>();
+    vi.spyOn(api, "commands").mockReturnValue(pending.promise);
     const editor = await mount(undefined);
     editor.sessionId = "session-1";
     editor.cwd = "/repo";
     await editor.updateComplete;
-    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: "#cla" }, selection: { anchor: 4 } });
-    saveDraft(machineSessionKey("local", "session-2"), "#cla");
-    await vi.waitFor(() => { expect(api.models).toHaveBeenCalledOnce(); });
+    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: "/tr" }, selection: { anchor: 3 } });
+    saveDraft(machineSessionKey("local", "session-2"), "/tr");
+    await vi.waitFor(() => { expect(api.commands).toHaveBeenCalledOnce(); });
 
     editor.sessionId = "session-2";
     await editor.updateComplete;
-    pending.resolve({ models: [sonnet] });
+    pending.resolve([tree]);
     await pending.promise;
     await Promise.resolve();
     await Promise.resolve();
     await editor.updateComplete;
-    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("#anthropic/claude-sonnet-4-5");
+    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("/tree");
   });
 
   it("does not submit while composing", async () => {

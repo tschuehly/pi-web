@@ -1,6 +1,6 @@
 import { parseSessionDefaults } from "../../../shared/sessionDefaults";
 import type { SessionDefaultsUpdate } from "../../../shared/apiTypes";
-import type { AskUserSubmission, DeleteWorkspaceFileResponse, ExtensionDialogAnswer, FileSuggestion, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, QueuedSessionMessage, ServerNoticeDismissRequest, SessionBulkMutationRef, SessionCleanupRequest, SessionModelScopeMode, SessionNotificationDismissThrough, SessionRef, SessionTreeForkRequest, SessionTreeForkResult, SessionTreeNavigateRequest, SessionUnreadAcknowledgeRequest, WorkspaceRemovalRequest, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
+import type { AskUserSubmission, DeleteWorkspaceFileResponse, ExtensionDialogAnswer, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, QueuedSessionMessage, ServerNoticeDismissRequest, SessionBulkMutationRef, SessionCleanupRequest, SessionModelScopeMode, SessionNotificationDismissThrough, SessionRef, SessionTreeForkRequest, SessionTreeForkResult, SessionTreeNavigateRequest, SessionUnreadAcknowledgeRequest, WorkspaceRemovalRequest, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
 import { WORKSPACE_SEARCH_CURSOR } from "../../../shared/workspaceFiles";
 import { resolveAppUrl } from "../appUrl";
 import { request } from "./http";
@@ -372,25 +372,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export interface FileSuggestionQueryOptions {
-  kind?: FileSuggestion["kind"] | undefined;
-  mode?: "file" | "path" | undefined;
-  scope?: "tracked" | "all" | undefined;
-  machineId?: string | undefined;
-  projectId: string;
-  workspaceId: string;
-}
-
-export const filesApi = {
-  files: (query: string, options: FileSuggestionQueryOptions) => {
-    const params = new URLSearchParams({ q: query });
-    if (options.kind !== undefined) params.set("kind", options.kind);
-    if (options.mode !== undefined) params.set("mode", options.mode);
-    if (options.scope !== undefined) params.set("scope", options.scope);
-    return request(`${workspaceFilesPath(options.machineId ?? "local", options.projectId, options.workspaceId)}/files?${params.toString()}`, arrayOf(parseFileSuggestion));
-  },
-};
-
 const workspaceTrustPath = (machineId: string, projectId: string, workspaceId: string) =>
   `${machinePrefix(machineId)}/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}/trust`;
 
@@ -416,7 +397,6 @@ export const api = {
   ...projectsApi,
   ...workspacesApi,
   ...sessionsApi,
-  ...filesApi,
   ...trustApi,
 
 };

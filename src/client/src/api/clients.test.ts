@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PiWebConfigValues, TerminalCommandRun, Workspace } from "../../../shared/apiTypes";
-import { configApi, filesApi, machinesApi, noticesApi, piPackagesApi, piWebApi, pluginsApi, SessionTreeForkUnavailableError, sessionsApi, workspacesApi } from "./clients";
+import { configApi, machinesApi, noticesApi, piPackagesApi, piWebApi, pluginsApi, SessionTreeForkUnavailableError, sessionsApi, workspacesApi } from "./clients";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
@@ -622,17 +622,6 @@ describe("request cancellation", () => {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve, reject) => { server.close((error) => { if (error === undefined) resolve(); else reject(error); }); });
     }
-  });
-});
-
-describe("machine-scoped file suggestion API", () => {
-  it("uses the workspace-scoped route", async () => {
-    const fetchMock = stubJsonFetch([]);
-
-    await filesApi.files("README", { projectId: "p 1", workspaceId: "w/1", scope: "tracked", machineId: "remote a" });
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/projects/p%201/workspaces/w%2F1/files?q=README&scope=tracked");
   });
 });
 

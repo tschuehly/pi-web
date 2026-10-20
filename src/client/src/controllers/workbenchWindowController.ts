@@ -282,6 +282,11 @@ export class WorkbenchWindowController {
     return holder !== undefined && await this.isHeld(holder) ? holder : undefined;
   }
 
+  /** Whether this window holds the Chat, read from the store as stored now: a suspended page may have missed changes. */
+  holds(machineId: string, sessionId: string): boolean {
+    return this.windowId !== "" && this.read()[this.windowId]?.chats.some((chat) => chat.machineId === machineId && chat.sessionId === sessionId) === true;
+  }
+
   /** The reservation is authoritative even before its backend id is known in this window. */
   reservationId(sessionId: string, startupToken?: string): string {
     return Object.values(this.read()).flatMap((window) => window.chats).find((chat) => chat.sessionId === sessionId || startupToken !== undefined && chat.startupToken === startupToken)?.sessionId ?? sessionId;
