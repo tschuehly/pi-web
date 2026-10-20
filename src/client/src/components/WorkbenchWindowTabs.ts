@@ -90,6 +90,8 @@ export class WorkbenchWindowTabs extends LitElement {
   /** The Chat on screen; undefined while the home shows. */
   @property({ attribute: false }) selected: string | undefined;
   @property({ attribute: false }) statuses: Record<string, ChatTabStatus> = {};
+  /** Each Chat's open `ask_user` questions, shown in place of its dot. */
+  @property({ attribute: false }) questionCounts: Record<string, number> = {};
   /** This window's id, carried by a drag so the receiving window knows where the Chats come from. */
   @property({ attribute: false }) windowId = "";
 
@@ -203,11 +205,12 @@ export class WorkbenchWindowTabs extends LitElement {
     const status = this.status(chat);
     const open = () => { this.select(chat.sessionId); };
     const move = this.moveHandlers([chat.sessionId], chat.title);
+    const questions = this.questionCounts[chat.sessionId] ?? 0;
     return html`
       <div role="tab" tabindex="0" class="chat-tab" data-session=${chat.sessionId} data-status=${status} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.title} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
         @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([chat.sessionId]); }}>
-        ${renderChatStatusDot(status)}
+        ${questions === 0 ? renderChatStatusDot(status) : html`<span class="questions" role="img" aria-label=${`${String(questions)} open ${questions === 1 ? "question" : "questions"}`}>${String(questions)}</span>`}
         <span class="title">${chat.title}</span>
         <button class="close" title="Close" aria-label=${`Close ${chat.title}`} @click=${(event: Event) => { event.stopPropagation(); this.close([chat.sessionId]); }} @keydown=${(event: KeyboardEvent) => { event.stopPropagation(); }}>${renderBuiltinTabIcon("x")}</button>
       </div>`;
@@ -241,6 +244,7 @@ export class WorkbenchWindowTabs extends LitElement {
     .chat-tab::after { right: 4px; background: var(--pi-text); }
     .chat-tab:not([aria-selected="true"]):hover::after { opacity: .25; }
     .chat-tab[data-status="needs"] { color: var(--pi-text); }
+    .questions { flex: 0 0 auto; min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px; border-radius: 8px; background: var(--pi-warning); color: var(--pi-bg); font: 700 10px/16px system-ui, sans-serif; text-align: center; font-variant-numeric: tabular-nums; }
     .title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .close { flex: 0 0 auto; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--pi-muted); }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }

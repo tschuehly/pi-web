@@ -15,11 +15,12 @@ import type { WindowChat } from "../workbenchWindows";
 import "./ChatView";
 import "./CommandPicker";
 import "./PromptEditor";
+import "./WorkbenchQuestionChips";
 
 /**
  * A grid tile's Chat beside the focused one: its live transcript and a compact composer, driven by its own
- * SessionController. Focusing the tile hands the Chat to the full Workbench shell, so everything else (Files,
- * Questions, goal, delegates, quotes) stays with the focused Chat.
+ * SessionController, with its open questions as chips above the composer. Focusing the tile hands the Chat to the full
+ * Workbench shell, so everything else (Files, goal, delegates, quotes) stays with the focused Chat.
  */
 @customElement("workbench-chat-pane")
 export class WorkbenchChatPane extends LitElement {
@@ -116,6 +117,7 @@ export class WorkbenchChatPane extends LitElement {
         .onLoadMore=${() => { void this.sessions.loadEarlierMessages(); }}
         .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
       ></chat-view>
+      <workbench-question-chips .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => this.sessions.submitAsk(askId, submission)}></workbench-question-chips>
       <prompt-editor
         .draftStorage=${this.draftStorage}
         dense
@@ -150,7 +152,8 @@ export class WorkbenchChatPane extends LitElement {
     :host { --pi-panel-padding: 5px; --pi-message-padding: 5px; --pi-toolbar-gap: 3px; display: flex; flex-direction: column; min-width: 0; min-height: 0; color: var(--pi-text); font: 14px system-ui, sans-serif; }
     .placeholder { margin: auto; color: var(--pi-muted); }
     .error { flex: 0 0 auto; padding: 4px 10px; background: color-mix(in srgb, var(--pi-danger) 12%, transparent); color: var(--pi-danger); }
-    chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+    /* Zero basis: the transcript takes what is left, so the question chips and drawer never shrink for it. */
+    chat-view { flex: 1 1 0; min-height: 0; overflow: hidden; }
     prompt-editor { flex: 0 0 auto; }
   `;
 }

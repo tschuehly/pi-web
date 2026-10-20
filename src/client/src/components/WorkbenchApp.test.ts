@@ -24,6 +24,7 @@ import { EditorView } from "@codemirror/view";
 import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
 import { WorkbenchChatPane } from "./WorkbenchChatPane";
+import type { WorkbenchQuestionChips } from "./WorkbenchQuestionChips";
 import { SessionController } from "../controllers/sessionController";
 import { WINDOW_CHANNEL, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY } from "../controllers/workbenchWindowController";
 import { FakeLocks } from "../controllers/webLocks.testSupport";
@@ -645,32 +646,30 @@ describe("Workbench Chat chooser", () => {
     pane()?.shadowRoot?.querySelector<HTMLInputElement>('input[aria-label="Filter files"]')?.blur();
   });
 
-  it("toggles a Questions pane listing only this Chat's open question sets, with an open-count badge", async () => {
+  it("shows only this Chat's open questions as chips above its composer, answering through the session, with no Questions button or pane", async () => {
     const current = session("human", "Edit notes");
     const app = await mountChooser([current]);
     const openAsk = (askId: string) => ({ askId, askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, context: "Why", questions: [{ id: "db", question: "Which database?", options: [] }] });
-    setState(app, { ...getState(app), selectedSession: current, pendingAsks: [openAsk("abc-1"), openAsk("def-2")] });
+    setState(app, { ...getState(app), selectedSession: current, pendingAsks: [openAsk("abc-1"), openAsk("def-2")], sessionStatuses: { other: { ...idleStatus("other"), pendingAsks: [openAsk("xyz-9")] } } });
     await app.updateComplete;
-    const toggle = () => app.shadowRoot?.querySelector<HTMLButtonElement>("header .questions-toggle");
+    const chips = app.shadowRoot?.querySelector<WorkbenchQuestionChips>(".chat-column > workbench-question-chips");
 
-    expect(toggle()?.getAttribute("aria-label")).toBe("Questions, 2 open");
-    expect(toggle()?.querySelector(".badge")?.textContent).toBe("2");
+    expect(chips?.nextElementSibling?.localName).toBe("prompt-editor");
+    expect(chips?.asks.map((ask) => ask.askId)).toEqual(["abc-1", "def-2"]);
     expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.pendingAsks).toEqual([]);
-    expect(app.shadowRoot?.querySelector("workbench-questions-pane")).toBeNull();
+    expect(app.shadowRoot?.querySelector(".questions-toggle, workbench-questions-pane, #workbench-questions")).toBeNull();
+    expect(WorkbenchApp.styles.cssText).not.toContain("questions");
 
-    toggle()?.click();
-    await app.updateComplete;
-    const pane = app.shadowRoot?.querySelector("workbench-questions-pane");
-    expect(toggle()?.getAttribute("aria-expanded")).toBe("true");
-    expect(pane?.asks.map((ask) => ask.askId)).toEqual(["abc-1", "def-2"]);
+    const submit = vi.spyOn(api, "submitAsk").mockResolvedValue({ result: "closed", sessionStatus: idleStatus(current.id) });
+    await chips?.onSubmit?.("def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" });
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: current.id }), "def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" }, "local");
 
     setState(app, { ...getState(app), pendingAsks: [] });
     await app.updateComplete;
-    expect(toggle()?.querySelector(".badge")).toBeNull();
-    expect(pane?.asks).toEqual([]);
+    expect(chips?.asks).toEqual([]);
   });
 
-  it("shows Files or Questions in one side-pane slot with a shared divider, width and close chevron", async () => {
+  it("keeps Files in the side slot with its divider, width and close chevron", async () => {
     const current = session("human", "Edit notes");
     const app = await mountChooser([current]);
     setState(app, { ...getState(app), selectedSession: current });
@@ -681,39 +680,26 @@ describe("Workbench Chat chooser", () => {
     const $ = (selector: string) => app.shadowRoot?.querySelector(selector) ?? null;
     const click = async (selector: string) => { app.shadowRoot?.querySelector<HTMLButtonElement>(selector)?.click(); await app.updateComplete; };
 
-    await click("header .questions-toggle");
-    expect($("workbench-questions-pane")).not.toBeNull();
+    await click(".files-toggle");
+    expect($("workbench-files-pane")).not.toBeNull();
     const divider = $(".files-divider");
-    expect(divider?.getAttribute("aria-label")).toBe("Resize Questions pane");
-    expect(divider?.getAttribute("aria-controls")).toBe("workbench-questions");
-    expect($(".files-close")?.getAttribute("aria-label")).toBe("Close Questions");
-    expect(WorkbenchApp.styles.cssText).toMatch(/workbench-files-pane, workbench-questions-pane \{ flex: 0 0 min\(var\(--files-width\)/);
+    expect(divider?.getAttribute("aria-label")).toBe("Resize Files pane");
+    expect(divider?.getAttribute("aria-controls")).toBe("workbench-files");
+    expect($(".files-close")?.getAttribute("aria-label")).toBe("Close Files");
+    expect($(".files-toggle")?.getAttribute("aria-expanded")).toBe("true");
+    expect(WorkbenchApp.styles.cssText).toMatch(/workbench-files-pane \{ flex: 0 0 min\(var\(--files-width\)/);
     divider?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
     await app.updateComplete;
     expect($(".files-divider")?.getAttribute("aria-valuenow")).toBe("424");
 
-    await click(".files-toggle");
-    expect($("workbench-questions-pane")).toBeNull();
-    expect($("workbench-files-pane")).not.toBeNull();
-    expect(app.shadowRoot?.querySelectorAll(".files-divider")).toHaveLength(1);
-    expect($(".files-divider")?.getAttribute("aria-valuenow")).toBe("424");
-    expect($(".files-close")?.getAttribute("aria-label")).toBe("Close Files");
-    expect($(".files-toggle")?.getAttribute("aria-expanded")).toBe("true");
-    expect($("header .questions-toggle")?.getAttribute("aria-expanded")).toBe("false");
-
     const files = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
     if (!files) throw new Error("Files pane was not mounted");
     const canClose = vi.spyOn(files, "canClose").mockReturnValue(false);
-    await click("header .questions-toggle");
-    expect($("workbench-files-pane")).toBe(files);
-    expect($("workbench-questions-pane")).toBeNull();
-    canClose.mockReturnValue(true);
-    await click("header .questions-toggle");
-    expect($("workbench-files-pane")).toBeNull();
-    expect($("header .questions-toggle")?.getAttribute("aria-expanded")).toBe("true");
-
     await click(".files-close");
-    expect($("workbench-questions-pane")).toBeNull();
+    expect($("workbench-files-pane")).toBe(files);
+    canClose.mockReturnValue(true);
+    await click(".files-close");
+    expect($("workbench-files-pane")).toBeNull();
     expect($(".files-divider")).toBeNull();
   });
 
@@ -2173,13 +2159,36 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
   });
 
+  it("counts each Chat's open questions on its tab, live from this window and from status another window caused", async () => {
+    const app = await mountWithWorkstreamChats();
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]); });
+    const selected = getState(app).selectedSession?.id;
+    const other = selected === "a1" ? "a2" : "a1";
+    const ask = (askId: string, questions: number) => ({ askId, askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: Array.from({ length: questions }, (_, index) => ({ id: `q${String(index)}`, question: `Question ${String(index)}?`, options: [] })) });
+    const count = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"] .questions`)?.textContent ?? null;
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+
+    receive({ type: "status.update", status: { ...idleStatus(other), pendingAsks: [ask("abc-1", 2), ask("def-2", 1)] } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(count(other)).toBe("3"); });
+    expect(count(selected ?? "")).toBeNull();
+
+    // The selected Chat's own stream keeps its live asks, as an ask.opened frame does.
+    setState(app, { ...getState(app), pendingAsks: [ask("ghi-3", 1)] });
+    await vi.waitFor(async () => { await app.updateComplete; expect(count(selected ?? "")).toBe("1"); });
+
+    receive({ type: "status.update", status: { ...idleStatus(other), pendingAsks: [ask("def-2", 1)] } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(count(other)).toBe("1"); });
+    receive({ type: "status.update", status: idleStatus(other) });
+    await vi.waitFor(async () => { await app.updateComplete; expect(count(other)).toBeNull(); });
+  });
+
   it("puts the Chat's tools in the tab row, naming its folder in the Files tooltip, and gives them back to the tile in a grid", async () => {
     const app = await mountWithWorkstreamChats();
     const tools = () => app.shadowRoot?.querySelector('workbench-window-tabs > .chat-tools[slot="tools"]');
 
     expect(app.shadowRoot?.querySelector(".chat-shell > header")).toBeNull();
     expect(tools()?.querySelector(".files-toggle")?.getAttribute("title")).toBe("Files \u2014 Project \u00b7 main (/repo)");
-    expect(tools()?.querySelector(".questions-toggle")).not.toBeNull();
     await vi.waitFor(() => { expect(drawerTitle(app)).toBe("Docs"); });
     expect(tools()?.querySelector("workstream-context-drawer")).not.toBeNull();
     expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]);
@@ -2250,6 +2259,21 @@ describe("window tabs", () => {
     expect(tiles()).toHaveLength(1);
     expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]);
     expect(app.shadowRoot?.querySelector('header button[aria-label="Full size"]')).toBeNull();
+  });
+
+  it("puts a grid tile's own open questions as chips above its compact composer", async () => {
+    vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+    const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "db", question: "Which database?", options: [] }] };
+    vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(ref.id === "a2" ? { ...idleStatus("a2"), pendingAsks: [ask] } : idleStatus(ref.id)));
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
+    await settled(app);
+    const tile = (sessionId: string) => app.shadowRoot?.querySelector('.tile[data-session="' + sessionId + '"] workbench-chat-pane')?.shadowRoot;
+
+    await vi.waitFor(() => { expect(tile("a2")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([ask]); });
+    expect(tile("a2")?.querySelector("workbench-question-chips")?.nextElementSibling?.localName).toBe("prompt-editor");
+    expect(tile("a1")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([]);
   });
 
   it("keeps the Chat on screen and its Files pane mounted across \u2303G and full size", async () => {
@@ -3318,7 +3342,8 @@ describe("Workbench Chat controls", () => {
     expect(goal.status).toBe(getState(app).status);
     await goal.updateComplete;
     expect(goal.shadowRoot?.querySelector("summary")?.textContent).toContain("Build the UI");
-    expect(goal.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
+    expect(goal.nextElementSibling?.tagName).toBe("WORKBENCH-QUESTION-CHIPS");
+    expect(goal.nextElementSibling?.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
     expect(collapsedRoster.collapsed).toBe(true);
     expect(shell.querySelector("status-bar")).toBeNull();
     expect(shell.querySelector("working-mode-controls")).toBeNull();
