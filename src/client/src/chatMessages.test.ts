@@ -351,6 +351,10 @@ This block replaces every earlier <working-mode> block.
         { type: "text", text: " after" },
       ],
     }]);
+    expect(normalizeMessage({ role: "user", content: `${block("a")}\n\nthen ${block("b")} done` })).toEqual([
+      { role: "user", parts: [{ type: "skillInvocation", name: "a", location: "/skills/a", content: "Use <a>" }] },
+      { role: "user", parts: [{ type: "text", text: "then " }, { type: "skillInvocation", name: "b", location: "/skills/b", content: "Use <b>" }, { type: "text", text: " done" }] },
+    ]);
     expect(normalizeMessage({ role: "user", content: `${block("a")}\n<skill broken>` })).toEqual([{
       role: "user", parts: [
         { type: "skillInvocation", name: "a", location: "/skills/a", content: "Use <a>" },

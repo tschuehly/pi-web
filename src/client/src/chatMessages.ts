@@ -136,8 +136,13 @@ function normalizeSkillInvocation(parts: ChatPart[]): ChatLine[] | undefined {
   const skill = parseSkillBlock(text);
   if (skill !== undefined) return [
     { role: "user", parts: [{ type: "skillInvocation", name: skill.name, location: skill.location, content: skill.content }] },
-    ...(skill.userMessage === undefined ? [] : [{ role: "user" as const, parts: [{ type: "text" as const, text: skill.userMessage }] }]),
+    ...(skill.userMessage === undefined ? [] : [{ role: "user" as const, parts: inlineSkillParts(skill.userMessage) ?? [{ type: "text" as const, text: skill.userMessage }] }]),
   ];
+  const segments = inlineSkillParts(text);
+  return segments === undefined ? undefined : [{ role: "user", parts: segments }];
+}
+
+function inlineSkillParts(text: string): ChatPart[] | undefined {
   const segments: ChatPart[] = [];
   const pattern = /<skill name="([^"\r\n]+)" location="([^"\r\n]+)">\n([\s\S]*?)\n<\/skill>/g;
   let cursor = 0;
@@ -148,7 +153,7 @@ function normalizeSkillInvocation(parts: ChatPart[]): ChatLine[] | undefined {
   }
   if (segments.length === 0) return undefined;
   if (cursor < text.length) segments.push({ type: "text", text: text.slice(cursor) });
-  return [{ role: "user", parts: segments }];
+  return segments;
 }
 
 function parseSkillBlock(text: string): { name: string; location: string; content: string; userMessage?: string } | undefined {
