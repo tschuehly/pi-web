@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { api, type Machine, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
 import { ACTIVITY_STATUS_KEY, GOAL_STATUS_KEY } from "../extensionStatusSnapshots";
-import { DesktopNotificationController, NATIVE_NOTIFICATION_OPEN_EVENT } from "../controllers/desktopNotificationController";
+import { DesktopNotificationController, NATIVE_NOTIFICATION_HOLDS_EVENT, NATIVE_NOTIFICATION_OPEN_EVENT } from "../controllers/desktopNotificationController";
 import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
 import { readStoredPresentationProfile } from "../presentationProfiles";
@@ -2463,6 +2463,28 @@ describe("window tabs", () => {
       owner.close();
       release();
     }
+  });
+
+  it("tells the macOS app which Chats this window holds, so a notification goes to their window and none other changes", async () => {
+    const app = await mountWithWorkstreamChats();
+    const elsewhere = { sessionId: "c1", title: "Elsewhere", machineId: "local", projectId: "project", workspaceId: "workspace" };
+    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w2", elsewhere)));
+    const holds = (machineId: string, sessionId: string) => !window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_HOLDS_EVENT, { cancelable: true, detail: { machineId, sessionId } }));
+    const before = localStorage.getItem(WINDOW_STORE_KEY);
+
+    expect(holds("local", "a2")).toBe(true);
+    expect(holds("local", "c1")).toBe(false);
+    expect(holds("remote", "a2")).toBe(false);
+    expect(holds("local", "unknown")).toBe(false);
+    await settled(app);
+    expect(localStorage.getItem(WINDOW_STORE_KEY)).toBe(before);
+    expect(getState(app).selectedSession?.id).toBe("b1");
+
+    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
+    window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "a2" } }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    expect(new URLSearchParams(window.location.search).get("win")).toBe("w1");
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
   });
 
   it("shows a Chat another live window holds there when Back or the chooser opens it, and stays as it is", async () => {
