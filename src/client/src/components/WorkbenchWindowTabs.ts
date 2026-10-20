@@ -223,11 +223,12 @@ export class WorkbenchWindowTabs extends LitElement {
      * Two rows, one language: quiet text tabs on the surface, the selected one in --pi-text with a 2px underline,
      * the Workstream colour (--ws) on top and neutral beneath so the two never compete. A tab sizes to its label
      * between 120px and 200px, ellipsizing the rest (the full title is its tooltip); a crowded row shrinks its tabs
-     * to 120px, then scrolls while the tools beside it stay put.
+     * to 120px, then scrolls while the tools beside it stay put. Selection changes only colour, at once: no fade, no
+     * width change.
      */
     .tabs { flex: 1 1 auto; min-width: 0; align-self: stretch; display: flex; overflow-x: auto; scrollbar-width: none; }
-    .workstream-tab, .chat-tab { position: relative; flex: 0 1 auto; min-width: 120px; max-width: 200px; overflow: hidden; display: flex; align-items: center; gap: 6px; box-sizing: border-box; color: var(--pi-muted); white-space: nowrap; cursor: pointer; transition: color .12s ease; }
-    .workstream-tab::after, .chat-tab::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--ws, var(--pi-accent)); opacity: 0; transition: opacity .12s ease; }
+    .workstream-tab, .chat-tab { position: relative; flex: 0 1 auto; min-width: 120px; max-width: 200px; overflow: hidden; display: flex; align-items: center; gap: 6px; box-sizing: border-box; color: var(--pi-muted); white-space: nowrap; cursor: pointer; }
+    .workstream-tab::after, .chat-tab::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--ws, var(--pi-accent)); opacity: 0; }
     .workstream-tab:hover, .chat-tab:hover, [aria-selected="true"] { color: var(--pi-text); }
     .workstream-tab:hover::after { opacity: .35; }
     [aria-selected="true"]::after { opacity: 1; }

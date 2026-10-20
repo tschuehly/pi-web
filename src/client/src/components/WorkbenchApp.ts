@@ -531,6 +531,9 @@ export class WorkbenchApp extends LitElement {
       const session = isCurrent() ? this.sessions.pendingSession(sessionId, chat.startupToken) ?? await this.knownSession(sessionId, workspace.path, machineId, isCurrent) : undefined;
       if (!isCurrent()) return;
       if (session === undefined) throw new Error("This Chat is no longer available.");
+      // The Chat on screen stays until the next one can paint its transcript: never a blank frame between them.
+      await this.sessions.prefetchTranscript(session, machineId);
+      if (!isCurrent()) return;
       await this.sessions.selectSession(session, this.inWorkspace(session, sequence, { selectedProject: project, workspaces, selectedWorkspace: workspace, sessions: [...unsavedChatsIn(this.app.sessions, workspace.path, session.id), session], error: "" }));
     } catch (error) {
       if (isCurrent()) this.setApp({ error: error instanceof Error ? error.message : String(error) });

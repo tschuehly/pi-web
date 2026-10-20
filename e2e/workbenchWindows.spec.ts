@@ -100,6 +100,71 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await expect(page.locator("workbench-window-tabs .chat-tab .title")).toHaveText(["Draft the release notes"]);
 });
 
+interface SwitchFrame { phase: string; tabs: { session: string; width: number; selected: boolean; status: string; color: string; opacity: string }[]; shown: string; articles: number; scrollTop: number; atBottom: boolean }
+
+/** Samples every frame: the Chat tabs' widths, colours and selection, and the Chat on screen with its transcript scroll. */
+function sampleFrames(): void {
+  const frames: unknown[] = [];
+  Reflect.set(window, "switchFrames", frames);
+  const sample = () => {
+    const app = document.querySelector("pi-workbench-app")?.shadowRoot;
+    const tabs = app?.querySelector("workbench-window-tabs")?.shadowRoot;
+    const shell = app?.querySelector("main.chat-shell");
+    const chat = shell?.querySelector("chat-view")?.shadowRoot?.querySelector(".chat");
+    frames.push({
+      phase: String(Reflect.get(window, "switchPhase")),
+      tabs: [...tabs?.querySelectorAll<HTMLElement>(".chat-tab") ?? []].map((tab) => ({ session: tab.dataset["session"] ?? "", width: tab.getBoundingClientRect().width, selected: tab.getAttribute("aria-selected") === "true", status: tab.dataset["status"] ?? "", color: getComputedStyle(tab).color, opacity: getComputedStyle(tab).opacity })),
+      shown: shell?.getAttribute("data-session") ?? "",
+      articles: chat?.querySelectorAll("article").length ?? 0,
+      scrollTop: chat?.scrollTop ?? -1,
+      atBottom: chat === null || chat === undefined ? false : chat.scrollHeight - chat.scrollTop - chat.clientHeight < 2,
+    });
+    if (Reflect.get(window, "switchFrames") === frames) requestAnimationFrame(afterPaint);
+  };
+  // Read once the frame's animation callbacks (scroll restores among them) ran and it painted.
+  const afterPaint = () => { setTimeout(sample, 0); };
+  requestAnimationFrame(afterPaint);
+}
+
+test("switches tabs steadily: same tab widths, one selected tab, never a blank Chat, and each Chat's scroll kept", async ({ page }) => {
+  await openSeededWindow(page, true);
+  await expect(shownChat(page).locator("chat-view article").first()).toBeVisible();
+  const transcript = (page: Page) => shownChat(page).locator("chat-view .chat");
+  const phase = (name: string) => page.evaluate((value) => { Reflect.set(window, "switchPhase", value); }, name);
+  const show = async (session: string, title: string) => {
+    await chatTab(page, title).click();
+    await expect(shownChat(page)).toHaveAttribute("data-session", session);
+    await page.waitForTimeout(300);
+  };
+  await page.evaluate(sampleFrames);
+  // First visits load each Chat; GUIDE stays at its bottom, RELEASE is scrolled up.
+  await phase("first");
+  await show(GUIDE, "Review the install guide");
+  await show(RELEASE, "Draft the release notes");
+  await transcript(page).hover();
+  await page.mouse.wheel(0, -600);
+  await page.waitForTimeout(300);
+  const releaseTop = await transcript(page).evaluate((chat) => chat.scrollTop);
+  expect(releaseTop).toBeGreaterThan(0);
+  await phase("again");
+  for (const [session, title] of [[NOTES, "Where are the notes?"], [GUIDE, "Review the install guide"], [RELEASE, "Draft the release notes"], [NOTES, "Where are the notes?"], [RELEASE, "Draft the release notes"], [GUIDE, "Review the install guide"]] as const) await show(session, title);
+  const frames = await page.evaluate(() => { const frames = Reflect.get(window, "switchFrames") as SwitchFrame[]; Reflect.set(window, "switchFrames", undefined); return frames; });
+
+  expect(frames.length).toBeGreaterThan(30);
+  for (const session of [NOTES, RELEASE, GUIDE]) {
+    const widths = new Set(frames.map((frame) => frame.tabs.find((tab) => tab.session === session)?.width.toFixed(1)));
+    expect(widths, `widths of tab ${session}`).toEqual(new Set([[...widths][0]]));
+  }
+  const unsteady = frames.filter((frame) => frame.tabs.filter((tab) => tab.selected).length !== 1 || frame.tabs.some((tab) => tab.opacity !== "1"));
+  expect(unsteady, "frames without exactly one selected, fully opaque tab").toEqual([]);
+  // The selected tab is in full text colour from its first frame: no fade through grey.
+  expect(new Set(frames.flatMap((frame) => frame.tabs.filter((tab) => tab.selected).map((tab) => tab.color))).size, "selected tab colours").toBe(1);
+  expect(frames.filter((frame) => frame.shown === "" || frame.articles === 0), "blank Chat frames").toEqual([]);
+  const again = frames.filter((frame) => frame.phase === "again");
+  expect(new Set(again.filter((frame) => frame.shown === RELEASE).map((frame) => Math.round(frame.scrollTop))), "RELEASE scroll in every frame").toEqual(new Set([Math.round(releaseTop)]));
+  expect(frames.filter((frame) => frame.shown === GUIDE && !frame.atBottom).length, "GUIDE frames off its bottom").toBe(0);
+});
+
 test("a second page opened on a live window's id gets a window of its own", async ({ page, context }) => {
   await openSeededWindow(page);
   const duplicate = await context.newPage();
