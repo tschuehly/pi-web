@@ -96,6 +96,64 @@ describe("inline reply quotes", () => {
     expect(onSend).toHaveBeenCalledWith(`${Q1}\n\n${Q2}\n\nWhy?`, undefined, undefined, undefined, undefined);
   });
 
+  it("puts text typed right after a collapsed quote on its own paragraph, visible and outside the quote", async () => {
+    const editor = await mount();
+    const long = { entryId: "m9", excerpt: "A quoted sentence that is clearly longer than the sixty character label" };
+    const quote = "> [msg m9](#entry:m9) A quoted sentence that is clearly longer than the sixty character label";
+    editor.insertReplyQuote(long);
+    view(editor).dispatch({ selection: EditorSelection.cursor(quote.length) });
+
+    view(editor).dispatch({ changes: { from: quote.length, insert: "W" }, selection: EditorSelection.cursor(quote.length + 1), userEvent: "input.type" });
+    view(editor).dispatch({ changes: { from: view(editor).state.selection.main.head, insert: "hy?" }, selection: EditorSelection.cursor(view(editor).state.selection.main.head + 3), userEvent: "input.type" });
+
+    expect(view(editor).state.doc.toString()).toBe(`${quote}\n\nWhy?\n\n`);
+    expect(view(editor).state.selection.main.head).toBe(quote.length + 6);
+    expect(view(editor).contentDOM.textContent).toContain("Why?");
+    expect(toggles(editor).map((toggle) => toggle.getAttribute("aria-expanded"))).toEqual(["false"]);
+
+    view(editor).dispatch({ changes: { from: 0, insert: "Hi" }, selection: EditorSelection.cursor(2), userEvent: "input.type" });
+    expect(view(editor).state.doc.toString()).toBe(`Hi\n\n${quote}\n\nWhy?\n\n`);
+    expect(view(editor).state.selection.main.head).toBe(2);
+  });
+
+  it("expands a collapsed quote when any other edit changes its text", async () => {
+    const editor = await mount();
+    editor.insertReplyQuote(cache);
+
+    view(editor).dispatch({ changes: { from: Q1.length, insert: " tail" } });
+
+    expect(view(editor).contentDOM.textContent).toContain("Use the cache tail");
+    expect(toggles(editor).map((toggle) => toggle.getAttribute("aria-expanded"))).toEqual(["true"]);
+  });
+
+  it("keeps image placeholders inside quotes when sending without attachments and across a reload", async () => {
+    const onSend = vi.fn(() => Promise.resolve(true));
+    const first = await mount();
+    first.insertReplyQuote({ entryId: "m4", excerpt: "Compare [PIC_1] with [PIC_2]" });
+    view(first).dispatch({ changes: { from: view(first).state.doc.length, insert: "See [PIC_3]" } });
+    first.remove();
+
+    const reloaded = await mount(onSend);
+    const quote = "> [msg m4](#entry:m4) Compare [PIC_1] with [PIC_2]";
+    expect(view(reloaded).state.doc.toString()).toBe(`${quote}\n\nSee`);
+    reloaded.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.click();
+    expect(onSend).toHaveBeenCalledWith(`${quote}\n\nSee`, undefined, undefined, undefined, undefined);
+  });
+
+  it("restores the caret at the end of a reloaded draft so Enter sends instead of expanding a quote", async () => {
+    const onSend = vi.fn(() => Promise.resolve(true));
+    const first = await mount();
+    first.insertReplyQuote(cache);
+    view(first).dispatch({ changes: { from: view(first).state.doc.length, insert: "Why?" } });
+    first.remove();
+
+    const reloaded = await mount(onSend);
+    expect(view(reloaded).state.selection.main.head).toBe(view(reloaded).state.doc.length);
+    view(reloaded).contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    expect(onSend).toHaveBeenCalledWith(`${Q1}\n\nWhy?`, undefined, undefined, undefined, undefined);
+  });
+
   it("keeps quotes in the draft across a reload, collapsed again", async () => {
     const first = await mount();
     first.insertReplyQuote(cache);

@@ -13,7 +13,7 @@ import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputMode
 import { machineSessionKey } from "../machineKeys";
 import { WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
 import type { StagedPromptChip } from "../promptChips";
-import { replyQuoteFolding, replyQuoteInsertion, type ReplyQuote } from "../replyQuotes";
+import { editOutsideReplyQuotes, replyQuoteFolding, replyQuoteInsertion, type ReplyQuote } from "../replyQuotes";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "../promptDraftStorage";
@@ -505,7 +505,7 @@ export class PromptEditor extends LitElement {
       const attachments = [...staged.attachments, ...additions].sort((a, b) => attachmentIdSequence(a.id) - attachmentIdSequence(b.id));
       const pendingImageReferences = staged.pendingImageReferences.filter((reference) => !references.includes(reference));
       saveStagedAttachments(targetKey, { ...staged, attachments, pendingImageReferences });
-      if (failedReferences.length > 0) saveDraft(targetKey, removeImageReferenceTokensFromText(loadDraft(targetKey, this.draftStorage), failedReferences), this.draftStorage);
+      if (failedReferences.length > 0) saveDraft(targetKey, removeUnquotedImageReferenceTokens(loadDraft(targetKey, this.draftStorage), failedReferences), this.draftStorage);
       return;
     }
     if (generation !== this.draftGeneration) return;
@@ -523,7 +523,7 @@ export class PromptEditor extends LitElement {
   }
 
   private removeImageReferenceTokens(reference: string): void {
-    const text = removeImageReferenceTokensFromText(this.draft, [reference]);
+    const text = removeUnquotedImageReferenceTokens(this.draft, [reference]);
     if (text === this.draft) return;
     const editor = this.editor;
     if (editor !== undefined) {
@@ -573,6 +573,8 @@ export class PromptEditor extends LitElement {
       parent: this.editorHost,
       state: EditorState.create({
         doc: this.draft,
+        // At the end, so focusing a restored draft and pressing Enter sends rather than acting on a quote at its start.
+        selection: EditorSelection.cursor(this.draft.length),
         extensions: [
           history(),
           markdown(),
@@ -1153,7 +1155,12 @@ function dataTransferHasFiles(data: DataTransfer): boolean {
 export function sanitizeDraftImageReferences(text: string, attachments: readonly { kind: string; reference?: string }[], pendingReferences: readonly string[] = []): string {
   const references = new Set([...pendingReferences, ...attachments.flatMap((attachment) => attachment.kind === "image" ? [attachment.reference] : [])]);
   const dangling = Array.from(text.matchAll(/\[PIC_[1-9]\d*\]/g), (match) => match[0]).filter((reference) => !references.has(reference));
-  return removeImageReferenceTokensFromText(text, dangling);
+  return removeUnquotedImageReferenceTokens(text, dangling);
+}
+
+/** Quoted messages keep their own `[PIC_n]` text; only the composer's placeholders are attachment tokens. */
+function removeUnquotedImageReferenceTokens(text: string, references: readonly string[]): string {
+  return editOutsideReplyQuotes(text, (outside) => removeImageReferenceTokensFromText(outside, references));
 }
 
 export function isLeadingKnownCommandDraft(draft: string, knownCommandNames: ReadonlySet<string>): boolean {

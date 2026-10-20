@@ -620,6 +620,7 @@ export const promptEditorStyles = css`
   .markdown-editor .cm-placeholder { color: var(--pi-dim); }
   .markdown-editor .cm-argument-hint { color: var(--pi-dim); pointer-events: none; }
   .markdown-editor .cm-reply-quote { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; border-left: 2px solid var(--pi-accent); padding-left: 4px; color: var(--pi-muted); cursor: pointer; }
+  .markdown-editor .cm-reply-quote-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .markdown-editor .cm-reply-quote-open { vertical-align: middle; margin-right: 2px; }
   .markdown-editor .cm-reply-quote:hover { color: var(--pi-text); }
   .markdown-editor .cm-reply-quote .tab-icon { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .12s ease; }

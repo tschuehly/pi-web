@@ -50,6 +50,40 @@ test("quotes selections from two messages inline and sends them with the reply",
   await expect(quotes).toHaveCount(0);
 });
 
+test("keeps a long collapsed quote on one row in a narrow composer", async ({ page }) => {
+  const url = process.env["PI_WEB_E2E_CHAT_URL"];
+  if (url === undefined) throw new Error("Isolated PI WEB was not started");
+  await page.setViewportSize({ width: 420, height: 800 });
+  await page.goto(url);
+  await page.locator("prompt-editor").evaluate((editor) => {
+    (editor as HTMLElement & { insertReplyQuote(quote: { entryId: string; excerpt: string }): void }).insertReplyQuote({ entryId: "e2e00002", excerpt: "They are in the docs folder next to the install guide and the release plan" });
+  });
+  const quote = page.locator("prompt-editor .cm-reply-quote");
+  await expect(quote).toHaveAttribute("aria-expanded", "false");
+  const box = await quote.boundingBox();
+  if (box === null) throw new Error("missing geometry");
+  expect(box.height).toBeLessThan(30);
+});
+
+test("puts text typed right of a collapsed quote on its own visible line", async ({ page }) => {
+  const url = process.env["PI_WEB_E2E_CHAT_URL"];
+  if (url === undefined) throw new Error("Isolated PI WEB was not started");
+  await page.goto(url);
+  const editor = page.locator("prompt-editor");
+  await editor.evaluate((element) => {
+    (element as HTMLElement & { insertReplyQuote(quote: { entryId: string; excerpt: string }): void }).insertReplyQuote({ entryId: "e2e00002", excerpt: "They are in the docs folder next to the install guide and the release plan" });
+  });
+  const line = page.locator("prompt-editor .cm-line").first();
+  const box = await line.boundingBox();
+  if (box === null) throw new Error("missing geometry");
+  await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+  await page.keyboard.type("Typed");
+  await expect(page.locator("prompt-editor .cm-content")).toContainText("Typed");
+  await expect(page.locator("prompt-editor .cm-reply-quote")).toHaveAttribute("aria-expanded", "false");
+  expect(await editor.evaluate((element) => (element as HTMLElement & { view: { state: { doc: { toString(): string } } } }).view.state.doc.toString()))
+    .toBe("> [msg e2e00002](#entry:e2e00002) They are in the docs folder next to the install guide and the release plan\n\nTyped\n\n");
+});
+
 test("places the Reply button at the selection under a larger interface scale", async ({ page }) => {
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (url === undefined) throw new Error("Isolated PI WEB was not started");

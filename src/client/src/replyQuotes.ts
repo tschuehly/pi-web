@@ -1,4 +1,4 @@
-import { Prec, StateEffect, StateField, type Text } from "@codemirror/state";
+import { EditorState, Prec, StateEffect, StateField, Text, type ChangeSet, type ChangeSpec } from "@codemirror/state";
 import { Decoration, EditorView, keymap, WidgetType, type DecorationSet } from "@codemirror/view";
 import { render } from "lit";
 import { renderBuiltinTabIcon } from "./components/tabIcons";
@@ -64,7 +64,12 @@ class QuoteToggle extends WidgetType {
     toggle.setAttribute("aria-expanded", String(this.expanded));
     toggle.title = this.expanded ? "Collapse quote" : "Expand quote";
     render(renderBuiltinTabIcon("chevron"), toggle);
-    if (!this.expanded) toggle.append(this.label);
+    if (!this.expanded) {
+      const label = document.createElement("span");
+      label.className = "cm-reply-quote-label";
+      label.textContent = this.label;
+      toggle.append(label);
+    }
     toggle.addEventListener("mousedown", (event) => {
       event.preventDefault();
       const at = view.posAtDOM(toggle);
@@ -77,9 +82,19 @@ class QuoteToggle extends WidgetType {
 
 interface QuoteFolds { readonly expanded: readonly number[]; readonly collapsed: DecorationSet; readonly toggles: DecorationSet }
 
-function quoteFolds(doc: Text, requested: readonly number[]): QuoteFolds {
+/** Whether `changes` edited the block's own text, as opposed to inserting the whole block or text beside it. */
+function editsInside(changes: ChangeSet | undefined, block: QuoteBlock): boolean {
+  let edited = false;
+  changes?.iterChangedRanges((_fromA, _toA, from, to) => {
+    if (from === to ? from > block.from && from < block.to : from < block.to && to > block.from && (from > block.from || to < block.to)) edited = true;
+  }, true);
+  return edited;
+}
+
+function quoteFolds(doc: Text, requested: readonly number[], changes?: ChangeSet): QuoteFolds {
   const blocks = quoteBlocks(doc);
-  const expanded = requested.filter((from) => blocks.some((block) => block.from === from));
+  // An edit to a collapsed quote's text opens it, so a change is never hidden inside the fold.
+  const expanded = blocks.filter((block) => requested.includes(block.from) || editsInside(changes, block)).map((block) => block.from);
   const collapsed = blocks.filter((block) => !expanded.includes(block.from));
   return {
     expanded,
@@ -97,7 +112,7 @@ const quoteFoldField = StateField.define<QuoteFolds>({
       if (effect.is(toggleReplyQuote)) expanded = expanded.includes(effect.value) ? expanded.filter((from) => from !== effect.value) : [...expanded, effect.value];
     }
     if (!tr.docChanged && expanded.length === folds.expanded.length && expanded.every((from, index) => from === folds.expanded[index])) return folds;
-    return quoteFolds(tr.state.doc, expanded);
+    return quoteFolds(tr.state.doc, expanded, tr.changes);
   },
   provide: (field) => [
     EditorView.decorations.from(field, (folds) => folds.collapsed),
@@ -117,5 +132,34 @@ function expandQuoteAtCursor(view: EditorView): boolean {
   return true;
 }
 
+/**
+ * Text typed at a collapsed quote's edge goes into its own paragraph beside the quote: visible, and not quoted
+ * (a single line break would still continue the blockquote in Markdown). Line breaks and IME composition pass through.
+ */
+const typeBesideCollapsedQuotes = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged || !tr.isUserEvent("input") || tr.isUserEvent("input.type.compose")) return tr;
+  const starts = new Set<number>();
+  const ends = new Set<number>();
+  tr.startState.field(quoteFoldField).collapsed.between(0, tr.startState.doc.length, (from, to) => { starts.add(from); ends.add(to); });
+  const breaks: ChangeSpec[] = [];
+  tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+    if (fromA !== toA || inserted.length === 0) return;
+    if (ends.has(fromA) && inserted.sliceString(0, 1) !== "\n") breaks.push({ from: fromB, insert: "\n\n" });
+    else if (starts.has(fromA) && inserted.sliceString(inserted.length - 1) !== "\n") breaks.push({ from: toB, insert: "\n\n" });
+  });
+  return breaks.length === 0 ? tr : [tr, { changes: breaks, sequential: true }];
+});
+
+/** Applies `edit` to the text between reply quotes, leaving each quote exactly as quoted. */
+export function editOutsideReplyQuotes(text: string, edit: (outside: string) => string): string {
+  let result = "";
+  let at = 0;
+  for (const block of quoteBlocks(Text.of(text.split("\n")))) {
+    result += edit(text.slice(at, block.from)) + text.slice(block.from, block.to);
+    at = block.to;
+  }
+  return result + edit(text.slice(at));
+}
+
 /** Reply quotes render collapsed by default; their text in the document is unchanged either way. */
-export const replyQuoteFolding = [quoteFoldField, Prec.highest(keymap.of([{ key: "Enter", run: expandQuoteAtCursor }]))];
+export const replyQuoteFolding = [quoteFoldField, typeBesideCollapsedQuotes, Prec.highest(keymap.of([{ key: "Enter", run: expandQuoteAtCursor }]))];
