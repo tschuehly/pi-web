@@ -87,6 +87,9 @@ export function sessionInfoText(session: SessionInfo, status?: SessionStatus): s
   return `Session: ${session.id}\nFolder: ${session.cwd}\nTranscript: ${transcript}`;
 }
 
+/** Which workspace Files shows, on which machine: the scope Files resets for. */
+const filesKey = ({ machineId, workspace }: { machineId: string; workspace: Workspace | undefined }): string => `${machineId}:${workspace?.projectId ?? ""}:${workspace?.id ?? ""}`;
+
 export const adHocWorkspace = (path: string): Workspace => ({ id: adHocFolderWorkspaceId(path), projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
 
 /** A project inside another registered project, or its sibling `<project>-<suffix>` repository, belongs to that project's tab. */
@@ -119,6 +122,10 @@ export class WorkbenchApp extends LitElement {
   @state() private sidePane: "files" | undefined;
   /** A workspace the Files pane shows instead of the Chat's, after a link to a file outside the Chat's folder. */
   @state() private filesTarget: { sessionId: string; workspace: Workspace } | undefined;
+  /** What the Files pane shows; only `guardFilesTarget` changes it. */
+  @state() private filesShown: { machineId: string; workspace: Workspace | undefined } = { machineId: "local", workspace: undefined };
+  /** The target the owner refused to discard Files edits for; Files keeps its own until they ask again or it changes. */
+  @state() private filesDeclined: string | undefined;
   @state() private filesWidth = 400;
   private filesResize: { pointerId: number; startX: number; startWidth: number; handle: HTMLElement } | undefined;
   @query("chat-view") private chatView?: ChatView;
@@ -506,7 +513,7 @@ export class WorkbenchApp extends LitElement {
     if (window === undefined || selected === undefined || isCreatingSessionId(selected) || window.focused === selected) return;
     const lost = Object.entries(this.windows.store).some(([id, other]) => id !== this.windows.id && other.chats.some((chat) => chat.sessionId === selected));
     if (lost) this.retireSelected();
-    this.showNext(lost);
+    this.showNext();
   }
 
   /** Takes the Chat on screen down at once, its composer saved and unmounted; the URL follows what shows next. */
@@ -516,26 +523,20 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** Shows the Chat this window focuses, or its home once nothing is on screen. */
-  private showNext(discardConfirmed: boolean): void {
+  private showNext(): void {
     const next = this.windows.window?.focused;
     if (next === undefined) { if (this.app.selectedSession === undefined) this.updateUrl(); }
-    else if (next !== this.app.selectedSession?.id) void this.showWindowChat(next, discardConfirmed);
+    else if (next !== this.app.selectedSession?.id) void this.showWindowChat(next);
   }
 
   private filesPaneCanClose(): boolean {
     return this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false;
   }
 
-  /** Files open on `chat`'s own workspace: it stays, edits and all, when the Chat comes on screen. */
-  private filesShowWorkspaceOf(chat: WindowChat): boolean {
-    const files = this.filesWorkspace();
-    return files !== undefined && chat.machineId === selectedMachineId(this.app) && chat.projectId === files.projectId && chat.workspaceId === files.id;
-  }
-
   /** Shows one of this window's Chats, in its recorded workspace, without leaving the Chat on screen first; Files stays open. */
-  private async showWindowChat(sessionId: string, discardConfirmed = false): Promise<void> {
+  private async showWindowChat(sessionId: string): Promise<void> {
     const chat = this.windows.window?.chats.find((candidate) => candidate.sessionId === sessionId);
-    if (chat === undefined || sessionId === this.app.selectedSession?.id || !discardConfirmed && !this.filesShowWorkspaceOf(chat) && !this.filesPaneCanClose()) return;
+    if (chat === undefined || sessionId === this.app.selectedSession?.id) return;
     void this.updateWindow((store, id) => focusChat(store, id, sessionId));
     const machineId = selectedMachineId(this.app);
     if (chat.machineId !== machineId) {
@@ -629,13 +630,12 @@ export class WorkbenchApp extends LitElement {
     if (leaving !== undefined && !this.filesPaneCanClose()) return undefined;
     const text = leaving === undefined ? undefined : this.promptEditor?.view?.state.doc.toString();
     const machineId = selectedMachineId(this.app);
-    // The owner already chose to discard any unsaved file edits; do not ask again.
     if (leaving !== undefined) this.retireSelected();
     return this.updateComplete.then(() => this.updateWindow(change)).then(async () => {
       if (leaving === undefined) return;
-      if (this.windows.window?.chats.some((chat) => chat.sessionId === leaving) !== true) { this.showNext(true); return; }
+      if (this.windows.window?.chats.some((chat) => chat.sessionId === leaving) !== true) { this.showNext(); return; }
       const { error } = this.app;
-      await this.showWindowChat(leaving, true);
+      await this.showWindowChat(leaving);
       if (text !== undefined) await this.replacePromptEditorText({ machineId, sessionId: leaving, text });
       this.setApp({ error });
     });
@@ -718,6 +718,7 @@ export class WorkbenchApp extends LitElement {
 
   /** The Chat's Workstream names its tab group once known; an unreachable Workstream service keeps the last name. */
   protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
+    this.guardFilesTarget();
     const session = this.app.selectedSession;
     if (!changed.has("currentWorkstream") || session === undefined || this.currentWorkstream === undefined || this.currentWorkstreamError !== "") return;
     const snapshot = this.currentWorkstream;
@@ -1740,18 +1741,29 @@ export class WorkbenchApp extends LitElement {
     return target !== undefined && target.sessionId === this.app.selectedSession?.id ? target.workspace : this.app.selectedWorkspace;
   }
 
-  /** Show `path` in the Files pane, in `workspace` or else the Chat's own workspace. */
+  /**
+   * Every change of what Files shows lands here, on the update that would show it: with unsaved edits in Files the
+   * owner chooses between discarding them and keeping Files as it is, beside a Chat of another workspace.
+   */
+  private guardFilesTarget(): void {
+    const next = { machineId: selectedMachineId(this.app), workspace: this.filesWorkspace() };
+    const key = filesKey(next);
+    if (key === filesKey(this.filesShown)) { this.filesDeclined = undefined; return; }
+    if (this.sidePane !== undefined && (key === this.filesDeclined || !this.filesPaneCanClose())) { this.filesDeclined = key; return; }
+    this.filesShown = next;
+    this.filesDeclined = undefined;
+  }
+
+  /** Show `path` in the Files pane, in `workspace` or else the Chat's own workspace, unless Files keeps its edits. */
   private openInFiles(workspace: Workspace | undefined, path: string, lines?: LineRange): void {
-    const current = this.filesWorkspace();
-    const next = workspace ?? this.app.selectedWorkspace;
-    const switching = current !== undefined && (next?.projectId !== current.projectId || next.id !== current.id);
-    if (switching && this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() === false) return;
     const session = this.app.selectedSession;
     this.filesTarget = workspace === undefined || session === undefined ? undefined : { sessionId: session.id, workspace };
+    this.filesDeclined = undefined;
     this.sidePane = "files";
+    const wanted = filesKey({ machineId: selectedMachineId(this.app), workspace: workspace ?? this.app.selectedWorkspace });
     void this.updateComplete.then(async () => {
       const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
-      if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.openFile(path, false, lines); }
+      if (pane !== null && pane !== undefined && filesKey(this.filesShown) === wanted) { await pane.updateComplete; await pane.openFile(path, false, lines); }
     });
   }
 
@@ -1826,7 +1838,8 @@ export class WorkbenchApp extends LitElement {
       <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
         @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
       <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("chevron")}</button></div>
-      <workbench-files-pane id="workbench-files" .workspace=${this.filesWorkspace()} .machineId=${selectedMachineId(this.app)}></workbench-files-pane>
+      <workbench-files-pane id="workbench-files" .workspace=${this.filesShown.workspace} .machineId=${this.filesShown.machineId}>${this.filesDeclined === undefined ? nothing : html`
+        <p class="files-elsewhere" role="status">Files still shows ${this.filesShown.workspace?.label ?? "another workspace"}. <button type="button" @click=${() => { this.filesDeclined = undefined; }}>Show this Chat's files</button></p>`}</workbench-files-pane>
     `;
   }
 
@@ -2023,6 +2036,8 @@ export class WorkbenchApp extends LitElement {
     .files-close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .files-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     workbench-files-pane { flex: 0 0 min(var(--files-width), max(240px, calc(100% - 328px))); box-sizing: border-box; }
+    .files-elsewhere { margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--pi-border); color: var(--pi-warning); font-size: 12px; }
+    .files-elsewhere button { font: inherit; }
     @media (max-width: 760px) {
       .chat-and-files { flex-direction: column; }
       .files-divider, .files-close-anchor { display: none; }
