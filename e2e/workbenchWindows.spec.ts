@@ -7,25 +7,25 @@ const SHOTS = process.env["PI_WEB_E2E_SCREENSHOTS"];
 const STORE_KEY = "pi-workbench.windows.v1";
 const [NOTES, RELEASE, GUIDE] = [E2E_SESSION_ID, E2E_MORE_CHATS[0].id, E2E_MORE_CHATS[1].id];
 
-/** One window holding the three fixture Chats: two in a long-named Workstream, one in another. */
-function seededWindow(workspaceId: string) {
+/** One window holding the three fixture Chats: two in a long-named Workstream, one in another (or all in one). */
+function seededWindow(workspaceId: string, oneWorkstream = false) {
   const chat = (sessionId: string, title: string, workstream: { id: string; title: string }) => ({ sessionId, title, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream });
   const dogfooding = { id: "ws-dogfooding", title: "Pi Workbench UI dogfooding and two-tier tab layout review" };
   const docs = { id: "ws-docs", title: "Docs" };
   return {
     e2e: {
       name: "Window 1", layout: "tabs", maximized: false, focused: NOTES, lastActive: {},
-      chats: [chat(NOTES, "Where are the notes?", dogfooding), chat(RELEASE, "Draft the release notes", dogfooding), chat(GUIDE, "Review the install guide", docs)],
+      chats: [chat(NOTES, "Where are the notes?", dogfooding), chat(RELEASE, "Draft the release notes", dogfooding), chat(GUIDE, "Review the install guide", oneWorkstream ? dogfooding : docs)],
     },
   };
 }
 
-async function openSeededWindow(page: Page): Promise<void> {
+async function openSeededWindow(page: Page, oneWorkstream = false): Promise<void> {
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
   // Only the first page seeds: a window this test opens later must find the store as the first one left it.
-  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify(seededWindow(workspaceId))] as const);
+  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify(seededWindow(workspaceId, oneWorkstream))] as const);
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
   await page.goto(target.toString());
@@ -35,11 +35,26 @@ async function openSeededWindow(page: Page): Promise<void> {
 const shownChat = (page: Page) => page.locator("main.chat-shell").first();
 const workstreamTab = (page: Page, name: string) => page.locator("workbench-window-tabs .workstream-tab", { hasText: name });
 const chatTab = (page: Page, name: string) => page.locator("workbench-window-tabs .chat-tab", { hasText: name });
+/** The selected Chat's toolbar, slotted into the window's tab row in Tabs. */
+const tabRowTools = (page: Page) => page.locator("workbench-window-tabs > .chat-tools");
 
 test("switches Workstreams back to their last Chat, lays them out as a grid, and moves a Chat to a new window", async ({ page, context }) => {
   await openSeededWindow(page);
   await expect(page.locator("workbench-window-tabs .workstream-tab .title")).toHaveText(["Pi Workbench UI dogfooding and two-tier tab layout review", "Docs"]);
   await expect(page.locator("workbench-window-tabs .chat-tab .title")).toHaveText(["Where are the notes?", "Draft the release notes"]);
+  // The Chat's tools share the Chat tabs' row, its folder named only in the Files tooltip; the Chat keeps no header of its own.
+  await expect(tabRowTools(page).locator(".files-toggle")).toHaveAttribute("title", /^Files — e2e · .+ \(\/.+\)$/);
+  const row = await page.locator("workbench-window-tabs .bar").boundingBox();
+  const files = await tabRowTools(page).locator(".files-toggle").boundingBox();
+  expect(files !== null && row !== null && files.y >= row.y && files.y + files.height <= row.y + row.height).toBe(true);
+  await expect(shownChat(page).locator("header")).toHaveCount(0);
+  // Tabs keep between 120px and 200px, a long title ellipsized with the full title as the tooltip; × shows on every Chat tab.
+  const widths = await page.locator("workbench-window-tabs .workstream-tab, workbench-window-tabs .chat-tab").evaluateAll((tabs) => tabs.map((tab) => tab.getBoundingClientRect().width));
+  expect(Math.max(...widths)).toBeLessThanOrEqual(200);
+  expect(Math.min(...widths)).toBeGreaterThanOrEqual(120);
+  await expect(workstreamTab(page, "dogfooding")).toHaveAttribute("title", "Workstream: Pi Workbench UI dogfooding and two-tier tab layout review");
+  expect(await workstreamTab(page, "dogfooding").locator(".title").evaluate((title) => title.scrollWidth > title.clientWidth)).toBe(true);
+  await expect(chatTab(page, "Draft the release notes").locator(".close")).toBeVisible();
 
   await chatTab(page, "Draft the release notes").click();
   await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
@@ -55,6 +70,8 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await expect(page.locator(".grid > .tile")).toHaveCount(3);
   await expect(page.locator("workbench-chat-pane")).toHaveCount(2);
   await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", RELEASE);
+  await expect(tabRowTools(page)).toHaveCount(0);
+  await expect(page.locator('.tile[data-focused="true"] main.chat-shell > header .files-toggle')).toBeVisible();
   await expect(page.locator(`.tile[data-session="${GUIDE}"] workbench-chat-pane chat-view`)).toContainText("Done.");
   await page.locator(`.tile[data-session="${NOTES}"] .tile-bar`).click();
   await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", NOTES);
@@ -75,6 +92,9 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   const moved = await popup;
   await expect(shownChat(moved)).toHaveAttribute("data-session", NOTES);
   await expect(moved.locator("workbench-window-tabs .chat-tab .title")).toHaveText(["Where are the notes?"]);
+  // A single Workstream needs no Workstream row: one row of Chat tabs and tools.
+  await expect(moved.locator("workbench-window-tabs .workstream-tab")).toHaveCount(0);
+  await expect(tabRowTools(moved).locator(".files-toggle")).toBeVisible();
   expect(new URL(moved.url()).searchParams.get("win")).not.toBe("e2e");
   await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
   await expect(page.locator("workbench-window-tabs .chat-tab .title")).toHaveText(["Draft the release notes"]);
@@ -396,13 +416,21 @@ test("captures the window layouts for review", async ({ browser }) => {
   test.setTimeout(120_000);
   for (const scheme of ["dark", "light"] as const) {
     for (const [label, width, scale] of [["1440", 1440, undefined], ["900", 900, undefined], ["scale125", 1440, "1.25"]] as const) {
+      const single = await browser.newContext({ viewport: { width, height: 820 }, colorScheme: scheme });
+      const singlePage = await single.newPage();
+      if (scale !== undefined) await singlePage.addInitScript((value) => { localStorage.setItem("pi-web-app-scale", value); }, scale);
+      await openSeededWindow(singlePage, true);
+      await singlePage.waitForTimeout(400);
+      await singlePage.screenshot({ path: join(SHOTS ?? "", `tabs-1ws-${label}-${scheme}.png`) });
+      await single.close();
+
       const context = await browser.newContext({ viewport: { width, height: 820 }, colorScheme: scheme });
       const page = await context.newPage();
       if (scale !== undefined) await page.addInitScript((value) => { localStorage.setItem("pi-web-app-scale", value); }, scale);
       await openSeededWindow(page);
       await chatTab(page, "Draft the release notes").hover();
       await page.waitForTimeout(400);
-      await page.screenshot({ path: join(SHOTS ?? "", `tabs-${label}-${scheme}.png`) });
+      await page.screenshot({ path: join(SHOTS ?? "", `tabs-2ws-${label}-${scheme}.png`) });
       await page.keyboard.press("Control+g");
       await expect(page.locator("workbench-chat-pane chat-view")).toHaveCount(2);
       await page.waitForTimeout(800);

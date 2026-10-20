@@ -1409,7 +1409,7 @@ export class WorkbenchApp extends LitElement {
         @chat-tab-menu=${(event: CustomEvent<ChatTabMenuDetail>) => { this.openWindowMenu(event.detail); }}
         @chat-tab-drop=${(event: CustomEvent<DraggedChats>) => { void this.takeDroppedChats(event.detail); }}
         @chat-tab-drag-out=${(event: CustomEvent<DraggedChats>) => { this.moveToNewWindow(event.detail.sessionIds); }}
-        @dragstart=${this.guardChatDrag}></workbench-window-tabs>
+        @dragstart=${this.guardChatDrag}>${this.chatToolsInTabRow() ? html`<div class="chat-tools" slot="tools">${this.renderChatTools()}</div>` : nothing}</workbench-window-tabs>
       <div class="stage">${this.app.selectedSession === undefined ? this.renderChooser() : this.renderWindowChats()}${this.renderSwipePeek()}</div>
       ${this.renderWindowMenu()}
     `;
@@ -1695,6 +1695,31 @@ export class WorkbenchApp extends LitElement {
     return { workspace: adHocWorkspace(file.slice(0, slash) || "/"), path: file.slice(slash + 1) };
   }
 
+  /** Tabs: the Chat's tools join the window's tab row. A grid tile, or a window without tabs, keeps its own header. */
+  private chatToolsInTabRow(): boolean {
+    const window = this.windows.window;
+    return this.app.selectedSession !== undefined && window?.layout === "tabs" && window.chats.length > 0;
+  }
+
+  /** The selected Chat's Workstream and tools; its folder is the Files tooltip. */
+  private renderChatTools() {
+    const state = this.app;
+    const session = state.selectedSession;
+    if (session === undefined) return nothing;
+    const workspace = state.selectedWorkspace;
+    const folder = workspace === undefined ? "" : ` — ${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${workspace.label} (${workspace.path})`;
+    return html`
+      ${this.currentWorkstream ? html`<workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>` : nothing}
+      <button type="button" class="icon-button files-toggle" title=${`Files${folder}`} aria-label="Files" aria-expanded=${this.sidePane === "files"} aria-controls="workbench-files" @click=${() => { this.toggleSidePane("files"); }}>${renderBuiltinTabIcon("files")}</button>
+      <button type="button" class="icon-button questions-toggle" title="Questions" aria-label=${`Questions, ${String(state.pendingAsks.length)} open`} aria-expanded=${this.sidePane === "questions"} aria-controls="workbench-questions" @click=${() => { this.toggleSidePane("questions"); }}>${QUESTIONS_ICON}${state.pendingAsks.length === 0 ? null : html`<small class="badge" aria-hidden="true">${state.pendingAsks.length}</small>`}</button>
+      <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></button>
+      <button class="icon-button" type="button" title=${`${sessionInfoText(session, state.status)}\n\nClick to copy`} aria-label=${this.sessionInfoCopied ? "Copied session info" : "Copy session info"} @click=${() => { void this.copySessionInfo(session); }}>${this.sessionInfoCopied ? html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`}</button>
+      ${this.renderSettingsPanel()}
+      ${this.renderDesktopNotificationButton()}
+      ${this.renderGridActions(session.id)}
+    `;
+  }
+
   /** `tile`: the focused tile of a grid, with the tiles' compact transcript and composer. */
   private renderChat(tile = false) {
     const state = this.app;
@@ -1704,18 +1729,7 @@ export class WorkbenchApp extends LitElement {
     const sidePaneName = this.sidePane === "questions" ? "Questions" : "Files";
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${selectedMachineId(state)} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
-        <header>
-          <button class="back" type="button" aria-label="Back" title="Back" @click=${() => { this.goHome(); }}>←</button>
-          <workstream-context-drawer .snapshot=${this.currentWorkstream} .error=${this.currentWorkstreamError} .fallbackTitle=${sessionTitle(session)} .serviceContext=${this.workstreamServiceContext} .sessionId=${session.id} @workstream-updated=${(event: CustomEvent<WorkstreamSnapshot>) => { this.currentWorkstream = event.detail; }}></workstream-context-drawer>
-          <span title=${state.selectedWorkspace?.path ?? ""}>${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${state.selectedWorkspace?.label}</span>
-          <button type="button" class="icon-button files-toggle" title="Files" aria-label="Files" aria-expanded=${this.sidePane === "files"} aria-controls="workbench-files" @click=${() => { this.toggleSidePane("files"); }}>${renderBuiltinTabIcon("files")}</button>
-          <button type="button" class="icon-button questions-toggle" title="Questions" aria-label=${`Questions, ${String(state.pendingAsks.length)} open`} aria-expanded=${this.sidePane === "questions"} aria-controls="workbench-questions" @click=${() => { this.toggleSidePane("questions"); }}>${QUESTIONS_ICON}${state.pendingAsks.length === 0 ? null : html`<small class="badge" aria-hidden="true">${state.pendingAsks.length}</small>`}</button>
-          <button class="icon-button" type="button" title="Session tree" aria-label="Session tree" @click=${() => { void this.sessions.runCommand("/tree"); }}><span aria-hidden="true">⎇</span></button>
-          <button class="icon-button" type="button" title=${`${sessionInfoText(session, state.status)}\n\nClick to copy`} aria-label=${this.sessionInfoCopied ? "Copied session info" : "Copy session info"} @click=${() => { void this.copySessionInfo(session); }}>${this.sessionInfoCopied ? html`<span aria-hidden="true">✓</span>` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`}</button>
-          ${this.renderSettingsPanel()}
-          ${this.renderDesktopNotificationButton()}
-          ${this.renderGridActions(session.id)}
-        </header>
+        ${this.chatToolsInTabRow() ? nothing : html`<header>${this.renderChatTools()}</header>`}
         ${this.renderDesktopNotificationDiagnostic()}
         ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
         <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>
@@ -1827,10 +1841,9 @@ export class WorkbenchApp extends LitElement {
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pi-bg); }
     .tile { container-type: inline-size; }
     .grid:not([data-single]) > .tile[data-focused="true"] { background: var(--pi-surface); outline: 2px solid color-mix(in srgb, var(--pi-accent) 70%, transparent); outline-offset: -2px; }
-    /* A tile too narrow for the full Chat header keeps its title: Back and the workspace label give way. */
+    /* A tile too narrow for the full Chat header packs its buttons tighter. */
     @container (max-width: 640px) {
       .grid:not([data-single]) .chat-shell > header { gap: 2px; padding: 2px 6px; }
-      .grid:not([data-single]) .chat-shell > header > .back, .grid:not([data-single]) .chat-shell > header > span { display: none; }
       .grid:not([data-single]) .chat-shell > header > .icon-button { width: 28px; height: 28px; min-height: 28px; padding: 5px; }
     }
     .tile .chat-shell { flex: 1 1 auto; height: auto; min-height: 0; }
@@ -1870,7 +1883,7 @@ export class WorkbenchApp extends LitElement {
     .icon-button { min-height: 0; width: 32px; height: 32px; padding: 6px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--pi-muted); }
     .icon-button:hover { border-color: var(--pi-border); color: var(--pi-text); background: var(--pi-surface-hover); }
     .icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    header .notification-button { flex: 0 0 auto; }
+    :is(header, .chat-tools) .notification-button { flex: 0 0 auto; }
     .session-tools { display: flex; gap: 14px; align-items: center; }
     .sessions h2 small { color: var(--pi-muted); font-weight: 500; }
     .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; font-weight: 700; color: var(--pi-muted); }
@@ -1886,12 +1899,14 @@ export class WorkbenchApp extends LitElement {
     .error, .chat-error { color: var(--pi-danger); }
     .chat-shell { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     header { position: relative; z-index: 6; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
-    header > button { flex: 0 0 auto; min-height: 32px; border-color: transparent; background: transparent; }
-    header > button:hover:not(:disabled) { background: var(--pi-surface-hover); }
-    header > .icon-button:hover { border-color: transparent; }
-    .back { padding: 4px 10px; text-align: center; }
+    /* In the tab row: the Chat tabs scroll and the tools keep their room; only a long Workstream title truncates. */
+    .chat-tools { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; }
+    :is(header, .chat-tools) > button { flex: 0 0 auto; min-height: 32px; border-color: transparent; background: transparent; }
+    :is(header, .chat-tools) > button:hover:not(:disabled) { background: var(--pi-surface-hover); }
+    :is(header, .chat-tools) > .icon-button:hover { border-color: transparent; }
     header workstream-context-drawer { flex: 1 1 auto; min-width: 0; }
-    header span { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    header > .files-toggle { margin-left: auto; }
+    .chat-tools workstream-context-drawer { flex: 0 1 auto; min-width: 80px; max-width: 280px; margin-right: 4px; }
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     .chat-and-files { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
     .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
@@ -1924,7 +1939,6 @@ export class WorkbenchApp extends LitElement {
       .new-chat label { min-width: 0; }
       .new-chat select { min-width: 0; max-width: 100%; }
       header { gap: 6px; padding-inline: 8px; }
-      header span { display: none; }
     }
     @media (max-width: 600px), (pointer: coarse) {
       .link { min-height: max(44px, var(--pi-control-min-size)); }
