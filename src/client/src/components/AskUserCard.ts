@@ -488,6 +488,8 @@ export class AskUserCard extends LitElement {
     :host([context-beside]) .open-card:has(.ask-context) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
     :host([context-beside]) .open-card .card-header { grid-column: 1 / -1; }
     :host([context-beside]) .open-card .ask-context { align-self: start; position: sticky; top: 40px; max-height: 60vh; overflow: auto; padding: 12px 16px; border-right: 1px solid var(--pi-border-muted); font-size: 13px; }
+    /* The drawer scrolls the questions under their actions, which stay in view. */
+    :host([context-beside]) .form-footer { position: sticky; bottom: 0; z-index: 6; border-radius: 0 0 9px 0; background: var(--pi-surface); }
     .questions { display: grid; padding-top: 8px; }
     fieldset.question {
       min-width: 0;
@@ -618,6 +620,7 @@ export class AskUserCard extends LitElement {
       .record-question { padding: 14px 12px; }
       .record-summary, .ask-context { padding-inline: 12px; }
       .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
+      :host([context-beside]) .form-footer { border-radius: 0 0 9px 9px; }
       .partial-confirmation { align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }
       .primary-action { min-height: 42px; }

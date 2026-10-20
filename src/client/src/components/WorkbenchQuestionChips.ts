@@ -84,6 +84,13 @@ export class WorkbenchQuestionChips extends LitElement {
     /* One row however many questions are open: it scrolls sideways, and the drawer lists every question anyway. */
     .chips { flex: 0 0 auto; display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 6px var(--pi-panel-padding, 10px) 2px; }
     .chips::-webkit-scrollbar { display: none; }
+    /* Fades the clipped edge(s) only while the row overflows: an inactive scroll timeline applies no mask. */
+    .chips { animation: chips-edge linear both; animation-timeline: scroll(self inline); }
+    @keyframes chips-edge {
+      0% { mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+      5%, 95% { mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+      100% { mask-image: linear-gradient(to right, transparent, #000 32px); }
+    }
     .chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: min(320px, 100%); height: 28px; padding: 0 11px 0 9px; border: 1px solid color-mix(in srgb, var(--pi-warning) 55%, transparent); border-radius: 999px; background: var(--pi-warning-surface); color: var(--pi-text); font: 12.5px system-ui, sans-serif; cursor: pointer; }
     .chip svg { color: var(--pi-warning); }
     .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
