@@ -10,7 +10,7 @@ import { writeClipboardText } from "../clipboard";
 import type { ReplyQuote } from "../replyQuotes";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
-import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
+import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, type ChatAnchorScrollPosition, type ChatScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
 import type { AskUserSubmission, PendingAskUser, PendingExtensionDialog, QueuedSessionMessage, SessionActivity, SessionRef, SessionStatus, SessionWarningSeverity } from "../api";
 import type { ClosedExtensionDialog } from "../appState";
 import {
@@ -344,6 +344,8 @@ export class ChatView extends LitElement {
   private touchStartY: number | undefined;
   private pendingScrollRestoreSessionId: string | undefined;
   private pendingScrollRestorePosition: ChatAnchorScrollPosition | undefined;
+  /** The saved place this session's view restored, and the scrollTop it left, until the reader scrolls away. */
+  private restoredPlace: { position: ChatAnchorScrollPosition; scrollTop: number } | undefined;
   private restoreScrollFrame: number | undefined;
   private prependRestoreToken = 0;
   @state() private loadMoreRequested = false;
@@ -375,7 +377,11 @@ export class ChatView extends LitElement {
   };
   private readonly onImageLayout = (event: Event): void => {
     const image = event.composedPath()[0];
-    if (image !== undefined && this.imageLayoutScroll.restore(image, this.imageLayoutScrollContext(image), this.scrollAnchorElements())) this.syncScrollMetrics();
+    const chat = this.chat;
+    const place = this.restoredPlace;
+    // The restored place was measured on loaded images: re-apply it as they load, rather than shifting by their growth.
+    if (place !== undefined && chat?.scrollTop === place.scrollTop) this.reapplyRestoredPlace(place, chat);
+    else if (image !== undefined && this.imageLayoutScroll.restore(image, this.imageLayoutScrollContext(image), this.scrollAnchorElements())) this.syncScrollMetrics();
     if (this.pinnedToBottom) this.scrollToBottom();
   };
   private readonly openImageZoom = (src: string, alt: string): void => {
@@ -505,11 +511,12 @@ export class ChatView extends LitElement {
     this.suppressLoadMoreRequests = false;
     this.pendingScrollRestoreSessionId = undefined;
     this.pendingScrollRestorePosition = undefined;
+    this.restoredPlace = undefined;
     this.prependRestoreToken += 1;
-    if (this.restoreScrollFrame !== undefined) {
-      cancelAnimationFrame(this.restoreScrollFrame);
-      this.restoreScrollFrame = undefined;
-    }
+    // The incoming Chat's own pin: the outgoing one's would let its first image or resize jump to the bottom before the restore.
+    this.pinnedToBottom = this.scrollController.readPosition(this.sessionId)?.mode !== "anchor";
+    for (const frame of [this.restoreScrollFrame, this.scrollToBottomFrame]) if (frame !== undefined) cancelAnimationFrame(frame);
+    this.restoreScrollFrame = this.scrollToBottomFrame = undefined;
     if (this.scrollToOpenAskFrame !== undefined) {
       cancelAnimationFrame(this.scrollToOpenAskFrame);
       this.scrollToOpenAskFrame = undefined;
@@ -1484,6 +1491,7 @@ export class ChatView extends LitElement {
   private onScroll() {
     if (this.replySelection !== undefined) this.requestUpdate();
     this.imageLayoutScroll.reset();
+    if (!this.suppressScrollSave) this.restoredPlace = undefined;
     this.requestLoadMoreIfNeeded();
     this.updatePinnedToBottomFromScroll();
     this.scheduleConversationRailUpdate();
@@ -1676,6 +1684,20 @@ export class ChatView extends LitElement {
       const chat = this.chat;
       const result = this.scrollController.restorePosition(sessionId, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
       this.handleScrollRestoreResult(sessionId, result);
+      this.rememberRestoredPlace(result, this.scrollController.readPosition(sessionId));
+    });
+  }
+
+  private rememberRestoredPlace(result: ChatScrollRestoreResult, position: ChatScrollPosition | undefined): void {
+    const chat = this.chat;
+    this.restoredPlace = result.status === "restored" && position?.mode === "anchor" && chat != null ? { position, scrollTop: chat.scrollTop } : undefined;
+  }
+
+  private reapplyRestoredPlace(place: NonNullable<typeof this.restoredPlace>, chat: HTMLElement): void {
+    this.withSuppressedScrollSave(() => {
+      this.scrollController.restoreExplicitPosition(place.position, chat, this.scrollAnchorElements(), { fallbackToBottom: false });
+      place.scrollTop = chat.scrollTop;
+      this.syncScrollMetrics();
     });
   }
 
@@ -1690,6 +1712,7 @@ export class ChatView extends LitElement {
         const chat = this.chat;
         const result = this.scrollController.restoreExplicitPosition(position, chat ?? undefined, chat == null ? [] : this.scrollAnchorElements(), { fallbackToBottom: this.shouldFallbackToBottomForMissingAnchor() });
         this.handleScrollRestoreResult(sessionId, result);
+        this.rememberRestoredPlace(result, position);
       });
     });
   }
