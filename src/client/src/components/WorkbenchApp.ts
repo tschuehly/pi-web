@@ -526,11 +526,16 @@ export class WorkbenchApp extends LitElement {
     return this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane")?.canClose() !== false;
   }
 
-  /** Shows one of this window's Chats, in its recorded workspace, without leaving the Chat on screen first. */
+  /** Files open on `chat`'s own workspace: it stays, edits and all, when the Chat comes on screen. */
+  private filesShowWorkspaceOf(chat: WindowChat): boolean {
+    const files = this.filesWorkspace();
+    return files !== undefined && chat.machineId === selectedMachineId(this.app) && chat.projectId === files.projectId && chat.workspaceId === files.id;
+  }
+
+  /** Shows one of this window's Chats, in its recorded workspace, without leaving the Chat on screen first; Files stays open. */
   private async showWindowChat(sessionId: string, discardConfirmed = false): Promise<void> {
     const chat = this.windows.window?.chats.find((candidate) => candidate.sessionId === sessionId);
-    if (chat === undefined || sessionId === this.app.selectedSession?.id || !discardConfirmed && !this.filesPaneCanClose()) return;
-    if (this.sidePane === "files") this.sidePane = undefined;
+    if (chat === undefined || sessionId === this.app.selectedSession?.id || !discardConfirmed && !this.filesShowWorkspaceOf(chat) && !this.filesPaneCanClose()) return;
     void this.updateWindow((store, id) => focusChat(store, id, sessionId));
     const machineId = selectedMachineId(this.app);
     if (chat.machineId !== machineId) {
@@ -916,6 +921,8 @@ export class WorkbenchApp extends LitElement {
 
   /** The question chip last pressed in a side tile, opened once that tile's Chat is on screen. */
   private tileQuestion: { sessionId: string; askId: string; questionIndex: number } | undefined;
+  /** Where a click on a still unfocused tile's tools landed, replayed once the tile is focused. */
+  private tileClick: { sessionId: string; x: number; y: number } | undefined;
 
   /** Open asks read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
   @state() private restoredAsks: Record<string, readonly PendingAskUser[]> = {};
@@ -1413,6 +1420,9 @@ export class WorkbenchApp extends LitElement {
     const question = this.tileQuestion?.sessionId === sessionId ? this.tileQuestion : undefined;
     this.tileQuestion = undefined;
     await this.updateComplete;
+    const click = this.tileClick?.sessionId === sessionId ? this.tileClick : undefined;
+    this.tileClick = undefined;
+    if (click !== undefined) { deepElementAt(this.shadowRoot, click.x, click.y)?.closest<HTMLElement>("button, summary")?.click(); return; }
     const chips = question === undefined ? undefined : this.shadowRoot?.querySelector<WorkbenchQuestionChips>('.tile[data-focused="true"] .chat-column > workbench-question-chips');
     if (question === undefined || chips === null || chips === undefined || !await chips.openQuestion(question.askId, question.questionIndex)) await this.focusChatComposer();
   }
@@ -1466,6 +1476,7 @@ export class WorkbenchApp extends LitElement {
    * Tabs, or a maximized tile: the focused Chat alone. Grid: its page of up to four tiles, only those live. Every layout
    * renders the focused Chat as the same first tile, so ⌃G and full size never remount it with its composer and Files edits.
    * The other tiles each keep their grid position's slot, so a focus switch never moves one (a moved tile loses its scroll).
+   * Window-wide notices sit above the grid and Files beside it, so focus never reshapes a tile.
    */
   private renderWindowChats() {
     const window = this.windows.window;
@@ -1475,9 +1486,14 @@ export class WorkbenchApp extends LitElement {
     const focused = tiles.length < 2 ? undefined : tiles.find((tile) => tile.chat.sessionId === selected);
     const statuses = this.chatTabStatuses();
     return html`
-      <div class="grid" ?data-single=${focused === undefined} @dragover=${(event: DragEvent) => { if (carriesChats(event)) event.preventDefault(); }} @drop=${(event: DragEvent) => { const dropped = droppedChats(event); if (dropped !== undefined) { event.preventDefault(); void this.takeDroppedChats(dropped); } }}>
-        <section class="tile" data-focused="true" style=${this.tileStyle(focused)}>${focused === undefined ? nothing : this.renderTileBar(focused, statuses[focused.chat.sessionId] ?? "idle", true)}${this.renderChat(focused !== undefined)}</section>
-        ${(focused === undefined ? [] : tiles).map((tile) => tile === focused ? nothing : keyed(tile.chat.sessionId, this.renderTile(tile, statuses[tile.chat.sessionId] ?? "idle")))}
+      ${this.renderDesktopNotificationDiagnostic()}
+      ${this.app.error === "" ? null : html`<div class="chat-error" role="alert">${this.app.error}</div>`}
+      <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>
+        <div class="grid" ?data-single=${focused === undefined} @dragover=${(event: DragEvent) => { if (carriesChats(event)) event.preventDefault(); }} @drop=${(event: DragEvent) => { const dropped = droppedChats(event); if (dropped !== undefined) { event.preventDefault(); void this.takeDroppedChats(dropped); } }}>
+          <section class="tile" data-focused="true" style=${this.tileStyle(focused)}>${focused === undefined ? nothing : this.renderTileBar(focused, statuses[focused.chat.sessionId] ?? "idle", true)}${this.renderChat(focused !== undefined)}</section>
+          ${(focused === undefined ? [] : tiles).map((tile) => tile === focused ? nothing : keyed(tile.chat.sessionId, this.renderTile(tile, statuses[tile.chat.sessionId] ?? "idle")))}
+        </div>
+        ${this.renderFiles()}
       </div>
     `;
   }
@@ -1503,10 +1519,18 @@ export class WorkbenchApp extends LitElement {
       // A press and the focus it causes (WebKit focuses no button on click) both switch; the chip pressed is kept for the switch that lands.
       const chip = path.find((target): target is HTMLElement => target instanceof HTMLElement && target.dataset["ask"] !== undefined && target.dataset["question"] !== undefined);
       if (chip !== undefined) this.tileQuestion = { sessionId: chat.sessionId, askId: chip.dataset["ask"] ?? "", questionIndex: Number(chip.dataset["question"]) };
+      // The outgoing Chat's place, saved while its tile still has its size: a scroll still settling would save it after the move.
+      this.shadowRoot?.querySelector<ChatView>('.tile[data-focused="true"] chat-view')?.saveScrollPosition();
       void this.showWindowChat(chat.sessionId).then(() => this.focusTileChat(chat.sessionId));
     };
+    // A click on the tile bar's inert Workstream or tools, still unfocused, acts once focused: the focused bar has them at the same point.
+    const replay = (event: MouseEvent) => {
+      const { clientX: x, clientY: y } = event;
+      const section = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined;
+      if ([...section?.querySelectorAll(".tile-bar [inert]") ?? []].some((inert) => { const box = inert.getBoundingClientRect(); return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom; })) this.tileClick = { sessionId: chat.sessionId, x, y };
+    };
     return html`
-      <section class="tile" data-session=${chat.sessionId} style=${this.tileStyle(tile)} @pointerdown=${focus} @focusin=${focus}>
+      <section class="tile" data-session=${chat.sessionId} style=${this.tileStyle(tile)} @pointerdown=${focus} @focusin=${focus} @click=${replay}>
         ${this.renderTileBar(tile, status, false)}
         <workbench-chat-pane .chat=${chat} .claimSession=${this.claimGridChat} .draftStorage=${this.windows.draftStorage} .machines=${this.app.machines} .resolveWorkspace=${this.windowChatWorkspace} .contentRendering=${this.contentRendering}
           .rosterCollapsed=${this.delegateRosterCollapsed} .onToggleRoster=${this.toggleDelegateRoster}></workbench-chat-pane>
@@ -1517,7 +1541,7 @@ export class WorkbenchApp extends LitElement {
   /**
    * Every Grid tile's one header row, focused or not, so focusing a tile moves nothing: its Workstream, its Chat, the
    * Chat's tools, full size and close. Only the focused (`live`) tile's Workstream and tools act; elsewhere they are
-   * inert, so a press falls through to the tile and focuses it.
+   * inert, so a press falls through to the tile, focuses it, and then acts in the focused bar.
    */
   private renderTileBar({ chat }: GridTile, status: ChatTabStatus, live: boolean) {
     const session = this.app.selectedSession;
@@ -1795,6 +1819,17 @@ export class WorkbenchApp extends LitElement {
     `;
   }
 
+  /** Files beside the grid, outside every tile: a focus switch keeps it open and leaves every tile its size. */
+  private renderFiles() {
+    if (this.sidePane === undefined) return nothing;
+    return html`
+      <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
+        @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
+      <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("chevron")}</button></div>
+      <workbench-files-pane id="workbench-files" .workspace=${this.filesWorkspace()} .machineId=${selectedMachineId(this.app)}></workbench-files-pane>
+    `;
+  }
+
   /** `tile`: the focused tile of a grid, laid out like every other tile under its tile bar. */
   private renderChat(tile = false) {
     const state = this.app;
@@ -1804,10 +1839,7 @@ export class WorkbenchApp extends LitElement {
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${selectedMachineId(state)} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         ${this.chatToolsInTabRow() || tile ? nothing : html`<header>${this.renderChatTools()}</header>`}
-        ${this.renderDesktopNotificationDiagnostic()}
-        ${state.error === "" ? null : html`<div class="chat-error" role="alert">${state.error}</div>`}
-        <div class="chat-and-files" style=${`--files-width: ${String(this.filesWidth)}px`}>
-          <div class="chat-column">
+        <div class="chat-column">
         <chat-view
           .dense=${tile}
           .contentRendering=${this.contentRendering}
@@ -1874,12 +1906,6 @@ export class WorkbenchApp extends LitElement {
           .onSetThinkingLevel=${this.setThinkingLevel}
           .onRunCommand=${(command: string) => this.sessions.runCommand(command)}
         ></prompt-editor>
-          </div>
-          ${this.sidePane === undefined ? null : html`
-            <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
-              @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
-            <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("chevron")}</button></div>`}
-          ${this.sidePane === "files" ? html`<workbench-files-pane id="workbench-files" .workspace=${this.filesWorkspace()} .machineId=${selectedMachineId(state)}></workbench-files-pane>` : null}
         </div>
         ${state.commandDialog === undefined ? null : html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>`}
         ${this.renderSessionTreeNavigator(state)}
@@ -1905,9 +1931,9 @@ export class WorkbenchApp extends LitElement {
     @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
       :host { --pi-app-safe-area-bottom: env(safe-area-inset-bottom); }
     }
-    .stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; }
+    .stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     /* No rules between tiles: every tile rests on the background, the gutter is darker, the focused tile is outlined. */
-    .grid { height: 100%; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 3px; background: light-dark(color-mix(in srgb, var(--pi-bg) 94%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 85%, black)); }
+    .grid { flex: 1 1 0; min-width: 0; min-height: 0; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 3px; background: light-dark(color-mix(in srgb, var(--pi-bg) 94%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 85%, black)); }
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pi-bg); }
     /* Grid tracks size every tile, so it can contain its size: the question drawer measures its height against it (cqh). */
     .tile { container-type: size; }
@@ -2014,6 +2040,17 @@ export class WorkbenchApp extends LitElement {
       .link { min-height: max(44px, var(--pi-control-min-size)); }
     }
   `;
+}
+
+/** The innermost element at a point, through open shadow roots. */
+function deepElementAt(root: ShadowRoot | null, x: number, y: number): Element | undefined {
+  let element = root?.elementFromPoint(x, y) ?? undefined;
+  while (element?.shadowRoot) {
+    const inner = element.shadowRoot.elementFromPoint(x, y);
+    if (inner === null || inner === element) break;
+    element = inner;
+  }
+  return element;
 }
 
 function completeChatRoute(route: ParsedAppRoute): route is ParsedAppRoute & { projectId: string; workspaceId: string; sessionId: string } {

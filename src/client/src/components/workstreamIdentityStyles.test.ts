@@ -75,7 +75,7 @@ describe("Workstream identity presentation contracts", () => {
     expect(drawer).toContain("summary { border-color: ButtonText; border-left-color: LinkText; background: Canvas; }");
     expect(drawer).toMatch(/@media \(max-width: 520px\)[^{]*\{[^}]*\.sheet\s*\{\s*padding:\s*12px 16px/u);
     expect(rule(drawer, "summary:focus-visible")).toContain("outline: 2px solid var(--pi-accent)");
-    expect(rule(drawer, ".sheet")).toContain("max-height: calc(var(--pi-workbench-viewport-height, 100vh) - 56px)");
+    expect(rule(drawer, ".sheet")).toContain("max-height: min(calc(var(--pi-workbench-viewport-height, 100vh) - 56px), calc(100cqh - 40px))");
     // Status indicator must declare --pi-text outline for visibility across all surfaces
     expect(chooser).toContain(".row .activity-indicator, .session-row .activity-indicator { box-shadow: 0 0 0 1px var(--pi-text);");
   });

@@ -498,8 +498,12 @@ export class ChatView extends LitElement {
     super.disconnectedCallback();
   }
 
+  /**
+   * Saves the outgoing session's place only if a scroll has not saved it yet: its view may already have its next size
+   * (a Grid tile's shell moving slots), which would shift the saved anchor.
+   */
   private savePreviousSessionScrollPosition(previousSessionId: unknown): void {
-    if (typeof previousSessionId !== "string" || previousSessionId === "" || previousSessionId === this.sessionId) return;
+    if (typeof previousSessionId !== "string" || previousSessionId === "" || previousSessionId === this.sessionId || !this.scrollController.savePending) return;
     this.saveScrollPosition(previousSessionId);
   }
 
@@ -1819,6 +1823,7 @@ export class ChatView extends LitElement {
     if (this.transcriptFilter !== "everything") return;
     const chat = this.chat;
     if (!sessionId || chat == null) return;
+    this.scrollController.clearScheduledSave();
     this.scrollController.savePosition(sessionId, chat, this.scrollAnchorElements());
   }
 

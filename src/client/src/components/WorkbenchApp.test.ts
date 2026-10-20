@@ -355,7 +355,9 @@ describe("Workbench Chat chooser", () => {
     expect(app.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("browser's site settings");
     setState(app, { ...getState(app), selectedSession: session("denied", "Chat") });
     await app.updateComplete;
-    expect(app.shadowRoot?.querySelector('[data-view="chat"] [role="alert"]')?.textContent).toContain("browser's site settings");
+    // Window-wide guidance sits above the Chat, outside it, so it never moves with a Grid tile's focus.
+    expect(app.shadowRoot?.querySelector('.stage > [role="alert"]')?.textContent).toContain("browser's site settings");
+    expect(app.shadowRoot?.querySelector('[data-view="chat"] [role="alert"]')).toBeNull();
   });
 
   it("shows a native permission failure in the chooser without hiding the retry control", async () => {

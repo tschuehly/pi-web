@@ -231,7 +231,8 @@ export class WorkstreamContextDrawer extends LitElement {
     summary strong { flex: 1 1 auto; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
     .tab { overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
     .fallback-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sheet { --sheet-tint: color-mix(in srgb, var(--pi-purple-surface) 36%, transparent); --sheet-paint: linear-gradient(var(--sheet-tint), var(--sheet-tint)); position: absolute; top: 100%; left: 0; right: 0; max-height: calc(var(--pi-workbench-viewport-height, 100vh) - 56px); overflow: auto; display: grid; padding: 20px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: var(--sheet-paint) var(--pi-surface); box-shadow: 0 18px 48px var(--pi-shadow); }
+    /* Below a Grid tile's bar the sheet fits the tile (its size container) and scrolls inside it; elsewhere cqh is the viewport's. */
+    .sheet { --sheet-tint: color-mix(in srgb, var(--pi-purple-surface) 36%, transparent); --sheet-paint: linear-gradient(var(--sheet-tint), var(--sheet-tint)); position: absolute; top: 100%; left: 0; right: 0; max-height: min(calc(var(--pi-workbench-viewport-height, 100vh) - 56px), calc(100cqh - 40px)); overflow: auto; display: grid; padding: 20px max(24px, calc((100% - 900px) / 2)); border-bottom: 1px solid var(--pi-purple-border); background: var(--sheet-paint) var(--pi-surface); box-shadow: 0 18px 48px var(--pi-shadow); }
     button, input, select, textarea { font: inherit; color: var(--pi-text); background: var(--pi-surface); border: 1px solid var(--pi-border); border-radius: 6px; padding: 8px; }
     button { cursor: pointer; }
     :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--pi-accent); }

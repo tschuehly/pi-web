@@ -253,44 +253,54 @@ function gridLayout() {
   }).sort((a, b) => a.session.localeCompare(b.session));
 }
 
+type GridLayout = ReturnType<typeof gridLayout>;
+
+/** Opens a Grid of `sessions` with `focused` outlined, at 1440×900, once every tile shows its transcript. */
+async function openGrid(page: Page, sessions: readonly string[], focused = sessions[0]): Promise<void> {
+  const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
+  const url = process.env["PI_WEB_E2E_CHAT_URL"];
+  if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
+  const workstreams = [{ id: "ws-dogfooding", title: "Dogfooding" }, { id: "ws-docs", title: "Docs" }, { id: "ws-grid", title: "Grid focus" }];
+  const chats = sessions.map((sessionId, index) => ({ sessionId, title: `Chat ${String(index + 1)}`, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream: workstreams[index % workstreams.length] }));
+  await page.addInitScript(([key, value]) => { localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify({ e2e: { name: "Window 1", layout: "grid", maximized: false, focused, lastActive: {}, chats } })] as const);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const target = new URL(url);
+  target.searchParams.set("win", "e2e");
+  await page.goto(target.toString());
+  await expect(page.locator(".grid > .tile")).toHaveCount(sessions.length);
+  await expect.poll(async () => (await page.evaluate(gridLayout)).every((tile) => tile.anchor !== "none"), { timeout: 10_000 }).toBe(true);
+  await page.waitForTimeout(600);
+}
+
+/** The tiles that moved, within a pixel: their box, their transcript's box, or their first visible message and its top. */
+function movedTiles(before: GridLayout, after: GridLayout) {
+  return before.flatMap((was, index) => {
+    const now = after[index];
+    const numbers = [...was.tile, ...was.transcript, was.message];
+    const nowNumbers = now === undefined ? [] : [...now.tile, ...now.transcript, now.message];
+    return now?.session === was.session && now.anchor === was.anchor && numbers.every((value, at) => Math.abs(value - (nowNumbers[at] ?? NaN)) <= 1) ? [] : [{ was, now }];
+  });
+}
+
+/** Presses the middle of `session`'s tile transcript, which focuses it, and waits for the focus to settle. */
+async function focusTile(page: Page, session: string): Promise<void> {
+  const box = await page.locator(`.grid > .tile[data-session="${session}"]`).boundingBox();
+  if (box === null) throw new Error(`tile ${session} is not on screen`);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 3);
+  await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", session);
+  await page.waitForTimeout(800);
+}
+
 for (const count of [2, 4]) {
   test(`every Grid tile looks the same focused or not: focusing another of ${String(count)} tiles only moves the outline`, async ({ page }) => {
-    const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
-    const url = process.env["PI_WEB_E2E_CHAT_URL"];
-    if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
-    const workstreams = [{ id: "ws-dogfooding", title: "Dogfooding" }, { id: "ws-docs", title: "Docs" }, { id: "ws-grid", title: "Grid focus" }];
     const sessions = [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id].slice(0, count);
-    const chats = sessions.map((sessionId, index) => ({ sessionId, title: `Chat ${String(index + 1)}`, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream: workstreams[index % workstreams.length] }));
-    await page.addInitScript(([key, value]) => { localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify({ e2e: { name: "Window 1", layout: "grid", maximized: false, focused: NOTES, lastActive: {}, chats } })] as const);
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const target = new URL(url);
-    target.searchParams.set("win", "e2e");
-    await page.goto(target.toString());
-    await expect(page.locator(".grid > .tile")).toHaveCount(count);
-    const settled = async () => {
-      const layout = await page.evaluate(gridLayout);
-      return layout.every((tile) => tile.anchor !== "none") ? layout : undefined;
-    };
-    await expect.poll(settled, { timeout: 10_000 }).toBeDefined();
-    await page.waitForTimeout(600);
+    await openGrid(page, sessions);
     const before = await page.evaluate(gridLayout);
-    // Within a pixel: every tile's box, its transcript's box, and its first visible message and that message's top.
-    const moved = (after: typeof before) => before.flatMap((was, index) => {
-      const now = after[index];
-      const numbers = [...was.tile, ...was.transcript, was.message];
-      const nowNumbers = now === undefined ? [] : [...now.tile, ...now.transcript, now.message];
-      return now?.session === was.session && now.anchor === was.anchor && numbers.every((value, at) => Math.abs(value - (nowNumbers[at] ?? NaN)) <= 1) ? [] : [{ was, now }];
-    });
     for (const session of [...sessions.slice(1), NOTES]) {
-      const chosen = page.locator(`.grid > .tile[data-session="${session}"]`);
-      const box = await chosen.boundingBox();
-      if (box === null) throw new Error(`tile ${session} is not on screen`);
       // Anywhere in the tile focuses it: here, the middle of its transcript.
-      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 3);
-      await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", session);
-      await page.waitForTimeout(800);
+      await focusTile(page, session);
       const after = await page.evaluate(gridLayout);
-      expect(moved(after), `tiles that moved after focusing ${session}`).toEqual([]);
+      expect(movedTiles(before, after), `tiles that moved after focusing ${session}`).toEqual([]);
       expect(after.filter((tile) => tile.outlined).map((tile) => tile.session), "only the focused tile is outlined").toEqual([session]);
       await page.keyboard.type("typed here");
       await expect(page.locator('.tile[data-focused="true"] .cm-content')).toHaveText("typed here");
@@ -299,6 +309,80 @@ for (const count of [2, 4]) {
     }
   });
 }
+
+test("focusing the full-width tile of three keeps the scrolled top-right tile where it was read", async ({ page }) => {
+  const sessions = [NOTES, E2E_LONG_CHAT.id, GUIDE];
+  await openGrid(page, sessions, E2E_LONG_CHAT.id);
+  await page.locator('.tile[data-focused="true"] chat-view .chat').hover();
+  for (let step = 0; step < 4; step += 1) { await page.mouse.wheel(0, -1200); await page.waitForTimeout(200); }
+  await page.waitForTimeout(800);
+  const before = await page.evaluate(gridLayout);
+  for (const session of [GUIDE, E2E_LONG_CHAT.id]) {
+    await focusTile(page, session);
+    expect(movedTiles(before, await page.evaluate(gridLayout)), `tiles that moved after focusing ${session}`).toEqual([]);
+  }
+});
+
+test("Files stays open beside the Grid when focus moves, and moves no tile", async ({ page }) => {
+  await openGrid(page, [NOTES, RELEASE, GUIDE]);
+  await page.locator('.tile[data-focused="true"] > .tile-bar .files-toggle').click();
+  await expect(page.locator("workbench-files-pane")).toBeVisible();
+  await page.waitForTimeout(600);
+  const before = await page.evaluate(gridLayout);
+  await focusTile(page, RELEASE);
+  await expect(page.locator("workbench-files-pane")).toBeVisible();
+  expect(movedTiles(before, await page.evaluate(gridLayout))).toEqual([]);
+  if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "grid-3-files.png") });
+});
+
+test("a window-wide notice shows once above the Grid and stays put when focus moves", async ({ page }) => {
+  await page.addInitScript(() => { Object.defineProperty(window, "Notification", { configurable: true, value: class { static permission = "denied"; static requestPermission() { return Promise.resolve("denied"); } } }); });
+  await openGrid(page, [NOTES, RELEASE]);
+  // Shown once, above the Grid: not inside a tile, where it would move with focus.
+  await expect(page.locator("p.error[role=alert]", { hasText: "notifications" })).toHaveCount(1);
+  const notice = page.locator("pi-workbench-app .stage > p.error[role=alert]");
+  await expect(notice).toHaveCount(1);
+  await expect(page.locator(".grid p.error[role=alert]")).toHaveCount(0);
+  const before = await page.evaluate(gridLayout);
+  await focusTile(page, RELEASE);
+  await expect(notice).toHaveCount(1);
+  expect(movedTiles(before, await page.evaluate(gridLayout))).toEqual([]);
+});
+
+test("Edit Workstream in a quarter tile scrolls inside the tile, its Save in reach", async ({ page }) => {
+  await openGrid(page, [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id]);
+  // The fixture has no Workstream service: show the focused tile's Workstream as a found one would.
+  await expect.poll(() => page.locator("pi-workbench-app").evaluate((app) => Reflect.get(app, "currentWorkstream"))).toBeNull();
+  await page.locator("pi-workbench-app").evaluate((app) => { Reflect.set(app, "currentWorkstreamError", ""); Reflect.set(app, "currentWorkstream", { id: "ws-dogfooding", title: "Dogfooding", revision: 1, updatedAt: "", sessions: [], humanTasks: [], links: [], closed: false, overview: { goal: "Dogfood the Grid", description: "Every tile looks the same.", doneWhen: "Focus moves only the outline." } }); });
+  const drawer = page.locator('.tile[data-focused="true"] > .tile-bar workstream-context-drawer');
+  await drawer.locator("summary").click();
+  await drawer.getByRole("button", { name: "Edit Workstream" }).click();
+  const save = drawer.getByRole("button", { name: "Save" });
+  await expect(save).toBeAttached();
+  const reach = await page.locator('.tile[data-focused="true"]').evaluate((tile) => {
+    const drawerRoot = tile.querySelector("workstream-context-drawer")?.shadowRoot;
+    const sheet = drawerRoot?.querySelector<HTMLElement>(".sheet");
+    if (sheet === null || sheet === undefined) return undefined;
+    sheet.scrollTop = sheet.scrollHeight;
+    const button = [...drawerRoot?.querySelectorAll("button") ?? []].find((candidate) => candidate.textContent === "Save");
+    const box = button?.getBoundingClientRect();
+    const bounds = tile.getBoundingClientRect();
+    const hit = box === undefined ? null : drawerRoot?.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    return { inside: box !== undefined && box.top >= bounds.top && box.bottom <= bounds.bottom, hit: hit === button, tileScroll: tile.scrollTop };
+  });
+  expect(reach).toEqual({ inside: true, hit: true, tileScroll: 0 });
+  if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "grid-4-drawer.png") });
+});
+
+test("one click on a resting tile's Files focuses the tile and opens its Files", async ({ page }) => {
+  await openGrid(page, [NOTES, RELEASE, GUIDE]);
+  const box = await page.locator(`.tile[data-session="${RELEASE}"] > .tile-bar .files-toggle`).boundingBox();
+  if (box === null) throw new Error("the resting tile shows no Files button");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", RELEASE);
+  await expect(page.locator("workbench-files-pane")).toBeVisible();
+  await expect(page.locator('.tile[data-focused="true"] > .tile-bar .files-toggle')).toHaveAttribute("aria-expanded", "true");
+});
 
 /** The Chat tile and the neighbour preview beside it during a swipe. */
 const swipeStage = (page: Page) => page.locator("pi-workbench-app").evaluate((app) => {
