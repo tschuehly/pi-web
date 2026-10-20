@@ -126,6 +126,8 @@ export class WorkbenchApp extends LitElement {
   @state() private filesShown: { machineId: string; workspace: Workspace | undefined } = { machineId: "local", workspace: undefined };
   /** The target the owner refused to discard Files edits for; Files keeps its own until they ask again or it changes. */
   @state() private filesDeclined: string | undefined;
+  /** Files shows another machine or workspace than the one on screen; set by `guardFilesTarget` before each render. */
+  private filesElsewhere = false;
   @state() private filesWidth = 400;
   private filesResize: { pointerId: number; startX: number; startWidth: number; handle: HTMLElement } | undefined;
   @query("chat-view") private chatView?: ChatView;
@@ -1751,14 +1753,24 @@ export class WorkbenchApp extends LitElement {
    * owner chooses between discarding them and keeping Files as it is, beside a Chat of another workspace.
    */
   private guardFilesTarget(): void {
-    // No Chat on screen yet (a load or machine switch in flight): nothing replaces Files, which keeps what it shows.
-    if (this.app.selectedSession === undefined) return;
     const next = { machineId: selectedMachineId(this.app), workspace: this.filesWorkspace() };
     const key = filesKey(next);
-    if (key === filesKey(this.filesShown)) { this.filesDeclined = undefined; return; }
+    this.filesElsewhere = key !== filesKey(this.filesShown);
+    if (!this.filesElsewhere) { this.filesDeclined = undefined; return; }
+    // No Chat on screen (a chooser, a load or a machine switch in flight): Files keeps what it shows, and says so.
+    if (this.app.selectedSession === undefined) return;
     if (this.sidePane !== undefined && (key === this.filesDeclined || !this.filesPaneCanClose())) { this.filesDeclined = key; return; }
     this.filesShown = next;
     this.filesDeclined = undefined;
+    this.filesElsewhere = false;
+  }
+
+  /** Where Files reads and saves: its workspace, after its machine's name when that is not the one on screen. */
+  private filesShownLabel(): string {
+    const { machineId, workspace } = this.filesShown;
+    const label = workspace?.label ?? "another workspace";
+    if (machineId === selectedMachineId(this.app)) return label;
+    return `${this.app.machines.find((machine) => machine.id === machineId)?.name ?? machineId} · ${label}`;
   }
 
   /** Show `path` in the Files pane, in `workspace` or else the Chat's own workspace, unless Files keeps its edits. */
@@ -1845,8 +1857,8 @@ export class WorkbenchApp extends LitElement {
       <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
         @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
       <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("chevron")}</button></div>
-      <workbench-files-pane id="workbench-files" .workspace=${this.filesShown.workspace} .machineId=${this.filesShown.machineId}>${this.filesDeclined === undefined ? nothing : html`
-        <p class="files-elsewhere" role="status">Files still shows ${this.filesShown.workspace?.label ?? "another workspace"}. <button type="button" @click=${() => { this.filesDeclined = undefined; }}>Show this Chat's files</button></p>`}</workbench-files-pane>
+      <workbench-files-pane id="workbench-files" .workspace=${this.filesShown.workspace} .machineId=${this.filesShown.machineId}>${this.filesElsewhere ? html`
+        <p class="files-elsewhere" role="status">Files still shows ${this.filesShownLabel()}.${this.filesDeclined === undefined ? nothing : html` <button type="button" @click=${() => { this.filesDeclined = undefined; }}>Show this Chat's files</button>`}</p>` : nothing}</workbench-files-pane>
     `;
   }
 

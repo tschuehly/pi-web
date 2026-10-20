@@ -327,6 +327,35 @@ test("a Chat on another machine asks before replacing Files edits, and Cancel ke
   expect(asked).toHaveLength(1);
 });
 
+test("Files kept beside another machine's chooser names the machine it saves to, and ⌘S saves there", async ({ page }) => {
+  const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
+  if (project === undefined) throw new Error("Isolated PI WEB was not started");
+  const notes = join(project, "docs", "notes.md");
+  const seeded = await readFile(notes, "utf8");
+  keepEdits(page);
+  await addRemoteMachine(page);
+  // The Remote Chat's lookup fails, so the Remote window shows its chooser instead of a Chat.
+  await page.route((url) => url.pathname.includes("/api/machines/remote/") && url.pathname.includes(E2E_MORE_CHATS[1].id), async (route) => { await route.fulfill({ status: 503, json: { error: "unavailable" } }); });
+  await openTabsWindow(page, { remote: true });
+  await page.getByRole("button", { name: "Files", exact: true }).click();
+  const pane = await editNotesInFiles(page);
+  await chatTab(page, E2E_MORE_CHATS[1].id).click();
+  await expect(page.locator('[data-view="chooser"]')).toBeVisible();
+  await expect(page.locator(".files-elsewhere")).toContainText("Files still shows Local");
+  const saves: string[] = [];
+  page.on("request", (request) => { if (request.method() === "PUT" && request.url().includes("/file?")) saves.push(new URL(request.url()).pathname); });
+  try {
+    await pane.getByRole("textbox", { name: "File source" }).click();
+    await page.keyboard.press("Meta+s");
+    await expect(pane.locator(".state")).toHaveText(/Saved/);
+    expect(saves).toHaveLength(1);
+    expect(saves[0]).toContain("/api/machines/local/");
+    expect(await readFile(notes, "utf8")).toContain("Edited in Files.");
+  } finally {
+    await writeFile(notes, seeded);
+  }
+});
+
 test("a ../sibling file link in Chat opens that file, editable, in the Files pane", async ({ page }) => {
   const file = process.env["PI_WEB_E2E_SIBLING_FILE"];
   if (file === undefined) throw new Error("Isolated PI WEB was not started");
