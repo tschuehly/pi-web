@@ -10,7 +10,7 @@ import { initialAppState, type AppState } from "../appState";
 import { latestWorkingModeSelection } from "../chatMessages";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { AuthController } from "../controllers/authController";
-import { desktopNotifications, DesktopNotificationController, NATIVE_NOTIFICATION_OPEN_EVENT, NOTIFICATION_ANCHOR } from "../controllers/desktopNotificationController";
+import { desktopNotifications, DesktopNotificationController, NATIVE_NOTIFICATION_HOLDS_EVENT, NATIVE_NOTIFICATION_OPEN_EVENT, NOTIFICATION_ANCHOR } from "../controllers/desktopNotificationController";
 import { SessionController, type PromptEditorTextReplacement, type SessionSelectionOptions } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { selectedMachineId } from "../controllers/types";
@@ -277,6 +277,18 @@ export class WorkbenchApp extends LitElement {
     this.openNotificationChat(machineId, sessionId, typeof message === "string" && NOTIFICATION_ANCHOR.test(message) ? message : undefined);
   };
 
+  /**
+   * The macOS app asks each window before routing a notification click, since a window on another Space may be
+   * suspended and miss other windows' requests; it then brings the holder forward and opens the Chat there.
+   */
+  private readonly onNativeNotificationHolds = (event: Event): void => {
+    const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+    if (typeof detail !== "object" || detail === null) return;
+    const machineId: unknown = Reflect.get(detail, "machineId");
+    const sessionId: unknown = Reflect.get(detail, "sessionId");
+    if (typeof machineId === "string" && typeof sessionId === "string" && this.windows.holds(machineId, sessionId)) event.preventDefault();
+  };
+
   private readonly notifications = new SessionNotificationController(
     () => this.app,
     (patch) => { this.setApp(patch); },
@@ -385,6 +397,7 @@ export class WorkbenchApp extends LitElement {
     this.notifications.resume();
     window.addEventListener("popstate", this.onPopState);
     window.addEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
+    window.addEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
     window.addEventListener("focus", this.onPageAttention);
     document.addEventListener("visibilitychange", this.onPageAttention);
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
@@ -429,6 +442,7 @@ export class WorkbenchApp extends LitElement {
   override disconnectedCallback(): void {
     window.removeEventListener("popstate", this.onPopState);
     window.removeEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
+    window.removeEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
     window.removeEventListener("focus", this.onPageAttention);
     document.removeEventListener("visibilitychange", this.onPageAttention);
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
