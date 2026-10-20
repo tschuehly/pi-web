@@ -45,6 +45,24 @@ describe("composer Markdown formatting", () => {
     expect(onSend).toHaveBeenCalledWith(`${DRAFT}iew`, undefined, undefined, undefined, undefined);
   });
 
+  it("sends and accepts completions with Enter on a list line, and continues the list on Shift-Enter", async () => {
+    vi.spyOn(api, "commands").mockResolvedValue([{ name: "skill:review", source: "skill" }]);
+    const onSend = vi.fn(() => Promise.resolve(true));
+    const view = await mount(onSend);
+
+    view.dispatch({ changes: { from: 0, insert: "- item" }, selection: { anchor: 6 } });
+    enter(view, true);
+    expect(view.state.doc.toString()).toBe("- item\n- ");
+
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "/skill:revi" }, selection: { anchor: view.state.doc.length + 11 } });
+    await vi.waitFor(() => { expect(menuText()).toContain("/skill:review"); });
+    enter(view);
+    expect(view.state.doc.toString()).toBe("- item\n- /skill:review ");
+
+    enter(view);
+    expect(onSend).toHaveBeenCalledWith("- item\n- /skill:review", undefined, undefined, undefined, undefined);
+  });
+
   it("types @ and # as plain text, so a # heading sends as written", async () => {
     const models = vi.spyOn(api, "models").mockResolvedValue({ models: [] });
     const onSend = vi.fn(() => Promise.resolve(true));
@@ -75,6 +93,6 @@ function menuText(): string {
   return (document.querySelector("prompt-editor")?.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent ?? "").trim();
 }
 
-function enter(view: EditorView): void {
-  view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+function enter(view: EditorView, shiftKey = false): void {
+  view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey, bubbles: true, cancelable: true }));
 }

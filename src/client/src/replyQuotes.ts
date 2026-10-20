@@ -134,7 +134,7 @@ function expandQuoteAtCursor(view: EditorView): boolean {
 
 /**
  * Text typed at a collapsed quote's edge goes into its own paragraph beside the quote: visible, and not quoted
- * (a single line break would still continue the blockquote in Markdown). Line breaks and IME composition pass through.
+ * (a single line break would still continue the blockquote in Markdown). Line breaks pass through; IME composition is handled when it starts.
  */
 const typeBesideCollapsedQuotes = EditorState.transactionFilter.of((tr) => {
   if (!tr.docChanged || !tr.isUserEvent("input") || tr.isUserEvent("input.type.compose")) return tr;
@@ -150,6 +150,25 @@ const typeBesideCollapsedQuotes = EditorState.transactionFilter.of((tr) => {
   return breaks.length === 0 ? tr : [tr, { changes: breaks, sequential: true }];
 });
 
+/**
+ * IME composition can't be split by the filter above, so before it starts at a collapsed quote's edge, open the same
+ * paragraph beside the quote and put the caret in it.
+ */
+const composeBesideCollapsedQuotes = EditorView.domEventHandlers({
+  compositionstart: (_event, view) => {
+    const { main } = view.state.selection;
+    if (!main.empty) return false;
+    let edge: "start" | "end" | undefined;
+    view.state.field(quoteFoldField).collapsed.between(main.head, main.head, (from, to) => {
+      edge = main.head === to ? "end" : main.head === from ? "start" : undefined;
+      return false;
+    });
+    if (edge === undefined) return false;
+    view.dispatch({ changes: { from: main.head, insert: "\n\n" }, selection: { anchor: edge === "end" ? main.head + 2 : main.head } });
+    return false;
+  },
+});
+
 /** Applies `edit` to the text between reply quotes, leaving each quote exactly as quoted. */
 export function editOutsideReplyQuotes(text: string, edit: (outside: string) => string): string {
   let result = "";
@@ -162,4 +181,4 @@ export function editOutsideReplyQuotes(text: string, edit: (outside: string) => 
 }
 
 /** Reply quotes render collapsed by default; their text in the document is unchanged either way. */
-export const replyQuoteFolding = [quoteFoldField, typeBesideCollapsedQuotes, Prec.highest(keymap.of([{ key: "Enter", run: expandQuoteAtCursor }]))];
+export const replyQuoteFolding = [quoteFoldField, typeBesideCollapsedQuotes, composeBesideCollapsedQuotes, Prec.highest(keymap.of([{ key: "Enter", run: expandQuoteAtCursor }]))];

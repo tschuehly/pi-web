@@ -1,6 +1,6 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab, insertNewlineAndIndent } from "@codemirror/commands";
 import { deleteMarkupBackward, insertNewlineContinueMarkup } from "@codemirror/lang-markdown";
-import { EditorSelection, EditorState, Compartment } from "@codemirror/state";
+import { EditorSelection, EditorState, Compartment, Prec } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
 import { indentOnInput, indentUnit } from "@codemirror/language";
 import { LitElement, html, type PropertyValues } from "lit";
@@ -598,7 +598,9 @@ export class PromptEditor extends LitElement {
             if (update.docChanged) this.updateDraft(update.state.doc.toString());
             else if (update.selectionSet) void this.refreshCompletions();
           }),
-          keymap.of([
+          // Above the Markdown language's own Prec.high keymap, so Enter on a list line sends or accepts a completion; after
+          // replyQuoteFolding, so Enter at a collapsed quote's edge still expands it.
+          Prec.highest(keymap.of([
             { any: (view, event) => this.handleEditorKeyDown(event, view) },
             { key: "ArrowDown", run: () => this.moveCompletion(1) },
             { key: "ArrowUp", run: () => this.moveCompletion(-1) },
@@ -608,7 +610,7 @@ export class PromptEditor extends LitElement {
             { key: "Backspace", run: (view) => deleteMarkupBackward(view) },
             ...historyKeymap,
             ...defaultKeymap,
-          ]),
+          ])),
         ],
       }),
     });

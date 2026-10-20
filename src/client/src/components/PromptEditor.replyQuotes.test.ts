@@ -116,6 +116,25 @@ describe("inline reply quotes", () => {
     expect(view(editor).state.selection.main.head).toBe(2);
   });
 
+  it("moves the caret into a fresh paragraph beside a collapsed quote before IME composition starts at its edge", async () => {
+    const editor = await mount();
+    editor.insertReplyQuote(cache);
+    const compose = (text: string) => {
+      view(editor).contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      const at = view(editor).state.selection.main.head;
+      view(editor).dispatch({ changes: { from: at, insert: text }, selection: EditorSelection.cursor(at + text.length), userEvent: "input.type.compose" });
+    };
+
+    view(editor).dispatch({ selection: EditorSelection.cursor(Q1.length) });
+    compose("日本");
+    expect(view(editor).state.doc.toString()).toBe(`${Q1}\n\n日本\n\n`);
+
+    view(editor).dispatch({ selection: EditorSelection.cursor(0) });
+    compose("語");
+    expect(view(editor).state.doc.toString()).toBe(`語\n\n${Q1}\n\n日本\n\n`);
+    expect(toggles(editor).map((toggle) => toggle.getAttribute("aria-expanded"))).toEqual(["false"]);
+  });
+
   it("expands a collapsed quote when any other edit changes its text", async () => {
     const editor = await mount();
     editor.insertReplyQuote(cache);
