@@ -85,6 +85,59 @@ test("captures the question chips and drawer for review", async ({ browser }) =>
   }
 });
 
+/** Tabs view under an Activity strip, the second question long enough to wrap its id and an option with long details. */
+async function openCrampedDrawer(page: Page): Promise<void> {
+  await openAskingWindow(page);
+  // Pins the roster's status: the live session status would replace a plain assignment.
+  await shownChat(page).locator("delegate-roster").evaluate((element: HTMLElement & { requestUpdate: () => void }) => {
+    const items = ["Reviewer", "Builder", "Scout", "Tester", "Writer", "Linter", "Designer", "Planner"].map((name, index) => ({ id: `d${String(index)}`, kind: "subagent", name, reportedStatus: `${name} is working on the next step` }));
+    const status = { extensionStatuses: { "pi-workbench:activity": JSON.stringify({ schemaVersion: 1, items }) } };
+    Object.defineProperty(element, "status", { configurable: true, get: () => status, set: () => undefined });
+    element.requestUpdate();
+  });
+  await shownChat(page).locator("workbench-question-chips").evaluate((element: HTMLElement & { asks: { questions: { question: string; options: { detail?: string }[] }[] }[] }) => {
+    const [ask] = element.asks;
+    if (ask === undefined) return;
+    const [first, second] = ask.questions;
+    if (first === undefined || second === undefined) return;
+    const long = "Restarts the session daemon, so every running session is interrupted and has to be resumed by hand afterwards. ".repeat(3);
+    element.asks = [{ ...ask, questions: [{ ...first, options: first.options.map((option) => ({ ...option, detail: long })) }, { ...second, question: "Fix the support bot's prompt so it stops promising refunds it cannot grant, and which checks should run first?" }] }];
+  });
+  await expect(shownChat(page).locator("delegate-roster section")).toBeVisible();
+  await chips(page).first().click();
+  await expect(drawer(page)).toBeVisible();
+}
+
+test("fits one flat question drawer above the chips and composer in a short window", async ({ browser }) => {
+  const sizes = SHOTS === undefined ? [[1000, 650]] as const : [[1000, 650], [1440, 900]] as const;
+  for (const scheme of SHOTS === undefined ? ["light"] as const : ["dark", "light"] as const) {
+    for (const [width, height] of sizes) {
+      const context = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
+      const page = await context.newPage();
+      await openCrampedDrawer(page);
+      await page.waitForTimeout(400);
+      if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, `flat-drawer-${String(width)}-${scheme}.png`) });
+      // The chips row and the composer stay whole on screen; the drawer gives way and scrolls.
+      for (const box of [await shownChat(page).locator("workbench-question-chips .chips").boundingBox(), await shownChat(page).locator("prompt-editor").boundingBox()]) {
+        expect(box !== null && box.y >= 0 && box.y + box.height <= height + 0.5).toBe(true);
+      }
+      const layout = await drawer(page).evaluate((root) => {
+        const all = (node: Element | ShadowRoot): Element[] => [...node.querySelectorAll("*")].flatMap((element) => [element, ...(element.shadowRoot === null ? [] : all(element.shadowRoot))]);
+        const elements = [root, ...all(root)];
+        const visible = (style: CSSStyleDeclaration, side: string) => parseFloat(style.getPropertyValue(`border-${side}-width`)) > 0 && style.getPropertyValue(`border-${side}-style`) !== "none" && !/rgba\(.*, 0\)$|transparent/.test(style.getPropertyValue(`border-${side}-color`));
+        const framed = elements.filter((element) => !element.matches("button, input, textarea, label, code") && ["top", "right", "bottom", "left"].every((side) => visible(getComputedStyle(element), side)));
+        const headings = elements.filter((element) => element.matches("legend")).map((element) => element.getBoundingClientRect());
+        // A fieldset's top border paints through its legend, so separators must be elements of their own.
+        const lines = elements.filter((element) => element.matches("fieldset") ? visible(getComputedStyle(element), "top") : element.matches("hr")).map((element) => element.getBoundingClientRect());
+        const crossing = lines.filter((line) => headings.some((heading) => line.top < heading.bottom && line.bottom > heading.top && line.left < heading.right && line.right > heading.left));
+        return { framed: framed.length, separators: lines.length, crossing: crossing.length };
+      });
+      expect(layout).toEqual({ framed: 1, separators: 1, crossing: 0 });
+      await context.close();
+    }
+  }
+});
+
 test("counts an idle Chat's open questions on its tab right after a reload, without opening it", async ({ page }) => {
   // Anything but the read-only asks read would open the cold Chat in the daemon.
   const reads: string[] = [];

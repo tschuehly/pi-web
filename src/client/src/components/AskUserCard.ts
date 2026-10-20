@@ -86,7 +86,7 @@ export class AskUserCard extends LitElement {
     return html`
       <article class="card open-card" aria-labelledby="ask-user-heading">
         <header class="card-header">
-          <h2 id="ask-user-heading">Questions</h2>
+          <h2 id="ask-user-heading"><slot name="title">Questions</slot></h2>
           <span class="ask-meta">
             <time datetime=${ask.updatedAt} title=${ask.updatedAt}>${updatedAgo(ask.updatedAt)}</time>
             ${ask.turnsSinceUpdate > ASK_USER_STALE_TURNS ? html`<span class="stale" title=${`${String(ask.turnsSinceUpdate)} agent turns without an update`}>may be stale</span>` : null}
@@ -94,11 +94,12 @@ export class AskUserCard extends LitElement {
           <span class="header-status" role="status" aria-live="polite" aria-atomic="true">
             ${count} of ${ask.questions.length} answered
           </span>
+          <slot name="actions"></slot>
         </header>
         ${this.renderContext(ask.context)}
         <form class="ask-form" @submit=${(event: SubmitEvent) => { this.handleSubmit(event, ask); }}>
           <div class="questions">
-            ${ask.questions.map((question, index) => this.renderQuestion(ask, question, index))}
+            ${ask.questions.map((question, index) => html`${index === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, index)}`)}
           </div>
           <footer class="form-footer">
             ${this.confirmingPartialSubmit && unanswered.length > 0
@@ -495,11 +496,11 @@ export class AskUserCard extends LitElement {
       min-width: 0;
       margin: 0;
       border: 0;
-      border-top: 1px solid var(--pi-border-muted);
       padding: 0 16px 16px;
       background: transparent;
     }
-    fieldset.question:first-child { border-top: 0; }
+    /* Its own element: a fieldset's top border would paint through the middle of its legend. */
+    .question-separator { margin: 0 0 10px; border: 0; border-top: 1px solid var(--pi-border-muted); }
     fieldset.question:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -3px; }
     legend {
       box-sizing: border-box;
@@ -625,6 +626,25 @@ export class AskUserCard extends LitElement {
       .confirmation-actions { justify-content: flex-end; }
       .primary-action { min-height: 42px; }
     }
+    /* Embedded in the question drawer: no frame of its own, one header line, composer-dense spacing. */
+    :host([flat]) { margin: 0; font-size: 13px; }
+    :host([flat]) .card { border: 0; border-radius: 0; background: transparent; }
+    :host([flat]) .card-header { justify-content: flex-start; gap: 6px; min-height: 28px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--pi-border-muted); border-radius: 0; box-shadow: none; }
+    :host([flat]) h2 { color: var(--pi-muted); font-weight: 600; text-transform: none; white-space: nowrap; }
+    :host([flat]) .ask-meta { flex: 0 1 auto; gap: 6px; font-size: 12px; }
+    :host([flat]) .header-status { flex: 1 1 auto; font-size: 12px; text-align: start; }
+    :host([flat]) .ask-meta::before, :host([flat]) .header-status::before { content: "·" / ""; margin-inline-end: 6px; }
+    :host([flat]) .open-card .ask-context { top: 37px; padding: 8px 12px; }
+    :host([flat]) .questions { padding-top: 8px; }
+    :host([flat]) .question-separator { margin-bottom: 8px; }
+    :host([flat]) fieldset.question { padding: 0 12px 8px; }
+    :host([flat]) .question-detail { margin: 2px 0 6px; }
+    :host([flat]) legend + .options { margin-top: 6px; }
+    :host([flat]) .options { gap: 2px; }
+    :host([flat]) .option { padding: 4px 8px; }
+    :host([flat]) .form-footer { padding: 6px 12px; border-radius: 0; }
+    :host([flat]) .form-footer button:not(.question-jump) { padding: 5px 10px; }
+    :host([flat]) .edit-option { margin-top: 1px; }
   `;
 }
 
