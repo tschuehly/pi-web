@@ -201,6 +201,37 @@ test("a crowded tab row keeps every tool clickable: only the Chat tabs shrink an
   if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "tabs-crowded-900.png") });
 });
 
+for (const scale of ["1", "1.25"]) {
+  test(`the tab row's controls share one centre and one gap per group at interface scale ${scale}`, async ({ page }) => {
+    await page.addInitScript((value) => { localStorage.setItem("pi-web-app-scale", value); }, scale);
+    await page.setViewportSize({ width: 1000, height: 820 });
+    await openSeededWindow(page, true);
+    // The fixture has no Workstream service: once its lookup settles, show the drawer as a found Workstream would.
+    await expect.poll(() => page.locator("pi-workbench-app").evaluate((app) => Reflect.get(app, "currentWorkstream"))).toBeNull();
+    await page.locator("pi-workbench-app").evaluate((app) => { Reflect.set(app, "currentWorkstreamError", ""); Reflect.set(app, "currentWorkstream", { id: "ws-dogfooding", title: "Pi Workbench UI dogfooding and two-tier tab layout review", sessions: [], closed: false }); });
+    await expect(tabRowTools(page).locator("workstream-context-drawer")).toBeVisible();
+    const row = await page.locator("workbench-window-tabs").evaluate((tabs) => {
+      const box = (element: Element) => element.getBoundingClientRect();
+      const bar = tabs.shadowRoot?.querySelector(".bar");
+      const actions = tabs.shadowRoot?.querySelectorAll(".actions button") ?? [];
+      const tools = [...tabs.querySelectorAll(".chat-tools > *")];
+      const gaps = (group: Element[]) => group.slice(1).map((element, index) => box(element).left - box(group[index] ?? element).right);
+      return {
+        centre: bar === null || bar === undefined ? NaN : box(bar).top + box(bar).height / 2,
+        centres: [...tools, ...actions, ...(tabs.shadowRoot?.querySelectorAll(".chat-tab .title") ?? [])].map((element) => box(element).top + box(element).height / 2),
+        toolGaps: gaps(tools),
+        actionGaps: gaps([...actions]),
+      };
+    });
+    for (const centre of row.centres) expect(Math.abs(centre - row.centre)).toBeLessThanOrEqual(1);
+    for (const gaps of [row.toolGaps, row.actionGaps]) expect(Math.max(...gaps) - Math.min(...gaps), gaps.join(", ")).toBeLessThanOrEqual(1);
+    // The Workstream control keeps the row's type, its full title as the tooltip.
+    const summary = tabRowTools(page).locator("workstream-context-drawer summary");
+    await expect(summary).toHaveAttribute("title", "Pi Workbench UI dogfooding and two-tier tab layout review");
+    expect(await summary.evaluate((element) => getComputedStyle(element).fontSize)).toBe(await chatTab(page, "Where are the notes?").evaluate((element) => getComputedStyle(element).fontSize));
+  });
+}
+
 /** The Chat tile and the neighbour preview beside it during a swipe. */
 const swipeStage = (page: Page) => page.locator("pi-workbench-app").evaluate((app) => {
   const tile = app.shadowRoot?.querySelector<HTMLElement>(".grid > .tile");
