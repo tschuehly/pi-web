@@ -131,6 +131,23 @@ describe("WorkstreamContextDrawer", () => {
     expect(request).not.toHaveProperty("records.1.payload.checkpoint.waitingOn");
   });
 
+  it("saves a draft for the Chat it was opened in after the drawer moves to another Chat", async () => {
+    const other = { ...snapshot, sessions: [...snapshot.sessions, { id: "session-other", status: "active", latestCheckpoint: null }] };
+    const calls: unknown[] = [];
+    const element = await editor((operation, input) => { if (operation === "inspect") return other; calls.push(input); return { acceptedRevision: 5 }; }, other);
+    const root = required(element.shadowRoot);
+    const next = required(root.querySelector<HTMLTextAreaElement>("#next"));
+    next.value = "A's next step"; next.dispatchEvent(new Event("input", { bubbles: true }));
+    // Grid focus moves to Chat B in the same Workstream; the focused tile's drawer is reused.
+    element.sessionId = "session-other";
+    element.serviceContext = { ...context, workspaceId: "workspace-other" };
+    await element.updateComplete;
+    root.querySelector<HTMLFormElement>("form")?.requestSubmit();
+    await vi.waitFor(() => { expect(calls).toHaveLength(1); });
+    expect(calls[0]).toMatchObject({ records: [{ type: "checkpoint.replaced", sourceSessionId: "session-current", payload: { sessionId: "session-current", checkpoint: { next: "A's next step" } } }] });
+    expect(JSON.stringify(vi.mocked(fetch).mock.calls)).not.toContain("workspace-other");
+  });
+
   it("saves waitingOn alone without a prompt field, prefilled from the checkpoint", async () => {
     const current = snapshot.sessions[0]?.latestCheckpoint;
     if (current === undefined || current === null) throw new Error("Missing fixture checkpoint");

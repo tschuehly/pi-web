@@ -28,24 +28,28 @@ export class WorkstreamContextDrawer extends LitElement {
   private draft: { title: string; whatChanged: string; remains: string; next: string; waitingOn: WorkstreamWaitingOn | "" } | undefined;
   private base: WorkstreamSnapshot | undefined;
   private pending: WorkstreamAppendInput | undefined;
+  /** The Chat and service an open draft belongs to: a reused drawer (the focused Grid tile) may since show another Chat. */
+  private target: { sessionId: string; context: WorkstreamServiceContext } | undefined;
 
-  private checkpoint(snapshot: WorkstreamSnapshot | undefined) {
-    return snapshot?.sessions.find((session) => session.id === this.sessionId)?.latestCheckpoint;
+  private checkpoint(snapshot: WorkstreamSnapshot | undefined, sessionId = this.sessionId) {
+    return snapshot?.sessions.find((session) => session.id === sessionId)?.latestCheckpoint;
   }
 
   protected override updated(changed: Map<string, unknown>): void {
     if (changed.has("snapshot") && this.base && this.snapshot?.id !== this.base.id) {
       this.editing = false;
       this.base = undefined;
+      this.target = undefined;
       this.pending = undefined;
       this.message = "";
     }
   }
 
-  private openEditor(): void {
-    if (!this.snapshot || this.snapshot.closed) return;
+  private openEditor(target = this.serviceContext && { sessionId: this.sessionId, context: this.serviceContext }): void {
+    if (!this.snapshot || this.snapshot.closed || !target) return;
+    this.target = target;
     this.base = this.snapshot;
-    const checkpoint = this.checkpoint(this.snapshot);
+    const checkpoint = this.checkpoint(this.snapshot, this.target.sessionId);
     this.draft = { title: this.snapshot.title, whatChanged: checkpoint?.whatChanged ?? "", remains: checkpoint?.remains ?? "", next: checkpoint?.next ?? "", waitingOn: checkpoint?.waitingOn ?? "" };
     this.editing = true;
     this.conflict = false;
@@ -58,6 +62,7 @@ export class WorkstreamContextDrawer extends LitElement {
     if (this.saving) return;
     if (this.dirty && !window.confirm("You have unsaved changes. Discard?")) return;
     this.editing = false;
+    this.target = undefined;
     this.pending = undefined;
     this.message = "";
   }
@@ -69,7 +74,7 @@ export class WorkstreamContextDrawer extends LitElement {
 
   private get checkpointChanged(): boolean {
     const d = this.draft;
-    const old = this.checkpoint(this.base);
+    const old = this.checkpoint(this.base, this.target?.sessionId);
     return !!d && (checkpointFields.some(({ name }) => d[name] !== (old?.[name] ?? "")) || d.waitingOn !== (old?.waitingOn ?? ""));
   }
 
@@ -91,15 +96,15 @@ export class WorkstreamContextDrawer extends LitElement {
   }
 
   private async reload(): Promise<void> {
-    if (!this.base || !this.serviceContext) return;
+    if (!this.base || !this.target) return;
     const keepLocal = this.conflict || this.pending !== undefined;
     if (!keepLocal && this.dirty && !window.confirm("Reload and discard your unsaved changes?")) return;
     try {
-      const snapshot = await inspectWorkstream(this.serviceContext, this.base.id);
+      const snapshot = await inspectWorkstream(this.target.context, this.base.id);
       const draft = this.draft;
       this.snapshot = snapshot;
       this.dispatchEvent(new CustomEvent("workstream-updated", { detail: snapshot, bubbles: true, composed: true }));
-      this.openEditor();
+      this.openEditor(this.target);
       if (keepLocal && draft !== undefined) {
         this.draft = draft;
         this.message = "Latest Workstream loaded. Your local draft is kept; review it before saving.";
@@ -110,31 +115,33 @@ export class WorkstreamContextDrawer extends LitElement {
 
   private async save(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    if (this.saving || !this.base || !this.draft || !this.serviceContext || !this.dirty || this.conflict) return;
+    if (this.saving || !this.base || !this.draft || !this.target || !this.dirty || this.conflict) return;
     const d = this.draft;
+    const { sessionId, context } = this.target;
     const titleError = d.title.trim() === "" ? "Enter a title." : d.title.length > 200 ? "Title must be at most 200 characters." : "";
-    const old = this.checkpoint(this.base);
+    const old = this.checkpoint(this.base, sessionId);
     const checkpointChanged = this.checkpointChanged;
     if (titleError || this.invalidCheckpoint) { this.message = titleError || "Complete all three checkpoint fields (4,000 characters each)."; return; }
-    const source = this.base.sessions.find((session) => session.id === this.sessionId && session.status === "active");
-    if (checkpointChanged && !source) { this.message = "The selected Chat must be an active Workstream session to replace its checkpoint."; return; }
+    const source = this.base.sessions.find((session) => session.id === sessionId && session.status === "active");
+    if (checkpointChanged && !source) { this.message = `Chat ${sessionId} is no longer an active Workstream session; its checkpoint was not saved. Your draft is kept.`; return; }
     this.saving = true;
     this.message = "";
     let appended = false;
     try {
       // Preflight gives an actionable conflict before append; the Store's expectedRevision is authoritative.
-      const current = this.pending ? this.base : await inspectWorkstream(this.serviceContext, this.base.id);
+      const current = this.pending ? this.base : await inspectWorkstream(context, this.base.id);
       if (current.revision !== this.base.revision) { this.conflict = true; this.message = "Workstream changed elsewhere. Reload to review the latest version; your draft is preserved."; return; }
       const records: WorkstreamAppendInput["records"] = [];
-      if (d.title !== this.base.title) records.push({ type: "title.set", producer: "owner", ...(this.sessionId ? { sourceSessionId: this.sessionId } : {}), payload: { title: d.title } });
+      if (d.title !== this.base.title) records.push({ type: "title.set", producer: "owner", ...(sessionId ? { sourceSessionId: sessionId } : {}), payload: { title: d.title } });
       if (checkpointChanged && source) records.push({ type: "checkpoint.replaced", producer: "owner", sourceSessionId: source.id, payload: { sessionId: source.id, checkpoint: { id: randomHex(16), whatChanged: d.whatChanged, remains: d.remains, next: d.next, ...(d.waitingOn === "" ? {} : { waitingOn: d.waitingOn }), ...(old?.references ? { references: old.references } : {}) } } });
       this.pending ??= { workstreamId: this.base.id, expectedRevision: this.base.revision, idempotencyKey: randomHex(16), records };
-      await appendWorkstream(this.serviceContext, this.pending);
+      await appendWorkstream(context, this.pending);
       appended = true;
       this.pending = undefined;
-      const saved = await inspectWorkstream(this.serviceContext, this.base.id);
+      const saved = await inspectWorkstream(context, this.base.id);
       this.pending = undefined;
       this.editing = false;
+      this.target = undefined;
       this.snapshot = saved;
       this.dispatchEvent(new CustomEvent("workstream-updated", { detail: saved, bubbles: true, composed: true }));
       this.message = "Workstream saved.";
@@ -159,6 +166,7 @@ export class WorkstreamContextDrawer extends LitElement {
 
     const overview = this.snapshot.overview;
     const checkpoint = this.checkpoint(this.snapshot);
+    const draftCheckpoint = this.checkpoint(this.snapshot, this.target?.sessionId);
     return html`
       <details style=${`--workstream-color:${workstreamAccentColor(this.snapshot.id)}`}>
         <summary title=${this.snapshot.title}><span class="visually-hidden">Workstream: </span><strong>${this.snapshot.title}</strong>${this.compact ? html`<svg class="chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>` : nothing}</summary>
@@ -185,7 +193,7 @@ export class WorkstreamContextDrawer extends LitElement {
               <label for="workstream-title">Title</label>
               <input id="workstream-title" name="title" .value=${this.draft.title} aria-describedby="title-error" ?disabled=${this.saving}>
               <small id="title-error" class="error">${!this.draft.title.trim() ? "Enter a title." : this.draft.title.length > 200 ? "Title must be at most 200 characters." : ""}</small>
-              <p>Checkpoint for Chat ${this.sessionId} · owner correction${checkpoint ? ` (${checkpoint.recordedAt})` : " (new)"}</p>
+              <p>Checkpoint for Chat ${this.target?.sessionId} · owner correction${draftCheckpoint ? ` (${draftCheckpoint.recordedAt})` : " (new)"}</p>
               ${checkpointFields.map(({ name, label, max }) => html`
                 <label for=${name}>${label}</label><textarea id=${name} name=${name} maxlength=${max} .value=${this.draft?.[name] ?? ""} ?disabled=${this.saving}></textarea>
               `)}
