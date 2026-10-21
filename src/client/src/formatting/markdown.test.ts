@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { marked } from "marked";
 import { toSafeMarkdownHtml } from "./markdown";
 import { markdownWorkspaceContext, type MarkdownWorkspaceContext } from "./workspaceLinks";
 
@@ -29,17 +28,15 @@ describe("final Markdown HTML cache", () => {
   it("reuses sanitized HTML without parsing or rebuilding DOM, including across route query changes", () => {
     vi.stubEnv("BASE_URL", "./");
     window.history.replaceState(null, "", "/nested/pi/?view=chat");
-    const parse = vi.spyOn(marked, "parse");
+    // Every uncached render parses into a fresh <template>, so no element creation means no parse.
     const createElement = vi.spyOn(document, "createElement");
     const text = "[cache reuse](./cached.txt)\n\n| A |\n| - |\n| B |";
     const first = toSafeMarkdownHtml(text, workspace);
     expect(first).toContain('data-workspace-file="cached.txt"');
     expect(first).toContain('class="table-scroll"');
-    parse.mockClear();
     createElement.mockClear();
     window.history.replaceState(null, "", "/nested/pi/?view=workspace");
     expect(toSafeMarkdownHtml(text, { ...workspace })).toBe(first);
-    expect(parse).not.toHaveBeenCalled();
     expect(createElement).not.toHaveBeenCalled();
   });
 
@@ -54,19 +51,19 @@ describe("final Markdown HTML cache", () => {
     expect(toSafeMarkdownHtml(text, workspace)).toContain("/fixed/api/");
 
     const plain = toSafeMarkdownHtml(text);
-    const parse = vi.spyOn(marked, "parse");
+    const createElement = vi.spyOn(document, "createElement");
     vi.stubEnv("BASE_URL", "/elsewhere/");
     expect(toSafeMarkdownHtml(text)).toBe(plain);
-    expect(parse).not.toHaveBeenCalled();
+    expect(createElement).not.toHaveBeenCalled();
   });
 
   it("evicts old entries rather than growing without bound", () => {
     const text = "cache eviction sentinel";
     toSafeMarkdownHtml(text);
     for (let index = 0; index < 300; index++) toSafeMarkdownHtml(`cache eviction ${String(index)}`);
-    const parse = vi.spyOn(marked, "parse");
+    const createElement = vi.spyOn(document, "createElement");
     toSafeMarkdownHtml(text);
-    expect(parse).toHaveBeenCalledOnce();
+    expect(createElement).toHaveBeenCalledExactlyOnceWith("template");
   });
 });
 
@@ -110,6 +107,17 @@ describe("workspace Markdown downloads", () => {
     const absolute = "[download](/srv/work/result.zip)";
     expect(link(absolute, workspace).href).toContain("download=1");
     expect(link(absolute, { ...workspace, root: "/another" }).getAttribute("data-outside-file")).toBe("/srv/work/result.zip");
+  });
+
+  it("links bare absolute destinations with spaces, leaving code untouched", () => {
+    const text = "[IMG_2430.MOV](/Users/me/Bilder & Videos/Hochzeit Jana/IMG_2430.MOV) and `[x](/a b/c.mov)`";
+    const div = render(text, workspace);
+    const anchor = div.querySelector("a");
+    expect(anchor?.textContent).toBe("IMG_2430.MOV");
+    expect(anchor?.getAttribute("data-outside-file")).toBe("/Users/me/Bilder & Videos/Hochzeit Jana/IMG_2430.MOV");
+    expect(new URL(anchor?.href ?? "").searchParams.get("path")).toBe("IMG_2430.MOV");
+    expect(div.querySelector("code")?.textContent).toBe("[x](/a b/c.mov)");
+    expect(render("[relative](a b.mov)", workspace).querySelector("a")).toBeNull();
   });
 
   it.each([

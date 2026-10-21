@@ -170,7 +170,22 @@ it("reveals a local .docx link in Finder without opening anything, while a .md l
   }
 });
 
-it.each(["xlsb", "ppsx", "odg", "flac", "aac", "webm", "m4v", "mkv"])("reveals a local .%s link in Finder", async (extension) => {
+it.each(["mp4", "MOV", "m4v", "webm"])("opens a local .%s video link in the Files pane, not Finder", async (extension) => {
+  const revealLocalFile = vi.fn(() => Promise.resolve(true));
+  Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile: vi.fn(), revealLocalFile } });
+  try {
+    const listener = vi.fn((event: Event) => { event.preventDefault(); });
+    const link = await setup(`clips/IMG_2430.${extension}`, "local");
+    link.view.addEventListener("workspace-file-open", listener);
+    expect(dispatchClick(link.view, link.anchor)).toBe(true);
+    expect(revealLocalFile).not.toHaveBeenCalled();
+    expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { path: `clips/IMG_2430.${extension}` } });
+  } finally {
+    Reflect.deleteProperty(window, "piWebNative");
+  }
+});
+
+it.each(["xlsb", "ppsx", "odg", "flac", "aac", "mkv"])("reveals a local .%s link in Finder", async (extension) => {
   const revealLocalFile = vi.fn(() => Promise.resolve(true));
   Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile: vi.fn(), revealLocalFile } });
   try {

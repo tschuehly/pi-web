@@ -124,7 +124,7 @@ export class WorkbenchChatPane extends LitElement {
       ></chat-view>
       <delegate-roster .status=${state.status} .collapsed=${this.rosterCollapsed} .onToggleCollapsed=${this.onToggleRoster}></delegate-roster>
       <goal-status-chip .status=${state.status}></goal-status-chip>
-      <workbench-question-chips .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => this.sessions.submitAsk(askId, submission)}></workbench-question-chips>
+      <workbench-question-chips .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => this.sessions.submitAsk(askId, submission)}></workbench-question-chips>
       <prompt-editor
         .draftStorage=${this.draftStorage}
         dense

@@ -1,4 +1,4 @@
-import { marked } from "marked";
+import { Marked, marked, type TokenizerExtension } from "marked";
 import { replaceLocalMarkdownImages } from "./markdownImages";
 import { workspaceFilePreviewUrl } from "../api/urls";
 import { resolveAppUrl } from "../appUrl";
@@ -12,6 +12,27 @@ renderer.blockquote = function ({ text, tokens }) {
   return `<blockquote data-quote-source="${escapeHtml(text).replaceAll('"', "&quot;")}">\n${this.parser.parse(tokens)}</blockquote>\n`;
 };
 
+/**
+ * `[label](/abs/path with spaces.mov)`: CommonMark needs `<…>` around a destination
+ * containing spaces, but agents write absolute local paths bare. Parsed inline, so
+ * code spans and blocks keep their text.
+ */
+const spacedLocalPathLink: TokenizerExtension = {
+  name: "spacedLocalPathLink",
+  level: "inline",
+  start: (src) => {
+    const index = src.indexOf("[");
+    return index < 0 ? undefined : index;
+  },
+  tokenizer(src) {
+    const match = /^\[([^[\]\n]+)\]\((\/[^()<>\n]* [^()<>\n]*)\)/u.exec(src);
+    if (match === null) return undefined;
+    const [raw, text = "", href = ""] = match;
+    return { type: "link", raw, href: href.trim(), title: null, text, tokens: this.lexer.inlineTokens(text) };
+  },
+};
+const markdown = new Marked({ extensions: [spacedLocalPathLink] });
+
 const MAX_MARKDOWN_CACHE_ENTRIES = 300;
 const markdownHtmlCache = new Map<string, string>();
 
@@ -22,7 +43,7 @@ export function toSafeMarkdownHtml(text: string, workspace?: MarkdownWorkspaceCo
   ]]);
   const cached = markdownHtmlCache.get(key);
   if (cached !== undefined) return cached;
-  const html = marked.parse(text, { async: false, breaks: true, gfm: true, renderer });
+  const html = markdown.parse(text, { async: false, breaks: true, gfm: true, renderer });
   const safeHtml = sanitizeHtml(html, workspace, imageIntentKey);
   markdownHtmlCache.set(key, safeHtml);
   if (markdownHtmlCache.size > MAX_MARKDOWN_CACHE_ENTRIES) {

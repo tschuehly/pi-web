@@ -4,6 +4,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { PendingAskUser } from "../../../shared/apiTypes";
 import type { AskUserCard, AskUserSubmitCallback } from "./AskUserCard";
 import "./AskUserCard";
+import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 
 // Lucide "message-circle-question" and "chevron-down" (https://lucide.dev, ISC).
 const QUESTION_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>`;
@@ -23,6 +24,7 @@ export class WorkbenchQuestionChips extends LitElement {
   /** Machine-scoped session key the ask drafts are stored under. */
   @property({ attribute: false }) draftSessionId = "";
   @property({ attribute: false }) onSubmit?: AskUserSubmitCallback;
+  @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
   @state() private open = false;
   /** The chip that opened the drawer, refocused when it closes. */
   private opener: HTMLElement | undefined;
@@ -43,7 +45,7 @@ export class WorkbenchQuestionChips extends LitElement {
         <section id="question-drawer" class="drawer" aria-label="Open questions" @keydown=${this.onKeydown}>
           ${single ? nothing : html`<header><span>${title}</span>${closeButton}</header>`}
           <div class="sets">
-            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat context-beside data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
+            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat context-beside data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
           </div>
         </section>` : nothing}
       <div class="chips" role="group" aria-label="Open questions" @keydown=${this.onKeydown}>
