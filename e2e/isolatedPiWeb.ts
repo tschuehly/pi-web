@@ -87,7 +87,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const adHocFolder = join(root, "embabel", "me-openapi-human-acceptance", ".scratch", "openapi-pr-delivery");
     if (encodeURIComponent(`folder:${adHocFolder}`).length <= 100) throw new Error("Ad-hoc fixture folder id must exceed 100 characters");
     const clientDist = join(root, "client");
-    const socket = join(dataDir, "sessiond.sock");
+    // Keep the Unix socket below macOS's 104-byte path ceiling, including a session-scoped TMPDIR.
+    const socket = join(root, "s");
     const port = await freePort();
     if (port === LIVE_PORT) throw new Error("Refusing to use the live PI WEB port");
     await Promise.all([mkdir(sessionDir, { recursive: true }), mkdir(join(project, "docs"), { recursive: true }), mkdir(join(project, "entries"), { recursive: true }), mkdir(adHocFolder, { recursive: true })]);

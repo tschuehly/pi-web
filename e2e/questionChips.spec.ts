@@ -32,7 +32,7 @@ async function openWindow(page: Page, chats: readonly (readonly [string, string]
   await expect(shownChat(page)).toHaveAttribute("data-session", focused);
 }
 
-const shownChat = (page: Page) => page.locator("main.chat-shell").first();
+const shownChat = (page: Page) => page.locator('.tile[data-focused="true"] main.chat-shell');
 const chips = (page: Page) => shownChat(page).locator("workbench-question-chips .chip");
 const drawer = (page: Page) => shownChat(page).locator("workbench-question-chips .drawer");
 const tabCount = (page: Page, sessionId: string) => page.locator(`workbench-window-tabs .chat-tab[data-session="${sessionId}"] .questions`);
