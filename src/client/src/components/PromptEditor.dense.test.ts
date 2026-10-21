@@ -74,7 +74,7 @@ describe("dense Activity badge", () => {
 
     const badge = root.querySelector<HTMLButtonElement>(".input-row > .activity-badge");
     expect(badge?.textContent.trim()).toBe("3");
-    expect(badge?.getAttribute("aria-label")).toBe("Activity: 2 running delegates · 1 uncollected · 0 watchers · 0 shells");
+    expect(badge?.getAttribute("aria-label")).toBe("Activity: 1 to collect · 2 running");
     expect(badge?.getAttribute("aria-expanded")).toBe("false");
     badge?.click();
     expect(toggle).toHaveBeenCalledOnce();
