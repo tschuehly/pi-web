@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GOAL_STATUS_STATE_VALUES, isTerminalDelegate, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWatcherStatusSnapshot, parseWorkingModeSnapshot, visibleShellExecutions, workingModePending, type WorkingModeState } from "./extensionStatusSnapshots";
+import { ACTIVITY_STATUS_KEY, GOAL_STATUS_STATE_VALUES, WATCHER_STATUS_KEY, activitySummary, delegateOutcome, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWatcherStatusSnapshot, parseWorkingModeSnapshot, visibleShellExecutions, workingModePending, type WorkingModeState } from "./extensionStatusSnapshots";
 
 describe("extension status snapshots", () => {
   it("accepts only bounded active background bash status", () => {
@@ -135,10 +135,10 @@ describe("extension status snapshots", () => {
   it("accepts bounded source-owned watcher rows and rejects malformed snapshots atomically", () => {
     const watcher = { logicalId: "logical-1", handleId: "abc123", label: "Build", mode: "poll", scope: "gh run view 123", state: "retrying", consecutiveFailures: 2, startedAt: "2026-08-02T10:00:00.000Z" };
     const parse = (watchers: unknown[], schemaVersion = 1) => parseWatcherStatusSnapshot(JSON.stringify({ schemaVersion, watchers }));
-    expect(parse([watcher])).toEqual([{ logicalId: "logical-1", handleId: "abc123", label: "Build", mode: "poll", scope: "gh run view 123", state: "retrying", consecutiveFailures: 2 }]);
+    expect(parse([watcher])).toEqual([{ logicalId: "logical-1", handleId: "abc123", label: "Build", mode: "poll", scope: "gh run view 123", state: "retrying", consecutiveFailures: 2, startedAt: "2026-08-02T10:00:00.000Z" }]);
     expect(parse([{ ...watcher, scope: "界\u200b\u202e\u0000 👩‍💻  ready\n" }, { ...watcher, logicalId: "other" }])).toEqual([
-      { logicalId: "logical-1", handleId: "abc123", label: "Build", mode: "poll", scope: "界 👩💻 ready", state: "retrying", consecutiveFailures: 2 },
-      { logicalId: "other", handleId: "abc123", label: "Build", mode: "poll", scope: "gh run view 123", state: "retrying", consecutiveFailures: 2 },
+      { logicalId: "logical-1", handleId: "abc123", label: "Build", mode: "poll", scope: "界 👩💻 ready", state: "retrying", consecutiveFailures: 2, startedAt: "2026-08-02T10:00:00.000Z" },
+      { logicalId: "other", handleId: "abc123", label: "Build", mode: "poll", scope: "gh run view 123", state: "retrying", consecutiveFailures: 2, startedAt: "2026-08-02T10:00:00.000Z" },
     ]);
     expect(parse([{ ...watcher, scope: "\u200b\u0000" }, { ...watcher, logicalId: "other" }])).toMatchObject([
       { logicalId: "logical-1", scope: "" }, { logicalId: "other", scope: "gh run view 123" },
@@ -192,9 +192,35 @@ describe("extension status snapshots", () => {
     const terminal = items[1];
     if (running === undefined || terminal === undefined) throw new Error("Expected parsed roster items");
     expect(running).toMatchObject({ model: "openai-codex/gpt-5.6-sol", effort: "medium" });
-    expect(isTerminalDelegate(running)).toBe(false);
-    expect(isTerminalDelegate(terminal)).toBe(true);
+    expect(delegateOutcome(running)).toBe("running");
+    expect(delegateOutcome(terminal)).toBe("done");
     expect(parseDelegateActivitySnapshot(JSON.stringify({ schemaVersion: 1, items: [{ id: "shell", kind: "shell" }] }))).toEqual([]);
     expect(parseDelegateActivitySnapshot(JSON.stringify({ schemaVersion: 1, items: [{ id: "one", kind: "worker" }, { id: "one", kind: "worker" }] }))).toEqual([]);
+  });
+
+  it("keeps valid launch, report and end times and drops anything else", () => {
+    const [item] = parseDelegateActivitySnapshot(JSON.stringify({ schemaVersion: 1, items: [
+      { id: "one", kind: "worker", startedAt: "2026-10-21T10:00:00.000Z", reportedAt: "2026-10-21T10:02:00Z", endedAt: "yesterday" },
+    ] }));
+    expect(item).toEqual({ id: "one", kind: "worker", startedAt: "2026-10-21T10:00:00.000Z", reportedAt: "2026-10-21T10:02:00Z" });
+  });
+
+  it("tells failures, collectable results and cancellations apart from running work", () => {
+    const outcome = (activity?: string) => delegateOutcome({ id: "x", kind: "subagent", ...(activity === undefined ? {} : { activity }) });
+    expect([undefined, "starting", "reading src/a.ts"].map(outcome)).toEqual(["running", "running", "running"]);
+    expect(["success", "finished"].map(outcome)).toEqual(["done", "done"]);
+    expect(["execution failed", "launch_failed", "preflight failed", "outcome unknown", "timed out"].map(outcome)).toEqual(["failed", "failed", "failed", "failed", "failed"]);
+    expect(outcome("cancelled")).toBe("cancelled");
+  });
+
+  it("summarizes activity attention-first and omits empty categories", () => {
+    const summary = (items: unknown[], watchers: unknown[] = []) => activitySummary({ extensionStatuses: {
+      [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items }),
+      [WATCHER_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, watchers }),
+    } }).label;
+    expect(summary([{ id: "a", kind: "subagent" }])).toBe("1 running");
+    expect(summary([
+      { id: "a", kind: "subagent" }, { id: "b", kind: "worker" }, { id: "c", kind: "subagent", activity: "success" }, { id: "d", kind: "subagent", activity: "execution failed" },
+    ], [{ logicalId: "w", handleId: "w", mode: "poll", scope: "", state: "watching", consecutiveFailures: 0, startedAt: "2026-08-02T10:00:00.000Z" }])).toBe("1 failed · 1 to collect · 2 running · 1 watcher");
   });
 });

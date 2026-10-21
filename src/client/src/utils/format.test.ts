@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatFileSize } from "./format";
+import { formatAge, formatElapsed, formatFileSize } from "./format";
 
 describe("formatFileSize", () => {
   it("keeps small sizes in whole bytes", () => {
@@ -19,5 +19,12 @@ describe("formatFileSize", () => {
     expect(formatFileSize(-1)).toBe("0 B");
     expect(formatFileSize(Number.NaN)).toBe("0 B");
     expect(formatFileSize(Number.POSITIVE_INFINITY)).toBe("0 B");
+  });
+});
+
+describe("formatElapsed and formatAge", () => {
+  it("use the coarsest unit that still reads precisely", () => {
+    expect([0, 45_000, 12 * 60_000 + 59_000, 65 * 60_000, 50 * 3_600_000].map(formatElapsed)).toEqual(["0s", "45s", "12m", "1h 05m", "2d 2h"]);
+    expect([-5_000, 9_000, 45_000, 12 * 60_000, 3 * 3_600_000, 49 * 3_600_000].map(formatAge)).toEqual(["just now", "just now", "45s ago", "12m ago", "3h ago", "2d ago"]);
   });
 });
