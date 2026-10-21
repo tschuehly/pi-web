@@ -174,8 +174,8 @@ export class ModelEffortPicker extends LitElement {
     .model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .separator { color: var(--pi-dim); }
     .thinking { flex: 0 0 auto; }
-    /* Anchored to the composer footer (the nearest positioned ancestor), left-aligned above it. */
-    .popover { position: absolute; z-index: 20; left: 10px; bottom: calc(100% + 4px); display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; width: min(360px, calc(100% - 20px)); max-height: min(440px, 60vh); padding: 8px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
+    /* Anchored to the composer footer (the nearest positioned ancestor), left-aligned above it; 100cqh keeps it inside a Grid tile. */
+    .popover { position: absolute; z-index: 20; left: 10px; bottom: calc(100% + 4px); display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; width: min(360px, calc(100% - 20px)); max-height: min(440px, 60vh, calc(100cqh - 80px)); padding: 8px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
     .effort { display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 8px; background: var(--pi-bg); }
     .effort > button { flex: 1 1 auto; min-height: 26px; padding: 2px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--pi-muted); }
     .effort > button:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
@@ -194,6 +194,8 @@ export class ModelEffortPicker extends LitElement {
     /* Narrow composer: a full-width sheet above the composer. */
     @container composer (max-width: 560px) {
       .trigger { max-width: 40cqi; }
+      /* Clip the start, not the end: "…opus-5-5" still names the model where "claude-o…" does not. */
+      .model-name { direction: rtl; }
       .popover { right: 6px; left: 6px; width: auto; }
     }
     @media (pointer: coarse) {

@@ -1,4 +1,4 @@
-import { ACTIVE_TOOL_EXECUTION_LIMIT, type ActiveToolExecution } from "../../shared/apiTypes";
+import { ACTIVE_TOOL_EXECUTION_LIMIT, type ActiveToolExecution, type SessionStatus } from "../../shared/apiTypes";
 
 export const WORKING_MODE_STATUS_KEY = "working-mode";
 export const ACTIVITY_STATUS_KEY = "pi-workbench:activity";
@@ -247,4 +247,17 @@ export function parseDelegateActivitySnapshot(text: string | undefined): Delegat
 const TERMINAL_ACTIVITY = new Set(["success", "preflight failed", "launch failed", "execution failed", "cancelled", "outcome unknown", "finished", "timed out"]);
 export function isTerminalDelegate(item: DelegateActivityItem): boolean {
   return TERMINAL_ACTIVITY.has(item.activity?.toLowerCase().replaceAll("_", " ") ?? "");
+}
+
+/** The Activity roster's entries by source, their total, and the one-line aggregate its header and badge show. */
+export function activitySummary(status: Pick<SessionStatus, "extensionStatuses" | "activeToolExecutions"> | undefined) {
+  const delegates = parseDelegateActivitySnapshot(status?.extensionStatuses?.[ACTIVITY_STATUS_KEY]);
+  const watchers = parseWatcherStatusSnapshot(status?.extensionStatuses?.[WATCHER_STATUS_KEY]);
+  const shells = visibleShellExecutions(status?.activeToolExecutions);
+  const backgroundBash = parseBackgroundBashStatusSnapshot(status?.extensionStatuses?.[BACKGROUND_BASH_STATUS_KEY]);
+  const uncollected = delegates.filter(isTerminalDelegate).length;
+  const running = delegates.length - uncollected;
+  const shellCount = shells.length + backgroundBash.length;
+  const label = `${String(running)} running ${running === 1 ? "delegate" : "delegates"} · ${String(uncollected)} uncollected · ${String(watchers.length)} ${watchers.length === 1 ? "watcher" : "watchers"} · ${String(shellCount)} ${shellCount === 1 ? "shell" : "shells"}`;
+  return { delegates, watchers, shells, backgroundBash, count: delegates.length + watchers.length + shellCount, label };
 }
