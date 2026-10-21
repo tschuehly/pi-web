@@ -38,7 +38,7 @@ import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
 import { closeChats, focusChat, GRID_MIN_TILE, gridRatio, gridRatioBounds, gridRatioFromDrag, gridRatioFromKeyboard, gridTiles, moveChats, orderedChats, resizeGrid, toggleLayout, toggleMaximized, updateChat, type GridAxis, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
-import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor } from "../workstreamColor";
+import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import type { ChatRevealTarget, ChatView } from "./ChatView";
 import { hasUnacknowledgedSend, type PromptEditor } from "./PromptEditor";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
@@ -109,6 +109,7 @@ const MOVE_REPLY_MS = 60_000;
 
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
+  private readonly workstreamColors = new WorkstreamColorController(this);
   @state() private app: AppState = initialAppState();
   /** The navigation still loading; a newer navigation ends its Loading. */
   @state() private loadingAt: number | undefined = 0;
@@ -1634,7 +1635,7 @@ export class WorkbenchApp extends LitElement {
 
   /**
    * Every Grid tile's one header row, focused or not, so focusing a tile moves nothing: its Chat, the Chat's menu, full
-   * size and close; its Workstream is the colour on its edge. Only the focused (`live`) tile's menu acts; elsewhere it is
+   * size and close; its Workstream is the colour on its edge and a muted title after the Chat's, which ellipsizes first. Only the focused (`live`) tile's menu acts; elsewhere it is
    * inert, so a press falls through to the tile, focuses it, and then acts in the focused bar.
    */
   private renderTileBar({ chat }: GridTile, status: ChatTabStatus, live: boolean) {
@@ -1646,7 +1647,7 @@ export class WorkbenchApp extends LitElement {
         @dragstart=${(event: DragEvent) => { startChatDrag(event, { windowId: this.windows.id, sessionIds: [chat.sessionId] }, chat.title); this.guardChatDrag(event); }}
         @dragend=${(event: DragEvent) => { if (event.dataTransfer?.dropEffect === "none" && endedOutside(event, window)) this.moveToNewWindow([chat.sessionId]); }}>
         ${renderChatStatusDot(status)}
-        <span class="tile-title" title=${chat.title}>${chat.title}</span>
+        <span class="tile-title" title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · Chat: ${chat.title}`}><span class="chat-name">${chat.title}</span>${chat.workstream === undefined ? nothing : html`<span class="tile-ws"><span class="ws-dot"></span><span>${chat.workstream.title}</span></span>`}</span>
         ${status === "needs" ? html`<span class="needs">Needs you</span>` : nothing}
         <span class="tile-actions">
           <button type="button" class="icon-button" title="Full size (⌃↩)" aria-label=${`Full size ${chat.title}`} @click=${maximize}>${renderBuiltinTabIcon("maximize")}</button>
@@ -2087,7 +2088,13 @@ export class WorkbenchApp extends LitElement {
     .tile .chat-shell { flex: 1 1 auto; height: auto; min-height: 0; }
     /* Compact: the Workstream colour is a 2px edge and a contrast-checked tint, so the title stays --pi-text. */
     .tile-bar { position: relative; z-index: 6; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 2px 0 6px; border-left: 2px solid var(--ws, transparent); background: color-mix(in srgb, var(--ws, var(--pi-surface)) ${WORKSTREAM_TINT_PERCENTAGES.tab}%, var(--pi-surface)); color: var(--pi-muted); font-size: 12px; user-select: none; --workbench-menu-button-size: 24px; }
-    .tile-title { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--pi-text); text-overflow: ellipsis; white-space: nowrap; }
+    .tile-title { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; }
+    .chat-name { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-text); text-overflow: ellipsis; }
+    /* The Workstream title gives way long before the Chat title does. */
+    .tile-ws { flex: 0 1000 auto; min-width: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; color: var(--pi-muted); }
+    .tile-ws::before { content: "·"; }
+    .ws-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ws); }
+    .tile-ws > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .needs { flex: 0 0 auto; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--pi-warning) 28%, transparent); color: var(--pi-text); font-size: 11px; font-weight: 700; line-height: 18px; }
     .tile-tools { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; }
     /* Full size and close take room only while the bar is hovered or holds focus, leaving the title the width; the menu stays put at the end. */
