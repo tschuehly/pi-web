@@ -81,8 +81,8 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean, reflect: true, attribute: "show-usage" }) showUsage = false;
   @property({ type: Number }) warningCount = 0;
   /**
-   * A grid tile's compact composer: one row of attachment chips, a one-line input that grows, then model · effort, the context
-   * ring (numbers and cost in its tooltip), the Working Mode icons, the Activity badge, and attach/send/stop (stop only while
+   * A grid tile's compact composer: one full-width field holding attachment chips, a one-line input that grows, then at its
+   * right edge the model icon (model · effort in its tooltip), the context ring (numbers and cost in its tooltip), the Working Mode icons, the Activity badge, and attach/send/stop (stop only while
    * there is work to stop).
    */
   @property({ type: Boolean, reflect: true }) dense = false;
@@ -311,7 +311,7 @@ export class PromptEditor extends LitElement {
 
   private renderCompactStatus() {
     if (this.status === undefined) return null;
-    return html`<model-effort-picker .status=${this.status} .thinkingLevels=${this.thinkingLevels} .loadModels=${this.loadModels} .onSetModel=${this.onSetModel} .onSetThinkingLevel=${this.onSetThinkingLevel}></model-effort-picker>`;
+    return html`<model-effort-picker ?compact=${this.dense} .status=${this.status} .thinkingLevels=${this.thinkingLevels} .loadModels=${this.loadModels} .onSetModel=${this.onSetModel} .onSetThinkingLevel=${this.onSetThinkingLevel}></model-effort-picker>`;
   }
 
   private renderActivityBadge() {

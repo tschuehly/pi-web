@@ -665,7 +665,7 @@ export const promptEditorStyles = css`
   @media (forced-colors: active) {
     .editor-resize-handle:focus-visible, button:focus-visible { outline-color: Highlight; }
   }
-  /* Dense (a grid tile): one row, no rules; a tinted field instead of a top border. The meta and actions stay on the input's last line. */
+  /* Dense (a grid tile): one full-width tinted field, no rules. Icon-only meta and actions sit inside it at the right edge, on the input's last line. */
   :host([dense]) footer { gap: 1px; padding: 2px 6px; border-top: 0; }
   :host([dense]) footer.shell-mode { background: transparent; }
   /* One input-row in both layouts keeps the CodeMirror host across a dense toggle; only dense lays it out. */
@@ -673,7 +673,7 @@ export const promptEditorStyles = css`
   :host([dense]) .input-row { display: flex; align-items: flex-end; gap: 4px; min-width: 0; padding: 0 2px 0 8px; border-radius: 8px; background: color-mix(in srgb, var(--pi-text) 6%, transparent); }
   :host([dense]) .input-row:has(.cm-editor.cm-focused) { background: color-mix(in srgb, var(--pi-text) 9%, transparent); }
   :host([dense]) footer.shell-mode .input-row { background: var(--pi-success-bg); }
-  /* Zero basis: the input takes what the meta leaves, and the model name gives way (ellipsis) before the input drops below its minimum. */
+  /* Zero basis: the input takes what the icons leave, so its text wraps before them. */
   :host([dense]) .editor-wrap { flex: 1 1 0; min-width: min(90px, 30%); }
   :host([dense]) .dense-meta { flex: 0 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; height: 26px; margin-bottom: 1px; color: var(--pi-muted); font-size: 11px; white-space: nowrap; }
   :host([dense]) .dense-meta working-mode-controls { flex: 0 0 auto; }
