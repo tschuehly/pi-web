@@ -18,7 +18,8 @@ Baseline: `79fd0483`. Candidate: the commit that adds this file.
   The winner is still chosen in the old order: filename bucket first, then remaining files, newest embedded timestamp first, ties broken by plain path order.
   An exact header id beats a prefix match wherever it appears.
   An exact hit stops claiming later candidates.
-  Concurrent lookups share in-flight header reads only, so no header or miss is remembered.
+  Concurrent lookups share the entire in-flight header probe (memo validation and any fallback read).
+  Completed probes and misses are not remembered by the sharing map.
 
 `SessionDirResolver` and its synchronous settings lock are unchanged.
 
@@ -78,10 +79,10 @@ Choosing the global read bound used simultaneous paired cold runs, where base an
 
 - Measurements come from a single host under heavy unrelated load, so absolute wall times are not representative. Ratios and CPU are steadier.
 - The cold path is still dominated by parse CPU (~4.4 s). A persisted memo would remove that; it is out of scope.
-- Locate misses still read every header. The next step is to consult the scanner memo with stat validation, which is not done here.
+- Locate/resolve now reuse the scanner memo for unchanged candidates with a usable, LF-terminated header ending within the 262,144-byte cap: one stat replaces a header read per in-flight probe, shared by concurrent lookups of that path. Changed candidates cost the stat plus a read. Cold candidates, directories not listed this daemon lifetime, files other than the one a targeted row warmed, and ineligible headers (past the cap, unterminated tails, headerless or rejected files) still use the cold reader. `listAll` does not warm this memo; there is no client prewarming.
 - A batch locate endpoint would need a client change.
-- In-flight header sharing can hand a lookup a read that started at most one header read before its request.
-  Headers are written when a session is created, so only a session whose file appears inside that window could be missed, and the next lookup finds it.
+- In-flight header sharing can hand a lookup a probe that started before its request: at most one memo-validation stat plus one fallback header read.
+  An invalidation or file creation inside that window may not be seen by callers sharing the probe; after it settles, the next lookup validates or reads afresh.
 
 ## Benchmark script (`bench.mts`)
 

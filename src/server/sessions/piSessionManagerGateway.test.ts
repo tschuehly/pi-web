@@ -687,6 +687,160 @@ describe("locating sessions across session directories", () => {
   });
 });
 
+describe("warm lookups from the summary memo", () => {
+  function lookupGateway(env: NodeJS.ProcessEnv = {}) {
+    const gateway = createPiSessionManagerGateway(piProfileOptions(env));
+    if (gateway.locate === undefined || gateway.listRecent === undefined) throw new Error("Expected lookup and recent listing");
+    return { gateway, locate: gateway.locate.bind(gateway), recent: gateway.listRecent.bind(gateway) };
+  }
+
+  async function fortyFiles() {
+    for (let i = 0; i < 40; i += 1) await writeSessionFile(defaultPiSessionDir(cwd, agentDir), `stored-${String(i)}`, cwd);
+  }
+
+  it("serves both misses without fallback reads after an ordinary listing", async () => {
+    await fortyFiles();
+    const { gateway, locate } = lookupGateway();
+    await gateway.list(cwd);
+    const reads = vi.mocked(readSessionHeaderSummary).mockClear();
+    expect(await locate("missing")).toBeUndefined();
+    expect(await gateway.resolveSessionFile(cwd, "missing")).toBeUndefined();
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  it("shares the whole memo probe between concurrent warm misses, but not later lookups", async () => {
+    await fortyFiles();
+    const { gateway, locate } = lookupGateway();
+    await gateway.list(cwd);
+    const probes = vi.spyOn(SessionSummaryScanner.prototype, "memoizedHeader");
+    const reads = vi.mocked(readSessionHeaderSummary).mockClear();
+    try {
+      const located = await Promise.all(Array.from({ length: 8 }, (_, i) => locate(`missing-${String(i)}`)));
+      expect(located).toEqual(Array.from({ length: 8 }, () => undefined));
+      expect(probes.mock.calls.length).toBeGreaterThanOrEqual(40);
+      expect(probes.mock.calls.length).toBeLessThanOrEqual(80);
+      expect(reads).not.toHaveBeenCalled();
+      // Settled probes are not remembered: each sequential miss validates again.
+      probes.mockClear();
+      expect(await locate("missing-again")).toBeUndefined();
+      expect(probes).toHaveBeenCalledTimes(40);
+      probes.mockClear();
+      expect(await gateway.resolveSessionFile(cwd, "missing-again")).toBeUndefined();
+      expect(probes).toHaveBeenCalledTimes(40);
+      expect(reads).not.toHaveBeenCalled();
+    } finally {
+      probes.mockRestore();
+    }
+  });
+
+  it.each(["append", "replace", "delete", "late", "detach"])("keeps warm lookups fresh after %s", async (change) => {
+    const dir = defaultPiSessionDir(cwd, agentDir);
+    const path = await writeNamedSessionFile(dir, "original.jsonl", { id: "original", cwd, parentSession: "/parent.jsonl" });
+    const { gateway, locate } = lookupGateway();
+    await gateway.list(cwd);
+    if (change === "append") await appendFile(path, '{"type":"message"}\n');
+    if (change === "replace") {
+      const replacement = await writeNamedSessionFile(dir, "replacement.tmp", { id: "replacement", cwd });
+      await rename(replacement, path);
+    }
+    if (change === "delete") await rm(path);
+    if (change === "late") await writeSessionFile(dir, "late", cwd);
+    if (change === "detach") { await rewriteHeaderWithoutParentSession(path); gateway.invalidateSessionFile(path); }
+    const reads = vi.mocked(readSessionHeaderSummary).mockClear();
+    const id = change === "replace" ? "replacement" : change === "late" ? "late" : "original";
+    expect(await locate(id)).toEqual(change === "delete" ? undefined : { cwd });
+    expect(reads).toHaveBeenCalledTimes(change === "delete" ? 0 : 1);
+    if (change === "replace") {
+      reads.mockClear();
+      expect(await locate("original")).toBeUndefined();
+      expect(reads).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("preserves cold winners, ids, paths, cwd filtering and rejection", async () => {
+    const dir = defaultPiSessionDir(cwd, agentDir), otherCwd = join(tempDir, "other-workspace");
+    const fixtures = [
+      ["2026-01-02T00-00-00-000Z_exact-more.jsonl", "exact-more", cwd],
+      ["exact-renamed.jsonl", "exact", cwd],
+      ["2026-01-03T00-00-00-000Z_tie-ZZZ.jsonl", "tie-ZZZ", cwd],
+      ["2026-01-03T00-00-00-000Z_tie-aaa.jsonl", "tie-aaa", cwd],
+      ["2026-01-01T00-00-00-000Z_duplicate.jsonl", "duplicate", cwd],
+      ["renamed-duplicate.jsonl", "duplicate", otherCwd],
+      ["elsewhere.jsonl", "elsewhere", otherCwd],
+      ["legacy.jsonl", "legacy", undefined],
+      ["2026-01-04T00-00-00-000Z_decoy.jsonl", "unrelated", cwd],
+      ["real-decoy.jsonl", "decoy", cwd],
+      ["2026-01-01T00-00-00-000Z_newest-old.jsonl", "newest-old", cwd],
+      ["2026-01-02T00-00-00-000Z_newest-new.jsonl", "newest-new", cwd],
+    ] as const;
+    for (const [file, id, sessionCwd] of fixtures) await writeNamedSessionFile(dir, file, { id, ...(sessionCwd === undefined ? {} : { cwd: sessionCwd }) });
+    const cold = lookupGateway(), warm = lookupGateway();
+    await warm.recent(1000);
+    for (const [query, id, file, locatedCwd] of [
+      ["exact", "exact", "exact-renamed.jsonl", cwd],
+      ["tie", "tie-aaa", "2026-01-03T00-00-00-000Z_tie-aaa.jsonl", cwd],
+      ["newest", "newest-new", "2026-01-02T00-00-00-000Z_newest-new.jsonl", cwd],
+      ["duplicate", "duplicate", "2026-01-01T00-00-00-000Z_duplicate.jsonl", cwd],
+      ["elsewhere", undefined, undefined, otherCwd],
+      ["legacy", undefined, undefined, undefined],
+      ["decoy", "decoy", "real-decoy.jsonl", cwd],
+    ] as const) {
+      const expected = id === undefined ? undefined : { id, path: join(dir, file), cwd };
+      expect(await cold.gateway.resolveSessionFile(cwd, query)).toEqual(expected);
+      expect(await warm.gateway.resolveSessionFile(cwd, query)).toEqual(expected);
+      const located = locatedCwd === undefined ? undefined : { cwd: locatedCwd };
+      expect(await cold.locate(query)).toEqual(located);
+      expect(await warm.locate(query)).toEqual(located);
+    }
+  });
+
+  it.each(["targeted", "listAll", "one-directory"])("only uses memo entries actually warmed by %s", async (kind) => {
+    await fortyFiles();
+    const { gateway, locate } = lookupGateway();
+    if (kind === "targeted") await gateway.list(cwd, { sessionId: "stored-0" });
+    if (kind === "listAll") await gateway.listAll();
+    if (kind === "one-directory") {
+      const other = join(tempDir, "other-workspace");
+      for (let i = 0; i < 3; i += 1) await writeSessionFile(defaultPiSessionDir(other, agentDir), `other-${String(i)}`, other);
+      await gateway.list(cwd);
+    }
+    const reads = vi.mocked(readSessionHeaderSummary).mockClear();
+    expect(await locate("missing")).toBeUndefined();
+    expect(reads).toHaveBeenCalledTimes(kind === "targeted" ? 39 : kind === "listAll" ? 40 : 3);
+  });
+
+  it("reads only the structurally ineligible file in a mixed warm directory", async () => {
+    const dir = defaultPiSessionDir(cwd, agentDir);
+    await writeSessionFile(dir, "normal", cwd);
+    await writeLookupBoundary(dir, "past-cap", 262144);
+    const { gateway, locate } = lookupGateway();
+    await gateway.list(cwd);
+    const reads = vi.mocked(readSessionHeaderSummary).mockClear();
+    expect(await locate("missing")).toBeUndefined();
+    expect(reads).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([262143, 262144])("preserves cold/warm cap parity at LF byte %i", async (lfIndex) => {
+    const dir = defaultPiSessionDir(cwd, agentDir);
+    await mkdir(dir, { recursive: true });
+    await writeLookupBoundary(dir, "boundary", lfIndex);
+    const cold = lookupGateway(), warm = lookupGateway();
+    await warm.gateway.list(cwd);
+    expect(await cold.locate("boundary")).toEqual(lfIndex === 262143 ? { cwd } : undefined);
+    const reads = vi.mocked(readSessionHeaderSummary).mockClear();
+    expect(await warm.locate("boundary")).toEqual(lfIndex === 262143 ? { cwd } : undefined);
+    expect(reads).toHaveBeenCalledTimes(lfIndex === 262143 ? 0 : 1);
+  });
+
+  async function writeLookupBoundary(dir: string, id: string, lfIndex: number) {
+    const header = JSON.stringify({ type: "session", id, cwd });
+    const garbage = "x".repeat(lfIndex - Buffer.byteLength(header) - 1);
+    const content = Buffer.from(`${garbage}\n${header}\n`);
+    expect(content.indexOf(0x0a, garbage.length + 1)).toBe(lfIndex);
+    await writeFile(join(dir, `${id}.jsonl`), content);
+  }
+});
+
 /** A real header reader that records how many reads overlap. */
 function concurrencyTrackingReader() {
   let inFlight = 0;

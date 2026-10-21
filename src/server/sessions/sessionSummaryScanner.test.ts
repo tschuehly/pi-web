@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PiSessionListEntry } from "./piSessionService.js";
 import { rewriteHeaderWithoutParentSession } from "./sessionFileRewrite.testSupport.js";
 import { SessionSummaryScanner } from "./sessionSummaryScanner.js";
+import { readSessionHeaderSummary } from "./sessionFileHeader.js";
 
 // Route node:fs/promises through a plain copy of the real module: Node's
 // builtin namespaces are frozen, so vi.spyOn cannot redefine their exports
@@ -900,6 +901,100 @@ describe("session summary scanner deliberate SDK divergences", () => {
     ]);
   });
 });
+
+describe("memoized session headers", () => {
+  it("does not create a memo entry for an unknown path", async () => {
+    const path = await writeSession("unknown.jsonl", [headerLine({ id: "unknown" })]);
+    const scanner = new SessionSummaryScanner();
+    expect(await scanner.memoizedHeader(path)).toBeUndefined();
+    const opens = vi.spyOn(fsPromises, "open");
+    try {
+      expect(await scanner.scanSessionSummariesInDir(sessionDir)).toMatchObject([{ id: "unknown" }]);
+      expect(opens).toHaveBeenCalledTimes(1);
+    } finally { opens.mockRestore(); }
+  });
+
+  it.each([
+    { id: "bare" }, { id: "empty", cwd: "", parentSession: "" },
+    { id: "parent", cwd: WORKSPACE, parentSession: "/parent.jsonl" },
+    { id: "unicode", cwd: "/é/🙂" },
+  ])("agrees with the cold reader for $id, including CRLF and garbage", async (header) => {
+    const path = join(sessionDir, "header.jsonl");
+    await writeFile(path, `garbage é🙂\r\n${headerLine(header)}\r\n`);
+    const scanner = new SessionSummaryScanner();
+    await scanner.scanSessionSummariesInDir(sessionDir);
+    expect(await scanner.memoizedHeader(path)).toEqual(await readSessionHeaderSummary(path));
+    expect(await scanner.memoizedHeader(path)).toMatchObject({ id: header.id });
+  });
+
+  it.each(["append", "replace", "delete", "invalidate", "clear"])("falls back after %s and can re-memoize", async (change) => {
+    const path = await writeSession("fresh.jsonl", [headerLine({ id: "fresh", cwd: WORKSPACE })]);
+    const scanner = new SessionSummaryScanner();
+    await scanner.scanSessionSummariesInDir(sessionDir);
+    if (change === "append") await appendFile(path, "garbage\n");
+    if (change === "replace") {
+      const replacement = await writeSession("replacement.tmp", [headerLine({ id: "other", cwd: WORKSPACE })]);
+      await rename(replacement, path);
+    }
+    if (change === "delete") await rm(path);
+    if (change === "invalidate") scanner.invalidate(path);
+    if (change === "clear") scanner.clear();
+    expect(await scanner.memoizedHeader(path)).toBeUndefined();
+    if (change === "delete") await writeSession("fresh.jsonl", [headerLine({ id: "back" })]);
+    await scanner.scanSessionSummariesInDir(sessionDir);
+    expect(await scanner.memoizedHeader(path)).toEqual(await readSessionHeaderSummary(path));
+    expect(await scanner.memoizedHeader(path)).toBeDefined();
+  });
+
+  it.each([
+    ["rejected", '{"type":"message"}\n', undefined],
+    ["headerless", "garbage\n", undefined],
+    ["empty-id", '{"type":"session","id":""}\n', undefined],
+    ["numeric-id", '{"type":"session","id":123}\n', undefined],
+    ["EOF-tail", '{"type":"session","id":"tail"}', { id: "tail" }],
+  ] as const)("conservatively falls back for %s", async (_name, content, cold) => {
+    const path = join(sessionDir, "ineligible.jsonl");
+    await writeFile(path, content);
+    const scanner = new SessionSummaryScanner();
+    await scanner.scanSessionSummariesInDir(sessionDir);
+    expect(await readSessionHeaderSummary(path)).toEqual(cold);
+    expect(await scanner.memoizedHeader(path)).toBeUndefined();
+  });
+
+  const boundaries = [262143, 262144, 262145].flatMap((lfIndex) =>
+    [false, true].flatMap((crlf) => [7, 64, undefined].flatMap((chunkBytes) =>
+      [false, true].map((trailing) => ({ lfIndex, crlf, chunkBytes, trailing })))));
+  it.each(boundaries)("preserves cap/listing parity at $lfIndex, CRLF=$crlf, chunk=$chunkBytes, trailing=$trailing", async ({ lfIndex, crlf, chunkBytes, trailing }) => {
+    const path = join(sessionDir, "boundary.jsonl");
+    await writeFile(path, headerWithLfAt(lfIndex, { crlf, multibyte: true, trailing }));
+    const expected = lfIndex === 262143 ? { id: "boundary", cwd: "/é/🙂" } : undefined;
+    // Pin the cold oracle before exercising the memo.
+    expect(await readSessionHeaderSummary(path)).toEqual(expected);
+    const scanner = new SessionSummaryScanner(chunkBytes === undefined ? {} : { chunkBytes });
+    expect(await scanner.scanSessionSummariesInDir(sessionDir)).toMatchObject([{ id: "boundary", cwd: "/é/🙂", messageCount: trailing ? 1 : 0 }]);
+    expect(await scanner.memoizedHeader(path)).toEqual(expected);
+  }, 30000);
+
+  it.each([7, 64])("records an LF at byte zero of the next %i-byte chunk", async (chunkBytes) => {
+    const path = join(sessionDir, "straddle.jsonl");
+    await writeFile(path, headerWithLfAt(chunkBytes * 40, { crlf: false, multibyte: true, trailing: true }));
+    const scanner = new SessionSummaryScanner({ chunkBytes });
+    await scanner.scanSessionSummariesInDir(sessionDir);
+    expect(await scanner.memoizedHeader(path)).toEqual({ id: "boundary", cwd: "/é/🙂" });
+  });
+});
+
+/** Size in bytes, not JS characters: garbage and header both contain UTF-8. */
+function headerWithLfAt(lfIndex: number, options: { crlf: boolean; multibyte: boolean; trailing: boolean }): Buffer {
+  const ending = options.crlf ? "\r\n" : "\n";
+  const garbage = options.multibyte ? "garbage é🙂" : "garbage";
+  const header = headerLine({ id: "boundary", cwd: options.multibyte ? "/é/🙂" : WORKSPACE });
+  const padding = lfIndex - Buffer.byteLength(garbage + ending + header + (options.crlf ? "\r" : ""));
+  const prefix = garbage + "x".repeat(padding) + ending;
+  const content = Buffer.from(prefix + header + ending + (options.trailing ? '{"type":"message"}\n' : ""));
+  expect(content.indexOf(0x0a, Buffer.byteLength(prefix))).toBe(lfIndex);
+  return content;
+}
 
 /** A listing from a scanner with an empty memo: every file is read from disk. */
 async function coldListing(dir: string): Promise<PiSessionListEntry[]> {

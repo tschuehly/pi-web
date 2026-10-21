@@ -14,7 +14,7 @@ import type { PiSessionListEntry, PiSessionManager, PiSessionManagerGateway, Res
 
 type SessionDirSource = "env" | "settings" | "pi-default";
 
-/** Header reads in flight per id lookup; lookups that miss read every header. */
+/** Header probes in flight per id lookup: memo validation plus any fallback read. */
 const MAX_CONCURRENT_HEADER_READS = 16;
 
 export interface SessionDirResolution {
@@ -78,8 +78,9 @@ export function createPiSessionManagerGateway(options: PiSessionManagerGatewayOp
 class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
   /**
    * One memoized scanner per gateway: its per-file summary memo lives as long
-   * as the daemon, so repeated listings answer unchanged files from one stat
-   * and re-scan changed ones whole. Invalidation is automatic (file identity +
+   * as the daemon, so repeated listings and eligible lookup headers answer
+   * unchanged files from one stat. Listings re-scan changed ones whole.
+   * Invalidation is automatic (file identity +
    * size; see SessionSummaryScanner), with `invalidateSessionFile` for the
    * in-place rewrites those checks cannot see.
    */
@@ -93,14 +94,16 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
   // when its read settles, so this map only ever holds genuinely concurrent
   // reads and needs no bound of its own.
   private readonly pendingTranscriptBranches = new Map<string, Promise<TranscriptBranchSnapshot | undefined>>();
-  // In-flight header reads, shared by concurrent id lookups that walk the same
-  // candidates (several Workstream misses at once). Nothing outlives its read:
-  // no header or miss is remembered, so new sessions are always found.
+  // Concurrent lookups share the whole header probe: memo validation (at most
+  // one stat), then a fallback read if needed. Entries disappear on settlement;
+  // neither completed headers nor misses are remembered here.
   private readonly pendingHeaderReads = new Map<string, Promise<SessionHeaderSummary | undefined>>();
   private readonly readHeaderShared: SessionHeaderReader = (sessionFile) => {
     const pending = this.pendingHeaderReads.get(sessionFile);
     if (pending !== undefined) return pending;
-    const read = readSessionHeaderSummary(sessionFile).finally(() => this.pendingHeaderReads.delete(sessionFile));
+    const read = this.summaryScanner.memoizedHeader(sessionFile)
+      .then((header) => header ?? readSessionHeaderSummary(sessionFile))
+      .finally(() => this.pendingHeaderReads.delete(sessionFile));
     this.pendingHeaderReads.set(sessionFile, read);
     return read;
   };

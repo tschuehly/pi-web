@@ -9,7 +9,7 @@ const HEADER_READ_CHUNK_BYTES = 8192;
  * written at creation; the bound keeps a pathological file with a huge
  * non-header prefix from dragging the listing and open paths.
  */
-const HEADER_READ_CAP_BYTES = 262144;
+export const HEADER_READ_CAP_BYTES = 262144;
 
 const NEWLINE = 0x0a; // `\n`
 const CARRIAGE_RETURN = 0x0d; // `\r`
@@ -101,6 +101,11 @@ function classifyHeaderLine(lineBytes: Buffer): SessionHeaderSummary | undefined
   if (end > 0 && lineBytes[end - 1] === CARRIAGE_RETURN) end -= 1;
   const entry = tryParseEntry(lineBytes.toString("utf8", 0, end));
   if (entry === undefined) return "skip";
+  return sessionHeaderSummaryFromEntry(entry);
+}
+
+/** Shared header validation for the cold reader and stat-validated scanner memo. */
+export function sessionHeaderSummaryFromEntry(entry: Record<string, unknown>): SessionHeaderSummary | undefined {
   if (entry["type"] !== "session") return undefined;
   const id = entry["id"];
   // The scanner skips headers without a usable id; the reader must agree so a
