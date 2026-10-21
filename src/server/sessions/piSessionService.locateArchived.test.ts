@@ -101,7 +101,7 @@ describe("PiSessionService.locate with archived Chats", () => {
     await legacy.close();
   });
 
-  it("keeps an exact active Chat ahead of an archived prefix collision, and answers misses as 404", async () => {
+  it("keeps an exact active Chat apart from an archived id sharing its prefix, and answers misses as 404", async () => {
     await writeChat(cwdB, "abc");
     const archivedPath = await writeChat(cwdA, "abc-archived");
     await new SessionArchiveStore(archiveFile).archive(archiveInput(cwdA, "abc-archived", archivedPath));
@@ -110,7 +110,8 @@ describe("PiSessionService.locate with archived Chats", () => {
       const { service, locateRoute, listAll, close } = await harness({ withoutGatewayLocate });
       await expect(service.locate("abc")).resolves.toEqual({ cwd: cwdB });
       expect(listAll.mock.calls.length > 0).toBe(withoutGatewayLocate);
-      await expect(service.locate("abc-arch")).resolves.toEqual({ cwd: cwdA });
+      await expect(service.locate("abc-arch")).resolves.toBeUndefined();
+      await expect(service.locate("abc-archived")).resolves.toEqual({ cwd: cwdA });
       await expect(service.locate("missing")).resolves.toBeUndefined();
       expect((await locateRoute("missing")).statusCode).toBe(404);
       await close();

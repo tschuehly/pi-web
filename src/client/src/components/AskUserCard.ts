@@ -22,6 +22,7 @@ import {
   type AskDraftAnswers,
 } from "../askDrafts";
 import "./FormattedText";
+import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 
 // Lucide "pencil" (https://lucide.dev, ISC).
@@ -54,6 +55,11 @@ interface DisplayedRecordAnswer {
  */
 @customElement("ask-user-card")
 export class AskUserCard extends LitElement {
+  constructor() {
+    super();
+    stylesheetIntegrationCapability.createController(this);
+  }
+
   @property({ attribute: false }) ask?: PendingAskUser;
   @property({ attribute: false }) outcome?: AskUserOutcome;
   /** Machine-scoped session cache key used by the ask draft store. */
@@ -87,7 +93,7 @@ export class AskUserCard extends LitElement {
     const count = answeredCount(ask.questions, this.answers);
     const unanswered = unansweredQuestions(ask.questions, this.answers);
     return html`
-      <article class="card open-card" aria-labelledby="ask-user-heading">
+      <article class="ui-transcript-surface card open-card" aria-labelledby="ask-user-heading">
         <header class="card-header">
           <h2 id="ask-user-heading"><slot name="title">Questions</slot></h2>
           <span class="ask-meta">
@@ -220,7 +226,7 @@ export class AskUserCard extends LitElement {
   private renderRecord(outcome: AskUserOutcome): TemplateResult {
     const recordLabel = { submitted: "Answers sent", superseded: "Superseded", cancelled: "Cancelled", withdrawn: "Withdrawn" }[outcome.reason];
     return html`
-      <article class="card record-card" aria-labelledby="ask-user-record-heading">
+      <article class="ui-transcript-surface card record-card" aria-labelledby="ask-user-record-heading">
         <header class="card-header">
           <h2 id="ask-user-record-heading">Questions</h2>
           <span class=${`header-status ${outcome.reason}`}>${recordLabel}</span>
@@ -447,7 +453,7 @@ export class AskUserCard extends LitElement {
       width: 100%;
       margin: 0 0 14px;
       color: var(--pi-text);
-      font: 14px system-ui, sans-serif;
+      font: 14px var(--pi-font, system-ui, sans-serif);
       container-type: inline-size;
     }
     .card {

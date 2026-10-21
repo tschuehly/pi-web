@@ -24,7 +24,7 @@ describe("dense composer", () => {
 
     expect(root.querySelector(".input-row > .editor-wrap + .composer-actions .send-button")).not.toBeNull();
     expect(root.querySelector(".actions")).toBeNull();
-    expect(root.querySelector(".cm-placeholder")?.textContent).toBe("Message…");
+    expect(root.querySelector(".prompt-placeholder")?.getAttribute("data-placeholder")).toBe("Message…");
   });
 
   it("keeps a meta row with usage, and the regular composer otherwise", async () => {

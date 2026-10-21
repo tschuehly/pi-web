@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MOBILE_PROMPT_ENTER_MEDIA_QUERY,
   parsePromptEnterPreference,
@@ -11,6 +11,8 @@ import {
   writePromptEnterPreference,
   type PromptEnterMedia,
 } from "./promptEnterBehavior";
+
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("promptEnterBehavior", () => {
   it("uses coarse-pointer capability without changing semantics at narrow widths", () => {

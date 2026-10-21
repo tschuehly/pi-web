@@ -1,7 +1,7 @@
 import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes";
 import { parseAskUserOutcome } from "./api/parsers";
-import { isSessionMediaId } from "../../shared/sessionMedia";
-import type { ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview, WorkingModeDial } from "./components/shared";
+import { isSessionMediaId, validImageDimensions } from "../../shared/sessionMedia";
+import type { ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview, WorkingModeDial } from "./chatTypes";
 import { validGoalId, WORKING_MODE_AXES as WORKING_MODE_VALUES, WORKING_MODE_AXIS_NAMES, workingModeState, type WorkingModeState } from "./extensionStatusSnapshots";
 
 export function normalizeMessages(messages: unknown[]): ChatLine[] {
@@ -15,9 +15,11 @@ export function textMessage(role: ChatLine["role"], text: string): ChatLine {
 export function withMessageMeta(line: ChatLine, rawMessage: unknown): ChatLine {
   const meta = normalizeMeta(rawMessage);
   const entryId = getString(rawMessage, "entryId");
-  if (meta === undefined && (entryId === undefined || entryId === "")) return line;
+  const streamId = getString(rawMessage, "streamId");
+  if (meta === undefined && entryId === undefined && streamId === undefined) return line;
   return {
     ...line,
+    ...(streamId === undefined ? {} : { streamId }),
     ...(meta === undefined ? {} : { meta }),
     ...(entryId === undefined || entryId === "" ? {} : { entryId }),
   };
@@ -71,7 +73,12 @@ export function normalizeMessage(message: unknown): ChatLine[] {
   const supersededRecord = rawRole === "toolResult"
     ? askUserRecordFromToolDetails(getString(message, "toolName") ?? "", getProperty(message, "details"))
     : undefined;
-  const parts = supersededRecord === undefined ? contentParts : [...contentParts, supersededRecord];
+  // Every tool result needs a result part, even when its output is empty or
+  // image-only, so coalescing can finish the call without losing chronology.
+  const resultParts = rawRole === "toolResult" && !contentParts.some((part) => part.type === "toolResult")
+    ? [toolResultPartFromText(contentParts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n"), message), ...contentParts.filter((part) => part.type === "image")]
+    : contentParts;
+  const parts = [...resultParts, ...(supersededRecord === undefined ? [] : [supersededRecord])];
   const skillLines = role === "user" ? normalizeSkillInvocation(parts) : undefined;
   if (skillLines !== undefined) return skillLines.map((line) => withMessageMeta(line, message));
   const source = normalizeSource(message);
@@ -342,16 +349,17 @@ function validLifecycleText(value: unknown): value is string {
 function normalizeImage(part: unknown): ChatPart[] {
   const mimeType = getString(part, "mimeType");
   const mediaId = getProperty(part, "mediaId");
+  const dimensions = validImageDimensions(getProperty(part, "width"), getProperty(part, "height"));
   if (mediaId !== undefined) {
     const byteSize = getNumber(part, "byteSize");
     if (isSessionMediaId(mediaId)
       && mimeType !== undefined && /^image\/[a-z0-9][a-z0-9.+-]*$/iu.test(mimeType)
       && byteSize !== undefined && Number.isSafeInteger(byteSize) && byteSize >= 0) {
-      return [{ type: "image", mediaId, mimeType, byteSize }];
+      return [{ type: "image", mediaId, mimeType, byteSize, ...dimensions }];
     }
   } else {
     const data = getString(part, "data");
-    if (data !== undefined && data !== "" && mimeType !== undefined && mimeType !== "") return [{ type: "image", mimeType, data }];
+    if (data !== undefined && data !== "" && mimeType !== undefined && mimeType !== "") return [{ type: "image", mimeType, data, ...dimensions }];
   }
   return [{ type: "text", text: "[image]" }];
 }
@@ -409,6 +417,7 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
   for (const line of lines) {
     let passthroughParts: ChatPart[] = [];
     const metadata = {
+      ...(line.streamId === undefined ? {} : { streamId: line.streamId }),
       ...(line.entryId === undefined ? {} : { entryId: line.entryId }),
       ...(line.source === undefined ? {} : { source: line.source }),
       ...(line.severity === undefined ? {} : { severity: line.severity }),
@@ -436,13 +445,18 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
           && getString(part.details, "diff") === undefined && previewFromDetails(part.details)?.diff === undefined
           && !line.parts.some((item) => item.type === "image" || item.type === "askUserRecord")) continue;
         const target = part.toolCallId === undefined ? undefined : pendingTools.get(part.toolCallId);
-        if (target !== undefined && mergeToolResultInto(result, target, part)) {
+        if (target !== undefined && mergeToolResultInto(result, target, part, line.meta)) {
           pendingTools.delete(part.toolCallId ?? "");
           continue;
         }
       }
 
-      passthroughParts.push(part);
+      if (part.type === "askUserRecord") {
+        flushPassthrough();
+        result.push({ role: line.role, parts: [part], ...metadata });
+      } else {
+        passthroughParts.push(part);
+      }
     }
 
     flushPassthrough();
@@ -462,7 +476,7 @@ function toolExecutionFromCall(part: Extract<ChatPart, { type: "toolCall" }>): T
   };
 }
 
-function mergeToolResultInto(lines: ChatLine[], target: { lineIndex: number; partIndex: number }, result: Extract<ChatPart, { type: "toolResult" }>): boolean {
+function mergeToolResultInto(lines: ChatLine[], target: { lineIndex: number; partIndex: number }, result: Extract<ChatPart, { type: "toolResult" }>, meta: ChatLine["meta"]): boolean {
   const line = lines[target.lineIndex];
   const current = line?.parts[target.partIndex];
   if (line === undefined || current?.type !== "toolExecution") return false;
@@ -475,7 +489,7 @@ function mergeToolResultInto(lines: ChatLine[], target: { lineIndex: number; par
     ...(result.details === undefined ? {} : { details: result.details }),
     ...(preview === undefined ? {} : { preview }),
   };
-  lines[target.lineIndex] = { ...line, parts: [...line.parts.slice(0, target.partIndex), next, ...line.parts.slice(target.partIndex + 1)] };
+  lines[target.lineIndex] = { ...line, parts: [...line.parts.slice(0, target.partIndex), next, ...line.parts.slice(target.partIndex + 1)], ...(meta === undefined ? {} : { meta }) };
   return true;
 }
 

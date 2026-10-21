@@ -1,5 +1,5 @@
-import { appendText, appendThinking, askUserRecordFromToolDetails, normalizeMessage, normalizeMessages, previewFromDetails, summarizeArgs, textMessage } from "./chatMessages";
-import type { ChatLine, ToolExecutionPart } from "./components/shared";
+import { appendText, appendThinking, askUserRecordFromToolDetails, normalizeMessage, normalizeMessages, previewFromDetails, summarizeArgs, textMessage, withMessageMeta } from "./chatMessages";
+import type { ChatLine, ToolExecutionPart } from "./chatTypes";
 import { appendShellChunk, finalizeShellMessage, shellStartMessage } from "./shellMessages";
 import type { SessionUiEvent } from "./sessionSocket";
 
@@ -7,6 +7,7 @@ type ToolResultImage = Extract<ChatLine["parts"][number], { type: "image" }>;
 
 interface ToolResultPresentation {
   images: ToolResultImage[];
+  entryId?: string;
   meta?: ChatLine["meta"];
 }
 
@@ -37,13 +38,23 @@ export function seedStreamingPartial(messages: ChatLine[], partial: unknown): Ch
   // call into a `toolExecution` line) so the seeded partial renders identically
   // to its finalized form and live `tool.*` events can target it by call id.
   const lines = normalizeMessages([partial]);
-  return lines.length === 0 ? messages : [...messages, ...lines];
+  // An empty start (or tool-call-only snapshot) still owns subsequent deltas.
+  // Keep its identity even before there is visible assistant content.
+  if (getString(partial, "streamId") !== undefined && !lines.some((line) => line.role === "assistant")) {
+    lines.unshift(withMessageMeta({ role: "assistant", parts: [] }, partial));
+  }
+  return [...messages, ...lines];
 }
 
 export function applyTranscriptEvent(messages: ChatLine[], event: SessionUiEvent): ChatLine[] | undefined {
   if (event.type === "message.append") return appendNewMessage(messages, event.message);
-  if (event.type === "assistant.delta") return appendText(messages, "assistant", event.text);
-  if (event.type === "assistant.thinking.delta") return appendThinking(messages, event.text);
+  if (event.type === "assistant.start") return seedStreamingPartial(messages, event.message);
+  if (event.type === "assistant.delta" || event.type === "assistant.thinking.delta") {
+    const append = event.type === "assistant.delta"
+      ? (lines: ChatLine[]) => appendText(lines, "assistant", event.text)
+      : (lines: ChatLine[]) => appendThinking(lines, event.text);
+    return appendAssistantStream(messages, event.streamId, append);
+  }
   if (event.type === "tool.start") return appendToolExecutionStart(messages, event);
   if (event.type === "tool.update") return updateToolExecution(messages, event.toolCallId, (part) => mergeToolExecutionUpdate(part, event));
   if (event.type === "tool.end") {
@@ -55,7 +66,7 @@ export function applyTranscriptEvent(messages: ChatLine[], event: SessionUiEvent
       content: event.content,
       details: event.details,
       presentation: toolResultPresentation({ role: "toolResult", content: event.content }),
-    });
+    }, false);
   }
   if (event.type === "shell.start") return [...messages, shellStartMessage(event.command, event.excludeFromContext)];
   if (event.type === "shell.chunk") return appendShellChunk(messages, event.chunk);
@@ -66,20 +77,50 @@ export function applyTranscriptEvent(messages: ChatLine[], event: SessionUiEvent
   return undefined;
 }
 
+function appendAssistantStream(messages: ChatLine[], streamId: string | undefined, append: (lines: ChatLine[]) => ChatLine[]): ChatLine[] {
+  // Older daemons do not send identities; retain their existing behavior.
+  if (streamId === undefined) return append(messages);
+  let index = messages.length - 1;
+  while (index >= 0 && !(messages[index]?.role === "assistant" && messages[index]?.streamId === streamId)) index--;
+  const line = index < 0 ? { role: "assistant" as const, parts: [], streamId } : messages[index];
+  if (line === undefined) return messages;
+  const updated = append([line]);
+  return index < 0 ? [...messages, ...updated]
+    : [...messages.slice(0, index), ...updated, ...messages.slice(index + 1)];
+}
+
 function applyFinalMessage(messages: ChatLine[], rawMessage: unknown): ChatLine[] | undefined {
   const rawToolResult = toolResultFromRawMessage(rawMessage);
-  if (rawToolResult !== undefined) return finalizeToolExecution(messages, rawToolResult);
+  if (rawToolResult !== undefined) return finalizeToolExecution(messages, rawToolResult, true);
 
   const ended = normalizeMessage(rawMessage);
-  if (ended.length === 0) return undefined;
+  const streamId = getString(rawMessage, "streamId");
+  if (ended.length === 0) {
+    if (streamId !== undefined) {
+      return messages.filter((line) => line.role !== "assistant" || line.streamId !== streamId);
+    }
+    return undefined;
+  }
   const displayEnded = ended
     .map((line) => line.role === "assistant" ? withoutToolCalls(line) : line)
     .filter((line) => line.parts.length > 0);
+  if (streamId !== undefined && !displayEnded.some((line) => line.role === "assistant" || line.role === "skill")) {
+    messages = messages.filter((line) => line.role !== "assistant" || line.streamId !== streamId);
+  }
   if (displayEnded.length === 0) return messages;
   return displayEnded.reduce((next, line) => applyFinalLine(next, line), messages);
 }
 
 function applyFinalLine(messages: ChatLine[], displayEnded: ChatLine): ChatLine[] {
+  if ((displayEnded.role === "assistant" || displayEnded.role === "skill") && displayEnded.streamId !== undefined) {
+    const indexes = messages.flatMap((line, index) =>
+      (line.role === "assistant" || line.role === "skill") && line.streamId === displayEnded.streamId ? [index] : []);
+    // Skill reads have their own provisional tool-call identity. Reconcile
+    // those too, without consuming an adjacent, unrelated assistant message.
+    indexes.push(...findMatchingSkillReadIndexes(messages, displayEnded));
+    if (indexes.length === 0) return [...messages, displayEnded];
+    return replaceTranscriptLines(messages, indexes, displayEnded);
+  }
   const skillReadIndexes = findMatchingSkillReadIndexes(messages, displayEnded);
   if (skillReadIndexes.length > 0) return replaceSkillReadLines(messages, skillReadIndexes, displayEnded);
   const askUserRecord = displayEnded.parts.find((part) => part.type === "askUserRecord");
@@ -145,14 +186,14 @@ function mergeToolExecutionUpdate(part: ToolExecutionPart, event: Extract<Sessio
   };
 }
 
-function finalizeToolExecution(messages: ChatLine[], result: ToolResultUpdate): ChatLine[] {
+function finalizeToolExecution(messages: ChatLine[], result: ToolResultUpdate, committed: boolean): ChatLine[] {
   const { toolCallId, toolName, text, isError, content, details, presentation } = result;
   if (toolCallId !== undefined && toolCallId !== "" && toolName === "read" && !isError && presentation.images.length === 0
     && getString(details, "diff") === undefined && previewFromDetails(details)?.diff === undefined
     && messages.some((line) => skillReads(line).some((read) => read.toolCallId === toolCallId))) return messages;
   const updated = updateToolExecution(messages, toolCallId, (part) => {
     const preview = previewFromDetails(details) ?? part.preview;
-    return {
+    const next: ToolExecutionPart = {
       ...part,
       status: isError ? "error" : "success",
       resultText: text,
@@ -160,6 +201,9 @@ function finalizeToolExecution(messages: ChatLine[], result: ToolResultUpdate): 
       ...(details === undefined ? {} : { details }),
       ...(preview === undefined ? {} : { preview }),
     };
+    if (committed && content === undefined) delete next.content;
+    if (committed && details === undefined) delete next.details;
+    return next;
   }, (line) => reconcileToolResultPresentation(line, presentation));
 
   let finalized = updated;
@@ -176,8 +220,13 @@ function finalizeToolExecution(messages: ChatLine[], result: ToolResultUpdate): 
       ...(details === undefined ? {} : { details }),
       ...(preview === undefined ? {} : { preview }),
     };
-    finalized = [...messages, reconcileToolResultPresentation({ role: "tool", parts: [part] }, presentation)];
+    finalized = [...messages, reconcileToolResultPresentation({
+      role: "tool", parts: [part], ...(presentation.entryId === undefined ? {} : { entryId: presentation.entryId }),
+    }, presentation)];
   }
+  // tool.end is provisional: a message_end extension can still change the saved
+  // result. Only ordinary committed messages may contribute conversation facts.
+  if (!committed) return finalized;
   return reconcileAskUserToolRecord(finalized, toolName, details, presentation.meta);
 }
 
@@ -198,8 +247,7 @@ function lineHasAskUserRecord(
   record: Extract<ChatLine["parts"][number], { type: "askUserRecord" }>,
 ): boolean {
   return line?.parts.some((part) => part.type === "askUserRecord"
-    && part.outcome.askId === record.outcome.askId
-    && part.outcome.reason === record.outcome.reason) === true;
+    && JSON.stringify(part.outcome) === JSON.stringify(record.outcome)) === true;
 }
 
 function updateToolExecution(
@@ -232,7 +280,8 @@ function toolResultPresentation(message: unknown): ToolResultPresentation {
   const normalized = normalizeMessage(message);
   const images = normalized.flatMap((line) => line.parts.filter((part): part is ToolResultImage => part.type === "image"));
   const meta = normalized.find((line) => line.meta !== undefined)?.meta;
-  return { images, ...(meta === undefined ? {} : { meta }) };
+  const entryId = normalized.find((line) => line.entryId !== undefined)?.entryId;
+  return { images, ...(meta === undefined ? {} : { meta }), ...(entryId === undefined ? {} : { entryId }) };
 }
 
 function toolResultFromRawMessage(message: unknown): ToolResultUpdate | undefined {
@@ -283,10 +332,12 @@ function findMatchingSkillReadIndexes(messages: ChatLine[], ended: ChatLine): nu
 }
 
 function replaceSkillReadLines(messages: ChatLine[], indexes: number[], replacement: ChatLine): ChatLine[] {
-  const replacementIndexes = indexesWithAdjacentAssistantFragment(messages, indexes, replacement);
-  const insertIndex = replacementIndexes[0];
-  if (insertIndex === undefined) return messages;
-  const replaced = new Set(replacementIndexes);
+  return replaceTranscriptLines(messages, indexesWithAdjacentAssistantFragment(messages, indexes, replacement), replacement);
+}
+
+function replaceTranscriptLines(messages: ChatLine[], indexes: number[], replacement: ChatLine): ChatLine[] {
+  const insertIndex = Math.min(...indexes);
+  const replaced = new Set(indexes);
   const next: ChatLine[] = [];
   for (let index = 0; index < messages.length; index++) {
     if (index === insertIndex) next.push(replacement);
@@ -340,8 +391,9 @@ function messageText(message: ChatLine): string {
 }
 
 function appendNewMessage(messages: ChatLine[], rawMessage: unknown): ChatLine[] {
-  const lines = normalizeMessage(rawMessage);
-  return lines.length === 0 ? messages : [...messages, ...lines];
+  const toolResult = toolResultFromRawMessage(rawMessage);
+  if (toolResult !== undefined) return finalizeToolExecution(messages, toolResult, true);
+  return [...messages, ...normalizeMessage(rawMessage)];
 }
 
 function appendLine(messages: ChatLine[], line: ChatLine): ChatLine[] {

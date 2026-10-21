@@ -1,4 +1,5 @@
-import { CACHE_TTL_MS, collectCacheMisses, detectCacheMiss, type CacheMiss, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { CACHE_TTL_MS, collectCacheMisses, detectCacheMiss, type CacheMiss } from "./cacheStats";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 type ModelPrices = Parameters<typeof collectCacheMisses>[1];

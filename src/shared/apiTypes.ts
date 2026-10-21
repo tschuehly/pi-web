@@ -1,5 +1,6 @@
 import type { MachineStatusUiEvent } from "./machineStatus.js";
 import type { TerminalPluginMode } from "./requiredTerminalPlugin.js";
+import type { ThinkingLevel } from "./thinkingLevels.js";
 import type {
   DeleteWorkspaceFileResponse,
   FileContentMediaType,
@@ -164,6 +165,8 @@ export interface PiWebThemePreference {
 export interface PiWebConfigValues {
   /** App-wide theme default; browser-local theme preferences take precedence. */
   defaultTheme?: PiWebThemePreference;
+  /** Gateway-wide send behavior while streaming; defaults to steer. */
+  defaultStreamingBehavior?: "steer" | "followUp";
   host?: string;
   port?: number;
   allowedHosts?: string[] | true;
@@ -177,6 +180,16 @@ export interface PiWebConfigValues {
   attachments?: PiWebAttachmentsConfig;
   /** Maximum accepted HTTP request body size in bytes (uploads/attachments). */
   maxUploadBytes?: number;
+  /** Destination for newly archived transcripts; the index remains in the PI WEB data directory. */
+  sessionArchive?: { directory?: string };
+  /** Machine-wide naming overrides; defaults are the session model, 24 tokens, and minimal thinking. */
+  sessionNaming?: {
+    model?: string;
+    maxTokens?: number;
+    thinkingLevel?: ThinkingLevel;
+    /** Total wall time in milliseconds; defaults to 10000 when omitted. */
+    timeoutMs?: number;
+  };
   /** When true, LLMs can start new sessions via the spawn_session tool. */
   spawnSessions?: boolean;
   /**
@@ -613,8 +626,12 @@ export interface SessionInfo extends SessionRef {
   path: string;
   /** Creation identity, also present on listings so reconnects need no startup event replay. */
   startupToken?: string | undefined;
+  /** Only true for positively verified tracked agent subsessions; absent otherwise. */
+  agentSubsession?: boolean;
   /** True when the server has verified a backing session file exists; false when known transient. */
   persisted?: boolean;
+  /** Explicitly public, namespaced session data; never arbitrary Pi custom entries. */
+  metadata?: import("./pluginApiTypes.js").SessionUiMetadata;
   name?: string;
   created: string;
   modified: string;
@@ -714,9 +731,23 @@ export interface SessionActivity {
   startup?: boolean;
 }
 
+export interface SessionQueueMessageMutation {
+  action: "remove" | "edit" | "toggle";
+  index: number;
+  expectedQueue: QueuedSessionMessage[];
+}
+
+export interface SessionQueueMessageMutationRequest extends SessionQueueMessageMutation {
+  cwd: string;
+}
+
 export interface QueuedSessionMessage {
   kind: "steer" | "followUp";
   text: string;
+  /** Inline attachments that cannot be restored by text-only recall. */
+  hasAttachments?: boolean;
+  /** Number of attachments, when available; no attachment payloads are exposed. */
+  attachmentCount?: number;
 }
 
 /**
@@ -1104,7 +1135,21 @@ export interface AuthProvidersResponse {
   providers: AuthProviderOption[];
 }
 
+export interface McpAuthServerOption {
+  name: string;
+  description?: string;
+}
+
+export interface McpAuthServersResponse {
+  servers: McpAuthServerOption[];
+}
+
 export interface OAuthFlowState {
+  mcpMode?: "login" | "logout";
+  /** MCP completion means the Pi command finished, not that authentication succeeded. */
+  target?: "mcp";
+  /** Cancellation may race credential storage; remains true after command completion. */
+  cancelRequested?: boolean;
   flowId: string;
   providerId: string;
   providerName: string;
@@ -1211,6 +1256,8 @@ export interface SessionStatus {
   isBashRunning: boolean;
   pendingMessageCount: number;
   queuedMessages: QueuedSessionMessage[];
+  /** Best-effort SDK compatibility failure; public queue clearing remains available. */
+  queueMessageActionsUnavailable?: string;
   messageCount?: number;
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
   cost: number;
@@ -1349,6 +1396,8 @@ export interface SessionTreeNavigateRequest {
   /** Leaf shown when the navigator opened; null is valid for an empty/root position. */
   expectedLeafId: string | null;
   summary: SessionTreeSummaryChoice;
+  /** Message shortcuts retain a complete non-user checkpoint and its intervening history. */
+  retainCheckpoint?: boolean;
 }
 
 export type SessionTreeNavigateResult =
@@ -1359,6 +1408,8 @@ export interface SessionTreeForkRequest {
   entryId: string;
   /** Leaf shown when the navigator opened; null is valid for an empty/root position. */
   expectedLeafId: string | null;
+  /** Message shortcuts retain a complete non-user checkpoint and its intervening history. */
+  retainCheckpoint?: boolean;
 }
 
 /**
@@ -1420,8 +1471,9 @@ export type SessionUiEvent = SessionUiEventBody & { seq?: number };
 
 type SessionUiEventBody =
   | { type: "message.append"; message: unknown }
-  | { type: "assistant.delta"; text: string }
-  | { type: "assistant.thinking.delta"; text: string }
+  | { type: "assistant.start"; message: unknown }
+  | { type: "assistant.delta"; text: string; streamId?: string }
+  | { type: "assistant.thinking.delta"; text: string; streamId?: string }
   | { type: "tool.start"; toolName: string; toolCallId: string; summary: string; args?: unknown }
   | { type: "tool.update"; toolName: string; toolCallId: string; text: string; content?: unknown; details?: unknown }
   | { type: "tool.end"; toolName: string; toolCallId: string; text: string; isError: boolean; content?: unknown; details?: unknown }
@@ -1438,6 +1490,8 @@ type SessionUiEventBody =
   | { type: "session.error"; message: string }
   | { type: "ask.opened"; ask: PendingAskUser }
   | { type: "ask.closed"; askId: string; reason: AskUserCloseReason }
+  /** Technical details for the browser console, never transcript or notification content. */
+  | { type: "session.diagnostic"; message: string }
   | { type: "dialog.opened"; dialog: PendingExtensionDialog }
   | { type: "dialog.closed"; dialogId: string; reason: ExtensionDialogCloseReason; answer?: ExtensionDialogAnswer }
   | { type: "session.name"; sessionId: string; name?: string }
@@ -1464,6 +1518,11 @@ export interface SessionAttentionEvent {
   detail: string;
 }
 
+export interface WorkspaceChangedEvent {
+  type: "workspaces.changed";
+  projectId: string;
+}
+
 export type GlobalSessionEvent =
   | SessionAttentionEvent
   | Extract<SessionUiEventBody, { type: "status.update" | "activity.update" | "session.name" | "session.created" }>
@@ -1471,5 +1530,6 @@ export type GlobalSessionEvent =
   | SessionUnreadEvent
   | SessionStartupProgressEvent
   | ModelScopeChangedEvent
+  | WorkspaceChangedEvent
   | ServerNoticeEvent;
 export type RealtimeEvent = GlobalSessionEvent | MachineStatusUiEvent;

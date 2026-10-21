@@ -1,5 +1,5 @@
-import type { AuthProviderOption, CommandOption, CommandResult, ExtensionDialogAnswer, ExtensionDialogCloseReason, Machine, MachineHealth, MachineRuntime, OAuthFlowState, PendingAskUser, PendingExtensionDialog, PiWebStatusResponse, Project, QueuedSessionMessage, SessionActivity, SessionInfo, SessionModelCatalogEntry, SessionStatus, SessionTreeSnapshot, TerminalCommandRun, Workspace } from "./api";
-import type { ChatLine } from "./components/shared";
+import type { AuthProviderOption, CommandOption, CommandResult, ExtensionDialogAnswer, ExtensionDialogCloseReason, Machine, MachineHealth, MachineRuntime, OAuthFlowState, PendingAskUser, PendingExtensionDialog, PiWebStatusResponse, Project, QueuedSessionMessage, SessionActivity, SessionInfo, SessionModelCatalogEntry, SessionStatus, SessionTreeSnapshot, TerminalCommandRun, Workspace, WorkspaceProviderResolution } from "./api";
+import type { ChatLine } from "./chatTypes";
 import type { MachineStatusSnapshot } from "../../shared/machineStatus";
 import type { QualifiedContributionId } from "./plugins/ids";
 import type { SelectedSessionNotificationInbox } from "./sessionNotifications";
@@ -7,6 +7,8 @@ import type { BrowserErrorMap } from "./browserErrors";
 import type { MainView } from "./route";
 
 export interface AppState {
+  /** Latest authority result for the selected project; absent while resolving. */
+  workspaceResolution?: WorkspaceProviderResolution | undefined;
   machines: Machine[];
   selectedMachine: Machine | undefined;
   isLoadingMachines: boolean;
@@ -34,6 +36,8 @@ export interface AppState {
   selectedWorkspace: Workspace | undefined;
   selectedSession: SessionInfo | undefined;
   status: SessionStatus | undefined;
+  /** In-flight history operations; each entry belongs to one request. */
+  pendingTreeActions: readonly { machineId: string; sessionId: string }[];
   activity: SessionActivity | undefined;
   /**
    * The selected session's open `ask_user` question sets, oldest first, derived
@@ -97,6 +101,7 @@ export interface ClosedExtensionDialog {
 /** `machineId` stays bound to the machine selected when the auth operation began. */
 export type AuthDialogState =
   | { step: "method"; machineId: string }
+  | { step: "starting"; machineId: string; title: string; error?: string }
   | { step: "providers"; mode: "login"; machineId: string; authType?: "oauth" | "api_key"; providers: AuthProviderOption[] }
   | { step: "oauth"; flow: OAuthFlowState; machineId: string; responding?: boolean; inputValue?: string; error?: string }
   | { step: "logout"; machineId: string; providers: AuthProviderOption[] };
@@ -146,6 +151,7 @@ export function initialAppState(): AppState {
     selectedWorkspace: undefined,
     selectedSession: undefined,
     status: undefined,
+    pendingTreeActions: [],
     activity: undefined,
     pendingAsks: [],
     pendingDialogs: [],

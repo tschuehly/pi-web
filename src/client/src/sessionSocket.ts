@@ -85,6 +85,11 @@ export class SessionSocket {
   private async handleMessage(data: MessageEvent["data"], socket: WebSocket, session: SessionRef): Promise<void> {
     const event = parseSessionSocketEvent(await parseSocketEvent(data));
     if (this.socket !== socket || event === undefined) return;
+    if (event.type === "session.diagnostic") {
+      // Diagnostics are live-only, outside transcript snapshot reconciliation.
+      console.error("[PI WEB] Session diagnostic", { machineId: this.machineId, sessionId: session.id, cwd: session.cwd, message: event.message });
+      return;
+    }
     if (event.type === "notifications.inbox" && (session.id !== event.summary.sessionId || session.cwd !== event.summary.cwd)) return;
     this.onEvent?.(event);
   }
@@ -152,10 +157,7 @@ export class RealtimeSocket {
 
 export function parseSessionSocketEvent(event: unknown): SessionUiEvent | undefined {
   const type = eventType(event);
-  // Inbox, ask, and dialog frames have dedicated validators (they drive the
-  // notification inbox and the interactive cards answered on the model's or an
-  // extension's behalf). Every other accepted frame is session stream
-  // vocabulary, validated field by field.
+  // Inbox, ask and extension-dialog frames have dedicated validators.
   if (type === "notifications.inbox") return safelyParseValidatedEvent(() => parseSessionNotificationInboxEvent(event));
   if (type === "ask.opened") return safelyParseValidatedEvent(() => parseSessionAskOpenedEvent(event));
   if (type === "ask.closed") return safelyParseValidatedEvent(() => parseSessionAskClosedEvent(event));

@@ -340,7 +340,7 @@ describe("session routes", () => {
     }
   });
 
-  it("strictly parses cwd-scoped session tree navigation requests", async () => {
+  it("strictly parses cwd-scoped exact-entry navigation requests without retainCheckpoint", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
     const eventHub = new SessionEventHub();
@@ -372,7 +372,7 @@ describe("session routes", () => {
 
       expect([response.statusCode, withoutSummary.statusCode, withDefaultSummary.statusCode]).toEqual([200, 200, 200]);
       expect(response.json()).toEqual({ cancelled: false, editorText: "edit this" });
-      expect(routeService.navigateTreeCalls).toEqual([
+      expect(routeService.navigateTreeCalls).toStrictEqual([
         {
           lookup: { id: "session-1", cwd: resolve("/repo") },
           request: { targetId: "entry-2", expectedLeafId: null, summary: { mode: "custom", instructions: "focus on tests" } },
@@ -423,7 +423,7 @@ describe("session routes", () => {
     }
   });
 
-  it("strictly parses cwd-scoped session tree fork requests", async () => {
+  it("strictly parses cwd-scoped exact-entry fork requests without retainCheckpoint", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
     const eventHub = new SessionEventHub();
@@ -456,7 +456,7 @@ describe("session routes", () => {
         },
         promptDraft: "draft this",
       });
-      expect(routeService.forkFromTreeCalls).toEqual([
+      expect(routeService.forkFromTreeCalls).toStrictEqual([
         {
           lookup: { id: "session-1", cwd: resolve("/repo") },
           request: { entryId: "entry-2", expectedLeafId: "leaf-1" },
@@ -466,6 +466,69 @@ describe("session routes", () => {
           request: { entryId: "entry-3", expectedLeafId: null },
         },
       ]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it.each([true, false])("forwards retainCheckpoint=%s for session tree navigation and forks", async (retainCheckpoint) => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    const navigation: SessionTreeNavigateRequest = {
+      targetId: "entry-2",
+      expectedLeafId: "leaf-1",
+      summary: { mode: "none" },
+      retainCheckpoint,
+    };
+    const fork: SessionTreeForkRequest = { entryId: "entry-2", expectedLeafId: "leaf-1", retainCheckpoint };
+
+    try {
+      const navigateResponse = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/tree/navigate",
+        payload: { cwd: "/repo", ...navigation },
+      });
+      const forkResponse = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/tree/fork",
+        payload: { cwd: "/repo", ...fork },
+      });
+
+      expect([navigateResponse.statusCode, forkResponse.statusCode]).toEqual([200, 200]);
+      expect(routeService.navigateTreeCalls).toStrictEqual([{ lookup: { id: "session-1", cwd: resolve("/repo") }, request: navigation }]);
+      expect(routeService.forkFromTreeCalls).toStrictEqual([{ lookup: { id: "session-1", cwd: resolve("/repo") }, request: fork }]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it.each(["navigate", "fork"])("rejects non-boolean retainCheckpoint on tree/%s before calling the service", async (operation) => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    const base = operation === "navigate"
+      ? { cwd: "/repo", targetId: "entry-2", expectedLeafId: "leaf-1", summary: { mode: "none" } }
+      : { cwd: "/repo", entryId: "entry-2", expectedLeafId: "leaf-1" };
+    const malformed: unknown[] = [null, "true", "false", "", 0, 1, [], {}];
+
+    try {
+      for (const retainCheckpoint of malformed) {
+        const response = await routeApp.inject({
+          method: "POST",
+          url: `/sessions/session-1/tree/${operation}`,
+          payload: { ...base, retainCheckpoint },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toEqual({ error: "retainCheckpoint field must be a boolean" });
+      }
+      expect(routeService.navigateTreeCalls).toEqual([]);
+      expect(routeService.forkFromTreeCalls).toEqual([]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -1243,6 +1306,36 @@ describe("session routes", () => {
     }
   });
 
+  it("validates and forwards queue message mutations with workspace context", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    const calls: unknown[] = [];
+    routeService.mutateQueueMessage = (ref, mutation) => {
+      calls.push({ ref, mutation });
+      return routeService.clearQueue(ref);
+    };
+    try {
+      const mutation = { action: "toggle", index: 0, expectedQueue: [{ kind: "steer", text: "original" }] };
+      const response = await routeApp.inject({ method: "POST", url: "/sessions/session-1/queue/message", payload: { cwd: "/repo", ...mutation } });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ sessionId: "session-1", queuedMessages: [] });
+      expect(calls).toEqual([{ ref: { id: "session-1", cwd: resolve("/repo") }, mutation }]);
+      const invalid = await routeApp.inject({ method: "POST", url: "/sessions/session-1/queue/message", payload: { cwd: "/repo", ...mutation, index: 0.5 } });
+      expect(invalid.statusCode).toBe(400);
+      expect(calls).toHaveLength(1);
+      routeService.clearQueueError = new Error("Queued messages changed; refresh the queue and try again");
+      const stale = await routeApp.inject({ method: "POST", url: "/sessions/session-1/queue/message", payload: { cwd: "/repo", ...mutation } });
+      expect(stale.statusCode).toBe(400);
+      expect(stale.json()).toEqual({ error: "Queued messages changed; refresh the queue and try again" });
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+
   it("promotes one exact queued message and all queued messages through atomic queue routes", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1690,6 +1783,11 @@ class CapturingRouteSessionService implements SessionRouteService {
   promoteAllQueuedMessages(lookup: SessionRouteRef): Promise<SessionStatus> {
     this.promoteAllQueuedMessagesCalls.push(lookup);
     return Promise.resolve(idleStatus(lookup));
+  }
+
+  mutateQueueMessage(lookup: SessionRouteRef, mutation: Parameters<SessionRouteService["mutateQueueMessage"]>[1]): Promise<SessionStatus> {
+    void mutation;
+    return this.clearQueue(lookup);
   }
 
   clearQueue(lookup: SessionRouteRef): Promise<SessionStatus> {

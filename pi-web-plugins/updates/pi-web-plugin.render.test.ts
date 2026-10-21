@@ -96,6 +96,7 @@ function commandTexts(container: HTMLElement): string[] {
 
 afterEach(() => {
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 describe("Updates plugin panel layout", () => {
@@ -174,6 +175,22 @@ describe("Updates plugin panel layout", () => {
     expect(container.querySelector(".updates-recommended")).toBeNull();
     expect(container.textContent).toContain("No PI WEB update or restart messages.");
     expect(sectionOrder(container)).toEqual(["notices", "Installed services", "Suggested commands", "meta"]);
+  });
+
+  it("copies a command unchanged without requiring a selected workspace", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const command = "PI_CODING_AGENT_DIR='/profiles/active' '/usr/bin/node' '/opt/pi-web/dist/cli.js' update";
+    const container = renderPanel(status({
+      release: { packageName: "@jmfederico/pi-web", updateAvailable: true },
+      commands: { update: command },
+    }));
+    const copy = container.querySelector<HTMLButtonElement>(".updates-recommended button");
+    expect(copy?.textContent).toBe("Copy");
+    copy?.click();
+    await Promise.resolve();
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(command);
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Run")).toBe(false);
   });
 
   it.each([

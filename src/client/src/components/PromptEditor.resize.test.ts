@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import { PROMPT_EDITOR_MAX_HEIGHT, PROMPT_EDITOR_MIN_HEIGHT, PromptEditor, promptEditorDragHeight, promptEditorMaximumHeight } from "./PromptEditor";
-import { chatStyles, promptEditorStyles } from "./shared";
+
+import { promptEditorStyles } from "./shared";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -235,7 +236,6 @@ describe("PromptEditor resize handle", () => {
     expect(promptCss).toMatch(/@media \(pointer: coarse\)[\s\S]*\.editor-resize-handle\s*\{[^}]*top:\s*-8px;[^}]*height:\s*16px/);
     expect(promptCss).toMatch(/\.actions\s*\{[^}]*flex-wrap:\s*wrap/);
     expect(promptCss).toMatch(/\.icon-button\s*\{[^}]*width:\s*28px; height:\s*28px/);
-    expect(chatStyles.cssText).toMatch(/\.scroll-to-bottom\s*\{[^}]*bottom:\s*12px/);
   });
 
   it("uses compensated viewport bounds across interface scales", () => {

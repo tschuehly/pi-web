@@ -26,7 +26,10 @@ describe("Pi SDK before_agent_start for custom-message runs", () => {
       agentsFilesOverride: () => ({ agentsFiles: [] }),
       extensionFactories: [(pi) => {
         pi.on("before_agent_start", (event) => {
-          hookPrompts.push(event.prompt);
+          // Pi 1.3 types the event by what started the run; a triggered custom message carries its content.
+          hookPrompts.push(event.messageType === "user" ? event.prompt
+            : typeof event.message.content === "string" ? event.message.content
+            : event.message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n"));
           return { systemPrompt: `${event.systemPrompt}\n\nrun override` };
         });
       }],

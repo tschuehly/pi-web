@@ -536,6 +536,8 @@ describe("Workbench Chat chooser", () => {
   });
 
   it("opens Chat Markdown file links in the Files pane and respects unsaved edits", async () => {
+    // Chat Markdown formats on a later frame; without a viewport, format without waiting for visibility.
+    vi.stubGlobal("IntersectionObserver", undefined);
     const current = session("human", "Edit notes");
     const app = await mountChooser([current]);
     setState(app, { ...getState(app), selectedSession: current, messages: [{ role: "assistant", parts: [{ type: "text", text: "See [notes](docs/notes.md), [ledger](/repo/.scratch/LEDGER.md), [outside](/elsewhere/x.md) and [site](https://example.com)." }] }] });
@@ -568,6 +570,8 @@ describe("Workbench Chat chooser", () => {
   });
 
   it("offers the enabled Mermaid plugin for mermaid fences in Chat", async () => {
+    // Chat Markdown formats on a later frame; without a viewport, format without waiting for visibility.
+    vi.stubGlobal("IntersectionObserver", undefined);
     const manifest = { lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [
       { id: "mermaid", module: "/pi-web-plugins/mermaid/browser/pi-web-plugin.js", source: "bundled", scope: "bundled", machineSpecific: false },
       { id: "files", module: "/pi-web-plugins/files/browser/pi-web-plugin.js", source: "bundled", scope: "bundled", machineSpecific: false },
@@ -594,6 +598,8 @@ describe("Workbench Chat chooser", () => {
   });
 
   it("opens a Chat link outside its folder in the registered workspace that contains the file, then returns to the Chat's workspace", async () => {
+    // Chat Markdown formats on a later frame; without a viewport, format without waiting for visibility.
+    vi.stubGlobal("IntersectionObserver", undefined);
     const sibling: Project = { id: "sibling", name: "Sibling", path: "/pi-web.installed", createdAt: project.createdAt };
     const siblingWorkspace: Workspace = { id: "sibling-main", projectId: sibling.id, path: sibling.path, label: "main", isMain: true, effectiveConfig: {} };
     vi.spyOn(api, "workspaces").mockImplementation((projectId) => Promise.resolve(projectId === sibling.id ? [siblingWorkspace] : [workspace]));
@@ -3488,6 +3494,7 @@ async function chatAnchors(app: WorkbenchApp): Promise<HTMLAnchorElement[]> {
   if (chat === null || chat === undefined) throw new Error("Chat was not rendered");
   await chat.updateComplete;
   const texts = [...chat.renderRoot.querySelectorAll<FormattedText>("formatted-text")];
+  await vi.waitFor(() => { expect(texts.every((text) => (text.renderRoot.querySelector(".enhanced-content")?.childElementCount ?? 0) > 0)).toBe(true); });
   await Promise.all(texts.map((text) => text.updateComplete));
   return texts.flatMap((text) => [...text.renderRoot.querySelectorAll("a")]);
 }

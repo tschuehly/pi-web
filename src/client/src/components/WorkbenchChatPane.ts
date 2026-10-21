@@ -1,4 +1,6 @@
 import { LitElement, css, html, nothing } from "lit";
+import type { MessageActionAvailabilityContext } from "../../../plugin-api";
+import { runWorkbenchDisplayedMessageAction, runWorkbenchMessageAction, workbenchMessageActionContext, WORKBENCH_MESSAGE_ACTIONS } from "../workbenchMessageActions";
 import { customElement, property, state } from "lit/decorators.js";
 import { api, type AskUserSubmission, type ExtensionDialogAnswer, type Machine, type Project, type PromptAttachment, type QueuedSessionMessage, type Workspace } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
@@ -9,7 +11,7 @@ import { selectedMachineId } from "../controllers/types";
 import { markdownWorkspaceContext } from "../formatting/workspaceLinks";
 import { machineSessionKey } from "../machineKeys";
 import type { DraftStorage } from "../promptDraftStorage";
-import type { PluginRegistry } from "../plugins/registry";
+
 import type { BrowserRealtimeEvent } from "../sessionSocket";
 import type { WindowChat } from "../workbenchWindows";
 import "./ChatView";
@@ -33,7 +35,7 @@ export class WorkbenchChatPane extends LitElement {
   @property({ attribute: false }) machines: readonly Machine[] = [];
   /** Where the Chat lives: its recorded workspace, else its folder. */
   @property({ attribute: false }) resolveWorkspace: ((chat: WindowChat) => Promise<{ project: Project | undefined; workspace: Workspace }>) | undefined;
-  @property({ attribute: false }) contentRendering: PluginRegistry["chatContentRendering"] | undefined;
+  @property({ attribute: false }) contentRendering: import("../formatting/contentRendering").ChatContentRendering | undefined;
   /** The window's one Activity fold state, shared with the focused tile. */
   @property({ type: Boolean }) rosterCollapsed = false;
   @property({ attribute: false }) onToggleRoster: (() => void) | undefined;
@@ -120,7 +122,10 @@ export class WorkbenchChatPane extends LitElement {
         .onClearServerQueue=${() => { void this.sessions.clearServerQueue(); }}
         .onDismissWarning=${(dismissId: string) => { void this.sessions.dismissWarning(dismissId); }}
         .onLoadMore=${() => { void this.sessions.loadEarlierMessages(); }}
-        .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
+        .messageActions=${WORKBENCH_MESSAGE_ACTIONS}
+          .messageActionContext=${workbenchMessageActionContext(state)}
+          .onMessageAction=${(input: MessageActionAvailabilityContext, actionId: string) => runWorkbenchMessageAction((entryId, action) => this.sessions.actOnMessage(entryId, action), input, actionId)}
+          .onDisplayedMessageAction=${runWorkbenchDisplayedMessageAction}
       ></chat-view>
       <delegate-roster .status=${state.status} .collapsed=${this.rosterCollapsed} .onToggleCollapsed=${this.onToggleRoster}></delegate-roster>
       <goal-status-chip .status=${state.status}></goal-status-chip>

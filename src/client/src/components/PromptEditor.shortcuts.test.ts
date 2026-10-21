@@ -272,8 +272,11 @@ describe("composer keyboard handling", () => {
     await vi.waitFor(() => {
       const menu = editor.shadowRoot?.querySelector("autocomplete-menu");
       expect(menu?.shadowRoot?.textContent).toContain("/tree");
+      expect(editor.hasAttribute("completion-menu-open")).toBe(true);
     });
     press(editor, "Enter");
+    await editor.updateComplete;
+    expect(editor.hasAttribute("completion-menu-open")).toBe(false);
     expect(editor.view?.state.doc.toString()).toBe("/tree ");
     expect(editor.onSend).not.toHaveBeenCalled();
   });

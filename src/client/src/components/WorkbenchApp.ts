@@ -1,4 +1,6 @@
 import { LitElement, css, html, nothing } from "lit";
+import type { MessageActionAvailabilityContext } from "../../../plugin-api";
+import { runWorkbenchDisplayedMessageAction, runWorkbenchMessageAction, workbenchMessageActionContext, WORKBENCH_MESSAGE_ACTIONS } from "../workbenchMessageActions";
 import { keyed } from "lit/directives/keyed.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { customElement, query, state } from "lit/decorators.js";
@@ -36,6 +38,7 @@ import { sessionTitle } from "../sessionLabels";
 import { sessionPersistenceState } from "../sessionPersistence";
 import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
+import { pluginStyles, PluginStyleRuntime } from "../plugins/styles";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
 import { closeChats, focusChat, gridTiles, moveChats, orderedChats, toggleLayout, toggleMaximized, updateChat, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
 import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor } from "../workstreamColor";
@@ -175,11 +178,16 @@ export class WorkbenchApp extends LitElement {
   private orientationPendingSessionId: string | undefined;
   private workstreamWatchTimer: number | undefined;
   private readonly plugins = new PluginRegistry();
-  @state() private contentRendering: PluginRegistry["chatContentRendering"] | undefined;
+  @state() private contentRendering: import("../formatting/contentRendering").ChatContentRendering | undefined;
   private themesInitialized = false;
   @state() private themePreference: ThemePreference = readStoredThemePreference() ?? { themeId: "themes:github-dark", auto: true };
   private readonly systemLightThemeMedia = typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia("(prefers-color-scheme: light)") : undefined;
   private readonly onSystemLightThemeChange = (): void => { this.applyPreferredTheme(); };
+
+  /** Bundled themes are stylesheets: publish the active one to the document and every integrated shadow root. */
+  private readonly stylesheetRuntime = new PluginStyleRuntime(pluginStyles, (error) => {
+    console.error("Failed to apply theme stylesheets", error);
+  });
 
   private applyPreferredTheme(): void {
     const theme = resolveThemePreference({
@@ -188,6 +196,7 @@ export class WorkbenchApp extends LitElement {
       preference: this.themePreference,
       prefersLight: this.systemLightThemeMedia?.matches ?? false,
     }).activeTheme;
+    if (this.isConnected) this.stylesheetRuntime.update(theme?.stylesheets ?? []);
     if (theme !== undefined) applyPiWebTheme(theme);
   }
 
@@ -404,6 +413,7 @@ export class WorkbenchApp extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    this.stylesheetRuntime.connect(this.ownerDocument);
     this.sessions.resume();
     this.notifications.resume();
     window.addEventListener("popstate", this.onPopState);
@@ -444,13 +454,14 @@ export class WorkbenchApp extends LitElement {
       if (registrations.length === 0) return;
       await this.plugins.registerBatch(registrations);
       // A new reference re-renders already displayed Chat messages.
-      this.contentRendering = this.plugins.chatContentRendering;
+      this.contentRendering = this.plugins.getChatContentRendering("local");
     } catch (error) {
       console.warn("Chat content renderers unavailable", error);
     }
   }
 
   override disconnectedCallback(): void {
+    this.stylesheetRuntime.disconnect();
     window.removeEventListener("popstate", this.onPopState);
     window.removeEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
     window.removeEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
@@ -1927,7 +1938,10 @@ export class WorkbenchApp extends LitElement {
           .onDismissNotification=${(notificationId: string) => { void this.notifications.dismissNotification(notificationId); }}
           .onDismissAllNotifications=${() => { void this.notifications.dismissAll(); }}
           .onLoadMore=${() => { void this.sessions.loadEarlierMessages(); }}
-          .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
+          .messageActions=${WORKBENCH_MESSAGE_ACTIONS}
+          .messageActionContext=${workbenchMessageActionContext(state)}
+          .onMessageAction=${(input: MessageActionAvailabilityContext, actionId: string) => runWorkbenchMessageAction((entryId, action) => this.sessions.actOnMessage(entryId, action), input, actionId)}
+          .onDisplayedMessageAction=${runWorkbenchDisplayedMessageAction}
           .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
         ></chat-view>
         <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${this.toggleDelegateRoster}></delegate-roster>

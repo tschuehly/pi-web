@@ -9,6 +9,7 @@ import { defaultPiWebConfigPath, defaultPiWebDataDir, examplePiWebConfig } from 
 import { piWebDockerCommand, type PiWebDockerMode } from "./docker/piWebDockerCommandPlan.js";
 import { ownEnvironmentValue } from "./environment.js";
 import { runPiWebUpdate } from "./piWebUpdate.js";
+import { runWorkspaceNotificationCli } from "./workspaceNotificationCli.js";
 import { runPluginRecoveryCli, type SessionDaemonRestartPlan } from "./pluginRecoveryCli.js";
 import {
   packageVersion,
@@ -1366,8 +1367,9 @@ Usage:
   pi-web start|stop|restart|status|logs
   pi-web plugins disable <plugin-id> [--config <path>] [--restart]
   pi-web plugins safe-start show|clear|set <bundled-only|none> [--config <path>] [--restart]
+  pi-web workspaces notify --project <projectId> --plugin <pluginId>
   pi-web doctor
-  pi-web update [--yes]
+  pi-web update [--yes] [--force]
   pi-web version [--check]
 
 Recommended install:
@@ -1389,6 +1391,7 @@ async function main(): Promise<void> {
   } else if (command === "stop" || command === "status") await serviceAction(command);
   else if (command === "logs") logs();
   else if (command === "plugins") runPluginRecoveryCli(args, { restartPlan: (context) => sessionDaemonRestartPlan(context) });
+  else if (command === "workspaces") await runWorkspaceNotificationCli(args);
   else if (command === "--version" || command === "-v") console.log(packageVersion());
   else if (command === "help" || command === "--help" || command === "-h") help();
   else throw new Error(`Unknown command: ${command}`);

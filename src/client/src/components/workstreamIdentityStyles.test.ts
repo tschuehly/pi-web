@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PluginRegistry } from "../plugins/registry";
-import { themePackPlugin } from "../plugins/themes";
+import { bundledThemes, bundledThemeToken } from "../plugins/themes/themeTokens.testSupport";
 import { WORKSTREAM_TINT_PERCENTAGES } from "../workstreamColor";
 import { WorkstreamChooser } from "./WorkstreamChooser";
 import { WorkbenchWindowTabs } from "./WorkbenchWindowTabs";
@@ -8,14 +7,12 @@ import { WorkbenchWindowTabs } from "./WorkbenchWindowTabs";
 type Rgb = [number, number, number];
 
 describe("Workstream identity presentation contracts", () => {
-  it("keeps identity-surface text and shape boundaries above WCAG contrast floors for every hue and theme", async () => {
-    const registry = new PluginRegistry();
-    await registry.register({ id: "themes", plugin: themePackPlugin });
-    const themes = registry.getThemes();
-    expect(themes).toHaveLength(5);
+  it("keeps identity-surface text and shape boundaries above WCAG contrast floors for every hue and theme", () => {
+    const themes = bundledThemes();
+    expect(themes).toHaveLength(7);
 
     for (const theme of themes) {
-      const foreground = hexRgb(theme.tokens["--pi-text"]);
+      const foreground = hexRgb(bundledThemeToken(theme.id, "--pi-text"));
       const surfaces = [
         ["tab", "--pi-surface", WORKSTREAM_TINT_PERCENTAGES.tab],
         ["hovered tab", "--pi-surface-hover", WORKSTREAM_TINT_PERCENTAGES.tab],
@@ -25,7 +22,7 @@ describe("Workstream identity presentation contracts", () => {
       for (let hue = 0; hue < 360; hue += 1) {
         const identity = hslRgb(hue, theme.colorScheme === "light" ? 70 : 65, theme.colorScheme === "light" ? 40 : 65);
         for (const [name, token, percent] of surfaces) {
-          const background = mix(identity, hexRgb(theme.tokens[token]), percent / 100);
+          const background = mix(identity, hexRgb(bundledThemeToken(theme.id, token)), percent / 100);
           expect(contrast(foreground, background), `${theme.id} ${name} hue ${String(hue)} text`).toBeGreaterThanOrEqual(4.5);
         }
       }

@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
+import { useDeferredContent, settleDeferredContent } from "../formatting/deferredContent.testSupport";
 import { afterEach, expect, it, vi } from "vitest";
 import { writeClipboardText } from "../clipboard";
 import { FormattedText } from "./FormattedText";
 
 vi.mock("../clipboard", () => ({ writeClipboardText: vi.fn().mockResolvedValue(true) }));
+useDeferredContent();
 
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
 
@@ -23,7 +25,7 @@ async function setup(destination = "report.txt", machineId = "remote") {
   view.workspaceContext = { machineId, projectId: "p", workspaceId: "w", root: "/work" };
   view.text = `[**file**](${destination})`;
   document.body.append(view);
-  await view.updateComplete;
+  await settleDeferredContent(view);
   const anchor = view.renderRoot.querySelector("a");
   if (!anchor) throw new Error("Missing link");
   return { view, anchor };

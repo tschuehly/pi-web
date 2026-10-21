@@ -1,6 +1,7 @@
 import type {
   AskUserCloseResponse,
   AskUserSubmission,
+  SessionQueueMessageMutation,
   ExtensionDialogAnswer,
   ExtensionDialogCloseResponse,
   PendingAskUser,
@@ -80,6 +81,7 @@ export interface SessionRouteService {
   promoteQueuedMessage(ref: SessionRouteRef, target: { kind: "steer" | "followUp"; text: string }): Promise<ClientSessionStatus>;
   promoteAllQueuedMessages(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   clearQueue(ref: SessionRouteRef): Promise<ClientSessionStatus>;
+  mutateQueueMessage(ref: SessionRouteRef, mutation: SessionQueueMessageMutation): Promise<ClientSessionStatus>;
   submitAsk(ref: SessionRouteRef, askId: string, submission: AskUserSubmission): Promise<AskUserCloseResponse>;
   cancelAsk(ref: SessionRouteRef, askId: string): Promise<AskUserCloseResponse>;
   answerDialog(ref: SessionRouteRef, dialogId: string, value: ExtensionDialogAnswer): Promise<ExtensionDialogCloseResponse>;

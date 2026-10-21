@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatView } from "./ChatView";
+
 import type { ChatLine } from "./shared";
 
 afterEach(() => {
@@ -69,6 +70,17 @@ describe("transcript DOM ownership", () => {
 
     expect(previous?.isConnected).toBe(false);
     expect(transcript(view).querySelector("article[data-index='0']")).not.toBe(previous);
+  });
+
+  it("replaces a committed message with a different entry at the same index", async () => {
+    const view = new ChatView();
+    view.messages = [{ ...textMessage("assistant", "first"), entryId: "first-id" }];
+    document.body.append(view);
+    await settle(view);
+    const previous = transcript(view).querySelector("article");
+    view.messages = [{ ...textMessage("assistant", "replacement"), entryId: "second-id" }];
+    await settle(view);
+    expect(transcript(view).querySelector("article")).not.toBe(previous);
   });
 
   it("reuses existing message elements during same-session updates and history prepends", async () => {

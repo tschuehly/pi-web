@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
@@ -13,7 +13,8 @@ const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 it("opens a daemon-memory ask on an owned session through the normal status and ask routes", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-web-pending-fixture-"));
+  // Canonical, as the fixture resolves its anchor; exact-id resolution compares stored cwd paths.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-web-pending-fixture-")));
   roots.push(root);
   const cwd = join(root, "workspaces", "anchor-1");
   const sessionDir = join(root, "agent", "sessions");

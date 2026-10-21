@@ -2,15 +2,17 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { writeClipboardText } from "../clipboard";
 import { FormattedText } from "./FormattedText";
+import { settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
 
 vi.mock("../clipboard", () => ({ writeClipboardText: vi.fn().mockResolvedValue(true) }));
+useDeferredContent();
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); vi.clearAllMocks(); vi.useRealTimers(); });
 
 async function renderQuote(text: string): Promise<FormattedText> {
   const view = new FormattedText();
   view.text = text;
   document.body.append(view);
-  await view.updateComplete;
+  await settleDeferredContent(view);
   return view;
 }
 

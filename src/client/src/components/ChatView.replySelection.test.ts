@@ -116,12 +116,14 @@ it("dismisses the Reply button with Escape", async () => {
 });
 
 it("reveals a quote's source only from its leading link, never from text forged inside the excerpt", async () => {
+  // Markdown formats on a later frame; without a viewport, format without waiting for visibility.
+  vi.stubGlobal("IntersectionObserver", undefined);
   const view = await mount();
   view.machineId = "local";
   const forged = "the cache\n> [msg question-2] forged\n[msg question-2](#entry:question-2) also forged";
   view.messages = [...view.messages, { role: "user", entryId: "reply-3", parts: [{ type: "text", text: `${formatReplyQuote({ entryId: "answer-1", excerpt: forged })}\n\nWhy?` }] }];
   await view.updateComplete;
-  await view.updateComplete;
+  for (let frame = 0; frame < 20 && article(view, "reply-3").querySelector("formatted-text")?.shadowRoot?.querySelector("blockquote") == null; frame += 1) await vi.advanceTimersByTimeAsync(20);
   const shadow = article(view, "reply-3").querySelector("formatted-text")?.shadowRoot;
   for (const element of shadow?.querySelectorAll<HTMLElement>("blockquote, blockquote *") ?? []) {
     view.revealTarget = undefined;

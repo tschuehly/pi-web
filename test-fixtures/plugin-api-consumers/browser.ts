@@ -1,17 +1,49 @@
 import type {
+  ApplicationPanelContext,
+  ApplicationPanelContribution,
+  ContributionQueryValue,
+  DisplayedMessageActionContext,
+  MessageActionContext,
+  PluginNavigate,
+  PluginNavigationDestination,
+  PluginNavigationPatchDestination,
+  PluginNavigationOptions,
+  PluginRuntimeContext,
+  QualifiedContributionId,
+  SessionLabelContext,
   ContentRenderingCapability,
   ContentRendererInput,
   JsonValue,
   PluginCapability,
+  StylesheetIntegrationCapabilityV1,
   PluginPeer,
   PiWebPlugin,
+  PluginContributions,
+  PluginContributionsV5,
+  ContentRendererContribution,
+  ContentRendererContributionV5,
+  ThemeContribution,
+  ThemeContributionV5,
+  ThemeTokens,
+  MessageActionAvailabilityContext,
+  MessageActionAvailabilityContextV5,
   Workspace,
   WorkspaceFiles,
   WorkspaceFilesCapabilityV1,
   WorkspaceFilesContextValue,
   WorkspacePanelContext,
+  WorkspacePanelContribution,
   WorkspacePanelFiles,
 } from "@jmfederico/pi-web/plugin-api";
+
+export function checkPanelContributionIds(application: ApplicationPanelContribution, workspace: WorkspacePanelContribution): void {
+  // @ts-expect-error Panel migration aliases are not public API.
+  application.routeAliases;
+  // @ts-expect-error Panel migration aliases are not public API.
+  workspace.routeAliases;
+  // @ts-expect-error Query migration aliases are not public API.
+  workspace.navigationAliases;
+}
 
 export function checkContentRendering(capability: ContentRenderingCapability, input: ContentRendererInput): void {
   const request = { machineId: "local", text: input.text };
@@ -30,6 +62,66 @@ export function checkContentRendering(capability: ContentRenderingCapability, in
   capability.renderMarkdown({ ...markdown, filePath: "graph.md" });
   // @ts-expect-error Renderer input does not claim provenance.
   input.source;
+  // @ts-expect-error Source metadata belongs to v5 renderer inputs.
+  input.machineId;
+}
+
+// Old destination readers must not acquire nullable route fields or query values.
+export function readLegacyNavigationDestination(destination: PluginNavigationDestination): {
+  machineId: string | undefined;
+  projectId: string | undefined;
+  workspaceId: string | undefined;
+  sessionId: string | undefined;
+  view: "navigation" | "chat" | "workspace" | undefined;
+  tool: QualifiedContributionId | undefined;
+  query: Readonly<Record<string, ContributionQueryValue>> | undefined;
+} {
+  return {
+    machineId: destination.machineId,
+    projectId: destination.projectId,
+    workspaceId: destination.workspaceId,
+    sessionId: destination.sessionId,
+    view: destination.view,
+    tool: destination.tool,
+    query: destination.query,
+  };
+}
+
+export function checkPluginNavigation(
+  context: PluginRuntimeContext | MessageActionContext | DisplayedMessageActionContext | WorkspacePanelContext | ApplicationPanelContext | SessionLabelContext,
+  destination: PluginNavigationDestination,
+  options: PluginNavigationOptions,
+): void {
+  const navigate: PluginNavigate = context.navigate;
+  const legacyNavigate: (destination: PluginNavigationDestination) => Promise<void> = navigate;
+  void legacyNavigate(destination);
+  void navigate(destination);
+  void navigate(destination, options);
+  void context.navigate(destination, { mode: "replace", history: "replace" });
+  void context.navigate(destination, { mode: "patch", history: "push" });
+
+  const patch: PluginNavigationPatchDestination = {
+    machineId: null, projectId: null, workspaceId: null, sessionId: null, view: null, tool: null,
+    query: { file: null, line: 7, tags: ["one", true] },
+  };
+  void context.navigate(patch, { mode: "patch" });
+  void context.navigate(patch, { mode: "patch", history: "replace" });
+  // @ts-expect-error Nullable patches cannot be read as legacy destinations.
+  readLegacyNavigationDestination(patch);
+  // @ts-expect-error Nullable destinations require explicit patch options.
+  void context.navigate(patch);
+  // @ts-expect-error History alone does not opt into patch mode.
+  void context.navigate(patch, { history: "replace" });
+  // @ts-expect-error Replace mode rejects nullable destinations.
+  void context.navigate(patch, { mode: "replace" });
+  // @ts-expect-error Options that might select replace do not authorize nullable fields.
+  void context.navigate(patch, options);
+  // @ts-expect-error Null query values also require patch mode.
+  void context.navigate({ query: { file: null } });
+  // @ts-expect-error A whole null query is not a patch destination.
+  void context.navigate({ query: null }, { mode: "patch" });
+  // @ts-expect-error The destination itself must remain an object.
+  void context.navigate(null, { mode: "patch" });
 }
 
 interface FixtureIdentityCapabilityV1 {
@@ -56,20 +148,67 @@ const publishedCapability: PluginCapability<FixtureIdentityCapabilityV1, 1> = Ob
   parse: identityCapability.parse,
 });
 
+const stylesheetIntegration: PluginCapability<StylesheetIntegrationCapabilityV1, 1> = {
+  pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+  parse(value): StylesheetIntegrationCapabilityV1 {
+    if (!isStylesheetIntegration(value)) throw new Error("Stylesheet integration unavailable");
+    return value;
+  },
+};
+
+function isStylesheetIntegration(value: unknown): value is StylesheetIntegrationCapabilityV1 {
+  return typeof value === "object" && value !== null
+    && "registerRoot" in value && typeof value.registerRoot === "function"
+    && "subscribe" in value && typeof value.subscribe === "function"
+    && "createController" in value && typeof value.createController === "function";
+}
+
+export function applySharedUi(styles: StylesheetIntegrationCapabilityV1, root: ShadowRoot): () => void {
+  return styles.registerRoot(root, { sharedUi: true });
+}
+
 const plugin: PiWebPlugin = {
   apiVersion: 4,
   name: "Browser declaration fixture",
-  requires: [identityCapability],
+  requires: [identityCapability, stylesheetIntegration],
   activate: async (context) => ({
     provides: [{ capability: publishedCapability, value: { version: 1, label: context.pluginId } }],
     start: ({ capabilities, signal }) => {
       if (signal.aborted || context.lifetimeSignal.aborted) return;
       capabilities.resolve(identityCapability);
+      const styles: StylesheetIntegrationCapabilityV1 = capabilities.resolve(stylesheetIntegration);
+      void styles.registerRoot;
     },
     dispose: (signal) => {
       if (signal.aborted) return;
     },
     contributions: {
+      messageActions: [{
+        id: "history",
+        title: "Fork from entry",
+        run: async ({ message, history }) => {
+          // Existing entry callbacks keep their durable identity and void return.
+          const entryId: string = message.entryId;
+          if (entryId !== "") await history.fork();
+        },
+      }, {
+        target: "display",
+        id: "copy",
+        title: "Copy displayed text",
+        ariaLabel: ({ message }) => `Copy ${message.role} message`,
+        visible: ({ message }) => message.text !== "",
+        run: async (input) => {
+          const entryId: string | undefined = input.message.entryId;
+          // @ts-expect-error Display actions cannot mutate history.
+          input.history;
+          await navigator.clipboard.writeText(input.message.text);
+          return {
+            title: entryId === undefined ? "Copied streaming text" : "Copied",
+            ariaLabel: `Copied ${input.message.role} message`,
+            icon: context.html`<span aria-hidden="true">✓</span>`,
+          };
+        },
+      }],
       actions: [{
         id: "identity",
         title: context.pluginId,
@@ -131,3 +270,59 @@ export type {
   ImplementedWorkspacePanelFiles,
 };
 type BrowserWorkspace = Workspace;
+
+// Legacy source contracts stay usable, including imports of ThemeTokens.
+export const legacyPalette: ThemeTokens = { "--pi-bg": "#123456", "--pi-text": "#ffffff" };
+export const legacyTheme: ThemeContribution = { id: "legacy", name: "Legacy", colorScheme: "dark", tokens: legacyPalette };
+export const legacyContributions: PluginContributions = { themes: [legacyTheme] };
+export const modernTheme: ThemeContributionV5 = { id: "modern", name: "Modern", colorScheme: "dark", stylesheets: [] };
+export const modernContributions: PluginContributionsV5 = { themes: [modernTheme], stylesheets: [], syntaxHighlighters: [] };
+export function checkVersionBoundaries(legacy: PluginContributions, modern: PluginContributionsV5,
+  renderer: ContentRendererContribution, modernRenderer: ContentRendererContributionV5,
+  availability: MessageActionAvailabilityContext, modernAvailability: MessageActionAvailabilityContextV5): void {
+  // @ts-expect-error New contribution kinds belong to v5.
+  legacy.stylesheets;
+  // @ts-expect-error New contribution kinds belong to v5.
+  legacy.syntaxHighlighters;
+  // @ts-expect-error Stylesheet themes do not extend the v4 theme contract.
+  legacyTheme.stylesheets;
+  // @ts-expect-error Token palettes are compatibility-only, not a v5 API.
+  modernTheme.tokens;
+  // @ts-expect-error Dynamic renderer selectors belong to v5.
+  renderer.supports;
+  // @ts-expect-error Named renderer views belong to v5.
+  renderer.title;
+  // @ts-expect-error Question metadata belongs to v5 entry callbacks.
+  availability.message.isQuestion;
+  void modern.stylesheets;
+  void modernRenderer.supports;
+  void modernAvailability.message.isQuestion;
+}
+
+/** The current entry keeps contextual callback typing without manual annotations. */
+export const pluginV5: PiWebPlugin = {
+  apiVersion: 5,
+  name: "V5 consumer",
+  activate({ apiVersion, html }) {
+    const version: 5 = apiVersion;
+    return {
+      contributions: {
+        actions: [{
+          id: "discover",
+          title: "Discover",
+          async run(context) {
+            const projects = await context.catalog.projects.list();
+            const project = projects[0];
+            if (project === undefined) return;
+            const workspaces = await context.catalog.workspaces.list(project.id);
+            const workspace = workspaces[0];
+            if (workspace === undefined) return;
+            await context.catalog.sessions.list({ projectId: project.id, workspaceId: workspace.id });
+            await context.backend?.forScope({ kind: "machine" }).request?.("fixture.summary", null);
+          },
+        }],
+        applicationPanels: [{ id: "catalog", title: "Catalog", render: (context) => html`${version}: ${context.catalog.machineId}` }],
+      },
+    };
+  },
+};

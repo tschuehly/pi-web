@@ -225,8 +225,8 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
   async listAll(): Promise<PiSessionListEntry[]> {
     const envSessionDir = this.resolver.globalEnvSessionDir();
     const [defaultSessions, envSessions] = await Promise.all([
-      listSessionsInDefaultPiStore(this.resolver.defaultSessionsRoot()),
-      envSessionDir === undefined ? Promise.resolve([]) : listSessionsInDir(envSessionDir),
+      listSessionsInDefaultPiStore(this.resolver.defaultSessionsRoot(), this.summaryScanner),
+      envSessionDir === undefined ? Promise.resolve([]) : listSessionsInDir(envSessionDir, this.summaryScanner),
     ]);
     return uniqueSessionsByPath([...defaultSessions, ...envSessions]);
   }
@@ -338,17 +338,23 @@ function deriveTranscriptBranch(entries: readonly Record<string, unknown>[]): Re
   return branch.reverse();
 }
 
-export async function listSessionsInDir(sessionDir: string): Promise<PiSessionListEntry[]> {
+export async function listSessionsInDir(sessionDir: string, scanner = new SessionSummaryScanner()): Promise<PiSessionListEntry[]> {
   // listAll(sessionDir) lists without the SDK's internal cwd filter, which would
   // otherwise compare against this process's cwd and drop other projects' sessions.
   // Cwd filtering is applied explicitly by filterSessionsForCwd where needed.
   // Session file headers are written by external tools (Pi CLI, SDK consumers),
   // so their cwd is canonicalized here before it enters pi-web.
-  const sessions = await SessionManager.listAll(sessionDir);
-  return sessions.map((session) => ({ ...session, cwd: canonicalizeStoredCwd(session.cwd) }));
+  const [sessions, summaries] = await Promise.all([SessionManager.listAll(sessionDir), scanner.scanSessionSummariesInDir(sessionDir)]);
+  // Keep SDK cleanup dates/counts, while carrying public identity into archive
+  // indexes even when cleanup, rather than a workspace listing, initiates it.
+  const metadataByPath = new Map(summaries.map((summary) => [summary.path, summary.metadata]));
+  return sessions.map((session) => {
+    const metadata = metadataByPath.get(session.path);
+    return { ...session, cwd: canonicalizeStoredCwd(session.cwd), ...(metadata === undefined ? {} : { metadata }) };
+  });
 }
 
-export async function listSessionsInDefaultPiStore(storeRoot: string): Promise<PiSessionListEntry[]> {
+export async function listSessionsInDefaultPiStore(storeRoot: string, scanner = new SessionSummaryScanner()): Promise<PiSessionListEntry[]> {
   let entries: Dirent[];
   try {
     entries = await readdir(storeRoot, { withFileTypes: true });
@@ -357,7 +363,7 @@ export async function listSessionsInDefaultPiStore(storeRoot: string): Promise<P
   }
 
   const sessionDirs = entries.filter((entry) => entry.isDirectory()).map((entry) => join(storeRoot, entry.name));
-  const sessions = (await Promise.all(sessionDirs.map((dir) => listSessionsInDir(dir)))).flat();
+  const sessions = (await Promise.all(sessionDirs.map((dir) => listSessionsInDir(dir, scanner)))).flat();
   return sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 }
 
@@ -371,17 +377,16 @@ export function filterSessionsForCwd(sessions: readonly PiSessionListEntry[], cw
  * Locate a session file by id without parsing transcripts.
  *
  * Session filenames embed the session id (`<timestamp>_<sessionId>.jsonl`), so
- * exact and prefix matches are normally found from the directory names alone
- * and confirmed by one header read. Filename candidates that fail header
+ * exact matches are normally found from the directory names alone and
+ * confirmed by one header read. Filename candidates that fail header
  * verification (a copy whose header holds a different session) do not end the
  * search: the remaining files are checked too, so sessions in renamed or
  * hand-named files still resolve. Headers decide: a file whose header id or cwd
  * does not match is not the session.
  *
- * Among matches, an exact header id wins over a prefix match wherever it
- * appears. Ambiguous prefix candidates are considered in two buckets: filename
- * matches before remaining files, with each bucket sorted by the creation time
- * embedded in SDK-style names (see `sortedByNewestEmbeddedTimestamp`).
+ * Only full header id equality matches. Filename matches are checked before
+ * remaining files, with each bucket sorted by the creation time embedded in
+ * SDK-style names (see `sortedByNewestEmbeddedTimestamp`).
  *
  * The header's cwd is returned canonicalized, matching what `list` reports.
  */
@@ -412,13 +417,12 @@ interface SessionHeaderMatch {
 }
 
 /**
- * The session file whose header holds `sessionId`, exactly or as a prefix.
+ * The session file whose header id equals `sessionId`.
  *
  * Filename matches are searched before the remaining files, so a renamed file
- * still resolves when every filename candidate fails header verification. An
- * exact header id wins over a prefix match wherever it appears; otherwise the
- * first prefix match in candidate order wins. Headers are read concurrently,
- * but the winner is chosen by candidate order, never by completion order.
+ * still resolves when every filename candidate fails header verification.
+ * Headers are read concurrently, but the winner is chosen by candidate order,
+ * never by completion order.
  */
 async function findSessionFileByHeader(
   sessionFiles: readonly string[],
@@ -431,15 +435,11 @@ async function findSessionFileByHeader(
   for (const sessionFile of sessionFiles) {
     (fileNameMatchesSessionId(basename(sessionFile), sessionId) ? fileNameMatches : remainingFiles).push(sessionFile);
   }
-  // A prefix match is only provisional: an exact header id in a later bucket
-  // still wins over it.
-  let prefixMatch: SessionHeaderMatch | undefined;
   for (const bucket of [sortedByNewestEmbeddedTimestamp(fileNameMatches), sortedByNewestEmbeddedTimestamp(remainingFiles)]) {
-    const { exact, prefix } = await searchHeaderBucket(bucket, sessionId, readHeader, accepts);
+    const exact = await searchHeaderBucket(bucket, sessionId, readHeader, accepts);
     if (exact !== undefined) return exact;
-    prefixMatch ??= prefix;
   }
-  return prefixMatch;
+  return undefined;
 }
 
 /**
@@ -452,7 +452,7 @@ async function searchHeaderBucket(
   sessionId: string,
   readHeader: SessionHeaderReader,
   accepts: (header: SessionHeaderSummary & { cwd: string }) => boolean,
-): Promise<{ exact?: SessionHeaderMatch | undefined; prefix?: SessionHeaderMatch | undefined }> {
+): Promise<SessionHeaderMatch | undefined> {
   const matches: (SessionHeaderMatch | undefined)[] = [];
   let exactAt = files.length;
   let nextIndex = 0;
@@ -462,16 +462,15 @@ async function searchHeaderBucket(
       const path = files[index];
       if (path === undefined) break;
       const header = await readHeader(path);
-      if (header?.cwd === undefined || header.cwd === "" || !header.id.startsWith(sessionId)) continue;
+      if (header?.cwd === undefined || header.cwd === "" || header.id !== sessionId) continue;
       const match = { path, header: { ...header, cwd: header.cwd } };
       if (!accepts(match.header)) continue;
       matches[index] = match;
-      if (header.id === sessionId) exactAt = Math.min(exactAt, index);
+      exactAt = Math.min(exactAt, index);
     }
   };
   await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_HEADER_READS, files.length) }, worker));
-  if (exactAt < files.length) return { exact: matches[exactAt] };
-  return { prefix: matches.find((match) => match !== undefined) };
+  return exactAt < files.length ? matches[exactAt] : undefined;
 }
 
 /**
@@ -483,8 +482,8 @@ async function searchHeaderBucket(
  * deterministic everywhere.
  *
  * This deliberately drifts from the listing, which orders by modified time:
- * the resolver never stats transcript files, so ambiguous prefix candidates
- * within each bucket are considered in this creation-time order instead.
+ * the resolver never stats transcript files, so candidates within each bucket
+ * are considered in this creation-time order instead.
  */
 function sortedByNewestEmbeddedTimestamp(files: readonly string[]): string[] {
   // Keys computed once per file: a miss sorts every file in the store.
@@ -504,10 +503,10 @@ function embeddedFileNameTimestamp(fileName: string): string {
   return separatorIndex === -1 ? "" : stem.slice(0, separatorIndex);
 }
 
-/** Whether a `.jsonl` file name embeds `sessionId` (exactly or as a prefix). */
+/** Whether a `.jsonl` file name embeds the full `sessionId`. */
 function fileNameMatchesSessionId(fileName: string, sessionId: string): boolean {
   const embeddedId = embeddedFileNameSessionId(fileName);
-  return embeddedId !== undefined && (embeddedId === sessionId || embeddedId.startsWith(sessionId));
+  return embeddedId === sessionId;
 }
 
 /**

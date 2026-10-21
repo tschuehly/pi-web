@@ -11,6 +11,77 @@ afterEach(() => {
 });
 
 describe("machine-switcher status indicator", () => {
+  it("keeps the full machine name and current status available without the visible labels", async () => {
+    const remote = { ...machine("remote-a", "remote"), name: "Production build machine in the office", baseUrl: "https://fleet-a.example.com/" };
+    const switcher = await mountSwitcher([remote, machine("local", "local")], {}, { "remote-a": { ...health("offline"), machineId: "remote-a" } });
+    const button = switcherButton(switcher);
+
+    expect(button.getAttribute("aria-label")).toBe(`Machine: ${remote.name}. offline. Switch machine.`);
+    expect(button.title).toBe(`${remote.name} · ${remote.baseUrl} · offline`);
+    expect(button.classList.contains("disconnected")).toBe(true);
+    expect(button.querySelector(".machine-status")).toBeNull();
+    expect(button.querySelector(".machine-icon")?.classList.contains("dimmed")).toBe(true);
+
+    switcher.statuses = { "remote-a": { ...health("online"), machineId: "remote-a" } };
+    await switcher.updateComplete;
+    expect(button.getAttribute("aria-label")).toContain("online");
+    expect(button.classList.contains("disconnected")).toBe(false);
+    expect(button.querySelector(".machine-status")).toBeNull();
+    expect(button.querySelector(".machine-icon")?.classList.contains("dimmed")).toBe(false);
+
+    button.click();
+    await switcher.updateComplete;
+    const option = optionFor(switcher, remote.name);
+    expect(option.querySelector(".machine-option-name")?.textContent).toContain(remote.name);
+    expect(option.querySelector("small")?.textContent).toContain("online");
+  });
+
+  it("does not repeat the selected machine's attention in the other-machines indicator", async () => {
+    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], {
+      local: machineStatusSnapshot({ machine: { "core:working": true, "core:unread": true } }),
+    });
+
+    expect(switcherButton(switcher).querySelector(".unread-ring")).not.toBeNull();
+    expect(switcherButton(switcher).querySelector(".other-machines-activity")).toBeNull();
+  });
+
+  it("combines work and unread from unselected machines and updates when selection changes", async () => {
+    const remoteA = machine("remote-a", "remote");
+    const remoteB = machine("remote-b", "remote");
+    const switcher = await mountSwitcher([machine("local", "local"), remoteA, remoteB], {
+      "remote-a": machineStatusSnapshot({ machine: { "core:terminal": true, "core:unread": true } }),
+      "remote-b": machineStatusSnapshot({ machine: { "core:working": true } }),
+    });
+    const otherIndicator = () => switcherButton(switcher).querySelector(".other-machines-activity");
+
+    expect(otherIndicator()?.querySelector(".unread-ring")?.getAttribute("title")).toBe("Unread sessions on other machines · Other machines active");
+    expect(otherIndicator()?.querySelector(".activity-indicator.session")).not.toBeNull();
+
+    switcher.selected = remoteA;
+    await switcher.updateComplete;
+    expect(otherIndicator()?.querySelector(".unread-ring")).toBeNull();
+    expect(otherIndicator()?.querySelector(".activity-indicator.session")).not.toBeNull();
+
+    switcher.selected = remoteB;
+    await switcher.updateComplete;
+    expect(otherIndicator()?.querySelector(".activity-indicator.terminal")).not.toBeNull();
+    expect(otherIndicator()?.querySelector(".unread-ring")?.getAttribute("title")).toBe("Unread sessions on other machines · Terminal active on other machines");
+  });
+
+  it.each(["offline", "error"] as const)("keeps unread but ignores stale work from %s unselected machines", async (status) => {
+    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], {
+      "remote-a": machineStatusSnapshot({ machine: { "core:working": true, "core:unread": true } }),
+    }, { "remote-a": { ...health(status), machineId: "remote-a" } });
+    const indicator = switcherButton(switcher).querySelector(".other-machines-activity");
+
+    expect(indicator?.querySelector(".activity-indicator.session")).toBeNull();
+    expect(indicator?.querySelector(".activity-indicator.unread")?.getAttribute("title")).toBe("Unread sessions on other machines");
+
+    switcher.statusSnapshots = { "remote-a": machineStatusSnapshot({ machine: { "core:working": true } }) };
+    await switcher.updateComplete;
+    expect(switcherButton(switcher).querySelector(".other-machines-activity")).toBeNull();
+  });
+
   it("shows an unread dot on the switcher button while the selected machine reports unread", async () => {
     const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], { local: machineStatusSnapshot({ machine: { "core:unread": true } }) });
     const button = switcherButton(switcher);

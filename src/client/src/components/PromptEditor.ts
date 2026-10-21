@@ -3,7 +3,8 @@ import { deleteMarkupBackward, insertNewlineContinueMarkup } from "@codemirror/l
 import { EditorSelection, EditorState, Compartment, Prec } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
 import { indentOnInput, indentUnit } from "@codemirror/language";
-import { LitElement, html, type PropertyValues } from "lit";
+import { stylesheetIntegrationCapability } from "../plugins/styles";
+import { LitElement, html, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
@@ -54,6 +55,15 @@ export function promptEditorDragHeight(startHeight: number, startY: number, curr
   return clampNumber(startHeight + ((startY - currentY) / scale), PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
 }
 
+// Text nodes inside contenteditable can become iOS keyboard context, even in
+// non-editable placeholder widgets. Render the hint with CSS-generated content.
+function createPromptPlaceholder(text: string): HTMLElement {
+  const hint = document.createElement("span");
+  hint.className = "prompt-placeholder";
+  hint.dataset["placeholder"] = text;
+  return hint;
+}
+
 type PromptSendArgs = [text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string, chips?: readonly StagedPromptChip[]];
 // Existing composer consumers may still send fire-and-forget; only a boolean
 // promise confirms the new chip-bearing submission path.
@@ -61,8 +71,14 @@ type PromptSendHandler = ((...args: PromptSendArgs) => void | Promise<void>) | (
 
 @customElement("prompt-editor")
 export class PromptEditor extends LitElement {
+  constructor() {
+    super();
+    stylesheetIntegrationCapability.createController(this);
+  }
+
   @property({ type: Boolean }) disabled = false;
   @property({ attribute: false }) shortcuts: ShortcutPreferenceConfig = {};
+  @property() defaultStreamingBehavior: "steer" | "followUp" = "steer";
   @property() sessionId?: string;
   @property({ attribute: false }) draftStorage?: DraftStorage;
   @property() cwd?: string;
@@ -73,6 +89,7 @@ export class PromptEditor extends LitElement {
    * the save destination is always the folder the label advertised.
    */
   @property() attachmentsFolder = DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER;
+  @property({ attribute: false }) chatNavigation: TemplateResult | undefined;
   @property({ type: Boolean }) canSteer = false;
   @property({ type: Boolean }) isCompacting = false;
   @property({ type: Boolean }) canStop = false;
@@ -184,6 +201,9 @@ export class PromptEditor extends LitElement {
   }
 
   protected override updated(changed: PropertyValues) {
+    // Expose menu visibility so the shell can lift the composer above the
+    // transcript's activity badge without changing the idle stacking order.
+    if (changed.has("completions")) this.toggleAttribute("completion-menu-open", this.completions.length > 0);
     if (changed.has("disabled")) this.updateEditorDisabledState();
     if (changed.has("dense")) this.editor?.dispatch({ effects: this.placeholderCompartment.reconfigure(this.placeholder()) });
     if (changed.has("sessionId") || changed.has("machineId")) this.syncEditorDoc();
@@ -205,7 +225,8 @@ export class PromptEditor extends LitElement {
   override render() {
     const shellInputMode = this.promptChips.length === 0 && this.currentInputMode.kind === "shell" ? this.currentInputMode : undefined;
     const shellMode = shellInputMode !== undefined;
-    const steersInput = this.canSteer && !this.isCompacting;
+    const steersInput = this.defaultSendBehavior() === "steer";
+    const alternate = this.canSteer && !this.isCompacting ? (steersInput ? "followUp" : "steer") : undefined;
     const queuesInput = this.canSteer || this.isCompacting;
     const busy = this.disabled || this.sending || this.chipSendingKey === this.composerKey();
     const maximumHeight = this.maximumEditorHeight();
@@ -234,6 +255,7 @@ export class PromptEditor extends LitElement {
     const editor = html`
         <div class="editor-wrap">
           <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${editorHeightStyle} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
+          ${this.chatNavigation === undefined || this.dense ? null : html`<div class="editor-chat-navigation">${this.chatNavigation}</div>`}
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
@@ -244,10 +266,11 @@ export class PromptEditor extends LitElement {
       `;
     const composerActions = html`
           <div class="composer-actions">
-            <button class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
-            <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
-            ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
-            <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
+            <button type="button" class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
+            <button type="button" class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
+            ${alternate === "followUp" ? html`<button type="button" class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
+            ${alternate === "steer" ? html`<button type="button" class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}</button>` : null}
+            <button type="button" class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
           </div>
       `;
     const meta = html`
@@ -625,7 +648,8 @@ export class PromptEditor extends LitElement {
   }
 
   private placeholder() {
-    return placeholder(this.dense ? "Message…" : "Message pi… / for commands and skills");
+    const text = this.dense ? "Message…" : "Message pi… / for commands and skills";
+    return [placeholder(() => createPromptPlaceholder(text)), EditorView.contentAttributes.of({ "aria-placeholder": text })];
   }
 
   private interfaceScale(): number {
@@ -872,11 +896,11 @@ export class PromptEditor extends LitElement {
       return true;
     }
     if (primaryModifierEnter && composerKeyboardSubmissionEnabled(this.shortcuts, this.mobilePromptEnterMedia)) {
-      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, true));
+      this.send(this.defaultSendBehavior(true));
       return true;
     }
     if (send) {
-      this.send(promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, false));
+      this.send(this.defaultSendBehavior());
       return true;
     }
     if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -930,6 +954,13 @@ export class PromptEditor extends LitElement {
       ...(item.argumentHint === undefined || item.argumentHint === "" ? {} : { effects: setPromptArgumentHint.of({ pos: cursor, text: item.argumentHint }) }),
     });
     this.completions = [];
+  }
+
+  /** Enter follows the configured streaming default; the primary modifier sends the other way while the agent runs. */
+  private defaultSendBehavior(primaryModifier = false): "steer" | "followUp" | undefined {
+    const behavior = promptStreamingBehaviorForEnter(this.canSteer, this.isCompacting, primaryModifier);
+    if (behavior === undefined || this.defaultStreamingBehavior === "steer" || this.isCompacting) return behavior;
+    return behavior === "steer" ? "followUp" : "steer";
   }
 
   private send(streamingBehavior?: "steer" | "followUp") {

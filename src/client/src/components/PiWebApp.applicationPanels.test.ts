@@ -13,6 +13,7 @@ import { loadExternalPlugins } from "../plugins/external";
 import { PluginRegistry } from "../plugins/registry";
 import { PiWebApp } from "./PiWebApp";
 import { WorkspacePanel } from "./WorkspacePanel";
+import { themeStylesheetFetch } from "./themeStylesheetFetch.testSupport";
 
 // Keep real shell, registry, loader and public callback adaptation; omit socket/API startup.
 class ApplicationPanelsApp extends PiWebApp {
@@ -46,7 +47,7 @@ it("uses bundled Info with no project, workspace or session and follows selectio
   expect(panel.shadowRoot?.textContent).toContain("PI WEB status is not available yet");
   expect(panel.shadowRoot?.textContent).toContain("Machine");
   expect(panel.shadowRoot?.textContent).not.toContain("Workspace");
-  expect(panel.shadowRoot?.querySelector('[aria-label="Info"]')).not.toBeNull();
+  expect(navigationTabs(app).querySelector('[aria-label="Info"]')).not.toBeNull();
   const status: PiWebStatusResponse = {
     packageName: "@jmfederico/pi-web", generatedAt: "now",
     components: {
@@ -92,7 +93,7 @@ it("gives public callbacks fresh basic selections and keeps workspace-only tabs 
   }) } });
   patchState(app, { error: "Unrelated update" });
   await settle(app);
-  expect(toolSurface(app).shadowRoot?.textContent).not.toContain("Workspace only");
+  expect(navigationTabs(app).textContent).not.toContain("Workspace only");
   expect(workspaceRender).not.toHaveBeenCalled();
   expect(contexts.at(-1)?.workspace).toBeUndefined();
   expect(contexts.at(-1)?.terminal).toBeUndefined();
@@ -109,8 +110,8 @@ it("gives public callbacks fresh basic selections and keeps workspace-only tabs 
   expect(context?.workspace?.id).toBe("workspace");
   expect(context?.terminal).toBeUndefined(); // Terminal-disabled recovery still supplies workspace information.
   expect(toolSurface(app).shadowRoot?.textContent).toContain("Conversation");
-  expect(toolSurface(app).shadowRoot?.textContent).toContain("Workspace only");
-  expect(toolSurface(app).shadowRoot?.querySelector('[aria-label="Info, Project"]')).not.toBeNull();
+  expect(navigationTabs(app).textContent).toContain("Workspace only");
+  expect(navigationTabs(app).querySelector('[aria-label="Info, Project"]')).not.toBeNull();
 
   patchState(app, { selectedSession: { ...session, name: "Renamed" } });
   await settle(app);
@@ -126,7 +127,7 @@ it("supplies an external plugin live selection while its panel is closed, with e
   const early = vi.fn();
   let unsubscribe: () => void = () => undefined;
   const render = vi.fn(() => html`<p>Selection observer</p>`);
-  const activate = vi.fn<PiWebPlugin["activate"]>((context) => {
+  const activate = vi.fn<Extract<PiWebPlugin, { apiVersion: 4 }>["activate"]>((context) => {
     expect(context.apiVersion).toBe(4);
     selection = context.selection;
     if (selection === undefined) throw new Error("Missing public selection service");
@@ -185,7 +186,7 @@ it("supplies an external plugin live selection while its panel is closed, with e
   patchState(app, { selectedMachine: undefined, selectedProject: undefined, selectedWorkspace: undefined, selectedSession: undefined });
   await settle(app);
   expect(received).toHaveBeenLastCalledWith({});
-  toolSurface(app).shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Selection"]')?.click();
+  navigationButton(app, "Selection").click();
   await settle(app);
   expect(render).toHaveBeenCalled();
   expect(activate).toHaveBeenCalledOnce();
@@ -204,7 +205,7 @@ it("discovers registered projects and directories through a portable public pane
   const workspaceContexts: WorkspacePanelContext[] = [];
   let actionProjects: PluginProjects | undefined;
   let discovery = "";
-  const activate = vi.fn<PiWebPlugin["activate"]>(() => ({ contributions: {
+  const activate = vi.fn<Extract<PiWebPlugin, { apiVersion: 4 }>["activate"]>(() => ({ contributions: {
     applicationPanels: [{
       id: "workspace.discovery", title: "Discovery",
       render: (context) => {
@@ -267,7 +268,7 @@ it("discovers registered projects and directories through a portable public pane
   expect(await actionProjects?.listProjects()).toEqual([{ id: "project", name: "remote project", path: "/remote/repo" }]);
   patchState(app, { selectedProject: project, selectedWorkspace: workspace, workspaces: [workspace] });
   await settle(app);
-  toolSurface(app).shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Workspace discovery"]')?.click();
+  navigationButton(app, "Workspace discovery").click();
   await settle(app);
   expect(workspaceContexts.at(-1)?.projects?.machineId).toBe("remote");
   expect(await workspaceContexts.at(-1)?.projects?.suggestDirectories("/workspace/query"))
@@ -323,7 +324,7 @@ it.each([false, true])("keeps machine-specific discovery bound under existing lo
   Reflect.set(app, "verifiedPluginModeByMachine", new Map([["local", "recovery-disabled"], ["remote", "recovery-disabled"]]));
   invalidateToolSurface(app);
   await settle(app);
-  toolSurface(app).shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Discovery"]')?.click();
+  navigationButton(app, "Discovery").click();
   await settle(app);
   expect(toolSurface(app).shadowRoot?.textContent).toContain("Remote discovery");
   expect(toolSurface(app).shadowRoot?.textContent).not.toContain("Gateway discovery");
@@ -336,7 +337,7 @@ it.each([false, true])("keeps machine-specific discovery bound under existing lo
   const remoteRenders = remoteContexts.length;
   patchState(app, { selectedMachine: undefined });
   await settle(app);
-  toolSurface(app).shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Discovery"]')?.click();
+  navigationButton(app, "Discovery").click();
   await settle(app);
   expect(toolSurface(app).shadowRoot?.textContent).toContain("Gateway discovery");
   expect(remoteContexts).toHaveLength(remoteRenders);
@@ -355,7 +356,7 @@ function projectDiscoveryTransport() {
       ? [{ ...project, name: `${machineId} project`, path: `/${machineId}/repo` }]
       : [{ path: `/${machineId}/directory`, kind: "other" }])));
   });
-  vi.stubGlobal("fetch", fetch);
+  vi.stubGlobal("fetch", themeStylesheetFetch(fetch));
   return fetch;
 }
 
@@ -369,8 +370,7 @@ function discoveryRequestUrl(input: Parameters<typeof fetch>[0]): string {
 
 it("opens an application tab through existing navigation without a workspace and retains invalid-tool errors", async () => {
   const app = await mount(infoPlugin);
-  const tabs = app.shadowRoot?.querySelector("app-mobile-main-tabs");
-  tabs?.shadowRoot?.querySelector<HTMLButtonElement>('button[title="Info"]')?.click();
+  navigationButton(app, "Info").click();
   await settle(app);
   expect(new URL(window.location.href).searchParams.get("tool")).toBe("info:workspace.info");
   expect(new URL(window.location.href).searchParams.get("view")).toBe("workspace");
@@ -381,7 +381,7 @@ it("opens an application tab through existing navigation without a workspace and
   await settle(app);
   expect(toolSurface(app).shadowRoot?.textContent).toContain("Workspace panel unavailable: missing:panel");
   expect(toolSurface(app).shadowRoot?.querySelector(".panel-content")).toBeNull();
-  toolSurface(app).shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Info"]')?.click();
+  navigationButton(app, "Info").click();
   await settle(app);
   expect(toolSurface(app).shadowRoot?.querySelector(".panel-content")?.textContent).toContain("Machine");
 });
@@ -393,7 +393,7 @@ it("shows bundled Updates guidance and Copy without selections, retaining visibi
   const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
   expect(panel.shadowRoot?.textContent).toContain("PI WEB update available");
   expect(panel.shadowRoot?.textContent).toContain("Installed services");
-  expect(panel.shadowRoot?.querySelector('[aria-label="Updates, 1"]')).not.toBeNull();
+  expect(navigationTabs(app).querySelector('[aria-label="Updates, 1"]')).not.toBeNull();
   expect(commandButtons(panel, "Run")).toHaveLength(0);
   commandButtons(panel, "Copy")[0]?.click();
   expect(writeText).toHaveBeenCalledExactlyOnceWith("node /workspace/dist/cli.js update");
@@ -405,13 +405,13 @@ it("shows bundled Updates guidance and Copy without selections, retaining visibi
   patchState(app, { selectedProject: undefined, selectedWorkspace: undefined });
   await settle(app);
 
-  panel.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Updates, 1"]')?.click();
+  navigationButton(app, "Updates, 1").click();
   await settle(app);
   expect(new URL(window.location.href).searchParams.get("tool")).toBe("updates:workspace.updates");
 
   patchState(app, { piWebStatus: { ...updatesStatus, messages: [] } });
   await settle(app);
-  expect(panel.shadowRoot?.querySelector('[aria-label="Updates"]')).not.toBeNull();
+  expect(navigationTabs(app).querySelector('[aria-label="Updates"]')).not.toBeNull();
   const managed = { kind: "pi-package" as const };
   patchState(app, { piWebStatus: {
     ...updatesStatus, messages: [],
@@ -421,7 +421,7 @@ it("shows bundled Updates guidance and Copy without selections, retaining visibi
     },
   } });
   await settle(app);
-  expect(panel.shadowRoot?.querySelector('[aria-label="Updates"]')).toBeNull();
+  expect(navigationTabs(app).querySelector('[aria-label="Updates"]')).toBeNull();
   expect(activate).toHaveBeenCalledOnce();
 });
 
@@ -532,10 +532,10 @@ function commandButtons(panel: WorkspacePanel, label: string): HTMLButtonElement
 }
 
 async function mount(plugin: PiWebPlugin, { id = "info", state = {}, machineSpecific = false }: { id?: string; state?: Partial<AppState>; machineSpecific?: boolean } = {}): Promise<ApplicationPanelsApp> {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+  vi.stubGlobal("fetch", themeStylesheetFetch(vi.fn().mockResolvedValue(new Response(JSON.stringify({
     lifecycleVersion: PI_WEB_PLUGIN_LIFECYCLE_VERSION, terminalMode: "recovery-disabled",
     plugins: [{ id, module: `${id}/pi-web-plugin.js`, machineSpecific }],
-  }))));
+  })))));
   const app = new ApplicationPanelsApp();
   Reflect.set(app, "verifiedPluginModeByMachine", new Map([["local", "recovery-disabled"], ["remote", "recovery-disabled"]]));
   const loaded = await loadExternalPlugins(undefined, { moduleLoader: () => Promise.resolve({ default: plugin }) });
@@ -551,6 +551,20 @@ function registryFor(app: PiWebApp): PluginRegistry {
   const registry: unknown = Reflect.get(app, "plugins");
   if (!(registry instanceof PluginRegistry)) throw new Error("Expected plugin registry");
   return registry;
+}
+
+// The harness uses the stacked layout: tool content and navigation have separate hosts.
+function navigationTabs(app: PiWebApp): ShadowRoot {
+  const root = app.shadowRoot?.querySelector("app-mobile-main-tabs")?.shadowRoot;
+  if (root === undefined || root === null) throw new Error("Expected stacked navigation tabs");
+  return root;
+}
+
+function navigationButton(app: PiWebApp, label: string): HTMLButtonElement {
+  const button = [...navigationTabs(app).querySelectorAll<HTMLButtonElement>("button")]
+    .find((candidate) => candidate.getAttribute("aria-label") === label);
+  if (button === undefined) throw new Error(`Expected navigation button: ${label}`);
+  return button;
 }
 
 function toolSurface(app: PiWebApp): WorkspacePanel {

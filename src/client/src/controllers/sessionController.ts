@@ -67,8 +67,14 @@ export interface SessionControllerDependencies {
   transcripts?: ChatTranscriptStore;
   notifications?: SessionNotificationSessionBridge;
   navigateToSession?: (session: SessionInfo | undefined, options?: NavigationDestinationOptions) => Promise<boolean>;
+  /** Restrict incidental replacement navigation to rows the user can currently see. */
+  automaticSessionCandidates?: (sessions: SessionInfo[]) => SessionInfo[];
   replacePromptEditorText?: (replacement: PromptEditorTextReplacement) => void | Promise<void>;
   onSelectedSessionReady?: (selection: SelectedSessionReady) => void;
+  /** Capture before reading; publish only an accepted authoritative runtime snapshot. */
+  observeSessionSnapshot?: (machineId: string, sessionId: string) => (status: SessionStatus) => void;
+  /** Selection can be restored without joining a transcript hidden by the shell. */
+  isChatVisible?: () => boolean;
   onModelScopeChanged?: (revision: number) => void;
   onSessionError?: (message: string, eventId: number | undefined) => void;
   /**
@@ -134,6 +140,8 @@ interface SelectedSessionRefreshTarget {
 }
 
 export interface SessionSelectionOptions {
+  /** Publish the selected row now; the shell starts its chat after navigation paints. */
+  deferChatLoading?: boolean | undefined;
   updateUrl?: boolean | undefined;
   preserveTreeDialog?: boolean | undefined;
   propagateRefreshError?: boolean | undefined;
@@ -152,8 +160,12 @@ export class SessionController {
   private readonly transcripts: ChatTranscriptStore;
   private readonly notifications: SessionNotificationSessionBridge | undefined;
   private readonly navigateToSession: SessionControllerDependencies["navigateToSession"];
+  private readonly automaticSessionCandidates: (sessions: SessionInfo[]) => SessionInfo[];
   private readonly replacePromptEditorText: SessionControllerDependencies["replacePromptEditorText"];
   private readonly onSelectedSessionReady: SessionControllerDependencies["onSelectedSessionReady"];
+  private readonly observeSessionSnapshot: SessionControllerDependencies["observeSessionSnapshot"];
+  private readonly isChatVisible: () => boolean;
+  private selectedSessionLoadDeferred = false;
   private readonly onModelScopeChanged: SessionControllerDependencies["onModelScopeChanged"];
   private readonly onSessionError: SessionControllerDependencies["onSessionError"];
   private readonly captureNavigation: SessionControllerDependencies["captureNavigation"];
@@ -164,7 +176,9 @@ export class SessionController {
   private navigationSeq = 0;
   private readonly browserErrors: BrowserErrorReporter;
   private selectionSeq = 0;
-  private readonly pendingTreeActions = new Set<{ machineId: string; sessionId: string }>();
+  // A pending join still owns its URL-derived token. Once it settles while
+  // current, its loaded state/socket can outlive changes to the URL spelling.
+  private selectedSessionJoinNavigation: NavigationFreshness | undefined;
   private disposed = false;
   // Join-time stream watermark for the selected session. `seq` is the
   // `SessionEventHub` sequence captured together with the seeded partial by the
@@ -182,6 +196,7 @@ export class SessionController {
   private pendingTranscriptEvents: SessionUiEvent[] = [];
   private refreshEventBuffer: SelectedSessionRefreshBuffer | undefined;
   private selectedSessionRecoveryTarget: SelectedSessionRefreshTarget | undefined;
+  private initialSnapshotReady: { selectionSeq: number; complete: () => void } | undefined;
   private pendingStatusBySession = new Map<string, SessionStatus>();
   private pendingActivityBySession = new Map<string, SessionActivity>();
   private pendingFrame: number | undefined;
@@ -202,8 +217,11 @@ export class SessionController {
     this.transcripts = deps.transcripts ?? new ChatTranscriptStore();
     this.notifications = deps.notifications;
     this.navigateToSession = deps.navigateToSession;
+    this.automaticSessionCandidates = deps.automaticSessionCandidates ?? ((sessions) => sessions);
     this.replacePromptEditorText = deps.replacePromptEditorText;
     this.onSelectedSessionReady = deps.onSelectedSessionReady;
+    this.observeSessionSnapshot = deps.observeSessionSnapshot;
+    this.isChatVisible = deps.isChatVisible ?? (() => true);
     this.onModelScopeChanged = deps.onModelScopeChanged;
     this.onSessionError = deps.onSessionError;
     this.captureNavigation = deps.captureNavigation;
@@ -224,7 +242,10 @@ export class SessionController {
 
   dispose() {
     this.disposed = true;
+    this.selectedSessionLoadDeferred = false;
+    if (this.getState().pendingTreeActions.length > 0) this.setState({ pendingTreeActions: [] });
     this.selectionSeq += 1;
+    this.selectedSessionJoinNavigation = undefined;
     this.socket.close();
     this.clearPendingUpdates();
   }
@@ -243,7 +264,9 @@ export class SessionController {
   }
 
   clearActiveSession() {
+    this.selectedSessionLoadDeferred = false;
     this.selectionSeq += 1;
+    this.selectedSessionJoinNavigation = undefined;
     this.socket.close();
     this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
@@ -262,6 +285,11 @@ export class SessionController {
     this.beginNavigation();
     this.clearActiveSession();
     if (options?.updateUrl !== false) this.updateUrl();
+  }
+
+  private automaticReplacementSession(sessions: SessionInfo[]): SessionInfo | undefined {
+    const candidates = this.automaticSessionCandidates(sessions);
+    return candidates.find((session) => session.archived !== true) ?? candidates[0];
   }
 
   private async selectSessionAfterNavigation(session: SessionInfo, expected: NavigationSelection, options?: { updateUrl?: boolean | undefined }): Promise<void> {
@@ -334,7 +362,32 @@ export class SessionController {
         ? pending.session
         : undefined;
     }
-    return selectPreferredSession(sessions, { targetSessionId, latestSessionId: this.sessionSelection.latestSessionId(this.workspaceSelectionKey(cwd)) });
+    const latestSessionId = this.sessionSelection.latestSessionId(this.workspaceSelectionKey(cwd));
+    // Restore a specific requested/remembered session deliberately, but do not
+    // let a missing remembered session turn into an arbitrary hidden fallback.
+    if ((targetSessionId !== undefined && targetSessionId !== "")
+      || (latestSessionId !== undefined && latestSessionId !== "" && sessions.some((session) => session.id === latestSessionId))) {
+      return selectPreferredSession(sessions, { targetSessionId, latestSessionId });
+    }
+    return selectPreferredSession(this.automaticSessionCandidates(sessions));
+  }
+
+  /** Reusing a selected row must not abandon a join retired by a newer URL. */
+  canReuseSelectedSession(): boolean {
+    return !this.disposed && navigationIsCurrent(this.selectedSessionJoinNavigation);
+  }
+
+  get isChatLoadDeferred(): boolean {
+    return this.selectedSessionLoadDeferred;
+  }
+
+  /** Join only the current selection when the shell reveals Chat. */
+  async loadSelectedSession(): Promise<void> {
+    if (this.disposed || !this.selectedSessionLoadDeferred || !this.isChatVisible()) return;
+    const session = this.getState().selectedSession;
+    if (session === undefined) return;
+    const navigation = this.beginNavigationOperation?.(SESSION_RESTORE_SCOPE);
+    await this.selectSession(session, { updateUrl: false, navigation });
   }
 
   /**
@@ -376,12 +429,19 @@ export class SessionController {
     const errorOwner = this.captureSessionErrorOwner(session);
     this.sessionSelection.rememberSession({ ...session, cwd: this.workspaceSelectionKey(session.cwd) });
     const seq = ++this.selectionSeq;
+    this.selectedSessionJoinNavigation = options?.navigation;
     this.socket.close();
     this.streamWatermark = undefined;
     this.clearPendingUpdates();
-    this.notifications?.prepareSelectedSession(session, machineId);
+    this.selectedSessionLoadDeferred = options?.deferChatLoading === true || !this.isChatVisible();
+    if (this.selectedSessionLoadDeferred) this.notifications?.clearSelectedSession();
+    else this.notifications?.prepareSelectedSession(session, machineId);
     const transcriptKey = this.sessionCacheKey(session.id);
-    const cached = this.transcripts.cachedView(transcriptKey);
+    // Even a cache hit parses/normalizes the whole held transcript. Keep
+    // workspace navigation limited to the selected row's lightweight metadata.
+    const cached = this.selectedSessionLoadDeferred
+      ? { messages: [], messagePageStart: 0, messagePageEnd: 0, messagePageTotal: 0 }
+      : this.transcripts.cachedView(transcriptKey);
     this.setState({
       ...options?.context,
       selectedSession: session,
@@ -396,6 +456,13 @@ export class SessionController {
       availableThinkingLevels: [],
     });
     options?.onCommit?.();
+    if (this.selectedSessionLoadDeferred) {
+      // Metadata selection is complete. A later reveal joins the then-current
+      // selection, after this route may have published its restored session URL.
+      this.selectedSessionJoinNavigation = undefined;
+      if (options?.updateUrl !== false) this.updateUrl();
+      return;
+    }
     let socketConnected = false;
     try {
       if (session.archived === true) {
@@ -416,7 +483,7 @@ export class SessionController {
         },
         () => { void this.refreshSelectedSession(session.id, { recoverNetwork: true }); },
         machineId,
-        () => { void this.notifications?.refreshSelectedSession(session, machineId); },
+        () => { void this.refreshSessionNotifications(session, machineId); },
       );
       socketConnected = true;
       const refreshTarget: SelectedSessionRefreshTarget = {
@@ -426,7 +493,9 @@ export class SessionController {
         errorOwner,
         ...(options?.navigation === undefined ? {} : { navigation: options.navigation }),
       };
-      await this.requestSelectedSessionRefresh(refreshTarget);
+      // Tree mutations retain their authoritative trailing-refresh contract.
+      if (options?.propagateRefreshError === true) await this.requestSelectedSessionRefresh(refreshTarget);
+      else if (!await this.joinSelectedSessionSnapshot(refreshTarget)) return;
       if (!this.isCurrentRefreshTarget(refreshTarget) || !navigationIsCurrent(options?.navigation)) return;
       void this.refreshAvailableThinkingLevels();
       this.onSelectedSessionReady?.({ machineId, session });
@@ -451,10 +520,13 @@ export class SessionController {
       this.reportSessionError(session, machineId, error, errorOwner);
       if (options?.propagateRefreshError === true) throw error;
     } finally {
+      const navigationCurrent = navigationIsCurrent(options?.navigation);
+      if (seq === this.selectionSeq && navigationCurrent) this.selectedSessionJoinNavigation = undefined;
       // A newer URL selection can retire this join before its replacement has
-      // reached the controller. Release our socket in that gap, but
-      // never close a socket already owned by a newer controller selection.
-      if (socketConnected && !navigationIsCurrent(options?.navigation)
+      // reached the controller. Release our socket in that gap, but retain its
+      // stale token so restoration knows this selected row needs another join.
+      // Never close a socket already owned by a newer controller selection.
+      if (socketConnected && !navigationCurrent
         && this.isCurrentSessionSelection(session.id, machineId, seq)) {
         this.socket.close();
       }
@@ -696,15 +768,15 @@ export class SessionController {
       throw error;
     }
     if (!this.isSelectedSessionIdentity(session.id, machineId)) return;
-    if (action === "fork") await this.forkSessionTree(entryId, result.tree);
-    else await this.navigateSessionTree(entryId, { mode: "none" }, result.tree);
+    if (action === "fork") await this.forkSessionTree(entryId, result.tree, true);
+    else await this.navigateSessionTree(entryId, { mode: "none" }, result.tree, true);
   }
 
   async navigateTree(targetId: string, summary: SessionTreeSummaryChoice): Promise<SessionTreeNavigateResult> {
     return this.navigateSessionTree(targetId, summary, this.getState().treeDialog);
   }
 
-  private async navigateSessionTree(targetId: string, summary: SessionTreeSummaryChoice, tree: SessionTreeSnapshot | undefined): Promise<SessionTreeNavigateResult> {
+  private async navigateSessionTree(targetId: string, summary: SessionTreeSummaryChoice, tree: SessionTreeSnapshot | undefined, retainCheckpoint?: boolean): Promise<SessionTreeNavigateResult> {
     const state = this.getState();
     const session = state.selectedSession;
     if (session === undefined || tree === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) {
@@ -714,16 +786,18 @@ export class SessionController {
     const machineId = selectedMachineId(state);
     const errorOwner = this.captureSessionErrorOwner(session);
     const pending = { machineId, sessionId: session.id };
-    this.pendingTreeActions.add(pending);
+    this.setTreeActionPending(pending, true);
     try {
-      const result = await this.api.navigateTree(session, { targetId, expectedLeafId: tree.activeLeafId, summary }, machineId);
+      const result = await this.api.navigateTree(session, { targetId, expectedLeafId: tree.activeLeafId, summary,
+        ...(retainCheckpoint === undefined ? {} : { retainCheckpoint }),
+      }, machineId);
       await this.applySessionTreeNavigationResult(session, machineId, result, tree);
       return result;
     } catch (error) {
       this.reportSessionError(session, machineId, error, errorOwner);
       throw error;
     } finally {
-      this.pendingTreeActions.delete(pending);
+      this.setTreeActionPending(pending, false);
     }
   }
 
@@ -731,8 +805,8 @@ export class SessionController {
     if (result.cancelled) return;
 
     const cacheKey = machineSessionKey(machineId, session.id);
-    const editorText = result.editorText ?? "";
-    saveDraft(cacheKey, editorText, this.draftStorage);
+    const editorText = result.editorText;
+    if (editorText !== undefined) saveDraft(cacheKey, editorText, this.draftStorage);
     this.transcripts.discard(cacheKey);
 
     // A user can reselect the same session while the request is in flight. Its
@@ -740,19 +814,23 @@ export class SessionController {
     // identity and requires a fresh authoritative branch read.
     if (!this.isSelectedSessionIdentity(session.id, machineId)) return;
     this.clearPendingUpdates();
-    let authoritativeRefreshFailure: { error: unknown } | undefined;
-    try {
-      // Keep the subscription and selection identity during same-session reads.
-      await this.requestSelectedSessionRefresh({
+    // Only editable targets return editor text. Other history navigation keeps
+    // the draft; refresh history either way, even if editor replacement fails.
+    const editorReplacement = (async () => {
+      if (editorText !== undefined) {
+        await this.replacePromptEditorText?.({ machineId, sessionId: session.id, text: editorText });
+      }
+    })();
+    // Keep the subscription and selection identity during same-session reads.
+    const [replacement, refresh] = await Promise.allSettled([
+      editorReplacement,
+      this.requestSelectedSessionRefresh({
         session, machineId, selectionSeq: this.selectionSeq, errorOwner: this.captureSessionErrorOwner(session),
-      });
-    } catch (error) {
-      authoritativeRefreshFailure = { error };
-    }
+      }),
+    ]);
     if (!this.isSelectedSessionIdentity(session.id, machineId)) return;
-
-    await this.replacePromptEditorText?.({ machineId, sessionId: session.id, text: editorText });
-    if (authoritativeRefreshFailure !== undefined) throw authoritativeRefreshFailure.error;
+    if (replacement.status === "rejected") throw replacement.reason;
+    if (refresh.status === "rejected") throw refresh.reason;
     if (this.isSelectedSessionIdentity(session.id, machineId) && this.getState().treeDialog === tree) this.setState({ treeDialog: undefined });
   }
 
@@ -760,7 +838,7 @@ export class SessionController {
     return this.forkSessionTree(entryId, this.getState().treeDialog);
   }
 
-  private async forkSessionTree(entryId: string, tree: SessionTreeSnapshot | undefined): Promise<SessionTreeForkResult> {
+  private async forkSessionTree(entryId: string, tree: SessionTreeSnapshot | undefined, retainCheckpoint?: boolean): Promise<SessionTreeForkResult> {
     const state = this.getState();
     const session = state.selectedSession;
     if (session === undefined || tree === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) {
@@ -771,16 +849,18 @@ export class SessionController {
     const errorOwner = this.captureSessionErrorOwner(session);
     const expected = this.navigationSelection();
     const pending = { machineId, sessionId: session.id };
-    this.pendingTreeActions.add(pending);
+    this.setTreeActionPending(pending, true);
     try {
-      const result = await this.api.forkTree(session, { entryId, expectedLeafId: tree.activeLeafId }, machineId);
+      const result = await this.api.forkTree(session, { entryId, expectedLeafId: tree.activeLeafId,
+        ...(retainCheckpoint === undefined ? {} : { retainCheckpoint }),
+      }, machineId);
       await this.applySessionTreeForkResult(session, machineId, result, expected, tree);
       return result;
     } catch (error) {
       this.reportSessionError(session, machineId, error, errorOwner);
       throw error;
     } finally {
-      this.pendingTreeActions.delete(pending);
+      this.setTreeActionPending(pending, false);
     }
   }
 
@@ -841,21 +921,6 @@ export class SessionController {
     this.applyStatus(status);
   }
 
-  async useSuggestedInput(machineId: string, sessionId: string): Promise<void> {
-    if (!this.isSelectedSessionIdentity(sessionId, machineId)) return;
-    const state = this.getState();
-    const session = state.selectedSession;
-    const text = state.status?.sessionId === sessionId ? state.status.suggestedInput : undefined;
-    if (session === undefined || text === undefined) return;
-    const errorOwner = this.captureSessionErrorOwner(session);
-    saveDraft(machineSessionKey(machineId, sessionId), text, this.draftStorage);
-    try {
-      await this.replacePromptEditorText?.({ machineId, sessionId, text });
-    } catch (error) {
-      this.reportSessionError(session, machineId, error, errorOwner);
-    }
-  }
-
   private invalidateSessionTree(): void {
     const state = this.getState();
     const session = state.selectedSession;
@@ -873,8 +938,14 @@ export class SessionController {
     }
   }
 
+  private setTreeActionPending(target: PromptChipTarget, pending: boolean): void {
+    if (this.disposed) return;
+    const actions = this.getState().pendingTreeActions;
+    this.setState({ pendingTreeActions: pending ? [...actions, target] : actions.filter((action) => action !== target) });
+  }
+
   private hasPendingTreeAction(machineId: string, sessionId: string): boolean {
-    return [...this.pendingTreeActions].some((pending) => pending.machineId === machineId && pending.sessionId === sessionId);
+    return this.getState().pendingTreeActions.some((pending) => pending.machineId === machineId && pending.sessionId === sessionId);
   }
 
   async archiveSession(session = this.getState().selectedSession) {
@@ -891,7 +962,7 @@ export class SessionController {
       await this.api.archive(session, machineId);
       const state = this.getState();
       const sessions = markSessionArchived(state.sessions, session.id, new Date().toISOString());
-      const selectionChange = selectionAfterArchivingSession(sessions, state.selectedSession?.id, session.id);
+      const selectionChange = selectionAfterArchivingSession(this.automaticSessionCandidates(sessions), state.selectedSession?.id, session.id);
       this.setState({ sessions });
       const expected = this.navigationSelection();
 
@@ -911,7 +982,7 @@ export class SessionController {
       const archivedIds = response.sessionIds !== undefined && response.sessionIds.length > 0 ? response.sessionIds : [session.id];
       const state = this.getState();
       const sessions = markSessionsArchived(state.sessions, archivedIds, new Date().toISOString());
-      const selectionChange = selectionAfterArchivingSessions(sessions, state.selectedSession?.id, archivedIds);
+      const selectionChange = selectionAfterArchivingSessions(this.automaticSessionCandidates(sessions), state.selectedSession?.id, archivedIds);
       this.setState({ sessions });
       const expected = this.navigationSelection();
 
@@ -936,7 +1007,7 @@ export class SessionController {
       if (archivedIds.length > 0) {
         const state = this.getState();
         const nextSessions = markSessionsArchived(state.sessions, archivedIds, generatedAt ?? new Date().toISOString());
-        const selectionChange = selectionAfterArchivingSessions(nextSessions, state.selectedSession?.id, archivedIds);
+        const selectionChange = selectionAfterArchivingSessions(this.automaticSessionCandidates(nextSessions), state.selectedSession?.id, archivedIds);
         this.setState({ sessions: nextSessions });
         const expected = this.navigationSelection();
 
@@ -967,7 +1038,7 @@ export class SessionController {
         this.setState({ sessions: nextSessions });
         if (state.selectedSession !== undefined && deletedIdSet.has(state.selectedSession.id)) {
           const expected = this.navigationSelection();
-          const next = nextSessions.find((session) => session.archived !== true) ?? nextSessions[0];
+          const next = this.automaticReplacementSession(nextSessions);
           if (next !== undefined) await this.selectSessionAfterNavigation(next, expected);
           else await this.clearSessionAfterNavigation(expected);
         }
@@ -1007,11 +1078,11 @@ export class SessionController {
       const expected = this.navigationSelection();
 
       if (state.selectedSession !== undefined && deletedIdSet.has(state.selectedSession.id)) {
-        const next = nextSessions.find((session) => session.archived !== true) ?? nextSessions[0];
+        const next = this.automaticReplacementSession(nextSessions);
         if (next !== undefined) await this.selectSessionAfterNavigation(next, expected);
         else await this.clearSessionAfterNavigation(expected);
       } else {
-        const selectionChange = selectionAfterArchivingSessions(nextSessions, state.selectedSession?.id, archivedIds);
+        const selectionChange = selectionAfterArchivingSessions(this.automaticSessionCandidates(nextSessions), state.selectedSession?.id, archivedIds);
         if (selectionChange.type === "select") await this.selectSessionAfterNavigation(selectionChange.session, expected);
         else if (selectionChange.type === "clear") await this.clearSessionAfterNavigation(expected);
       }
@@ -1050,7 +1121,7 @@ export class SessionController {
           if (refreshedSelected !== selectedSession) this.setState({ selectedSession: refreshedSelected });
           return;
         }
-        const next = sessions.find((session) => session.archived !== true) ?? sessions[0];
+        const next = this.automaticReplacementSession(sessions);
         if (next !== undefined) await this.selectSessionAfterNavigation(next, expected);
         else await this.clearSessionAfterNavigation(expected);
       });
@@ -1090,7 +1161,7 @@ export class SessionController {
     });
     const expected = this.navigationSelection();
     if (this.getState().selectedSession?.id !== session.id) return;
-    const next = sessions.find((candidate) => candidate.archived !== true) ?? sessions[0];
+    const next = this.automaticReplacementSession(sessions);
     if (next !== undefined) await this.selectSessionAfterNavigation(next, expected);
     else await this.clearSessionAfterNavigation(expected);
   }
@@ -1150,6 +1221,7 @@ export class SessionController {
       await this.api.detachParent(session, machineId);
       const detached = { ...session };
       delete detached.parentSessionPath;
+      delete detached.agentSubsession;
       this.replaceSession(detached);
     } catch (error) {
       this.reportSessionError(session, machineId, error, errorOwner);
@@ -1330,6 +1402,28 @@ export class SessionController {
     }
   }
 
+  async mutateQueuedMessage(action: "remove" | "edit" | "toggle", index: number, expectedQueue: QueuedSessionMessage[]): Promise<void> {
+    const state = this.getState();
+    const session = state.selectedSession;
+    if (session === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) return;
+    const machineId = selectedMachineId(state);
+    const errorOwner = this.captureSessionErrorOwner(session);
+    const selectionSeq = this.selectionSeq;
+    try {
+      const status = await this.api.mutateQueuedMessage(session, { action, index, expectedQueue }, machineId);
+      if (action === "edit") {
+        const text = expectedQueue[index]?.text ?? "";
+        saveDraft(machineSessionKey(machineId, session.id), text, this.draftStorage);
+        if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) {
+          await this.replacePromptEditorText?.({ machineId, sessionId: session.id, text });
+        }
+      }
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(status);
+    } catch (error) {
+      this.reportSessionError(session, machineId, error, errorOwner);
+    }
+  }
+
   async promoteAllQueuedMessages() {
     const state = this.getState();
     const session = state.selectedSession;
@@ -1504,7 +1598,10 @@ export class SessionController {
    */
   refreshSelectedSession(sessionId = this.getState().selectedSession?.id, options?: { silent?: boolean; recoverNetwork?: boolean }): Promise<void> {
     const session = this.getState().selectedSession;
-    if (sessionId === undefined || session?.id !== sessionId || session.archived === true || isClientPendingStartSessionInfo(session)) return Promise.resolve();
+    if (sessionId === undefined || session?.id !== sessionId) return Promise.resolve();
+    // Polls/resume must not bypass the shell's first-paint boundary.
+    if (this.selectedSessionLoadDeferred) return Promise.resolve();
+    if (session.archived === true || isClientPendingStartSessionInfo(session)) return Promise.resolve();
     const machineId = selectedMachineId(this.getState());
     const target: SelectedSessionRefreshTarget = {
       session,
@@ -1539,6 +1636,38 @@ export class SessionController {
     return buffer;
   }
 
+  private async refreshSessionNotifications(session: SessionInfo, machineId: string): Promise<void> {
+    try {
+      await this.notifications?.refreshSelectedSession(session, machineId);
+    } catch (error) {
+      // The notification controller owns inbox failures. A rejecting bridge
+      // must still be observed, without turning it into a transcript failure.
+      console.warn("Selected session notification refresh failed", error);
+    }
+  }
+
+  private async joinSelectedSessionSnapshot(target: SelectedSessionRefreshTarget): Promise<boolean> {
+    let ready = false;
+    let complete!: () => void;
+    const snapshotReady = new Promise<boolean>((resolve) => {
+      complete = () => { ready = true; resolve(true); };
+    });
+    const join = { selectionSeq: target.selectionSeq, complete };
+    this.initialSnapshotReady = join;
+    const drained = this.requestSelectedSessionRefresh(target).then(() => ready, (error: unknown) => {
+      if (!ready) throw error;
+      // Completion no longer owns later passes, but their failures still need
+      // an observer even if no explicit refresh caller is awaiting them.
+      this.reportSessionError(target.session, target.machineId, error, target.errorOwner);
+      return true;
+    });
+    try {
+      return await Promise.race([snapshotReady, drained]);
+    } finally {
+      if (this.initialSnapshotReady === join) this.initialSnapshotReady = undefined;
+    }
+  }
+
   private requestSelectedSessionRefresh(target: SelectedSessionRefreshTarget): Promise<void> {
     if (!this.isCurrentRefreshTarget(target)) return Promise.resolve();
     const key = machineSessionKey(target.machineId, target.session.id);
@@ -1547,14 +1676,11 @@ export class SessionController {
     if (this.selectedSessionRecoveryTarget === undefined || !this.isCurrentRefreshTarget(this.selectedSessionRecoveryTarget)) {
       this.bufferRefreshEvents(target);
     }
-    // The notification controller coalesces its own refreshes. Keep that work
-    // outside the transcript coordinator so a slow inbox never blocks replay
-    // or a subsequent snapshot, while callers still await both results.
-    const notificationsRefresh = Promise.resolve().then(() => {
+    // Inbox work has its own completion and error owner, not transcript readiness.
+    void Promise.resolve().then(() => {
       if (!this.isCurrentRefreshTarget(target)) return;
-      return this.notifications?.refreshSelectedSession(target.session, target.machineId);
+      return this.refreshSessionNotifications(target.session, target.machineId);
     });
-    notificationsRefresh.catch(() => undefined);
     const transcriptRefresh = this.selectedSessionRefreshes.request(key, async () => {
       if (!this.isCurrentRefreshTarget(target)) return;
       const read = () => this.readSelectedSessionSnapshot(target, key);
@@ -1569,12 +1695,14 @@ export class SessionController {
         if (this.selectedSessionRecoveryTarget === target) this.selectedSessionRecoveryTarget = undefined;
       }
     });
-    return transcriptRefresh.then(() => notificationsRefresh);
+    return transcriptRefresh;
   }
 
   private async readSelectedSessionSnapshot(target: SelectedSessionRefreshTarget, key: string): Promise<void> {
     const buffer = this.bufferRefreshEvents(target);
     const historyRevision = this.transcripts.historyRevision(key);
+    const observeRuntime = this.observeSessionSnapshot?.(target.machineId, target.session.id);
+    let appliedHistoryRevision: number;
     const recoveryError = this.browserErrors.captureRecovery(
       sessionBrowserErrorScope(target.machineId, target.session.id, target.errorOwner), "session-refresh",
     );
@@ -1595,6 +1723,8 @@ export class SessionController {
         this.applyStatus(status);
         this.lastAppliedSelectedRefresh = { selectionSeq: target.selectionSeq, partialJson: selectedRefreshPartialJson(snapshot) };
       }
+      appliedHistoryRevision = this.transcripts.historyRevision(key);
+      observeRuntime?.(status);
     } finally {
       if (this.refreshEventBuffer === buffer) this.refreshEventBuffer = undefined;
       // Release every attempt, including failed ones, before any retry delay.
@@ -1605,6 +1735,13 @@ export class SessionController {
           this.applyEvent(event);
         }
       }
+    }
+    // Replay may invalidate the just-read branch and enqueue its replacement.
+    // Only a coherent snapshot surviving that replay can complete the join.
+    if (this.transcripts.historyRevision(key) === appliedHistoryRevision
+      && this.isCurrentRefreshTarget(target)
+      && this.initialSnapshotReady?.selectionSeq === target.selectionSeq) {
+      this.initialSnapshotReady.complete();
     }
   }
 
@@ -1796,8 +1933,10 @@ export class SessionController {
   }
 
   private selectClientPendingStartSession(session: ClientPendingStartSessionInfo, options?: { updateUrl?: boolean | undefined; activity?: SessionActivity | undefined; sessions?: SessionInfo[] | undefined; context?: Partial<AppState> | undefined }): void {
+    this.selectedSessionLoadDeferred = false;
     this.sessionSelection.rememberSession({ ...session, cwd: this.workspaceSelectionKey(session.cwd) });
     this.selectionSeq += 1;
+    this.selectedSessionJoinNavigation = undefined;
     this.socket.close();
     this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
@@ -2546,7 +2685,11 @@ function failedPendingSessionActivity(sessionId: string, message: string, queued
 
 function queuedSessionMessagePreview(queued: QueuedPendingSessionSend): QueuedSessionMessage {
   if (queued.type === "prompt") {
-    return { kind: queued.streamingBehavior === "steer" ? "steer" : "followUp", text: queuedPromptPreviewText(queued.text, queued.attachments) };
+    const attachmentCount = queued.attachments?.length ?? 0;
+    return {
+      kind: queued.streamingBehavior === "steer" ? "steer" : "followUp", text: queuedPromptPreviewText(queued.text, queued.attachments),
+      ...(attachmentCount > 0 ? { hasAttachments: true, attachmentCount } : {}),
+    };
   }
   return { kind: "followUp", text: queued.text };
 }

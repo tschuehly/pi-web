@@ -73,7 +73,7 @@ describe("durable transcript identity", () => {
     expect(lines.map((line) => line.entryId)).toEqual(["compact", "user"]);
     expect(lines[0]?.parts).toEqual([{ type: "text", text: `Compacted history:\n\n${summary}` }]);
     expect(groupChatMessages(lines)).toEqual([
-      { kind: "group", presentation: "history", startIndex: 0, endIndex: 0, messages: [lines[0]] },
+      { kind: "group", presentation: "history", startIndex: 0, endIndex: 0, messages: [{ message: lines[0], index: 0 }] },
       { kind: "message", index: 1, message: lines[1] },
     ]);
   });

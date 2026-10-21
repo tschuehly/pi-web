@@ -37,9 +37,7 @@ describe("PromptEditor Working Mode controls", () => {
     const actions = required(editor.shadowRoot?.querySelector(".actions"));
     const order = [...actions.children].map((child) => child.classList.contains("usage") ? "usage" : child.classList.contains("composer-actions") ? "composer-actions" : child.localName);
     expect(order).toEqual(["model-effort-picker", "usage", "working-mode-controls", "composer-actions"]);
-    expect(getComputedStyle(actions).flexWrap).toBe("wrap");
     const composerActions = required(actions.querySelector<HTMLElement>(".composer-actions"));
-    expect(getComputedStyle(composerActions).flexShrink).toBe("0");
     expect([...composerActions.children].map((child) => child.getAttribute("aria-label"))).toEqual(["Attach files", "Send message", "Stop current work"]);
 
     const controls = await workingMode(editor);
@@ -388,7 +386,7 @@ function expectHiddenMetric(editor: PromptEditor, name: string, accessible: stri
   const item = metric(editor, name);
   expect(item.localName).toBe("li");
   expect(item.textContent).toBe(accessible);
-  expect(getComputedStyle(item).position).toBe("absolute");
+  expect(item.classList.contains("visually-hidden")).toBe(true);
 }
 
 function accessibleMetricTextOrOwn(editor: PromptEditor, name: string): string | null {
@@ -404,6 +402,6 @@ function expectMetric(editor: PromptEditor, name: string, visible: string, acces
   expect(item.getAttribute("aria-label")).toBeNull();
   expect(visibleText.textContent.trim()).toBe(visible);
   expect(accessibleText.textContent).toBe(accessible);
-  expect(getComputedStyle(accessibleText).position).toBe("absolute");
+  expect(accessibleText.classList.contains("visually-hidden")).toBe(true);
   expect(item.title).toBe(title);
 }

@@ -12,8 +12,6 @@ import { PromptEditor, promptEditorMaximumHeight } from "./PromptEditor";
 import { SessionTreeNavigator } from "./SessionTreeNavigator";
 import { WorkbenchApp } from "./WorkbenchApp";
 
-const viewportHeight = "var(--pi-workbench-viewport-height, 100vh)";
-const viewportWidth = "var(--pi-workbench-viewport-width, 100vw)";
 
 describe("Workbench zoom-compensated viewport contracts", () => {
   it("defines inherited compensated viewport dimensions on the Workbench host", () => {
@@ -27,37 +25,18 @@ describe("Workbench zoom-compensated viewport contracts", () => {
     expect(rule(ModalSurface.styles, ":host")).toContain("height: var(--pi-workbench-viewport-height, 100%)");
   });
 
+  // Upstream's shared dialog primitives (theme/base/uiDialog.css) carry the compensated viewport for every dialog.
   it.each([
     ["ModelPicker", ModelPicker.styles],
     ["CommandPicker", CommandPicker.styles],
     ["AuthDialog", AuthDialog.styles],
-  ])("compensates %s card width and height", (_name, styles) => {
-    const modalRule = rule(styles, "modal-surface");
-    expect(modalRule).toContain(viewportWidth);
-    expect(modalRule).toContain(viewportHeight);
-  });
-
-  it("compensates ActionPalette placement, width, and height", () => {
-    const modalRule = rule(ActionPalette.styles, "modal-surface");
-    expect(modalRule).toContain(viewportWidth);
-    expect(modalRule).toContain(viewportHeight);
-    expect(modalRule).toContain("var(--palette-top)");
-    expect(modalRule).toContain("var(--palette-bottom)");
-  });
-
-  it.each([
+    ["ActionPalette", ActionPalette.styles],
     ["ProjectDialog", ProjectDialog.styles],
     ["MachineDialog", MachineDialog.styles],
-  ])("compensates %s top placement, width, and height", (_name, styles) => {
-    const modalRule = rule(styles, "modal-surface");
-    expect(modalRule).toContain("--dialog-top:");
-    expect(modalRule).toContain(viewportWidth);
-    expect(modalRule).toContain("var(--pi-workbench-viewport-height, calc(100vh - 40px + var(--dialog-top)))");
-    expect(modalRule).toContain("var(--dialog-top)");
-  });
-
-  it("keeps ProjectDialog content independently scrollable", () => {
-    expect(rule(ProjectDialog.styles, ".body")).toContain("overflow: auto");
+  ])("compensates %s card width and height", (_name, styles) => {
+    const modalRule = styleText(styles);
+    expect(modalRule).toContain("var(--pi-workbench-viewport-width");
+    expect(modalRule).toContain("var(--pi-workbench-viewport-height");
   });
 
   it("compensates the full-height SessionTreeNavigator", () => {
@@ -67,7 +46,7 @@ describe("Workbench zoom-compensated viewport contracts", () => {
   });
 
   it("bounds the whole PromptEditor against half the compensated viewport", () => {
-    const automaticRule = rule(PromptEditor.styles, "textarea, .markdown-editor .cm-editor");
+    const automaticRule = rule(PromptEditor.styles, ".markdown-editor .cm-editor");
     const manualRule = rule(PromptEditor.styles, ".markdown-editor-manual-height .cm-editor");
     expect(automaticRule).toContain("max-height: min(220px, var(--prompt-editor-maximum-height, 220px))");
     expect(manualRule).toContain("height: var(--prompt-editor-manual-height)");

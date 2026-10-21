@@ -4,6 +4,7 @@ import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../api";
 import { initialAppState, type AppState } from "../appState";
+import { AppShellController } from "../appShell/appShellController";
 import { AuthDialog } from "./AuthDialog";
 import { ChatView } from "./ChatView";
 import { ModalSurface } from "./ModalSurface";
@@ -112,6 +113,47 @@ describe("PiWebApp global shortcut modality boundary", () => {
     expect(appShouldAutoFocusPrompt(app)).toBe(false);
   });
 
+  it("does not turn focus restoration into navigation when Chat is hidden", async () => {
+    const app = new PiWebApp();
+    const shell: unknown = Reflect.get(app, "appShell");
+    if (!(shell instanceof AppShellController)) throw new Error("Expected app shell");
+    shell.isMobileNavigationLayout = true;
+    shell.isDesktopSideBySideLayout = false;
+    window.history.replaceState(null, "", "/app?view=navigation");
+    setAppState(app, { mainView: "navigation" });
+    const before = window.location.href;
+    const focusInput = vi.fn();
+    Object.defineProperty(app, "promptEditor", { configurable: true, value: { focusInput } });
+    Object.defineProperty(app, "updateComplete", { configurable: true, value: Promise.resolve(true) });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 1; });
+
+    await focusChatComposer(app);
+
+    expect(window.location.href).toBe(before);
+    expect(Reflect.get(app, "state")).toMatchObject({ mainView: "navigation" });
+    expect(focusInput).not.toHaveBeenCalled();
+  });
+
+  it("does not focus an editor that became hidden while restoration was pending", async () => {
+    const app = new PiWebApp();
+    const shell: unknown = Reflect.get(app, "appShell");
+    if (!(shell instanceof AppShellController)) throw new Error("Expected app shell");
+    shell.isMobileNavigationLayout = true;
+    shell.isDesktopSideBySideLayout = false;
+    setAppState(app, { mainView: "chat" });
+    const focusInput = vi.fn();
+    Object.defineProperty(app, "promptEditor", { configurable: true, value: { focusInput } });
+    Object.defineProperty(app, "updateComplete", { configurable: true, value: Promise.resolve(true) });
+    let frameCallback: FrameRequestCallback | undefined;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frameCallback = callback; return 1; });
+    const focusing = focusChatComposer(app);
+    await vi.waitFor(() => { expect(frameCallback).toBeDefined(); });
+    setAppState(app, { mainView: "navigation" });
+    frameCallback?.(0);
+    await focusing;
+    expect(focusInput).not.toHaveBeenCalled();
+  });
+
   it("rechecks rendered modality before a delayed prompt focus takes effect", async () => {
     const app = new PiWebApp();
     setAppState(app, { mainView: "chat" });
@@ -200,15 +242,12 @@ async function openImageZoom(app: PiWebApp): Promise<HTMLElement> {
   expect(view.sessionCwd).toBe(selectedSession.cwd);
   const transcript = requiredElement(view.renderRoot.querySelector<TranscriptImage>("pi-web-transcript-image"), "transcript image");
   const presentation = await settleImage(transcript);
-  presentation.renderRoot.querySelector<HTMLButtonElement>(".placeholder")?.click();
-  await settleImage(transcript);
-  requiredElement(presentation.renderRoot.querySelector("img"), "native image").dispatchEvent(new Event("load"));
-  await presentation.updateComplete;
   const image = requiredElement(presentation.renderRoot.querySelector<HTMLButtonElement>(".image-button"), "image trigger");
   image.focus();
   image.click();
   await view.updateComplete;
-  const dialog = requiredElement(view.shadowRoot?.querySelector<HTMLDialogElement>("dialog.image-zoom"), "image zoom dialog");
+  const gallery = requiredElement(view.renderRoot.querySelector("pi-web-image-gallery-dialog"), "image gallery");
+  const dialog = requiredElement(gallery.shadowRoot?.querySelector<HTMLDialogElement>("dialog.image-zoom"), "image zoom dialog");
   expect(dialog.open).toBe(true);
   return requiredElement(dialog.querySelector<HTMLElement>(".image-zoom-close"), "image zoom close button");
 }

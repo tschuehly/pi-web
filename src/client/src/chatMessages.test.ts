@@ -5,7 +5,8 @@ import { appendText, appendThinking, latestWorkingModeDials, latestWorkingModeSe
 import { applyTranscriptEvent, seedStreamingPartial } from "./chatTranscript";
 import type { ChatLine } from "./components/shared";
 
-const imageReference = { type: "image" as const, mediaId: "0123456789abcdef".repeat(4), mimeType: "image/png", byteSize: 3 };
+const legacyImageReference = { type: "image" as const, mediaId: "0123456789abcdef".repeat(4), mimeType: "image/png", byteSize: 3 };
+const imageReference = { ...legacyImageReference, width: 1200, height: 800 };
 
 it.each(["visible", "", undefined, 42])("preserves original text and optional string display text (%s)", (displayText) => {
   const display = typeof displayText === "string" ? { displayText } : {};
@@ -246,6 +247,29 @@ This block replaces every earlier <working-mode> block.
     const raw = { role: "user", entryId: "image-entry", content: [{ ...imageReference, data: "QUJD", url: "https://remote.test/not-the-proxy" }] };
     const normalized = normalizeMessages([raw]);
     expect(normalized).toEqual([{ role: "user", entryId: "image-entry", parts: [imageReference] }]);
+    expect(normalizeMessages(normalized)).toEqual(normalized);
+  });
+
+  it("keeps older references without dimensions usable", () => {
+    expect(normalizeMessages([{ role: "user", content: [legacyImageReference] }]))
+      .toEqual([{ role: "user", parts: [legacyImageReference] }]);
+  });
+
+  it("preserves inline dimension hints through normalization and cached chat lines", () => {
+    const inline = { type: "image" as const, mimeType: "image/png", data: "QUJD", width: 400, height: 1600 };
+    const normalized = normalizeMessages([{ role: "user", content: [inline] }]);
+    expect(normalized).toEqual([{ role: "user", parts: [inline] }]);
+    expect(normalizeMessages(normalized)).toEqual(normalized);
+  });
+
+  it.each([
+    { width: undefined }, { height: undefined }, { width: 0 }, { height: 0 },
+    { width: -1 }, { height: -1 }, { width: 1.5 }, { height: 1.5 },
+    { width: Infinity }, { height: Infinity }, { width: "1200" }, { height: null },
+    { width: Number.MAX_SAFE_INTEGER + 1 },
+  ])("drops invalid dimension pairs without discarding the image: %j", (invalid) => {
+    const normalized = normalizeMessages([{ role: "user", content: [{ ...imageReference, ...invalid }] }]);
+    expect(normalized).toEqual([{ role: "user", parts: [legacyImageReference] }]);
     expect(normalizeMessages(normalized)).toEqual(normalized);
   });
 

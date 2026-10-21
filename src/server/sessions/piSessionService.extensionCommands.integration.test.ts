@@ -43,7 +43,7 @@ async function fixture(options: { rootUser?: boolean; notificationsDisabled?: bo
   const directory = await mkdtemp(join(tmpdir(), "pi-web-extension-commands-"));
   const agentDir = join(directory, "agent");
   const sessionDir = join(directory, "sessions");
-  const controls: { input?: ReturnType<typeof gate>; tree?: ReturnType<typeof gate>; fork?: ReturnType<typeof gate>; cancelTree: boolean; cancelFork: boolean; forkStartupDialog: boolean; reloadStartupDialog: boolean } = {
+  const controls: { input?: ReturnType<typeof gate>; tree?: ReturnType<typeof gate>; fork?: ReturnType<typeof gate>; cancelTree: boolean; cancelFork: boolean; forkStartupDialog: boolean; reloadStartupDialog: boolean; appendTreeEntry?: boolean; treeLabel?: string } = {
     cancelTree: false, cancelFork: false, forkStartupDialog: false, reloadStartupDialog: false,
   };
   const cleanup: { service?: PiSessionService } = {};
@@ -81,6 +81,7 @@ async function fixture(options: { rootUser?: boolean; notificationsDisabled?: bo
     expect(addGlobalSocket).not.toHaveBeenCalled();
   });
   const starts: { id: string; generation: number; reason: string }[] = [];
+  const treeEvents: { oldLeafId: string | null; newLeafId: string | null; leafId: string | null; branchIds: string[]; messages: readonly unknown[] }[] = [];
   const startupDialogs: { id: string; announcedBeforeStart: boolean; accepted?: boolean }[] = [];
   const reloadDialogs: Promise<boolean>[] = [];
   let archived = options.notificationsDisabled === true;
@@ -124,7 +125,16 @@ async function fixture(options: { rootUser?: boolean; notificationsDisabled?: bo
               const held = controls.tree;
               held?.entered.resolve();
               await held?.release.promise;
-              return { cancel: controls.cancelTree };
+              return { cancel: controls.cancelTree, ...(controls.treeLabel === undefined ? {} : { label: controls.treeLabel }) };
+            });
+            pi.on("session_tree", (event, ctx) => {
+              treeEvents.push({
+                oldLeafId: event.oldLeafId, newLeafId: event.newLeafId,
+                leafId: ctx.sessionManager.getLeafId(),
+                branchIds: ctx.sessionManager.getBranch().map((entry) => entry.id),
+                messages: structuredClone(current?.messages ?? []),
+              });
+              if (controls.appendTreeEntry === true) pi.appendEntry("navigation-proof", { retained: true });
             });
             pi.on("session_before_fork", async () => {
               const held = controls.fork;
@@ -192,8 +202,227 @@ async function fixture(options: { rootUser?: boolean; notificationsDisabled?: bo
       return await completion.promise;
     } finally { connection.close(); }
   }
-  return { service: hosted, hub, manager, controls, session, ref, run, starts, startupDialogs, reloadDialogs, diskList: list, earlier: earlier ?? draft, draft, latest, draftText, originalFile };
+  return { service: hosted, hub, manager, controls, session, ref, run, starts, treeEvents, startupDialogs, reloadDialogs, diskList: list, earlier: earlier ?? draft, draft, latest, draftText, originalFile };
 }
+
+describe("message history shortcuts with native Pi", () => {
+  it.each([
+    { action: "fork", retainCheckpoint: true, customTail: false },
+    { action: "back", retainCheckpoint: true, customTail: false },
+    { action: "fork", retainCheckpoint: false, customTail: false },
+    { action: "back", retainCheckpoint: false, customTail: false },
+    { action: "fork", retainCheckpoint: true, customTail: true },
+    { action: "back", retainCheckpoint: true, customTail: true },
+  ] as const)("$action preserves checkpoint history ($retainCheckpoint, custom tail $customTail)", async ({ action, retainCheckpoint, customTail }) => {
+    const f = await fixture();
+    const selected = {
+      ...assistant("Test message 7/10 — A table"),
+      content: [
+        { type: "text" as const, text: "Test message 7/10 — A table" },
+        { type: "toolCall" as const, id: "bash-call", name: "bash", arguments: { command: "date" } },
+        { type: "toolCall" as const, id: "read-call", name: "read", arguments: { path: "image.png" } },
+      ],
+      stopReason: "toolUse" as const,
+    };
+    const selectedId = f.manager.appendMessage(selected);
+    const bashResult = { role: "toolResult" as const, toolCallId: "bash-call", toolName: "bash", isError: true,
+      content: [{ type: "text" as const, text: "Previously recorded error" }], timestamp: 3 };
+    f.manager.appendMessage(bashResult);
+    f.manager.appendCustomEntry("tool-metadata", { retained: true });
+    const readResult = { role: "toolResult" as const, toolCallId: "read-call", toolName: "read", isError: false,
+      content: [{ type: "image" as const, mimeType: "image/png", data: "aW1hZ2U=" }], timestamp: 4 };
+    f.manager.appendMessage(readResult);
+    f.manager.appendCustomMessageEntry("checkpoint-notice", "Retain this intervening notice", true);
+    const technical = { ...assistant(""), content: [
+      { type: "toolCall" as const, id: "technical-call", name: "bash", arguments: { command: "printf recorded" } },
+    ], stopReason: "toolUse" as const };
+    f.manager.appendMessage(technical);
+    const technicalResult = { role: "toolResult" as const, toolCallId: "technical-call", toolName: "bash", isError: false,
+      content: [{ type: "text" as const, text: "Recorded technical output" }], timestamp: 5 };
+    f.manager.appendMessage(technicalResult);
+    const checkpointEndId = customTail
+      ? f.manager.appendCustomMessageEntry("checkpoint-tail", "Retain this final notice, not an editor draft", true)
+      : f.manager.appendCustomEntry("checkpoint-tail", { retained: true });
+    const later = assistant("Next reply must not be included");
+    const laterId = f.manager.appendMessage(later);
+    f.session().refreshContext();
+    const originalBytes = await readFile(f.originalFile, "utf8");
+    const originalEntries = structuredClone(f.manager.getEntries());
+    const originalRef = f.ref();
+    const boundary = retainCheckpoint ? { retainCheckpoint: true } : {};
+
+    if (action === "fork") {
+      const result = await f.service.forkFromTree(originalRef, { entryId: selectedId, expectedLeafId: laterId, ...boundary });
+      expect(result).toMatchObject({ cancelled: false });
+      expect(result).not.toHaveProperty("promptDraft");
+      expect(f.session().sessionId).not.toBe(originalRef.id);
+      expect(f.manager.getLeafId()).toBe(laterId);
+      const forkedFile = f.session().sessionFile;
+      if (forkedFile === undefined) throw new Error("Fork must be persisted");
+      const persisted = SessionManager.open(forkedFile).buildSessionContext().messages;
+      expect(persisted).toContainEqual(selected);
+      if (retainCheckpoint) expect(persisted).toContainEqual(readResult);
+      else expect(persisted).not.toContainEqual(readResult);
+      expect(persisted).not.toContainEqual(later);
+    } else {
+      await expect(f.service.navigateTree(originalRef, {
+        targetId: selectedId, expectedLeafId: laterId, summary: { mode: "none" }, ...boundary,
+      })).resolves.toEqual({ cancelled: false });
+      const expectedLeafId = retainCheckpoint ? checkpointEndId : selectedId;
+      expect(f.manager.getLeafId()).toBe(expectedLeafId);
+      // Observe the native event and context inside the extension handler, not
+      // just the host's final state after native navigation has returned.
+      expect(f.treeEvents).toEqual([expect.objectContaining({
+        oldLeafId: laterId, newLeafId: expectedLeafId, leafId: expectedLeafId,
+        messages: f.session().messages,
+      })]);
+      if (retainCheckpoint) expect(f.treeEvents[0]?.branchIds).toContain(checkpointEndId);
+    }
+
+    expect(f.session().messages).toContainEqual(selected);
+    if (retainCheckpoint) {
+      expect(f.session().messages).toContainEqual(technical);
+      expect(f.session().messages).toContainEqual(expect.objectContaining({ role: "custom", customType: "checkpoint-notice" }));
+      expect(f.session().sessionManager.getBranch().map((entry) => entry.id)).toContain(checkpointEndId);
+    } else {
+      expect(f.session().messages).not.toContainEqual(technical);
+      expect(f.session().sessionManager.getBranch().map((entry) => entry.id)).not.toContain(checkpointEndId);
+    }
+    for (const result of [bashResult, readResult, technicalResult]) {
+      if (retainCheckpoint) expect(f.session().messages).toContainEqual(result);
+      else expect(f.session().messages).not.toContainEqual(result);
+    }
+    expect(f.session().messages).not.toContainEqual(later);
+    expect(f.session().agent.state.messages).toEqual(f.session().sessionManager.buildSessionContext().messages);
+    expect(await readFile(f.originalFile, "utf8")).toBe(originalBytes);
+    expect(f.manager.getEntries()).toEqual(originalEntries);
+  });
+
+  it("preserves cancellation and extension-added history when a checkpoint ends in a custom message", async () => {
+    const f = await fixture();
+    const selectedId = f.manager.appendMessage(assistant("Selected checkpoint"));
+    const noticeId = f.manager.appendCustomMessageEntry("checkpoint-tail", "Retain this notice", true);
+    const later = assistant("Later reply");
+    const laterId = f.manager.appendMessage(later);
+    f.session().refreshContext();
+    const originalBytes = await readFile(f.originalFile, "utf8");
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Capture identity for restoration assertions, never invoke these methods.
+    const { branch: originalBranch, resetLeaf: originalResetLeaf } = f.manager;
+    const request = { targetId: selectedId, expectedLeafId: laterId, retainCheckpoint: true, summary: { mode: "none" as const } };
+
+    f.controls.cancelTree = true;
+    const held = gate();
+    f.controls.tree = held;
+    const cancelled = f.service.navigateTree(f.ref(), request);
+    await held.entered.promise;
+    expect(f.manager.getLeafId()).toBe(laterId);
+    held.release.resolve();
+    await expect(cancelled).resolves.toEqual({ cancelled: true });
+    delete f.controls.tree;
+    expect(f.manager.getLeafId()).toBe(laterId);
+    expect(f.session().messages).toContainEqual(later);
+    expect(f.treeEvents).toEqual([]);
+    expect(await readFile(f.originalFile, "utf8")).toBe(originalBytes);
+    expect(f.manager).toHaveProperty("branch", originalBranch);
+    expect(f.manager).toHaveProperty("resetLeaf", originalResetLeaf);
+
+    f.controls.cancelTree = false;
+    f.controls.appendTreeEntry = true;
+    await expect(f.service.navigateTree(f.ref(), request)).resolves.toEqual({ cancelled: false });
+    const extensionEntry = f.manager.getLeafEntry();
+    expect(extensionEntry).toMatchObject({ type: "custom", customType: "navigation-proof", parentId: noticeId });
+    expect(f.manager.getBranch().map((entry) => entry.id)).toContain(noticeId);
+    expect(f.manager.getLeafId()).not.toBe(noticeId);
+    expect(f.treeEvents).toEqual([expect.objectContaining({ oldLeafId: laterId, newLeafId: noticeId, leafId: noticeId })]);
+    expect(f.treeEvents[0]?.messages).toContainEqual(expect.objectContaining({ role: "custom", customType: "checkpoint-tail" }));
+    expect(f.session().messages).not.toContainEqual(later);
+    expect(f.session().agent.state.messages).toEqual(f.manager.buildSessionContext().messages);
+    expect(f.manager).toHaveProperty("branch", originalBranch);
+    expect(f.manager).toHaveProperty("resetLeaf", originalResetLeaf);
+    expect(await f.service.status(f.ref())).not.toHaveProperty("suggestedInput");
+  });
+
+  it("preserves a native before-tree label on the retained custom-message checkpoint", async () => {
+    const f = await fixture();
+    const selectedId = f.manager.appendMessage(assistant("Selected checkpoint"));
+    const noticeId = f.manager.appendCustomMessageEntry("checkpoint-tail", "Retain this notice", true);
+    const later = assistant("Later reply");
+    const laterId = f.manager.appendMessage(later);
+    f.session().refreshContext();
+    f.controls.treeLabel = "Extension bookmark";
+
+    await expect(f.service.navigateTree(f.ref(), {
+      targetId: selectedId, expectedLeafId: laterId, retainCheckpoint: true, summary: { mode: "none" },
+    })).resolves.toEqual({ cancelled: false });
+    const labelEntry = f.manager.getLeafEntry();
+    expect(labelEntry).toMatchObject({ type: "label", parentId: noticeId, targetId: noticeId, label: "Extension bookmark" });
+    expect(f.manager.getLabel(noticeId)).toBe("Extension bookmark");
+    expect(f.treeEvents).toEqual([expect.objectContaining({
+      oldLeafId: laterId, newLeafId: labelEntry?.id, leafId: labelEntry?.id, messages: f.session().messages,
+    })]);
+    expect(f.treeEvents[0]?.branchIds).toContain(noticeId);
+    expect(f.session().messages).toContainEqual(expect.objectContaining({ role: "custom", customType: "checkpoint-tail" }));
+    expect(f.session().messages).not.toContainEqual(later);
+  });
+
+  it("retains a root custom-message checkpoint and leaves an already-current checkpoint alone", async () => {
+    const f = await fixture();
+    f.manager.resetLeaf();
+    const noticeId = f.manager.appendCustomMessageEntry("root-checkpoint", "Retain the root notice", true);
+    const laterId = f.manager.appendMessage(assistant("Later reply"));
+    f.session().refreshContext();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Capture identity for restoration assertions, never invoke these methods.
+    const { branch, resetLeaf } = f.manager;
+
+    for (const expectedLeafId of [laterId, noticeId]) {
+      await expect(f.service.navigateTree(f.ref(), {
+        targetId: noticeId, expectedLeafId, retainCheckpoint: true, summary: { mode: "none" },
+      })).resolves.toEqual({ cancelled: false });
+      expect(f.manager.getLeafId()).toBe(noticeId);
+      expect(f.manager.getBranch().map((entry) => entry.id)).toEqual([noticeId]);
+      expect(f.manager).toHaveProperty("branch", branch);
+      expect(f.manager).toHaveProperty("resetLeaf", resetLeaf);
+    }
+    expect(f.treeEvents).toEqual([expect.objectContaining({
+      oldLeafId: laterId, newLeafId: noticeId, leafId: noticeId, branchIds: [noticeId], messages: f.session().messages,
+    })]);
+    expect(f.session().messages).toEqual([expect.objectContaining({ role: "custom", customType: "root-checkpoint" })]);
+  });
+
+  it.each([false, true])("keeps exact-entry custom-message editing separate from checkpoint retention (%s)", async (retainCheckpoint) => {
+    const f = await fixture();
+    const selectedId = f.manager.appendMessage(assistant("Selected checkpoint"));
+    const noticeText = "Custom message draft";
+    const noticeId = f.manager.appendCustomMessageEntry("checkpoint-tail", noticeText, true);
+    const laterId = f.manager.appendMessage(assistant("Later reply"));
+    f.session().refreshContext();
+
+    await expect(f.service.navigateTree(f.ref(), {
+      targetId: noticeId, expectedLeafId: laterId, retainCheckpoint, summary: { mode: "none" },
+    })).resolves.toEqual(retainCheckpoint ? { cancelled: false } : { cancelled: false, editorText: noticeText });
+    const leafId = retainCheckpoint ? noticeId : selectedId;
+    expect(f.manager.getLeafId()).toBe(leafId);
+    expect(f.treeEvents).toEqual([expect.objectContaining({ oldLeafId: laterId, newLeafId: leafId, leafId, messages: f.session().messages })]);
+  });
+
+  it.each(["fork", "back"] as const)("%s still restores a selected user message as editable text", async (action) => {
+    const f = await fixture();
+    if (action === "fork") {
+      await expect(f.service.forkFromTree(f.ref(), {
+        entryId: f.draft, expectedLeafId: f.latest, retainCheckpoint: true,
+      })).resolves.toMatchObject({ cancelled: false, promptDraft: f.draftText });
+    } else {
+      await expect(f.service.navigateTree(f.ref(), {
+        targetId: f.draft, expectedLeafId: f.latest, summary: { mode: "none" }, retainCheckpoint: true,
+      })).resolves.toEqual({ cancelled: false, editorText: f.draftText });
+    }
+    expect(f.session().messages).not.toContainEqual(expect.objectContaining({
+      role: "user", content: [{ type: "text", text: f.draftText }],
+    }));
+    expect(f.session().messages).not.toContainEqual(assistant("Later answer"));
+    expect(f.session().messages).toContainEqual(assistant("Earlier answer"));
+  });
+});
 
 describe("hosted ExtensionCommandContext actions with native Pi", () => {
   it("navigates real agent context through runCommand and pi.events -> sendUserMessage, retaining drafts for later status reads", async () => {

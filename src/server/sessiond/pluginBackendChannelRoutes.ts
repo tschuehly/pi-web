@@ -3,7 +3,9 @@ import { WebSocket, type RawData } from "ws";
 import type { JsonValue } from "../../shared/apiTypes.js";
 import { isPiWebPluginId } from "../../shared/pluginIds.js";
 import {
-  PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATH,
+  PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATHS,
+  pluginBackendScopeFromRoute,
+  type PluginBackendScopeSelection,
   parsePluginBackendChannelClientEnvelope,
   PLUGIN_BACKEND_CHANNEL_DATA_FRAME_MAX_BYTES,
   PLUGIN_BACKEND_CHANNEL_DRAIN_TIMEOUT_MS,
@@ -26,6 +28,7 @@ import {
   type PluginBackendChannelAdmissionRequest,
   type PluginBackendChannelSession,
   type PluginBackendChannelTransport,
+  type PluginBackendRequest,
 } from "../plugins/pluginBackendRegistry.js";
 import {
   closePluginBackendChannelWebSocket,
@@ -33,27 +36,19 @@ import {
   markPluginBackendChannelUpgradeRequest,
   setPluginBackendChannelSocketPayloadLimit,
 } from "../webSocketBridge.js";
-import type { Project } from "../types.js";
 import type { PluginBackendProjectReader } from "./pluginBackendRoutes.js";
 
 interface PluginBackendChannelRouteParams {
   pluginId: string;
-  projectId: string;
-  workspaceId: string;
+  projectId?: string;
+  workspaceId?: string;
   operation: string;
 }
 
 export interface PluginBackendChannelDispatcher {
   reserveChannel(request: PluginBackendChannelAdmissionRequest): PluginBackendChannelAdmission;
   openChannel(
-    request: {
-      pluginId: string;
-      moduleRevision: string;
-      project: Project;
-      workspaceId: string;
-      operation: string;
-      input: unknown;
-    },
+    request: PluginBackendRequest,
     transport: PluginBackendChannelTransport,
     signal?: AbortSignal,
     reservedAdmission?: PluginBackendChannelAdmission,
@@ -71,8 +66,8 @@ export function registerPluginBackendChannelRoutes(
   dependencies: PluginBackendChannelRouteDependencies,
   prefix = "",
 ): void {
-  app.get<{ Params: PluginBackendChannelRouteParams }>(
-    `${prefix}${PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATH}`,
+  for (const path of PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATHS) app.get<{ Params: PluginBackendChannelRouteParams }>(
+    `${prefix}${path}`,
     {
       websocket: true,
       onRequest(request, _reply, done) {
@@ -137,6 +132,7 @@ class PluginBackendChannelSocketController {
       if (this.params.workspaceId === "") throw new Error("Workspace id is required");
       this.admission = this.dependencies.backends.reserveChannel({
         pluginId: this.params.pluginId,
+        scope: pluginBackendScopeFromRoute(this.params),
         projectId: this.params.projectId,
         workspaceId: this.params.workspaceId,
       });
@@ -176,7 +172,7 @@ class PluginBackendChannelSocketController {
       }
       this.state = "opening";
       setPluginBackendChannelSocketPayloadLimit(this.socket, PLUGIN_BACKEND_CHANNEL_DATA_FRAME_MAX_BYTES);
-      void this.open(envelope.revision, envelope.input);
+      void this.open(envelope.revision, envelope.input, envelope);
       return;
     }
     if (this.state !== "ready" || envelope.kind !== "data") {
@@ -186,12 +182,19 @@ class PluginBackendChannelSocketController {
     this.enqueueIncoming(envelope.data, utf8ByteLength(text));
   }
 
-  private async open(revision: string, input: JsonValue): Promise<void> {
+  private async open(revision: string, input: JsonValue, wire: PluginBackendScopeSelection): Promise<void> {
     try {
-      const project = await this.dependencies.projects.requireProject(this.params.projectId);
+      let scope: ReturnType<typeof pluginBackendScopeFromRoute>;
+      try {
+        scope = pluginBackendScopeFromRoute(this.params, wire);
+      } catch (error) {
+        throw new PluginBackendChannelError("invalid-scope", 1008, boundedErrorMessage(error), { cause: error });
+      }
+      const project = this.params.projectId === undefined ? undefined : await this.dependencies.projects.requireProject(this.params.projectId);
       const session = await this.dependencies.backends.openChannel({
         pluginId: this.params.pluginId,
         moduleRevision: revision,
+        scope,
         project,
         workspaceId: this.params.workspaceId,
         operation: this.params.operation,

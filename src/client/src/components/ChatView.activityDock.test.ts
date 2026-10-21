@@ -72,7 +72,11 @@ describe.each(Object.entries(transitions))("ChatView activity overlay: %s", (_na
       transition(view, active);
       await view.updateComplete;
       flushFrame();
-      expect(view.shadowRoot?.querySelector(".activity-dock") !== null).toBe(active);
+      const dock = view.shadowRoot?.querySelector(".activity-dock");
+      expect(dock !== null).toBe(active);
+      if (active) expect(dock?.parentElement).toBe(chat.parentElement);
+      expect(view.shadowRoot?.querySelector(".chat-statusbar")).toBeNull();
+      expect(chat.querySelector(".activity-dock, .chat-jumps")).toBeNull();
       expect(scroll).not.toHaveBeenCalled();
     }
   });

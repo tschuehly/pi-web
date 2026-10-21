@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir, userInfo } from "node:os";
@@ -17,7 +17,7 @@ import { nativeServiceManagerRefs } from "./nativeServices/servicePlan.js";
 const PACKAGE_NAME = "@jmfederico/pi-web";
 const UPDATE_HANDOFF_LABEL_PREFIX = "com.pi-web.update";
 const WARNING = "Updating PI WEB will restart services and interrupt active sessions and terminals, including this terminal.";
-const HELP = "Usage: pi-web update [--yes]\nWithout --yes, an interactive confirmation is required. Nested Linux updates use a detached systemd user service. Nested macOS updates use a detached launchd user agent.";
+const HELP = "Usage: pi-web update [--yes] [--force]\n--force reinstalls an npm-global installation even when already current. Without --yes, an interactive confirmation is required. Nested Linux updates use a detached systemd user service. Nested macOS updates use a detached launchd user agent.";
 
 export interface PiWebUpdateCommand {
   executable: string;
@@ -47,6 +47,7 @@ export interface PiWebUpdateDependencies {
   exists(path: string): boolean;
   mkdir(path: string): Promise<void>;
   writeFile(path: string, contents: string): Promise<void>;
+  readFile(path: string): Promise<string>;
   removeFile(path: string): Promise<void>;
   piCliPath: string;
   interactive: boolean;
@@ -72,6 +73,7 @@ function defaultDependencies(): PiWebUpdateDependencies {
     mkdir: (path) => mkdir(path, { recursive: true }).then(() => undefined),
     writeFile: (path, contents) => writeFile(path, contents, { encoding: "utf8", mode: 0o600 }),
     removeFile: (path) => rm(path, { force: true }),
+    readFile: (path) => readFile(path, "utf8"),
     // Use this installation's Pi, not an unrelated (or older) `pi` on PATH.
     piCliPath: fileURLToPath(new URL("./cli.js", import.meta.resolve("@earendil-works/pi-coding-agent"))),
     interactive: isatty(0) && isatty(1),
@@ -111,10 +113,11 @@ function defaultDependencies(): PiWebUpdateDependencies {
 
 /** CLI arguments exclude `update`. Throws on invalid/unsafe requests and failed commands. */
 export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUpdateDependencies): Promise<void> {
-  const valid = args.length === 0 || (args.length === 1 && ["--yes", "--help", "-h"].includes(args[0] ?? ""));
+  const help = args.length === 1 && ["--help", "-h"].includes(args[0] ?? "");
+  const valid = help || (new Set(args).size === args.length && args.every((arg) => ["--yes", "--force"].includes(arg)));
   if (!valid) throw new Error(`Invalid update arguments. ${HELP}`);
   const deps = injected ?? defaultDependencies();
-  if (args[0] === "--help" || args[0] === "-h") {
+  if (help) {
     deps.log(HELP);
     return;
   }
@@ -157,7 +160,26 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
         || await deps.realpath(join(root, PACKAGE_NAME)) !== await deps.realpath(installation.path)) {
         throw new Error("Global npm target does not match this installation; nothing changed.");
       }
-      update = command("npm", ["install", "--global", "--prefix", resolve(prefix), `${PACKAGE_NAME}@latest`, "--allow-scripts=node-pty"]);
+      let latestVersion: string;
+      try {
+        const version: unknown = JSON.parse(await deps.capture(command("npm", ["view", "--global", "--prefix", resolve(prefix), `${PACKAGE_NAME}@latest`, "version", "--json"])));
+        if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
+          throw new Error("npm did not return a package version");
+        }
+        latestVersion = version;
+      } catch (error: unknown) {
+        throw new Error("Cannot determine the latest PI WEB npm version; no install or restart was run.", { cause: error });
+      }
+      const installed: unknown = JSON.parse(await deps.readFile(join(installation.path, "package.json")));
+      if (typeof installed !== "object" || installed === null || !("version" in installed) || typeof installed.version !== "string") {
+        throw new Error("Cannot determine the installed PI WEB version; nothing changed.");
+      }
+      if (installed.version === latestVersion && !args.includes("--force")) {
+        deps.log(`PI WEB is already up to date (${latestVersion}). Nothing changed. Use --force to reinstall.`);
+        return;
+      }
+      // Install the release we checked, even if the registry tag moves during confirmation.
+      update = command("npm", ["install", "--global", "--prefix", resolve(prefix), `${PACKAGE_NAME}@${latestVersion}`, "--allow-scripts=node-pty"]);
     } else {
       if (installation.scope !== "user" || installation.source === undefined || installation.source === "" || !/^(npm:|git:|https?:\/\/|ssh:\/\/)/.test(installation.source)) {
         throw new Error("Only user-scope remote Pi packages can be updated automatically. Update this package with its original tooling; nothing changed.");
@@ -188,7 +210,7 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
       }
       restart = command("systemd-run", [...dispatchArgs, `--unit=${restartUnit}`, "--", restart.executable, ...restart.args]);
     } else if (nested && deps.platform === "darwin") {
-      launchdHandoff = createLaunchdUpdateHandoff(deps, installation);
+      launchdHandoff = createLaunchdUpdateHandoff(deps, installation, args.includes("--force"));
     }
   }
   deps.log(`Update target: ${installation.kind}${installation.path === undefined ? "" : ` at ${JSON.stringify(installation.path)}`}`);
@@ -203,7 +225,7 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
     deps.log("The Docker installer owns the update and service restart.");
   }
   deps.log(WARNING);
-  if (args[0] !== "--yes") {
+  if (!args.includes("--yes")) {
     if (!deps.interactive) throw new Error("Noninteractive update requires explicit --yes consent. Nothing changed.");
     if (!await deps.confirm("Proceed with the update and restart?")) {
       deps.log("Update cancelled. Nothing changed.");
@@ -261,14 +283,15 @@ async function planLocalCheckoutUpdate(deps: PiWebUpdateDependencies, path: stri
   if (upstream === "") throw new Error(`The local checkout branch ${JSON.stringify(branch)} has no upstream branch configured. Nothing changed.`);
   return {
     pull: git(["pull", "--ff-only"]),
-    install: { executable: "npm", args: ["install"], env: { ...deps.env } },
-    build: { executable: "npm", args: ["run", "build"], env: { ...deps.env } },
+    install: { executable: "npm", args: ["--prefix", path, "install"], env: { ...deps.env } },
+    build: { executable: "npm", args: ["--prefix", path, "run", "build"], env: { ...deps.env } },
   };
 }
 
 function createLaunchdUpdateHandoff(
   deps: PiWebUpdateDependencies,
   installation: PiWebInstallationInfo,
+  force: boolean,
 ): LaunchdUpdateHandoff {
   if (installation.path === undefined || !isAbsolute(installation.path)) {
     throw new Error("Cannot safely locate this PI WEB installation for a launchd handoff; nothing changed.");
@@ -297,6 +320,7 @@ function createLaunchdUpdateHandoff(
     environment,
     plist: renderLaunchdUpdatePlist({
       label,
+      force,
       nodeExecutable: deps.nodeExecutable,
       cliPath: join(installation.path, "dist", "cli.js"),
       workingDirectory: deps.cwd,
@@ -363,6 +387,7 @@ function launchdHandoffEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv
 
 interface LaunchdUpdatePlistInput {
   label: string;
+  force: boolean;
   nodeExecutable: string;
   cliPath: string;
   workingDirectory: string;
@@ -371,7 +396,7 @@ interface LaunchdUpdatePlistInput {
 }
 
 function renderLaunchdUpdatePlist(input: LaunchdUpdatePlistInput): string {
-  const programArguments = [input.nodeExecutable, input.cliPath, "update", "--yes"];
+  const programArguments = [input.nodeExecutable, input.cliPath, "update", "--yes", ...(input.force ? ["--force"] : [])];
   const environmentEntries = Object.keys(input.environment)
     .sort()
     .map((key) => `    <key>${xmlEscape(key)}</key>\n    <string>${xmlEscape(input.environment[key] ?? "")}</string>\n`)

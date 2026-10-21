@@ -6,6 +6,7 @@ import { isSessionMediaId, SESSION_MEDIA_MODE } from "../../shared/sessionMedia.
 import { isSessionImageMimeType } from "./sessionMediaIndex.js";
 import { normalizeRequestCwd } from "../workingDirectory.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
+import { parseQueueMessageMutation } from "./queuedMessageMutation.js";
 import type { SessionRouteRef, SessionRouteService } from "./sessionService.js";
 import { normalizeSessionCleanupRequest } from "./sessionCleanup.js";
 
@@ -423,6 +424,15 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
+  app.post<{ Params: { sessionId: string }; Body: unknown }>(`${prefix}/sessions/:sessionId/queue/message`, async (request, reply) => {
+    try {
+      const body = requireRecord(request.body);
+      return await sessions.mutateQueueMessage(sessionRefFromBody(request.params.sessionId, body), parseQueueMessageMutation(body));
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
   app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/queue/clear`, async (request, reply) => {
     try {
       return await sessions.clearQueue(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));
@@ -682,13 +692,18 @@ function requireRefCwd(cwd: unknown): string {
 function sessionTreeNavigateRequestFromBody(body: Record<string, unknown>): SessionTreeNavigateRequest {
   const targetId = requireNonEmptyString(body, "targetId");
   const expectedLeafId = requireNullableString(body, "expectedLeafId");
-  return { targetId, expectedLeafId, summary: sessionTreeSummaryChoice(body["summary"]) };
+  return {
+    targetId,
+    expectedLeafId,
+    summary: sessionTreeSummaryChoice(body["summary"]),
+    ...optionalField("retainCheckpoint", optionalBoolean(body, "retainCheckpoint")),
+  };
 }
 
 function sessionTreeForkRequestFromBody(body: Record<string, unknown>): SessionTreeForkRequest {
   const entryId = requireNonEmptyString(body, "entryId");
   const expectedLeafId = requireNullableString(body, "expectedLeafId");
-  return { entryId, expectedLeafId };
+  return { entryId, expectedLeafId, ...optionalField("retainCheckpoint", optionalBoolean(body, "retainCheckpoint")) };
 }
 
 function sessionTreeSummaryChoice(value: unknown): SessionTreeSummaryChoice {
@@ -790,6 +805,10 @@ function requireBoolean(record: Record<string, unknown>, field: string): boolean
   const value = record[field];
   if (typeof value !== "boolean") throw new Error(`${field} field must be a boolean`);
   return value;
+}
+
+function optionalBoolean(record: Record<string, unknown>, field: string): boolean | undefined {
+  return record[field] === undefined ? undefined : requireBoolean(record, field);
 }
 
 function requireNonEmptyString(record: Record<string, unknown>, field: string): string {

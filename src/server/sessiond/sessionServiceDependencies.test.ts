@@ -5,6 +5,7 @@ import { SessionUnreadStore } from "../sessions/sessionUnreadStore.js";
 import { WorkstreamLaunchStore } from "../sessions/workstreamLaunchStore.js";
 import { PiSessionService, type PiSessionServiceDependencies } from "../sessions/piSessionService.js";
 import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, sessionGateway, testModelRuntime } from "../sessions/piSessionService.testSupport.js";
+import { PiSessionEventConnections } from "../sessions/piSessionEventConnections.js";
 import { sessionServiceDependencies, type SessionServiceDependencyInput } from "./sessionServiceDependencies.js";
 
 const AGENT_DIR = "/tmp/pi-web-test-agent";
@@ -17,6 +18,7 @@ const AGENT_DIR = "/tmp/pi-web-test-agent";
 function daemonCollaborators(patch: Partial<SessionServiceDependencyInput> = {}): SessionServiceDependencyInput {
   return {
     agentDir: AGENT_DIR,
+    sessionEvents: new PiSessionEventConnections(),
     archiveStore: emptyArchiveStore(),
     workstreamLaunchStore: new WorkstreamLaunchStore("/tmp/pi-web-test-workstream-launches"),
     modelRuntime: testModelRuntime,
@@ -93,6 +95,11 @@ describe("sessiond session service dependency assembly", () => {
     expect(withoutSpawnTargets.subsessionsEnabled).toBe(false);
     expect(withSpawnTargets.spawnTargets).toBe(spawnTargets);
     expect(withSpawnTargets.subsessionsEnabled).toBe(true);
+  });
+
+  it("passes session-local event and companion bindings through to the session service", () => {
+    const sessionEvents = new PiSessionEventConnections();
+    expect(sessionServiceDependencies(daemonCollaborators({ sessionEvents })).sessionEvents).toBe(sessionEvents);
   });
 
   it("passes the ask-user preference through to the session service", () => {

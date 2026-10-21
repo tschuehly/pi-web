@@ -4,7 +4,7 @@ import { ChatTranscriptStore } from "../chatTranscriptStore";
 import { machineSessionKey } from "../machineKeys";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { SessionTreeForkUnavailableError, type CommandResult, type SessionTreeSnapshot } from "../api";
-import { SessionController } from "./sessionController";
+import { SessionController, type SessionControllerDependencies } from "./sessionController";
 import { InMemorySessionSelectionMemory } from "./sessionSelection";
 import {
   defaultApi,
@@ -50,10 +50,10 @@ describe("SessionController message shortcuts", () => {
     expect(runCommand).toHaveBeenCalledWith(oldSession, "/tree", "local");
     expect(state.treeDialog).toBeUndefined();
     if (action === "fork") {
-      expect(forkTree).toHaveBeenCalledWith(oldSession, { entryId: "root", expectedLeafId: "leaf-1" }, "local");
+      expect(forkTree).toHaveBeenCalledWith(oldSession, { entryId: "root", expectedLeafId: "leaf-1", retainCheckpoint: true }, "local");
       expect(navigateTree).not.toHaveBeenCalled();
     } else {
-      expect(navigateTree).toHaveBeenCalledWith(oldSession, { targetId: "root", expectedLeafId: "leaf-1", summary: { mode: "none" } }, "local");
+      expect(navigateTree).toHaveBeenCalledWith(oldSession, { targetId: "root", expectedLeafId: "leaf-1", summary: { mode: "none" }, retainCheckpoint: true }, "local");
       expect(forkTree).not.toHaveBeenCalled();
     }
     await expect(controller.actOnMessage("missing", action)).rejects.toThrow("no longer available");
@@ -188,7 +188,8 @@ describe("SessionController session tree navigation", () => {
       sessions: [oldSession],
       treeDialog: tree,
     };
-    const replacePromptEditorText = vi.fn();
+    const editorReplacement = deferred<undefined>();
+    const replacePromptEditorText = vi.fn<NonNullable<SessionControllerDependencies["replacePromptEditorText"]>>(() => editorReplacement.promise);
     const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>(() => transcriptSnapshotFixture(authoritativePage.promise, status(oldSession.id)));
     const api: typeof defaultApi = {
       ...defaultApi,
@@ -207,9 +208,12 @@ describe("SessionController session tree navigation", () => {
     const navigation = controller.navigateTree("root", { mode: "none" });
     await vi.waitFor(() => { expect(transcriptSnapshot).toHaveBeenCalledOnce(); });
     expect(state.treeDialog).toBe(tree);
-    expect(replacePromptEditorText).not.toHaveBeenCalled();
+    expect(replacePromptEditorText).toHaveBeenCalledWith({ machineId: "local", sessionId: oldSession.id, text: "edit after refresh" });
 
     authoritativePage.resolve(page("authoritative branch", 1));
+    await vi.waitFor(() => { expect(state.messages[0]?.parts).toEqual([{ type: "text", text: "authoritative branch" }]); });
+    expect(state.treeDialog).toBe(tree);
+    editorReplacement.resolve(undefined);
     await navigation;
 
     expect(replacePromptEditorText).toHaveBeenCalledWith({ machineId: "local", sessionId: oldSession.id, text: "edit after refresh" });
@@ -276,9 +280,9 @@ describe("SessionController session tree navigation", () => {
     expect(state.treeDialog).toBe(tree);
     expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("prompt editor replacement failed");  });
 
-  it("explicitly clears the editor draft when navigating to a non-user entry", async () => {
+  it("preserves the editor draft when navigation returns no editor text", async () => {
     const cacheKey = machineSessionKey("local", oldSession.id);
-    saveDraft(cacheKey, "stale editor text");
+    saveDraft(cacheKey, "unsent draft");
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession], treeDialog: tree };
     const replacePromptEditorText = vi.fn();
     const api: typeof defaultApi = {
@@ -297,8 +301,10 @@ describe("SessionController session tree navigation", () => {
 
     await controller.navigateTree("leaf-1", { mode: "none" });
 
-    expect(loadDraft(cacheKey)).toBe("");
-    expect(replacePromptEditorText).toHaveBeenCalledWith({ machineId: "local", sessionId: oldSession.id, text: "" });
+    expect(loadDraft(cacheKey)).toBe("unsent draft");
+    expect(replacePromptEditorText).not.toHaveBeenCalled();
+    expect(state.messages).toEqual([{ role: "assistant", parts: [{ type: "text", text: "selected entry" }] }]);
+    expect(state.treeDialog).toBeUndefined();
   });
 
   it("retains the tree on cancellation and errors and exposes abort and close lifecycle methods", async () => {

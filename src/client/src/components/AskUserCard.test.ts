@@ -5,6 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
 import { saveAskDraft } from "../askDrafts";
 import { AskUserCard, type AskUserSubmitCallback } from "./AskUserCard";
+import { settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
+
+useDeferredContent();
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -278,6 +281,8 @@ describe("ask-user-card context", () => {
 async function renderedContext(card: AskUserCard): Promise<ShadowRoot> {
   const formatted = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.ask-context"), "ask context");
   await formatted.updateComplete;
+  // Markdown formatting is deferred to a later frame.
+  await settleDeferredContent(formatted);
   return requiredElement(formatted.shadowRoot, "ask context shadow root");
 }
 

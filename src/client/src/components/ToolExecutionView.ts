@@ -1,8 +1,10 @@
-import { LitElement, css, html } from "lit";
+import { stylesheetIntegrationCapability } from "../plugins/styles";
+import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { writeClipboardText } from "../clipboard";
-import type { ToolExecutionPart } from "./shared";
-import { renderBuiltinTabIcon } from "./tabIcons";
+import type { ToolExecutionPart } from "../chatTypes";
+import { uiButtonStyles } from "./ui/controlStyles";
+import { uiTranscriptStyles } from "./ui/transcriptStyles";
 import "./BashLogButton";
 
 const MAX_COLLAPSED_DIFF_LINES = 180;
@@ -30,8 +32,9 @@ export function toolActionLabel(name: string): string {
 export function toolRowSummary(execution: ToolExecutionPart): ToolRowSummary {
   const argument = toolArgumentSummary(execution);
   if (execution.status === "pending" || execution.status === "running") return argument === "" ? {} : { argument };
-  const output = diffFromDetails(execution.details) ?? execution.preview?.diff ?? execution.resultText ?? execution.preview?.error;
-  const result = outputSummary(output);
+  // A diff shows its own +/- statistics; summarizing it again would rescan every line.
+  const hasDiff = diffFromDetails(execution.details) !== undefined || execution.preview?.diff !== undefined;
+  const result = hasDiff ? undefined : outputSummary(execution.resultText ?? execution.preview?.error);
   return {
     ...(argument === "" ? {} : { argument }),
     ...(result === undefined ? {} : { result }),
@@ -40,11 +43,26 @@ export function toolRowSummary(execution: ToolExecutionPart): ToolRowSummary {
 
 @customElement("tool-execution-view")
 export class ToolExecutionView extends LitElement {
+  constructor() {
+    super();
+    stylesheetIntegrationCapability.createController(this);
+  }
+
   @property({ attribute: false }) execution: ToolExecutionPart | undefined;
+  /** A result without its call (an orphan): show its diff and output open. */
   @property({ type: Boolean }) orphan = false;
   @property() machineId = "local";
   @state() private showFullDiff = false;
   @state() private copied = false;
+  @state() private diffOpen = true;
+  @state() private textOpen: boolean | undefined;
+  private countedDiff: string | undefined;
+  private diffStats: { added: number; removed: number; lines: number } | undefined;
+
+  protected override willUpdate(changed: PropertyValues<ToolExecutionView>): void {
+    const previous = changed.get("execution");
+    if (changed.has("execution") && this.execution?.status === "error" && previous?.status !== "error") this.textOpen = true;
+  }
 
   override render() {
     const execution = this.execution;
@@ -53,92 +71,115 @@ export class ToolExecutionView extends LitElement {
     const path = pathFromArgs(execution.args);
     const actualDiff = diffFromDetails(execution.details);
     const preview = execution.preview;
-    const hasPreviewError = preview?.error !== undefined && preview.error !== "";
     const visibleDiff = actualDiff ?? preview?.diff;
-    const diffStats = visibleDiff === undefined ? undefined : countDiffLines(visibleDiff);
+    if (visibleDiff !== this.countedDiff) {
+      this.countedDiff = visibleDiff;
+      this.diffStats = visibleDiff === undefined ? undefined : countDiffLines(visibleDiff);
+    }
+    const diffStats = this.diffStats;
     const previewMismatch = actualDiff !== undefined && preview?.diff !== undefined && actualDiff !== preview.diff;
-    const errorText = execution.status === "error" ? execution.resultText : undefined;
+    const errorText = execution.status === "error" ? execution.resultText : preview?.error;
     const bodyText = this.orphan && execution.status === "error" ? undefined
-      : this.orphan || visibleDiff === undefined || (execution.status === "success" && hasPreviewError) ? execution.resultText : undefined;
+      : this.orphan || visibleDiff === undefined ? execution.resultText : undefined;
     const target = toolTarget(execution, path);
     const row = toolRowSummary(execution);
-    const diffBody = visibleDiff === undefined ? null : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff");
+    const log = execution.toolName === "bash" ? logPath(execution.details) : undefined;
 
     return html`
-      <details class=${`tool-card ${execution.status}`} ?open=${hasPreviewError || (this.orphan && visibleDiff !== undefined)}>
-        <summary class="tool-row">
-          <span class="chevron">${renderBuiltinTabIcon("chevron")}</span>
-          <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
-          <strong>${toolActionLabel(execution.toolName)}</strong>
-          ${row.argument === undefined ? null : html`<span class="row-argument">${row.argument}</span>`}
-          ${row.result === undefined ? null : html`<span class="row-result">· ${row.result}</span>`}
-          ${execution.toolName !== "bash" || logPath(execution.details) === undefined ? null : html`<bash-log-button .logPath=${logPath(execution.details) ?? ""} .machineId=${this.machineId}></bash-log-button>`}
-        </summary>
-        <div class="tool-body">
+      <section class=${`tool-card ui-transcript-surface ui-transcript-activity ui-transcript-tool ${execution.status}`}>
+        <div class="tool-header ui-transcript-heading">
+          <div class="tool-title">
+            <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
+            <strong>${toolActionLabel(execution.toolName)}</strong>
+            ${this.renderHeaderTarget(target, row.argument)}
+            ${row.result === undefined ? null : html`<span class="row-result">· ${row.result}</span>`}
+            ${log === undefined ? null : html`<bash-log-button .logPath=${log} .machineId=${this.machineId}></bash-log-button>`}
+          </div>
           <div class="tool-meta">
             ${editCountLabel(execution) === undefined ? null : html`<span>${editCountLabel(execution)}</span>`}
-            ${diffStats === undefined ? null : html`<span class="diff-stats"><b class="added">+${String(diffStats.added)}</b><span>/</span><b class="removed">-${String(diffStats.removed)}</b></span>`}
+            ${diffStats === undefined ? null : html`<span class="diff-stats"><b class="added">+${diffStats.added}</b><span>/</span><b class="removed">-${diffStats.removed}</b></span>`}
             <span class="status-label">${statusLabel(execution.status)}</span>
           </div>
-          ${diffBody}
-          ${this.renderExpandedArguments(execution.args, target, visibleDiff !== undefined)}
-          ${previewMismatch ? html`<p class="notice">Applied diff differs from the preview.</p>` : null}
-          ${errorText === undefined || errorText === "" ? null : html`<pre class="error-text">${errorText}</pre>`}
-          ${hasPreviewError ? html`<span class="detail-label">Preview error</span><pre class="error-text">${preview.error}</pre>` : null}
-          ${this.renderTextBody(bodyText)}
         </div>
-      </details>
+
+        ${previewMismatch ? html`<p class="notice">Applied diff differs from the preview.</p>` : null}
+        ${errorText === undefined || errorText === "" ? null : html`<pre class="error-text">${errorText}</pre>`}
+        ${visibleDiff === undefined ? this.renderTextBody(bodyText, execution.status === "error", target) : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff", target)}
+        ${visibleDiff !== undefined && this.orphan ? this.renderTextBody(bodyText, true, undefined) : null}
+      </section>
     `;
   }
 
-  private renderExpandedArguments(args: unknown, target: ToolTarget | undefined, hasDiff: boolean) {
-    const text = formattedArguments(args) ?? target?.text;
-    if (text === undefined || text === "") return null;
-    return hasDiff ? html`
-      <details class="detail-target">
-        <summary class="detail-label">Arguments</summary>
-        <pre class="detail-target-value">${text}</pre>
-      </details>
-    ` : html`
-      <div class="detail-target">
-        <span class="detail-label">Arguments</span>
-        <pre class="detail-target-value">${text}</pre>
-      </div>
-    `;
+  private renderHeaderTarget(target: ToolTarget | undefined, summary: string | undefined) {
+    if (target === undefined) return null;
+    const className = target.label === "File" ? "path" : "summary";
+    return html`<span class=${className} title=${target.text} aria-label=${`${target.label}: ${target.text}`}>${summary ?? target.text}</span>`;
   }
 
-  private renderTextBody(text: string | undefined) {
-    if (text === undefined || text === "") return null;
+  private renderExpandedTarget(target: ToolTarget | undefined) {
+    if (target === undefined) return null;
     return html`
-      <div class="detail-result">
-        <span class="detail-label">Result</span>
-        <pre>${text}</pre>
+      <div class="detail-target">
+        <span class="detail-label">${target.label}</span>
+        <pre class="detail-target-value">${target.text}</pre>
       </div>
     `;
   }
 
-  private renderDiffBody(diff: string, label: string) {
+  private renderTextBody(text: string | undefined, open: boolean, target: ToolTarget | undefined) {
+    if ((text === undefined || text === "") && target === undefined) return null;
+    const expanded = this.textOpen ?? open;
+    return html`
+      <details class="text-body" ?open=${expanded} @toggle=${(event: Event) => {
+        if (event.currentTarget instanceof HTMLDetailsElement) this.textOpen = event.currentTarget.open;
+      }}>
+        <summary class="ui-transcript-disclosure">Details</summary>
+        ${expanded ? html`${this.renderExpandedTarget(target)}
+        ${text === undefined || text === "" ? null : html`
+          <div class="detail-result">
+            <span class="detail-label">Result</span>
+            <pre>${text}</pre>
+          </div>
+        `}` : null}
+      </details>
+    `;
+  }
+
+  private renderDiffBody(diff: string, label: string, target: ToolTarget | undefined) {
+    const lineCount = this.diffStats?.lines ?? 0;
+    return html`
+      <details class="diff-details" ?open=${this.diffOpen} @toggle=${(event: Event) => { this.onDiffToggle(event); }}>
+        <summary class="ui-transcript-disclosure">
+          <span>${label}</span>
+          <small>${String(lineCount)} ${lineCount === 1 ? "line" : "lines"}</small>
+        </summary>
+        ${this.diffOpen ? this.renderDiffContent(diff, label, target) : null}
+      </details>
+    `;
+  }
+
+  private renderDiffContent(diff: string, label: string, target: ToolTarget | undefined) {
     const lines = diff.split("\n");
     const truncated = !this.showFullDiff && lines.length > MAX_COLLAPSED_DIFF_LINES;
     const visibleLines = truncated ? lines.slice(0, MAX_COLLAPSED_DIFF_LINES) : lines;
     return html`
-      <div class="diff-details">
-        <div class="diff-heading">
-          <span>${label}</span>
-          <small>${String(lines.length)} ${lines.length === 1 ? "line" : "lines"}</small>
-        </div>
+        ${this.renderExpandedTarget(target)}
         <div class="diff-toolbar">
           <span>${truncated ? `Showing ${String(visibleLines.length)} of ${String(lines.length)} lines` : "Full diff"}</span>
-          <button type="button" @click=${() => { void this.copyDiff(diff); }}>${this.copied ? "Copied" : "Copy diff"}</button>
+          <button class="ui-button ui-button--compact" type="button" @click=${() => { void this.copyDiff(diff); }}>${this.copied ? "Copied" : "Copy diff"}</button>
         </div>
         <pre class="diff" aria-label=${label}><code class="diff-content">${visibleLines.map((line) => html`<span class=${diffLineClass(line)}>${line}</span>`)}</code></pre>
         ${truncated ? html`
-          <button class="show-more" type="button" @click=${() => { this.showFullDiff = true; }}>
+          <button class="show-more ui-button ui-button--compact" type="button" @click=${() => { this.showFullDiff = true; }}>
             Show all ${String(lines.length)} diff lines
           </button>
         ` : null}
-      </div>
     `;
+  }
+
+  private onDiffToggle(event: Event): void {
+    const details = event.currentTarget;
+    if (details instanceof HTMLDetailsElement) this.diffOpen = details.open;
   }
 
   private async copyDiff(diff: string): Promise<void> {
@@ -151,45 +192,44 @@ export class ToolExecutionView extends LitElement {
     window.setTimeout(() => { this.copied = false; }, 1200);
   }
 
-  static override styles = css`
+  static override styles = [uiButtonStyles, uiTranscriptStyles, css`
     :host { display: block; width: 100%; max-width: 100%; min-width: 0; color: var(--pi-text); }
-    .tool-card { display: block; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; overflow: hidden; color: var(--pi-text); }
-    .tool-card.running .status-icon, .tool-card.pending .status-icon { color: var(--pi-warning); }
-    .tool-card.success .status-icon { color: var(--pi-success); }
-    .tool-card.error .status-icon, .tool-card.error .status-label { color: var(--pi-danger); }
-    .tool-row { display: flex; align-items: center; gap: 7px; min-width: 0; padding: var(--pi-tool-row-padding, 5px) 0; overflow: hidden; list-style: none; cursor: pointer; }
-    .tool-row::-webkit-details-marker { display: none; }
-    .chevron { flex: 0 0 auto; display: inline-grid; color: var(--pi-muted); transition: transform .12s ease; }
-    .chevron .tab-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .tool-card[open] > .tool-row .chevron { transform: rotate(90deg); }
-    .status-icon, strong { flex: 0 0 auto; }
-    strong { color: var(--pi-text); }
-    .row-argument { min-width: 0; overflow: hidden; color: var(--pi-accent); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
-    .row-result { min-width: 0; overflow: hidden; color: var(--pi-muted); text-overflow: ellipsis; white-space: nowrap; }
-    .tool-body { min-width: 0; display: grid; gap: 8px; padding: 2px 0 8px 21px; overflow-wrap: anywhere; }
-    .tool-meta { display: inline-flex; align-items: baseline; gap: 8px; color: var(--pi-muted); font-size: 12px; }
+    .tool-card { display: grid; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; padding: 0; color: var(--pi-text); }
+    .tool-card.running, .tool-card.pending { --ui-activity-tone: var(--pi-warning); }
+    .tool-card.error { --ui-activity-tone: var(--pi-danger); }
+    .success .status-icon { color: var(--pi-success); }
+    .running .status-icon, .pending .status-icon { color: var(--pi-warning); }
+    .error .status-icon { color: var(--pi-danger); }
+    .tool-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; min-width: 0; }
+    .tool-title { flex: 1 1 auto; display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; }
+    .status-icon { flex: 0 0 auto; color: var(--pi-muted); }
+    strong { flex: 0 0 auto; color: var(--pi-text); }
+    .path, .summary { display: block; flex: 1 1 auto; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; white-space: pre; color: var(--pi-text); font: 13px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); direction: ltr; text-align: left; unicode-bidi: isolate; }
+    .summary { color: var(--pi-text-secondary); }
+    .row-result { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-muted); text-overflow: ellipsis; white-space: nowrap; }
+    .tool-meta { flex: 0 0 auto; display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 8px; color: var(--pi-text-secondary); font-size: 12px; }
     .diff-stats { display: inline-flex; gap: 3px; }
-    .added, .diff .added { color: var(--pi-success); }
-    .removed, .diff .removed { color: var(--pi-danger); }
-    .status-label { text-transform: uppercase; letter-spacing: .04em; color: var(--pi-muted); }
-    .notice { margin: 0; color: var(--pi-warning); }
+    .added, .diff .added { color: color-mix(in srgb, var(--pi-success) 65%, var(--pi-text) 35%); }
+    .removed, .diff .removed { color: color-mix(in srgb, var(--pi-danger) 65%, var(--pi-text) 35%); }
+    .status-label { color: var(--pi-text-secondary); }
+    .notice { margin: 0; padding: 8px 12px; color: var(--pi-warning); }
     .muted { margin: 0; color: var(--pi-muted); }
-    .error-text { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; background: color-mix(in srgb, var(--pi-danger) 7%, transparent); color: var(--pi-danger); padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .detail-target, .detail-result { display: grid; gap: 4px; min-width: 0; }
+    .error-text { margin: 0; color: var(--pi-danger); padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
+    .text-body { min-width: 0; }
+    .text-body[open], .diff-details[open] { padding-bottom: 12px; }
+    .text-body > summary { color: var(--pi-muted); }
+    .detail-target, .detail-result { display: grid; gap: 4px; margin: 8px 12px 0; min-width: 0; }
     .detail-label { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-    details.detail-target { display: block; }
-    details.detail-target > summary { cursor: pointer; }
-    .detail-result pre { box-sizing: border-box; max-width: 100%; margin: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; padding: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
-    .detail-target-value { box-sizing: border-box; max-width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-accent); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
-    .diff-details { min-width: 0; max-width: 100%; padding-top: 2px; }
-    .diff-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; color: var(--pi-muted); }
-    .diff-heading span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .diff-heading small { flex: 0 0 auto; color: var(--pi-dim); }
-    .diff-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; margin-top: 8px; color: var(--pi-muted); font-size: 12px; }
+    .text-body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); color: var(--pi-text); }
+    .detail-result pre { box-sizing: border-box; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; border: 1px solid var(--pi-border-muted); border-radius: 0; background: var(--pi-bg); padding: 8px; white-space: pre; overflow-wrap: normal; direction: ltr; text-align: left; unicode-bidi: isolate; }
+    .detail-target-value { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text-secondary); font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); direction: ltr; text-align: left; unicode-bidi: isolate; }
+    .diff-details { min-width: 0; max-width: 100%; }
+    .diff-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; color: var(--pi-muted); }
+    .diff-details > summary span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .diff-details > summary small { flex: 0 0 auto; color: var(--pi-dim); }
+    .diff-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; margin-top: 8px; color: var(--pi-muted); font-size: 12px; padding-inline: 12px; }
     .diff-toolbar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    button { border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); padding: 3px 7px; font: 12px system-ui, sans-serif; cursor: pointer; }
-    button:hover, button:focus { border-color: var(--pi-accent); }
-    .diff { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; margin: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-bg); padding: 8px 0; color: var(--pi-muted); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.45; }
+    .diff { box-sizing: border-box; width: calc(100% - 24px); max-width: 100%; min-width: 0; margin: 0 12px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--pi-border-muted); border-radius: 0; background: var(--pi-bg); padding: 8px 0; color: var(--pi-muted); font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); line-height: 1.45; }
     .diff-content { display: block; width: max-content; min-width: 100%; }
     .diff span { display: block; min-height: 1.45em; padding: 0 8px; white-space: pre; }
     .diff .context { color: var(--pi-muted); }
@@ -198,8 +238,8 @@ export class ToolExecutionView extends LitElement {
     .diff .meta { color: var(--pi-dim); }
     .diff .added { background: color-mix(in srgb, var(--pi-success) 12%, transparent); }
     .diff .removed { background: color-mix(in srgb, var(--pi-danger) 12%, transparent); }
-    .show-more { justify-self: start; }
-  `;
+    .show-more { justify-self: start; margin-inline: 12px; }
+  `];
 }
 
 function toolTarget(execution: ToolExecutionPart, path: string | undefined): ToolTarget | undefined {
@@ -214,10 +254,6 @@ function toolTarget(execution: ToolExecutionPart, path: string | undefined): Too
 function logPath(details: unknown): string | undefined {
   const path = getString(details, "logPath");
   return path?.startsWith("/") === true ? path : undefined;
-}
-
-function pathFromArgs(args: unknown): string | undefined {
-  return getString(args, "path") ?? getString(args, "file_path");
 }
 
 function toolArgumentSummary(execution: ToolExecutionPart): string {
@@ -243,14 +279,8 @@ function truncate(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
-function formattedArguments(args: unknown): string | undefined {
-  if (args === undefined) return undefined;
-  if (typeof args === "string") return args;
-  try {
-    return JSON.stringify(args, undefined, 2);
-  } catch {
-    return undefined;
-  }
+function pathFromArgs(args: unknown): string | undefined {
+  return getString(args, "path") ?? getString(args, "file_path");
 }
 
 function editCountLabel(execution: ToolExecutionPart): string | undefined {
@@ -265,14 +295,15 @@ function diffFromDetails(details: unknown): string | undefined {
   return getString(details, "diff");
 }
 
-function countDiffLines(diff: string): { added: number; removed: number } {
+function countDiffLines(diff: string): { added: number; removed: number; lines: number } {
   let added = 0;
   let removed = 0;
-  for (const line of diff.split("\n")) {
+  const lines = diff.split("\n");
+  for (const line of lines) {
     if (isAddedDiffLine(line)) added++;
     else if (isRemovedDiffLine(line)) removed++;
   }
-  return { added, removed };
+  return { added, removed, lines: lines.length };
 }
 
 function diffLineClass(line: string): string {
