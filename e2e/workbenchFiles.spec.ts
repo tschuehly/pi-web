@@ -252,7 +252,7 @@ async function addRemoteMachine(page: Page): Promise<void> {
 }
 
 const chatTab = (page: Page, sessionId: string) => page.locator(`workbench-window-tabs .chat-tab[data-session="${sessionId}"]`);
-const shownChat = (page: Page) => page.locator("main.chat-shell").first();
+const shownChat = (page: Page) => page.locator('.tile[data-focused="true"] main.chat-shell');
 
 /** Opens docs/notes.md from the open Files tree and leaves an unsaved edit in it. */
 async function editNotesInFiles(page: Page): Promise<Locator> {
@@ -298,7 +298,7 @@ test("edits made in Files while another workspace's Chat loads are asked about w
   await openFiles(page);
   let arrive = () => {};
   const arrived = new Promise<void>((resolve) => { arrive = resolve; });
-  await page.route((url) => url.pathname.includes(E2E_ADHOC_SESSION_ID) && url.pathname.includes("/messages"), async (route) => { await arrived; await route.continue(); });
+  await page.route((url) => url.pathname.includes(E2E_ADHOC_SESSION_ID) && url.pathname.includes("/transcript-snapshot"), async (route) => { await arrived; await route.continue(); });
   await chatTab(page, E2E_ADHOC_SESSION_ID).click();
   const pane = await editNotesInFiles(page);
   expect(asked).toEqual([]);

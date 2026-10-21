@@ -19,7 +19,7 @@ async function openWindow(page: Page): Promise<void> {
   await expect(shown(page)).toHaveAttribute("data-session", LONG);
 }
 
-const shown = (page: Page) => page.locator("main.chat-shell").first();
+const shown = (page: Page) => page.locator('.tile[data-focused="true"] main.chat-shell');
 const transcript = (page: Page) => shown(page).locator("chat-view .chat");
 
 async function show(page: Page, session: string): Promise<void> {
@@ -71,7 +71,7 @@ const tileTranscript = (page: Page, session: string) => page.locator(`.tile[data
 test("keeps each Grid tile's reading place when focus moves between tiles", async ({ page }) => {
   await openWindow(page);
   await page.keyboard.press("Control+g");
-  await expect(page.locator("workbench-chat-pane")).toHaveCount(1);
+  await expect(page.locator("workbench-chat-pane")).toHaveCount(2);
   const long = tileTranscript(page, LONG);
   await expect(long.locator("article").first()).toBeVisible();
   await expect(tileTranscript(page, RELEASE).locator("article").first()).toBeVisible();

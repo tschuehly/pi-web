@@ -73,6 +73,17 @@ describe("rendered modal layer visibility", () => {
     expect(hasRenderedModal(document)).toBe(false);
   });
 
+  it("does not restore an inactive Chat's opener when its dialog closes in the background", () => {
+    const trigger = appendTrigger("Open review");
+    trigger.focus();
+    const layer = mountLayer("background dialog");
+    layer.registration.focus();
+    layer.element.setAttribute("inert", "");
+    layer.view.remove();
+    layer.registration.unregister();
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it("refuses focus for a hidden layer so the caller can tell it is not rendered", () => {
     const trigger = appendTrigger("Open review");
     trigger.focus();
