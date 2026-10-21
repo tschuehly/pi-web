@@ -3,7 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { styleMap } from "lit/directives/style-map.js";
 import type { SessionStatus } from "../api";
 import { gridPage, gridPageCount, gridPageLead, NO_WORKSTREAM_KEY, windowGroups, workstreamKey, workstreamTabTarget, type ChatGroup, type WindowChat, type WindowLayout, type WorkbenchWindow } from "../workbenchWindows";
-import { workstreamAccentColor } from "../workstreamColor";
+import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor } from "../workstreamColor";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 export type ChatTabStatus = "needs" | "running" | "done" | "idle";
@@ -81,9 +81,10 @@ const onActivationKey = (activate: () => void) => (event: KeyboardEvent) => {
 };
 
 /**
- * Quiet text tabs: the selected Workstream's Chats beside the `tools` slot (the Chat's toolbar) and the window actions,
- * with a row of Workstream tabs above once two or more share the window. Selecting a Workstream reopens its last-active Chat.
- * In that top row, Chats without a Workstream are tabs of their own, and the lower row lists Chats only for a Workstream with several.
+ * Quiet text tabs in one row that ends in the `tools` slot (the Chat's menu) and the window actions. With one Workstream
+ * the row holds its Chats; with two or more it holds Workstream tabs, Chats without a Workstream as tabs of their own,
+ * and a second row beneath lists the selected Workstream's Chats only when it has several. Selecting a Workstream reopens
+ * its last-active Chat. Tabs of a Workstream in the first row carry a tint of its colour.
  */
 @customElement("workbench-window-tabs")
 export class WorkbenchWindowTabs extends LitElement {
@@ -146,14 +147,14 @@ export class WorkbenchWindowTabs extends LitElement {
     }
   };
   private readonly stripResizes = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(this.keepSelectedInView);
-  private observedStrip: Element | null = null;
+  private observedStrips: Element[] = [];
 
   protected override updated(changed: PropertyValues<this>): void {
-    const strip = this.renderRoot.querySelector(".tabs.chats");
-    if (strip !== this.observedStrip) {
+    const strips = [...this.renderRoot.querySelectorAll(".tabs")];
+    if (strips.length !== this.observedStrips.length || strips.some((strip, index) => strip !== this.observedStrips[index])) {
       this.stripResizes?.disconnect();
-      if (strip !== null) this.stripResizes?.observe(strip);
-      this.observedStrip = strip;
+      for (const strip of strips) this.stripResizes?.observe(strip);
+      this.observedStrips = strips;
     }
     if (changed.has("selected")) this.keepSelectedInView();
   }
@@ -161,7 +162,7 @@ export class WorkbenchWindowTabs extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.stripResizes?.disconnect();
-    this.observedStrip = null;
+    this.observedStrips = [];
   }
 
   private status(chat: WindowChat): ChatTabStatus {
@@ -176,21 +177,23 @@ export class WorkbenchWindowTabs extends LitElement {
     const activeKey = current === undefined ? groups[0]?.key : workstreamKey(current);
     const activeGroup = groups.find((group) => group.key === activeKey) ?? groups[0];
     const tabs = window.layout === "tabs";
-    const twoRows = tabs && groups.length >= 2;
-    // With two rows, a Chat already named on top needs no lower tab: loose Chats and a Workstream's only Chat.
-    const lowerChats = !twoRows || (activeGroup !== undefined && activeGroup.key !== NO_WORKSTREAM_KEY && activeGroup.chats.length > 1);
+    // A Grid on screen gives its tiles the whole window: Add and the layout move to each Chat's menu, a row stays only for pages.
+    if (!tabs && this.selected !== undefined) return this.renderGridPager(window);
+    const workstreamTabs = groups.length >= 2;
+    // A Chat already named on top needs no lower tab: loose Chats and a Workstream's only Chat.
+    const lowerChats = tabs && workstreamTabs && activeGroup?.workstream !== undefined && activeGroup.chats.length > 1 ? activeGroup : undefined;
+    const chatsLabel = (group: ChatGroup | undefined) => `${group?.workstream?.title ?? "No Workstream"} Chats`;
     return html`
       <nav aria-label=${window.name} @dragover=${this.onDragOver} @drop=${this.onDrop}>
-        ${!twoRows ? nothing : html`
-          <div class="tabs workstreams" role="tablist" aria-label=${`${window.name} Workstreams`}>
-            ${groups.map((group) => group.key === NO_WORKSTREAM_KEY
-              ? group.chats.map((chat) => this.renderChatTab(chat))
-              : this.renderWorkstreamTab(window, group, this.selected !== undefined && group === activeGroup))}
-          </div>`}
         <div class="bar">
-          ${!tabs ? this.renderGridLead(window) : !lowerChats ? html`<span class="spacer"></span>` : html`
-            <div class="tabs chats" role="tablist" aria-label=${`${activeGroup?.workstream?.title ?? "No Workstream"} Chats`}>
-              ${activeGroup?.chats.map((chat) => this.renderChatTab(chat))}
+          ${!tabs ? this.renderGridLead(window) : workstreamTabs ? html`
+            <div class="tabs workstreams" role="tablist" aria-label=${`${window.name} Workstreams`}>
+              ${groups.map((group) => group.key === NO_WORKSTREAM_KEY
+                ? group.chats.map((chat) => this.renderChatTab(chat))
+                : this.renderWorkstreamTab(window, group, this.selected !== undefined && group === activeGroup))}
+            </div>` : html`
+            <div class="tabs chats" role="tablist" aria-label=${chatsLabel(activeGroup)}>
+              ${activeGroup?.chats.map((chat) => this.renderChatTab(chat, activeGroup.workstream?.id))}
             </div>`}
           <slot name="tools"></slot>
           <div class="actions">
@@ -200,25 +203,36 @@ export class WorkbenchWindowTabs extends LitElement {
             </div>
           </div>
         </div>
+        ${lowerChats === undefined ? nothing : html`
+          <div class="tabs chats lower" role="tablist" aria-label=${chatsLabel(lowerChats)}>
+            ${lowerChats.chats.map((chat) => this.renderChatTab(chat))}
+          </div>`}
       </nav>
     `;
   }
 
-  /** Grid: the window's name, and pages of four tiles once there are more. */
+  /** Grid behind the home: the window's name beside its actions, the way back to its tiles. */
   private renderGridLead(window: WorkbenchWindow) {
+    return html`<div class="lead"><span class="window-name">${window.name}</span>${this.renderPager(window)}</div>`;
+  }
+
+  /** Grid on screen: only a slim row for pages of four tiles, once there are more. */
+  private renderGridPager(window: WorkbenchWindow) {
+    const pager = this.renderPager(window);
+    return pager === nothing ? nothing : html`<nav class="pager-row" aria-label=${window.name}>${pager}</nav>`;
+  }
+
+  private renderPager(window: WorkbenchWindow) {
     const pages = gridPageCount(window);
+    if (pages < 2 || window.maximized) return nothing;
     const page = gridPage(window);
     const turn = (to: number) => { this.select(gridPageLead(window, to)); };
     return html`
-      <div class="lead">
-        <span class="window-name">${window.name}</span>
-        ${pages < 2 || window.maximized ? nothing : html`
-          <span class="pager" role="group" aria-label="Grid pages">
-            <button aria-label="Previous page" ?disabled=${page === 0} @click=${() => { turn(page - 1); }}>${renderBuiltinTabIcon("chevron-left")}</button>
-            <span>${String(page + 1)} / ${String(pages)}</span>
-            <button aria-label="Next page" ?disabled=${page >= pages - 1} @click=${() => { turn(page + 1); }}>${renderBuiltinTabIcon("chevron")}</button>
-          </span>`}
-      </div>`;
+      <span class="pager" role="group" aria-label="Grid pages">
+        <button aria-label="Previous page" ?disabled=${page === 0} @click=${() => { turn(page - 1); }}>${renderBuiltinTabIcon("chevron-left")}</button>
+        <span>${String(page + 1)} / ${String(pages)}</span>
+        <button aria-label="Next page" ?disabled=${page >= pages - 1} @click=${() => { turn(page + 1); }}>${renderBuiltinTabIcon("chevron")}</button>
+      </span>`;
   }
 
   private renderWorkstreamTab(window: WorkbenchWindow, group: ChatGroup, selected: boolean) {
@@ -228,7 +242,7 @@ export class WorkbenchWindowTabs extends LitElement {
     const only = group.chats.length === 1 ? group.chats[0] : undefined;
     const move = this.moveHandlers(group.chats.map((chat) => chat.sessionId), only?.title ?? label);
     return html`
-      <div role="tab" tabindex="0" class="workstream-tab" data-session=${only?.sessionId ?? nothing} style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${only === undefined ? `Workstream: ${label}` : `Workstream: ${label} · ${only.title}`} draggable="true"
+      <div role="tab" tabindex="0" class=${group.workstream === undefined ? "workstream-tab" : "workstream-tab tinted"} data-session=${only?.sessionId ?? nothing} style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${only === undefined ? `Workstream: ${label}` : `Workstream: ${label} · ${only.title}`} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
         @auxclick=${(event: MouseEvent) => { if (only !== undefined && event.button === 1) this.close([only.sessionId]); }}>
         ${only === undefined ? nothing : this.renderChatMarker(only)}
@@ -239,12 +253,13 @@ export class WorkbenchWindowTabs extends LitElement {
       </div>`;
   }
 
-  private renderChatTab(chat: WindowChat) {
+  /** `tintFrom`: the Workstream whose colour tints the tab, when its Chats stand alone in the first row. */
+  private renderChatTab(chat: WindowChat, tintFrom?: string) {
     const status = this.status(chat);
     const open = () => { this.select(chat.sessionId); };
     const move = this.moveHandlers([chat.sessionId], chat.title);
     return html`
-      <div role="tab" tabindex="0" class="chat-tab" data-session=${chat.sessionId} data-status=${status} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.title} draggable="true"
+      <div role="tab" tabindex="0" class=${tintFrom === undefined ? "chat-tab" : "chat-tab tinted"} style=${workstreamStyle(tintFrom)} data-session=${chat.sessionId} data-status=${status} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.title} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
         @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([chat.sessionId]); }}>
         ${this.renderChatMarker(chat)}
@@ -264,20 +279,21 @@ export class WorkbenchWindowTabs extends LitElement {
   }
 
   static override styles = [chatStatusDotStyles, css`
-    /* Positioned above the stage, so the slotted Chat tools' drawer and popovers open over the Chat. */
+    /* Positioned above the stage, so the slotted Chat menu opens over the Chat. */
     :host { position: relative; z-index: 6; display: block; flex: 0 0 auto; min-width: 0; background: var(--pi-surface); color: var(--pi-text); font: 13px system-ui, sans-serif; user-select: none; }
     button { font: inherit; color: inherit; cursor: pointer; }
     svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    /* One row, one type size; --pi-toolbar-gap spaces the controls within the Chat's tools and within the window actions. */
-    .bar { display: flex; align-items: center; gap: 12px; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 8px 0 2px; font-size: 12px; }
+    /* One row, one type size: the tabs, then the Chat's menu and the window actions, tight and compact. */
+    .bar { display: flex; align-items: center; gap: 8px; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 6px 0 2px; font-size: 12px; }
     /*
-     * Two rows, one language: quiet text tabs on the surface, the selected one in --pi-text with a 2px underline,
-     * the Workstream colour (--ws) on top and neutral beneath so the two never compete. A tab sizes to its label
-     * between 120px and 200px, ellipsizing the rest (the full title is its tooltip); a crowded row shrinks its tabs
-     * to 120px, then scrolls while the tools beside it stay put. Selection changes only colour, at once: no fade, no
-     * width change.
+     * One language for both rows: quiet text tabs, the selected one in --pi-text with a 2px underline. A Workstream's
+     * tabs in the first row sit on a tint of its colour (--ws), stronger when selected; Chats without one and the lower
+     * row's Chats stay neutral, so the rows never compete. The tints are the contrast-checked Workstream surfaces. A tab
+     * sizes to its label between 120px and 200px, ellipsizing the rest (the full title is its tooltip); a crowded row
+     * shrinks its tabs to 120px, then scrolls while the tools beside it stay put. Selection changes only colour, at once:
+     * no fade, no width change.
      */
-    .tabs { flex: 1 1 auto; min-width: 0; align-self: stretch; display: flex; overflow-x: auto; scrollbar-width: none; }
+    .tabs { flex: 1 1 auto; min-width: 0; align-self: stretch; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
     /* WebKit before scrollbar-width would reserve a scrollbar's height and clip the selected tab's underline. */
     .tabs::-webkit-scrollbar { display: none; }
     .workstream-tab, .chat-tab { position: relative; flex: 0 1 auto; min-width: 120px; max-width: 200px; overflow: hidden; display: flex; align-items: center; gap: 6px; box-sizing: border-box; color: var(--pi-muted); white-space: nowrap; cursor: pointer; }
@@ -286,31 +302,38 @@ export class WorkbenchWindowTabs extends LitElement {
     .workstream-tab:hover::after { opacity: .35; }
     [aria-selected="true"]::after { opacity: 1; }
     .workstream-tab:focus-visible, .chat-tab:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -4px; border-radius: 6px; }
-    .tabs.workstreams { height: 34px; padding: 0 8px 0 2px; }
+    .bar .tabs > [role="tab"] { border-radius: 6px 6px 0 0; }
+    .tinted { background: color-mix(in srgb, var(--ws) ${WORKSTREAM_TINT_PERCENTAGES.tab}%, var(--pi-surface)); color: var(--pi-text); }
+    .tinted:hover { background: color-mix(in srgb, var(--ws) ${WORKSTREAM_TINT_PERCENTAGES.tab}%, var(--pi-surface-hover)); }
+    .tinted[aria-selected="true"] { background: color-mix(in srgb, var(--ws) ${WORKSTREAM_TINT_PERCENTAGES.tabSelected}%, var(--pi-surface-hover)); }
+    .tabs.lower { height: 32px; padding: 0 6px 0 2px; border-top: 1px solid var(--pi-border-muted); }
     .workstream-tab { padding: 0 10px; font-weight: 500; }
     .workstream-tab[data-session] { padding-right: 4px; }
     .count { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
     .tabs.chats { min-width: 120px; font-size: 12px; }
-    .spacer { flex: 1 1 auto; }
     .workstreams .chat-tab { font-weight: 500; }
     .chat-tab { padding: 0 4px 0 10px; }
     .chat-tab::after { right: 4px; background: var(--pi-text); }
+    .chat-tab.tinted::after { background: var(--ws); }
     .chat-tab:not([aria-selected="true"]):hover::after { opacity: .25; }
     .chat-tab[data-status="needs"] { color: var(--pi-text); }
     .questions { flex: 0 0 auto; min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px; border-radius: 8px; background: var(--pi-warning); color: var(--pi-bg); font: 700 10px/16px system-ui, sans-serif; text-align: center; font-variant-numeric: tabular-nums; }
-    .title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    /* The title takes a tab's free room, so its × sits at the tab's end. */
+    .title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .close { flex: 0 0 auto; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--pi-muted); }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
-    .actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--pi-toolbar-gap, 6px); }
-    .add { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); white-space: nowrap; }
+    .actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
+    .add { display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px 0 6px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); white-space: nowrap; }
     .add:hover, .add[aria-pressed="true"] { background: var(--pi-surface-hover); color: var(--pi-text); }
     .add:focus-visible, .segmented button:focus-visible, .pager button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .segmented { display: flex; gap: var(--pi-toolbar-gap, 6px); }
-    .segmented button { height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); }
+    .segmented { display: flex; gap: 4px; }
+    .segmented button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); }
     .segmented button:hover { color: var(--pi-text); }
     .segmented button[aria-pressed="true"] { background: var(--pi-surface-hover); color: var(--pi-text); }
     .lead { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding-left: 10px; }
     .window-name { color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
+    .pager-row { display: flex; justify-content: center; height: 22px; align-items: center; }
+    .pager-row .pager button { width: 20px; height: 20px; }
     .pager { display: flex; align-items: center; gap: 4px; color: var(--pi-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
     .pager button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; }
     .pager button:hover:not(:disabled) { background: var(--pi-surface-hover); }

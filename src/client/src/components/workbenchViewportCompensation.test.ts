@@ -11,7 +11,6 @@ import { ProjectDialog } from "./ProjectDialog";
 import { PromptEditor, promptEditorMaximumHeight } from "./PromptEditor";
 import { SessionTreeNavigator } from "./SessionTreeNavigator";
 import { WorkbenchApp } from "./WorkbenchApp";
-import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
 
 const viewportHeight = "var(--pi-workbench-viewport-height, 100vh)";
 const viewportWidth = "var(--pi-workbench-viewport-width, 100vw)";
@@ -65,10 +64,6 @@ describe("Workbench zoom-compensated viewport contracts", () => {
     const modalRule = rule(SessionTreeNavigator.styles, "modal-surface");
     expect(modalRule).toContain("--modal-surface-height: var(--pi-workbench-viewport-height, 100dvh)");
     expect(modalRule).toContain("--modal-surface-max-height: var(--pi-workbench-viewport-height, 100dvh)");
-  });
-
-  it("compensates the WorkstreamContextDrawer sheet height", () => {
-    expect(rule(WorkstreamContextDrawer.styles, ".sheet")).toContain(`max-height: min(calc(${viewportHeight} - 56px), calc(100cqh - 40px))`);
   });
 
   it("bounds the whole PromptEditor against half the compensated viewport", () => {

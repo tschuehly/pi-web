@@ -1,7 +1,7 @@
 export const WORKSTREAM_TINT_PERCENTAGES = {
   mark: 30,
-  drawer: 12,
-  drawerActive: 18,
+  tab: 12,
+  tabSelected: 26,
 } as const;
 
 /** A compact title-derived identity cue that remains distinct without colour. */
@@ -16,7 +16,7 @@ export function workstreamMonogram(title: string): string {
 
 /**
  * Deterministic accent colour per Workstream id, so the same Workstream reads
- * as the same colour everywhere it appears (chooser card, Chat drawer) without
+ * as the same colour everywhere it appears (chooser card, window tabs) without
  * a colour field in the Workstream store.
  *
  * Saturation and lightness are fixed constants tuned for both `color-scheme`

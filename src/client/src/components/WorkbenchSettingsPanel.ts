@@ -19,6 +19,8 @@ export class WorkbenchSettingsPanel extends LitElement {
   @property({ attribute: false }) themes: readonly QualifiedThemeContribution[] = [];
   @property({ attribute: false }) themePairs: readonly QualifiedThemePairContribution[] = [];
   @property({ attribute: false }) onThemePreferenceChange?: (preference: ThemePreference) => void;
+  /** Without its own ⚙ button: another control, such as a menu, opens it with `openFrom`. */
+  @property({ type: Boolean, attribute: "no-trigger" }) noTrigger = false;
 
   @state() private open = false;
   @state() private anchorTop = 0;
@@ -30,10 +32,13 @@ export class WorkbenchSettingsPanel extends LitElement {
   @state() private sleepError = "";
   @state() private sleepChangeError = "";
   private sleepPoll: ReturnType<typeof setInterval> | undefined;
+  /** The control that opened the popover, when not the panel's own button: it places the popover and takes focus back. */
+  private anchor: HTMLElement | undefined;
   private sleepReadVersion = 0;
 
   private readonly onDocumentClick = (event: MouseEvent): void => {
-    if (event.composedPath().includes(this)) return;
+    const path = event.composedPath();
+    if (path.includes(this) || (this.anchor !== undefined && path.includes(this.anchor))) return;
     this.close();
   };
 
@@ -50,7 +55,7 @@ export class WorkbenchSettingsPanel extends LitElement {
 
   override render() {
     return html`
-      <button
+      ${this.noTrigger ? nothing : html`<button
         class="trigger"
         type="button"
         aria-haspopup="dialog"
@@ -58,7 +63,7 @@ export class WorkbenchSettingsPanel extends LitElement {
         title="Workbench settings"
         aria-label="Workbench settings"
         @click=${() => { this.toggle(); }}
-      >⚙</button>
+      >⚙</button>`}
       ${this.open ? this.renderPopover() : nothing}
     `;
   }
@@ -115,8 +120,20 @@ export class WorkbenchSettingsPanel extends LitElement {
     `;
   }
 
+  /** Opens the popover below `anchor`, which takes focus back when it closes. */
+  openFrom(anchor: HTMLElement): void {
+    if (this.open) this.close();
+    this.anchor = anchor;
+    this.show();
+  }
+
   private toggle(): void {
     if (this.open) { this.close(); return; }
+    this.anchor = undefined;
+    this.show();
+  }
+
+  private show(): void {
     const appliedScale = parseInterfaceScale(document.documentElement.style.getPropertyValue(INTERFACE_SCALE_CSS_PROPERTY)) ?? this.scale;
     this.positionPopover(appliedScale);
     this.open = true;
@@ -135,7 +152,7 @@ export class WorkbenchSettingsPanel extends LitElement {
   }
 
   private positionPopover(scale: number): void {
-    const rect = this.renderRoot.querySelector(".trigger")?.getBoundingClientRect();
+    const rect = (this.anchor ?? this.renderRoot.querySelector(".trigger"))?.getBoundingClientRect();
     this.anchorTop = ((rect?.bottom ?? 0) + 6) / scale;
     this.anchorRight = Math.max(8, window.innerWidth - (rect?.right ?? window.innerWidth)) / scale;
   }
@@ -146,7 +163,7 @@ export class WorkbenchSettingsPanel extends LitElement {
     this.stopSleepPolling();
     document.removeEventListener("click", this.onDocumentClick);
     window.removeEventListener("resize", this.onWindowResize);
-    this.renderRoot.querySelector<HTMLButtonElement>(".trigger")?.focus();
+    (this.anchor ?? this.renderRoot.querySelector<HTMLButtonElement>(".trigger"))?.focus();
   }
 
   private onPopoverKeyDown(event: KeyboardEvent): void {
