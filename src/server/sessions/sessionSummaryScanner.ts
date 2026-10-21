@@ -3,6 +3,7 @@ import type { FileHandle } from "node:fs/promises";
 import type { Stats } from "node:fs";
 import { dirname, join } from "node:path";
 import { isRecord, tryParseEntry } from "./sessionFileFormat.js";
+import { HEADER_READ_CAP_BYTES, sessionHeaderSummaryFromEntry, type SessionHeaderSummary } from "./sessionFileHeader.js";
 import type { PiSessionListEntry } from "./piSessionService.js";
 
 /*
@@ -181,6 +182,26 @@ export class SessionSummaryScanner {
     return this.scanFileWithMemo(filePath, this.memo.get(dirname(filePath)));
   }
 
+  /** Unknown or stale headers fall back to the cold reader; no negative result is memoized. */
+  async memoizedHeader(filePath: string): Promise<SessionHeaderSummary | undefined> {
+    const memoized = this.memo.get(dirname(filePath))?.get(filePath);
+    if (memoized === undefined) return undefined;
+    const { fold } = memoized;
+    if (fold.header === undefined || fold.headerEnd === undefined || fold.headerEnd > HEADER_READ_CAP_BYTES) return undefined;
+    const header = sessionHeaderSummaryFromEntry(fold.header);
+    if (header === undefined) return undefined;
+    // Grabbing the entry before a concurrent invalidate can still answer with
+    // its old header: the same window as in-flight header sharing. The next
+    // lookup is fresh. This getter never changes the memo or joins a scan.
+    try {
+      const stats = await stat(filePath);
+      if (stats.dev === memoized.dev && stats.ino === memoized.ino && stats.size === memoized.size) return header;
+    } catch {
+      // A failed stat leaves the header unknown, so the caller tries its reader.
+    }
+    return undefined;
+  }
+
   private startDirectoryScan(sessionDir: string): Promise<PiSessionListEntry[]> {
     const entry: PendingDirectoryScan = { running: this.scanDirectory(sessionDir) };
     this.pendingScans.set(sessionDir, entry);
@@ -293,6 +314,8 @@ interface MemoizedSessionSummary {
 /** The summary-relevant state accumulated while folding a file's lines. */
 interface SummaryFoldState {
   header: Record<string, unknown> | undefined;
+  /** Exclusive LF end (absolute LF index + 1); undefined for an EOF-tail header. */
+  headerEnd: number | undefined;
   rejected: boolean;
   messageCount: number;
   firstMessageText: string | undefined;
@@ -300,7 +323,7 @@ interface SummaryFoldState {
 }
 
 function createEmptyFold(): SummaryFoldState {
-  return { header: undefined, rejected: false, messageCount: 0, firstMessageText: undefined, name: undefined };
+  return { header: undefined, headerEnd: undefined, rejected: false, messageCount: 0, firstMessageText: undefined, name: undefined };
 }
 
 /** One scanned session file: what it was read as, and what folding it produced. */
@@ -387,6 +410,7 @@ async function foldFileLines(file: FileHandle, fold: SummaryFoldState, chunkBuff
     let lineStart = 0;
     let newlineAt = data.indexOf(NEWLINE);
     while (newlineAt !== -1) {
+      const hadHeader = fold.header !== undefined;
       if (pendingChunks.length > 0) {
         // A line longer than one chunk: join the saved pieces and finish it.
         pendingChunks.push(Buffer.from(data.subarray(lineStart, newlineAt)));
@@ -396,6 +420,7 @@ async function foldFileLines(file: FileHandle, fold: SummaryFoldState, chunkBuff
       } else {
         processLineBytes(data, lineStart, newlineAt, fold);
       }
+      if (!hadHeader && fold.header !== undefined) fold.headerEnd = position + newlineAt + 1;
       if (fold.rejected) return position + bytesRead;
       lineStart = newlineAt + 1;
       newlineAt = data.indexOf(NEWLINE, lineStart);
