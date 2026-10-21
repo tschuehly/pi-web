@@ -274,7 +274,8 @@ async function openGrid(page: Page, sessions: readonly string[], focused = sessi
   if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
   const workstreams = [{ id: "ws-dogfooding", title: "Dogfooding" }, { id: "ws-docs", title: "Docs" }, { id: "ws-grid", title: "Grid focus" }];
   const chats = sessions.map((sessionId, index) => ({ sessionId, title: `Chat ${String(index + 1)}`, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream: workstreams[index % workstreams.length] }));
-  await page.addInitScript(([key, value]) => { localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify({ e2e: { name: "Window 1", layout: "grid", maximized: false, focused, lastActive: {}, chats } })] as const);
+  // Seeds only the first load, so a reload finds what the window stored.
+  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify({ e2e: { name: "Window 1", layout: "grid", maximized: false, focused, lastActive: {}, chats } })] as const);
   await page.setViewportSize({ width: 1440, height: 900 });
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
@@ -359,6 +360,114 @@ test("a window-wide notice shows once above the Grid and stays put when focus mo
   await focusTile(page, RELEASE);
   await expect(notice).toHaveCount(1);
   expect(movedTiles(before, await page.evaluate(gridLayout))).toEqual([]);
+});
+
+/** Drags `axis`'s divider by `delta` px from a quarter along it, clear of the other divider, crossing tile content in small steps. */
+async function dragDivider(page: Page, axis: "columns" | "rows", delta: number): Promise<void> {
+  const box = await page.locator(`.grid-divider[data-axis="${axis}"]`).boundingBox();
+  if (box === null) throw new Error(`no ${axis} divider`);
+  const [x, y] = axis === "columns" ? [box.x + box.width / 2, box.y + box.height / 4] : [box.x + box.width / 4, box.y + box.height / 2];
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(axis === "columns" ? x + delta : x, axis === "rows" ? y + delta : y, { steps: 12 });
+  await page.mouse.up();
+}
+
+const tileBox = async (page: Page, session: string) => {
+  const box = await page.locator(`.grid > .tile:has(main.chat-shell[data-session="${session}"]), .grid > .tile[data-session="${session}"]`).boundingBox();
+  if (box === null) throw new Error(`tile ${session} is not on screen`);
+  return box;
+};
+
+test("dragging the Grid's dividers resizes its columns and rows, which survive focus, Files and a reload", async ({ page }) => {
+  const sessions = [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id];
+  await openGrid(page, sessions);
+  const columns = page.locator('.grid-divider[data-axis="columns"]');
+  const rows = page.locator('.grid-divider[data-axis="rows"]');
+  await expect(columns).toHaveAttribute("aria-valuenow", "50");
+  await expect(columns).toHaveCSS("cursor", "col-resize");
+  await expect(rows).toHaveCSS("cursor", "row-resize");
+  // Wider than the 1px gutter it sits on.
+  expect((await columns.boundingBox())?.width).toBeGreaterThanOrEqual(8);
+
+  // No jump: grabbing the divider moves nothing, the tile follows the pointer, and the release keeps it there.
+  const even = await tileBox(page, NOTES);
+  const handle = await columns.boundingBox();
+  if (handle === null) throw new Error("no columns divider");
+  await page.mouse.move(handle.x + handle.width / 2 + 3, handle.y + handle.height / 4);
+  await page.mouse.down();
+  expect((await tileBox(page, NOTES)).width).toBeCloseTo(even.width, 0);
+  await page.mouse.move(handle.x + handle.width / 2 + 303, handle.y + handle.height / 4, { steps: 12 });
+  const dragged = (await tileBox(page, NOTES)).width;
+  expect(dragged).toBeCloseTo(even.width + 300, -1);
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  expect((await tileBox(page, NOTES)).width).toBeCloseTo(dragged, 0);
+  await dragDivider(page, "rows", -150);
+  const first = await tileBox(page, NOTES);
+  const grid = await page.locator(".grid").boundingBox();
+  if (grid === null) throw new Error("no grid");
+  expect(first.width).toBeCloseTo((grid.width - 1) / 2 + 300, -1);
+  expect(first.height).toBeCloseTo((grid.height - 1) / 2 - 150, -1);
+  await expect(columns).not.toHaveAttribute("aria-valuenow", "50");
+  // The divider stays on the gutter between the tiles.
+  const divider = await columns.boundingBox();
+  expect((divider?.x ?? 0) + (divider?.width ?? 0) / 2).toBeCloseTo(first.x + first.width + 0.5, 0);
+
+  // A drag past the minimum stops there: the far tile keeps 320px.
+  await dragDivider(page, "columns", 2000);
+  expect((await tileBox(page, RELEASE)).width).toBeGreaterThanOrEqual(319);
+  await columns.dblclick();
+  await expect(columns).toHaveAttribute("aria-valuenow", "50");
+  await dragDivider(page, "columns", 300);
+
+  const before = await page.evaluate(gridLayout);
+  await focusTile(page, RELEASE);
+  expect(movedTiles(before, await page.evaluate(gridLayout))).toEqual([]);
+  await page.reload();
+  await expect(page.locator(".grid > .tile")).toHaveCount(4);
+  await expect.poll(async () => (await tileBox(page, NOTES)).width).toBeCloseTo(first.width, -1);
+  expect((await tileBox(page, NOTES)).height).toBeCloseTo(first.height, -1);
+
+  // Files narrows the Grid but keeps the shares, as far as the far tile's minimum allows.
+  const gridWidth = async () => (await page.locator(".grid").boundingBox())?.width ?? Number.NaN;
+  const share = (await tileBox(page, NOTES)).width / await gridWidth();
+  await (await openChatMenu(page.locator('.tile[data-focused="true"] > .tile-bar'))).locator(".files-toggle").click();
+  await expect(page.locator("workbench-files-pane")).toBeVisible();
+  await expect.poll(async () => (await tileBox(page, NOTES)).width / await gridWidth()).toBeCloseTo(Math.min(share, 1 - 321 / (await gridWidth())), 1);
+
+  // Keyboard: arrows along the divider's axis, Shift for larger steps.
+  await rows.focus();
+  const valueNow = Number(await rows.getAttribute("aria-valuenow"));
+  await page.keyboard.press("ArrowDown");
+  await expect(rows).toHaveAttribute("aria-valuenow", String(valueNow + 2));
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect(rows).toHaveAttribute("aria-valuenow", String(valueNow - 8));
+});
+
+test("captures resized Grids for review", async ({ browser }) => {
+  test.skip(SHOTS === undefined, "set PI_WEB_E2E_SCREENSHOTS to keep review screenshots");
+  test.setTimeout(180_000);
+  for (const scheme of ["dark", "light"] as const) {
+    for (const count of [2, 3, 4]) {
+      const context = await browser.newContext({ colorScheme: scheme });
+      const page = await context.newPage();
+      await openGrid(page, [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id].slice(0, count));
+      await dragDivider(page, "columns", 260);
+      if (count > 2) await dragDivider(page, "rows", -140);
+      // Off the dividers, so the shot shows them at rest rather than hovered.
+      await page.mouse.move(120, 600);
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: join(SHOTS ?? "", `grid-resized-${String(count)}-${scheme}.png`) });
+      if (count === 4) {
+        await page.locator('.grid-divider[data-axis="rows"]').focus();
+        await page.keyboard.press("ArrowUp");
+        await page.waitForTimeout(200);
+        await page.screenshot({ path: join(SHOTS ?? "", `grid-resized-4-divider-focused-${scheme}.png`) });
+      }
+      await context.close();
+    }
+  }
 });
 
 test("one click on a resting tile's menu focuses the tile and opens its menu, Files then opening beside the Grid", async ({ page }) => {

@@ -31,7 +31,20 @@ export interface WorkbenchWindow {
   maximized: boolean;
   /** Workstream key (see {@link workstreamKey}) → its last-active Chat, so selecting a Workstream reopens it. */
   lastActive: Record<string, string>;
+  /** Grid only: the dragged share of the first column and row, on every page; an axis without one splits evenly. */
+  gridSplit?: GridSplit | undefined;
 }
+
+/** A Grid divider: between the columns, or between the rows. */
+export type GridAxis = "columns" | "rows";
+
+/** Each axis's share (strictly between 0 and 1) of its first track. */
+export type GridSplit = Partial<Record<GridAxis, number | undefined>>;
+
+/** Smallest tile, in px, that keeps its tile bar and composer usable; narrower Grids split evenly. */
+export const GRID_MIN_TILE: Readonly<Record<GridAxis, number>> = { columns: 320, rows: 220 };
+const GRID_KEYBOARD_STEP = 0.02;
+const GRID_LARGE_KEYBOARD_STEP = 0.1;
 
 export type WindowStore = Record<string, WorkbenchWindow>;
 
@@ -131,8 +144,7 @@ export function closeChats(store: WindowStore, windowId: string, sessionIds: rea
   if (window === undefined) return store;
   const closing = new Set(sessionIds);
   const order = orderedChats(window).map((chat) => chat.sessionId);
-  const next = cloneWindow(window);
-  next.chats = next.chats.filter((chat) => !closing.has(chat.sessionId));
+  const next = fitGridSplit(cloneWindow(window), window.chats.filter((chat) => !closing.has(chat.sessionId)));
   if (window.focused === undefined || !closing.has(window.focused)) return { ...store, [windowId]: next };
   const index = order.indexOf(window.focused);
   const successor = order.slice(index + 1).find((id) => !closing.has(id)) ?? order.slice(0, index).reverse().find((id) => !closing.has(id));
@@ -193,6 +205,47 @@ export function gridTiles(window: WorkbenchWindow): GridTile[] {
   });
 }
 
+/** The share of the first column or row: the stored one, else an even split. */
+export function gridRatio(window: WorkbenchWindow, axis: GridAxis): number {
+  return window.gridSplit?.[axis] ?? 0.5;
+}
+
+/** Stores a divider's share; `undefined` splits that axis evenly again. */
+export function resizeGrid(store: WindowStore, windowId: string, axis: GridAxis, ratio: number | undefined): WindowStore {
+  const window = store[windowId];
+  const rounded = ratio === undefined ? undefined : Math.round(ratio * 10_000) / 10_000;
+  if (window === undefined || window.gridSplit?.[axis] === rounded) return store;
+  return { ...store, [windowId]: fitGridSplit(cloneWindow(window), window.chats, { ...window.gridSplit, [axis]: rounded }) };
+}
+
+/** The shares that leave both tiles `minimum` px of `size`: only even when both cannot fit; anything while unmeasured. */
+export function gridRatioBounds(size: number, minimum: number): { min: number; max: number } {
+  if (!(size > 0)) return { min: 0, max: 1 };
+  const min = Math.min(0.5, minimum / size);
+  return { min, max: 1 - min };
+}
+
+export function clampGridRatio(ratio: number, size: number, minimum: number): number {
+  const { min, max } = gridRatioBounds(size, minimum);
+  return Math.min(Math.max(ratio, min), max);
+}
+
+/** The share after dragging a divider from `start` to `position` px along an axis `size` px long. */
+export function gridRatioFromDrag(startRatio: number, start: number, position: number, size: number, minimum: number): number {
+  return clampGridRatio(size > 0 ? startRatio + (position - start) / size : startRatio, size, minimum);
+}
+
+/** Arrows toward the first track shrink it (Shift: larger steps), Home/End go to the bounds; other keys give undefined. */
+export function gridRatioFromKeyboard(ratio: number, axis: GridAxis, key: string, largeStep: boolean, size: number, minimum: number): number | undefined {
+  const bounds = gridRatioBounds(size, minimum);
+  if (key === "Home") return bounds.min;
+  if (key === "End") return bounds.max;
+  const [shrink, grow] = axis === "columns" ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
+  const step = largeStep ? GRID_LARGE_KEYBOARD_STEP : GRID_KEYBOARD_STEP;
+  const delta = key === shrink ? -step : key === grow ? step : undefined;
+  return delta === undefined ? undefined : clampGridRatio(ratio + delta, size, minimum);
+}
+
 /** The stored windows, dropping anything that does not have the window shape. */
 export function parseWindowStore(raw: string | null): WindowStore {
   let parsed: unknown;
@@ -213,14 +266,32 @@ function parseWindow(value: unknown): WorkbenchWindow | undefined {
   const recent = value["lastActive"];
   if (isRecord(recent)) for (const [key, id] of Object.entries(recent)) if (typeof id === "string") lastActive[key] = id;
   const focused = value["focused"];
-  return {
+  const split = value["gridSplit"];
+  return fitGridSplit({
     name: value["name"],
     chats,
     focused: typeof focused === "string" && chats.some((chat) => chat.sessionId === focused) ? focused : undefined,
     layout: value["layout"] === "grid" ? "grid" : "tabs",
     maximized: value["maximized"] === true,
     lastActive,
-  };
+  }, chats, isRecord(split) ? { columns: shareOf(split["columns"]), rows: shareOf(split["rows"]) } : {});
+}
+
+function shareOf(value: unknown): number | undefined {
+  return typeof value === "number" && value > 0 && value < 1 ? value : undefined;
+}
+
+/**
+ * `window` holding `chats`, keeping only the shares of dividers they still have: columns from two Chats, rows from three.
+ * Fewer Chats reset that axis to even, so a later tile does not inherit a split made for another layout.
+ */
+function fitGridSplit(window: WorkbenchWindow, chats: WindowChat[], split: GridSplit | undefined = window.gridSplit): WorkbenchWindow {
+  const kept: GridSplit = {};
+  if (split?.columns !== undefined && chats.length >= 2) kept.columns = split.columns;
+  if (split?.rows !== undefined && chats.length >= 3) kept.rows = split.rows;
+  const next: WorkbenchWindow = { ...window, chats };
+  delete next.gridSplit;
+  return kept.columns === undefined && kept.rows === undefined ? next : { ...next, gridSplit: kept };
 }
 
 function parseChat(value: unknown): WindowChat | undefined {
