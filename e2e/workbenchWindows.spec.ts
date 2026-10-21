@@ -11,8 +11,8 @@ const [NOTES, RELEASE, GUIDE] = [E2E_SESSION_ID, E2E_MORE_CHATS[0].id, E2E_MORE_
  * One window holding the three fixture Chats: two in a long-named Workstream, one in another (or all in one).
  * Crowded: one Workstream of eight long-titled tabs, five of them placeholders, NOTES last.
  */
-function seededWindow(workspaceId: string, oneWorkstream = false, crowded = false) {
-  const chat = (sessionId: string, title: string, workstream: { id: string; title: string }) => ({ sessionId, title, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream });
+function seededWindow(workspaceId: string, oneWorkstream = false, crowded = false, looseGuide = false) {
+  const chat = (sessionId: string, title: string, workstream: { id: string; title: string } | undefined) => ({ sessionId, title, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream });
   const dogfooding = { id: "ws-dogfooding", title: "Pi Workbench UI dogfooding and two-tier tab layout review" };
   const docs = { id: "ws-docs", title: "Docs" };
   if (crowded) {
@@ -22,17 +22,17 @@ function seededWindow(workspaceId: string, oneWorkstream = false, crowded = fals
   return {
     e2e: {
       name: "Window 1", layout: "tabs", maximized: false, focused: NOTES, lastActive: {},
-      chats: [chat(NOTES, "Where are the notes?", dogfooding), chat(RELEASE, "Draft the release notes", dogfooding), chat(GUIDE, "Review the install guide", oneWorkstream ? dogfooding : docs)],
+      chats: [chat(NOTES, "Where are the notes?", dogfooding), chat(RELEASE, "Draft the release notes", dogfooding), chat(GUIDE, "Review the install guide", looseGuide ? undefined : oneWorkstream ? dogfooding : docs)],
     },
   };
 }
 
-async function openSeededWindow(page: Page, oneWorkstream = false, crowded = false): Promise<void> {
+async function openSeededWindow(page: Page, oneWorkstream = false, crowded = false, looseGuide = false): Promise<void> {
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
   // Only the first page seeds: a window this test opens later must find the store as the first one left it.
-  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify(seededWindow(workspaceId, oneWorkstream, crowded))] as const);
+  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify(seededWindow(workspaceId, oneWorkstream, crowded, looseGuide))] as const);
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
   await page.goto(target.toString());
@@ -67,7 +67,9 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
   await workstreamTab(page, "Docs").click();
   await expect(shownChat(page)).toHaveAttribute("data-session", GUIDE);
-  await expect(page.locator("workbench-window-tabs .chat-tab .title")).toHaveText(["Review the install guide"]);
+  // Docs holds one Chat: its Workstream tab stands for it, so no Chat tab repeats it beneath.
+  await expect(page.locator("workbench-window-tabs .chat-tab")).toHaveCount(0);
+  await expect(workstreamTab(page, "Docs").locator(".close")).toBeVisible();
   await workstreamTab(page, "dogfooding").focus();
   await page.keyboard.press("Enter");
   await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
@@ -104,7 +106,9 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await expect(tabRowTools(moved).locator(".files-toggle")).toBeVisible();
   expect(new URL(moved.url()).searchParams.get("win")).not.toBe("e2e");
   await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
-  await expect(page.locator("workbench-window-tabs .chat-tab .title")).toHaveText(["Draft the release notes"]);
+  // Both Workstreams now hold one Chat each: their tabs stand for those Chats, with no Chat row beneath.
+  await expect(page.locator("workbench-window-tabs .chat-tab")).toHaveCount(0);
+  await expect(workstreamTab(page, "dogfooding")).toHaveAttribute("data-session", RELEASE);
 });
 
 interface SwitchFrame { phase: string; tabs: { session: string; width: number; selected: boolean; status: string; color: string; opacity: string }[]; shown: string; articles: number; scrollTop: number; atBottom: boolean }
@@ -726,6 +730,26 @@ for (const scenario of ["move", "reselect", "missed-startup", "images-and-send"]
     } finally { release(); }
   });
 }
+
+test("a Chat without a Workstream is a tab of its own beside the Workstreams, with no lower row", async ({ page }) => {
+  await openSeededWindow(page, false, false, true);
+  const top = page.locator("workbench-window-tabs .tabs.workstreams [role=tab] .title");
+  await expect(top).toHaveText(["Pi Workbench UI dogfooding and two-tier tab layout review", "Review the install guide"]);
+  await expect(page.locator("workbench-window-tabs")).not.toContainText("No Workstream");
+  await expect(page.locator("workbench-window-tabs .bar .chat-tab .title")).toHaveText(["Where are the notes?", "Draft the release notes"]);
+  const before = await page.locator("workbench-window-tabs .bar .add").boundingBox();
+  await page.locator("workbench-window-tabs .tabs.workstreams .chat-tab", { hasText: "Review the install guide" }).click();
+  await expect(shownChat(page)).toHaveAttribute("data-session", GUIDE);
+  await expect(page.locator("workbench-window-tabs .bar .chat-tab")).toHaveCount(0);
+  expect(await page.locator("workbench-window-tabs .bar .add").boundingBox()).toEqual(before);
+  if (SHOTS !== undefined) {
+    await page.screenshot({ path: join(SHOTS, "tabs-loose-selected.png") });
+    await workstreamTab(page, "dogfooding").click();
+    await expect(page.locator("workbench-window-tabs .bar .chat-tab")).toHaveCount(2);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: join(SHOTS, "tabs-loose-ws-selected.png") });
+  }
+});
 
 test("captures the window layouts for review", async ({ browser }) => {
   test.skip(SHOTS === undefined, "set PI_WEB_E2E_SCREENSHOTS to keep review screenshots");

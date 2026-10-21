@@ -2136,11 +2136,12 @@ describe("window tabs", () => {
     const app = new WorkbenchApp();
     document.body.append(app);
     await vi.waitFor(async () => { await app.updateComplete; expect(chatTabs(app)).toEqual(["Plan the release"]); });
-    for (const title of ["Release notes", "Install guide"]) {
+    for (const [title, sessionId] of [["Release notes", "a2"], ["Install guide", "b1"]] as const) {
       tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
       await vi.waitFor(() => { expect(sessionTitles(app)).toContain(title); });
       [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? [])].find((button) => button.textContent.includes(title))?.click();
-      await vi.waitFor(() => { expect(chatTabs(app)).toContain(title); });
+      // Docs holds one Chat, so its only tab is the Workstream tab on top.
+      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(sessionId); });
     }
     await vi.waitFor(async () => { await app.updateComplete; expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]); });
     return app;
@@ -2385,7 +2386,7 @@ describe("window tabs", () => {
     const opened = vi.spyOn(window, "open").mockReturnValue(null);
     const app = await mountWithWorkstreamChats();
 
-    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true, clientX: 30, clientY: 40 }));
+    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true, clientX: 30, clientY: 40 }));
     await app.updateComplete;
     const menu = app.shadowRoot?.querySelector<HTMLElement>('.window-menu[aria-label="Install guide"]');
     expect([...(menu?.querySelectorAll("button") ?? [])].map((item) => item.textContent.trim())).toEqual(["Move to new window", "Close"]);
@@ -2423,7 +2424,7 @@ describe("window tabs", () => {
     if (pane === null || pane === undefined) throw new Error("Files pane was not mounted");
     const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
 
-    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
     await app.updateComplete;
     app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
     await app.updateComplete;
@@ -2433,7 +2434,7 @@ describe("window tabs", () => {
     expect(getState(app).selectedSession?.id).toBe("b1");
 
     canClose.mockClear().mockReturnValue(true);
-    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
     await app.updateComplete;
     app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
@@ -2605,7 +2606,7 @@ describe("window tabs", () => {
       expect(localStorage.getItem(WINDOW_STORE_KEY)).toBeNull();
       expect(parseWindowStore(sessionStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats).toHaveLength(3);
 
-      tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+      tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
       await app.updateComplete;
       expect([...(app.shadowRoot?.querySelectorAll(".window-menu button") ?? [])].map((item) => item.textContent.trim())).toEqual(["Close"]);
     } finally {
@@ -2691,7 +2692,7 @@ describe("window tabs", () => {
       setItem(key, value);
     });
 
-    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
     await app.updateComplete;
     app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
     await vi.waitFor(() => { expect(writable).not.toEqual([]); });
@@ -3095,7 +3096,7 @@ describe("window tabs", () => {
     promptEditor(app).replaceText("saved draft");
     vi.spyOn(localStorage, "setItem").mockImplementation(() => { throw new DOMException("full", "QuotaExceededError"); });
     promptEditor(app).replaceText("saved draft plus unsaved edits");
-    tabsRoot(app).querySelector('.chat-tab[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
     await app.updateComplete;
     [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((item) => item.textContent.trim() === "Move to new window")?.click();
     await vi.waitFor(() => {
