@@ -96,7 +96,7 @@ describe("DelegateRoster delegate rows", () => {
     expect(times("delegate:fresh")).toEqual(["45s ago", "12m"]);
     expect(row(shadow, "delegate:fresh").querySelector(".status .visually-hidden")?.textContent).toBe("Reported ");
     expect(row(shadow, "delegate:fresh").querySelector(".elapsed .visually-hidden")?.textContent).toBe("Running for ");
-    expect(times("delegate:quiet")).toEqual(["15m ago", "1h 20m"]);
+    expect(times("delegate:quiet"), "a quiet delegate says so in words").toEqual(["Quiet 15m", "1h 20m"]);
     const quiet = row(shadow, "delegate:quiet").querySelector(".status");
     expect(quiet?.classList.contains("quiet")).toBe(true);
     expect(quiet?.getAttribute("title")).toBe("No status report for 15m; it may be stuck");

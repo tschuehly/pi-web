@@ -150,7 +150,9 @@ export class DelegateRoster extends LitElement {
     return this.renderRow({
       key: `delegate:${item.id}`, tone: "running", shape: item.kind === "worker" ? ICONS.worker : ICONS.subagent, iconLabel: `${kind}, running`,
       name: item.name ?? "Unnamed", nameTitle: details, report: item.reportedStatus, reportLabel: "Status", fallback: "Waiting for its first status report",
-      status: age === undefined ? nothing : html`${quiet ? icon(ICONS.quiet, "quiet-icon") : nothing}<span class="visually-hidden">${item.reportedAt === undefined ? "Started" : "Reported"} </span>${age}`,
+      status: reportAge === undefined || age === undefined ? nothing
+        : quiet ? html`${icon(ICONS.quiet, "quiet-icon")}Quiet ${formatElapsed(reportAge)}`
+        : html`<span class="visually-hidden">${item.reportedAt === undefined ? "Started" : "Reported"} </span>${age}`,
       statusTitle: reportAge === undefined || age === undefined ? undefined : quiet ? `No status report for ${formatElapsed(reportAge)}; it may be stuck` : `${item.reportedAt === undefined ? "Started" : "Last status report"} ${age}`,
       quiet, elapsed: since(item.startedAt, now),
     });
@@ -178,7 +180,7 @@ export class DelegateRoster extends LitElement {
     return html`<div class="row running" data-row-key=${`background-bash:${item.id}`}>
       <span class="kind" role="img" aria-label="Background bash, running" title="Background bash, running">${icon(ICONS.backgroundShell)}</span>
       <button type="button" class="name expand" aria-expanded=${String(expanded)} aria-controls=${logId} title=${expanded ? "Hide output" : "Show output"} @click=${() => { this.toggleBashJob(item.id); }}>
-        ${icon(ICONS.chevron, "chevron")}<span>${item.description ?? "Background bash"}</span>
+        <span>${item.description ?? "Background bash"}</span>${icon(ICONS.chevron, "chevron")}
       </button>
       ${item.command === undefined
         ? html`<span class="report fallback">Command not shown</span>`
