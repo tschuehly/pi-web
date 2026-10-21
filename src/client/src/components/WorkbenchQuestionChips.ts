@@ -99,8 +99,8 @@ export class WorkbenchQuestionChips extends LitElement {
     .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .chip:hover, .chip[aria-expanded="true"] { border-color: var(--pi-warning); }
     .chip:focus-visible, .close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    /* Rises from the composer, as tall as its forms up to 60% of the tile (cqh), then scrolls them. */
-    .drawer { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; max-height: min(60cqh, 640px); overflow: hidden; margin: 6px var(--pi-panel-padding, 10px) 0; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 -10px 30px var(--pi-shadow-soft); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
+    /* Rises from the composer, as tall as its forms up to 60% of the tile (cqh, or the height a Grid resize froze), then scrolls them. */
+    .drawer { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; max-height: min(calc(0.6 * var(--pi-tile-height, 100cqh)), 640px); overflow: hidden; margin: 6px var(--pi-panel-padding, 10px) 0; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 -10px 30px var(--pi-shadow-soft); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
     header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); font: 12px system-ui, sans-serif; }
     .close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); cursor: pointer; }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }

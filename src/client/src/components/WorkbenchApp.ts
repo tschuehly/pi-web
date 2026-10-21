@@ -131,8 +131,11 @@ export class WorkbenchApp extends LitElement {
   private filesElsewhere = false;
   @state() private filesWidth = 400;
   private filesResize: { pointerId: number; startX: number; startWidth: number; handle: HTMLElement } | undefined;
-  /** A Grid divider being dragged: its share shows at once and reaches the window store on release (`released`). */
-  @state() private gridDrag: { axis: GridAxis; pointerId: number; start: number; startRatio: number; size: number; ratio: number; handle: HTMLElement; released: boolean } | undefined;
+  /**
+   * A Grid divider being dragged: its share reaches the window store on release (`released`). Not reactive: a move writes
+   * the Grid's template straight to the page once a frame (`frame`), since a render per move would re-render every tile.
+   */
+  private gridDrag: { axis: GridAxis; pointerId: number; start: number; startRatio: number; size: number; ratio: number; handle: HTMLElement; released: boolean; frame: number | undefined } | undefined;
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -1545,7 +1548,7 @@ export class WorkbenchApp extends LitElement {
     const label = axis === "columns" ? "Resize Grid columns" : "Resize Grid rows";
     return html`
       <div class="grid-divider" data-axis=${axis} role="separator" tabindex="0" aria-label=${label} title=${`${label} (double-click to even)`} aria-orientation=${axis === "columns" ? "vertical" : "horizontal"}
-        aria-valuemin=${percent(bounds.min)} aria-valuemax=${percent(bounds.max)} aria-valuenow=${percent(this.gridShare(axis))} ?data-dragging=${this.gridDrag?.axis === axis} style=${`grid-area: ${area}`}
+        aria-valuemin=${percent(bounds.min)} aria-valuemax=${percent(bounds.max)} aria-valuenow=${percent(this.gridShare(axis))} style=${`grid-area: ${area}`}
         @pointerdown=${(event: PointerEvent) => { this.startGridResize(axis, event); }} @pointermove=${(event: PointerEvent) => { this.moveGridResize(event); }}
         @pointerup=${(event: PointerEvent) => { this.finishGridResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishGridResize(event); }}
         @dblclick=${() => { void this.updateWindow((store, id) => resizeGrid(store, id, axis, undefined)); }}
@@ -1561,7 +1564,30 @@ export class WorkbenchApp extends LitElement {
     handle.setPointerCapture(event.pointerId);
     const size = this.gridSize(axis);
     const ratio = gridRatioFromDrag(this.gridShare(axis), 0, 0, size, GRID_MIN_TILE[axis]);
-    this.gridDrag = { axis, pointerId: event.pointerId, start: axis === "columns" ? event.clientX : event.clientY, startRatio: ratio, size, ratio, handle, released: false };
+    this.gridDrag = { axis, pointerId: event.pointerId, start: axis === "columns" ? event.clientX : event.clientY, startRatio: ratio, size, ratio, handle, released: false, frame: undefined };
+    handle.toggleAttribute("data-dragging", true);
+    this.toggleGridResizing(true);
+  }
+
+  /**
+   * A size container re-styles and lays out its whole transcript twice whenever it resizes, so tiles stop being containers
+   * while a divider moves; each keeps the height it had for what measures against it (the question drawer).
+   */
+  private toggleGridResizing(resizing: boolean): void {
+    const grid = this.shadowRoot?.querySelector(".grid");
+    for (const tile of grid?.querySelectorAll<HTMLElement>(":scope > .tile") ?? []) {
+      if (resizing) tile.style.setProperty("--pi-tile-height", `${String(tile.clientHeight)}px`);
+      else tile.style.removeProperty("--pi-tile-height");
+    }
+    grid?.toggleAttribute("data-resizing", resizing);
+  }
+
+  /** Writes `drag`'s divider and the Grid's template as a render would, without one: the share being dragged, else the window's. */
+  private paintGridDrag(drag: NonNullable<WorkbenchApp["gridDrag"]>): void {
+    if (drag.frame !== undefined) cancelAnimationFrame(drag.frame);
+    drag.frame = undefined;
+    this.shadowRoot?.querySelector(".grid")?.setAttribute("style", this.gridTemplate());
+    drag.handle.setAttribute("aria-valuenow", String(Math.round(this.gridShare(drag.axis) * 100)));
   }
 
   private moveGridResize(event: PointerEvent): void {
@@ -1569,7 +1595,9 @@ export class WorkbenchApp extends LitElement {
     if (drag?.pointerId !== event.pointerId || drag.released) return;
     event.preventDefault();
     const ratio = gridRatioFromDrag(drag.startRatio, drag.start, drag.axis === "columns" ? event.clientX : event.clientY, drag.size, GRID_MIN_TILE[drag.axis]);
-    if (ratio !== drag.ratio) this.gridDrag = { ...drag, ratio };
+    if (ratio === drag.ratio) return;
+    drag.ratio = ratio;
+    drag.frame ??= requestAnimationFrame(() => { this.paintGridDrag(drag); });
   }
 
   /** Stores the dragged share; the drag's share stays on screen until the store has it, so the release moves nothing. */
@@ -1577,10 +1605,14 @@ export class WorkbenchApp extends LitElement {
     const drag = this.gridDrag;
     if (drag?.pointerId !== event.pointerId || drag.released) return;
     if (drag.handle.hasPointerCapture(drag.pointerId)) drag.handle.releasePointerCapture(drag.pointerId);
-    if (drag.ratio === drag.startRatio) { this.gridDrag = undefined; return; }
-    const released = { ...drag, released: true };
-    this.gridDrag = released;
-    void this.updateWindow((store, id) => resizeGrid(store, id, drag.axis, drag.ratio)).then(() => { if (this.gridDrag === released) this.gridDrag = undefined; });
+    this.paintGridDrag(drag);
+    drag.handle.removeAttribute("data-dragging");
+    this.toggleGridResizing(false);
+    drag.released = true;
+    // Painted again once it lands, so the page shows the window's share also when the store refused the drag's.
+    const settle = () => { if (this.gridDrag === drag) { this.gridDrag = undefined; this.paintGridDrag(drag); } };
+    if (drag.ratio === drag.startRatio) { settle(); return; }
+    void this.updateWindow((store, id) => resizeGrid(store, id, drag.axis, drag.ratio)).then(settle);
   }
 
   private resizeGridWithKeyboard(axis: GridAxis, event: KeyboardEvent): void {
@@ -2081,6 +2113,7 @@ export class WorkbenchApp extends LitElement {
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pi-bg); }
     /* Grid tracks size every tile, so it can contain its size: the question drawer measures its height against it (cqh). */
     .tile { container-type: size; }
+    .grid[data-resizing] > .tile { container-type: normal; }
     /* Half the comfortable profile's spacing inside a tile; focus is only the outline, so it moves nothing. */
     .grid:not([data-single]) > .tile { --pi-panel-padding: 5px; --pi-message-padding: 5px; --pi-toolbar-gap: 3px; }
     .grid:not([data-single]) > .tile[data-focused="true"] { outline: 1.5px solid var(--ws, color-mix(in srgb, var(--pi-accent) 70%, transparent)); outline-offset: -1.5px; }
