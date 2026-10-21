@@ -1044,6 +1044,7 @@ export class ChatView extends LitElement {
         data-scroll-anchor-id=${`ask:${ask.askId}`}
         .ask=${ask}
         .draftSessionId=${this.askDraftSessionId}
+        .workspaceContext=${this.workspaceContext}
         .onSubmit=${this.onSubmitAsk}
       ></ask-user-card>
     `);
@@ -1448,6 +1449,7 @@ export class ChatView extends LitElement {
         class="part"
         .outcome=${part.outcome}
         .draftSessionId=${this.askDraftSessionId}
+        .workspaceContext=${this.workspaceContext}
       ></ask-user-card>
     `;
     if (part.type === "image") {

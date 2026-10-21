@@ -17,6 +17,9 @@ const HTML_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'non
 // denies scripts, navigation helpers, and every subresource except the
 // same-origin plugin document (`object-src 'self'`) that the viewer embeds.
 const PDF_CONTENT_SECURITY_POLICY = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'self'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
+// Opened directly, a video URL becomes the browser's media document, which
+// loads the same URL as its media source.
+const VIDEO_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'self'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
 const DOWNLOAD_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'none'";
 const ERROR_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
 
@@ -32,11 +35,12 @@ export function workspaceFilePreviewResponsePolicy(path: string, options: { down
     throw new Error("Inline preview is not supported for this file type");
   }
 
-  const contentSecurityPolicy = classification.mediaType === "image"
-    ? IMAGE_CONTENT_SECURITY_POLICY
-    : classification.mediaType === "html"
-      ? HTML_CONTENT_SECURITY_POLICY
-      : PDF_CONTENT_SECURITY_POLICY;
+  const contentSecurityPolicy = {
+    image: IMAGE_CONTENT_SECURITY_POLICY,
+    html: HTML_CONTENT_SECURITY_POLICY,
+    pdf: PDF_CONTENT_SECURITY_POLICY,
+    video: VIDEO_CONTENT_SECURITY_POLICY,
+  }[classification.mediaType];
   return responsePolicy(classification.previewMimeType, "inline", filename, contentSecurityPolicy);
 }
 

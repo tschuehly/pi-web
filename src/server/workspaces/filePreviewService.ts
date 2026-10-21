@@ -3,16 +3,18 @@ import { open, realpath, stat, type FileHandle } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { pipeline, Readable, Transform } from "node:stream";
-import type { FileContentMediaType, PiWebPathAccessConfig } from "../../shared/apiTypes.js";
-import { classifyWorkspaceFile, MAX_INLINE_PREVIEW_BYTES, MAX_INLINE_PREVIEW_LABEL, workspaceFileName } from "../../shared/workspaceFiles.js";
+import type { PiWebPathAccessConfig } from "../../shared/apiTypes.js";
+import { classifyWorkspaceFile, MAX_INLINE_PREVIEW_BYTES, MAX_INLINE_PREVIEW_LABEL, workspaceFileName, type WorkspaceFileClassification } from "../../shared/workspaceFiles.js";
 import { resolveWorkspacePathAccessTarget } from "./pathAccessPolicy.js";
 
 export interface WorkspaceFilePreview {
   path: string;
   filename: string;
-  mediaType?: FileContentMediaType;
+  mediaType?: WorkspaceFileClassification["mediaType"];
   /** Byte count of `body`, safe to advertise as `Content-Length`. */
   size: number;
+  /** Set when `body` is the requested byte range of a `total`-byte file (HTTP 206). */
+  range?: ByteRange & { total: number };
   modifiedAt: string;
   /**
    * Bytes taken from the descriptor that was validated: an exact snapshot for
@@ -25,6 +27,42 @@ export interface ReadWorkspaceFilePreviewOptions {
   download?: boolean;
   /** One-request image preview, including paths outside configured roots. Never grants download access. */
   explicitlyRequestedImage?: boolean;
+  /** Raw HTTP `Range` request header. WebKit only plays and seeks video served by range. */
+  range?: string;
+}
+
+/** Inclusive byte offsets. */
+export interface ByteRange {
+  start: number;
+  end: number;
+}
+
+/** A `Range` that no byte of the file satisfies; answer 416 with `Content-Range: bytes *\/total`. */
+export class RangeNotSatisfiableError extends Error {
+  constructor(readonly total: number) {
+    super("Requested range is not satisfiable");
+  }
+}
+
+/**
+ * The single byte range a `Range` header asks for, per RFC 9110 §14.1.2.
+ * Undefined means "serve the whole file": no header, another unit, malformed
+ * syntax, or several ranges (which a server may answer in full).
+ */
+export function parseByteRange(header: string | undefined, size: number): ByteRange | undefined {
+  const match = header === undefined ? null : /^bytes=(\d*)-(\d*)$/u.exec(header.trim());
+  if (match === null) return undefined;
+  const [, first = "", last = ""] = match;
+  if (first === "" && last === "") return undefined;
+  if (first === "") {
+    const suffix = Number(last);
+    if (suffix === 0 || size === 0) throw new RangeNotSatisfiableError(size);
+    return { start: Math.max(0, size - suffix), end: size - 1 };
+  }
+  const start = Number(first);
+  if (last !== "" && Number(last) < start) return undefined;
+  if (start >= size) throw new RangeNotSatisfiableError(size);
+  return { start, end: last === "" ? size - 1 : Math.min(Number(last), size - 1) };
 }
 
 export async function readWorkspaceFilePreview(
@@ -60,17 +98,26 @@ export async function readWorkspaceFilePreview(
     // Download mode serves any file as an opaque octet-stream attachment. No
     // size cap: the response is streamed, and the browser writes it straight to
     // disk. The stream still cannot exceed the validated size.
-    if (options.download === true) {
-      if (stats.size === 0) return { ...metadata, size: 0, body: Buffer.alloc(0) };
-      streamOwnsHandle = true;
-      return { ...metadata, size: stats.size, body: validatedFileStream(handle, stats.size) };
+    const classification = options.download === true ? undefined : classifyWorkspaceFile(displayPath);
+    if (options.download !== true) {
+      if (classification === undefined || !("previewMimeType" in classification)) throw new Error("Inline preview is not supported for this file type");
+      if (classification.mediaType !== "video" && stats.size > MAX_INLINE_PREVIEW_BYTES) throw new Error(`File is too large to preview (limit ${MAX_INLINE_PREVIEW_LABEL})`);
     }
+    const media = classification === undefined ? {} : { mediaType: classification.mediaType };
+    const requested = parseByteRange(options.range, stats.size);
+    const { start, end } = requested ?? { start: 0, end: stats.size - 1 };
+    const range = requested === undefined ? {} : { range: { ...requested, total: stats.size } };
+    const size = end - start + 1;
 
-    const classification = classifyWorkspaceFile(displayPath);
-    if (classification === undefined || !("previewMimeType" in classification)) throw new Error("Inline preview is not supported for this file type");
-    if (stats.size > MAX_INLINE_PREVIEW_BYTES) throw new Error(`File is too large to preview (limit ${MAX_INLINE_PREVIEW_LABEL})`);
-    const body = await readValidatedSnapshot(handle, stats.size);
-    return { ...metadata, mediaType: classification.mediaType, size: body.byteLength, body };
+    // Images, HTML and PDF are capped and served as an exact snapshot. Downloads
+    // and videos are uncapped and streamed, but never past the validated size.
+    if (classification !== undefined && classification.mediaType !== "video") {
+      const body = (await readValidatedSnapshot(handle, stats.size)).subarray(start, end + 1);
+      return { ...metadata, ...media, ...range, size: body.byteLength, body };
+    }
+    if (size === 0) return { ...metadata, ...media, size: 0, body: Buffer.alloc(0) };
+    streamOwnsHandle = true;
+    return { ...metadata, ...media, ...range, size, body: validatedFileStream(handle, start, end) };
   } finally {
     if (!streamOwnsHandle) await handle.close();
   }
@@ -107,8 +154,9 @@ async function readValidatedSnapshot(handle: FileHandle, size: number): Promise<
  * after validation are never sent, and a short read fails the response instead
  * of silently truncating an advertised `Content-Length`.
  */
-function validatedFileStream(handle: FileHandle, size: number): Readable {
-  const source = handle.createReadStream({ start: 0, end: size - 1, autoClose: true });
+function validatedFileStream(handle: FileHandle, start: number, end: number): Readable {
+  const size = end - start + 1;
+  const source = handle.createReadStream({ start, end, autoClose: true });
   let streamed = 0;
   const exactLength = new Transform({
     transform(chunk: Buffer, _encoding, done) {

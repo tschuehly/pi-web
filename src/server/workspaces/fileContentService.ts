@@ -279,7 +279,7 @@ function languageForPath(path: string): { language?: string } {
 function mediaForClassification(classification: WorkspaceFileClassification | undefined): { mediaType?: FileContentMediaType; mimeType?: string } {
   if (classification === undefined) return {};
   return {
-    mediaType: classification.mediaType,
+    ...(classification.mediaType === "video" ? {} : { mediaType: classification.mediaType }),
     ...("previewMimeType" in classification ? { mimeType: classification.previewMimeType } : {}),
   };
 }

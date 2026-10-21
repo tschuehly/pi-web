@@ -65,6 +65,36 @@ describe("ad-hoc folder workspace file routes", () => {
     expect(remove.statusCode).toBe(200);
   });
 
+  it("serves a video outside every project by byte range, with its MIME type and preview isolation", async () => {
+    const folder = join(appTestContext.tempDir, "Bilder & Videos", "Hochzeit Jana");
+    await mkdir(folder, { recursive: true });
+    await writeFile(join(folder, "IMG_2430.MOV"), "0123456789");
+    const url = `${folderUrl(folder, "file/preview")}?path=IMG_2430.MOV`;
+
+    const read = await appTestContext.app.inject({ method: "GET", url: `${folderUrl(folder, "file")}?path=IMG_2430.MOV` });
+    expect(read.json<FileContentResponse>()).toMatchObject({ mimeType: "video/quicktime", binary: true, content: "" });
+    expect(read.json<FileContentResponse>().mediaType).toBeUndefined();
+
+    const whole = await appTestContext.app.inject({ method: "GET", url });
+    expect(whole.statusCode).toBe(200);
+    expect(whole.headers).toMatchObject({ "accept-ranges": "bytes", "content-type": "video/quicktime", "content-length": "10", "x-content-type-options": "nosniff" });
+    expect(whole.headers["content-security-policy"]).toMatch(/^sandbox;.*media-src 'self'/u);
+
+    const first = await appTestContext.app.inject({ method: "GET", url, headers: { range: "bytes=0-1" } });
+    expect(first.statusCode).toBe(206);
+    expect(first.headers).toMatchObject({ "content-range": "bytes 0-1/10", "content-length": "2", "content-type": "video/quicktime" });
+    expect(first.body).toBe("01");
+
+    const rest = await appTestContext.app.inject({ method: "GET", url, headers: { range: "bytes=7-" } });
+    expect(rest.statusCode).toBe(206);
+    expect(rest.headers["content-range"]).toBe("bytes 7-9/10");
+    expect(rest.body).toBe("789");
+
+    const beyond = await appTestContext.app.inject({ method: "GET", url, headers: { range: "bytes=10-" } });
+    expect(beyond.statusCode).toBe(416);
+    expect(beyond.headers).toMatchObject({ "content-range": "bytes */10", "content-type": "application/json; charset=utf-8", "x-content-type-options": "nosniff" });
+  });
+
   it("opens any existing directory, including parents and the filesystem root, without consulting sessions", async () => {
     const folder = await longScratchFolder();
     for (const allowed of [join(folder, ".."), appTestContext.tempDir, "/"]) {

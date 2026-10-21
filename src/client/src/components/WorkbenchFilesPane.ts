@@ -619,12 +619,15 @@ export class WorkbenchFilesPane extends LitElement {
       ? html`<button type="button" @click=${() => { void reveal(absolute).catch((error: unknown) => { this.error = `Could not show the file in Finder: ${String(error)}`; }); }}>Show in Finder</button>`
       : html`<a class="download" href=${workspaceFilePreviewUrl(workspace.projectId, workspace.id, file.path, { machineId: this.machineId, download: true })} download>Download file</a>`;
     const preview = workspaceFilePreviewUrl(workspace.projectId, workspace.id, file.path, { machineId: this.machineId, modifiedAt: file.modifiedAt });
-    if (file.truncated) return html`<p class="note" role="note">Showing the first ${formatBytes(MAX_WORKSPACE_FILE_CONTENT_BYTES)} of ${formatBytes(file.size)}. The file is too large to edit here. ${action}</p>`;
+    // Video has no public media type; the server's MIME type marks it. Its preview streams by byte range, uncapped.
+    const video = file.mimeType?.startsWith("video/") === true;
+    if (file.truncated && !video) return html`<p class="note" role="note">Showing the first ${formatBytes(MAX_WORKSPACE_FILE_CONTENT_BYTES)} of ${formatBytes(file.size)}. The file is too large to edit here. ${action}</p>`;
     const pdf = file.mediaType === "pdf" && file.size <= MAX_INLINE_PREVIEW_BYTES;
-    return html`<div class=${pdf ? "preview pdf" : "preview"}>
+    return html`<div class=${pdf ? "preview pdf" : video ? "preview video" : "preview"}>
       ${(file.mediaType === "image" || file.mediaType === "pdf") && file.size > MAX_INLINE_PREVIEW_BYTES ? html`<p>File too large to preview.</p>`
         : file.mediaType === "image" ? html`<img alt=${`Preview of ${file.path}`} title="Pinch to zoom" @gesturestart=${this.onImageGesture} @gesturechange=${this.onImageGesture} @gestureend=${this.onImageGesture} @wheel=${this.onImageWheel} src=${preview}>`
         : pdf ? keyed(this.pdfLayout, html`<iframe title=${`Preview of ${file.path}`} src=${preview} allow="" referrerpolicy="no-referrer"></iframe>`)
+        : video ? html`<video aria-label=${`Preview of ${file.path}`} src=${preview} controls playsinline preload="metadata"></video>`
         : html`<p>Preview unavailable: this file is binary.</p>`}
       <p class="note">${action}</p>
     </div>`;
@@ -743,6 +746,8 @@ export class WorkbenchFilesPane extends LitElement {
     .preview p, .note { color: var(--pi-muted); }
     .note { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--pi-border-muted); }
     .preview img { max-width: 100%; max-height: 100%; touch-action: pan-x pan-y; }
+    .preview.video { display: flex; flex-direction: column; }
+    .preview video { flex: 1; min-height: 0; width: 100%; background: #000; }
     .preview.pdf { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
     /* WebKit's native PDF view ignores the root interface zoom; undo it so the page fits the frame. */
     .preview iframe { flex: 1; width: 100%; min-width: 0; min-height: 0; border: 0; zoom: calc(1 / var(--pi-interface-scale, 1)); }

@@ -308,6 +308,20 @@ describe("Workbench Files read-only files", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it("plays a video of any size from its streamed preview", async () => {
+    // Over the content cap the JSON read is truncated, but the preview streams the whole file by range.
+    vi.spyOn(api, "workspaceFile").mockResolvedValue({ ...file("clips/IMG_2430.MOV", "", "v1"), mimeType: "video/quicktime", binary: true, truncated: true, size: 200 * 1024 * 1024 });
+    const pane = await mount();
+    expect(await pane.openFile("clips/IMG_2430.MOV")).toBe(true); await pane.updateComplete;
+    const video = pane.shadowRoot?.querySelector("video");
+    expect(video?.hasAttribute("controls")).toBe(true);
+    const src = new URL(video?.getAttribute("src") ?? "", "http://pi-web.local");
+    expect(src.pathname).toMatch(/\/file\/preview$/u);
+    expect(src.searchParams.get("path")).toBe("clips/IMG_2430.MOV");
+    expect(src.searchParams.has("download")).toBe(false);
+    expect(pane.shadowRoot?.textContent).not.toContain("too large");
+  });
+
   it("undoes the interface zoom on the PDF and lays it out again when the scale changes", async () => {
     // WebKit's PDF view ignores the root zoom and keeps its first layout.
     expect(WorkbenchFilesPane.styles.cssText).toMatch(/\.preview iframe\s*\{[^}]*zoom:\s*calc\(1\s*\/\s*var\(--pi-interface-scale,\s*1\)\)/);

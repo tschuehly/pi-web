@@ -80,6 +80,18 @@ describe("workspaceFilePreviewResponsePolicy", () => {
     });
   });
 
+  it("serves videos inline under their own MIME type in a sandbox that allows only same-origin media", () => {
+    expect(workspaceFilePreviewResponsePolicy("clip.mp4").contentType).toBe("video/mp4");
+    expect(workspaceFilePreviewResponsePolicy("clip.M4V").contentType).toBe("video/mp4");
+    expect(workspaceFilePreviewResponsePolicy("IMG_2430.MOV").contentType).toBe("video/quicktime");
+    const webm = workspaceFilePreviewResponsePolicy("clip.webm");
+    expect(webm).toMatchObject({ contentType: "video/webm", contentDisposition: "inline; filename=\"clip.webm\"; filename*=UTF-8''clip.webm", contentTypeOptions: "nosniff" });
+    expect(webm.contentSecurityPolicy).toMatch(/^sandbox; default-src 'none';/u);
+    expect(webm.contentSecurityPolicy).toContain("script-src 'none'");
+    expect(webm.contentSecurityPolicy).toContain("media-src 'self'");
+    expect(() => workspaceFilePreviewResponsePolicy("clip.mkv")).toThrow("Inline preview is not supported");
+  });
+
   it("does not expose Markdown or unsupported files as raw streamed previews", () => {
     expect(() => workspaceFilePreviewResponsePolicy("README.md")).toThrow("Inline preview is not supported");
     expect(() => workspaceFilePreviewResponsePolicy("archive.zip")).toThrow("Inline preview is not supported");

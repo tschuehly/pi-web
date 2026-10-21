@@ -5,7 +5,7 @@ import type { ProjectService } from "./projects/projectService.js";
 import { deleteWorkspaceFile, moveWorkspaceFile, readWorkspaceFile, writeWorkspaceFile, WorkspaceFileConflictError, WorkspaceFileOutcomeUnknownError } from "./workspaces/fileContentService.js";
 import { listWorkspaceTree, searchWorkspaceFiles } from "./workspaces/fileTreeService.js";
 import { isAbsoluteishPath } from "./workspaces/pathAccessPolicy.js";
-import { readWorkspaceFilePreview } from "./workspaces/filePreviewService.js";
+import { RangeNotSatisfiableError, readWorkspaceFilePreview } from "./workspaces/filePreviewService.js";
 import { workspaceFilePreviewResponsePolicy } from "./workspaces/filePreviewResponsePolicy.js";
 import { applyWorkspaceFilePreviewErrorResponsePolicy } from "./workspaces/filePreviewResponseHeaders.js";
 import { resolveWorkspaceContext } from "./workspaces/workspaceContext.js";
@@ -97,9 +97,16 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
       const context = await resolveContext(request.params);
       const download = request.query.download === "1" || request.query.download === "true";
       const pathAccess = isAbsoluteishPath(request.query.path ?? "") ? await pathAccessForWorkspaceContext(context, options.config) : undefined;
-      const preview = await readWorkspaceFilePreview(context.root, request.query.path, pathAccess, { download, explicitlyRequestedImage: request.query.showImage === "1" });
+      const preview = await readWorkspaceFilePreview(context.root, request.query.path, pathAccess, {
+        download, explicitlyRequestedImage: request.query.showImage === "1", ...(request.headers.range === undefined ? {} : { range: request.headers.range }),
+      });
       const policy = workspaceFilePreviewResponsePolicy(preview.path, { download });
+      if (preview.range !== undefined) {
+        const { start, end, total } = preview.range;
+        reply.code(206).header("Content-Range", `bytes ${String(start)}-${String(end)}/${String(total)}`);
+      }
       return await reply
+        .header("Accept-Ranges", "bytes")
         .header("Content-Type", policy.contentType)
         .header("Cache-Control", "private, max-age=3600")
         .header("Content-Length", String(preview.size))
@@ -110,7 +117,8 @@ export function registerWorkspaceExplorerRoutes(app: FastifyInstance, projects: 
         .send(preview.body);
     } catch (error) {
       applyWorkspaceFilePreviewErrorResponsePolicy(reply);
-      return sendWorkspaceRequestError(reply, error, 400);
+      if (error instanceof RangeNotSatisfiableError) reply.header("Content-Range", `bytes */${String(error.total)}`);
+      return sendWorkspaceRequestError(reply, error, error instanceof RangeNotSatisfiableError ? 416 : 400);
     }
   });
 }

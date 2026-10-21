@@ -1,5 +1,3 @@
-import type { FileContentMediaType } from "./pluginApiTypes.js";
-
 export const MAX_INLINE_PREVIEW_BYTES = 10 * 1024 * 1024;
 export const MAX_INLINE_PREVIEW_LABEL = "10 MB";
 /** Text files up to this size open whole and editable in the Files pane; larger ones show this much, read-only. */
@@ -22,16 +20,15 @@ export function adHocFolderPath(workspaceId: string): string | undefined {
   return workspaceId.startsWith(AD_HOC_FOLDER_WORKSPACE_PREFIX) ? workspaceId.slice(AD_HOC_FOLDER_WORKSPACE_PREFIX.length) : undefined;
 }
 
-type WorkspaceFileClassificationDetails =
+/** Internal classification; `mediaType` is the public file-response media type except for video. */
+export type WorkspaceFileClassification =
   | { readonly mediaType: "image"; readonly source: "stream" | "text"; readonly previewMimeType: string }
   | { readonly mediaType: "html"; readonly source: "text"; readonly previewMimeType: "text/html; charset=utf-8" }
   | { readonly mediaType: "pdf"; readonly source: "stream"; readonly previewMimeType: "application/pdf" }
-  | { readonly mediaType: "markdown"; readonly source: "text" };
-
-/** Internal classification constrained to the public file-response media types. */
-export type WorkspaceFileClassification = WorkspaceFileClassificationDetails & {
-  readonly mediaType: FileContentMediaType;
-};
+  | { readonly mediaType: "markdown"; readonly source: "text" }
+  // Video is internal only: JSON reads identify it by `mimeType`, because older
+  // clients reject a `mediaType` outside the public `FileContentMediaType` union.
+  | { readonly mediaType: "video"; readonly source: "stream"; readonly previewMimeType: "video/mp4" | "video/quicktime" | "video/webm" };
 
 // Extension classification is shared by JSON source reads, streamed previews,
 // and proxy response policy. Keep this an allowlist: only classifications with
@@ -55,6 +52,11 @@ const WORKSPACE_FILE_CLASSIFICATIONS: Readonly<Record<string, WorkspaceFileClass
   ".htm": { mediaType: "html", source: "text", previewMimeType: "text/html; charset=utf-8" },
   ".html": { mediaType: "html", source: "text", previewMimeType: "text/html; charset=utf-8" },
   ".pdf": { mediaType: "pdf", source: "stream", previewMimeType: "application/pdf" },
+  // Videos stream with HTTP Range support and no inline size cap.
+  ".mp4": { mediaType: "video", source: "stream", previewMimeType: "video/mp4" },
+  ".m4v": { mediaType: "video", source: "stream", previewMimeType: "video/mp4" },
+  ".mov": { mediaType: "video", source: "stream", previewMimeType: "video/quicktime" },
+  ".webm": { mediaType: "video", source: "stream", previewMimeType: "video/webm" },
   ".md": { mediaType: "markdown", source: "text" },
   ".markdown": { mediaType: "markdown", source: "text" },
 };

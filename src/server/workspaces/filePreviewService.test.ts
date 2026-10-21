@@ -6,7 +6,7 @@ import { basename, join, relative } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MAX_INLINE_PREVIEW_BYTES } from "../../shared/workspaceFiles.js";
 import { cleanupTempWorkspaces, createTempWorkspace } from "./fileContentService.testSupport.js";
-import { readWorkspaceFilePreview } from "./filePreviewService.js";
+import { parseByteRange, RangeNotSatisfiableError, readWorkspaceFilePreview } from "./filePreviewService.js";
 
 afterEach(async () => {
   await cleanupTempWorkspaces();
@@ -188,5 +188,57 @@ describe("readWorkspaceFilePreview", () => {
 
     expect(preview.size).toBe(size);
     await expect(previewText(preview.body)).rejects.toThrow("File changed while it was being read");
+  });
+
+  it("streams videos past the inline cap, by byte range when asked", async () => {
+    const root = await createTempWorkspace();
+    await writeFile(join(root, "clip.mov"), "");
+    await truncate(join(root, "clip.mov"), MAX_INLINE_PREVIEW_BYTES + 10);
+    await appendFile(join(root, "clip.mov"), "TAIL");
+    const total = MAX_INLINE_PREVIEW_BYTES + 14;
+
+    const whole = await readWorkspaceFilePreview(root, "clip.mov");
+    expect(whole).toMatchObject({ mediaType: "video", size: total });
+    expect(whole.range).toBeUndefined();
+    if (!Buffer.isBuffer(whole.body)) whole.body.destroy();
+
+    const tail = await readWorkspaceFilePreview(root, "clip.mov", undefined, { range: "bytes=-4" });
+    expect(tail).toMatchObject({ size: 4, range: { start: total - 4, end: total - 1, total } });
+    expect(await previewText(tail.body)).toBe("TAIL");
+    await expect(readWorkspaceFilePreview(root, "clip.mov", undefined, { range: `bytes=${String(total)}-` })).rejects.toBeInstanceOf(RangeNotSatisfiableError);
+  });
+
+  it("slices capped snapshot previews and downloads by range too", async () => {
+    const root = await createTempWorkspace();
+    await writeFile(join(root, "page.html"), "<h1>safe</h1>");
+    await writeFile(join(root, "note.txt"), "hello world");
+
+    const inline = await readWorkspaceFilePreview(root, "page.html", undefined, { range: "bytes=1-2" });
+    expect(await previewText(inline.body)).toBe("h1");
+    expect(inline.range).toEqual({ start: 1, end: 2, total: 13 });
+    const download = await readWorkspaceFilePreview(root, "note.txt", undefined, { download: true, range: "bytes=6-" });
+    expect(await previewText(download.body)).toBe("world");
+    expect(download.size).toBe(5);
+  });
+});
+
+describe("parseByteRange", () => {
+  it.each([
+    ["bytes=0-99", { start: 0, end: 99 }],
+    ["bytes=0-", { start: 0, end: 999 }],
+    ["bytes=990-5000", { start: 990, end: 999 }],
+    ["bytes=-10", { start: 990, end: 999 }],
+    ["bytes=-5000", { start: 0, end: 999 }],
+    [" bytes=5-5 ", { start: 5, end: 5 }],
+  ])("reads %s of a 1000-byte file", (header, expected) => {
+    expect(parseByteRange(header, 1000)).toEqual(expected);
+  });
+
+  it.each([undefined, "", "items=0-1", "bytes=", "bytes=-", "bytes=5-1", "bytes=0-1,4-5", "bytes=a-b"])("serves the whole file for %s", (header) => {
+    expect(parseByteRange(header, 1000)).toBeUndefined();
+  });
+
+  it.each([["bytes=1000-", 1000], ["bytes=1000-1001", 1000], ["bytes=-0", 1000], ["bytes=0-", 0], ["bytes=-1", 0]])("rejects unsatisfiable %s of a %d-byte file", (header, size) => {
+    expect(() => parseByteRange(header, size)).toThrow(RangeNotSatisfiableError);
   });
 });

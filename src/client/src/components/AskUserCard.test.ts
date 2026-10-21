@@ -253,6 +253,21 @@ describe("ask-user-card context", () => {
     expect(renderRoot(card).querySelector(".ask-context ~ .record-questions")).not.toBeNull();
   });
 
+  it("opens a local video linked from the context through the host, like a Chat link", async () => {
+    const ask = { ...openAsk([question("db", "Which take?", [])]), context: "Watch [IMG_2430.MOV](/Users/me/Bilder & Videos/IMG_2430.MOV)." };
+    const card = new AskUserCard();
+    card.ask = ask;
+    card.workspaceContext = { machineId: "local", projectId: "p", workspaceId: "w", root: "/work" };
+    document.body.append(card);
+    await card.updateComplete;
+    const opened = vi.fn((event: Event) => { event.preventDefault(); });
+    document.body.addEventListener("outside-file-open", opened, { once: true });
+
+    requiredElement((await renderedContext(card)).querySelector("a"), "context link").click();
+
+    expect(opened.mock.calls[0]?.[0]).toMatchObject({ detail: { machineId: "local", path: "/Users/me/Bilder & Videos/IMG_2430.MOV" } });
+  });
+
   it("renders no context block when the ask carries none", async () => {
     const card = await mountOpenAsk(openAsk([question("db", "Which database?", [])]));
 
