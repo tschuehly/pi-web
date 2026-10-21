@@ -98,6 +98,11 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", RELEASE);
   await expect(tabRowTools(page)).toHaveCount(0);
   await expect(chatMenu(page.locator('.tile[data-focused="true"] > .tile-bar'))).toBeVisible();
+  // Each tile bar names its Workstream after the Chat, the Workstream title giving way first.
+  const notesTitle = page.locator(`.tile[data-session="${NOTES}"] .tile-title`);
+  await expect(notesTitle).toHaveAttribute("title", "Workstream: Pi Workbench UI dogfooding and two-tier tab layout review · Chat: Where are the notes?");
+  await expect(notesTitle.locator(".tile-ws")).toHaveText("Pi Workbench UI dogfooding and two-tier tab layout review");
+  expect(await notesTitle.locator(".chat-name").evaluate((name) => name.scrollWidth <= name.clientWidth)).toBe(true);
   // No window row over the Grid: tiles start at the top.
   expect((await page.locator(".grid").boundingBox())?.y).toBe((await page.locator("pi-workbench-app").boundingBox())?.y);
   await expect(page.locator(`.tile[data-session="${GUIDE}"] workbench-chat-pane chat-view`)).toContainText("Done.");

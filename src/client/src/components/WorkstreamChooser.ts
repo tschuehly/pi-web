@@ -7,7 +7,7 @@ import type { SessionActivity, SessionInfo, SessionStatus, Workspace } from "../
 import { isSessionActive, sessionActivityText } from "../../../shared/activity";
 import { renderActivityIndicator } from "./activityBadge";
 import { listStyles } from "./shared";
-import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor, workstreamMonogram } from "../workstreamColor";
+import { WORKSTREAM_TINT_PERCENTAGES, setWorkstreamColorOrder, workstreamAccentColor, workstreamMonogram } from "../workstreamColor";
 
 // Workstream re-entry view backed by the user-local Workbench plugin service.
 
@@ -302,7 +302,10 @@ export class WorkstreamChooser extends LitElement {
     this.loading = true;
     try {
       const list = await listWorkstreams(context);
-      if (sequence === this.loadSequence) this.summaries = this.sortedSummaries(list);
+      if (sequence === this.loadSequence) {
+        setWorkstreamColorOrder(list);
+        this.summaries = this.sortedSummaries(list);
+      }
     } catch (error) {
       if (sequence === this.loadSequence) this.error = error instanceof Error ? error.message : String(error);
     } finally {

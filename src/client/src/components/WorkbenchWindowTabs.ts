@@ -3,7 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { styleMap } from "lit/directives/style-map.js";
 import type { SessionStatus } from "../api";
 import { gridPage, gridPageCount, gridPageLead, NO_WORKSTREAM_KEY, windowGroups, workstreamKey, workstreamTabTarget, type ChatGroup, type WindowChat, type WindowLayout, type WorkbenchWindow } from "../workbenchWindows";
-import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor } from "../workstreamColor";
+import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
 export type ChatTabStatus = "needs" | "running" | "done" | "idle";
@@ -88,6 +88,7 @@ const onActivationKey = (activate: () => void) => (event: KeyboardEvent) => {
  */
 @customElement("workbench-window-tabs")
 export class WorkbenchWindowTabs extends LitElement {
+  private readonly workstreamColors = new WorkstreamColorController(this);
   @property({ attribute: false }) workingSet: WorkbenchWindow | undefined;
   /** The Chat on screen; undefined while the home shows. */
   @property({ attribute: false }) selected: string | undefined;
