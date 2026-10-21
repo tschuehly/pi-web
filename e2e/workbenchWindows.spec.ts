@@ -396,6 +396,8 @@ async function dragDivider(page: Page, axis: "columns" | "rows", delta: number):
   await page.mouse.down();
   await page.mouse.move(axis === "columns" ? x + delta : x, axis === "rows" ? y + delta : y, { steps: 12 });
   await page.mouse.up();
+  // Two frames, so the tiles' resize observers have kept their Chats' scroll at the new size.
+  await page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(resolve); }); }));
 }
 
 const tileBox = async (page: Page, session: string) => {
