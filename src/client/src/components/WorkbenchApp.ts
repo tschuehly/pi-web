@@ -118,7 +118,7 @@ export class WorkbenchApp extends LitElement {
   @state() private chooserView: "project" | "other" | "all" = "project";
   @state() private currentWorkstream: WorkstreamSnapshot | null | undefined;
   @state() private currentWorkstreamError = "";
-  @state() private delegateRosterCollapsed = false;
+  @state() private delegateRosterCollapsed = true;
   /** The right-hand slot beside the Chat: divider, width and close chevron. */
   @state() private sidePane: "files" | undefined;
   /** A workspace the Files pane shows instead of the Chat's, after a link to a file outside the Chat's folder. */
