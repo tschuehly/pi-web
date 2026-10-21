@@ -3442,7 +3442,8 @@ describe("Workbench Chat controls", () => {
     expect(shell.querySelector("header > strong")).toBeNull();
     const roster = shell.querySelector("delegate-roster");
     if (!(roster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered");
-    expect(roster.collapsed).toBe(false);
+    // Starts collapsed: the Activity header alone until opened.
+    expect(roster.collapsed).toBe(true);
     await roster.updateComplete;
     const rosterToggle = roster.shadowRoot?.querySelector<HTMLButtonElement>(".section-toggle");
     if (rosterToggle === null || rosterToggle === undefined) throw new Error("Delegate roster toggle was not rendered");
@@ -3457,7 +3458,7 @@ describe("Workbench Chat controls", () => {
     expect(goal.shadowRoot?.querySelector("summary")?.textContent).toContain("Build the UI");
     expect(goal.nextElementSibling?.tagName).toBe("WORKBENCH-QUESTION-CHIPS");
     expect(goal.nextElementSibling?.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
-    expect(collapsedRoster.collapsed).toBe(true);
+    expect(collapsedRoster.collapsed).toBe(false);
     expect(shell.querySelector("status-bar")).toBeNull();
     expect(shell.querySelector("working-mode-controls")).toBeNull();
     const promptEditor = shell.querySelector<PromptEditor>("prompt-editor");

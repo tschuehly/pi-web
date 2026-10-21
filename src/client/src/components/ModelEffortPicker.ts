@@ -19,8 +19,9 @@ export function modelPickerGroups(models: readonly SessionModel[], query: string
   return [...groups].map(([provider, grouped]) => ({ provider, models: grouped }));
 }
 
-// Lucide "check" (https://lucide.dev, ISC).
+// Lucide "check" and "cpu" (https://lucide.dev, ISC).
 const CHECK_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"></path></svg>`;
+const MODEL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 20v2"></path><path d="M12 2v2"></path><path d="M17 20v2"></path><path d="M17 2v2"></path><path d="M2 12h2"></path><path d="M2 17h2"></path><path d="M2 7h2"></path><path d="M20 12h2"></path><path d="M20 17h2"></path><path d="M20 7h2"></path><path d="M7 20v2"></path><path d="M7 2v2"></path><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="8" y="8" width="8" height="8" rx="1"></rect></svg>`;
 
 /**
  * One composer button for the model and its thinking effort. It opens a compact popover: the effort
@@ -34,6 +35,8 @@ export class ModelEffortPicker extends LitElement {
   @property({ attribute: false }) loadModels?: () => Promise<readonly SessionModel[]>;
   @property({ attribute: false }) onSetModel?: (provider: string, modelId: string) => unknown;
   @property({ attribute: false }) onSetThinkingLevel?: (level: string) => unknown;
+  /** A Grid tile's composer: the trigger is the model icon alone; model and thinking stay in its tooltip and label. */
+  @property({ type: Boolean, reflect: true }) compact = false;
   @state() private open = false;
   @state() private models: readonly SessionModel[] = [];
   @state() private query = "";
@@ -56,7 +59,7 @@ export class ModelEffortPicker extends LitElement {
     const thinking = thinkingLevelLabel(this.status?.thinkingLevel);
     return html`
       <button class="trigger" type="button" title=${`Model: ${qualified} · Thinking: ${thinking}`} aria-label=${`Model: ${qualified}, thinking ${thinking}. Change model or thinking`} aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"} @click=${() => { this.setOpen(!this.open); }}>
-        <span class="model-name">${model}</span><span class="separator" aria-hidden="true">·</span><span class="thinking">${thinking}</span>
+        ${this.compact ? MODEL_ICON : html`<span class="model-name">${model}</span><span class="separator" aria-hidden="true">·</span><span class="thinking">${thinking}</span>`}
       </button>
       ${this.open ? this.renderPopover(thinking) : null}
     `;
@@ -172,10 +175,12 @@ export class ModelEffortPicker extends LitElement {
     .trigger { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: min(42vw, 360px); min-height: var(--composer-control-size, 24px); padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--pi-text-secondary, var(--pi-text)); white-space: nowrap; }
     .trigger:hover, .trigger[aria-expanded="true"] { background: var(--pi-surface-hover); color: var(--pi-text); }
     .model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    :host([compact]) .trigger { justify-content: center; width: 26px; height: 26px; padding: 0; color: var(--pi-muted); }
+    :host([compact]) .trigger svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .separator { color: var(--pi-dim); }
     .thinking { flex: 0 0 auto; }
-    /* Anchored to the composer footer (the nearest positioned ancestor), left-aligned above it. */
-    .popover { position: absolute; z-index: 20; left: 10px; bottom: calc(100% + 4px); display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; width: min(360px, calc(100% - 20px)); max-height: min(440px, 60vh); padding: 8px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
+    /* Anchored to the composer footer (the nearest positioned ancestor), left-aligned above it; 100cqh keeps it inside a Grid tile. */
+    .popover { position: absolute; z-index: 20; left: 10px; bottom: calc(100% + 4px); display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; width: min(360px, calc(100% - 20px)); max-height: min(440px, 60vh, calc(100cqh - 80px)); padding: 8px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
     .effort { display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 8px; background: var(--pi-bg); }
     .effort > button { flex: 1 1 auto; min-height: 26px; padding: 2px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--pi-muted); }
     .effort > button:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
@@ -194,6 +199,8 @@ export class ModelEffortPicker extends LitElement {
     /* Narrow composer: a full-width sheet above the composer. */
     @container composer (max-width: 560px) {
       .trigger { max-width: 40cqi; }
+      /* Clip the start, not the end: "…opus-5-5" still names the model where "claude-o…" does not. */
+      .model-name { direction: rtl; }
       .popover { right: 6px; left: 6px; width: auto; }
     }
     @media (pointer: coarse) {

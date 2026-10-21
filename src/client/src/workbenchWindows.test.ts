@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closeChats, emptyWindow, focusChat, moveChats, gridPage, gridPageCount, gridPageLead, gridTiles, openChat, orderedChats, parseWindowStore, toggleLayout, toggleMaximized, updateChat, windowGroups, workstreamTabTarget, type WindowChat, type WindowStore } from "./workbenchWindows";
+import { clampGridRatio, closeChats, emptyWindow, focusChat, moveChats, gridPage, gridRatio, gridRatioFromDrag, gridRatioFromKeyboard, resizeGrid, gridPageCount, gridPageLead, gridTiles, openChat, orderedChats, parseWindowStore, toggleLayout, toggleMaximized, updateChat, windowGroups, workstreamTabTarget, type WindowChat, type WindowStore } from "./workbenchWindows";
 
 const release = { id: "ws-release", title: "Release" };
 const docs = { id: "ws-docs", title: "Docs" };
@@ -143,6 +143,61 @@ describe("grid", () => {
     expect(maximized["w1"]?.maximized).toBe(true);
     expect(toggleLayout(maximized, "w1")["w1"]).toMatchObject({ layout: "tabs", maximized: false });
     expect(toggleMaximized(maximized, "w1")["w1"]?.maximized).toBe(false);
+  });
+});
+
+describe("resizable grid", () => {
+  const four = () => windowWith(chat("a"), chat("b"), chat("c"), chat("d"));
+  const ratios = (store: WindowStore) => { const window = store["w1"]; return window === undefined ? [] : [gridRatio(window, "columns"), gridRatio(window, "rows")]; };
+
+  it("splits evenly until a divider is dragged, then keeps its share on every page and focus; double-click evens it again", () => {
+    const store = resizeGrid(resizeGrid(windowWith(chat("a"), chat("b"), chat("c"), chat("d"), chat("e")), "w1", "columns", 0.33333), "w1", "rows", 0.7);
+
+    expect(ratios(windowWith(chat("a"), chat("b")))).toEqual([0.5, 0.5]);
+    expect(ratios(store)).toEqual([0.3333, 0.7]);
+    expect(ratios(focusChat(store, "w1", "a"))).toEqual([0.3333, 0.7]);
+    expect(resizeGrid(store, "w1", "rows", 0.7)).toBe(store);
+    expect(ratios(resizeGrid(store, "w1", "columns", undefined))).toEqual([0.5, 0.7]);
+    expect(resizeGrid(resizeGrid(store, "w1", "columns", undefined), "w1", "rows", undefined)["w1"]).not.toHaveProperty("gridSplit");
+  });
+
+  it("keeps a share while its divider still exists and evens it once fewer Chats remove it", () => {
+    const store = resizeGrid(resizeGrid(four(), "w1", "columns", 0.3), "w1", "rows", 0.6);
+
+    expect(ratios(closeChats(store, "w1", ["d"]))).toEqual([0.3, 0.6]);
+    expect(ratios(closeChats(store, "w1", ["c", "d"]))).toEqual([0.3, 0.5]);
+    expect(ratios(openChat(closeChats(store, "w1", ["c", "d"]), "w1", chat("c")))).toEqual([0.3, 0.5]);
+    expect(closeChats(store, "w1", ["b", "c", "d"])["w1"]).not.toHaveProperty("gridSplit");
+    expect(ratios(moveChats(store, "w1", "w2", ["c", "d"]))).toEqual([0.3, 0.5]);
+  });
+
+  it("drags by the pointer's share of the Grid, never leaving a tile below its minimum", () => {
+    expect(gridRatioFromDrag(0.5, 400, 500, 1000, 320)).toBeCloseTo(0.6);
+    expect(gridRatioFromDrag(0.5, 400, 0, 1000, 320)).toBeCloseTo(0.32);
+    expect(gridRatioFromDrag(0.5, 400, 2000, 1000, 320)).toBeCloseTo(0.68);
+    expect(clampGridRatio(0.9, 500, 320)).toBeCloseTo(0.5);
+    expect(clampGridRatio(0.9, 0, 320)).toBeCloseTo(0.9);
+  });
+
+  it("steps with the arrows along its axis, further with Shift, and jumps to the bounds with Home and End", () => {
+    expect(gridRatioFromKeyboard(0.5, "columns", "ArrowRight", false, 1000, 320)).toBeCloseTo(0.52);
+    expect(gridRatioFromKeyboard(0.5, "columns", "ArrowLeft", true, 1000, 320)).toBeCloseTo(0.4);
+    expect(gridRatioFromKeyboard(0.5, "columns", "ArrowUp", false, 1000, 320)).toBeUndefined();
+    expect(gridRatioFromKeyboard(0.5, "rows", "ArrowUp", false, 1000, 220)).toBeCloseTo(0.48);
+    expect(gridRatioFromKeyboard(0.5, "rows", "ArrowDown", true, 1000, 220)).toBeCloseTo(0.6);
+    expect(gridRatioFromKeyboard(0.3, "rows", "ArrowUp", true, 1000, 220)).toBeCloseTo(0.22);
+    expect(gridRatioFromKeyboard(0.5, "columns", "Home", false, 1000, 320)).toBeCloseTo(0.32);
+    expect(gridRatioFromKeyboard(0.5, "columns", "End", false, 1000, 320)).toBeCloseTo(0.68);
+    expect(gridRatioFromKeyboard(0.5, "columns", "Enter", false, 1000, 320)).toBeUndefined();
+  });
+
+  it("survives a reload and drops shares that are no fraction", () => {
+    const store = resizeGrid(resizeGrid(four(), "w1", "columns", 0.25), "w1", "rows", 0.75);
+
+    expect(parseWindowStore(JSON.stringify(store))).toEqual(store);
+    for (const gridSplit of [{ columns: 2, rows: "0.4" }, "wide"]) {
+      expect(parseWindowStore(JSON.stringify({ w1: { ...store["w1"], gridSplit } }))["w1"]).not.toHaveProperty("gridSplit");
+    }
   });
 });
 

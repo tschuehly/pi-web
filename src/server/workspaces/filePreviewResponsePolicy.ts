@@ -1,4 +1,5 @@
-import { classifyWorkspaceFile, workspaceFileName } from "../../shared/workspaceFiles.js";
+import { workspaceFileName } from "../../shared/workspaceFiles.js";
+import { classifyWebWorkspaceFile } from "./webFileClassification.js";
 
 export interface WorkspaceFilePreviewResponsePolicy {
   readonly contentType: string;
@@ -30,7 +31,7 @@ export function workspaceFilePreviewResponsePolicy(path: string, options: { down
     return responsePolicy("application/octet-stream", "attachment", filename, DOWNLOAD_CONTENT_SECURITY_POLICY);
   }
 
-  const classification = classifyWorkspaceFile(path);
+  const classification = classifyWebWorkspaceFile(path);
   if (classification === undefined || !("previewMimeType" in classification)) {
     throw new Error("Inline preview is not supported for this file type");
   }

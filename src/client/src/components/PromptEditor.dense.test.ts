@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SessionStatus } from "../api";
+import { ACTIVITY_STATUS_KEY } from "../extensionStatusSnapshots";
+import type { ModelEffortPicker } from "./ModelEffortPicker";
 import { PromptEditor } from "./PromptEditor";
 
 afterEach(() => {
@@ -8,10 +11,20 @@ afterEach(() => {
   localStorage.clear();
 });
 
-async function mount(dense: boolean, showUsage: boolean): Promise<ShadowRoot> {
+function status(activityItems: unknown[] = []): SessionStatus {
+  return {
+    sessionId: "s", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
+    tokens: { input: 10, output: 20, cacheRead: 0, cacheWrite: 0, total: 30 }, cost: 3.68,
+    contextUsage: { tokens: 162_000, contextWindow: 1_000_000, percent: 16.2 },
+    extensionStatuses: { [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: activityItems }) },
+  };
+}
+
+async function mount(dense: boolean, showUsage: boolean, setup: (editor: PromptEditor) => void = () => undefined): Promise<ShadowRoot> {
   const editor = new PromptEditor();
   editor.dense = dense;
   editor.showUsage = showUsage;
+  setup(editor);
   document.body.append(editor);
   await editor.updateComplete;
   if (editor.shadowRoot === null) throw new Error("no shadow root");
@@ -19,20 +32,90 @@ async function mount(dense: boolean, showUsage: boolean): Promise<ShadowRoot> {
 }
 
 describe("dense composer", () => {
-  it("puts the input and its send controls on one row, and drops the meta row without usage", async () => {
-    const root = await mount(true, false);
+  it("lays the input, meta, and actions out as one row, with stop only while there is work to stop", async () => {
+    const root = await mount(true, true, (editor) => { editor.status = status(); });
 
-    expect(root.querySelector(".input-row > .editor-wrap + .composer-actions .send-button")).not.toBeNull();
     expect(root.querySelector(".actions")).toBeNull();
+    expect(root.querySelector(".input-row > .editor-wrap + .dense-meta > model-effort-picker")).not.toBeNull();
+    expect(root.querySelector(".dense-meta > working-mode-controls[compact]")).not.toBeNull();
+    expect(root.querySelector(".dense-meta + .composer-actions .send-button")).not.toBeNull();
+    expect(root.querySelector(".stop-button")).toBeNull();
     expect(root.querySelector(".prompt-placeholder")?.getAttribute("data-placeholder")).toBe("Message…");
+
+    const busy = await mount(true, true, (editor) => { editor.status = status(); editor.canStop = true; });
+    expect(busy.querySelector(".composer-actions .stop-button")).not.toBeNull();
   });
 
-  it("keeps a meta row with usage, and the regular composer otherwise", async () => {
-    expect((await mount(true, true)).querySelector(".input-row + .actions working-mode-controls")).not.toBeNull();
-    const regular = await mount(false, true);
+  it("shows the model as an icon naming model and thinking in its tooltip and label, opening the same picker", async () => {
+    const root = await mount(true, true, (editor) => { editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" }, thinkingLevel: "high" }; });
+    const picker = root.querySelector<ModelEffortPicker>("model-effort-picker");
+    await picker?.updateComplete;
+
+    const trigger = picker?.shadowRoot?.querySelector<HTMLButtonElement>(".trigger");
+    expect(picker?.hasAttribute("compact")).toBe(true);
+    expect(trigger?.textContent.trim()).toBe("");
+    expect(trigger?.querySelector("svg")).not.toBeNull();
+    expect(trigger?.title).toBe("Model: anthropic/claude-opus-5-5 \u00b7 Thinking: high");
+    expect(trigger?.getAttribute("aria-label")).toBe("Model: anthropic/claude-opus-5-5, thinking high. Change model or thinking");
+    trigger?.click();
+    await picker?.updateComplete;
+    expect(picker?.shadowRoot?.querySelector('[role="dialog"]')).not.toBeNull();
+
+    const regular = await mount(false, true, (editor) => { editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" } }; });
+    const regularPicker = regular.querySelector<ModelEffortPicker>("model-effort-picker");
+    await regularPicker?.updateComplete;
+    expect(regularPicker?.shadowRoot?.querySelector(".model-name")?.textContent).toBe("claude-opus-5-5");
+  });
+
+  it("shows the context as a ring whose tooltip carries the numbers and the cost, keeping the cost for screen readers", async () => {
+    const root = await mount(true, true, (editor) => { editor.status = status(); });
+
+    const context = root.querySelector<HTMLElement>('[data-usage="context"]');
+    expect(context?.querySelector('[aria-hidden="true"]')?.textContent.trim()).toBe("");
+    expect(context?.title).toContain("162k / 1.0M");
+    expect(context?.title).toContain("Session cost: $3.68");
+    expect(root.querySelector('[data-usage="cost"]')?.classList.contains("visually-hidden")).toBe(true);
+  });
+
+  it("keeps the regular composer's meta row with visible context and cost", async () => {
+    const regular = await mount(false, true, (editor) => { editor.status = status(); });
     expect(regular.querySelector(".input-row > .composer-actions")).toBeNull();
     expect(regular.querySelector("footer > .input-row > .editor-wrap")).not.toBeNull();
     expect(regular.querySelector("footer > .input-row + .actions > .composer-actions .send-button")).not.toBeNull();
+    expect(regular.querySelector("working-mode-controls[compact]")).toBeNull();
+    expect(regular.querySelector('[data-usage="cost"]')?.classList.contains("visually-hidden")).toBe(false);
+  });
+});
+
+describe("dense Activity badge", () => {
+  const running = [{ id: "a", kind: "subagent", name: "Review" }, { id: "b", kind: "worker", name: "Rows" }, { id: "c", kind: "subagent", name: "Done", activity: "success" }];
+
+  it("counts the roster's entries, names them in its label, and toggles the roster", async () => {
+    const toggle = vi.fn();
+    const root = await mount(true, true, (editor) => { editor.status = status(running); editor.onToggleActivity = toggle; });
+
+    const badge = root.querySelector<HTMLButtonElement>(".input-row > .activity-badge");
+    expect(badge?.textContent.trim()).toBe("3");
+    expect(badge?.getAttribute("aria-label")).toBe("Activity: 2 running delegates · 1 uncollected · 0 watchers · 0 shells");
+    expect(badge?.getAttribute("aria-expanded")).toBe("false");
+    badge?.click();
+    expect(toggle).toHaveBeenCalledOnce();
+  });
+
+  it("re-renders on an activity-only status change and hides with nothing to show", async () => {
+    let editor: PromptEditor | undefined;
+    const root = await mount(true, true, (created) => { editor = created; created.status = status(); created.onToggleActivity = () => undefined; });
+    expect(root.querySelector(".activity-badge")).toBeNull();
+
+    if (editor === undefined) throw new Error("no editor");
+    editor.status = status(running.slice(0, 1));
+    await editor.updateComplete;
+    expect(root.querySelector(".activity-badge")?.textContent.trim()).toBe("1");
+  });
+
+  it("is absent outside a Grid tile", async () => {
+    const root = await mount(false, true, (editor) => { editor.status = status(running); editor.onToggleActivity = () => undefined; });
+    expect(root.querySelector(".activity-badge")).toBeNull();
   });
 });
 
@@ -52,6 +135,6 @@ describe("dense toggle", () => {
     const root = editor.shadowRoot;
     expect(root?.querySelector(".markdown-editor .cm-editor")).toBe(view.dom);
     expect(editor.view?.state.doc.toString()).toBe("draft");
-    expect(root?.querySelector(".cm-placeholder")?.textContent).not.toBe("Message…");
+    expect(root?.querySelector(".prompt-placeholder")?.getAttribute("data-placeholder")).not.toBe("Message…");
   });
 });

@@ -40,8 +40,8 @@ import { selectedNotificationView } from "../sessionNotifications";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { pluginStyles, PluginStyleRuntime } from "../plugins/styles";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
-import { closeChats, focusChat, gridTiles, moveChats, orderedChats, toggleLayout, toggleMaximized, updateChat, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
-import { WORKSTREAM_TINT_PERCENTAGES, workstreamAccentColor } from "../workstreamColor";
+import { closeChats, focusChat, GRID_MIN_TILE, gridRatio, gridRatioBounds, gridRatioFromDrag, gridRatioFromKeyboard, gridTiles, moveChats, orderedChats, resizeGrid, toggleLayout, toggleMaximized, updateChat, type GridAxis, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
+import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import type { ChatRevealTarget, ChatView } from "./ChatView";
 import { hasUnacknowledgedSend, type PromptEditor } from "./PromptEditor";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
@@ -112,6 +112,7 @@ const MOVE_REPLY_MS = 60_000;
 
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
+  private readonly workstreamColors = new WorkstreamColorController(this);
   @state() private app: AppState = initialAppState();
   /** The navigation still loading; a newer navigation ends its Loading. */
   @state() private loadingAt: number | undefined = 0;
@@ -121,7 +122,7 @@ export class WorkbenchApp extends LitElement {
   @state() private chooserView: "project" | "other" | "all" = "project";
   @state() private currentWorkstream: WorkstreamSnapshot | null | undefined;
   @state() private currentWorkstreamError = "";
-  @state() private delegateRosterCollapsed = false;
+  @state() private delegateRosterCollapsed = true;
   /** The right-hand slot beside the Chat: divider, width and close chevron. */
   @state() private sidePane: "files" | undefined;
   /** A workspace the Files pane shows instead of the Chat's, after a link to a file outside the Chat's folder. */
@@ -134,6 +135,8 @@ export class WorkbenchApp extends LitElement {
   private filesElsewhere = false;
   @state() private filesWidth = 400;
   private filesResize: { pointerId: number; startX: number; startWidth: number; handle: HTMLElement } | undefined;
+  /** A Grid divider being dragged: its share shows at once and reaches the window store on release (`released`). */
+  @state() private gridDrag: { axis: GridAxis; pointerId: number; start: number; startRatio: number; size: number; ratio: number; handle: HTMLElement; released: boolean } | undefined;
   @query("chat-view") private chatView?: ChatView;
   @query("prompt-editor") private promptEditor?: PromptEditor;
   private readonly realtime = new RealtimeSocket();
@@ -1512,11 +1515,93 @@ export class WorkbenchApp extends LitElement {
     const focused = tiles.length < 2 ? undefined : tiles.find((tile) => tile.chat.sessionId === selected);
     const statuses = this.chatTabStatuses();
     return html`
-        <div class="grid" ?data-single=${focused === undefined} @dragover=${(event: DragEvent) => { if (carriesChats(event)) event.preventDefault(); }} @drop=${(event: DragEvent) => { const dropped = droppedChats(event); if (dropped !== undefined) { event.preventDefault(); void this.takeDroppedChats(dropped); } }}>
+        <div class="grid" ?data-single=${focused === undefined} style=${focused === undefined ? "" : this.gridTemplate()} @dragover=${(event: DragEvent) => { if (carriesChats(event)) event.preventDefault(); }} @drop=${(event: DragEvent) => { const dropped = droppedChats(event); if (dropped !== undefined) { event.preventDefault(); void this.takeDroppedChats(dropped); } }}>
           <section class="tile" data-focused="true" style=${this.tileStyle(focused)}>${focused === undefined ? nothing : this.renderTileBar(focused, statuses[focused.chat.sessionId] ?? "idle", true)}${this.renderChat(focused !== undefined)}</section>
           ${(focused === undefined ? [] : tiles).map((tile) => tile === focused ? nothing : keyed(tile.chat.sessionId, this.renderTile(tile, statuses[tile.chat.sessionId] ?? "idle")))}
+          ${focused === undefined ? nothing : this.renderGridDivider("columns", tiles.length === 3 ? "1 / 2 / 2 / 3" : "1 / 2 / 3 / 3")}
+          ${tiles.length < 3 ? nothing : this.renderGridDivider("rows", "2 / 1 / 3 / 3")}
         </div>
     `;
+  }
+
+  /** The share of the first column or row on screen: the one being dragged, else the window's. */
+  private gridShare(axis: GridAxis): number {
+    const drag = this.gridDrag;
+    if (drag?.axis === axis) return drag.ratio;
+    const window = this.windows.window;
+    return window === undefined ? 0.5 : gridRatio(window, axis);
+  }
+
+  /**
+   * Tracks at the window's shares; each keeps its minimum unless the Grid is too small for two, then both halve. Flex
+   * factors are percentages: a track held at its minimum leaves the other one factor below 1, which would fill only that
+   * fraction of the rest.
+   */
+  private gridTemplate(): string {
+    const tracks = (axis: GridAxis) => { const share = this.gridShare(axis); return [share, 1 - share].map((part) => `minmax(min(${String(GRID_MIN_TILE[axis])}px, calc(50% - 0.5px)), ${String(Math.round(part * 10_000) / 100)}fr)`).join(" "); };
+    return `grid-template-columns: ${tracks("columns")}; grid-template-rows: ${tracks("rows")}`;
+  }
+
+  /** The Grid's length along `axis`, less its 1px gap; 0 before layout. */
+  private gridSize(axis: GridAxis): number {
+    const grid = this.shadowRoot?.querySelector<HTMLElement>(".grid");
+    const length = axis === "columns" ? grid?.clientWidth : grid?.clientHeight;
+    return Math.max(0, (length ?? 0) - 1);
+  }
+
+  /** A divider over the gutter between two tracks, in `area`, wider than the gutter for the pointer; double-click evens it. */
+  private renderGridDivider(axis: GridAxis, area: string) {
+    const size = this.gridSize(axis);
+    const bounds = gridRatioBounds(size, GRID_MIN_TILE[axis]);
+    const percent = (share: number) => String(Math.round(share * 100));
+    const label = axis === "columns" ? "Resize Grid columns" : "Resize Grid rows";
+    return html`
+      <div class="grid-divider" data-axis=${axis} role="separator" tabindex="0" aria-label=${label} title=${`${label} (double-click to even)`} aria-orientation=${axis === "columns" ? "vertical" : "horizontal"}
+        aria-valuemin=${percent(bounds.min)} aria-valuemax=${percent(bounds.max)} aria-valuenow=${percent(this.gridShare(axis))} ?data-dragging=${this.gridDrag?.axis === axis} style=${`grid-area: ${area}`}
+        @pointerdown=${(event: PointerEvent) => { this.startGridResize(axis, event); }} @pointermove=${(event: PointerEvent) => { this.moveGridResize(event); }}
+        @pointerup=${(event: PointerEvent) => { this.finishGridResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishGridResize(event); }}
+        @dblclick=${() => { void this.updateWindow((store, id) => resizeGrid(store, id, axis, undefined)); }}
+        @keydown=${(event: KeyboardEvent) => { this.resizeGridWithKeyboard(axis, event); }}></div>
+    `;
+  }
+
+  private startGridResize(axis: GridAxis, event: PointerEvent): void {
+    if (event.button !== 0 || !(event.currentTarget instanceof HTMLElement) || this.gridDrag !== undefined && !this.gridDrag.released) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    // Captured, so a drag over a tile's transcript or frame keeps reaching the divider.
+    handle.setPointerCapture(event.pointerId);
+    const size = this.gridSize(axis);
+    const ratio = gridRatioFromDrag(this.gridShare(axis), 0, 0, size, GRID_MIN_TILE[axis]);
+    this.gridDrag = { axis, pointerId: event.pointerId, start: axis === "columns" ? event.clientX : event.clientY, startRatio: ratio, size, ratio, handle, released: false };
+  }
+
+  private moveGridResize(event: PointerEvent): void {
+    const drag = this.gridDrag;
+    if (drag?.pointerId !== event.pointerId || drag.released) return;
+    event.preventDefault();
+    const ratio = gridRatioFromDrag(drag.startRatio, drag.start, drag.axis === "columns" ? event.clientX : event.clientY, drag.size, GRID_MIN_TILE[drag.axis]);
+    if (ratio !== drag.ratio) this.gridDrag = { ...drag, ratio };
+  }
+
+  /** Stores the dragged share; the drag's share stays on screen until the store has it, so the release moves nothing. */
+  private finishGridResize(event: PointerEvent): void {
+    const drag = this.gridDrag;
+    if (drag?.pointerId !== event.pointerId || drag.released) return;
+    if (drag.handle.hasPointerCapture(drag.pointerId)) drag.handle.releasePointerCapture(drag.pointerId);
+    if (drag.ratio === drag.startRatio) { this.gridDrag = undefined; return; }
+    const released = { ...drag, released: true };
+    this.gridDrag = released;
+    void this.updateWindow((store, id) => resizeGrid(store, id, drag.axis, drag.ratio)).then(() => { if (this.gridDrag === released) this.gridDrag = undefined; });
+  }
+
+  private resizeGridWithKeyboard(axis: GridAxis, event: KeyboardEvent): void {
+    const size = this.gridSize(axis);
+    const next = gridRatioFromKeyboard(this.gridShare(axis), axis, event.key, event.shiftKey, size, GRID_MIN_TILE[axis]);
+    if (next === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void this.updateWindow((store, id) => resizeGrid(store, id, axis, next));
   }
 
   private renderSwipePeek() {
@@ -1561,7 +1646,7 @@ export class WorkbenchApp extends LitElement {
 
   /**
    * Every Grid tile's one header row, focused or not, so focusing a tile moves nothing: its Chat, the Chat's menu, full
-   * size and close; its Workstream is the colour on its edge. Only the focused (`live`) tile's menu acts; elsewhere it is
+   * size and close; its Workstream is the colour on its edge and a muted title after the Chat's, which ellipsizes first. Only the focused (`live`) tile's menu acts; elsewhere it is
    * inert, so a press falls through to the tile, focuses it, and then acts in the focused bar.
    */
   private renderTileBar({ chat }: GridTile, status: ChatTabStatus, live: boolean) {
@@ -1573,7 +1658,7 @@ export class WorkbenchApp extends LitElement {
         @dragstart=${(event: DragEvent) => { startChatDrag(event, { windowId: this.windows.id, sessionIds: [chat.sessionId] }, chat.title); this.guardChatDrag(event); }}
         @dragend=${(event: DragEvent) => { if (event.dataTransfer?.dropEffect === "none" && endedOutside(event, window)) this.moveToNewWindow([chat.sessionId]); }}>
         ${renderChatStatusDot(status)}
-        <span class="tile-title" title=${chat.title}>${chat.title}</span>
+        <span class="tile-title" title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · Chat: ${chat.title}`}><span class="chat-name">${chat.title}</span>${chat.workstream === undefined ? nothing : html`<span class="tile-ws"><span class="ws-dot"></span><span>${chat.workstream.title}</span></span>`}</span>
         ${status === "needs" ? html`<span class="needs">Needs you</span>` : nothing}
         <span class="tile-actions">
           <button type="button" class="icon-button" title="Full size (⌃↩)" aria-label=${`Full size ${chat.title}`} @click=${maximize}>${renderBuiltinTabIcon("maximize")}</button>
@@ -1944,12 +2029,14 @@ export class WorkbenchApp extends LitElement {
           .onDisplayedMessageAction=${runWorkbenchDisplayedMessageAction}
           .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
         ></chat-view>
-        <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${this.toggleDelegateRoster}></delegate-roster>
+        <delegate-roster ?compact=${tile} .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${this.toggleDelegateRoster}></delegate-roster>
         <goal-status-chip .status=${state.status}></goal-status-chip>
         <workbench-question-chips @workspace-file-open=${this.openWorkspaceFile} @outside-file-open=${this.openOutsideFile} .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(selectedMachineId(state), session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => this.sessions.submitAsk(askId, submission)}></workbench-question-chips>
         <prompt-editor
           .draftStorage=${this.windows.draftStorage}
           .dense=${tile}
+          .activityExpanded=${!this.delegateRosterCollapsed}
+          .onToggleActivity=${tile ? this.toggleDelegateRoster : undefined}
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
           .machineId=${selectedMachineId(state)}
@@ -1998,6 +2085,16 @@ export class WorkbenchApp extends LitElement {
     .stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     /* No rules between tiles: every tile rests on the background, the gutter is darker, the focused tile is outlined. */
     .grid { flex: 1 1 0; min-width: 0; min-height: 0; display: grid; grid-template: minmax(0, 1fr) minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr); gap: 1px; background: light-dark(color-mix(in srgb, var(--pi-bg) 94%, var(--pi-text)), color-mix(in srgb, var(--pi-bg) 85%, black)); }
+    .grid:not([data-single]) { position: relative; }
+    /* 9px over the 1px gutter, centred on it: the gutter stays the only line until hover, focus or a drag. */
+    .grid-divider { position: absolute; z-index: 7; touch-action: none; }
+    .grid-divider[data-axis="columns"] { top: 0; bottom: 0; left: -5px; width: 9px; cursor: col-resize; }
+    .grid-divider[data-axis="rows"] { left: 0; right: 0; top: -5px; height: 9px; cursor: row-resize; }
+    .grid-divider::after { content: ""; position: absolute; inset: 0; }
+    .grid-divider[data-axis="columns"]::after { left: 3px; right: 3px; }
+    .grid-divider[data-axis="rows"]::after { top: 3px; bottom: 3px; }
+    .grid-divider:hover::after, .grid-divider:focus-visible::after, .grid-divider[data-dragging]::after { background: var(--pi-accent); }
+    .grid-divider:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pi-bg); }
     /* Grid tracks size every tile, so it can contain its size: the question drawer measures its height against it (cqh). */
     .tile { container-type: size; }
@@ -2007,7 +2104,13 @@ export class WorkbenchApp extends LitElement {
     .tile .chat-shell { flex: 1 1 auto; height: auto; min-height: 0; }
     /* Compact: the Workstream colour is a 2px edge and a contrast-checked tint, so the title stays --pi-text. */
     .tile-bar { position: relative; z-index: 6; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 2px 0 6px; border-left: 2px solid var(--ws, transparent); background: color-mix(in srgb, var(--ws, var(--pi-surface)) ${WORKSTREAM_TINT_PERCENTAGES.tab}%, var(--pi-surface)); color: var(--pi-muted); font-size: 12px; user-select: none; --workbench-menu-button-size: 24px; }
-    .tile-title { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--pi-text); text-overflow: ellipsis; white-space: nowrap; }
+    .tile-title { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; }
+    .chat-name { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-text); text-overflow: ellipsis; }
+    /* The Workstream title gives way long before the Chat title does. */
+    .tile-ws { flex: 0 1000 auto; min-width: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; color: var(--pi-muted); }
+    .tile-ws::before { content: "·"; }
+    .ws-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ws); }
+    .tile-ws > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .needs { flex: 0 0 auto; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--pi-warning) 28%, transparent); color: var(--pi-text); font-size: 11px; font-weight: 700; line-height: 18px; }
     .tile-tools { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; }
     /* Full size and close take room only while the bar is hovered or holds focus, leaving the title the width; the menu stays put at the end. */

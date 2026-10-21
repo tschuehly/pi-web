@@ -2,7 +2,7 @@ import { LitElement, css, html } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { customElement, property, state } from "lit/decorators.js";
 import type { SessionStatus } from "../api";
-import { ACTIVITY_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY, WATCHER_STATUS_KEY, isTerminalDelegate, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, parseWatcherStatusSnapshot, visibleShellExecutions } from "../extensionStatusSnapshots";
+import { activitySummary, isTerminalDelegate } from "../extensionStatusSnapshots";
 
 function shortModel(model: string | undefined): string | undefined {
   return model?.split("/").at(-1)?.replace(/-\d{8}$/, "");
@@ -12,6 +12,8 @@ function shortModel(model: string | undefined): string | undefined {
 export class DelegateRoster extends LitElement {
   @property({ attribute: false }) status?: SessionStatus;
   @property({ type: Boolean }) collapsed = false;
+  /** A Grid tile folds the roster away entirely: its composer's Activity badge shows the count and unfolds it. */
+  @property({ type: Boolean }) compact = false;
   @property({ attribute: false }) onToggleCollapsed?: () => void;
   @state() private expandedBashJobs = new Set<string>();
 
@@ -29,25 +31,21 @@ export class DelegateRoster extends LitElement {
   }
 
   override render() {
-    const delegates = parseDelegateActivitySnapshot(this.status?.extensionStatuses?.[ACTIVITY_STATUS_KEY]);
-    const watchers = parseWatcherStatusSnapshot(this.status?.extensionStatuses?.[WATCHER_STATUS_KEY]);
-    const shells = visibleShellExecutions(this.status?.activeToolExecutions);
-    const backgroundBash = parseBackgroundBashStatusSnapshot(this.status?.extensionStatuses?.[BACKGROUND_BASH_STATUS_KEY]);
-    const uncollected = delegates.filter(isTerminalDelegate).length;
+    const { delegates, watchers, shells, backgroundBash, label } = activitySummary(this.status);
     const rows = [
       ...delegates.map((item) => ({ key: `delegate:${item.id}`, source: "delegate" as const, item })),
       ...watchers.map((item) => ({ key: `watcher:${item.logicalId}`, source: "watcher" as const, item })),
       ...shells.map((item) => ({ key: `shell:${item.id}`, source: "shell" as const, item })),
       ...backgroundBash.map((item) => ({ key: `background-bash:${item.id}`, source: "background-bash" as const, item })),
     ];
-    if (rows.length === 0) return null;
+    if (rows.length === 0 || (this.compact && this.collapsed)) return null;
     return html`
       <section aria-label="Activity">
         <header>
           <button type="button" class="section-toggle" aria-expanded=${String(!this.collapsed)} aria-controls="delegate-roster-rows" @click=${() => { this.onToggleCollapsed?.(); }}>
             <span class="section-title">
               <span class="section-name"><span class="chevron" aria-hidden="true">${this.collapsed ? "▸" : "▾"}</span> Activity</span>
-              <small class="aggregate">${String(delegates.length - uncollected)} running ${delegates.length - uncollected === 1 ? "delegate" : "delegates"} · ${String(uncollected)} uncollected · ${String(watchers.length)} ${watchers.length === 1 ? "watcher" : "watchers"} · ${String(shells.length + backgroundBash.length)} ${shells.length + backgroundBash.length === 1 ? "shell" : "shells"}</small>
+              <small class="aggregate">${label}</small>
             </span>
           </button>
         </header>
