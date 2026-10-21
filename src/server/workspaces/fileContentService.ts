@@ -7,7 +7,8 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import type { DeleteWorkspaceFileResponse, FileContentMediaType, FileContentResponse, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, PiWebPathAccessConfig, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse } from "../../shared/apiTypes.js";
-import { classifyWorkspaceFile, MAX_WORKSPACE_FILE_CONTENT_BYTES, type WorkspaceFileClassification } from "../../shared/workspaceFiles.js";
+import { MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../shared/workspaceFiles.js";
+import { classifyWebWorkspaceFile, type WebWorkspaceFileClassification } from "./webFileClassification.js";
 import { resolveWorkspacePathAccessTarget } from "./pathAccessPolicy.js";
 import { openDirectoryFromDescriptor, relativeToGrantedRoot } from "./fileTreeService.js";
 import { ensureInside, isNodeErrorWithCode, resolveInsideWorkspace, resolveParentInsideWorkspace } from "./pathSafety.js";
@@ -27,7 +28,7 @@ export async function readWorkspaceFile(rootPath: string, path: string | undefin
   const s = result;
   const buffer = Buffer.from(s.content, "base64");
   if (buffer.length !== Math.min(s.size, MAX_WORKSPACE_FILE_CONTENT_BYTES)) throw new Error("Incomplete workspace file read");
-  const classification = classifyWorkspaceFile(displayPath);
+  const classification = classifyWebWorkspaceFile(displayPath);
   const media = mediaForClassification(classification);
   // Text-source formats (HTML, Markdown, SVG) retain capped literal UTF-8
   // source for Raw mode. Raster image and PDF bytes stay out of JSON and are
@@ -276,7 +277,7 @@ function languageForPath(path: string): { language?: string } {
   return language === undefined ? {} : { language };
 }
 
-function mediaForClassification(classification: WorkspaceFileClassification | undefined): { mediaType?: FileContentMediaType; mimeType?: string } {
+function mediaForClassification(classification: WebWorkspaceFileClassification | undefined): { mediaType?: FileContentMediaType; mimeType?: string } {
   if (classification === undefined) return {};
   return {
     ...(classification.mediaType === "video" ? {} : { mediaType: classification.mediaType }),

@@ -4,13 +4,14 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { pipeline, Readable, Transform } from "node:stream";
 import type { PiWebPathAccessConfig } from "../../shared/apiTypes.js";
-import { classifyWorkspaceFile, MAX_INLINE_PREVIEW_BYTES, MAX_INLINE_PREVIEW_LABEL, workspaceFileName, type WorkspaceFileClassification } from "../../shared/workspaceFiles.js";
+import { MAX_INLINE_PREVIEW_BYTES, MAX_INLINE_PREVIEW_LABEL, workspaceFileName } from "../../shared/workspaceFiles.js";
+import { classifyWebWorkspaceFile, type WebWorkspaceFileClassification } from "./webFileClassification.js";
 import { resolveWorkspacePathAccessTarget } from "./pathAccessPolicy.js";
 
 export interface WorkspaceFilePreview {
   path: string;
   filename: string;
-  mediaType?: WorkspaceFileClassification["mediaType"];
+  mediaType?: WebWorkspaceFileClassification["mediaType"];
   /** Byte count of `body`, safe to advertise as `Content-Length`. */
   size: number;
   /** Set when `body` is the requested byte range of a `total`-byte file (HTTP 206). */
@@ -77,7 +78,7 @@ export async function readWorkspaceFilePreview(
   const { target, displayPath } = explicitImage
     ? await resolveExplicitImageTarget(rootPath, path)
     : await resolveWorkspacePathAccessTarget(rootPath, path, pathAccess);
-  if (explicitImage && classifyWorkspaceFile(displayPath)?.mediaType !== "image") {
+  if (explicitImage && classifyWebWorkspaceFile(displayPath)?.mediaType !== "image") {
     throw new Error("Explicit image preview requires an image file");
   }
   // Reject devices/directories before opening, and use nonblocking mode so a
@@ -98,7 +99,7 @@ export async function readWorkspaceFilePreview(
     // Download mode serves any file as an opaque octet-stream attachment. No
     // size cap: the response is streamed, and the browser writes it straight to
     // disk. The stream still cannot exceed the validated size.
-    const classification = options.download === true ? undefined : classifyWorkspaceFile(displayPath);
+    const classification = options.download === true ? undefined : classifyWebWorkspaceFile(displayPath);
     if (options.download !== true) {
       if (classification === undefined || !("previewMimeType" in classification)) throw new Error("Inline preview is not supported for this file type");
       if (classification.mediaType !== "video" && stats.size > MAX_INLINE_PREVIEW_BYTES) throw new Error(`File is too large to preview (limit ${MAX_INLINE_PREVIEW_LABEL})`);
