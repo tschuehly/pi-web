@@ -11,7 +11,7 @@ import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePr
 import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
-import { WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
+import { activitySummary, WORKING_MODE_STATUS_KEY, type WorkingModeState } from "../extensionStatusSnapshots";
 import type { StagedPromptChip } from "../promptChips";
 import { editOutsideReplyQuotes, replyQuoteFolding, replyQuoteInsertion, type ReplyQuote } from "../replyQuotes";
 import { detectPromptCompletionTrigger, type PromptCompletionTrigger } from "../promptCompletions";
@@ -23,7 +23,7 @@ import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUs
 import { composerKeyboardSubmissionEnabled, composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
-import { renderAttachIcon, renderContextRing, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
+import { renderActivityIcon, renderAttachIcon, renderContextRing, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
 import "./WorkingModeControls";
 import "./ModelEffortPicker";
 import { formatCost, formatTokenCount } from "../utils/format";
@@ -81,10 +81,14 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean, reflect: true, attribute: "show-usage" }) showUsage = false;
   @property({ type: Number }) warningCount = 0;
   /**
-   * A grid tile's compact composer: at most two rows. Row 1 = attachment chips, a one-line input that grows, and attach/send/stop;
-   * row 2 = one meta line (model · effort, context, cost, mode), dropped entirely when `showUsage` is false.
+   * A grid tile's compact composer: one full-width field holding attachment chips, a one-line input that grows, then at its
+   * right edge the model icon (model · effort in its tooltip), the context ring (numbers and cost in its tooltip), the Working Mode icons, the Activity badge, and attach/send/stop (stop only while
+   * there is work to stop).
    */
   @property({ type: Boolean, reflect: true }) dense = false;
+  /** Dense only: the Activity badge, shown while the roster has entries, toggles the roster above the composer. */
+  @property({ attribute: false }) onToggleActivity?: () => void;
+  @property({ type: Boolean }) activityExpanded = false;
   @property({ type: Boolean }) sending = false;
   @property({ attribute: false }) promptChips: readonly StagedPromptChip[] = [];
   @property({ attribute: false }) onRemoveChip?: (chip: StagedPromptChip) => void;
@@ -167,7 +171,7 @@ export class PromptEditor extends LitElement {
     // status field the template actually displays differs, so streaming does not
     // disturb the editor DOM (and any in-progress touch gesture survives).
     if (changed.has("status") && changed.size === 1) {
-      return !sessionStatusRenderEqual(changed.get("status"), this.status, this.showUsage);
+      return !sessionStatusRenderEqual(changed.get("status"), this.status, this.showUsage, this.dense && this.onToggleActivity !== undefined);
     }
     return true;
   }
@@ -247,19 +251,19 @@ export class PromptEditor extends LitElement {
             <button class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
             <button class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
             ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
-            <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
+            ${this.dense && !this.canStop ? null : html`<button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>`}
           </div>
       `;
     const meta = html`
           ${this.renderCompactStatus()}
           ${this.showUsage ? this.renderUsage() : null}
-          <working-mode-controls .status=${this.status} .transcriptSelection=${this.workingModeTranscriptSelection} .onRunCommand=${this.onRunCommand}></working-mode-controls>
+          <working-mode-controls ?compact=${this.dense} .status=${this.status} .transcriptSelection=${this.workingModeTranscriptSelection} .onRunCommand=${this.onRunCommand}></working-mode-controls>
       `;
     return html`
       <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => { void this.handlePaste(event); }} @dragover=${(event: DragEvent) => { this.handleDragOver(event); }} @drop=${(event: DragEvent) => { void this.handleDrop(event); }}>
         ${resizeHandle}
-        <div class="input-row">${this.dense ? this.renderDenseAttachments() : null}${editor}${this.dense ? composerActions : null}</div>
-        ${this.dense ? (this.showUsage ? html`<div class="actions">${meta}</div>` : null) : html`<div class="actions">${meta}${composerActions}</div>`}
+        <div class="input-row">${this.dense ? this.renderDenseAttachments() : null}${editor}${this.dense ? html`<div class="dense-meta">${meta}</div>${this.renderActivityBadge()}${composerActions}` : null}</div>
+        ${this.dense ? null : html`<div class="actions">${meta}${composerActions}</div>`}
       </footer>
     `;
   }
@@ -307,7 +311,14 @@ export class PromptEditor extends LitElement {
 
   private renderCompactStatus() {
     if (this.status === undefined) return null;
-    return html`<model-effort-picker .status=${this.status} .thinkingLevels=${this.thinkingLevels} .loadModels=${this.loadModels} .onSetModel=${this.onSetModel} .onSetThinkingLevel=${this.onSetThinkingLevel}></model-effort-picker>`;
+    return html`<model-effort-picker ?compact=${this.dense} .status=${this.status} .thinkingLevels=${this.thinkingLevels} .loadModels=${this.loadModels} .onSetModel=${this.onSetModel} .onSetThinkingLevel=${this.onSetThinkingLevel}></model-effort-picker>`;
+  }
+
+  private renderActivityBadge() {
+    if (this.onToggleActivity === undefined) return null;
+    const { count, label } = activitySummary(this.status);
+    if (count === 0) return null;
+    return html`<button type="button" class="activity-badge" title=${label} aria-label=${`Activity: ${label}`} aria-expanded=${this.activityExpanded ? "true" : "false"} @click=${() => this.onToggleActivity?.()}>${renderActivityIcon()}<span aria-hidden="true">${count}</span></button>`;
   }
 
   private renderUsage() {
@@ -326,6 +337,7 @@ export class PromptEditor extends LitElement {
         : `Context: ${String(context.tokens)} of ${String(context.contextWindow)} tokens used${exactContextPercent === undefined ? "" : ` (${exactContextPercent}%)`}`;
     const inputLabel = `Input tokens: ${String(status.tokens.input)}`;
     const outputLabel = `Output tokens: ${String(status.tokens.output)}`;
+    const costLabel = `Session cost: $${String(status.cost)}`;
     const level = percent === undefined ? "" : percent >= 90 ? " context-danger" : percent >= 70 ? " context-warning" : "";
     const metric = (name: string, visible: unknown, exact: string, title = exact) => html`<li data-usage=${name} title=${title}><span aria-hidden="true">${visible}</span><span class="visually-hidden">${exact}</span></li>`;
     // Input and output are cumulative session counters with little per-turn decision value: they stay
@@ -334,8 +346,8 @@ export class PromptEditor extends LitElement {
       <ul class="usage" aria-label="Session usage">
         <li data-usage="input" class="visually-hidden">${inputLabel}</li>
         <li data-usage="output" class="visually-hidden">${outputLabel}</li>
-        ${metric("context", html`<span class=${`context-meter${level}`}>${renderContextRing(percent)}${contextText}</span>`, contextLabel, `${contextLabel}\n${inputLabel}\n${outputLabel}`)}
-        ${metric("cost", formatCost(status.cost), `Session cost: $${String(status.cost)}`)}
+        ${metric("context", html`<span class=${`context-meter${level}`}>${renderContextRing(percent)}${this.dense ? null : contextText}</span>`, contextLabel, `${this.dense ? `${contextText}\n` : ""}${contextLabel}\n${inputLabel}\n${outputLabel}${this.dense ? `\n${costLabel}` : ""}`)}
+        ${this.dense ? html`<li data-usage="cost" class="visually-hidden">${costLabel}</li>` : metric("cost", formatCost(status.cost), costLabel)}
         ${this.warningCount > 0 ? metric("warnings", `Warnings ${String(this.warningCount)}`, `Session warnings: ${String(this.warningCount)}`) : null}
         ${status.pendingMessageCount > 0 ? metric("queued", `Queued ${String(status.pendingMessageCount)}`, `Queued messages: ${String(status.pendingMessageCount)}`) : null}
       </ul>
@@ -1079,13 +1091,14 @@ export class PromptEditor extends LitElement {
 
 // Compare only status fields rendered by PromptEditor so unrelated streaming
 // churn does not disturb the editor DOM or an in-progress touch gesture.
-function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus | undefined, showUsage: boolean): boolean {
+function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus | undefined, showUsage: boolean, showsActivity: boolean): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;
   if (a.model?.id !== b.model?.id
     || a.model?.provider !== b.model?.provider
     || a.thinkingLevel !== b.thinkingLevel
-    || a.extensionStatuses?.[WORKING_MODE_STATUS_KEY] !== b.extensionStatuses?.[WORKING_MODE_STATUS_KEY]) return false;
+    || a.extensionStatuses?.[WORKING_MODE_STATUS_KEY] !== b.extensionStatuses?.[WORKING_MODE_STATUS_KEY]
+    || (showsActivity && activitySummary(a).label !== activitySummary(b).label)) return false;
   return !showUsage || (a.tokens.input === b.tokens.input
     && a.tokens.output === b.tokens.output
     && a.contextUsage?.tokens === b.contextUsage?.tokens

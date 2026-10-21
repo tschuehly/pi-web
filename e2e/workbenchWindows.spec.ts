@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { E2E_LONG_CHAT, E2E_MORE_CHATS, E2E_MORE_LONG_CHAT_IDS, E2E_PROJECT_ID, E2E_SESSION_ID } from "./isolatedPiWeb";
@@ -97,6 +98,11 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", RELEASE);
   await expect(tabRowTools(page)).toHaveCount(0);
   await expect(chatMenu(page.locator('.tile[data-focused="true"] > .tile-bar'))).toBeVisible();
+  // Each tile bar names its Workstream after the Chat, the Workstream title giving way first.
+  const notesTitle = page.locator(`.tile[data-session="${NOTES}"] .tile-title`);
+  await expect(notesTitle).toHaveAttribute("title", "Workstream: Pi Workbench UI dogfooding and two-tier tab layout review · Chat: Where are the notes?");
+  await expect(notesTitle.locator(".tile-ws")).toHaveText("Pi Workbench UI dogfooding and two-tier tab layout review");
+  expect(await notesTitle.locator(".chat-name").evaluate((name) => name.scrollWidth <= name.clientWidth)).toBe(true);
   // No window row over the Grid: tiles start at the top.
   expect((await page.locator(".grid").boundingBox())?.y).toBe((await page.locator("pi-workbench-app").boundingBox())?.y);
   await expect(page.locator(`.tile[data-session="${GUIDE}"] workbench-chat-pane chat-view`)).toContainText("Done.");
@@ -338,6 +344,23 @@ test("focusing the full-width tile of three keeps the scrolled top-right tile wh
   }
 });
 
+test("every Grid tile's composer is one row that grows with a multi-line draft", async ({ page }) => {
+  await openGrid(page, [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id]);
+  // Playwright's CSS locators pierce the tiles' shadow roots.
+  const heights = await page.locator(".grid > .tile prompt-editor").evaluateAll((editors) => editors.map((editor) => editor.getBoundingClientRect().height));
+  expect(heights).toHaveLength(4);
+  for (const height of heights) expect(height).toBeLessThanOrEqual(36);
+  // The field spans the tile; inside it the model is one icon, so the text keeps all but the icon strip at the right edge.
+  const tile = page.locator('.tile[data-focused="true"]');
+  const [tileBox, field, text, model] = await Promise.all([tile, tile.locator("prompt-editor .input-row"), tile.locator("prompt-editor .editor-wrap"), tile.locator("model-effort-picker .trigger")].map(async (locator) => (await locator.boundingBox())?.width ?? 0));
+  expect(field).toBeGreaterThanOrEqual((tileBox ?? 0) - 16);
+  expect(model).toBeLessThanOrEqual(30);
+  expect(text).toBeGreaterThanOrEqual((field ?? 0) - 220);
+  await page.locator('.tile[data-focused="true"] prompt-editor .cm-content').click();
+  await page.keyboard.insertText("one\ntwo\nthree");
+  await expect.poll(async () => (await page.locator('.tile[data-focused="true"] prompt-editor').boundingBox())?.height ?? 0).toBeGreaterThan(60);
+});
+
 test("Files stays open beside the Grid when focus moves, and moves no tile", async ({ page }) => {
   await openGrid(page, [NOTES, RELEASE, GUIDE]);
   await (await openChatMenu(page.locator('.tile[data-focused="true"] > .tile-bar'))).locator(".files-toggle").click();
@@ -532,6 +555,40 @@ test("captures resized Grids for review", async ({ browser }) => {
       await context.close();
     }
   }
+});
+
+test("captures Grid composers for review", async ({ browser }) => {
+  test.skip(SHOTS === undefined, "set PI_WEB_E2E_SCREENSHOTS to keep review screenshots");
+  test.setTimeout(180_000);
+  const widths: Record<string, unknown> = {};
+  for (const scheme of ["dark", "light"] as const) {
+    for (const width of [900, 1440]) {
+      const context = await browser.newContext({ colorScheme: scheme });
+      const page = await context.newPage();
+      await openGrid(page, [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id]);
+      await page.setViewportSize({ width, height: 900 });
+      await page.waitForTimeout(600);
+      const shot = async (name: string) => { await page.screenshot({ path: join(SHOTS ?? "", `grid-composer-${name}-${String(width)}-${scheme}.png`) }); };
+      await shot("idle");
+      widths[`${String(width)}-${scheme}`] = await page.locator(".grid > .tile").evaluateAll((tiles) => tiles.map((tile) => {
+        const find = (root: Element | ShadowRoot): Element | undefined => root.querySelector("prompt-editor") ?? [...root.querySelectorAll("*")].flatMap((element) => element.shadowRoot === null ? [] : [find(element.shadowRoot)]).find((found) => found !== undefined);
+        const editor = find(tile)?.shadowRoot;
+        const box = (selector: string) => Math.round(editor?.querySelector(selector)?.getBoundingClientRect().width ?? 0);
+        return { tile: Math.round(tile.getBoundingClientRect().width), box: box(".input-row"), text: box(".editor-wrap") };
+      }));
+      await page.locator('.tile[data-focused="true"] prompt-editor .cm-content').click();
+      await page.keyboard.insertText("A first line long enough to wrap before the icons at the right edge of the field in every tile width\nSecond line\nThird line");
+      await page.waitForTimeout(300);
+      await shot("typing");
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.press("Delete");
+      await page.locator('.tile[data-focused="true"] model-effort-picker .trigger').click();
+      await page.waitForTimeout(400);
+      await shot("model-picker");
+      await context.close();
+    }
+  }
+  writeFileSync(join(SHOTS ?? "", "grid-composer-widths.json"), JSON.stringify(widths, null, 1));
 });
 
 test("one click on a resting tile's menu focuses the tile and opens its menu, Files then opening beside the Grid", async ({ page }) => {
