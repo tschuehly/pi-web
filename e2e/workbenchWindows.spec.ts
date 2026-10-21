@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { E2E_LONG_CHAT, E2E_MORE_CHATS, E2E_PROJECT_ID, E2E_SESSION_ID } from "./isolatedPiWeb";
+import { E2E_LONG_CHAT, E2E_MORE_CHATS, E2E_MORE_LONG_CHAT_IDS, E2E_PROJECT_ID, E2E_SESSION_ID } from "./isolatedPiWeb";
 
 // Set PI_WEB_E2E_SCREENSHOTS to a folder to keep review screenshots of the window tabs and grid.
 const SHOTS = process.env["PI_WEB_E2E_SCREENSHOTS"];
@@ -285,6 +285,8 @@ async function openGrid(page: Page, sessions: readonly string[], focused = sessi
   await page.setViewportSize({ width: 1440, height: 900 });
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
+  // The URL's Chat joins the window, so a Grid without it opens on its focused Chat instead.
+  if (!sessions.includes(NOTES)) target.searchParams.set("session", focused);
   await page.goto(target.toString());
   await expect(page.locator(".grid > .tile")).toHaveCount(sessions.length);
   await expect.poll(async () => (await page.evaluate(gridLayout)).every((tile) => tile.anchor !== "none"), { timeout: 10_000 }).toBe(true);
@@ -394,6 +396,8 @@ async function dragDivider(page: Page, axis: "columns" | "rows", delta: number):
   await page.mouse.down();
   await page.mouse.move(axis === "columns" ? x + delta : x, axis === "rows" ? y + delta : y, { steps: 12 });
   await page.mouse.up();
+  // Two frames, so the tiles' resize observers have kept their Chats' scroll at the new size.
+  await page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(resolve); }); }));
 }
 
 const tileBox = async (page: Page, session: string) => {
@@ -466,6 +470,68 @@ test("dragging the Grid's dividers resizes its columns and rows, which survive f
   await expect(rows).toHaveAttribute("aria-valuenow", String(valueNow + 2));
   await page.keyboard.press("Shift+ArrowUp");
   await expect(rows).toHaveAttribute("aria-valuenow", String(valueNow - 8));
+});
+
+interface DragCost { appRenders: number; chatViewRenders: number; frames: number[]; layout: number[] }
+
+/**
+ * Drags `axis`'s divider (held down by the page's mouse) one pointermove a frame for `frames` frames, swinging 300px
+ * either way, and counts the renders of pi-workbench-app and every chat-view, each frame's gap and its forced layout.
+ */
+async function measureDividerDrag(page: Page, axis: "columns" | "rows", frames: number): Promise<DragCost> {
+  return page.evaluate(async ([axis, frames]) => {
+    const cost: DragCost = { appRenders: 0, chatViewRenders: 0, frames: [], layout: [] };
+    const restore: (() => void)[] = [];
+    for (const [tag, key] of [["pi-workbench-app", "appRenders"], ["chat-view", "chatViewRenders"]] as const) {
+      const proto = customElements.get(tag)?.prototype as { update(changed: unknown): void } | undefined;
+      if (proto === undefined) throw new Error(`no ${tag}`);
+      const update = proto.update;
+      proto.update = function (this: unknown, changed: unknown) { cost[key] += 1; update.call(this, changed); };
+      restore.push(() => { proto.update = update; });
+    }
+    const find = (root: Document | ShadowRoot, selector: string): HTMLElement | undefined => root.querySelector<HTMLElement>(selector) ?? [...root.querySelectorAll("*")].flatMap((element) => element.shadowRoot === null ? [] : [find(element.shadowRoot, selector)]).find((found) => found !== undefined);
+    const handle = find(document, `.grid-divider[data-axis="${axis}"]`);
+    const app = find(document, "pi-workbench-app") as (HTMLElement & { updateComplete: Promise<unknown> }) | undefined;
+    if (handle === undefined || app === undefined) throw new Error(`no ${axis} divider`);
+    const layout = () => { const start = performance.now(); handle.parentElement?.querySelector(".tile")?.getBoundingClientRect(); return performance.now() - start; };
+    const box = handle.getBoundingClientRect();
+    const [x, y] = axis === "columns" ? [box.x + box.width / 2, box.y + box.height / 4] : [box.x + box.width / 4, box.y + box.height / 2];
+    const frame = () => new Promise<number>((resolve) => { requestAnimationFrame(resolve); });
+    let last = await frame();
+    for (let index = 1; index <= frames; index += 1) {
+      const now = await frame();
+      cost.frames.push(now - last);
+      last = now;
+      // Whether a move lands in a render or in the next frame's write, these two layouts time what the frame pays for it.
+      const written = layout();
+      const offset = 300 * Math.sin(index / frames * 1.5 * Math.PI);
+      handle.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 1, bubbles: true, composed: true, cancelable: true, clientX: axis === "columns" ? x + offset : x, clientY: axis === "rows" ? y + offset : y }));
+      await app.updateComplete;
+      cost.layout.push(written + layout());
+    }
+    for (const undo of restore) undo();
+    return cost;
+  }, [axis, frames] as const);
+}
+
+test("dragging a Grid divider over four long transcripts renders nothing per pointermove", async ({ page }) => {
+  await openGrid(page, [E2E_LONG_CHAT.id, ...E2E_MORE_LONG_CHAT_IDS]);
+  const columns = page.locator('.grid-divider[data-axis="columns"]');
+  const box = await columns.boundingBox();
+  if (box === null) throw new Error("no columns divider");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 4);
+  await page.mouse.down();
+  const cost = await measureDividerDrag(page, "columns", 120);
+  await page.mouse.up();
+  const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length * 0.95)] ?? Number.NaN;
+  const span = cost.frames.reduce((sum, gap) => sum + gap, 0);
+  // Review numbers, not asserted: frame rates vary by machine.
+  console.log(`Grid drag: ${JSON.stringify({ appRenders: cost.appRenders, chatViewRenders: cost.chatViewRenders, fps: Math.round(cost.frames.length / span * 1000), frameGapP95: p95(cost.frames), longFrames: cost.frames.filter((gap) => gap > 50).length, layoutP95: p95(cost.layout) })}`);
+  // The drag writes the Grid's template itself, once a frame: a render per move would re-render every tile's Chat.
+  expect(cost.appRenders).toBe(0);
+  expect(cost.chatViewRenders).toBe(0);
+  // The drag ends 300px left of even: it moved the tiles, and the release stored it.
+  await expect(columns).not.toHaveAttribute("aria-valuenow", "50");
 });
 
 test("captures resized Grids for review", async ({ browser }) => {

@@ -116,7 +116,8 @@ describe("WorkbenchQuestionChips", () => {
     expect(styles).toMatch(/\.chips \{ flex: 0 0 auto;/);
     expect(styles).toMatch(/\.chips \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/);
     expect(styles).toMatch(/\.chip \{ flex: 0 0 auto;/);
-    expect(styles).toMatch(/\.drawer \{[^}]*max-height: min\(60cqh, 640px\);/);
+    // 60% of the tile, or of the height a Grid resize froze while tiles stop being size containers.
+    expect(styles).toMatch(/\.drawer \{[^}]*max-height: min\(calc\(0\.6 \* var\(--pi-tile-height, 100cqh\)\), 640px\);/);
     expect(styles).toMatch(/\.drawer \{ flex: 0 1 auto;[^}]*min-height: 0;/);
   });
 
