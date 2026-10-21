@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionStatus } from "../api";
 import { ACTIVITY_STATUS_KEY } from "../extensionStatusSnapshots";
+import type { ModelEffortPicker } from "./ModelEffortPicker";
 import { PromptEditor } from "./PromptEditor";
 
 afterEach(() => {
@@ -43,6 +44,27 @@ describe("dense composer", () => {
 
     const busy = await mount(true, true, (editor) => { editor.status = status(); editor.canStop = true; });
     expect(busy.querySelector(".composer-actions .stop-button")).not.toBeNull();
+  });
+
+  it("shows the model as an icon naming model and thinking in its tooltip and label, opening the same picker", async () => {
+    const root = await mount(true, true, (editor) => { editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" }, thinkingLevel: "high" }; });
+    const picker = root.querySelector<ModelEffortPicker>("model-effort-picker");
+    await picker?.updateComplete;
+
+    const trigger = picker?.shadowRoot?.querySelector<HTMLButtonElement>(".trigger");
+    expect(picker?.hasAttribute("compact")).toBe(true);
+    expect(trigger?.textContent.trim()).toBe("");
+    expect(trigger?.querySelector("svg")).not.toBeNull();
+    expect(trigger?.title).toBe("Model: anthropic/claude-opus-5-5 \u00b7 Thinking: high");
+    expect(trigger?.getAttribute("aria-label")).toBe("Model: anthropic/claude-opus-5-5, thinking high. Change model or thinking");
+    trigger?.click();
+    await picker?.updateComplete;
+    expect(picker?.shadowRoot?.querySelector('[role="dialog"]')).not.toBeNull();
+
+    const regular = await mount(false, true, (editor) => { editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" } }; });
+    const regularPicker = regular.querySelector<ModelEffortPicker>("model-effort-picker");
+    await regularPicker?.updateComplete;
+    expect(regularPicker?.shadowRoot?.querySelector(".model-name")?.textContent).toBe("claude-opus-5-5");
   });
 
   it("shows the context as a ring whose tooltip carries the numbers and the cost, keeping the cost for screen readers", async () => {

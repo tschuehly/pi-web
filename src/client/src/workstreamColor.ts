@@ -2,8 +2,8 @@ import type { ReactiveController, ReactiveControllerHost } from "lit";
 
 export const WORKSTREAM_TINT_PERCENTAGES = {
   mark: 30,
-  tab: 12,
-  tabSelected: 26,
+  tab: 20,
+  tabSelected: 36,
 } as const;
 
 /** A compact title-derived identity cue that remains distinct without colour. */

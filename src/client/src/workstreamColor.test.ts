@@ -56,6 +56,6 @@ describe("workstreamAccentColor", () => {
   });
 
   it("keeps full-surface identity tint strengths explicit", () => {
-    expect(WORKSTREAM_TINT_PERCENTAGES).toEqual({ mark: 30, tab: 12, tabSelected: 26 });
+    expect(WORKSTREAM_TINT_PERCENTAGES).toEqual({ mark: 30, tab: 20, tabSelected: 36 });
   });
 });
