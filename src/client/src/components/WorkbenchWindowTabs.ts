@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { styleMap } from "lit/directives/style-map.js";
 import type { SessionStatus } from "../api";
-import { gridPage, gridPageCount, gridPageLead, windowGroups, workstreamKey, workstreamTabTarget, type ChatGroup, type WindowChat, type WindowLayout, type WorkbenchWindow } from "../workbenchWindows";
+import { gridPage, gridPageCount, gridPageLead, NO_WORKSTREAM_KEY, windowGroups, workstreamKey, workstreamTabTarget, type ChatGroup, type WindowChat, type WindowLayout, type WorkbenchWindow } from "../workbenchWindows";
 import { workstreamAccentColor } from "../workstreamColor";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
@@ -83,6 +83,7 @@ const onActivationKey = (activate: () => void) => (event: KeyboardEvent) => {
 /**
  * Quiet text tabs: the selected Workstream's Chats beside the `tools` slot (the Chat's toolbar) and the window actions,
  * with a row of Workstream tabs above once two or more share the window. Selecting a Workstream reopens its last-active Chat.
+ * In that top row, Chats without a Workstream are tabs of their own, and the lower row lists Chats only for a Workstream with several.
  */
 @customElement("workbench-window-tabs")
 export class WorkbenchWindowTabs extends LitElement {
@@ -134,14 +135,15 @@ export class WorkbenchWindowTabs extends LitElement {
 
   /** A crowded row scrolls: the Chat on screen stays in view as the selection or the row's room changes. */
   private readonly keepSelectedInView = (): void => {
-    const strip = this.renderRoot.querySelector<HTMLElement>(".tabs.chats");
-    const tab = strip?.querySelector<HTMLElement>('[aria-selected="true"]') ?? null;
-    if (strip === null || tab === null) return;
-    // Only the strip scrolls, never the page around it.
-    const room = strip.getBoundingClientRect();
-    const bounds = tab.getBoundingClientRect();
-    if (bounds.left < room.left) strip.scrollLeft -= room.left - bounds.left;
-    else if (bounds.right > room.right) strip.scrollLeft += Math.min(bounds.right - room.right, bounds.left - room.left);
+    for (const tab of this.renderRoot.querySelectorAll<HTMLElement>('.tabs > [aria-selected="true"]')) {
+      const strip = tab.parentElement;
+      if (strip === null) continue;
+      // Only the strip scrolls, never the page around it.
+      const room = strip.getBoundingClientRect();
+      const bounds = tab.getBoundingClientRect();
+      if (bounds.left < room.left) strip.scrollLeft -= room.left - bounds.left;
+      else if (bounds.right > room.right) strip.scrollLeft += Math.min(bounds.right - room.right, bounds.left - room.left);
+    }
   };
   private readonly stripResizes = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(this.keepSelectedInView);
   private observedStrip: Element | null = null;
@@ -174,14 +176,19 @@ export class WorkbenchWindowTabs extends LitElement {
     const activeKey = current === undefined ? groups[0]?.key : workstreamKey(current);
     const activeGroup = groups.find((group) => group.key === activeKey) ?? groups[0];
     const tabs = window.layout === "tabs";
+    const twoRows = tabs && groups.length >= 2;
+    // With two rows, a Chat already named on top needs no lower tab: loose Chats and a Workstream's only Chat.
+    const lowerChats = !twoRows || (activeGroup !== undefined && activeGroup.key !== NO_WORKSTREAM_KEY && activeGroup.chats.length > 1);
     return html`
       <nav aria-label=${window.name} @dragover=${this.onDragOver} @drop=${this.onDrop}>
-        ${!tabs || groups.length < 2 ? nothing : html`
+        ${!twoRows ? nothing : html`
           <div class="tabs workstreams" role="tablist" aria-label=${`${window.name} Workstreams`}>
-            ${groups.map((group) => this.renderWorkstreamTab(window, group, this.selected !== undefined && group === activeGroup))}
+            ${groups.map((group) => group.key === NO_WORKSTREAM_KEY
+              ? group.chats.map((chat) => this.renderChatTab(chat))
+              : this.renderWorkstreamTab(window, group, this.selected !== undefined && group === activeGroup))}
           </div>`}
         <div class="bar">
-          ${!tabs ? this.renderGridLead(window) : html`
+          ${!tabs ? this.renderGridLead(window) : !lowerChats ? html`<span class="spacer"></span>` : html`
             <div class="tabs chats" role="tablist" aria-label=${`${activeGroup?.workstream?.title ?? "No Workstream"} Chats`}>
               ${activeGroup?.chats.map((chat) => this.renderChatTab(chat))}
             </div>`}
@@ -217,12 +224,18 @@ export class WorkbenchWindowTabs extends LitElement {
   private renderWorkstreamTab(window: WorkbenchWindow, group: ChatGroup, selected: boolean) {
     const label = group.workstream?.title ?? "No Workstream";
     const open = () => { this.select(workstreamTabTarget(window, group.key)); };
-    const move = this.moveHandlers(group.chats.map((chat) => chat.sessionId), label);
+    // A Workstream with one Chat has no lower tab, so its tab stands for that Chat: its status, its menu and ×.
+    const only = group.chats.length === 1 ? group.chats[0] : undefined;
+    const move = this.moveHandlers(group.chats.map((chat) => chat.sessionId), only?.title ?? label);
     return html`
-      <div role="tab" tabindex="0" class="workstream-tab" style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${`Workstream: ${label}`} draggable="true"
-        @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}>
+      <div role="tab" tabindex="0" class="workstream-tab" data-session=${only?.sessionId ?? nothing} style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${only === undefined ? `Workstream: ${label}` : `Workstream: ${label} · ${only.title}`} draggable="true"
+        @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
+        @auxclick=${(event: MouseEvent) => { if (only !== undefined && event.button === 1) this.close([only.sessionId]); }}>
+        ${only === undefined ? nothing : this.renderChatMarker(only)}
         <span class="title">${label}</span>
-        ${group.chats.length > 1 ? html`<span class="count" aria-label=${`${String(group.chats.length)} Chats`}>${String(group.chats.length)}</span>` : nothing}
+        ${only === undefined
+          ? html`<span class="count" aria-label=${`${String(group.chats.length)} Chats`}>${String(group.chats.length)}</span>`
+          : this.renderCloseButton(only)}
       </div>`;
   }
 
@@ -230,15 +243,24 @@ export class WorkbenchWindowTabs extends LitElement {
     const status = this.status(chat);
     const open = () => { this.select(chat.sessionId); };
     const move = this.moveHandlers([chat.sessionId], chat.title);
-    const questions = this.questionCounts[chat.sessionId] ?? 0;
     return html`
       <div role="tab" tabindex="0" class="chat-tab" data-session=${chat.sessionId} data-status=${status} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.title} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
         @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([chat.sessionId]); }}>
-        ${questions === 0 ? renderChatStatusDot(status) : html`<span class="questions" role="img" aria-label=${`${String(questions)} open ${questions === 1 ? "question" : "questions"}`}>${String(questions)}</span>`}
+        ${this.renderChatMarker(chat)}
         <span class="title">${chat.title}</span>
-        <button class="close" title="Close" aria-label=${`Close ${chat.title}`} @click=${(event: Event) => { event.stopPropagation(); this.close([chat.sessionId]); }} @keydown=${(event: KeyboardEvent) => { event.stopPropagation(); }}>${renderBuiltinTabIcon("x")}</button>
+        ${this.renderCloseButton(chat)}
       </div>`;
+  }
+
+  /** The status dot, or the open-question count in its place. */
+  private renderChatMarker(chat: WindowChat) {
+    const questions = this.questionCounts[chat.sessionId] ?? 0;
+    return questions === 0 ? renderChatStatusDot(this.status(chat)) : html`<span class="questions" role="img" aria-label=${`${String(questions)} open ${questions === 1 ? "question" : "questions"}`}>${String(questions)}</span>`;
+  }
+
+  private renderCloseButton(chat: WindowChat) {
+    return html`<button class="close" title="Close" aria-label=${`Close ${chat.title}`} @click=${(event: Event) => { event.stopPropagation(); this.close([chat.sessionId]); }} @keydown=${(event: KeyboardEvent) => { event.stopPropagation(); }}>${renderBuiltinTabIcon("x")}</button>`;
   }
 
   static override styles = [chatStatusDotStyles, css`
@@ -266,8 +288,11 @@ export class WorkbenchWindowTabs extends LitElement {
     .workstream-tab:focus-visible, .chat-tab:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -4px; border-radius: 6px; }
     .tabs.workstreams { height: 34px; padding: 0 8px 0 2px; }
     .workstream-tab { padding: 0 10px; font-weight: 500; }
+    .workstream-tab[data-session] { padding-right: 4px; }
     .count { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
     .tabs.chats { min-width: 120px; font-size: 12px; }
+    .spacer { flex: 1 1 auto; }
+    .workstreams .chat-tab { font-weight: 500; }
     .chat-tab { padding: 0 4px 0 10px; }
     .chat-tab::after { right: 4px; background: var(--pi-text); }
     .chat-tab:not([aria-selected="true"]):hover::after { opacity: .25; }

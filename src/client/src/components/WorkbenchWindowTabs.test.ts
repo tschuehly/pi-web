@@ -40,9 +40,9 @@ describe("window tabs", () => {
   it("shows Workstreams on top and the selected Workstream's Chats beneath, with status dots", async () => {
     const { root } = await mount("a2");
 
-    expect([...root.querySelectorAll(".workstream-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")])).toEqual([["Release", "true"], ["No Workstream", "false"]]);
+    expect([...root.querySelectorAll(".workstreams [role=tab]")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")])).toEqual([["Release", "true"], ["Chat x", "false"]]);
     expect(root.querySelector(".workstream-tab .count")?.textContent).toBe("2");
-    expect([...root.querySelectorAll(".chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected"), tab.querySelector(".dot")?.getAttribute("aria-label")]))
+    expect([...root.querySelectorAll(".bar .chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected"), tab.querySelector(".dot")?.getAttribute("aria-label")]))
       .toEqual([["Chat a1", "false", "Working"], ["Chat a2", "true", "Needs you"]]);
   });
 
@@ -71,7 +71,7 @@ describe("window tabs", () => {
 
     keydown(root.querySelector(".workstream-tab"), "Enter");
     keydown(root.querySelectorAll(".chat-tab")[0], " ");
-    keydown(root.querySelector(".chat-tab"), "a");
+    keydown(root.querySelector(".bar .chat-tab"), "a");
 
     expect(events).toEqual(["select a2", "select x"]);
   });
@@ -81,7 +81,7 @@ describe("window tabs", () => {
 
     root.querySelector<HTMLButtonElement>('button[aria-label="Close Chat a2"]')?.click();
     keydown(root.querySelector('button[aria-label="Close Chat a1"]'), "Enter");
-    root.querySelectorAll(".chat-tab")[0]?.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true }));
+    root.querySelectorAll(".bar .chat-tab")[0]?.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true }));
     root.querySelector<HTMLButtonElement>("button.add")?.click();
 
     expect(events).toEqual(["close a2", "close a1", "home"]);
@@ -96,8 +96,30 @@ describe("window tabs", () => {
     expect([...bar?.children ?? []].map((child) => child.matches("slot") ? `slot ${child.getAttribute("name") ?? ""}` : child.className)).toEqual(["tabs chats", "slot tools", "actions"]);
 
     const mixed = await mount("a1");
-    expect(mixed.root.querySelectorAll(".workstreams .workstream-tab")).toHaveLength(2);
+    expect(mixed.root.querySelectorAll(".workstreams [role=tab]")).toHaveLength(2);
     expect(mixed.root.querySelector(".bar .tabs.chats")).not.toBeNull();
+  });
+
+  it("puts Chats without a Workstream on top as their own tabs, and drops the second row for a single-Chat tab", async () => {
+    const docs = { id: "docs", title: "Docs" };
+    const window = [chat("a1", release), chat("d1", docs), chat("x"), chat("y")].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") })["w"];
+    const { root, events } = await mount("x", window);
+
+    expect([...root.querySelectorAll(".workstreams [role=tab]")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")]))
+      .toEqual([["Release", "false"], ["Docs", "false"], ["Chat x", "true"], ["Chat y", "false"]]);
+    expect(root.textContent).not.toContain("No Workstream");
+    expect(root.querySelector(".bar .tabs.chats")).toBeNull();
+
+    root.querySelector<HTMLButtonElement>('.workstreams button[aria-label="Close Chat y"]')?.click();
+    expect(events).toEqual(["close y"]);
+
+    const docsTab = root.querySelector('.workstream-tab[data-session="d1"]');
+    expect(docsTab?.querySelector(".dot")).not.toBeNull();
+    docsTab?.querySelector<HTMLButtonElement>('button[aria-label="Close Chat d1"]')?.click();
+    expect(events).toEqual(["close y", "close d1"]);
+
+    const onDocs = await mount("d1", window);
+    expect(onDocs.root.querySelector(".bar .tabs.chats")).toBeNull();
   });
 
   it("caps every tab between 120px and 200px, its full title as the tooltip, with the dot and \u00d7 always shown", async () => {
@@ -107,7 +129,7 @@ describe("window tabs", () => {
     expect(css).toMatch(/\.workstream-tab, \.chat-tab \{[^}]*min-width: 120px; max-width: 200px;[^}]*overflow: hidden/);
     expect(css).toMatch(/\.title \{[^}]*text-overflow: ellipsis/);
     expect(css).not.toMatch(/visibility: hidden/);
-    expect(root.querySelector(".chat-tab")?.getAttribute("title")).toBe("Chat a1");
+    expect(root.querySelector(".bar .chat-tab")?.getAttribute("title")).toBe("Chat a1");
     expect(root.querySelector(".workstream-tab")?.getAttribute("title")).toBe("Workstream: Release");
   });
 
@@ -143,7 +165,7 @@ describe("moving Chats", () => {
     const { tabs, root } = await mount("a1");
     record(tabs);
 
-    root.querySelector(".chat-tab")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }));
+    root.querySelector(".bar .chat-tab")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }));
     root.querySelector(".workstream-tab")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 5 }));
 
     expect(details).toEqual([
@@ -177,9 +199,9 @@ describe("moving Chats", () => {
     tabs.windowId = "w1";
     record(tabs);
     const transfer = new FakeTransfer();
-    root.querySelector(".chat-tab")?.dispatchEvent(drag("dragend", transfer, { screenX: 5000, screenY: 10 }));
+    root.querySelector(".bar .chat-tab")?.dispatchEvent(drag("dragend", transfer, { screenX: 5000, screenY: 10 }));
     transfer.dropEffect = "move";
-    root.querySelector(".chat-tab")?.dispatchEvent(drag("dragend", transfer, { screenX: 5000, screenY: 10 }));
+    root.querySelector(".bar .chat-tab")?.dispatchEvent(drag("dragend", transfer, { screenX: 5000, screenY: 10 }));
 
     expect(details).toEqual([["chat-tab-drag-out", { windowId: "w1", sessionIds: ["a1"] }]]);
     const frame = { screenX: 100, screenY: 50, outerWidth: 800, outerHeight: 600 };
