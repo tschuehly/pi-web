@@ -58,6 +58,8 @@ export class WorkingModeControls extends LitElement {
   @property({ attribute: false }) onRunCommand?: (command: string) => void | Promise<void>;
   /** Selection of the latest Working Mode block in the loaded transcript; the baseline before the first turn. */
   @property({ attribute: false }) transcriptSelection?: WorkingModeState;
+  /** A Grid tile's one-row composer: icons only at any width, like a narrow composer; names stay in the tooltip. */
+  @property({ type: Boolean, reflect: true }) compact = false;
   @state() private open = false;
 
   private readonly closeOnOutsidePointer = (event: PointerEvent): void => {
@@ -191,7 +193,8 @@ export class WorkingModeControls extends LitElement {
     .aligned-chip svg { width: 12px; height: 12px; }
     .aligned-chip.waiting { border-style: dashed; border-color: var(--pi-muted); color: var(--pi-muted); font-weight: 400; }
     /* Anchored to the composer footer (the nearest positioned ancestor), right-aligned above it. */
-    .pane { position: absolute; z-index: 20; right: 10px; bottom: calc(100% + 4px); display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 12px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
+    /* 100cqh is the Grid tile (a size container) when there is one: the pane stays inside it, above the tile bar and composer. */
+    .pane { position: absolute; z-index: 20; right: 10px; bottom: calc(100% + 4px); max-height: calc(100cqh - 80px); overflow-y: auto; display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 12px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
     .axis-name { color: var(--pi-muted); }
     .actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; padding-top: 4px; border-top: 1px solid var(--pi-border); }
     .send { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 10px; border: 1px solid var(--pi-accent); border-radius: 6px; background: var(--pi-accent); color: var(--pi-accent-contrast, #fff); font-weight: 600; }
@@ -205,6 +208,9 @@ export class WorkingModeControls extends LitElement {
     .values > button:hover { background: var(--pi-surface-hover); }
     .values > button[aria-checked="true"] { border-color: var(--axis-color); background: color-mix(in srgb, var(--axis-color) 14%, transparent); font-weight: 600; }
     /* Narrow composer: changed axes keep only their accent icon, and the pane becomes a full-width sheet. */
+    :host([compact]) .axis > .value, :host([compact]) .aligned-chip > .value { display: none; }
+    :host([compact]) .axis { min-width: 20px; padding: 0 2px; }
+    :host([compact]) .aligned-chip { padding: 0 3px; }
     @container composer (max-width: 560px) {
       .axis > .value, .aligned-chip > .value { display: none; }
       .pane { right: 6px; left: 6px; max-width: none; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px; }

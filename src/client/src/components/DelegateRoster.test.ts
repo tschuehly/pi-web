@@ -82,3 +82,24 @@ describe("DelegateRoster status cell", () => {
     expect(pre.scrollTop, "a reader who scrolled up keeps their place").toBe(100);
   });
 });
+
+describe("DelegateRoster in a Grid tile", () => {
+  it("folds away entirely when collapsed, leaving the composer's badge, and shows as usual when expanded", async () => {
+    const element = new DelegateRoster();
+    element.compact = true;
+    element.collapsed = true;
+    element.status = {
+      sessionId: "s", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+      extensionStatuses: { [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "a", kind: "subagent", name: "Review" }] }) },
+    } satisfies SessionStatus;
+    document.body.append(element);
+    await element.updateComplete;
+    expect(element.shadowRoot?.querySelector("section")).toBeNull();
+
+    element.collapsed = false;
+    await element.updateComplete;
+    expect(element.shadowRoot?.querySelector(".aggregate")?.textContent).toBe("1 running delegate · 0 uncollected · 0 watchers · 0 shells");
+    expect(element.shadowRoot?.querySelector(".section-toggle")?.getAttribute("aria-expanded")).toBe("true");
+  });
+});
