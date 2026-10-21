@@ -336,6 +336,17 @@ test("focusing the full-width tile of three keeps the scrolled top-right tile wh
   }
 });
 
+test("every Grid tile's composer is one row that grows with a multi-line draft", async ({ page }) => {
+  await openGrid(page, [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id]);
+  // Playwright's CSS locators pierce the tiles' shadow roots.
+  const heights = await page.locator(".grid > .tile prompt-editor").evaluateAll((editors) => editors.map((editor) => editor.getBoundingClientRect().height));
+  expect(heights).toHaveLength(4);
+  for (const height of heights) expect(height).toBeLessThanOrEqual(36);
+  await page.locator('.tile[data-focused="true"] prompt-editor .cm-content').click();
+  await page.keyboard.insertText("one\ntwo\nthree");
+  await expect.poll(async () => (await page.locator('.tile[data-focused="true"] prompt-editor').boundingBox())?.height ?? 0).toBeGreaterThan(60);
+});
+
 test("Files stays open beside the Grid when focus moves, and moves no tile", async ({ page }) => {
   await openGrid(page, [NOTES, RELEASE, GUIDE]);
   await (await openChatMenu(page.locator('.tile[data-focused="true"] > .tile-bar'))).locator(".files-toggle").click();

@@ -2014,12 +2014,14 @@ export class WorkbenchApp extends LitElement {
           .onMessageAction=${(entryId: string, action: "fork" | "back") => this.sessions.actOnMessage(entryId, action)}
           .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
         ></chat-view>
-        <delegate-roster .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${this.toggleDelegateRoster}></delegate-roster>
+        <delegate-roster ?compact=${tile} .status=${state.status} .collapsed=${this.delegateRosterCollapsed} .onToggleCollapsed=${this.toggleDelegateRoster}></delegate-roster>
         <goal-status-chip .status=${state.status}></goal-status-chip>
         <workbench-question-chips @workspace-file-open=${this.openWorkspaceFile} @outside-file-open=${this.openOutsideFile} .workspaceContext=${markdownWorkspaceContext(selectedMachineId(state), state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(selectedMachineId(state), session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => this.sessions.submitAsk(askId, submission)}></workbench-question-chips>
         <prompt-editor
           .draftStorage=${this.windows.draftStorage}
           .dense=${tile}
+          .activityExpanded=${!this.delegateRosterCollapsed}
+          .onToggleActivity=${tile ? this.toggleDelegateRoster : undefined}
           .sessionId=${session.id}
           .cwd=${state.selectedWorkspace?.path}
           .machineId=${selectedMachineId(state)}
