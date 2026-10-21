@@ -42,7 +42,7 @@ describe("window tabs", () => {
 
     expect([...root.querySelectorAll(".workstreams [role=tab]")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")])).toEqual([["Release", "true"], ["Chat x", "false"]]);
     expect(root.querySelector(".workstream-tab .count")?.textContent).toBe("2");
-    expect([...root.querySelectorAll(".bar .chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected"), tab.querySelector(".dot")?.getAttribute("aria-label")]))
+    expect([...root.querySelectorAll(".lower .chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected"), tab.querySelector(".dot")?.getAttribute("aria-label")]))
       .toEqual([["Chat a1", "false", "Working"], ["Chat a2", "true", "Needs you"]]);
   });
 
@@ -71,7 +71,7 @@ describe("window tabs", () => {
 
     keydown(root.querySelector(".workstream-tab"), "Enter");
     keydown(root.querySelectorAll(".chat-tab")[0], " ");
-    keydown(root.querySelector(".bar .chat-tab"), "a");
+    keydown(root.querySelector(".lower .chat-tab"), "a");
 
     expect(events).toEqual(["select a2", "select x"]);
   });
@@ -81,23 +81,29 @@ describe("window tabs", () => {
 
     root.querySelector<HTMLButtonElement>('button[aria-label="Close Chat a2"]')?.click();
     keydown(root.querySelector('button[aria-label="Close Chat a1"]'), "Enter");
-    root.querySelectorAll(".bar .chat-tab")[0]?.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true }));
+    root.querySelectorAll(".lower .chat-tab")[0]?.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true }));
     root.querySelector<HTMLButtonElement>("button.add")?.click();
 
     expect(events).toEqual(["close a2", "close a1", "home"]);
   });
 
-  it("keeps Chat tabs, the slotted Chat tools and the actions in one row, adding a Workstream row only for two or more", async () => {
+  it("ends the first row in the slotted Chat tools and the actions, the tabs of a lone Workstream's Chats tinted", async () => {
     const releaseOnly = [chat("a1", release), chat("a2", release)].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") })["w"];
     const { root } = await mount("a1", releaseOnly);
     const bar = root.querySelector(".bar");
 
     expect(root.querySelector(".workstreams")).toBeNull();
-    expect([...bar?.children ?? []].map((child) => child.matches("slot") ? `slot ${child.getAttribute("name") ?? ""}` : child.className)).toEqual(["tabs chats", "slot tools", "actions"]);
+    const rowOf = (row: Element | null | undefined) => [...row?.children ?? []].map((child) => child.matches("slot") ? `slot ${child.getAttribute("name") ?? ""}` : child.className);
+    expect(rowOf(bar)).toEqual(["tabs chats", "slot tools", "actions"]);
+    expect([...root.querySelectorAll(".chat-tab")].map((tab) => tab.classList.contains("tinted"))).toEqual([true, true]);
+    expect(root.querySelector<HTMLElement>(".chat-tab")?.style.getPropertyValue("--ws")).not.toBe("");
 
+    // Two or more Workstreams: their tabs take the first row, still ending in the tools; a Workstream's Chats go beneath, neutral.
     const mixed = await mount("a1");
-    expect(mixed.root.querySelectorAll(".workstreams [role=tab]")).toHaveLength(2);
-    expect(mixed.root.querySelector(".bar .tabs.chats")).not.toBeNull();
+    expect(rowOf(mixed.root.querySelector(".bar"))).toEqual(["tabs workstreams", "slot tools", "actions"]);
+    expect([...mixed.root.querySelectorAll(".workstreams [role=tab]")].map((tab) => tab.classList.contains("tinted"))).toEqual([true, false]);
+    expect(mixed.root.querySelector(".bar + .tabs.lower")).not.toBeNull();
+    expect(mixed.root.querySelector(".lower .tinted")).toBeNull();
   });
 
   it("puts Chats without a Workstream on top as their own tabs, and drops the second row for a single-Chat tab", async () => {
@@ -108,7 +114,7 @@ describe("window tabs", () => {
     expect([...root.querySelectorAll(".workstreams [role=tab]")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")]))
       .toEqual([["Release", "false"], ["Docs", "false"], ["Chat x", "true"], ["Chat y", "false"]]);
     expect(root.textContent).not.toContain("No Workstream");
-    expect(root.querySelector(".bar .tabs.chats")).toBeNull();
+    expect(root.querySelector(".tabs.lower")).toBeNull();
 
     root.querySelector<HTMLButtonElement>('.workstreams button[aria-label="Close Chat y"]')?.click();
     expect(events).toEqual(["close y"]);
@@ -119,7 +125,7 @@ describe("window tabs", () => {
     expect(events).toEqual(["close y", "close d1"]);
 
     const onDocs = await mount("d1", window);
-    expect(onDocs.root.querySelector(".bar .tabs.chats")).toBeNull();
+    expect(onDocs.root.querySelector(".tabs.lower")).toBeNull();
   });
 
   it("caps every tab between 120px and 200px, its full title as the tooltip, with the dot and \u00d7 always shown", async () => {
@@ -129,7 +135,7 @@ describe("window tabs", () => {
     expect(css).toMatch(/\.workstream-tab, \.chat-tab \{[^}]*min-width: 120px; max-width: 200px;[^}]*overflow: hidden/);
     expect(css).toMatch(/\.title \{[^}]*text-overflow: ellipsis/);
     expect(css).not.toMatch(/visibility: hidden/);
-    expect(root.querySelector(".bar .chat-tab")?.getAttribute("title")).toBe("Chat a1");
+    expect(root.querySelector(".lower .chat-tab")?.getAttribute("title")).toBe("Chat a1");
     expect(root.querySelector(".workstream-tab")?.getAttribute("title")).toBe("Workstream: Release");
   });
 
@@ -165,7 +171,7 @@ describe("moving Chats", () => {
     const { tabs, root } = await mount("a1");
     record(tabs);
 
-    root.querySelector(".bar .chat-tab")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }));
+    root.querySelector(".lower .chat-tab")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }));
     root.querySelector(".workstream-tab")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 5 }));
 
     expect(details).toEqual([
@@ -199,9 +205,9 @@ describe("moving Chats", () => {
     tabs.windowId = "w1";
     record(tabs);
     const transfer = new FakeTransfer();
-    root.querySelector(".bar .chat-tab")?.dispatchEvent(drag("dragend", transfer, { screenX: 5000, screenY: 10 }));
+    root.querySelector(".lower .chat-tab")?.dispatchEvent(drag("dragend", transfer, { screenX: 5000, screenY: 10 }));
     transfer.dropEffect = "move";
-    root.querySelector(".bar .chat-tab")?.dispatchEvent(drag("dragend", transfer, { screenX: 5000, screenY: 10 }));
+    root.querySelector(".lower .chat-tab")?.dispatchEvent(drag("dragend", transfer, { screenX: 5000, screenY: 10 }));
 
     expect(details).toEqual([["chat-tab-drag-out", { windowId: "w1", sessionIds: ["a1"] }]]);
     const frame = { screenX: 100, screenY: 50, outerWidth: 800, outerHeight: 600 };
@@ -210,22 +216,31 @@ describe("moving Chats", () => {
 });
 
 describe("grid bar", () => {
-  it("shows the window name and pages of four instead of the tiers, and switches layout", async () => {
+  it("leaves a Grid on screen only a slim pager row, and only for two or more pages", async () => {
     const base = workingSet("x");
     const extra = ["b", "c"].map((id) => chat(id));
     const grid: WorkbenchWindow = { ...base, layout: "grid", chats: [...base.chats, ...extra], focused: "c" };
     const { root, events } = await mount("c", grid);
-    const layoutEvents: string[] = [];
-    root.host.addEventListener("window-layout", (event) => { if (event instanceof CustomEvent) layoutEvents.push(String(Reflect.get(Object(event.detail), "layout"))); });
 
-    expect(root.querySelector(".workstream-tab")).toBeNull();
-    expect(root.querySelector(".tabs.chats")).toBeNull();
-    expect(root.querySelector(".window-name")?.textContent).toBe("Window 1");
+    expect([...root.children].filter((child) => child.localName !== "style").map((child) => child.className)).toEqual(["pager-row"]);
+    expect(root.querySelector(".window-name, .add, .segmented, .tabs")).toBeNull();
     expect(root.querySelector(".pager span")?.textContent).toBe("2 / 2");
     root.querySelector<HTMLButtonElement>('button[aria-label="Previous page"]')?.click();
     expect(events).toEqual(["select a1"]);
     expect(root.querySelector<HTMLButtonElement>('button[aria-label="Next page"]')?.disabled).toBe(true);
 
+    const onePage = await mount("x", { ...base, layout: "grid" });
+    expect(onePage.root.querySelector("nav")).toBeNull();
+  });
+
+  it("shows the window name and the layout toggle behind the home of a Grid", async () => {
+    const base = workingSet("x");
+    const { root } = await mount(undefined, { ...base, layout: "grid" });
+    const layoutEvents: string[] = [];
+    root.host.addEventListener("window-layout", (event) => { if (event instanceof CustomEvent) layoutEvents.push(String(Reflect.get(Object(event.detail), "layout"))); });
+
+    expect(root.querySelector(".workstream-tab")).toBeNull();
+    expect(root.querySelector(".window-name")?.textContent).toBe("Window 1");
     const [gridButton, tabsButton] = [...root.querySelectorAll<HTMLButtonElement>(".segmented button")];
     expect(gridButton?.getAttribute("aria-pressed")).toBe("true");
     gridButton?.click();

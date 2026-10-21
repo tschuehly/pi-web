@@ -4,7 +4,7 @@ export function renderNavigationMenuIcon(): TemplateResult {
   return svg`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`;
 }
 
-export type AppTabBuiltinIcon = "navigation" | "bell" | "chat" | "chat-plus" | "chevron" | "chevron-left" | "files" | "folder-plus" | "git" | "maximize" | "minimize" | "plus" | "terminal" | "x";
+export type AppTabBuiltinIcon = "navigation" | "bell" | "chat" | "chat-plus" | "chevron" | "chevron-left" | "files" | "folder-plus" | "git" | "maximize" | "menu" | "minimize" | "panels-top-left" | "plus" | "settings" | "terminal" | "x";
 export type AppTabIcon = AppTabBuiltinIcon | TemplateResult;
 
 export function renderAppTabIcon(icon: AppTabIcon): TemplateResult {
@@ -94,6 +94,21 @@ export function renderBuiltinTabIcon(icon: AppTabBuiltinIcon): TemplateResult {
           <path d="M9 21H3v-6"></path>
         </svg>
       `;
+    case "menu":
+      return svg`
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M4 12h16"></path>
+          <path d="M4 6h16"></path>
+          <path d="M4 18h16"></path>
+        </svg>
+      `;
+    case "settings":
+      return svg`
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+      `;
     case "minimize":
       return svg`
         <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -101,6 +116,14 @@ export function renderBuiltinTabIcon(icon: AppTabBuiltinIcon): TemplateResult {
           <path d="M20 10h-6V4"></path>
           <path d="m3 21 7-7"></path>
           <path d="M4 14h6v6"></path>
+        </svg>
+      `;
+    case "panels-top-left":
+      return svg`
+        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+          <path d="M3 9h18"></path>
+          <path d="M9 21V9"></path>
         </svg>
       `;
     case "plus":

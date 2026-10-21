@@ -26,6 +26,12 @@ function projectFile(path: string): string {
   return join(root, path);
 }
 
+/** Files sits in the Chat's menu, the burger in the tab row. */
+async function openFiles(page: Page): Promise<void> {
+  await page.locator("workbench-window-tabs > .chat-tools").getByRole("button", { name: "Chat menu" }).click();
+  await page.getByRole("button", { name: "Files", exact: true }).click();
+}
+
 async function shot(target: Page | Locator, name: string): Promise<void> {
   if (SHOTS !== undefined) await target.screenshot({ path: join(SHOTS, name) });
 }
@@ -43,7 +49,7 @@ async function drawerSettled(pane: Locator, open: boolean): Promise<void> {
 
 /** Opens `docs/<name>` through the Files tree. */
 async function openFromTree(page: Page, name: string): Promise<Locator> {
-  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await openFiles(page);
   await page.locator("workbench-files-pane").getByRole("button", { name: "Search files" }).click();
   const pane = page.locator("workbench-files-pane");
   const docs = pane.locator(".tree .row.dir", { hasText: "docs" });
@@ -55,7 +61,7 @@ async function openFromTree(page: Page, name: string): Promise<Locator> {
 
 test("the file tree filter searches the workspace and loads the next page", async ({ page }) => {
   await openChat(page);
-  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await openFiles(page);
   await page.locator("workbench-files-pane").getByRole("button", { name: "Search files" }).click();
   const pane = page.locator("workbench-files-pane");
   await expect(pane.getByRole("textbox", { name: "Filter files" })).toBeFocused();
@@ -289,7 +295,7 @@ test("back to a Chat whose Files showed an outside folder asks before replacing 
 test("edits made in Files while another workspace's Chat loads are asked about when it arrives, and kept on Cancel", async ({ page }) => {
   const asked = keepEdits(page);
   await openTabsWindow(page);
-  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await openFiles(page);
   let arrive = () => {};
   const arrived = new Promise<void>((resolve) => { arrive = resolve; });
   await page.route((url) => url.pathname.includes(E2E_ADHOC_SESSION_ID) && url.pathname.includes("/messages"), async (route) => { await arrived; await route.continue(); });
@@ -315,7 +321,7 @@ test("a Chat on another machine asks before replacing Files edits, and Cancel ke
   const asked = keepEdits(page);
   await addRemoteMachine(page);
   await openTabsWindow(page, { remote: true });
-  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await openFiles(page);
   const pane = await editNotesInFiles(page);
   await chatTab(page, E2E_MORE_CHATS[1].id).click();
   await expect(shownChat(page)).toHaveAttribute("data-session", E2E_MORE_CHATS[1].id);
@@ -337,7 +343,7 @@ test("Files kept beside another machine's chooser names the machine it saves to,
   // The Remote Chat's lookup fails, so the Remote window shows its chooser instead of a Chat.
   await page.route((url) => url.pathname.includes("/api/machines/remote/") && url.pathname.includes(E2E_MORE_CHATS[1].id), async (route) => { await route.fulfill({ status: 503, json: { error: "unavailable" } }); });
   await openTabsWindow(page, { remote: true });
-  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await openFiles(page);
   const pane = await editNotesInFiles(page);
   await chatTab(page, E2E_MORE_CHATS[1].id).click();
   await expect(page.locator('[data-view="chooser"]')).toBeVisible();

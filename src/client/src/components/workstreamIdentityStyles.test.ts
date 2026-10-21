@@ -3,7 +3,7 @@ import { PluginRegistry } from "../plugins/registry";
 import { themePackPlugin } from "../plugins/themes";
 import { WORKSTREAM_TINT_PERCENTAGES } from "../workstreamColor";
 import { WorkstreamChooser } from "./WorkstreamChooser";
-import { WorkstreamContextDrawer } from "./WorkstreamContextDrawer";
+import { WorkbenchWindowTabs } from "./WorkbenchWindowTabs";
 
 type Rgb = [number, number, number];
 
@@ -17,8 +17,9 @@ describe("Workstream identity presentation contracts", () => {
     for (const theme of themes) {
       const foreground = hexRgb(theme.tokens["--pi-text"]);
       const surfaces = [
-        ["drawer", "--pi-surface", WORKSTREAM_TINT_PERCENTAGES.drawer],
-        ["drawer active", "--pi-surface-hover", WORKSTREAM_TINT_PERCENTAGES.drawerActive],
+        ["tab", "--pi-surface", WORKSTREAM_TINT_PERCENTAGES.tab],
+        ["hovered tab", "--pi-surface-hover", WORKSTREAM_TINT_PERCENTAGES.tab],
+        ["selected tab", "--pi-surface-hover", WORKSTREAM_TINT_PERCENTAGES.tabSelected],
         ["identity mark", "--pi-surface", WORKSTREAM_TINT_PERCENTAGES.mark],
       ] as const;
       for (let hue = 0; hue < 360; hue += 1) {
@@ -31,19 +32,18 @@ describe("Workstream identity presentation contracts", () => {
     }
   });
 
-  it("keeps the Workstream colour in the compact tab-row control on the contrast-checked drawer surfaces", () => {
-    const drawer = styleText(WorkstreamContextDrawer.styles);
-    const resting = rule(drawer, ":host([compact]) summary");
-    // The tab row paints --pi-surface, so these are exactly the drawer surfaces the hue sweep above holds at AA.
-    expect(resting).toContain(`background: color-mix(in srgb, var(--workstream-color) ${String(WORKSTREAM_TINT_PERCENTAGES.drawer)}%, var(--pi-surface))`);
+  it("tints Workstream tabs with --pi-text on the contrast-checked tab surfaces", () => {
+    const tabs = styleText(WorkbenchWindowTabs.styles);
+    const resting = rule(tabs, ".tinted");
+    // The tab row paints --pi-surface, so these are exactly the tab surfaces the hue sweep above holds at AA.
+    expect(resting).toContain(`background: color-mix(in srgb, var(--ws) ${String(WORKSTREAM_TINT_PERCENTAGES.tab)}%, var(--pi-surface))`);
     expect(resting).toContain("color: var(--pi-text)");
-    expect(rule(drawer, ":host([compact]) details[open] summary")).toContain(`background: color-mix(in srgb, var(--workstream-color) ${String(WORKSTREAM_TINT_PERCENTAGES.drawerActive)}%, var(--pi-surface-hover))`);
-    expect(rule(drawer, ":host([compact]) summary::before")).toContain("background: var(--workstream-color)");
+    expect(rule(tabs, ".tinted:hover")).toContain(`background: color-mix(in srgb, var(--ws) ${String(WORKSTREAM_TINT_PERCENTAGES.tab)}%, var(--pi-surface-hover))`);
+    expect(rule(tabs, '.tinted[aria-selected="true"]')).toContain(`background: color-mix(in srgb, var(--ws) ${String(WORKSTREAM_TINT_PERCENTAGES.tabSelected)}%, var(--pi-surface-hover))`);
   });
 
   it("declares --pi-text foreground on every recolored label", () => {
     const chooser = styleText(WorkstreamChooser.styles);
-    const drawer = styleText(WorkstreamContextDrawer.styles);
 
     // Recolored label text must declare --pi-text foreground for consistent visibility
     const labels: [string, string][] = [
@@ -56,7 +56,6 @@ describe("Workstream identity presentation contracts", () => {
       ["summary", chooser],
       [".date", chooser],
       [".workstream .missing", chooser],
-      [".about p", drawer],
     ];
 
     for (const [selector, source] of labels) {
@@ -65,17 +64,11 @@ describe("Workstream identity presentation contracts", () => {
     }
   });
 
-  it("preserves selected-hover, forced-color, narrow-title, focus, zoom, and status-indicator contrast", () => {
+  it("preserves the chooser's forced-color and status-indicator contrast", () => {
     const chooser = styleText(WorkstreamChooser.styles);
-    const drawer = styleText(WorkstreamContextDrawer.styles);
 
     expect(rule(chooser, ".workstream")).toContain("border-left: 3px solid var(--workstream-color");
     expect(chooser).toContain(".identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }");
-    expect(rule(drawer, "summary")).toContain("border-left: 4px solid var(--workstream-color)");
-    expect(drawer).toContain("summary { border-color: ButtonText; border-left-color: LinkText; background: Canvas; }");
-    expect(drawer).toMatch(/@media \(max-width: 520px\)[^{]*\{[^}]*\.sheet\s*\{\s*padding:\s*12px 16px/u);
-    expect(rule(drawer, "summary:focus-visible")).toContain("outline: 2px solid var(--pi-accent)");
-    expect(rule(drawer, ".sheet")).toContain("max-height: min(calc(var(--pi-workbench-viewport-height, 100vh) - 56px), calc(100cqh - 40px))");
     // Status indicator must declare --pi-text outline for visibility across all surfaces
     expect(chooser).toContain(".row .activity-indicator, .session-row .activity-indicator { box-shadow: 0 0 0 1px var(--pi-text);");
   });
