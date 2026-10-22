@@ -30,8 +30,8 @@ export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string) 
 
 /**
  * Fork the Workbench Durable host (`chat-host-main.ts`) for one family store, with an IPC channel, the agent-visible
- * environment and the daemon's Pi agent directory, so it reads the same Claude subscription login. Host output goes
- * to `host.log` in the store directory.
+ * environment and the daemon's Pi agent directory, so it reads the same stored logins (Claude, ChatGPT, Copilot). Host
+ * output goes to `host.log` in the store directory.
  */
 export function forkDurableHost(options: { entry: string; model: string; agentDir: string; scripted?: boolean }): DurableHostLauncher {
   return (record, storeDir) => {
@@ -256,21 +256,22 @@ export class DurableChatService {
     await connection.request("prompt", { operationId: operationId ?? randomUUID(), text: expanded, ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }) });
   }
 
-  /** Slash commands of a Durable Chat: Working Mode and the workspace's skills. */
+  /** Slash commands of a Durable Chat: Working Mode, pi-openai-fast-mode's /fast and the workspace's skills. */
   async commands(ref: SessionRouteRef): Promise<ClientCommand[]> {
     await this.#for(ref);
     return [
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" },
+      { name: "fast", description: "Toggle Fast Mode. Usage: /fast [on|off|toggle]", source: "extension" },
       ...(this.#skills.get(ref.id) ?? []).map((skill) => ({ name: `skill:${skill.name}`, ...(skill.description === undefined ? {} : { description: skill.description }), source: "skill" as const })),
     ];
   }
 
-  /** `/mode …` runs in the host; `/skill:…` is a prompt; every other command is not available yet. */
+  /** `/mode …` and `/fast …` run in the host; `/skill:…` is a prompt; every other command is not available yet. */
   async runCommand(ref: SessionRouteRef, text: string): Promise<ClientCommandResult> {
     const trimmed = text.trim();
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
-    if (name === "mode") {
-      const { result } = await (await this.#for(ref)).request("mode", { args: trimmed.slice("/mode".length).trim() });
+    if (name === "mode" || name === "fast") {
+      const { result } = await (await this.#for(ref)).request(name, { args: trimmed.slice(name.length + 1).trim() });
       return commandResult(result);
     }
     if (name.startsWith("skill:")) {

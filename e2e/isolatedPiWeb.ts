@@ -111,7 +111,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const durableHost = process.env["PI_WEB_E2E_DURABLE_HOST"];
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_") && !key.startsWith("GIT_")));
     // Its telemetry goes to the fixture root, never to the owner's ~/.pi/agent/telemetry.
-    if (durableHost !== undefined && durableHost !== "") Object.assign(env, { PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry") });
+    // Durable hosts get their own agent dir with fake stored logins; legacy Chats keep the login-free fixture profile.
+    if (durableHost !== undefined && durableHost !== "") {
+      await seedLogins(join(root, "durable-agent", "auth.json"));
+      Object.assign(env, { PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_WEB_DURABLE_AGENT_DIR: join(root, "durable-agent"), PI_TELEMETRY_DIR: join(root, "telemetry") });
+    }
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),
@@ -282,6 +286,20 @@ function freePort(): Promise<number> {
       server.close(() => { if (typeof address === "object" && address !== null) done(address.port); else fail(new Error("No free port")); });
     });
     server.on("error", fail);
+  });
+}
+
+/**
+ * Fake subscription logins (never valid upstream; the fixture sets PI_OFFLINE and sends no model request): models are
+ * offered only for providers with a stored login, as in Pi.
+ */
+async function seedLogins(path: string): Promise<void> {
+  const expires = Date.now() + 24 * 3_600_000;
+  const codexAccess = ["e30", Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-e2e" } })).toString("base64url"), "sig"].join(".");
+  await writeJson(path, {
+    anthropic: { type: "oauth", access: "fake-e2e-claude", refresh: "fake-e2e-claude-refresh", expires },
+    "openai-codex": { type: "oauth", access: codexAccess, refresh: "fake-e2e-codex-refresh", expires, accountId: "acct-e2e" },
+    "github-copilot": { type: "oauth", access: "tid=fake-e2e;proxy-ep=proxy.individual.githubcopilot.com", refresh: "fake-e2e-gh", expires },
   });
 }
 

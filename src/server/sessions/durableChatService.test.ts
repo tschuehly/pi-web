@@ -165,6 +165,7 @@ describe("Durable Chats", () => {
     expect(only(launched).requests[0]).toMatchObject({ method: "configure", params: { resources: { projectContext: "Project-specific instructions and guidelines:" } } });
     await expect(durable.commands(ref)).resolves.toEqual([
       expect.objectContaining({ name: "mode", source: "extension" }),
+      { name: "fast", description: "Toggle Fast Mode. Usage: /fast [on|off|toggle]", source: "extension" },
       { name: "skill:tidy", description: "Tidy up", source: "skill" },
     ]);
     await durable.prompt(ref, "/skill:tidy src only", undefined, undefined, { operationId: "op-7" });
@@ -180,6 +181,19 @@ describe("Durable Chats", () => {
     await expect(durable.runCommand(ref, "/mode attention focused")).resolves.toEqual({ type: "done", message: "Working Mode applies with the next prompt." });
     expect(only(launched).requests.find((request) => request.method === "mode")?.params).toEqual({ args: "attention focused" });
     await expect(durable.runCommand(ref, "/tree")).resolves.toEqual({ type: "unsupported", message: "/tree is not available in Durable Chats yet" });
+  });
+
+  it("runs pi-openai-fast-mode's /fast in the host, with its usage error visible", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    only(launched).answer = (request) => {
+      if (request.method !== "fast") return status;
+      return request.params?.["args"] === "on" ? { type: "done", message: "Fast Mode on" } : { type: "unsupported", message: "Usage: /fast [on|off|toggle]" };
+    };
+    await expect(durable.runCommand(ref, "/fast on")).resolves.toEqual({ type: "done", message: "Fast Mode on" });
+    await expect(durable.runCommand(ref, "/fast maybe")).resolves.toEqual({ type: "unsupported", message: "Usage: /fast [on|off|toggle]" });
+    expect(only(launched).requests.filter((request) => request.method === "fast").map((request) => request.params)).toEqual([{ args: "on" }, { args: "maybe" }]);
   });
 
   it("validates answers with PI WEB's ask store and has the host commit them under the client's operation id", async () => {
