@@ -156,7 +156,7 @@ describe("Chat in a folder", () => {
     const app = new WorkbenchApp();
     document.body.append(app);
     await vi.waitFor(() => { expect(shownWorkstream(app)).toBe("Source learning"); });
-    expect(tabsRoot(app).querySelector(".chat-tab")?.classList.contains("tinted")).toBe(true);
+    expect(tabsRoot(app).querySelector(".solo")?.classList.contains("tinted")).toBe(true);
     expect(getState(app).selectedProject).toBeUndefined();
     expect(getState(app).selectedWorkspace?.path).toBe(current.cwd);
     expect(app.shadowRoot?.querySelector(".files-toggle")?.getAttribute("title")).toBe("Files \u2014 nested (/outside/nested)");
@@ -2159,6 +2159,11 @@ describe("window tabs", () => {
       [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? [])].find((button) => button.textContent.includes(title))?.click();
       // Docs holds one Chat, so its only tab is the Workstream tab on top.
       await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(sessionId); });
+      // A second Chat turns the window into a Grid; these tests start from Tabs.
+      if (sessionId === "a2") {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
+        await vi.waitFor(async () => { await app.updateComplete; expect(tabsRoot(app).querySelector("button.add")).not.toBeNull(); });
+      }
     }
     await vi.waitFor(async () => { await app.updateComplete; expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]); });
     // Restore the working set with only its selected tab loaded. Tests can then hold genuine first-open requests.
@@ -3434,7 +3439,7 @@ function tabsRoot(app: WorkbenchApp): ShadowRoot {
 
 const paneChats = (app: WorkbenchApp): (string | undefined)[] => [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])].map((pane) => pane instanceof WorkbenchChatPane ? pane.app?.selectedSession?.id : undefined);
 const workstreamTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".workstream-tab")].map((tab) => tab.textContent.replace(/\s+/gu, ""));
-const chatTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".chat-tab .title")].map((title) => title.textContent);
+const chatTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".chat-tab .title, .solo .title")].map((title) => title.textContent);
 
 function workstreamTab(app: WorkbenchApp, title: string): HTMLElement {
   const tab = [...tabsRoot(app).querySelectorAll<HTMLElement>(".workstream-tab")].find((candidate) => candidate.querySelector(".title")?.textContent === title);
@@ -3732,7 +3737,10 @@ function setState(app: WorkbenchApp, state: AppState): void {
 
 /** The Workstream the one-row tab strip names for the Chat on screen, through its Chats' label. */
 function shownWorkstream(app: WorkbenchApp): string | undefined {
-  const label = app.shadowRoot?.querySelector("workbench-window-tabs")?.shadowRoot?.querySelector(".tabs.chats")?.getAttribute("aria-label");
+  const root = app.shadowRoot?.querySelector("workbench-window-tabs")?.shadowRoot;
+  const solo = root?.querySelector(".solo");
+  if (solo !== null && solo !== undefined) return solo.querySelector(".solo-ws")?.textContent ?? undefined;
+  const label = root?.querySelector(".tabs.chats")?.getAttribute("aria-label");
   return label === undefined || label === null || label === "No Workstream Chats" ? undefined : label.replace(/ Chats$/u, "");
 }
 
