@@ -69,7 +69,7 @@ describe("window identity", () => {
     expect(fake.url.search).toBe("?win=w1&session=a");
   });
 
-  it("reopens a closed window's Chats in a window without an id, and writes the id into the URL", async () => {
+  it("starts a window without an id empty, keeping closed windows' Chats for their own id, and writes the id into the URL", async () => {
     storage.setItem(WINDOW_STORE_KEY, storeWith({
       open: openChat({ open: emptyWindow("Window 1") }, "open", chat("a"))["open"] ?? emptyWindow("x"),
       closed: openChat({ closed: emptyWindow("Window 2") }, "closed", chat("b"))["closed"] ?? emptyWindow("x"),
@@ -80,9 +80,10 @@ describe("window identity", () => {
     const controller = new WorkbenchWindowController(() => undefined, fake.environment);
     await controller.start();
 
-    expect(controller.id).toBe("closed");
-    expect(fake.url.searchParams.get("win")).toBe("closed");
-    expect(Object.keys(controller.store).sort()).toEqual(["closed", "open"]);
+    expect(controller.id).toBe("fresh");
+    expect(controller.window?.chats).toEqual([]);
+    expect(fake.url.searchParams.get("win")).toBe("fresh");
+    expect(Object.keys(controller.store).sort()).toEqual(["closed", "fresh", "open"]);
   });
 
   it("starts a new named window when every stored one is still open", async () => {

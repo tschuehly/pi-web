@@ -47,6 +47,7 @@ export interface WatcherStatusItem {
   scope: string;
   state: "watching" | "retrying" | "suspended" | "quarantined";
   consecutiveFailures: number;
+  startedAt: string;
 }
 
 export function parseWatcherStatusSnapshot(text: string | undefined): WatcherStatusItem[] {
@@ -68,7 +69,7 @@ export function parseWatcherStatusSnapshot(text: string | undefined): WatcherSta
     const normalizedLabel = label === undefined ? "" : normalizeGoalText(label.replace(/\u200d/gu, ""));
     items.push({ logicalId, handleId, ...(normalizedLabel === "" ? {} : { label: normalizedLabel }), mode,
       scope: normalizeGoalText(scope.replace(/\u200d/gu, "")),
-      state, consecutiveFailures });
+      state, consecutiveFailures, startedAt });
   }
   return items;
 }
@@ -140,6 +141,10 @@ export interface DelegateActivityItem {
   objective?: string;
   activity?: string;
   reportedStatus?: string;
+  /** ISO times: launch, the latest self-report, and the terminal outcome. Older Workbench builds omit them. */
+  startedAt?: string;
+  reportedAt?: string;
+  endedAt?: string;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -239,14 +244,24 @@ export function parseDelegateActivitySnapshot(text: string | undefined): Delegat
     const objective = optionalText(candidate["objective"]); if (objective !== undefined) item.objective = objective;
     const activity = optionalText(candidate["activity"]); if (activity !== undefined) item.activity = activity;
     const reportedStatus = optionalText(candidate["reportedStatus"]); if (reportedStatus !== undefined) item.reportedStatus = reportedStatus;
+    for (const key of ["startedAt", "reportedAt", "endedAt"] as const) { const time = candidate[key]; if (validStatusTime(time)) item[key] = time; }
     items.push(item);
   }
   return items;
 }
 
-const TERMINAL_ACTIVITY = new Set(["success", "preflight failed", "launch failed", "execution failed", "cancelled", "outcome unknown", "finished", "timed out"]);
-export function isTerminalDelegate(item: DelegateActivityItem): boolean {
-  return TERMINAL_ACTIVITY.has(item.activity?.toLowerCase().replaceAll("_", " ") ?? "");
+export type DelegateOutcome = "running" | "done" | "failed" | "cancelled";
+const FAILED_ACTIVITY = new Set(["preflight failed", "launch failed", "execution failed", "outcome unknown", "timed out"]);
+/** A retained delegate's terminal outcome, read from the publisher's terminal `activity`; anything else is still running. */
+export function delegateOutcome(item: DelegateActivityItem): DelegateOutcome {
+  const activity = item.activity?.toLowerCase().replaceAll("_", " ") ?? "";
+  if (activity === "success" || activity === "finished") return "done";
+  if (activity === "cancelled") return "cancelled";
+  return FAILED_ACTIVITY.has(activity) ? "failed" : "running";
+}
+
+function counted(count: number, singular: string, plural = singular): string | undefined {
+  return count === 0 ? undefined : `${String(count)} ${count === 1 ? singular : plural}`;
 }
 
 /** The Activity roster's entries by source, their total, and the one-line aggregate its header and badge show. */
@@ -255,9 +270,12 @@ export function activitySummary(status: Pick<SessionStatus, "extensionStatuses" 
   const watchers = parseWatcherStatusSnapshot(status?.extensionStatuses?.[WATCHER_STATUS_KEY]);
   const shells = visibleShellExecutions(status?.activeToolExecutions);
   const backgroundBash = parseBackgroundBashStatusSnapshot(status?.extensionStatuses?.[BACKGROUND_BASH_STATUS_KEY]);
-  const uncollected = delegates.filter(isTerminalDelegate).length;
-  const running = delegates.length - uncollected;
+  const outcomes = delegates.map(delegateOutcome);
+  const tally = (outcome: DelegateOutcome) => outcomes.filter((candidate) => candidate === outcome).length;
   const shellCount = shells.length + backgroundBash.length;
-  const label = `${String(running)} running ${running === 1 ? "delegate" : "delegates"} · ${String(uncollected)} uncollected · ${String(watchers.length)} ${watchers.length === 1 ? "watcher" : "watchers"} · ${String(shellCount)} ${shellCount === 1 ? "shell" : "shells"}`;
+  const label = [
+    counted(tally("failed"), "failed"), counted(tally("done"), "to collect"), counted(tally("cancelled"), "cancelled"), counted(tally("running"), "running"),
+    counted(watchers.length, "watcher", "watchers"), counted(shellCount, "shell", "shells"),
+  ].filter((part) => part !== undefined).join(" · ");
   return { delegates, watchers, shells, backgroundBash, count: delegates.length + watchers.length + shellCount, label };
 }

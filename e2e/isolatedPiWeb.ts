@@ -59,6 +59,8 @@ export const E2E_CROWDED_ASK_CHAT = {
 type SeededAsk = { askId: string; context: string; questions: readonly unknown[] };
 /** A Chat shaped like daily use: more raw messages than one page, with thinking, tool output, code blocks and late-loading images. */
 export const E2E_LONG_CHAT = { id: "019ef4c0-0000-7000-8000-00000000e2e7", question: "Migrate the build", turns: 60 } as const;
+/** Three more Chats like `E2E_LONG_CHAT`, so a Grid can hold four long transcripts. */
+export const E2E_MORE_LONG_CHAT_IDS = ["019ef4c0-0000-7000-8000-00000000e2e8", "019ef4c0-0000-7000-8000-00000000e2e9", "019ef4c0-0000-7000-8000-00000000e2ea"] as const;
 export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
 export const E2E_SIBLING_BODY = "export const seededSiblingBody = true;";
 export const E2E_PLAN = [
@@ -85,7 +87,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const adHocFolder = join(root, "embabel", "me-openapi-human-acceptance", ".scratch", "openapi-pr-delivery");
     if (encodeURIComponent(`folder:${adHocFolder}`).length <= 100) throw new Error("Ad-hoc fixture folder id must exceed 100 characters");
     const clientDist = join(root, "client");
-    const socket = join(dataDir, "sessiond.sock");
+    // Keep the Unix socket below macOS's 104-byte path ceiling, including a session-scoped TMPDIR.
+    const socket = join(root, "s");
     const port = await freePort();
     if (port === LIVE_PORT) throw new Error("Refusing to use the live PI WEB port");
     await Promise.all([mkdir(sessionDir, { recursive: true }), mkdir(join(project, "docs"), { recursive: true }), mkdir(join(project, "entries"), { recursive: true }), mkdir(adHocFolder, { recursive: true })]);
@@ -100,7 +103,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     for (const chat of E2E_MORE_CHATS) await seedChat(sessionDir, project, chat.id, "Done.", chat.question, 24);
     await seedChat(sessionDir, project, E2E_ASK_CHAT.id, "One question on how they go live.", E2E_ASK_CHAT.question, 3, E2E_ASK_CHAT.ask);
     await seedChat(sessionDir, project, E2E_CROWDED_ASK_CHAT.id, "Twelve questions before it starts.", E2E_CROWDED_ASK_CHAT.question, 3, E2E_CROWDED_ASK_CHAT.ask);
-    await seedLongChat(sessionDir, project);
+    for (const id of [E2E_LONG_CHAT.id, ...E2E_MORE_LONG_CHAT_IDS]) await seedLongChat(sessionDir, project, id);
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
@@ -192,8 +195,8 @@ async function seedChat(sessionDir: string, cwd: string, sessionId: string, answ
 }
 
 /** Each turn: a question, thinking and a bash call, its output, then a markdown answer with a code block; every sixth turn reads an image. */
-async function seedLongChat(sessionDir: string, cwd: string): Promise<void> {
-  const { id: sessionId, question, turns } = E2E_LONG_CHAT;
+async function seedLongChat(sessionDir: string, cwd: string, sessionId: string): Promise<void> {
+  const { question, turns } = E2E_LONG_CHAT;
   const ms = Date.now();
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
   const image = (await readFile(join(REPO_ROOT, "docs", "assets", "pi-web-mobile.png"))).toString("base64");

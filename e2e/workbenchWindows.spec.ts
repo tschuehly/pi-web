@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { E2E_LONG_CHAT, E2E_MORE_CHATS, E2E_PROJECT_ID, E2E_SESSION_ID } from "./isolatedPiWeb";
+import { E2E_ASK_CHAT, E2E_CROWDED_ASK_CHAT, E2E_LONG_CHAT, E2E_MORE_CHATS, E2E_MORE_LONG_CHAT_IDS, E2E_PROJECT_ID, E2E_SESSION_ID } from "./isolatedPiWeb";
 
 // Set PI_WEB_E2E_SCREENSHOTS to a folder to keep review screenshots of the window tabs and grid.
 const SHOTS = process.env["PI_WEB_E2E_SCREENSHOTS"];
@@ -43,7 +43,7 @@ async function openSeededWindow(page: Page, oneWorkstream = false, crowded = fal
   await expect(shownChat(page)).toHaveAttribute("data-session", NOTES);
 }
 
-const shownChat = (page: Page) => page.locator("main.chat-shell").first();
+const shownChat = (page: Page) => page.locator('.tile[data-focused="true"] main.chat-shell');
 const workstreamTab = (page: Page, name: string) => page.locator("workbench-window-tabs .workstream-tab", { hasText: name });
 const chatTab = (page: Page, name: string) => page.locator("workbench-window-tabs .chat-tab", { hasText: name });
 /** The selected Chat's toolbar, slotted into the window's tab row in Tabs. */
@@ -94,7 +94,7 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
 
   await page.keyboard.press("Control+g");
   await expect(page.locator(".grid > .tile")).toHaveCount(3);
-  await expect(page.locator("workbench-chat-pane")).toHaveCount(2);
+  await expect(page.locator("workbench-chat-pane")).toHaveCount(3);
   await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", RELEASE);
   await expect(tabRowTools(page)).toHaveCount(0);
   await expect(chatMenu(page.locator('.tile[data-focused="true"] > .tile-bar'))).toBeVisible();
@@ -111,8 +111,8 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await page.locator('.tile[data-focused="true"] .cm-content').click();
   await page.keyboard.type("kept draft");
   await page.keyboard.press("Control+g");
-  await expect(page.locator(".grid > .tile")).toHaveCount(1);
-  await expect(page.locator("workbench-chat-pane")).toHaveCount(0);
+  await expect(page.locator(".grid > .tile:visible")).toHaveCount(1);
+  await expect(page.locator("workbench-chat-pane")).toHaveCount(3);
   await expect(shownChat(page).locator(".cm-content")).toHaveText("kept draft");
   await page.keyboard.type(" and more");
   await expect(shownChat(page).locator(".cm-content")).toHaveText("kept draft and more");
@@ -144,7 +144,7 @@ function sampleFrames(): void {
   const sample = () => {
     const app = document.querySelector("pi-workbench-app")?.shadowRoot;
     const tabs = app?.querySelector("workbench-window-tabs")?.shadowRoot;
-    const shell = app?.querySelector("main.chat-shell");
+    const shell = app?.querySelector('.tile[data-focused="true"] main.chat-shell');
     const chat = shell?.querySelector("chat-view")?.shadowRoot?.querySelector(".chat");
     frames.push({
       phase: String(Reflect.get(window, "switchPhase")),
@@ -185,6 +185,7 @@ test("switches tabs steadily: same tab widths, one selected tab, never a blank C
   for (const [session, title] of [[NOTES, "Where are the notes?"], [GUIDE, "Review the install guide"], [RELEASE, "Draft the release notes"], [NOTES, "Where are the notes?"], [RELEASE, "Draft the release notes"], [GUIDE, "Review the install guide"]] as const) await show(session, title);
   const frames = await page.evaluate(() => { const frames = Reflect.get(window, "switchFrames") as SwitchFrame[]; Reflect.set(window, "switchFrames", undefined); return frames; });
 
+  await test.info().attach("tab-switch-frames", { body: JSON.stringify(frames), contentType: "application/json" });
   expect(frames.length).toBeGreaterThan(30);
   for (const session of [NOTES, RELEASE, GUIDE]) {
     const widths = new Set(frames.map((frame) => frame.tabs.find((tab) => tab.session === session)?.width.toFixed(1)));
@@ -273,6 +274,165 @@ function gridLayout() {
 
 type GridLayout = ReturnType<typeof gridLayout>;
 
+/** Observe identities as well as every painted frame: a settled screenshot misses the outgoing tile's white flash. */
+function probeGrid() {
+  const root = document.querySelector("pi-workbench-app")?.shadowRoot;
+  if (root === undefined || root === null) throw new Error("Workbench is missing");
+  const identities = new Map<string, Element>();
+  const scrolls = new Map<string, number>();
+  const failures: string[] = [];
+  const observed = new Set<Node>();
+  let frames = 0;
+  let stopped = false;
+  const phase = () => String(Reflect.get(window, "gridProbePhase") ?? "focus");
+  const observer = new MutationObserver((records) => {
+    if (phase() === "page") return;
+    for (const record of records) for (const removed of record.removedNodes) {
+      for (const [session, view] of identities) if (removed === view || removed.contains(view)) failures.push(`${phase()}: removed ${session}`);
+    }
+  });
+  const sample = () => {
+    frames++;
+    for (const tile of root.querySelectorAll<HTMLElement>(".grid > .tile")) {
+      const pane = tile.querySelector("workbench-chat-pane");
+      const view = tile.querySelector("chat-view") ?? pane?.shadowRoot?.querySelector("chat-view");
+      const session = tile.dataset["session"] ?? tile.querySelector<HTMLElement>("main.chat-shell")?.dataset["session"] ?? "";
+      const chat = view?.shadowRoot?.querySelector<HTMLElement>(".chat");
+      for (const node of [root, pane?.shadowRoot, view?.shadowRoot]) if (node !== null && node !== undefined && !observed.has(node)) {
+        observed.add(node); observer.observe(node, { childList: true, subtree: true });
+      }
+      if (view !== null && view !== undefined) {
+        const before = identities.get(session);
+        if (before !== undefined && before !== view && phase() !== "page") failures.push(`${phase()}: recreated ${session}`);
+        identities.set(session, view);
+      }
+      if (tile.getBoundingClientRect().width === 0 || getComputedStyle(tile).visibility === "hidden") continue;
+      if (chat === null || chat === undefined || chat.querySelectorAll("article").length === 0 || chat.getBoundingClientRect().height < 1) failures.push(`${phase()}: empty ${session}`);
+      // A white fallback in dark mode is never the themed content box.
+      if (matchMedia("(prefers-color-scheme: dark)").matches && [tile, chat].some((element) => element !== null && element !== undefined && getComputedStyle(element).backgroundColor === "rgb(255, 255, 255)")) failures.push(`${phase()}: white ${session}`);
+      if (chat !== null && chat !== undefined && phase() === "focus") {
+        const top = scrolls.get(session);
+        if (top !== undefined && Math.abs(top - chat.scrollTop) > 1) failures.push(`focus: scrolled ${session}: ${String(top)} -> ${String(chat.scrollTop)}`);
+        scrolls.set(session, chat.scrollTop);
+      }
+    }
+    if (!stopped) requestAnimationFrame(() => { setTimeout(sample, 0); });
+  };
+  Reflect.set(window, "finishGridProbe", () => { stopped = true; observer.disconnect(); return { frames, failures: [...new Set(failures)] }; });
+  sample();
+}
+
+for (const scheme of ["dark", "light"] as const) {
+  test(`uniform Grid retains Chat identities and paints every frame through focus and layout switches (${scheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    const sessions = [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id];
+    const connections: string[] = [];
+    const transcriptReads: string[] = [];
+    page.on("websocket", (socket) => { connections.push(socket.url()); });
+    page.on("request", (request) => { if (request.url().includes("/transcript-snapshot") || request.url().includes("/messages?")) transcriptReads.push(request.url()); });
+    await openGrid(page, sessions);
+    await page.locator(`.tile[data-session="${E2E_LONG_CHAT.id}"] chat-view .chat`).evaluate((element: HTMLElement) => { element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * 0.6); });
+    await page.waitForTimeout(400);
+    const joined = connections.length;
+    const loaded = transcriptReads.length;
+    await page.evaluate(probeGrid);
+    await page.mouse.move(0, 0);
+    if (SHOTS !== undefined) {
+      await expect(page.locator('.tile[data-focused="true"] chat-view .transcript-filter')).toHaveCSS("opacity", "0");
+      await page.screenshot({ path: join(SHOTS, `uniform-grid-before-${scheme}.png`) });
+    }
+    for (const session of [RELEASE, GUIDE, E2E_LONG_CHAT.id, NOTES]) {
+      await focusTile(page, session);
+      if (session === RELEASE && SHOTS !== undefined) {
+        await page.mouse.move(0, 0);
+        // Let hover chrome fade before comparing still images; the frame probe keeps sampling throughout.
+        await expect(page.locator('.tile[data-focused="true"] chat-view .transcript-filter')).toHaveCSS("opacity", "0");
+        await page.screenshot({ path: join(SHOTS, `uniform-grid-after-${scheme}.png`) });
+      }
+    }
+    expect(connections.length, "focus switches open no connections").toBe(joined);
+    expect(transcriptReads.length, "focus switches reload no transcripts").toBe(loaded);
+    const beforeLayout = await page.evaluate(gridLayout);
+    await page.evaluate(() => { Reflect.set(window, "gridProbePhase", "layout"); });
+    await page.locator('.tile[data-focused="true"] .cm-content').click();
+    await page.keyboard.type("retained composer");
+    for (let index = 0; index < 2; index++) {
+      await page.keyboard.press("Control+g");
+      await expect(page.locator(".grid[data-tabs]")).toHaveCount(index === 0 ? 1 : 0);
+      await expect(page.locator(".grid > .tile:visible")).toHaveCount(index === 0 ? 1 : 4);
+      await page.waitForTimeout(400);
+    }
+    expect(movedTiles(beforeLayout, await page.evaluate(gridLayout)), "Tabs round trip preserves Grid anchors").toEqual([]);
+    await expect(page.locator('.tile[data-focused="true"] .cm-content')).toHaveText("retained composer");
+    // Full size is not a composer shortcut: leave the text field before pressing it.
+    await page.locator('.tile[data-focused="true"] .tile-bar').click();
+    await page.locator('.tile[data-focused="true"] .cm-content').evaluate((element: HTMLElement) => { element.blur(); });
+    for (let index = 0; index < 2; index++) {
+      await page.keyboard.press("Control+Enter");
+      await expect(page.locator(".grid[data-single]")).toHaveCount(index === 0 ? 1 : 0);
+      await expect(page.locator(".grid > .tile:visible")).toHaveCount(index === 0 ? 1 : 4);
+      await page.waitForTimeout(400);
+    }
+    expect(movedTiles(beforeLayout, await page.evaluate(gridLayout)), "Full-size round trip preserves Grid anchors").toEqual([]);
+    const result = await page.evaluate(() => (Reflect.get(window, "finishGridProbe") as () => { frames: number; failures: string[] })());
+    expect(result.frames).toBeGreaterThan(30);
+    expect(result.failures, `${String(result.frames)} sampled frames`).toEqual([]);
+    await test.info().attach("grid-frame-probe", { body: JSON.stringify({ ...result, connections: joined, transcriptReads: loaded }), contentType: "application/json" });
+  });
+}
+
+test("a pointer returns to a retained Chat dialog with keyboard focus inside it", async ({ page }) => {
+  await openGrid(page, [NOTES, RELEASE]);
+  await page.route("**/commands/run", (route) => route.fulfill({ json: { type: "tree", tree: { nodes: [{ id: "entry", parentId: null, kind: "assistant", summary: "Reply" }], activeLeafId: "entry", activePathIds: ["entry"] } } }));
+  const tile = page.locator(`.tile[data-session="${NOTES}"]`);
+  const menu = await openChatMenu(tile);
+  await menu.getByRole("button", { name: "Session tree", exact: true }).click();
+  const tree = tile.locator("session-tree-navigator");
+  const entry = tree.locator('[data-tree-node-id="entry"]');
+  await expect(entry).toBeFocused();
+  for (const target of [tile.locator(".tile-title"), tile.getByRole("button", { name: "Chat menu", exact: true })]) {
+    await page.evaluate((sessionId) => { window.dispatchEvent(new CustomEvent("pi-web:notification-open", { detail: { machineId: "local", sessionId } })); }, RELEASE);
+    await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
+    await expect(tree).toBeHidden();
+    await page.locator('.tile[data-focused="true"] .cm-content').click();
+    const box = await target.boundingBox();
+    if (box === null) throw new Error("Retained Chat is unavailable");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(tree).toBeVisible();
+    await expect(entry).toBeFocused();
+  }
+  await page.keyboard.press("Escape");
+  await expect(tree).toHaveCount(0);
+});
+
+test("Grid paging keeps the outgoing page painted until every incoming tile has its transcript", async ({ page }) => {
+  await openGrid(page, [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id, E2E_ASK_CHAT.id, E2E_CROWDED_ASK_CHAT.id]);
+  await page.locator(`.tile[data-session="${E2E_LONG_CHAT.id}"] chat-view .chat`).evaluate((element: HTMLElement) => { element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * 0.6); });
+  await page.waitForTimeout(400);
+  const before = await page.evaluate(gridLayout);
+  await page.evaluate(() => { Reflect.set(window, "gridProbePhase", "page"); });
+  await page.evaluate(probeGrid);
+  let arrive = () => {};
+  const arrival = new Promise<void>((resolve) => { arrive = resolve; });
+  await page.route((url) => url.pathname.includes("/transcript-snapshot") && (url.pathname.includes(GUIDE) || url.pathname.includes(E2E_CROWDED_ASK_CHAT.id)), async (route) => { await arrival; await route.continue(); });
+  try {
+    await page.getByRole("button", { name: "Next page", exact: true }).click();
+    await page.waitForTimeout(350);
+    await expect(page.locator(".grid > .tile:visible")).toHaveCount(4);
+    arrive();
+    await expect(page.locator(".grid > .tile:visible")).toHaveCount(2);
+    await page.waitForTimeout(400);
+    await page.getByRole("button", { name: "Previous page", exact: true }).click();
+    await expect(page.locator(".grid > .tile:visible")).toHaveCount(4);
+    await page.waitForTimeout(400);
+    const result = await page.evaluate(() => (Reflect.get(window, "finishGridProbe") as () => { frames: number; failures: string[] })());
+    expect(result.frames).toBeGreaterThan(30);
+    expect(result.failures).toEqual([]);
+    expect(movedTiles(before, await page.evaluate(gridLayout)), "Page round trip restores Grid anchors").toEqual([]);
+    await test.info().attach("grid-page-probe", { body: JSON.stringify(result), contentType: "application/json" });
+  } finally { arrive(); }
+});
+
 /** Opens a Grid of `sessions` with `focused` outlined, at 1440×900, once every tile shows its transcript. */
 async function openGrid(page: Page, sessions: readonly string[], focused = sessions[0]): Promise<void> {
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
@@ -285,8 +445,10 @@ async function openGrid(page: Page, sessions: readonly string[], focused = sessi
   await page.setViewportSize({ width: 1440, height: 900 });
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
+  // The URL's Chat joins the window, so a Grid without it opens on its focused Chat instead.
+  if (!sessions.includes(NOTES)) target.searchParams.set("session", focused);
   await page.goto(target.toString());
-  await expect(page.locator(".grid > .tile")).toHaveCount(sessions.length);
+  await expect(page.locator(".grid > .tile")).toHaveCount(Math.min(4, sessions.length));
   await expect.poll(async () => (await page.evaluate(gridLayout)).every((tile) => tile.anchor !== "none"), { timeout: 10_000 }).toBe(true);
   await page.waitForTimeout(600);
 }
@@ -394,6 +556,8 @@ async function dragDivider(page: Page, axis: "columns" | "rows", delta: number):
   await page.mouse.down();
   await page.mouse.move(axis === "columns" ? x + delta : x, axis === "rows" ? y + delta : y, { steps: 12 });
   await page.mouse.up();
+  // Two frames, so the tiles' resize observers have kept their Chats' scroll at the new size.
+  await page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(resolve); }); }));
 }
 
 const tileBox = async (page: Page, session: string) => {
@@ -449,6 +613,7 @@ test("dragging the Grid's dividers resizes its columns and rows, which survive f
   expect(movedTiles(before, await page.evaluate(gridLayout))).toEqual([]);
   await page.reload();
   await expect(page.locator(".grid > .tile")).toHaveCount(4);
+  await expect(page.locator('.tile[data-focused="true"] chat-view article').first()).toBeVisible();
   await expect.poll(async () => (await tileBox(page, NOTES)).width).toBeCloseTo(first.width, -1);
   expect((await tileBox(page, NOTES)).height).toBeCloseTo(first.height, -1);
 
@@ -466,6 +631,68 @@ test("dragging the Grid's dividers resizes its columns and rows, which survive f
   await expect(rows).toHaveAttribute("aria-valuenow", String(valueNow + 2));
   await page.keyboard.press("Shift+ArrowUp");
   await expect(rows).toHaveAttribute("aria-valuenow", String(valueNow - 8));
+});
+
+interface DragCost { appRenders: number; chatViewRenders: number; frames: number[]; layout: number[] }
+
+/**
+ * Drags `axis`'s divider (held down by the page's mouse) one pointermove a frame for `frames` frames, swinging 300px
+ * either way, and counts the renders of pi-workbench-app and every chat-view, each frame's gap and its forced layout.
+ */
+async function measureDividerDrag(page: Page, axis: "columns" | "rows", frames: number): Promise<DragCost> {
+  return page.evaluate(async ([axis, frames]) => {
+    const cost: DragCost = { appRenders: 0, chatViewRenders: 0, frames: [], layout: [] };
+    const restore: (() => void)[] = [];
+    for (const [tag, key] of [["pi-workbench-app", "appRenders"], ["chat-view", "chatViewRenders"]] as const) {
+      const proto = customElements.get(tag)?.prototype as { update(changed: unknown): void } | undefined;
+      if (proto === undefined) throw new Error(`no ${tag}`);
+      const update = proto.update;
+      proto.update = function (this: unknown, changed: unknown) { cost[key] += 1; update.call(this, changed); };
+      restore.push(() => { proto.update = update; });
+    }
+    const find = (root: Document | ShadowRoot, selector: string): HTMLElement | undefined => root.querySelector<HTMLElement>(selector) ?? [...root.querySelectorAll("*")].flatMap((element) => element.shadowRoot === null ? [] : [find(element.shadowRoot, selector)]).find((found) => found !== undefined);
+    const handle = find(document, `.grid-divider[data-axis="${axis}"]`);
+    const app = find(document, "pi-workbench-app") as (HTMLElement & { updateComplete: Promise<unknown> }) | undefined;
+    if (handle === undefined || app === undefined) throw new Error(`no ${axis} divider`);
+    const layout = () => { const start = performance.now(); handle.parentElement?.querySelector(".tile")?.getBoundingClientRect(); return performance.now() - start; };
+    const box = handle.getBoundingClientRect();
+    const [x, y] = axis === "columns" ? [box.x + box.width / 2, box.y + box.height / 4] : [box.x + box.width / 4, box.y + box.height / 2];
+    const frame = () => new Promise<number>((resolve) => { requestAnimationFrame(resolve); });
+    let last = await frame();
+    for (let index = 1; index <= frames; index += 1) {
+      const now = await frame();
+      cost.frames.push(now - last);
+      last = now;
+      // Whether a move lands in a render or in the next frame's write, these two layouts time what the frame pays for it.
+      const written = layout();
+      const offset = 300 * Math.sin(index / frames * 1.5 * Math.PI);
+      handle.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 1, bubbles: true, composed: true, cancelable: true, clientX: axis === "columns" ? x + offset : x, clientY: axis === "rows" ? y + offset : y }));
+      await app.updateComplete;
+      cost.layout.push(written + layout());
+    }
+    for (const undo of restore) undo();
+    return cost;
+  }, [axis, frames] as const);
+}
+
+test("dragging a Grid divider over four long transcripts renders nothing per pointermove", async ({ page }) => {
+  await openGrid(page, [E2E_LONG_CHAT.id, ...E2E_MORE_LONG_CHAT_IDS]);
+  const columns = page.locator('.grid-divider[data-axis="columns"]');
+  const box = await columns.boundingBox();
+  if (box === null) throw new Error("no columns divider");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 4);
+  await page.mouse.down();
+  const cost = await measureDividerDrag(page, "columns", 120);
+  await page.mouse.up();
+  const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length * 0.95)] ?? Number.NaN;
+  const span = cost.frames.reduce((sum, gap) => sum + gap, 0);
+  // Review numbers, not asserted: frame rates vary by machine.
+  console.log(`Grid drag: ${JSON.stringify({ appRenders: cost.appRenders, chatViewRenders: cost.chatViewRenders, fps: Math.round(cost.frames.length / span * 1000), frameGapP95: p95(cost.frames), longFrames: cost.frames.filter((gap) => gap > 50).length, layoutP95: p95(cost.layout) })}`);
+  // The drag writes the Grid's template itself, once a frame: a render per move would re-render every tile's Chat.
+  expect(cost.appRenders).toBe(0);
+  expect(cost.chatViewRenders).toBe(0);
+  // The drag ends 300px left of even: it moved the tiles, and the release stored it.
+  await expect(columns).not.toHaveAttribute("aria-valuenow", "50");
 });
 
 test("captures resized Grids for review", async ({ browser }) => {
@@ -550,7 +777,7 @@ test("one click on a resting tile's menu focuses the tile and opens its menu, Fi
 
 /** The Chat tile and the neighbour preview beside it during a swipe. */
 const swipeStage = (page: Page) => page.locator("pi-workbench-app").evaluate((app) => {
-  const tile = app.shadowRoot?.querySelector<HTMLElement>(".grid > .tile");
+  const tile = app.shadowRoot?.querySelector<HTMLElement>('.grid > .tile[data-focused="true"]');
   const peek = app.shadowRoot?.querySelector<HTMLElement>(".swipe-peek");
   return { tileLeft: tile?.getBoundingClientRect().left, transform: tile?.style.transform, peekLeft: peek === null || peek === undefined ? undefined : peek.getBoundingClientRect().left, peekVisible: peek === null || peek === undefined ? false : getComputedStyle(peek).visibility === "visible" };
 });
@@ -560,7 +787,7 @@ test("a swipe to a Chat that loads slowly shows its preview, and a vertical scro
   await expect(shownChat(page).locator("chat-view article").first()).toBeVisible();
   let arrive = () => {};
   const arrived = new Promise<void>((resolve) => { arrive = resolve; });
-  await page.route((url) => url.pathname.includes(RELEASE) && url.pathname.includes("/messages"), async (route) => { await arrived; await route.continue(); });
+  await page.route((url) => url.pathname.includes(RELEASE) && url.pathname.includes("/transcript-snapshot"), async (route) => { await arrived; await route.continue(); });
   await shownChat(page).locator("chat-view .chat").hover();
   // One big sample is a flick: it moves on at once, and the neighbour's preview fills the stage while its Chat loads.
   await page.mouse.wheel(40, 0);
@@ -644,7 +871,7 @@ test("places the move menu at the pointer under a larger interface scale", async
   expect(Math.abs(menu.y - (box.y + 10))).toBeLessThan(4);
 });
 
-const composer = (page: Page) => page.locator("main.chat-shell prompt-editor .cm-content");
+const composer = (page: Page) => shownChat(page).locator("prompt-editor .cm-content");
 
 async function openWindow(page: Page, windowId: string, sessionId?: string): Promise<void> {
   const target = new URL(process.env["PI_WEB_E2E_CHAT_URL"] ?? "");
@@ -847,7 +1074,7 @@ for (const scenario of ["move", "reselect", "missed-startup", "images-and-send"]
         await expect(composer(page)).toHaveText("source first prompt");
         await expect(shownChat(page)).toHaveAttribute("data-session", tempId);
       } else if (scenario === "images-and-send") {
-        await page.locator('prompt-editor input[type="file"]').setInputFiles({ name: "source.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
+        await shownChat(page).locator('prompt-editor input[type="file"]').setInputFiles({ name: "source.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
         await expect(page.locator("prompt-editor .attachment-chip")).toHaveCount(1);
       }
       const target = await context.newPage();
@@ -940,7 +1167,7 @@ test("captures the window layouts for review", async ({ browser }) => {
       const two = await open((page) => openSeededWindow(page));
       await shot(two.page, `tabs-2ws-two-rows-${label}-${scheme}.png`);
       await two.page.keyboard.press("Control+g");
-      await expect(two.page.locator("workbench-chat-pane chat-view")).toHaveCount(2);
+      await expect(two.page.locator("workbench-chat-pane chat-view")).toHaveCount(3);
       await two.page.waitForTimeout(800);
       await shot(two.page, `grid-3-tiles-${label}-${scheme}.png`);
       await openChatMenu(two.page.locator('.tile[data-focused="true"] > .tile-bar'));

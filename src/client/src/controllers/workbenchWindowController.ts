@@ -113,8 +113,7 @@ function webLocks(): WindowLocks | undefined {
 
 /**
  * Owns this window's identity and its read-modify-write access to the shared window store. `start` claims the URL's
- * `?win=` id, else the working set of a window nobody holds any more (a closed window reopened with ⌘N), else a new
- * one; a live page holds its id's Web Lock, so a second page asking for the same id gets a new one. Every store write
+ * `?win=` id, else a new, empty one (a closed window's Chats stay with its own id, never with a new window); a live page holds its id's Web Lock, so a second page asking for the same id gets a new one. Every store write
  * runs under one Web Lock, so windows never overwrite each other's changes. Other windows' writes arrive through
  * `onExternalChange`.
  */
@@ -173,15 +172,11 @@ export class WorkbenchWindowController {
 
   private async claimId(): Promise<void> {
     const url = this.environment.url();
-    const stored = this.read();
     const alive = this.readHeartbeats();
     const now = this.environment.now();
     const isAlive = (id: string) => (alive[id] ?? 0) > now - STALE_MS;
     const requested = url.searchParams.get(WINDOW_URL_PARAM) ?? this.environment.tabStorage?.getItem(TAB_WINDOW_KEY) ?? null;
-    const candidates = requested !== null && requested !== "" ? [requested]
-      : Object.keys(stored).filter((candidate) => !isAlive(candidate) && (stored[candidate]?.chats.length ?? 0) > 0);
-    let id: string | undefined;
-    for (const candidate of candidates) if (await this.holdId(candidate)) { id = candidate; break; }
+    let id = requested !== null && requested !== "" && await this.holdId(requested) ? requested : undefined;
     if (id === undefined) {
       id = this.environment.newId();
       await this.holdId(id);
@@ -193,7 +188,7 @@ export class WorkbenchWindowController {
     try { this.environment.tabStorage?.setItem(TAB_WINDOW_KEY, id); } catch { /* The URL still carries the id. */ }
     this.windowId = id;
     const claimed = id;
-    // Closed windows without Chats are dropped; closed ones with Chats stay as move targets and for ⌘N to reopen.
+    // Closed windows without Chats are dropped; closed ones with Chats stay as move targets and for their restored window.
     await this.exclusive(() => {
       const latest = this.read();
       const kept = ensureWindow(Object.fromEntries(Object.entries(latest).filter(([candidate, window]) => candidate === claimed || isAlive(candidate) || window.chats.length > 0)), claimed);

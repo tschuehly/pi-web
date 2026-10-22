@@ -16,6 +16,7 @@ import { transcriptImageSource, type TranscriptImage } from "./TranscriptImage";
 import { DelegateRoster } from "./DelegateRoster";
 import type { FormattedText } from "./FormattedText";
 import { GoalStatusChip } from "./GoalStatusChip";
+import { composedContains, deepActiveElement, hasRenderedModal } from "./modalLayerRegistry";
 import { PromptEditor } from "./PromptEditor";
 import { WorkbenchApp, adHocWorkspace, rootProjectOf, rootProjects, sessionInfoText } from "./WorkbenchApp";
 import { HttpRequestError } from "../api/http";
@@ -25,7 +26,8 @@ import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import { WorkbenchChatPane } from "./WorkbenchChatPane";
 import type { WorkbenchQuestionChips } from "./WorkbenchQuestionChips";
 import { SessionController } from "../controllers/sessionController";
-import { WINDOW_CHANNEL, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY } from "../controllers/workbenchWindowController";
+import { WorkbenchWindowController, WINDOW_CHANNEL, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY } from "../controllers/workbenchWindowController";
+import { WorkbenchChatSession, WorkbenchSessionFocus } from "../controllers/workbenchSessionFocus";
 import { FakeLocks } from "../controllers/webLocks.testSupport";
 import { moveChats, openChat, parseWindowStore } from "../workbenchWindows";
 
@@ -121,6 +123,20 @@ describe("project tabs", () => {
 });
 
 describe("Chat in a folder", () => {
+  it("updates the chooser from global events in its current folder without projecting a background Chat", async () => {
+    const app = await mountChooser([]);
+    const receive: unknown = Reflect.get(app, "handleRealtimeEvent");
+    if (typeof receive !== "function") throw new Error("Global event handler unavailable");
+    Reflect.apply(receive, app, [{ type: "session.created", session: session("first", "First Chat") }]);
+    await app.updateComplete;
+    expect(sessionTitles(app)).toEqual(["First Chat"]);
+    setState(app, { ...getState(app), selectedWorkspace: { ...workspace, path: "/other" }, sessions: [] });
+    Reflect.apply(receive, app, [{ type: "session.created", session: session("old-folder", "Wrong folder") }]);
+    Reflect.apply(receive, app, [{ type: "session.created", session: { ...session("new-folder", "New folder Chat"), cwd: "/other" } }]);
+    await app.updateComplete;
+    expect(sessionTitles(app)).toEqual(["New folder Chat"]);
+    expect(getState(app).selectedSession).toBeUndefined();
+  });
   it("shows the associated Workstream through a registered workspace without registering the Chat folder", async () => {
     const current = { ...session("adhoc", "Investigate", "Nested chat"), cwd: "/outside/nested" };
     const calls: WorkstreamServiceCall[] = [];
@@ -307,7 +323,7 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("second"); });
     expect(window.location.search).toContain("session=second");
     await app.updateComplete;
-    expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.revealTarget).toEqual({ machineId: "local", sessionId: "second", anchor: "ask:ask-1" });
+    expect(app.shadowRoot?.querySelector<ChatView>('.tile[data-focused="true"] chat-view')?.revealTarget).toEqual({ machineId: "local", sessionId: "second", anchor: "ask:ask-1" });
   });
 
   it("reveals a notification's message from the opening URL once, and from the native app without a reload", async () => {
@@ -644,7 +660,6 @@ describe("Workbench Chat chooser", () => {
     await vi.waitFor(() => { expect(tree.mock.calls[0]?.slice(0, 4)).toEqual([project.id, workspace.id, "", "local"]); });
     await vi.waitFor(() => { expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]')); });
     expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
-    expect(WorkbenchApp.styles.cssText).toMatch(/header > button\s*\{[^}]*min-height:\s*26px;[^}]*border-color:\s*transparent/);
     // Search lives in the Files pane toolbar, not the Chat header.
     expect(app.shadowRoot?.querySelector('header button[aria-label="Search files"]')).toBeNull();
     // happy-dom's ShadowRoot.activeElement throws while focus sits in another nested shadow root.
@@ -1513,9 +1528,10 @@ describe("Workbench request waterfalls", () => {
   });
 
   it("UI-002: ignores a late targeted row after navigation moved to another Chat, in each of two windows", async () => {
-    // Both shells live in one document; without Web Locks neither proves the other alive, so neither routes the other's Chat.
+    // Plain-http windows have independent sessionStorage, even though this DOM harness hosts them in one document.
     Reflect.deleteProperty(navigator, "locks");
-    onTestFinished(() => { sessionStorage.clear(); });
+    const tabStorage = vi.spyOn(window, "sessionStorage", "get").mockReturnValue(new Storage());
+    onTestFinished(() => { tabStorage.mockRestore(); });
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const first = deferred<SessionInfo[]>();
@@ -1526,6 +1542,7 @@ describe("Workbench request waterfalls", () => {
     const app = new WorkbenchApp();
     document.body.append(app);
     window.history.replaceState({}, "", chatUrl(second.id));
+    tabStorage.mockReturnValue(new Storage());
     const other = new WorkbenchApp();
     document.body.append(other);
     await vi.waitFor(() => { expect(getState(other).selectedSession?.id).toBe(second.id); });
@@ -2150,8 +2167,167 @@ describe("window tabs", () => {
       await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(sessionId); });
     }
     await vi.waitFor(async () => { await app.updateComplete; expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]); });
-    return app;
+    // Restore the working set with only its selected tab loaded. Tests can then hold genuine first-open requests.
+    app.remove();
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    const restored = new WorkbenchApp();
+    document.body.append(restored);
+    await vi.waitFor(() => { expect(getState(restored).selectedSession?.id).toBe("b1"); });
+    await settled(restored);
+    return restored;
   }
+
+  it("keeps the full chooser catalog after closing onto a warm tile and reopening one from Home", async () => {
+    const app = await mountWithWorkstreamChats();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
+    await vi.waitFor(() => { expect(paneChats(app)).toHaveLength(3); });
+    app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-focused="true"] .tile-actions button[title="Close"]')?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
+    await vi.waitFor(() => { expect(sessionTitles(app)).toHaveLength(3); });
+    [...app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? []].find((button) => button.textContent.includes("Plan the release"))?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
+    await vi.waitFor(() => { expect(sessionTitles(app)).toHaveLength(3); });
+  });
+
+  it("keeps window status aggregates when a warm Chat receives its first focused stream update", async () => {
+    const app = await mountWithWorkstreamChats();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
+    await vi.waitFor(() => { expect(paneChats(app)).toHaveLength(3); });
+    await settled(app);
+    const catalog = deferred<SessionInfo[]>();
+    vi.mocked(api.sessions).mockReturnValue(catalog.promise);
+    const outside = { ...idleStatus("b1"), isStreaming: true };
+    const current = app.shadowRoot?.querySelector('.tile[data-session="b1"] workbench-chat-pane');
+    if (!(current instanceof WorkbenchChatPane) || current.runtime === undefined) throw new Error("Current Chat unavailable");
+    current.runtime.sessions.applySessionStatus(outside);
+    expect(getState(app).sessionStatuses["b1"]).toEqual(outside);
+    const warm = app.shadowRoot?.querySelector('.tile[data-session="a1"] workbench-chat-pane');
+    if (!(warm instanceof WorkbenchChatPane) || warm.runtime === undefined) throw new Error("Warm Chat unavailable");
+    try {
+      warm.promptEditor?.focusInput();
+      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+      warm.runtime.sessions.applySessionStatus(idleStatus("a1"));
+      expect(getState(app).sessionStatuses["b1"]).toEqual(outside);
+    } finally { catalog.resolve([session("a1", "Plan"), session("a2", "Notes"), session("b1", "Guide")]); }
+  });
+
+  it("keeps an unavailable tile local to its slot, with a close action, while the rest of Grid stays usable", async () => {
+    const app = await mountWithWorkstreamChats();
+    vi.mocked(api.sessions).mockImplementation((_cwd, _machineId, options) => options?.sessionId === "a2" ? Promise.reject(new HttpRequestError("Session not found", 404)) : Promise.resolve([session("a1", "Plan"), session("b1", "Guide")]));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelectorAll(".grid > .tile")).toHaveLength(3); expect(app.shadowRoot?.querySelector('.tile[data-session="a2"]')?.textContent).toContain("no longer available"); });
+    expect(getState(app).selectedSession?.id).toBe("b1");
+    app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-session="a2"] .tile-actions button[title="Close"]')?.click();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelectorAll(".grid > .tile")).toHaveLength(2); });
+    expect(getState(app).selectedSession?.id).toBe("b1");
+  });
+
+  it.each([true, false])("keeps a creation and another page's loading Chat alive whichever finishes first (creation first: %s)", async (creationFirst) => {
+    const app = await mountWithWorkstreamChats();
+    const windows: unknown = Reflect.get(app, "windows");
+    if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
+    const extra = [session("extra-1", "Extra 1"), session("extra-2", "Extra 2")];
+    const rows = [...getState(app).sessions, ...extra];
+    vi.mocked(api.sessions).mockImplementation((_cwd, _machineId, options) => Promise.resolve(rows.filter((row) => options?.sessionId === undefined || row.id === options.sessionId)));
+    await windows.update((store, id) => {
+      let next = store;
+      for (const row of extra) next = openChat(next, id, { sessionId: row.id, title: row.firstMessage, machineId: "local", projectId: project.id, workspaceId: workspace.id });
+      const window = next[id];
+      if (window === undefined) throw new Error("Window missing");
+      return { ...next, [id]: { ...window, focused: "b1" } };
+    });
+    const created = deferred<SessionInfo>();
+    vi.spyOn(api, "startSession").mockReturnValue(created.promise);
+    const snapshot = deferred<Awaited<ReturnType<typeof api.messages>>>();
+    let loading = false;
+    vi.mocked(api.messages).mockImplementation((row) => { if (row.id === "a1") { loading = true; return snapshot.promise; } return Promise.resolve({ messages: [], start: 0, total: 0 }); });
+    tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
+    await settled(app);
+    app.shadowRoot?.querySelector<HTMLButtonElement>("button.primary")?.click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toMatch(/^creating:/u); });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
+    await vi.waitFor(() => { expect(paneChats(app)).toContain("extra-2"); expect(paneChats(app)).toHaveLength(2); });
+    await settled(app);
+    const pane = app.shadowRoot?.querySelector('.tile[data-focused="true"] workbench-chat-pane');
+    if (!(pane instanceof WorkbenchChatPane) || pane.runtime === undefined) throw new Error("Pending Chat unavailable");
+    const runtime = pane.runtime;
+    const editor = pane.promptEditor;
+    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a1" } }));
+    await vi.waitFor(() => { expect(loading).toBe(true); });
+    const row = { ...session("created", ""), persisted: false, messageCount: 0 };
+    if (creationFirst) {
+      created.resolve(row);
+      await vi.waitFor(() => { expect(runtime.state.selectedSession?.id).toBe(row.id); });
+      await settled(app);
+      expect(pane.isConnected).toBe(true);
+      expect(pane.promptEditor).toBe(editor);
+    }
+    snapshot.resolve({ messages: [], start: 0, total: 0 });
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    if (!creationFirst) {
+      expect(runtime.pending).toBe(true);
+      created.resolve(row);
+      await vi.waitFor(() => { expect(runtime.state.selectedSession?.id).toBe(row.id); });
+    }
+    await settled(app);
+    expect(promptEditor(app).sessionId).toBe("a1");
+    expect(getState(app).selectedSession?.id).toBe("a1");
+    expect(windows.window?.chats.some((chat) => chat.sessionId === row.id)).toBe(true);
+  });
+
+  it("forks into its own Chat, closes the original tree dialog, and rejoins the retained original file", async () => {
+    const app = await mountWithWorkstreamChats();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
+    await vi.waitFor(() => { expect(paneChats(app)).toHaveLength(3); });
+    await settled(app);
+    const original = app.shadowRoot?.querySelector('.tile[data-session="b1"] workbench-chat-pane');
+    if (!(original instanceof WorkbenchChatPane) || original.runtime === undefined) throw new Error("Original Chat unavailable");
+    const view = original.chatView;
+    expect(view).toBeDefined();
+    vi.spyOn(api, "runCommand").mockResolvedValue({ type: "tree", tree: { nodes: [{ id: "entry", parentId: null, kind: "assistant", summary: "Reply" }], activeLeafId: "entry", activePathIds: ["entry"] } });
+    vi.spyOn(api, "forkTree").mockResolvedValue({ cancelled: false, session: session("forked", "Fork") });
+    original.promptEditor?.focusInput();
+    await original.runtime.sessions.runCommand("/tree");
+    await settled(app);
+    original.querySelector("session-tree-navigator")?.shadowRoot?.querySelector<HTMLButtonElement>("button")?.focus();
+    window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "a1" } }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    await settled(app);
+    expect(getState(app).selectedSession?.id).toBe("a1");
+    const tree = original.runtime.state.treeDialog;
+    expect(tree).toBeDefined();
+    expect(hasRenderedModal(document)).toBe(false);
+    promptEditor(app).focusInput();
+    window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "b1" } }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    await settled(app);
+    const retainedDialog = original.querySelector("session-tree-navigator");
+    if (retainedDialog === null) throw new Error("Retained tree dialog unavailable");
+    expect(composedContains(retainedDialog, deepActiveElement(document) ?? document.body)).toBe(true);
+    window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "a1" } }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    await settled(app);
+    original.runtime.patch({ treeDialog: undefined });
+    await settled(app);
+    expect(getState(app).selectedSession?.id).toBe("a1");
+    original.runtime.patch({ treeDialog: tree });
+    window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "b1" } }));
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    await settled(app);
+    expect(hasRenderedModal(document)).toBe(true);
+    const navigator = original.querySelector("session-tree-navigator");
+    if (navigator === null) throw new Error("Tree dialog unavailable");
+    expect(composedContains(navigator, deepActiveElement(document) ?? document.body)).toBe(true);
+    vi.mocked(api.transcriptSnapshot).mockClear();
+    await original.runtime.sessions.forkFromTree("entry");
+    await settled(app);
+    expect(getState(app).selectedSession?.id).toBe("forked");
+    expect(original.runtime.state.treeDialog).toBeUndefined();
+    expect(original.chatView).toBe(view);
+    expect(vi.mocked(api.transcriptSnapshot).mock.calls.some(([row]) => row.id === "b1")).toBe(true);
+  });
 
   it("opens each Chat as a tab under its Workstream, and a Workstream tab reopens its last-active Chat", async () => {
     const app = await mountWithWorkstreamChats();
@@ -2305,7 +2481,7 @@ describe("window tabs", () => {
     expect(tabsRoot(app).querySelector("nav")).toBeNull();
   });
 
-  it("switches to a grid with \u2303G, keeps only the visible tiles live, and hands a pressed tile to the shell", async () => {
+  it("switches to a grid with \u2303G and keeps every tile mounted while focus and layout change", async () => {
     // happy-dom loses a removed shadow root's focus; focusing the composer is not what this test checks.
     vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
@@ -2316,28 +2492,30 @@ describe("window tabs", () => {
     const tiles = () => [...(app.shadowRoot?.querySelectorAll<HTMLElement>(".grid > .tile") ?? [])];
     expect(tiles()).toHaveLength(3);
     expect(tiles().filter((tile) => tile.dataset["focused"] === "true").map((tile) => tile.querySelector(".chat-shell")?.getAttribute("data-session"))).toEqual(["b1"]);
-    expect(paneChats(app)).toEqual(["a1", "a2"]);
+    expect(paneChats(app)).toEqual(["a1", "a2", "b1"]);
+    const panes = [...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []];
     expect(tabsRoot(app).querySelector(".workstream-tab")).toBeNull();
-    // One tile bar for every tile: its Workstream's colour on its edge, and the Chat's menu, which acts only in the focused tile.
+    // One live menu per tile: focusing never replaces a tile or replays a click.
     expect(tiles().map((tile) => tile.style.getPropertyValue("--ws") !== "")).toEqual([true, true, true]);
     expect(tiles().map((tile) => tile.querySelector(":scope > .tile-bar workstream-context-drawer") === null && tile.querySelector(":scope > .tile-bar .tile-tools > workbench-menu-button") !== null)).toEqual([true, true, true]);
-    expect(tiles().map((tile) => tile.querySelector(":scope > .tile-bar .tile-tools")?.hasAttribute("inert"))).toEqual([false, true, true]);
+    expect(tiles().map((tile) => tile.querySelector(":scope > .tile-bar .tile-tools")?.hasAttribute("inert"))).toEqual([false, false, false]);
 
     app.shadowRoot?.querySelector('.tile[data-session="a1"]')?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector('.tile[data-focused="true"] .chat-shell')?.getAttribute("data-session")).toBe("a1");
-    expect(paneChats(app)).toEqual(["a2", "b1"]);
+    expect([...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []]).toEqual(panes);
 
     app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-focused="true"] > .tile-bar .tile-actions button[title^="Full size"]')?.click();
     await settled(app);
-    expect(tiles()).toHaveLength(1);
-    expect(app.shadowRoot?.querySelectorAll("workbench-chat-pane")).toHaveLength(0);
-    expect(app.shadowRoot?.querySelector<HTMLButtonElement>('header button[aria-label="Restore grid"]')).not.toBeNull();
+    expect(tiles().filter((tile) => !tile.hasAttribute("hidden"))).toHaveLength(1);
+    expect([...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []]).toEqual(panes);
+    expect(app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-focused="true"] button[aria-label="Restore grid"]')).not.toBeNull();
 
     press("g");
     await settled(app);
-    expect(tiles()).toHaveLength(1);
+    expect(tiles().filter((tile) => !tile.hasAttribute("hidden"))).toHaveLength(1);
+    expect([...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []]).toEqual(panes);
     expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]);
     expect(app.shadowRoot?.querySelector('header button[aria-label="Full size"]')).toBeNull();
   });
@@ -2350,27 +2528,31 @@ describe("window tabs", () => {
 
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
     await settled(app);
-    const tile = (sessionId: string) => app.shadowRoot?.querySelector('.tile[data-session="' + sessionId + '"] workbench-chat-pane')?.shadowRoot;
+    const tile = (sessionId: string) => app.shadowRoot?.querySelector('.tile[data-session="' + sessionId + '"] workbench-chat-pane');
 
     await vi.waitFor(() => { expect(tile("a2")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([ask]); });
     expect(tile("a2")?.querySelector("workbench-question-chips")?.nextElementSibling?.localName).toBe("prompt-editor");
     expect(tile("a1")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([]);
   });
 
-  it("opens a side tile's question in one press: the tile takes the shell and the drawer opens at that question", async () => {
+  it("opens an unfocused tile's question in one click without replacing its question chips", async () => {
     vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
     const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "db", question: "Which database?", options: [] }, { id: "why", question: "Why now?", options: [] }] };
     vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(ref.id === "a2" ? { ...idleStatus("a2"), pendingAsks: [ask] } : idleStatus(ref.id)));
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
     await settled(app);
-    const sideChips = () => app.shadowRoot?.querySelector('.tile[data-session="a2"] workbench-chat-pane')?.shadowRoot?.querySelector<WorkbenchQuestionChips>("workbench-question-chips");
+    const sideChips = () => app.shadowRoot?.querySelector('.tile[data-session="a2"] workbench-chat-pane')?.querySelector<WorkbenchQuestionChips>("workbench-question-chips");
     await vi.waitFor(async () => { await sideChips()?.updateComplete; expect(sideChips()?.shadowRoot?.querySelectorAll(".chip")).toHaveLength(2); });
 
-    sideChips()?.shadowRoot?.querySelectorAll(".chip")[1]?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    const chip = sideChips()?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".chip")[1];
+    const chipsBefore = sideChips();
+    chip?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    chip?.click();
 
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
     const shellChips = () => app.shadowRoot?.querySelector<WorkbenchQuestionChips>('.tile[data-focused="true"] .chat-column > workbench-question-chips');
+    expect(shellChips()).toBe(chipsBefore);
     await vi.waitFor(async () => { await shellChips()?.updateComplete; expect(shellChips()?.shadowRoot?.querySelector('.drawer ask-user-card[data-ask="abc-1"]')).not.toBeNull(); });
   });
 
@@ -2380,22 +2562,20 @@ describe("window tabs", () => {
     app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle")?.click();
     await app.updateComplete;
     const pane = app.shadowRoot?.querySelector("workbench-files-pane");
-    const composer = app.shadowRoot?.querySelector("prompt-editor");
+    const composer = promptEditor(app);
     expect(pane).not.toBeNull();
     const press = async (key: string) => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true }));
       await settled(app);
       expect(app.shadowRoot?.querySelector("workbench-files-pane")).toBe(pane);
-      expect(app.shadowRoot?.querySelector("prompt-editor")).toBe(composer);
+      expect(promptEditor(app)).toBe(composer);
     };
 
     await press("g");
     const panes = [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])];
-    expect(panes).toHaveLength(2);
-    // Removing a tile mid-load leaks its composer's editor in happy-dom.
-    await vi.waitFor(() => { expect(panes.every((tile) => tile.shadowRoot?.querySelector("prompt-editor") !== null)).toBe(true); });
+    expect(panes).toHaveLength(3);
     await press("Enter");
-    expect(app.shadowRoot?.querySelectorAll("workbench-chat-pane")).toHaveLength(0);
+    expect([...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []]).toEqual(panes);
     await press("g");
   });
 
@@ -2492,7 +2672,7 @@ describe("window tabs", () => {
 
     expect(opened).not.toHaveBeenCalled();
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId).sort()).toEqual(["a1", "a2", "b1"]);
-    expect(app.shadowRoot?.querySelector(".chat-error")?.textContent).toContain("Plan the release");
+    expect(app.shadowRoot?.querySelector(".stage > .error")?.textContent).toContain("Plan the release");
     clearStagedAttachments(machineSessionKey("local", "a1"));
   });
 
@@ -2956,7 +3136,8 @@ describe("window tabs", () => {
     await settled(app);
     expect(sent.mock.calls.map(([target, text, , machineId]) => [target.id, text, machineId])).toEqual([[row.id, "queued first message", "local"]]);
     expect(loadDraft(machineSessionKey("local", row.id))).toBe("draft before navigation");
-    expect(getState(app).selectedSession?.id).toBe(mode === "home" || mode === "slow-tab" ? undefined : "a2");
+    // A loading destination keeps the outgoing Chat on screen, including its completed creation.
+    expect(getState(app).selectedSession?.id).toBe(mode === "home" ? undefined : mode === "slow-tab" ? row.id : "a2");
     slow?.release();
     if (slow !== undefined) await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.find((chat) => chat.sessionId === row.id)?.machineId).toBe("local");
@@ -3219,7 +3400,7 @@ function tabsRoot(app: WorkbenchApp): ShadowRoot {
   return root;
 }
 
-const paneChats = (app: WorkbenchApp): (string | undefined)[] => [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])].map((pane) => pane instanceof WorkbenchChatPane ? pane.chat?.sessionId : undefined);
+const paneChats = (app: WorkbenchApp): (string | undefined)[] => [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])].map((pane) => pane instanceof WorkbenchChatPane ? pane.app?.selectedSession?.id : undefined);
 const workstreamTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".workstream-tab")].map((tab) => tab.textContent.replace(/\s+/gu, ""));
 const chatTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".chat-tab .title")].map((title) => title.textContent);
 
@@ -3434,10 +3615,10 @@ describe("Workbench Chat controls", () => {
 
     const shell = app.shadowRoot?.querySelector(".chat-shell");
     if (shell === null || shell === undefined) throw new Error("Chat shell was not rendered");
-    expect(shell.querySelector("header > workbench-menu-button .files-toggle")).not.toBeNull();
+    expect(app.shadowRoot?.querySelector(".chat-tools workbench-menu-button .files-toggle")).not.toBeNull();
     Reflect.set(app, "currentWorkstream", { id: "ws", title: "Release", revision: 1, sessions: [], humanTasks: [], links: [], overview: null, closed: false });
     await app.updateComplete;
-    expect([...shell.querySelector("header")?.children ?? []].map((child) => child.localName)).toEqual(["workbench-menu-button"]);
+    expect(shell.querySelector("header")).toBeNull();
     expect(shell.querySelector("header > goal-status-chip")).toBeNull();
     expect(shell.querySelector("header > strong")).toBeNull();
     const roster = shell.querySelector("delegate-roster");
@@ -3501,7 +3682,21 @@ async function chatAnchors(app: WorkbenchApp): Promise<HTMLAnchorElement[]> {
 }
 
 function setState(app: WorkbenchApp, state: AppState): void {
-  if (!Reflect.set(app, "app", state)) throw new Error("Could not set WorkbenchApp state");
+  // These component-boundary fixtures seed a loaded Chat through the focus seam, without opening a backend runtime.
+  const focused: unknown = Reflect.get(app, "focused");
+  const windows: unknown = Reflect.get(app, "windows");
+  const create: unknown = Reflect.get(app, "createChatSession");
+  if (!(focused instanceof WorkbenchSessionFocus) || !(windows instanceof WorkbenchWindowController) || typeof create !== "function") throw new Error("Workbench session seam unavailable");
+  const session = state.selectedSession;
+  if (session === undefined) { focused.clear(); Reflect.set(app, "app", state); return; }
+  const runtime: unknown = focused.current?.state.selectedSession?.id === session.id ? focused.current : Reflect.apply(create, app, [state]);
+  if (!(runtime instanceof WorkbenchChatSession)) throw new Error("Chat runtime unavailable");
+  runtime.patch(state, false);
+  runtime.ready = true;
+  const store = openChat(windows.store, windows.id, { sessionId: session.id, title: session.name ?? session.firstMessage, machineId: state.selectedMachine?.id ?? "local", projectId: state.selectedProject?.id, workspaceId: state.selectedWorkspace?.id });
+  localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(store));
+  Reflect.set(windows, "current", store);
+  focused.focus(runtime);
 }
 
 /** The Workstream the one-row tab strip names for the Chat on screen, through its Chats' label. */
@@ -3511,7 +3706,7 @@ function shownWorkstream(app: WorkbenchApp): string | undefined {
 }
 
 function promptEditor(app: WorkbenchApp): PromptEditor {
-  const editor = app.shadowRoot?.querySelector("prompt-editor");
+  const editor = app.shadowRoot?.querySelector('.tile[data-focused="true"] prompt-editor');
   if (!(editor instanceof PromptEditor)) throw new Error("Prompt editor was not rendered");
   return editor;
 }

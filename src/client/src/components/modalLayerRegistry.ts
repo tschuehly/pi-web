@@ -77,6 +77,13 @@ export function hasRenderedModal(ownerDocument: Document | undefined): boolean {
     && (topModalLayer(ownerDocument) !== undefined || hasComposedOpenDialog(ownerDocument));
 }
 
+/** Reapply the visible modal's focus contract when its retained view becomes active again. */
+export function focusTopModal(ownerDocument: Document): void {
+  notifyModalLayers(ownerDocument);
+  const top = topModalLayer(ownerDocument);
+  if (top !== undefined) focusModalLayer(top);
+}
+
 function hasComposedOpenDialog(root: Document | ShadowRoot): boolean {
   if (root.querySelector("dialog[open]") !== null) return true;
   for (const element of root.querySelectorAll("*")) {
@@ -86,7 +93,9 @@ function hasComposedOpenDialog(root: Document | ShadowRoot): boolean {
 }
 
 function restoreAfterModalClose(registered: RegisteredModalLayer): void {
-  const { element } = registered.layer;
+  const { element, paintElement, nativeTopLayer } = registered.layer;
+  // A background Chat's dialog can finish after focus moved elsewhere, even while the document has no active control.
+  if (nativeTopLayer !== true && isHiddenOrInertInComposedTree(paintElement ?? element)) return;
   const ownerDocument = element.ownerDocument;
   const active = deepActiveElement(ownerDocument);
   const focusWasReset = active === null || active === ownerDocument.body || active === ownerDocument.documentElement;
