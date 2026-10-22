@@ -35,6 +35,18 @@ function shortModel(model: string | undefined): string | undefined {
   return model?.split("/").at(-1)?.replace(/-\d{8}$/, "");
 }
 
+const MODEL_NICKNAMES: readonly (readonly [RegExp, string])[] = [[/opus/u, "Opus"], [/sonnet/u, "Sonnet"], [/fable/u, "Fable"], [/haiku/u, "Haiku"], [/astra/u, "Astra"], [/sol\b/u, "Sol"], [/luna/u, "Luna"], [/grok/u, "Grok"]];
+const EFFORT_LETTERS: Readonly<Record<string, string>> = { minimal: "Min", low: "L", medium: "M", high: "H", xhigh: "XH", max: "Max" };
+
+/** "Opus H": the model's nickname (one version of each is in use) and an effort letter; unknown models keep their short id. */
+function modelLabel(model: string | undefined, effort: string | undefined): string | undefined {
+  const short = shortModel(model);
+  if (short === undefined) return undefined;
+  const nickname = MODEL_NICKNAMES.find(([pattern]) => pattern.test(short))?.[1] ?? short;
+  const letter = effort === undefined ? undefined : EFFORT_LETTERS[effort];
+  return letter === undefined ? nickname : `${nickname} ${letter}`;
+}
+
 function since(iso: string | undefined, now: number): number | undefined {
   return iso === undefined ? undefined : now - Date.parse(iso);
 }
@@ -132,13 +144,15 @@ export class DelegateRoster extends LitElement {
   private renderDelegate(item: DelegateActivityItem, outcome: DelegateOutcome, now: number): TemplateResult {
     const kind = item.kind === "worker" ? "Worker" : "Subagent";
     const details = [kind, item.role, shortModel(item.model), item.effort].filter(Boolean).join(" · ");
+    const label = modelLabel(item.model, item.effort);
+    const model = label === undefined || item.model === undefined ? undefined : { label, title: item.effort === undefined ? item.model : `${item.model} · ${item.effort} effort` };
     const reportAge = since(item.reportedAt ?? item.startedAt, now);
     const ended = item.endedAt === undefined ? undefined : Date.parse(item.endedAt);
     if (outcome !== "running") {
       const raw = capitalized((item.activity ?? "").replaceAll("_", " "));
       return this.renderRow({
         key: `delegate:${item.id}`, tone: outcome === "cancelled" ? "muted" : outcome, shape: ICONS[outcome], iconLabel: `${kind}, ${OUTCOME_LABEL[outcome].toLowerCase()}`,
-        name: item.name ?? "Unnamed", nameTitle: details, report: item.reportedStatus, reportLabel: "Status", fallback: "No status report received",
+        name: item.name ?? "Unnamed", nameTitle: details, model, report: item.reportedStatus, reportLabel: "Status", fallback: "No status report received",
         status: outcome === "failed" ? raw : OUTCOME_LABEL[outcome],
         statusTitle: outcome === "done" ? "Finished; its result is waiting to be collected" : `${OUTCOME_LABEL[outcome]}: ${raw.toLowerCase()}`,
         elapsed: ended === undefined || item.startedAt === undefined ? undefined : ended - Date.parse(item.startedAt),
@@ -149,7 +163,7 @@ export class DelegateRoster extends LitElement {
     const age = reportAge === undefined ? undefined : formatAge(reportAge);
     return this.renderRow({
       key: `delegate:${item.id}`, tone: "running", shape: item.kind === "worker" ? ICONS.worker : ICONS.subagent, iconLabel: `${kind}, running`,
-      name: item.name ?? "Unnamed", nameTitle: details, report: item.reportedStatus, reportLabel: "Status", fallback: "Waiting for its first status report",
+      name: item.name ?? "Unnamed", nameTitle: details, model, report: item.reportedStatus, reportLabel: "Status", fallback: "Waiting for its first status report",
       status: reportAge === undefined || age === undefined ? nothing
         : quiet ? html`${icon(ICONS.quiet, "quiet-icon")}Quiet ${formatElapsed(reportAge)}`
         : html`<span class="visually-hidden">${item.reportedAt === undefined ? "Started" : "Reported"} </span>${age}`,
@@ -159,13 +173,15 @@ export class DelegateRoster extends LitElement {
   }
 
   private renderRow(row: {
-    key: string; tone: Tone; shape: TemplateResult; iconLabel: string; name: string; nameTitle?: string;
+    key: string; tone: Tone; shape: TemplateResult; iconLabel: string; name: string; nameTitle?: string; model?: { label: string; title: string } | undefined;
     report: string | undefined; reportLabel?: string; fallback?: string; status: unknown; statusTitle?: string | undefined; quiet?: boolean;
     elapsed: number | undefined; elapsedLabel?: string;
   }): TemplateResult {
     return html`<div class="row ${row.tone}" data-row-key=${row.key}>
       <span class="kind" role="img" aria-label=${row.iconLabel} title=${row.iconLabel}>${icon(row.shape)}</span>
-      <strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong>
+      ${row.model === undefined
+        ? html`<strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong>`
+        : html`<span class="who"><strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong><span class="model" title=${row.model.title}>${row.model.label}</span></span>`}
       ${row.report === undefined
         ? html`<span class="report fallback">${row.fallback}</span>`
         : html`<span class="report" title=${row.report}>${row.reportLabel === undefined ? nothing : html`<span class="visually-hidden">${row.reportLabel}: </span>`}${row.report}</span>`}
@@ -225,6 +241,8 @@ export class DelegateRoster extends LitElement {
     .row.muted { --tone: var(--pi-muted); }
     .kind { display: flex; color: var(--tone); }
     .icon { width: 14px; height: 14px; }
+    .who { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+    .model { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; white-space: nowrap; }
     .name { min-width: 0; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
     .report { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .report.fallback { color: var(--pi-muted); font-style: italic; }

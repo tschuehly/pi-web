@@ -235,3 +235,22 @@ describe("DelegateRoster disclosure", () => {
     expect(shadow.querySelector(".section-toggle")?.getAttribute("aria-expanded")).toBe("true");
   });
 });
+
+describe("model label", () => {
+  it("shows each delegate's model as its nickname plus an effort letter, the full model in the tooltip", async () => {
+    const { shadow } = await mount(status(delegates([
+      { id: "o", kind: "subagent", name: "Opus run", model: "anthropic/claude-opus-5-5", effort: "high", startedAt: new Date().toISOString() },
+      { id: "a", kind: "subagent", name: "Astra run", model: "openai-codex/gpt-6-astra", effort: "xhigh", startedAt: new Date().toISOString() },
+      { id: "l", kind: "worker", name: "Luna run", model: "openai-codex/gpt-6-luna", effort: "low", startedAt: new Date().toISOString() },
+      { id: "u", kind: "subagent", name: "Other", model: "local/qwen-9b-20260101", startedAt: new Date().toISOString() },
+      { id: "n", kind: "subagent", name: "No model", startedAt: new Date().toISOString() },
+    ])));
+    const label = (key: string) => row(shadow, key).querySelector(".model");
+    expect(label("delegate:o")?.textContent.trim()).toBe("Opus H");
+    expect(label("delegate:a")?.textContent.trim()).toBe("Astra XH");
+    expect(label("delegate:l")?.textContent.trim()).toBe("Luna L");
+    expect(label("delegate:u")?.textContent.trim()).toBe("qwen-9b");
+    expect(label("delegate:n")).toBeNull();
+    expect(label("delegate:o")?.getAttribute("title")).toBe("anthropic/claude-opus-5-5 · high effort");
+  });
+});
