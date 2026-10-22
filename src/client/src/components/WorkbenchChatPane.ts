@@ -10,6 +10,7 @@ import type { WorkbenchChatSession } from "../controllers/workbenchSessionFocus"
 import type { PromptEditorTextReplacement } from "../controllers/sessionController";
 import { selectedMachineId } from "../controllers/types";
 import { markdownWorkspaceContext } from "../formatting/workspaceLinks";
+import { queuedMessageRecallConfirmation, type QueuedMessageActionTarget } from "../queuedMessageActions";
 import { machineSessionKey } from "../machineKeys";
 import type { DraftStorage } from "../promptDraftStorage";
 import type { ChatContentRendering } from "../formatting/contentRendering";
@@ -39,6 +40,9 @@ export class WorkbenchChatPane extends LitElement {
   @property({ type: Boolean }) dense = false;
   @property({ type: Boolean }) focused = false;
   @state() private rosterCollapsed = true;
+  /** A draft-replacing request in flight (go back to a message, or a queue action). One at a time; Recall and go-back lock the composer. */
+  @state() private revertPending = false;
+  @state() private queuedActionTarget: QueuedMessageActionTarget | undefined;
   @query("chat-view") chatView?: ChatView;
   @query("prompt-editor") promptEditor?: PromptEditor;
 
@@ -60,7 +64,60 @@ export class WorkbenchChatPane extends LitElement {
     if (this.app === undefined || selectedMachineId(this.app) !== machineId || this.app.selectedSession?.id !== sessionId || editor.sessionId !== sessionId) return;
     if (mode === "prepend") editor.prependText(text);
     else editor.replaceText(text);
+    // The restored text has landed: typing is safe again while history refreshes.
+    this.revertPending = false;
   }
+
+  private get composerLocked(): boolean { return this.revertPending || this.queuedActionTarget?.action === "edit"; }
+
+  private get draft(): string { return this.promptEditor?.view?.state.doc.toString() ?? ""; }
+
+  private isCurrent(runtime: WorkbenchChatSession, machineId: string, sessionId: string): boolean {
+    return this.runtime === runtime && this.app !== undefined && selectedMachineId(this.app) === machineId && this.app.selectedSession?.id === sessionId;
+  }
+
+  /** Disable the composer now, before the request, so nothing typed meanwhile is overwritten by the restored text. */
+  private async lockComposer(): Promise<void> {
+    const editor = this.promptEditor;
+    if (editor === undefined) return;
+    editor.disabled = true;
+    await editor.updateComplete;
+  }
+
+  // Mirrors PiWebApp's guarded history action: going back to a user message restores its text into the composer.
+  private readonly goBack = async (input: MessageActionAvailabilityContext): Promise<void> => {
+    const runtime = this.runtime;
+    if (runtime === undefined || !this.isCurrent(runtime, input.machine.id, input.session.id)) throw new Error("This message's conversation is no longer available.");
+    if (this.revertPending || this.queuedActionTarget !== undefined) throw new Error("Another draft-replacing action is already in progress.");
+    if (input.message.role === "user" && this.draft !== "" && !window.confirm("Going back will replace your unsent draft. Continue?")) return;
+    this.revertPending = true;
+    try {
+      await this.lockComposer();
+      if (!this.isCurrent(runtime, input.machine.id, input.session.id)) return;
+      await runtime.sessions.actOnMessage(input.message.entryId, "back");
+    } finally {
+      this.revertPending = false;
+    }
+  };
+
+  // Mirrors PiWebApp's queued-message handler: Recall confirms lost attachments/later entries and the unsent draft.
+  private readonly actOnQueuedMessage = async (target: QueuedMessageActionTarget): Promise<void> => {
+    const runtime = this.runtime;
+    if (runtime === undefined || this.revertPending || this.queuedActionTarget !== undefined || !this.isCurrent(runtime, target.machineId, target.sessionId)) return;
+    if (target.action === "edit") {
+      const confirmation = queuedMessageRecallConfirmation(target.expectedQueue, target.index);
+      if (confirmation !== undefined && !window.confirm(confirmation)) return;
+      if (this.draft !== "" && !window.confirm("Recalling will replace your unsent draft. Continue?")) return;
+    }
+    this.queuedActionTarget = target;
+    try {
+      if (target.action === "edit") await this.lockComposer();
+      if (!this.isCurrent(runtime, target.machineId, target.sessionId)) return;
+      await runtime.sessions.mutateQueuedMessage(target.action, target.index, target.expectedQueue);
+    } finally {
+      if (this.queuedActionTarget === target) this.queuedActionTarget = undefined;
+    }
+  };
 
   private readonly toggleRoster = (): void => { this.rosterCollapsed = !this.rosterCollapsed; };
 
@@ -116,13 +173,15 @@ export class WorkbenchChatPane extends LitElement {
             .onPromoteQueuedMessage=${(message: QueuedSessionMessage) => { void sessions.promoteQueuedMessage(message); }}
             .onPromoteAllQueuedMessages=${() => { void sessions.promoteAllQueuedMessages(); }}
             .onClearServerQueue=${() => { void sessions.clearServerQueue(); }}
+            .onQueuedMessageAction=${session.archived === true ? undefined : this.actOnQueuedMessage}
+            .queuedMessageActionPending=${this.queuedActionTarget !== undefined || this.revertPending}
             .onDismissWarning=${(dismissId: string) => { void sessions.dismissWarning(dismissId); }}
             .onDismissNotification=${(notificationId: string) => { void notifications.dismissNotification(notificationId); }}
             .onDismissAllNotifications=${() => { void notifications.dismissAll(); }}
             .onLoadMore=${() => { void sessions.loadEarlierMessages(); }}
             .messageActions=${WORKBENCH_MESSAGE_ACTIONS}
             .messageActionContext=${workbenchMessageActionContext(state)}
-            .onMessageAction=${(input: MessageActionAvailabilityContext, actionId: string) => runWorkbenchMessageAction((entryId, action) => sessions.actOnMessage(entryId, action), input, actionId)}
+            .onMessageAction=${(input: MessageActionAvailabilityContext, actionId: string) => runWorkbenchMessageAction(this.goBack, input, actionId)}
             .onDisplayedMessageAction=${runWorkbenchDisplayedMessageAction}
             .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
           ></chat-view>
@@ -137,7 +196,7 @@ export class WorkbenchChatPane extends LitElement {
             .sessionId=${session.id}
             .cwd=${state.selectedWorkspace?.path}
             .machineId=${machineId}
-            .disabled=${session.archived === true}
+            .disabled=${session.archived === true || this.composerLocked}
             .canSteer=${state.status?.isStreaming === true}
             .isCompacting=${state.status?.isCompacting === true}
             .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0}

@@ -54,7 +54,7 @@ async function renderView(messages: ChatLine[], busy: boolean, actOnMessage: (en
   view.messages = messages;
   view.messageActions = WORKBENCH_MESSAGE_ACTIONS;
   view.messageActionContext = context(busy);
-  view.onMessageAction = (input, actionId) => runWorkbenchMessageAction(actOnMessage, input, actionId);
+  view.onMessageAction = (input, actionId) => runWorkbenchMessageAction((target) => actOnMessage(target.message.entryId, "back"), input, actionId);
   document.body.append(view);
   await view.updateComplete;
   return view;

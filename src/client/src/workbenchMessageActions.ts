@@ -30,9 +30,9 @@ export function workbenchMessageActionContext(state: AppState): Omit<MessageActi
   };
 }
 
-/** Runs an entry action on the Chat's history: Revert and Edit go back to the entry; fork is not offered. */
-export async function runWorkbenchMessageAction(actOnMessage: (entryId: string, action: "fork" | "back") => Promise<void>, input: MessageActionAvailabilityContext, actionId: string): Promise<MessageActionResult> {
-  if (actionId === "message.back" || actionId === "message.edit") await actOnMessage(input.message.entryId, "back");
+/** Runs an entry action on the Chat's history: Revert and Edit go back to the entry through the host's draft guard; fork is not offered. */
+export async function runWorkbenchMessageAction(goBack: (input: MessageActionAvailabilityContext) => Promise<void>, input: MessageActionAvailabilityContext, actionId: string): Promise<MessageActionResult> {
+  if (actionId === "message.back" || actionId === "message.edit") await goBack(input);
 }
 
 export async function runWorkbenchDisplayedMessageAction(input: DisplayedMessageActionAvailabilityContext, actionId: string): Promise<MessageActionResult> {
