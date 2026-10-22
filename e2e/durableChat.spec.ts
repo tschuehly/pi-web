@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_PROJECT_ID } from "./isolatedPiWeb";
 
@@ -47,12 +48,12 @@ test("a Durable Chat streams, runs tools, queues, stops and reloads to the same 
   expect(partial).not.toContain("word119");
 
   // A core tool in the Chat's workspace.
-  await send(page, 'call:bash {"command":"echo tool-ran > durable-tool.txt; cat durable-tool.txt"}');
+  await send(page, 'call:bash {"command":"echo tool-ran > durable-tool.txt; cat durable-tool.txt","description":"Write a file","foreground":true}');
   await expect(chat(page).getByText("done after bash").first()).toBeVisible();
   expect(await readFile(join(project, "durable-tool.txt"), "utf8")).toBe("tool-ran\n");
 
   // A running tool, a queued follow-up, then Stop: the follow-up returns to the composer and is never sent.
-  await send(page, 'call:bash {"command":"echo running; sleep 30"}');
+  await send(page, 'call:bash {"command":"echo running; sleep 30","description":"Run","foreground":true}');
   await expect(chat(page).getByText("running").first()).toBeVisible();
   await send(page, "the follow-up", "Queue follow-up");
   await expect(page.getByText("the follow-up").first()).toBeVisible();
@@ -73,7 +74,7 @@ const ASK = {
   questions: [{ id: "target", question: "Which target?", options: [{ value: "prod", label: "Production", recommended: true }, { value: "staging", label: "Staging" }] }],
 };
 
-test("a Durable Chat keeps Working Mode, answers a question, switches models and resolves an interrupted call", async ({ page }) => {
+test("a Durable Chat keeps Working Mode, answers a question, switches models and reattaches a bash call a host restart interrupted", async ({ page }) => {
   const base = process.env["PI_WEB_E2E_BASE_URL"];
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
   const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
@@ -125,22 +126,58 @@ test("a Durable Chat keeps Working Mode, answers a question, switches models and
   await send(page, "after switch");
   await expect(chat(page).getByText("ok: after switch").first()).toBeVisible();
 
-  // An unsafe bash interrupted by a host restart blocks bash until the user resolves it in the Chat.
+  // A foreground bash interrupted by a host restart: its job keeps running and the reopened Chat reattaches to it
+  // when the user resumes, so the effect runs once and nothing needs reconciling. (The reconciliation card for unsafe
+  // tools: the next test.)
   // Barrier: the effect itself, so the tool is running when the host is stopped.
-  await send(page, 'call:bash {"command":"echo deploy >> resolve-effects.log; sleep 30"}');
+  await send(page, 'call:bash {"command":"echo deploy >> resolve-effects.log; sleep 3; echo deployed","description":"Deploy","foreground":true}');
   await expect.poll(() => readFile(join(project, "resolve-effects.log"), "utf8").catch(() => "")).toBe("deploy\n");
   const stopped = await page.request.post(`${base}api/sessions/${encodeURIComponent(sessionId)}/stop`, { data: { cwd: project } });
   expect(stopped.ok()).toBe(true);
   await page.reload();
+  await expect(chat(page).locator(".unresolved-effects")).toHaveCount(0);
+  // The restored run is still open (paused), so the composer queues; sending resumes it.
+  await send(page, "resume", "Queue follow-up");
+  await expect(chat(page).getByText("ok: resume").first()).toBeVisible();
+  await expect(chat(page).getByText("done after bash").first()).toBeVisible();
+  expect((await readFile(join(project, "resolve-effects.log"), "utf8")).trim().split("\n")).toEqual(["deploy"]);
+});
+
+test("P051: an unsafe write a host crash interrupted blocks write until the owner resolves it in the Chat", async ({ page }) => {
+  const base = process.env["PI_WEB_E2E_BASE_URL"];
+  const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
+  const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
+  if (base === undefined || workspaceId === undefined || project === undefined) throw new Error("Isolated PI WEB was not started");
+  test.setTimeout(90_000);
+  await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
+  await page.getByRole("button", { name: "New Durable Chat" }).click();
+  await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
+  const sessionId = new URL(page.url()).searchParams.get("session") ?? "";
+
+  // A real unsafe tool held mid-effect: write into a FIFO, whose open waits for a reader that never comes (and cannot
+  // be aborted). Outside the project, so nothing that lists or previews the workspace opens it.
+  const fifo = join(project, "..", `p051-${sessionId.slice(0, 8)}.fifo`);
+  execFileSync("mkfifo", [fifo]);
+  await send(page, `call:write ${JSON.stringify({ path: fifo, content: "deploy" })}`);
+  // Barrier: the call is running (its intent is committed), so the crash interrupts it mid-effect.
+  await expect(chat(page).locator("tool-execution-view .tool-card.running")).toHaveCount(1);
+  // The host crashes (SIGKILL; found by this Chat's unique session ID): the write's result is never committed.
+  const host = () => { try { return execFileSync("pgrep", ["-f", `chat-host-main\\.ts .*--session-id ${sessionId}`]).toString().trim(); } catch { return ""; } };
+  const pid = Number(host().split("\n")[0]);
+  expect(pid).toBeGreaterThan(0);
+  process.kill(pid, "SIGKILL");
+  await expect.poll(host).toBe("");
+  // The daemon reopens the store on the next request (paused, with the interrupted call held for the owner).
+  await expect.poll(async () => (await page.request.get(`${base}api/sessions/${encodeURIComponent(sessionId)}/status?${new URLSearchParams({ cwd: project }).toString()}`)).ok()).toBe(true);
+  await page.reload();
   const card = chat(page).locator(".unresolved-effects");
   await expect(card).toContainText("Needs reconciliation");
-  await expect(card).toContainText("echo deploy");
+  await expect(card).toContainText(basename(fifo));
   await card.getByRole("button", { name: "Retry" }).click();
   await expect(card).toHaveCount(0);
-  await expect(chat(page).getByText(/The user resolved the interrupted bash call/).first()).toBeVisible();
+  await expect(chat(page).getByText(/The user resolved the interrupted write call/).first()).toBeVisible();
   await page.reload();
   await expect(chat(page).locator(".unresolved-effects")).toHaveCount(0);
-  expect((await readFile(join(project, "resolve-effects.log"), "utf8")).trim().split("\n")).toEqual(["deploy"]);
 });
 
 test("a Durable Chat shows the controls its host names, hides unsupported ones, takes /name, marks unread and needs-you on its tab, and refuses archiving", async ({ page }) => {

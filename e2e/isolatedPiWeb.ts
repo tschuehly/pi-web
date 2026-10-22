@@ -138,6 +138,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // Subagents: routing reads a fixture quota snapshot (specs refresh it), never quota-axi; routed children answer
         // through the mock like any Chat.
         PI_WORKBENCH_QUOTA_CACHE: join(root, "quota-cache.json"),
+        // Workbench bash jobs stay in the fixture; the Atelier Page check (its own browser) has its own suite.
+        PI_BACKGROUND_BASH_ROOT: join(root, "background-bash"), ATELIER_PAGE_CHECK: "off",
       });
       process.env["PI_WEB_E2E_QUOTA_CACHE"] = join(root, "quota-cache.json");
     }

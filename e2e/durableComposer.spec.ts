@@ -56,7 +56,7 @@ async function requests(sessionId: string): Promise<{ label: string; ran?: strin
 test("queued messages: send now and remove; after a host restart the queue is still there to recall, and Stop returns the rest to the composer", async ({ page }) => {
   test.setTimeout(90_000);
   const sessionId = await newDurableChat(page);
-  await send(page, 'call:bash {"command":"echo running; sleep 30"}');
+  await send(page, 'call:bash {"command":"echo running; sleep 30","description":"Run","foreground":true}');
   await expect(chat(page).getByText("running").first()).toBeVisible();
   for (const text of ["first follow-up", "second follow-up", "third follow-up"]) await send(page, text, "Queue follow-up");
   await expect(queued(page)).toHaveCount(3);
