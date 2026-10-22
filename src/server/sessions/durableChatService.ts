@@ -46,8 +46,8 @@ export function durableHostArgs(record: Pick<DurableChatRecord, "id" | "cwd">, s
 
 /**
  * Fork the Workbench Durable host (`chat-host-main.ts`) for one family store, with an IPC channel, the agent-visible
- * environment and the daemon's Pi agent directory, so it reads the same Claude subscription login. Host output goes
- * to `host.log` in the store directory.
+ * environment and the daemon's Pi agent directory, so it reads the same stored logins (Claude, ChatGPT, Copilot). Host
+ * output goes to `host.log` in the store directory.
  */
 export function forkDurableHost(options: { entry: string; model: string; agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }): DurableHostLauncher {
   return (record, storeDir) => {

@@ -111,24 +111,28 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const durableHost = process.env["PI_WEB_E2E_DURABLE_HOST"];
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_") && !key.startsWith("GIT_")));
     // Its telemetry goes to the fixture root, never to the owner's ~/.pi/agent/telemetry.
-    // PI_TMP, Workstreams and free disk space are fixture-local too.
-    if (durableHost !== undefined && durableHost !== "") Object.assign(env, {
-      PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry"),
-      PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
-    });
+    // PI_TMP, Workstreams and free disk space are fixture-local too. Durable hosts get their own agent dir with fake
+    // stored logins (models are offered only for providers with one); legacy Chats keep the login-free fixture profile.
+    const durableAgent = join(root, "durable-agent");
+    if (durableHost !== undefined && durableHost !== "") {
+      await seedLogins(join(durableAgent, "auth.json"));
+      Object.assign(env, {
+        PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_WEB_DURABLE_AGENT_DIR: durableAgent, PI_TELEMETRY_DIR: join(root, "telemetry"),
+        PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
+      });
+    }
     // Optional: installed Pi packages the Durable host binds (pi-process-monitor only: no network, no messages out),
-    // with HOME in the fixture root so watcher leases stay out of the owner's ~/.pi/agent/state.
+    // listed in the Durable agent dir's settings the host reads, with HOME in the fixture root so watcher leases stay out
+    // of the owner's ~/.pi/agent/state.
     const piPackages = process.env["PI_WEB_E2E_PI_PACKAGES"];
-    if (piPackages !== undefined && piPackages !== "") {
+    if (durableHost !== undefined && durableHost !== "" && piPackages !== undefined && piPackages !== "") {
+      await writeJson(join(durableAgent, "settings.json"), { packages: [join(piPackages, "pi-process-monitor")] });
       await mkdir(join(root, "home"), { recursive: true });
       Object.assign(env, { HOME: join(root, "home") });
     }
-    // Pi's settings, read by Durable Chats as by legacy ones. Compaction keeps only the newest turn, so a short scripted
-    // Chat has history to compact (legacy fixture Chats send no model requests here); packages names the bound package.
-    if (durableHost !== undefined && durableHost !== "") await writeJson(join(root, "agent", "settings.json"), {
-      compaction: { keepRecentTokens: 1 },
-      ...(piPackages !== undefined && piPackages !== "" ? { packages: [join(piPackages, "pi-process-monitor")] } : {}),
-    });
+    // Pi's compaction setting, which PI WEB reads from its agent profile for Durable Chats as for legacy ones: keep only
+    // the newest turn, so a short scripted Chat has history to compact. Legacy fixture Chats send no model requests here.
+    if (durableHost !== undefined && durableHost !== "") await writeJson(join(root, "agent", "settings.json"), { compaction: { keepRecentTokens: 1 } });
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),
@@ -299,6 +303,20 @@ function freePort(): Promise<number> {
       server.close(() => { if (typeof address === "object" && address !== null) done(address.port); else fail(new Error("No free port")); });
     });
     server.on("error", fail);
+  });
+}
+
+/**
+ * Fake subscription logins (never valid upstream; the fixture sets PI_OFFLINE and sends no model request): models are
+ * offered only for providers with a stored login, as in Pi.
+ */
+async function seedLogins(path: string): Promise<void> {
+  const expires = Date.now() + 24 * 3_600_000;
+  const codexAccess = ["e30", Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-e2e" } })).toString("base64url"), "sig"].join(".");
+  await writeJson(path, {
+    anthropic: { type: "oauth", access: "fake-e2e-claude", refresh: "fake-e2e-claude-refresh", expires },
+    "openai-codex": { type: "oauth", access: codexAccess, refresh: "fake-e2e-codex-refresh", expires, accountId: "acct-e2e" },
+    "github-copilot": { type: "oauth", access: "tid=fake-e2e;proxy-ep=proxy.individual.githubcopilot.com", refresh: "fake-e2e-gh", expires },
   });
 }
 

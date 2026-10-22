@@ -217,6 +217,21 @@ describe("Durable Chats", () => {
     expect(launched[1]?.requests.some((request) => request.method === "compact")).toBe(false);
   });
 
+  it("runs pi-openai-fast-mode's /fast through the host's command dispatcher, with its usage error visible", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    only(launched).answer = (request) => {
+      if (request.method === "commands") return [{ name: "fast", description: "Toggle Fast Mode. Usage: /fast [on|off|toggle]" }];
+      if (request.method !== "command") return status;
+      return request.params?.["args"] === "on" ? { type: "done", message: "Fast Mode on" } : { type: "unsupported", message: "Usage: /fast [on|off|toggle]" };
+    };
+    expect(await durable.commands(ref)).toEqual(expect.arrayContaining([{ name: "fast", description: "Toggle Fast Mode. Usage: /fast [on|off|toggle]", source: "extension" }]));
+    await expect(durable.runCommand(ref, "/fast on")).resolves.toEqual({ type: "done", message: "Fast Mode on" });
+    await expect(durable.runCommand(ref, "/fast maybe")).resolves.toEqual({ type: "unsupported", message: "Usage: /fast [on|off|toggle]" });
+    expect(only(launched).requests.filter((request) => request.method === "command").map((request) => request.params)).toMatchObject([{ name: "fast", args: "on" }, { name: "fast", args: "maybe" }]);
+  });
+
   it("lists and runs installed Pi package commands in the host; a refused one keeps the host's reason (P118 P126 P134)", async () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");

@@ -252,3 +252,37 @@ test("a Durable Chat runs an installed package's tool, shows its pings and its c
   await page.reload();
   await expect(chat(page).getByText(/\[watcher \S+ · e2e-job\] build DONE/).first()).toBeVisible();
 });
+
+test("a Durable Chat offers the stored ChatGPT and Copilot models, keeps the choice across a reload, and runs /fast", async ({ page }) => {
+  const base = process.env["PI_WEB_E2E_BASE_URL"];
+  const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
+  if (base === undefined || workspaceId === undefined) throw new Error("Isolated PI WEB was not started");
+  test.setTimeout(60_000);
+  await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
+  await page.getByRole("button", { name: "New Durable Chat" }).click();
+  await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
+  await send(page, "start");
+  await expect(chat(page).getByText("ok: start").first()).toBeVisible();
+
+  // The fixture's auth.json holds fake ChatGPT and Copilot logins: their models are offered; no request is sent.
+  const pick = async (value: string) => {
+    await page.getByRole("button", { name: /^Model: / }).click();
+    await page.getByRole("combobox", { name: "Search models" }).fill(value);
+    await page.getByRole("listbox", { name: "Models" }).getByRole("option").first().click();
+    await expect(page.getByRole("button", { name: new RegExp(`^Model: ${value.replace(".", "\\.")}`) })).toBeVisible();
+  };
+  await pick("github-copilot/grok-4.7");
+  await pick("openai-codex/gpt-6-astra");
+  await page.reload();
+  await expect(page.getByRole("button", { name: /^Model: openai-codex\/gpt-6-astra/ })).toBeVisible();
+
+  // pi-openai-fast-mode's /fast runs in the Durable host.
+  await send(page, "/fast on");
+  await expect(chat(page).getByText("Fast Mode on").first()).toBeVisible();
+  await send(page, "/fast off");
+  await expect(chat(page).getByText("Fast Mode off").first()).toBeVisible();
+
+  await pick("faux/faux-1");
+  await send(page, "after openai");
+  await expect(chat(page).getByText("ok: after openai").first()).toBeVisible();
+});
