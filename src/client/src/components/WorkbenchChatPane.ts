@@ -46,6 +46,7 @@ export class WorkbenchChatPane extends LitElement {
   @property({ attribute: false }) revealTarget: ChatRevealTarget | undefined;
   @property({ type: Boolean }) dense = false;
   @property({ type: Boolean }) focused = false;
+  @property() defaultStreamingBehavior: "steer" | "followUp" = "steer";
   @state() private rosterCollapsed = true;
   /** A draft-replacing request in flight (go back to a message, or a queue action). One at a time; Recall and go-back lock the composer. */
   @state() private revertPending = false;
@@ -151,6 +152,7 @@ export class WorkbenchChatPane extends LitElement {
         <div class="chat-column">
           <chat-view
             .dense=${this.dense}
+            workbench
             .behaviors=${WORKBENCH_CHAT_BEHAVIORS}
             .contentRendering=${this.contentRendering}
             .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)}
@@ -198,6 +200,7 @@ export class WorkbenchChatPane extends LitElement {
           <workbench-question-chips .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
           <prompt-editor
             .draftStorage=${this.draftStorage}
+            .defaultStreamingBehavior=${this.defaultStreamingBehavior}
             .dense=${this.dense}
             .activityExpanded=${!this.rosterCollapsed}
             .onToggleActivity=${this.dense ? this.toggleRoster : undefined}

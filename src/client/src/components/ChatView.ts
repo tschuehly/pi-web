@@ -19,6 +19,8 @@ import { machineSessionKey } from "../machineKeys";
 import { canonicalEntryActionHeaders, currentExchangeGroups, groupChatMessages, groupConsecutiveImageOutputs, type ChatDisplayGroup, type ChatGroup } from "../chatGroups";
 import type { ReplyQuote } from "../replyQuotes";
 import { ChatScrollFlows } from "../ChatScrollFlows";
+import type { ConversationMeter } from "./ConversationMeter";
+import "./ConversationMeter";
 import { ChatRenderKeys } from "../chatRenderKeys";
 import { DEFAULT_CHAT_BEHAVIORS, type ChatBehaviors } from "../chatBehaviors";
 import type { AskUserSubmission, PendingAskUser, PendingExtensionDialog, QueuedSessionMessage, SessionActivity, SessionRef, SessionStatus } from "../api";
@@ -153,6 +155,18 @@ function chatMessageModelLabel(message: ChatLine): string | undefined {
   return model.provider !== undefined && model.provider !== "" ? `${model.provider}/${id}` : id;
 }
 
+/** Where the reader is in the whole conversation (0–100), and how much of it is loaded, for the conversation meter. */
+export function conversationMeterPosition(input: { messageStart: number; loaded: number; total: number; hasMore: boolean; following: boolean; firstVisibleIndex: () => number | undefined }): { positionPercent: number; loadedPercent: number } {
+  const total = !input.hasMore && input.messageStart === 0 ? Math.max(1, input.loaded) : Math.max(1, input.total, input.messageStart + input.loaded);
+  const last = total - 1;
+  const visible = input.following ? last : input.firstVisibleIndex() ?? input.messageStart;
+  const index = Math.min(last, Math.max(0, Number.isFinite(visible) ? visible : input.messageStart));
+  return {
+    positionPercent: last <= 0 ? 100 : (index / last) * 100,
+    loadedPercent: input.hasMore ? Math.min(100, (input.loaded / total) * 100) : 100,
+  };
+}
+
 @customElement("chat-view")
 export class ChatView extends LitElement {
   constructor() {
@@ -227,7 +241,11 @@ export class ChatView extends LitElement {
   @property({ attribute: false }) onToggleWarnings?: () => void;
   @property({ attribute: false }) onLoadMore?: () => void;
   @property({ attribute: false }) behaviors: ChatBehaviors = DEFAULT_CHAT_BEHAVIORS;
+  /** Workbench presentation: bubbles with role and time, the conversation meter, one scroll-to-bottom button, wrapped tool output. */
+  @property({ type: Boolean, reflect: true }) workbench = false;
   @query(".chat") private chat?: HTMLDivElement;
+  @query("conversation-meter") private meter?: ConversationMeter;
+  private meterFrame: number | undefined;
   @query("pi-web-image-gallery-dialog") private imageGalleryDialog?: ImageGalleryDialog;
   @state() private followingLive = false;
   @state() private expandedMetaKey: string | undefined;
@@ -267,6 +285,7 @@ export class ChatView extends LitElement {
   private readonly onContentLayoutWillChange = () => { this.scrollFlows.holdReadingPlace(); };
   private readonly handleScroll = () => {
     this.scrollFlows.onScroll();
+    this.scheduleMeterUpdate();
     // The Reply button follows its selection.
     if (this.replySelection !== undefined) this.requestUpdate();
   };
@@ -379,6 +398,8 @@ export class ChatView extends LitElement {
     clearTimeout(this.selectionTimer);
     if (this.revealFrame !== undefined) cancelAnimationFrame(this.revealFrame);
     this.revealFrame = undefined;
+    if (this.meterFrame !== undefined) cancelAnimationFrame(this.meterFrame);
+    this.meterFrame = undefined;
     super.disconnectedCallback();
   }
 
@@ -433,6 +454,7 @@ export class ChatView extends LitElement {
       openedForm: changed.has("pendingDialogs") && this.isNewOpenDialog(changed.get("pendingDialogs")) ? "dialog"
         : changed.has("pendingAsks") && this.isNewPendingAsk(changed.get("pendingAsks")) ? "ask" : false,
     });
+    if (changed.has("messages") || changed.has("messageStart") || changed.has("messageTotal") || changed.has("hasMore") || changed.has("followingLive") || changed.has("workbench")) this.scheduleMeterUpdate();
     if (changed.has("revealTarget") || changed.has("sessionId") || changed.has("messages") || changed.has("pendingAsks") || changed.has("pendingDialogs")) this.scheduleReveal();
     // A filtered view is a projection: returning to Everything returns to the place saved when it was left.
     if (changed.get("transcriptFilter") !== undefined && this.transcriptFilter === "everything") this.scrollFlows.restorePosition();
@@ -514,10 +536,38 @@ export class ChatView extends LitElement {
         </div>
         ${this.renderReplySelection()}
         ${this.renderActivityDock()}
-        ${this.onNavigationChange === undefined ? this.renderNavigation() : nothing}
+        ${this.workbench && this.messages.length > 0 ? html`<conversation-meter ?dense=${this.dense}></conversation-meter>` : nothing}
+        ${this.onNavigationChange !== undefined ? nothing : this.workbench ? this.renderScrollToBottom() : this.renderNavigation()}
       </div>
       <pi-web-image-gallery-dialog></pi-web-image-gallery-dialog>
     `;
+  }
+
+  private renderScrollToBottom() {
+    if (this.behaviors.followTail && this.followingLive) return nothing;
+    // Lucide "chevron-down".
+    return html`<button type="button" class="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" @click=${this.handleJumpEnd}>
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg>
+    </button>`;
+  }
+
+  /** Scrolling moves only the meter's marker, never a ChatView render. */
+  private scheduleMeterUpdate(): void {
+    if (!this.workbench || this.meterFrame !== undefined) return;
+    this.meterFrame = requestAnimationFrame(() => {
+      this.meterFrame = undefined;
+      const meter = this.meter;
+      const chat = this.chat;
+      if (meter === undefined || chat === undefined) return;
+      const position = conversationMeterPosition({ messageStart: this.messageStart, loaded: this.messages.length, total: this.messageTotal, hasMore: this.hasMore, following: this.followingLive,
+        firstVisibleIndex: () => {
+          const top = chat.getBoundingClientRect().top;
+          const first = [...chat.querySelectorAll<HTMLElement>("[data-index]")].find((element) => element.getBoundingClientRect().bottom > top + 1);
+          return first === undefined ? undefined : Number(first.dataset["index"]);
+        } });
+      meter.positionPercent = position.positionPercent;
+      meter.loadedPercent = position.loadedPercent;
+    });
   }
 
   private renderNavigation() {
@@ -1009,5 +1059,31 @@ export class ChatView extends LitElement {
     :host([dense]) .tool-fold { padding: 1px 8px; }
     :host([dense]) .thinking-group > .thinking-text { padding: 4px 8px; }
     :host([dense]) .exchange-history > summary, :host([dense]) .exchange-boundary { padding: 4px 8px; }
+    /* Workbench presentation: rounded role bubbles with an inline role and time, wrapped tool output, one scroll-to-bottom button. */
+    .msg-heading { display: none; }
+    :host([workbench]) { --pi-tool-output-white-space: pre-wrap; --pi-tool-output-overflow-wrap: anywhere; }
+    :host([workbench]) .msg.conversation-message { --ui-transcript-bg: var(--pi-surface); margin: 0 var(--pi-panel-padding, 10px) var(--pi-message-gap, 10px); border: 1px solid var(--pi-border); border-radius: 14px; overflow-wrap: anywhere; }
+    :host([workbench]) .msg.user.conversation-message { --ui-transcript-bg: color-mix(in srgb, var(--pi-accent) 10%, var(--pi-surface)); border-color: color-mix(in srgb, var(--pi-accent) 30%, var(--pi-border)); }
+    :host([workbench]) .conversation-body { padding: var(--pi-message-padding, 10px) calc(var(--pi-message-padding, 10px) + 2px); }
+    :host([workbench]) .conversation-content > .msg-header.conversation-header { inset-block-end: 4px; inset-inline-end: 6px; }
+    :host([workbench]) .msg-heading { display: flex; align-items: baseline; gap: 5px; min-width: 0; margin-bottom: 6px; overflow: hidden; color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
+    .msg-role { font-weight: normal; text-transform: uppercase; color: var(--pi-text-secondary); }
+    .msg.user .msg-role { color: var(--pi-accent); }
+    .msg-time { min-width: 0; overflow: hidden; color: var(--pi-dim); font-size: 11px; text-overflow: ellipsis; }
+    .scroll-to-bottom { position: absolute; left: 50%; bottom: 12px; z-index: 21; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--pi-border); border-radius: 50%; background: var(--pi-bg-overlay, var(--pi-surface)); color: var(--pi-text); box-shadow: 0 4px 12px var(--pi-shadow); transform: translateX(-50%); cursor: pointer; }
+    .scroll-to-bottom:hover, .scroll-to-bottom:focus-visible { border-color: var(--pi-accent); color: var(--pi-text-bright); }
+    .scroll-to-bottom:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .scroll-to-bottom svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    /* Dense tiles: tints instead of borders, and the role and time float inline at the start of the first line. */
+    :host([workbench][dense]) .msg.conversation-message { margin: 0 6px 5px; border: 0; border-radius: 6px; }
+    :host([workbench][dense]) .msg.assistant.conversation-message { --ui-transcript-bg: transparent; }
+    :host([workbench][dense]) .msg.user.conversation-message { --ui-transcript-bg: color-mix(in srgb, var(--pi-accent) 12%, transparent); }
+    :host([workbench][dense]) .conversation-body { padding: 3px 8px; }
+    :host([workbench][dense]) .msg-heading { float: left; height: 21px; margin: 0 8px 0 0; }
+    :host([workbench][dense]) .msg-role { font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+    :host([workbench][dense]) .msg-time { font-size: 10px; }
+    :host([dense]) conversation-meter { opacity: 0; transition: opacity .15s ease; }
+    :host([dense]:hover) conversation-meter { opacity: .5; }
+    :host([dense]) .scroll-to-bottom { width: 28px; height: 28px; bottom: 8px; border: 0; background: var(--pi-surface-hover); box-shadow: 0 2px 8px var(--pi-shadow-soft, transparent); }
   `];
 }

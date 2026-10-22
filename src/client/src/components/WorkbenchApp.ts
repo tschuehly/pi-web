@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { customElement, state } from "lit/decorators.js";
-import { api, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
+import { api, configApi, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
 import type { PendingAskUser } from "../../../shared/apiTypes";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
@@ -191,6 +191,8 @@ export class WorkbenchApp extends LitElement {
   private readonly plugins = new PluginRegistry();
   @state() private contentRendering: ChatContentRendering | undefined;
   private themesInitialized = false;
+  /** The configured send behavior while a reply streams (upstream's defaultStreamingBehavior setting). */
+  @state() private defaultStreamingBehavior: "steer" | "followUp" = "steer";
   @state() private themePreference: ThemePreference = readStoredThemePreference() ?? { themeId: "themes:github-dark", auto: true };
   private readonly systemLightThemeMedia = typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia("(prefers-color-scheme: light)") : undefined;
   private readonly onSystemLightThemeChange = (): void => { this.applyPreferredTheme(); };
@@ -550,6 +552,7 @@ export class WorkbenchApp extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.stylesheetRuntime.connect(this.ownerDocument);
+    void this.loadClientConfig();
     window.addEventListener("popstate", this.onPopState);
     window.addEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
     window.addEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
@@ -567,6 +570,14 @@ export class WorkbenchApp extends LitElement {
     const revealed = anchor !== undefined && NOTIFICATION_ANCHOR.test(anchor) && route.sessionId !== undefined ? anchor : undefined;
     if (revealed !== undefined && route.sessionId !== undefined) this.revealTarget = { machineId: route.machineId ?? "local", sessionId: route.sessionId, anchor: revealed };
     void this.startWindow(route);
+  }
+
+  private async loadClientConfig(): Promise<void> {
+    try {
+      this.defaultStreamingBehavior = (await configApi.config()).effectiveConfig.defaultStreamingBehavior ?? "steer";
+    } catch (error) {
+      console.warn("Failed to load PI WEB config", error);
+    }
   }
 
   private async initializeThemes(): Promise<void> {
@@ -1777,7 +1788,7 @@ export class WorkbenchApp extends LitElement {
         @workspace-file-open=${this.openWorkspaceFile} @outside-file-open=${this.openOutsideFile}
         @workbench-prompt=${() => { if (this.orientationPendingSessionId === chat.sessionId) this.orientationPendingSessionId = undefined; }}>
         ${this.renderTileBar(tile, status)}
-        <workbench-chat-pane .runtime=${runtime} .app=${runtime?.state} .focused=${focused} .loadError=${this.chatLoadErrors.get(machineSessionKey(chat.machineId, chat.sessionId))} .draftStorage=${this.windows.draftStorage} .dense=${!single} .contentRendering=${this.contentRendering} .revealTarget=${focused ? this.revealTarget : undefined}></workbench-chat-pane>
+        <workbench-chat-pane .runtime=${runtime} .app=${runtime?.state} .focused=${focused} .loadError=${this.chatLoadErrors.get(machineSessionKey(chat.machineId, chat.sessionId))} .draftStorage=${this.windows.draftStorage} .defaultStreamingBehavior=${this.defaultStreamingBehavior} .dense=${!single} .contentRendering=${this.contentRendering} .revealTarget=${focused ? this.revealTarget : undefined}></workbench-chat-pane>
       </section>
     `;
   }

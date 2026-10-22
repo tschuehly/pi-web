@@ -58,6 +58,16 @@ export interface TranscriptRenderContext {
   openImageGallery: (images: readonly { part: Extract<ChatPart, { type: "image" }>; description: string }[], selectedIndex: number) => void;
 }
 
+const messageTimeFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+
+/** Workbench bubble heading: the role and the message's time inline; ChatView shows it only in the Workbench presentation. */
+function renderMessageHeading(context: TranscriptRenderContext, message: ChatLine) {
+  const timestamp = message.meta?.timestamp;
+  const date = timestamp === undefined ? undefined : new Date(timestamp);
+  const time = date === undefined || !Number.isFinite(date.getTime()) ? undefined : messageTimeFormatter.format(date);
+  return html`<div class="msg-heading"><b class="msg-role" aria-hidden="true">${message.role}</b>${time === undefined ? nothing : html`<time class="msg-time" datetime=${timestamp ?? nothing} title=${context.metadata.label(message)}>${time}</time>`}</div>`;
+}
+
 export function renderMessage(context: TranscriptRenderContext, message: ChatLine, index: number, entryActionHeaders: ReadonlySet<ChatLine>) {
     const hasHeader = chatMessageHasHeader(message);
     const conversationClass = hasHeader && (message.role === "user" || message.role === "assistant") ? " conversation-message conversation-layout" : "";
@@ -67,7 +77,7 @@ export function renderMessage(context: TranscriptRenderContext, message: ChatLin
         ${conversationClass !== "" ? html`
           <div class="conversation-content">
             ${renderMessageHeader(context, message, String(index), index, entryActionHeaders, message.role, true)}
-            <div class="conversation-body">${message.parts.map((part, partIndex) => renderPart(context, part, message, index, partIndex))}</div>
+            <div class="conversation-body">${renderMessageHeading(context, message)}${message.parts.map((part, partIndex) => renderPart(context, part, message, index, partIndex))}</div>
           </div>
           ${renderMessageMetadata(context, message, String(index))}
         ` : html`

@@ -132,3 +132,13 @@ function deferred() {
   if (resolve === undefined) throw new Error("Expected a promise resolver");
   return { promise, resolve };
 }
+
+it("hosts the Chat in the Workbench presentation and passes the configured streaming send behavior to the composer", async () => {
+  const { pane, editor, view } = await mountPane("");
+  expect(view.hasAttribute("workbench")).toBe(true);
+  expect(view.behaviors.holdReadingPlace).toBe(true);
+  expect(editor.defaultStreamingBehavior).toBe("steer");
+  pane.defaultStreamingBehavior = "followUp";
+  await pane.updateComplete;
+  expect(editor.defaultStreamingBehavior).toBe("followUp");
+});

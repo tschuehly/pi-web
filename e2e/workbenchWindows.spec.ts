@@ -521,6 +521,29 @@ test("every Grid tile's composer is one row that grows with a multi-line draft",
   await expect.poll(async () => (await page.locator('.tile[data-focused="true"] prompt-editor').boundingBox())?.height ?? 0).toBeGreaterThan(60);
 });
 
+test("Grid tiles show role/time bubbles, the meter, wrapped tool output and a scroll-to-bottom button without growing the composer", async ({ page }) => {
+  await openGrid(page, [NOTES, E2E_LONG_CHAT.id], E2E_LONG_CHAT.id);
+  const tile = page.locator(`.grid > .tile[data-session="${E2E_LONG_CHAT.id}"]`);
+  const chat = tile.locator("chat-view .chat");
+  await expect(chat.locator(".msg.user .msg-heading time").first()).toBeVisible();
+  await expect(tile.locator("chat-view conversation-meter")).toHaveCount(1);
+  await expect(tile.locator("chat-view .chat-jumps")).toHaveCount(0);
+  // Tool output views inherit the wrap from the transcript.
+  const wrap = await chat.evaluate((element) => getComputedStyle(element).getPropertyValue("--pi-tool-output-white-space").trim());
+  expect(wrap).toBe("pre-wrap");
+  const composer = async () => (await tile.locator("prompt-editor").boundingBox())?.height ?? 0;
+  const before = await composer();
+  await expect(tile.locator("chat-view .scroll-to-bottom")).toHaveCount(0);
+  await chat.hover();
+  await page.mouse.wheel(0, -1200);
+  await expect(tile.locator("chat-view .scroll-to-bottom")).toBeVisible();
+  expect(await composer()).toBe(before);
+  expect(before).toBeLessThanOrEqual(36);
+  await tile.locator("chat-view .scroll-to-bottom").click();
+  await expect(tile.locator("chat-view .scroll-to-bottom")).toHaveCount(0);
+  await expect.poll(() => chat.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThan(2);
+});
+
 test("Files stays open beside the Grid when focus moves, and moves no tile", async ({ page }) => {
   await openGrid(page, [NOTES, RELEASE, GUIDE]);
   await (await openChatMenu(page.locator('.tile[data-focused="true"] > .tile-bar'))).locator(".files-toggle").click();

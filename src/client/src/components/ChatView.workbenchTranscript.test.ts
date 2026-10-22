@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { PendingAskUser } from "../api";
 import type { ChatLine, ToolExecutionPart } from "../chatTypes";
-import { ChatView, filterChatGroups } from "./ChatView";
+import { ChatView, conversationMeterPosition, filterChatGroups } from "./ChatView";
 import { groupChatMessages } from "../chatGroups";
 
 afterEach(() => {
@@ -89,5 +89,35 @@ describe("Workbench transcript on the upstream chat surface", () => {
     const root = await mount([], (view) => { view.pendingAsks = [ask("one"), ask("two")]; view.dense = true; host = view; });
     expect([...root.querySelectorAll(".chat > ask-user-card.open-question-card")].map((card) => card.getAttribute("data-scroll-anchor-id"))).toEqual(["ask:one", "ask:two"]);
     expect(host?.hasAttribute("dense")).toBe(true);
+  });
+
+  it("presents Workbench bubbles with role and time, the conversation meter and one scroll-to-bottom button", async () => {
+    const at = "2026-10-22T09:41:00.000Z";
+    const messages: ChatLine[] = [
+      { role: "user", entryId: "u", meta: { timestamp: at }, parts: [{ type: "text", text: "Go" }] },
+      { role: "assistant", entryId: "a", parts: [{ type: "text", text: "Done" }] },
+    ];
+    const root = await mount(messages, (view) => { view.workbench = true; view.messageTotal = 2; view.messageEnd = 2; });
+    const heading = root.querySelector(".msg.user .conversation-body > .msg-heading");
+    expect(heading?.querySelector(".msg-role")?.textContent).toBe("user");
+    expect(heading?.querySelector("time")?.getAttribute("datetime")).toBe(at);
+    expect(heading?.querySelector("time")?.textContent).toBe(new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(new Date(at)));
+    expect(root.querySelector(".msg.assistant .msg-heading time")).toBeNull();
+    expect(root.querySelector("conversation-meter")).not.toBeNull();
+    expect(root.querySelector(".chat-jumps")).toBeNull();
+    expect(root.querySelectorAll('button[aria-label="Scroll to bottom"]').length).toBeLessThanOrEqual(1);
+
+    const upstream = await mount(messages);
+    expect(upstream.querySelector("conversation-meter")).toBeNull();
+    expect(upstream.querySelector(".scroll-to-bottom")).toBeNull();
+    expect(upstream.querySelector(".chat-jumps")).not.toBeNull();
+  });
+
+  it("places the meter by the first visible message, at the end while following, and reports how much is loaded", () => {
+    const base = { messageStart: 50, loaded: 50, total: 101, hasMore: true, following: false };
+    expect(conversationMeterPosition({ ...base, firstVisibleIndex: () => 75 })).toEqual({ positionPercent: 75, loadedPercent: 50 / 101 * 100 });
+    expect(conversationMeterPosition({ ...base, following: true, firstVisibleIndex: () => 75 }).positionPercent).toBe(100);
+    expect(conversationMeterPosition({ ...base, firstVisibleIndex: () => undefined }).positionPercent).toBe(50);
+    expect(conversationMeterPosition({ messageStart: 0, loaded: 1, total: 1, hasMore: false, following: false, firstVisibleIndex: () => 0 })).toEqual({ positionPercent: 100, loadedPercent: 100 });
   });
 });
