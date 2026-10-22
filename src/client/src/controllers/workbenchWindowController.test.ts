@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { closeChats, emptyWindow, moveChats, openChat, parseWindowStore, type WindowStore } from "../workbenchWindows";
+import { closeChats, emptyWindow, moveChats, openChat, parseWindowStore, toggleLayout, toggleMaximized, type WindowStore } from "../workbenchWindows";
 import { loadDraft, moveDraft, saveDraft } from "../promptDraftStorage";
 import { FakeLocks } from "./webLocks.testSupport";
 import { WINDOW_HEARTBEAT_KEY, WINDOW_STORE_KEY, WINDOW_STORE_LOCK, WorkbenchWindowController, newWindowId, type WindowLocks, type WindowRequest, type WorkbenchWindowEnvironment } from "./workbenchWindowController";
@@ -182,6 +182,23 @@ describe("draft ownership", () => {
     expect(source.window?.chats).not.toHaveLength(0); // Its stale view is not write authority.
     expect(parseWindowStore(storage.getItem(WINDOW_STORE_KEY))["w1"]?.chats).toEqual([]);
     target.dispose();
+  });
+
+  it.each([
+    ["Tabs", (store: WindowStore, id: string) => toggleLayout(store, id), { layout: "tabs", maximized: false }],
+    ["a maximized Grid", (store: WindowStore, id: string) => toggleMaximized(store, id), { layout: "grid", maximized: true }],
+  ])("keeps %s when the real Chat replaces its reservation, focusing the real Chat", async (_name, arrange, expected) => {
+    const controller = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=w1", "w1").environment);
+    await controller.start();
+    await controller.claim(chat("a"));
+    await controller.claim({ ...chat("creating:one"), startupToken: "creating:one" });
+    await controller.update(arrange);
+
+    expect(await controller.claim({ ...chat("real"), startupToken: "creating:one" })).toBe(true);
+    const window = parseWindowStore(storage.getItem(WINDOW_STORE_KEY))["w1"];
+    expect(window?.chats.map((candidate) => candidate.sessionId)).toEqual(["a", "real"]);
+    expect(window).toMatchObject({ ...expected, focused: "real" });
+    controller.dispose();
   });
 
   it("r6: a failed migration never erases the only stored draft", () => {
