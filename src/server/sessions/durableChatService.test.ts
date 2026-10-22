@@ -167,11 +167,16 @@ describe("Durable Chats", () => {
     await writeFile(filePath, "---\nname: tidy\ndescription: Tidy up\n---\nTidy every file.\n");
     const { durable, launched } = await service(undefined, {
       resources: { projectContext: "Project-specific instructions and guidelines:", sources: [] },
+      compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
       skillList: [{ name: "tidy", filePath, baseDir: skillDir, description: "Tidy up" }],
     });
     const chat = await durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
-    expect(only(launched).requests[0]).toMatchObject({ method: "configure", params: { resources: { projectContext: "Project-specific instructions and guidelines:" } } });
+    expect(only(launched).requests[0]).toMatchObject({ method: "configure", params: {
+      resources: { projectContext: "Project-specific instructions and guidelines:" },
+      // Pi's compaction settings: the host compacts like a legacy Chat.
+      compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
+    } });
     await expect(durable.commands(ref)).resolves.toEqual([
       expect.objectContaining({ name: "mode", source: "extension" }),
       expect.objectContaining({ name: "name", source: "builtin" }),
@@ -191,6 +196,24 @@ describe("Durable Chats", () => {
     await expect(durable.runCommand(ref, "/mode attention focused")).resolves.toEqual({ type: "done", message: "Working Mode applies with the next prompt." });
     expect(only(launched).requests.find((request) => request.method === "mode")?.params).toEqual({ args: "attention focused" });
     await expect(durable.runCommand(ref, "/tree")).resolves.toEqual({ type: "unsupported", message: "/tree is not available in Durable Chats yet" });
+  });
+
+  it("offers and runs /compact only when the host reports the compact capability", async () => {
+    const { durable, launched } = await service((launch) => new FakeHost(DURABLE_HOST_PROTOCOL, launch === 0 ? ["compact", "tool-groups"] : []));
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    only(launched).answer = (request) => request.method === "compact" ? { type: "done" } : status;
+    expect((await durable.status(ref)).capabilities).toEqual(["compact", "tool-groups"]);
+    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["compact", "mode", "name", "session"]);
+    await expect(durable.runCommand(ref, "/compact Keep the test names")).resolves.toEqual({ type: "done" });
+    await expect(durable.runCommand(ref, "/compact")).resolves.toEqual({ type: "done" });
+    expect(only(launched).requests.filter((request) => request.method === "compact").map((request) => request.params)).toEqual([{ instructions: "Keep the test names" }, {}]);
+
+    // An older host without the capability: no /compact command, and running it is refused visibly.
+    await durable.stop(ref);
+    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "session"]);
+    await expect(durable.runCommand(ref, "/compact")).resolves.toEqual({ type: "unsupported", message: "/compact is not available in this Durable Chat's host" });
+    expect(launched[1]?.requests.some((request) => request.method === "compact")).toBe(false);
   });
 
   it("validates answers with PI WEB's ask store and has the host commit them under the client's operation id", async () => {

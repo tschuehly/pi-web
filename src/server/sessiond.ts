@@ -21,7 +21,7 @@ import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGatewa
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
 import { DurableChatService, forkDurableHost } from "./sessions/durableChatService.js";
 import { durableThinkingLevel, loadDurableChatResources } from "./sessions/durableChatResources.js";
-import { createRuntimeRoutedSessionService } from "./sessions/runtimeRoutedSessionService.js";
+import { createRuntimeRoutedSessionService, routeMcpAuth } from "./sessions/runtimeRoutedSessionService.js";
 import { SessionRuntimeLocator } from "./sessions/sessionRuntimeLocator.js";
 import { SessionNotificationStore } from "./sessions/sessionNotificationStore.js";
 import { SessionArchiveStore, defaultSessionArchiveFilePath } from "./sessions/sessionArchiveStore.js";
@@ -484,7 +484,7 @@ async function createSessionDaemonRuntime() {
       await stateOwnership.release();
     };
     projectLifecycle.scheduleCleanup(); // One delayed pass for existing persisted unread, if any.
-    return { eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, routeSessions, serverNotices, unreadStore, activeAgentProfile, runtimeComponent, catalogRefresher, serverPlugins, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals, shutdown };
+    return { durableChats, eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, routeSessions, serverNotices, unreadStore, activeAgentProfile, runtimeComponent, catalogRefresher, serverPlugins, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals, shutdown };
   } catch (error) {
     await projectLifecycleForFailedConstruction?.closeAll();
     await durableChatsForFailedConstruction?.dispose().catch(() => undefined);
@@ -502,13 +502,13 @@ async function createSessionDaemonRuntime() {
   }
 }
 
-function registerSessionDaemonRoutes({ eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, routeSessions, serverNotices, runtimeComponent, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals }: SessionDaemonRuntime): void {
+function registerSessionDaemonRoutes({ durableChats, eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, routeSessions, serverNotices, runtimeComponent, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals }: SessionDaemonRuntime): void {
   registerProjectMutationRoutes(app, projectLifecycle);
   registerPluginCatalogRoutes(app, { projects, workspaces: workspaceProviders, sessions });
   registerMachineStatusRoutes(app, machineStatus);
   registerServerNoticeRoutes(app, serverNotices);
   registerAuthRoutes(app, auth);
-  registerMcpAuthRoutes(app, sessions);
+  registerMcpAuthRoutes(app, durableChats === undefined ? sessions : routeMcpAuth(sessions, durableChats));
   registerSessionRoutes(app, routeSessions, eventHub);
   registerWorkspaceCatalogRoutes(app, {
     projects,

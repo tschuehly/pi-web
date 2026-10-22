@@ -17,6 +17,8 @@ export interface DurableChatResources {
 
 export interface DurableChatResourceSet {
   resources: DurableChatResources;
+  /** Pi's compaction settings for the workspace, applied to the host's automatic compaction. */
+  compaction: { enabled: boolean; reserveTokens: number; keepRecentTokens: number };
   /** Every loaded skill, for `/skill:name` expansion and the command list. */
   skillList: (InlineSkill & { description?: string })[];
   /** Prompt templates (global, project and package `prompts/`), for `/name args` expansion and the command list. */
@@ -33,7 +35,8 @@ export interface DurablePromptTemplate { name: string; description?: string; arg
 export async function loadDurableChatResources(cwd: string, agentDir: string): Promise<DurableChatResourceSet> {
   const settingsManager = SettingsManager.create(cwd, agentDir);
   const trusted = await resolveWebProjectTrusted({ cwd, trustStore: new ProjectTrustStore(agentDir), settingsManager });
-  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir, { projectTrusted: trusted }), noExtensions: true, noThemes: true });
+  const trustedSettings = SettingsManager.create(cwd, agentDir, { projectTrusted: trusted });
+  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: trustedSettings, noExtensions: true, noThemes: true });
   await loader.reload();
   const agentsFiles = loader.getAgentsFiles().agentsFiles;
   const skills = loader.getSkills().skills;
@@ -55,6 +58,7 @@ export async function loadDurableChatResources(cwd: string, agentDir: string): P
         ...loader.getAppendSystemPromptSources().map((source) => ({ path: source.path, sha256: hash(addendum) })),
       ],
     },
+    compaction: trustedSettings.getCompactionSettings(),
     skillList: skills.map((skill) => ({ name: skill.name, filePath: skill.filePath, baseDir: skill.baseDir, ...(skill.description === "" ? {} : { description: skill.description }) })),
     promptList: loader.getPrompts().prompts.map((template) => ({
       name: template.name, content: template.content,

@@ -116,6 +116,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry"),
       PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
     });
+    // Pi's compaction setting, read by Durable Chats as by legacy ones: keep only the newest turn, so a short scripted
+    // Chat has history to compact. Legacy fixture Chats send no model requests here.
+    if (durableHost !== undefined && durableHost !== "") await writeJson(join(root, "agent", "settings.json"), { compaction: { keepRecentTokens: 1 } });
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),

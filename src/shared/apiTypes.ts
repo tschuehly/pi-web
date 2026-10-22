@@ -668,6 +668,9 @@ export const CHAT_CAPABILITY_LABELS = {
   reload: "Reloading",
   "detach-parent": "Detaching",
   archive: "Archiving",
+  compact: "Compacting",
+  "compact-and-continue": "Compacting and continuing",
+  "tool-groups": "Tool groups",
 } as const;
 export type ChatCapability = keyof typeof CHAT_CAPABILITY_LABELS;
 

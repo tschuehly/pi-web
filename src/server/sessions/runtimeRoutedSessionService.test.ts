@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
 import type { ClientSession } from "../types.js";
 import { DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostProcess } from "./durableChatService.js";
-import { createRuntimeRoutedSessionService } from "./runtimeRoutedSessionService.js";
+import { createRuntimeRoutedSessionService, routeMcpAuth } from "./runtimeRoutedSessionService.js";
 import type { SessionRouteService } from "./sessionService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 
@@ -69,7 +69,7 @@ async function router() {
     launch: () => { const host = new ReadyHost(); hosts.push(host); return host; },
     storesDir: join(root, "durable"),
   });
-  return { routed: createRuntimeRoutedSessionService(legacy.service, durable), calls: legacy.calls, hosts };
+  return { routed: createRuntimeRoutedSessionService(legacy.service, durable), durable, calls: legacy.calls, hosts };
 }
 
 describe("runtime-routed session service", () => {
@@ -95,6 +95,22 @@ describe("runtime-routed session service", () => {
     await routed.abort({ id: durableChat.id, cwd: "/work/a" });
     expect(calls).toEqual(["prompt", "abort"]);
     expect(hosts[0]?.methods).toEqual(["prompt", "status", "abort"]);
+  });
+
+  it("refuses MCP sign-in for a Durable Chat visibly and keeps legacy Chats on the legacy MCP auth service", async () => {
+    const { routed, durable } = await router();
+    const ref = await routed.start("/work/a", { runtime: "durable" });
+    const calls: string[] = [];
+    const legacyAuth = {
+      mcpAuthServers: (target: { id: string }) => { calls.push(`servers:${target.id}`); return Promise.resolve({ servers: [] }); },
+      startMcpAuth: (target: { id: string }) => { calls.push(`start:${target.id}`); return Promise.resolve({ flowId: "f", target: "mcp" as const, providerId: "mcp", providerName: "MCP server", status: "running" as const, progress: [] }); },
+      mcpAuthFlows: { get: () => { throw new Error("unused"); }, respond: () => { throw new Error("unused"); }, cancel: () => { throw new Error("unused"); } },
+    };
+    const auth = routeMcpAuth(legacyAuth, durable);
+    await expect(auth.mcpAuthServers({ id: ref.id, cwd: "/work/a" })).rejects.toThrow("MCP sign-in is not available in Durable Chats yet");
+    await expect(auth.startMcpAuth({ id: ref.id, cwd: "/work/a" }, "login", "remote")).rejects.toThrow("MCP sign-in is not available in Durable Chats yet");
+    await auth.mcpAuthServers({ id: legacyChat.id, cwd: "/work/a" });
+    expect(calls).toEqual([`servers:${legacyChat.id}`]);
   });
 
   it("rejects operations Durable Chats do not support yet without touching the legacy runtime", async () => {

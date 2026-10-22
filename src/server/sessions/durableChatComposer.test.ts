@@ -161,6 +161,7 @@ describe("Durable Chat composer", () => {
     await writeFile(join(skillDir, "SKILL.md"), "---\nname: tidy\n---\nTidy.\n");
     const { durable, host, ref } = await chat({ resources: {
       resources: { sources: [] },
+      compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
       skillList: [{ name: "tidy", filePath: join(skillDir, "SKILL.md"), baseDir: skillDir }],
       promptList: [{ name: "review", description: "Review code", argumentHint: "<path>", content: "Review $1 (all: $@) ${2:-carefully}" }],
     } });

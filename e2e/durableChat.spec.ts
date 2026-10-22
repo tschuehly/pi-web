@@ -194,3 +194,36 @@ test("a Durable Chat shows the controls its host names, hides unsupported ones, 
   expect(archived.ok()).toBe(false);
   expect(await archived.text()).toContain("Archiving is not available in Durable Chats yet");
 });
+
+test("a Durable Chat compacts on /compact and continues after compact_and_continue, and both survive a reload", async ({ page }) => {
+  const base = process.env["PI_WEB_E2E_BASE_URL"];
+  const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
+  if (base === undefined || workspaceId === undefined) throw new Error("Isolated PI WEB was not started");
+  test.setTimeout(60_000);
+  await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
+  await page.getByRole("button", { name: "New Durable Chat" }).click();
+  await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
+  await send(page, "one");
+  await expect(chat(page).getByText("ok: one").first()).toBeVisible();
+  await send(page, "two");
+  await expect(chat(page).getByText("ok: two").first()).toBeVisible();
+
+  // /compact with instructions: the summary appears as the transcript's history row, the earlier messages stay.
+  await send(page, "/compact Keep the test names");
+  await expect.poll(() => transcriptText(page)).toMatch(/history compaction summary|Compacted history/);
+  await send(page, "three");
+  await expect(chat(page).getByText("ok: three").first()).toBeVisible();
+
+  // compact_and_continue: the run ends, a second summary is placed, and the next phase starts by itself.
+  await send(page, `call:compact_and_continue ${JSON.stringify({ summaryFocus: "Keep the names", nextPhase: "write the docs" })}`);
+  await expect(chat(page).getByText(/ok: Context checkpoint completed/).first()).toBeVisible();
+  const checkVisible = async (): Promise<void> => {
+    await expect(chat(page).getByText("Continue with the requested next phase: write the docs").first()).toBeVisible();
+    await expect(chat(page).getByText(/ok: Context checkpoint completed/)).toHaveCount(1);
+    await expect(chat(page).getByText("1 history compaction summary")).toHaveCount(2);
+    for (const answer of ["ok: one", "ok: two", "ok: three"]) await expect(chat(page).getByText(answer)).toHaveCount(1);
+  };
+  await checkVisible();
+  await page.reload();
+  await checkVisible();
+});

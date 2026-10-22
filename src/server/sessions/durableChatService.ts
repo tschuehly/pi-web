@@ -416,10 +416,15 @@ export class DurableChatService {
     if (!connection.capabilities.includes(capability)) throw new DurableChatUnavailable(CHAT_CAPABILITY_LABELS[capability]);
   }
 
-  /** Slash commands of a Durable Chat: Working Mode, the host's Workbench commands and the workspace's skills. */
+  /**
+   * Slash commands of a Durable Chat: /name, /session, /compact where the host supports it, Working Mode, the host's
+   * Workbench commands, prompt templates and the workspace's skills.
+   */
   async commands(ref: SessionRouteRef): Promise<ClientCommand[]> {
+    const connection = await this.#for(ref);
     const hostCommands = await this.#hostCommands(ref);
     return [
+      ...(connection.capabilities.includes("compact") ? [{ name: "compact", description: "Manually compact session context", argumentHint: "[instructions]", source: "builtin" as const }] : []),
       ...BUILTIN_COMMANDS.filter((command) => command.name === "name" || command.name === "session"),
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" as const },
       ...hostCommands.map((command) => ({ ...command, source: "extension" as const })),
@@ -445,6 +450,13 @@ export class DurableChatService {
     if (name === "session") return { type: "done", message: await this.#stats(ref) };
     if (name === "mode") {
       const { result } = await (await this.#for(ref)).request("mode", { args: trimmed.slice("/mode".length).trim() });
+      return commandResult(result);
+    }
+    if (name === "compact") {
+      const connection = await this.#for(ref);
+      if (!connection.capabilities.includes("compact")) return { type: "unsupported", message: "/compact is not available in this Durable Chat's host" };
+      const instructions = trimmed.slice("/compact".length).trim();
+      const { result } = await connection.request("compact", instructions === "" ? {} : { instructions });
       return commandResult(result);
     }
     if ((await this.#hostCommands(ref)).some((command) => command.name === name)) {
@@ -610,7 +622,7 @@ export class DurableChatService {
       if (loaded !== undefined) {
         this.#skills.set(record.id, loaded.skillList);
         this.#templates.set(record.id, loaded.promptList ?? []);
-        await connection.request("configure", { resources: loaded.resources });
+        await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction });
       }
       return connection;
     });
