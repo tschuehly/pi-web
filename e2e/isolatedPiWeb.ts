@@ -2,9 +2,11 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeMockAgentConfig } from "./mockModels/agentConfig";
+import { startMockModelServer, type MockModelServer } from "./mockModels/server";
 
 /**
  * Starts a throwaway PI WEB (session daemon + web/API serving a fresh client build)
@@ -75,8 +77,10 @@ export const E2E_PLAN = [
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const root = await realpath(await mkdtemp(join(tmpdir(), "pi-web-e2e-")));
   const children: ChildProcess[] = [];
+  let mock: MockModelServer | undefined;
   const teardown = async (): Promise<void> => {
     await Promise.all(children.map(stop));
+    await mock?.close();
     await rm(root, { recursive: true, force: true });
   };
   try {
@@ -107,9 +111,19 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
+    // Mocked Claude and Codex endpoints (e2e/mockModels/README.md), on unless PI_WEB_E2E_MOCK_MODELS=0. The mock runs in
+    // this runner process, so it outlives daemon kills and specs reach it through PI_WEB_E2E_MOCK_URL.
+    if (process.env["PI_WEB_E2E_MOCK_MODELS"] !== "0") {
+      mock = await startMockModelServer();
+      const claudeCodeUse = process.env["PI_WEB_E2E_CLAUDE_CODE_USE"] ?? join(homedir(), ".pi", "agent", "npm", "node_modules", "@benvargas", "pi-claude-code-use", "extensions", "index.ts");
+      await writeMockAgentConfig(join(root, "agent"), mock.url, existsSync(claudeCodeUse) ? { claudeCodeUse } : {});
+      process.env["PI_WEB_E2E_MOCK_URL"] = mock.url;
+    }
+
     // Optional: the Workbench Durable host entry (chat-host-main.ts) enables Durable Chats with its scripted faux model.
     const durableHost = process.env["PI_WEB_E2E_DURABLE_HOST"];
-    const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_") && !key.startsWith("GIT_")));
+    // Provider keys from the owner's shell never reach the children: models resolve only through the fixture agent dir.
+    const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(PI_|GIT_|ANTHROPIC_|OPENAI_)/.test(key)));
     // Its telemetry goes to the fixture root, never to the owner's ~/.pi/agent/telemetry.
     if (durableHost !== undefined && durableHost !== "") Object.assign(env, { PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry") });
     Object.assign(env, {
