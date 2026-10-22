@@ -28,7 +28,7 @@ test("a Durable Chat runs the Workbench extensions: identity, shell activity, /t
   const sessionId = new URL(page.url()).searchParams.get("session") ?? "";
 
   // P034 + P073: the command sees this Chat's ID; while it runs, Activity counts one shell.
-  await send(page, 'call:bash {"command":"echo id=$PI_SESSION_ID > durable-identity.txt; sleep 30"}');
+  await send(page, 'call:bash {"command":"echo id=$PI_SESSION_ID > durable-identity.txt; sleep 30","description":"Identity","foreground":true}');
   await expect.poll(() => readFile(join(project, "durable-identity.txt"), "utf8").catch(() => "")).toBe(`id=${sessionId}\n`);
   const activity = page.getByRole("region", { name: "Activity" });
   await expect(activity.getByRole("button", { name: "Activity 1 shell" })).toBeVisible();

@@ -47,12 +47,12 @@ test("a Durable Chat streams, runs tools, queues, stops and reloads to the same 
   expect(partial).not.toContain("word119");
 
   // A core tool in the Chat's workspace.
-  await send(page, 'call:bash {"command":"echo tool-ran > durable-tool.txt; cat durable-tool.txt"}');
+  await send(page, 'call:bash {"command":"echo tool-ran > durable-tool.txt; cat durable-tool.txt","description":"Write a file","foreground":true}');
   await expect(chat(page).getByText("done after bash").first()).toBeVisible();
   expect(await readFile(join(project, "durable-tool.txt"), "utf8")).toBe("tool-ran\n");
 
   // A running tool, a queued follow-up, then Stop: the follow-up returns to the composer and is never sent.
-  await send(page, 'call:bash {"command":"echo running; sleep 30"}');
+  await send(page, 'call:bash {"command":"echo running; sleep 30","description":"Run","foreground":true}');
   await expect(chat(page).getByText("running").first()).toBeVisible();
   await send(page, "the follow-up", "Queue follow-up");
   await expect(page.getByText("the follow-up").first()).toBeVisible();
@@ -73,7 +73,7 @@ const ASK = {
   questions: [{ id: "target", question: "Which target?", options: [{ value: "prod", label: "Production", recommended: true }, { value: "staging", label: "Staging" }] }],
 };
 
-test("a Durable Chat keeps Working Mode, answers a question, switches models and resolves an interrupted call", async ({ page }) => {
+test("a Durable Chat keeps Working Mode, answers a question, switches models and reattaches a bash call a host restart interrupted", async ({ page }) => {
   const base = process.env["PI_WEB_E2E_BASE_URL"];
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
   const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
@@ -125,21 +125,20 @@ test("a Durable Chat keeps Working Mode, answers a question, switches models and
   await send(page, "after switch");
   await expect(chat(page).getByText("ok: after switch").first()).toBeVisible();
 
-  // An unsafe bash interrupted by a host restart blocks bash until the user resolves it in the Chat.
+  // A foreground bash interrupted by a host restart: its job keeps running and the reopened Chat reattaches to it
+  // when the user resumes, so the effect runs once and nothing needs reconciling. (The reconciliation card for unsafe
+  // tools is covered in the host suite with the native bash Subagents and Workers keep.)
   // Barrier: the effect itself, so the tool is running when the host is stopped.
-  await send(page, 'call:bash {"command":"echo deploy >> resolve-effects.log; sleep 30"}');
+  await send(page, 'call:bash {"command":"echo deploy >> resolve-effects.log; sleep 3; echo deployed","description":"Deploy","foreground":true}');
   await expect.poll(() => readFile(join(project, "resolve-effects.log"), "utf8").catch(() => "")).toBe("deploy\n");
   const stopped = await page.request.post(`${base}api/sessions/${encodeURIComponent(sessionId)}/stop`, { data: { cwd: project } });
   expect(stopped.ok()).toBe(true);
   await page.reload();
-  const card = chat(page).locator(".unresolved-effects");
-  await expect(card).toContainText("Needs reconciliation");
-  await expect(card).toContainText("echo deploy");
-  await card.getByRole("button", { name: "Retry" }).click();
-  await expect(card).toHaveCount(0);
-  await expect(chat(page).getByText(/The user resolved the interrupted bash call/).first()).toBeVisible();
-  await page.reload();
   await expect(chat(page).locator(".unresolved-effects")).toHaveCount(0);
+  // The restored run is still open (paused), so the composer queues; sending resumes it.
+  await send(page, "resume", "Queue follow-up");
+  await expect(chat(page).getByText("ok: resume").first()).toBeVisible();
+  await expect(chat(page).getByText("done after bash").first()).toBeVisible();
   expect((await readFile(join(project, "resolve-effects.log"), "utf8")).trim().split("\n")).toEqual(["deploy"]);
 });
 

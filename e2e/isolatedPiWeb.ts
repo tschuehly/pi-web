@@ -119,6 +119,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       Object.assign(env, {
         PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_WEB_DURABLE_AGENT_DIR: durableAgent, PI_TELEMETRY_DIR: join(root, "telemetry"),
         PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
+        // Workbench bash jobs stay in the fixture; the Atelier Page check (its own browser) has its own suite.
+        PI_BACKGROUND_BASH_ROOT: join(root, "background-bash"), ATELIER_PAGE_CHECK: "off",
       });
     }
     // Optional: installed Pi packages the Durable host binds (pi-process-monitor only: no network, no messages out),
