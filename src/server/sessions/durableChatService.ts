@@ -168,21 +168,25 @@ class DurableHostConnection {
   }
 
   /**
-   * Graceful close: the host closes its store and exits; a host that does not exit in time is terminated. Resolves
-   * only once the process is gone, so a host opened next for the same store never meets its lock.
+   * Graceful close: the host closes its store and exits. A host that does not exit within `graceMs` gets SIGTERM (it
+   * bounds its own close and exits non-zero); one still alive `graceMs` later, as when its close joins work that
+   * ignores cancellation, gets SIGKILL and reopens with that work interrupted. Resolves only once the process is gone,
+   * so a host opened next for the same store never meets its lock.
    */
-  async close(timeoutMs = 5000): Promise<void> {
+  async close(graceMs: number): Promise<void> {
     if (!this.alive) return;
-    const timer = setTimeout(() => { this.process.kill("SIGTERM"); }, timeoutMs);
+    const terminate = setTimeout(() => { this.process.kill("SIGTERM"); }, graceMs);
+    const kill = setTimeout(() => { this.process.kill("SIGKILL"); }, 2 * graceMs);
     try {
       await this.request("close");
     } catch {
-      // Already gone, or terminated by the timer.
+      // Already gone, or terminated by the timers.
     }
     try {
       await this.exited;
     } finally {
-      clearTimeout(timer);
+      clearTimeout(terminate);
+      clearTimeout(kill);
     }
   }
 }
@@ -211,6 +215,8 @@ export class DurableChatService {
      */
     unread?: (sessionId: string, cwd: string, change: "active" | "idle" | "closed") => Promise<void>;
     logger?: { warn(object: object, message: string): void };
+    /** Stop's wait before SIGTERM, and again before SIGKILL; default 5 s. */
+    closeGraceMs?: number;
   }) {}
 
   readonly #skills = new Map<string, DurableChatResourceSet["skillList"]>();
@@ -614,13 +620,13 @@ export class DurableChatService {
   async stop(ref: SessionRouteRef): Promise<void> {
     const connection = this.#connections.get(ref.id);
     this.#connections.delete(ref.id);
-    await (await connection?.catch(() => undefined))?.close();
+    await (await connection?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000);
   }
 
   async dispose(): Promise<void> {
     const connections = [...this.#connections.values()];
     this.#connections.clear();
-    await Promise.all(connections.map(async (connection) => (await connection.catch(() => undefined))?.close()));
+    await Promise.all(connections.map(async (connection) => (await connection.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000)));
   }
 
   #for(ref: SessionRouteRef): Promise<DurableHostConnection> {
