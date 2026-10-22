@@ -342,12 +342,42 @@ describe("ChatView transcript density", () => {
     expect(card?.querySelector("summary")?.textContent).toBe("Subagents finished");
     expect(card?.closest("article")?.querySelector(".msg-header")).toBeNull();
     expect(card?.querySelector(".subagent-completion-instruction")?.textContent).toBe(content);
-    expect(root.querySelectorAll("article.msg.system")).toHaveLength(2);
-    expect(Array.from(root.querySelectorAll<FormattedText>("article.msg.system formatted-text"), (text) => text.text)).toEqual([
-      "Receipt failed; inspect worker_status", "Other system notice",
-    ]);
+    // A failed receipt is an error: it never folds with the ordinary notice after it.
+    expect(root.querySelector("details.notice-fold")).toBeNull();
+    const failure = root.querySelector<HTMLElement>("article.msg.system.error:not(.notice-line)");
+    expect(failure?.querySelector(".msg-header")).not.toBeNull();
+    expect(failure?.querySelector<FormattedText>("formatted-text")?.text).toBe("Receipt failed; inspect worker_status");
+    expect(root.querySelector<FormattedText>("article.msg.notice-line formatted-text")?.text).toBe("Other system notice");
     card?.querySelector("summary")?.click();
     expect(card?.open).toBe(true);
+  });
+
+  it("renders extension notices as quiet lines and folds consecutive ones behind their newest first line", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.messages = normalizeMessages([
+      { role: "custom", customType: "storage-guard", content: "Disk low: 9 GB free." },
+      { role: "custom", customType: "atelier:immediate", content: "#73 Decision: Two columns\nThe owner picked two columns." },
+      { role: "assistant", content: [{ type: "text", text: "Applied." }], stopReason: "stop" },
+      { role: "custom", customType: "atelier:immediate", content: "#74 Comment: shorter headline\nMake it fit one line." },
+      { role: "assistant", content: [], stopReason: "error", errorMessage: "rate limited" },
+    ]);
+    document.body.append(view);
+    await view.updateComplete;
+
+    const root = requireShadowRoot(view);
+    const fold = root.querySelector<HTMLDetailsElement>("details.notice-fold");
+    expect(fold?.open).toBe(false);
+    expect(fold?.querySelector("summary")?.textContent.trim()).toMatch(/^2 notices\s*#73 Decision: Two columns$/u);
+    expect(fold?.querySelectorAll("article.notice-line")).toHaveLength(2);
+    const lone = root.querySelector<HTMLElement>("article.msg.notice-line");
+    expect(lone?.querySelector(".msg-header")).toBeNull();
+    expect(lone?.querySelector<HTMLDetailsElement>("details.notice")?.open).toBe(false);
+    expect(lone?.querySelector("details.notice > summary")?.textContent.trim()).toBe("#74 Comment: shorter headline");
+    expect(lone?.querySelector<FormattedText>("details.notice formatted-text")?.text).toBe("Make it fit one line.");
+    expect(root.querySelector("article.msg.system.error:not(.notice-line) .msg-header .label")?.textContent).toBe("system");
+    fold?.querySelector("summary")?.click();
+    expect(fold?.open).toBe(true);
   });
 
   it("renders separate collapsed background bash cards with output and a copyable log path", async () => {

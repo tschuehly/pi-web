@@ -4,7 +4,7 @@ import { guard } from "lit/directives/guard.js";
 import { repeat } from "lit/directives/repeat.js";
 import { keyed } from "lit/directives/keyed.js";
 import { machineSessionKey } from "../machineKeys";
-import { currentExchangeGroups, groupChatMessages, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
+import { currentExchangeGroups, groupChatMessages, isQuietNotice, splitNoticeText, summarizeChatGroup, type ChatGroup, type ChatGroupPresentation } from "../chatGroups";
 import { latestWorkingModeDials, previewFromDetails, workingModeSummary } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
 import type { ReplyQuote } from "../replyQuotes";
@@ -1157,6 +1157,10 @@ export class ChatView extends LitElement {
   }
 
   private renderMessage(message: ChatLine, index: number, anchorId: string) {
+    if (isQuietNotice(message)) return html`
+      ${this.renderScrollMarker(anchorId)}
+      <article class=${`msg system notice-line${message.severity === undefined ? "" : ` ${message.severity}`}`} data-index=${index} data-scroll-anchor-id=${anchorId} data-entry-id=${message.entryId ?? nothing}>${this.renderNotice(message, index)}</article>
+    `;
     const toolOnly = this.isToolExecutionOnlyMessage(message);
     const askUserRecordOnly = this.isAskUserRecordOnlyMessage(message);
     const goalLifecycleOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "goalLifecycle");
@@ -1214,6 +1218,13 @@ export class ChatView extends LitElement {
         <div class="group-body">${this.renderMessageGroupBody(messages, startIndex, groups, groupIndex)}</div>
       </details>
     `;
+    if (presentation === "notices") return html`
+      ${marker}
+      <details class="event-group notice-fold" data-index=${startIndex} data-scroll-anchor-id=${anchorId}>
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><span class="notice-fold-count">${messages.length} notices</span><span class="disclosure-preview" dir="auto">${messages.map(splitNoticeText).at(-1)?.first}</span></summary>
+        <div class="group-body">${this.renderMessageGroupBody(messages, startIndex, groups, groupIndex, messageIndices)}</div>
+      </details>
+    `;
     if (presentation === "thinking") {
       const segments: { kind: "thinking" | "skill" | "activity"; messages: ChatLine[]; offset: number }[] = [];
       for (const [offset, message] of messages.entries()) {
@@ -1265,20 +1276,31 @@ export class ChatView extends LitElement {
     return ids.size + anonymousExecutions + anonymousCallsAndResults;
   }
 
+  /** One quiet line; a multi-line notice expands to show the rest. */
+  private renderNotice(message: ChatLine, index: number) {
+    const { first, rest } = splitNoticeText(message);
+    const formatted = (text: string) => html`<formatted-text .intentKey=${JSON.stringify([this.machineId, this.sessionId, message.entryId ?? index, "notice"])} .contentRendering=${this.contentRendering} .machineId=${this.machineId} .workspaceContext=${this.workspaceContext} .text=${text}></formatted-text>`;
+    if (rest === "") return html`<div class="notice" dir="auto">${formatted(first)}</div>`;
+    return html`<details class="notice"><summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><span class="disclosure-preview" dir="auto">${first}</span></summary>${formatted(rest)}</details>`;
+  }
+
   private renderMessageGroupBody(messages: ChatLine[], startIndex: number, groups: ChatGroup[], groupIndex: number, messageIndices?: number[], segmentOffset = 0) {
     return messages.map((message, offset) => {
+      const notice = isQuietNotice(message);
       const toolOnly = this.isToolExecutionOnlyMessage(message);
       const skillOnly = this.isSkillReadOnlyMessage(message);
       const workingModeOnly = message.parts.length > 0 && message.parts.every((part) => part.type === "workingMode");
-      const classes = `${toolOnly ? "group-msg tool-execution-shell" : skillOnly ? "group-msg skill-read-shell" : `group-msg ${message.role}`}${message.severity === undefined ? "" : ` ${message.severity}`}`;
+      const classes = `${notice ? "group-msg system notice-line" : toolOnly ? "group-msg tool-execution-shell" : skillOnly ? "group-msg skill-read-shell" : `group-msg ${message.role}`}${message.severity === undefined ? "" : ` ${message.severity}`}`;
       const index = messageIndices?.[segmentOffset + offset] ?? startIndex + offset;
       const group = groups[groupIndex];
       const withinGroup = messageIndices?.slice(0, segmentOffset + offset).filter((candidate, earlier) => candidate === index && group?.kind === "group" && group.messages[earlier]?.parts.some((part) => part.type !== "thinking") === true).length ?? 0;
       const anchorId = this.eventAnchorKey(groups, groupIndex, index, withinGroup);
       return html`
         <article class=${classes} data-index=${index} data-scroll-anchor-id=${anchorId} data-entry-id=${message.entryId ?? nothing}>
-          ${toolOnly || skillOnly || workingModeOnly ? null : this.renderMessageHeader(message, anchorId)}
-          ${message.parts.map((part, partIndex) => this.renderPart(part, message, index, partIndex))}
+          ${notice ? this.renderNotice(message, index) : html`
+            ${toolOnly || skillOnly || workingModeOnly ? null : this.renderMessageHeader(message, anchorId)}
+            ${message.parts.map((part, partIndex) => this.renderPart(part, message, index, partIndex))}
+          `}
         </article>
       `;
     });
@@ -1959,6 +1981,24 @@ export class ChatView extends LitElement {
     .background-bash-output { max-height: 240px; overflow: auto; white-space: pre; font: inherit; font-family: monospace; }
     .background-bash-log { display: flex; align-items: center; gap: 8px; }
     .background-bash-log code { overflow-wrap: anywhere; min-width: 0; }
+    /* Extension notices (Disk low, Atelier events, cache misses): one muted line; consecutive ones fold into "N notices". */
+    .msg.notice-line, .group-msg.notice-line { --pi-paragraph-gap: 2px; color: var(--pi-muted); font-size: 12px; line-height: 1.4; }
+    .msg.notice-line { margin: 0 0 6px; padding: 0 2px; }
+    .group-msg.notice-line { padding: 1px 0; }
+    .notice > summary, .notice-fold > summary { display: flex; align-items: center; gap: 5px; min-width: 0; width: fit-content; max-width: 100%; list-style: none; cursor: pointer; }
+    .notice > summary::-webkit-details-marker, .notice-fold > summary::-webkit-details-marker { display: none; }
+    .notice > summary:hover, .notice[open] > summary, .notice-fold > summary:hover, .notice-fold[open] > summary { color: var(--pi-text); }
+    .notice > summary:focus-visible, .notice-fold > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; border-radius: 4px; }
+    .notice > summary .chevron .tab-icon, .notice-fold > summary .chevron .tab-icon { width: 12px; height: 12px; }
+    /* Expanded, a notice's first line wraps so its end stays readable; an open fold drops its preview because its body repeats it in full. */
+    .notice[open] > summary, .notice-fold[open] .notice > summary { align-items: flex-start; }
+    .notice[open] > summary .chevron, .notice-fold[open] .notice > summary .chevron { margin-block-start: 0.2em; }
+    .notice[open] > summary .disclosure-preview, .notice-fold[open] .notice > summary .disclosure-preview { white-space: normal; overflow-wrap: anywhere; }
+    .notice-fold[open] > summary .disclosure-preview { display: none; }
+    details.notice > formatted-text { margin: 2px 0 0 17px; }
+    .notice-fold { margin: 0 0 6px; color: var(--pi-muted); font-size: 12px; line-height: 1.4; }
+    .notice-fold-count { flex: 0 0 auto; font-weight: 600; }
+    .notice-fold > .group-body { padding: 2px 0 2px 17px; }
     .msg.subagent-completion-shell { padding: 0 2px var(--pi-message-padding); }
     .subagent-completion { color: var(--pi-muted); font-size: 12px; }
     .subagent-completion > summary { width: fit-content; cursor: pointer; }
@@ -1978,9 +2018,10 @@ export class ChatView extends LitElement {
     :host([dense]) .filter-options button[aria-pressed="true"], :host([dense]) .filter-toggle[data-filter-active="true"] { background: var(--pi-selection-bg); color: var(--pi-accent); }
     :host([dense]) .scroll-to-bottom { border: 0; background: var(--pi-surface-hover); box-shadow: 0 2px 8px var(--pi-shadow-soft, transparent); }
     :host([dense]) .msg, :host([dense]) .event-group { margin: 0 0 5px; }
+    :host([dense]) .msg.notice-line, :host([dense]) .notice-fold { margin: 0 0 3px; }
     :host([dense]) .msg { position: relative; }
     :host([dense]) .msg.user, :host([dense]) .msg.assistant { padding: 3px 8px; border: 0; border-radius: 6px; }
-    :host([dense]) .msg.assistant { background: transparent; }
+    :host([dense]) .msg.assistant { background: color-mix(in srgb, var(--pi-text) 6%, var(--pi-bg)); }
     :host([dense]) .msg.user { background: color-mix(in srgb, var(--pi-accent) 12%, transparent); }
     /* Role and time sit inline before the first line instead of a header band. */
     :host([dense]) .msg > .msg-header { position: static; float: left; min-height: 0; height: 21px; margin: 0 8px 0 0; padding: 0; background: none; }

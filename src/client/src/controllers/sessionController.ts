@@ -621,7 +621,7 @@ export class SessionController {
       this.markCachedNewSessionPersisted(session);
       return true;
     } catch (error) {
-      if (this.getState().selectedSession?.id === session.id) this.setState({ messages: [...this.getState().messages, textMessage("system", String(error))] });
+      if (this.getState().selectedSession?.id === session.id) this.setState({ messages: [...this.getState().messages, { ...textMessage("system", String(error)), severity: "error" }] });
       this.reportSessionError(session, machineId, error, errorOwner);
       return false;
     }
@@ -643,7 +643,7 @@ export class SessionController {
       this.markCachedNewSessionPersisted(session);
       return true;
     } catch (error) {
-      if (this.getState().selectedSession?.id === session.id) this.setState({ messages: [...this.getState().messages, textMessage("system", String(error))] });
+      if (this.getState().selectedSession?.id === session.id) this.setState({ messages: [...this.getState().messages, { ...textMessage("system", String(error)), severity: "error" }] });
       this.reportSessionError(session, machineId, error, errorOwner);
       return false;
     } finally {

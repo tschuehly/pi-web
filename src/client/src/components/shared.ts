@@ -470,7 +470,8 @@ export const chatStyles = css`
   .history-boundary small { color: var(--pi-dim); }
   .msg-header { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 22px; margin-bottom: 8px; color: var(--pi-muted); font-size: 12px; }
   .msg > .msg-header { position: sticky; top: calc(var(--pi-panel-padding) * -1); z-index: 4; margin: 0 0 var(--pi-toolbar-gap); padding: 3px 0; background: var(--pi-bg-overlay); }
-  .msg.assistant > .msg-header .label, .msg.tool-image-output > .msg-header .label { color: var(--pi-text-secondary); }
+  .msg.assistant > .msg-header .label { color: var(--pi-text); }
+  .msg.tool-image-output > .msg-header .label { color: var(--pi-text-secondary); }
   .msg.user > .msg-header .label { color: var(--pi-accent); }
   .msg.bash > .msg-header .label { color: var(--pi-success); }
   .msg.skill > .msg-header .label { color: var(--pi-purple); }
