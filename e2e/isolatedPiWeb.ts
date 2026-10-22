@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeMockAgentConfig } from "./mockModels/agentConfig";
+import { writeMockAgentConfig, writeMockProviders } from "./mockModels/agentConfig";
 import { startMockModelServer, type MockModelServer } from "./mockModels/server";
 
 /**
@@ -126,10 +126,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(PI_|GIT_|ANTHROPIC_|OPENAI_)/.test(key)));
     // Its telemetry goes to the fixture root, never to the owner's ~/.pi/agent/telemetry.
     // PI_TMP, Workstreams and free disk space are fixture-local too. Durable hosts get their own agent dir with fake
-    // stored logins (models are offered only for providers with one); legacy Chats keep the login-free fixture profile.
+    // stored logins (models are offered only for providers with one) and, with the mock on, its models.json and Claude
+    // and Codex logins; its settings stay its own (packages only).
     const durableAgent = join(root, "durable-agent");
     if (durableHost !== undefined && durableHost !== "") {
       await seedLogins(join(durableAgent, "auth.json"));
+      if (mock !== undefined) await writeMockProviders(durableAgent, mock.url);
       Object.assign(env, {
         PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_WEB_DURABLE_AGENT_DIR: durableAgent, PI_TELEMETRY_DIR: join(root, "telemetry"),
         PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
@@ -145,8 +147,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       Object.assign(env, { HOME: join(root, "home") });
     }
     // Pi's compaction setting, which PI WEB reads from its agent profile for Durable Chats as for legacy ones: keep only
-    // the newest turn, so a short scripted Chat has history to compact. Legacy fixture Chats send no model requests here.
-    if (durableHost !== undefined && durableHost !== "") await writeJson(join(root, "agent", "settings.json"), { compaction: { keepRecentTokens: 1 } });
+    // the newest turn, so a short scripted Chat has history to compact. Merged into the mock's settings, when written.
+    if (durableHost !== undefined && durableHost !== "") {
+      const settings = join(root, "agent", "settings.json");
+      const existing = JSON.parse(await readFile(settings, "utf8").catch(() => "{}")) as Record<string, unknown>;
+      await writeJson(settings, { ...existing, compaction: { keepRecentTokens: 1 } });
+    }
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),

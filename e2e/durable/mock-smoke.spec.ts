@@ -88,7 +88,7 @@ test("a legacy Chat answers through mocked Claude (with a tool round trip) and C
 });
 
 test.describe("Durable Chat", () => {
-  // Needs the Workbench Durable host with models.json baseUrl support (pi-workbench feat/durable-e2e-mocks or later).
+  // Needs the Workbench Durable host with models.json baseUrl support for anthropic and openai-codex (e2e/mockModels/README.md).
   test.skip(process.env["PI_WEB_E2E_DURABLE_HOST"] === undefined, "PI_WEB_E2E_DURABLE_HOST is not set");
 
   test("a Durable Chat answers through mocked Claude with a tool round trip", async ({ page }) => {
@@ -110,7 +110,25 @@ test.describe("Durable Chat", () => {
     expect(claude[1]?.lastUserText).toContain(E2E_NOTES_BODY);
   });
 
-  // The Durable host registers only the Claude subscription (and the scripted faux model); OpenAI Codex arrives with
-  // Phase B slice 4 (pi-workbench feat/durable-s4-openai). Then: choose MOCK_CODEX_MODEL and assert as the legacy test does.
-  test.fixme("a Durable Chat answers through mocked Codex", () => {});
+  test("a Durable Chat answers through mocked Codex with a tool round trip", async ({ page }) => {
+    test.setTimeout(60_000);
+    const marker = `durable-codex-${String(Date.now())}`;
+    const script = await mock.script({ provider: "openai-codex", match: marker, turns: [[{ thinking: "Read the notes." }, { toolCall: { name: "read", args: { path: "docs/notes.md" } } }], "Durable Codex read the notes."] });
+    await openWorkspace(page);
+    await page.getByRole("button", { name: "New Durable Chat" }).click();
+    await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
+    await chooseModel(page, MOCK_CODEX_MODEL);
+    await send(page, `${marker}: what do the notes say?`);
+    await expect(chat(page).getByText("Durable Codex read the notes.").first()).toBeVisible();
+
+    const codex = await mock.journal({ provider: "openai-codex", kind: "chat", contains: marker });
+    expect(codex.map((entry) => entry.answeredBy)).toEqual([{ script, turn: 0 }, { script, turn: 1 }]);
+    for (const entry of codex) {
+      expect(entry.violations).toEqual([]);
+      expect(entry.model).toBe(MOCK_CODEX_MODEL.id);
+      expect(entry.auth).toBe("jwt");
+      expect(entry.headers["chatgpt-account-id"]).toBe(MOCK_CODEX_ACCOUNT);
+    }
+    expect(codex[1]?.lastUserText).toContain(E2E_NOTES_BODY);
+  });
 });

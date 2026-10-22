@@ -24,7 +24,7 @@ The mock is on by default. Set `PI_WEB_E2E_MOCK_MODELS=0` to turn it off, and `m
 - The extension is a copy of `PI_WEB_E2E_CLAUDE_CODE_USE`. When that is unset, the harness copies the installed `~/.pi/agent/npm/node_modules/@benvargas/pi-claude-code-use/extensions/index.ts`, if it exists.
 - `ANTHROPIC_*` and `OPENAI_*` variables from your shell never reach the children.
 
-Durable Chats read the same `models.json` only from pi-workbench `feat/durable-e2e-mocks` or later, where `packages/durable-pilot/src/chat.ts` adds `modelsJsonBaseUrl`. An older host would send Claude requests to the real API with the dummy token. Point `PI_WEB_E2E_DURABLE_HOST` at a host that has this change. Durable Chats still open on the scripted `faux` model, so switch to `MOCK_CLAUDE_MODEL` in the model picker (see `e2e/durable/mock-smoke.spec.ts`).
+Durable hosts use their own agent dir (`<root>/durable-agent`, `PI_WEB_DURABLE_AGENT_DIR`). With the mock on, the harness writes the same `models.json` and the two mock logins there too (`writeMockProviders`), next to the fixture's fake Copilot login; its `settings.json` stays its own. The host honors that `models.json` for `anthropic` and `openai-codex` only from pi-workbench `feat/durable-host-slice1-20261022` after the mock merge (`modelsJsonBaseUrl` in `packages/durable-pilot/src/providers.ts`). An older host would send requests to the real APIs with the dummy tokens, so point `PI_WEB_E2E_DURABLE_HOST` at a host that has this change. Copilot is not mocked. Durable Chats still open on the scripted `faux` model, so switch to `MOCK_CLAUDE_MODEL` or `MOCK_CODEX_MODEL` in the model picker (see `e2e/durable/mock-smoke.spec.ts`).
 
 ## Scripting turns
 

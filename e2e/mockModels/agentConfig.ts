@@ -1,10 +1,12 @@
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /** The Claude subscription and ChatGPT Codex models the mock serves by default. */
 export const MOCK_CLAUDE_MODEL = { provider: "anthropic", id: "claude-sonnet-5-5" } as const;
 export const MOCK_CODEX_MODEL = { provider: "openai-codex", id: "gpt-6-luna" } as const;
 export const MOCK_CODEX_ACCOUNT = "e2e-mock-account";
+
+const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 
 /**
  * Points a Pi agent dir at the mock: `models.json` overrides the anthropic and openai-codex base URLs (built-in models
@@ -13,15 +15,7 @@ export const MOCK_CODEX_ACCOUNT = "e2e-mock-account";
  * Every value is fake; nothing here reads a real credential.
  */
 export async function writeMockAgentConfig(agentDir: string, mockUrl: string, options: { claudeCodeUse?: string } = {}): Promise<void> {
-  await mkdir(agentDir, { recursive: true });
-  const never = Date.UTC(2100, 0, 1);
-  const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
-  await writeFile(join(agentDir, "models.json"), json({ providers: { anthropic: { baseUrl: mockUrl }, "openai-codex": { baseUrl: mockUrl } } }));
-  await writeFile(join(agentDir, "auth.json"), json({
-    // pi-ai takes the OAuth path for any token containing sk-ant-oat; joined from parts so secret scanners skip it.
-    anthropic: { type: "oauth", access: ["sk", "ant", "oat01", "e2e", "mock", "not", "a", "real", "token"].join("-"), refresh: "e2e-mock-refresh", expires: never },
-    "openai-codex": { type: "oauth", access: fakeChatGptJwt(MOCK_CODEX_ACCOUNT, never), refresh: "e2e-mock-refresh", expires: never, accountId: MOCK_CODEX_ACCOUNT },
-  }), { mode: 0o600 });
+  await writeMockProviders(agentDir, mockUrl);
   const extensions: string[] = [];
   if (options.claudeCodeUse !== undefined) {
     // A copy, so the isolated agent dir is self-contained and the source package is only read.
@@ -40,6 +34,23 @@ export async function writeMockAgentConfig(agentDir: string, mockUrl: string, op
     warnings: { anthropicExtraUsage: false },
     ...(extensions.length > 0 ? { extensions } : {}),
   }));
+}
+
+/**
+ * The provider half of `writeMockAgentConfig`: `models.json` and the two mock logins, merged into an existing
+ * `auth.json` (other logins, such as the Durable fixture's Copilot one, stay). The Durable agent dir takes only this.
+ */
+export async function writeMockProviders(agentDir: string, mockUrl: string): Promise<void> {
+  await mkdir(agentDir, { recursive: true });
+  const never = Date.UTC(2100, 0, 1);
+  await writeFile(join(agentDir, "models.json"), json({ providers: { anthropic: { baseUrl: mockUrl }, "openai-codex": { baseUrl: mockUrl } } }));
+  const existing = JSON.parse(await readFile(join(agentDir, "auth.json"), "utf8").catch(() => "{}")) as Record<string, unknown>;
+  await writeFile(join(agentDir, "auth.json"), json({
+    ...existing,
+    // pi-ai takes the OAuth path for any token containing sk-ant-oat; joined from parts so secret scanners skip it.
+    anthropic: { type: "oauth", access: ["sk", "ant", "oat01", "e2e", "mock", "not", "a", "real", "token"].join("-"), refresh: "e2e-mock-refresh", expires: never },
+    "openai-codex": { type: "oauth", access: fakeChatGptJwt(MOCK_CODEX_ACCOUNT, never), refresh: "e2e-mock-refresh", expires: never, accountId: MOCK_CODEX_ACCOUNT },
+  }), { mode: 0o600 });
 }
 
 /** An unsigned JWT carrying only the ChatGPT account claim pi-ai's Codex transport reads. */
