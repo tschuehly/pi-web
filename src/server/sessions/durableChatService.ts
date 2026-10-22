@@ -2,17 +2,29 @@ import { fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
-import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, SessionAttentionEvent, SessionAttentionRequest, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
-import type { ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, SessionStreamSnapshot, SessionTranscriptSnapshot } from "../types.js";
+import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
+import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
+import type { PiWebConfig } from "../../config.js";
+import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
+import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
+import type { SessionMedia, SessionMediaIndex } from "./sessionMediaIndex.js";
+import type { ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, ClientThinkingLevel, SessionStreamSnapshot, SessionTranscriptSnapshot } from "../types.js";
 import type { DurableChatResourceSet } from "./durableChatResources.js";
-import { expandSkills } from "./durableChatResources.js";
+import { durableThinkingLevel, expandPromptTemplate, expandSkills } from "./durableChatResources.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
+import { appendInlineImageReferenceMapping } from "./piSessionService.js";
 import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
 import type { DurableChatRecord, SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
 export const DURABLE_HOST_PROTOCOL = 2;
+
+/**
+ * Optional host operations, named by the host in its ready message (Workbench `chat-session.ts` `CAPABILITIES`). An
+ * operation the Chat's host does not name is refused visibly, as an unsupported one.
+ */
+export type DurableHostCapability = "queue.edit" | "queue.promote" | "attachments.images" | "thinking" | "shell";
 
 /** How the owner resolves an interrupted unsafe tool call that may have run. */
 export type DurableEffectResolution = "done" | "not-done" | "retry";
@@ -33,13 +45,15 @@ export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string) 
  * environment and the daemon's Pi agent directory, so it reads the same Claude subscription login. Host output goes
  * to `host.log` in the store directory.
  */
-export function forkDurableHost(options: { entry: string; model: string; agentDir: string; scripted?: boolean }): DurableHostLauncher {
+export function forkDurableHost(options: { entry: string; model: string; agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }): DurableHostLauncher {
   return (record, storeDir) => {
     mkdirSync(storeDir, { recursive: true, mode: 0o700 });
     const log = openSync(join(storeDir, "host.log"), "a", 0o600);
     try {
       // No inherited loader flags (tsx): the host is plain Node with type stripping and its own pinned dependencies.
-      const args = ["--store", storeDir, "--cwd", record.cwd, "--model", options.model, "--session-id", record.id, ...(options.scripted === true ? ["--scripted"] : [])];
+      // A new Chat starts at the thinking level Pi would pick; a reopened one keeps its own (the host ignores this).
+      const thinking = options.thinkingLevel ?? ((cwd: string, model: string) => durableThinkingLevel(cwd, options.agentDir, model));
+      const args = ["--store", storeDir, "--cwd", record.cwd, "--model", options.model, "--session-id", record.id, "--thinking", thinking(record.cwd, options.model), ...(options.scripted === true ? ["--scripted"] : [])];
       return fork(options.entry, args, {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
@@ -53,6 +67,8 @@ export function forkDurableHost(options: { entry: string; model: string; agentDi
 
 interface HostEvents {
   publish(sessionId: string, event: SessionUiEvent, mediaScope?: { id: string; cwd: string }): void;
+  /** Image references of published events; a media read binds the Chat's images from its transcript. */
+  readonly mediaIndex?: SessionMediaIndex;
   publishGlobal(event: { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | SessionAttentionEvent): void;
   currentSeq(sessionId: string): number;
 }
@@ -79,6 +95,8 @@ class DurableHostConnection {
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
+  /** Optional operations the host named when ready. */
+  capabilities: ReadonlySet<string> = new Set();
   #next = 1;
   #exited: Error | undefined;
   readonly #pending = new Map<number, { resolve: (reply: { result: unknown; seq: number }) => void; reject: (error: Error) => void }>();
@@ -97,6 +115,8 @@ class DurableHostConnection {
       if (!isRecord(message)) return;
       if (isRecord(message["ready"])) {
         const protocol = message["ready"]["protocol"];
+        const capabilities = message["ready"]["capabilities"];
+        if (Array.isArray(capabilities)) this.capabilities = new Set(capabilities.filter((name): name is string => typeof name === "string"));
         if (protocol === DURABLE_HOST_PROTOCOL) markReady();
         else {
           failReady(new Error(`Durable host speaks protocol ${String(protocol)}, this daemon ${String(DURABLE_HOST_PROTOCOL)}`));
@@ -176,10 +196,13 @@ export class DurableChatService {
     storesDir: string;
     /** AGENTS.md, APPEND_SYSTEM.md and skills for a workspace, from Pi's loader; sent to each host as it opens. */
     resources?: (cwd: string) => Promise<DurableChatResourceSet>;
+    /** PI WEB config, for the attachment folder of a save request that names none (as legacy Chats). */
+    config?: { read(): { effectiveConfig: PiWebConfig } | Promise<{ effectiveConfig: PiWebConfig }> };
     logger?: { warn(object: object, message: string): void };
   }) {}
 
   readonly #skills = new Map<string, DurableChatResourceSet["skillList"]>();
+  readonly #templates = new Map<string, NonNullable<DurableChatResourceSet["promptList"]>>();
 
   owns(sessionId: string): boolean {
     return this.deps.locator.durable(sessionId) !== undefined;
@@ -223,12 +246,25 @@ export class DurableChatService {
 
   async messages(ref: SessionRouteRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
     const { result } = await (await this.#for(ref)).request("transcript");
-    return pageMessagesAtSafeBoundary(hostTranscript(result).messages, page);
+    return pageMessagesAtSafeBoundary(hostTranscript(result).messages.map(displayPromptMessage), page);
   }
 
   async status(ref: SessionRouteRef): Promise<ClientSessionStatus> {
-    const { result } = await (await this.#for(ref)).request("status");
-    return { ...hostStatus(result), sessionId: ref.id };
+    const connection = await this.#for(ref);
+    const { result } = await connection.request("status");
+    return { ...browserStatus(hostStatus(result), connection), sessionId: ref.id };
+  }
+
+  /** An image of the Chat's transcript (or its in-flight answer), bound to the Chat as a legacy Chat's media are. */
+  async media(ref: SessionRouteRef, mediaId: string): Promise<SessionMedia | undefined> {
+    const index = this.deps.events.mediaIndex;
+    if (index === undefined) return undefined;
+    const scope = { id: ref.id, cwd: ref.cwd };
+    const cached = index.get(scope, mediaId);
+    if (cached !== undefined) return cached;
+    const { result } = await (await this.#for(ref)).request("transcript");
+    const transcript = hostTranscript(result);
+    return index.find(scope, mediaId, [transcript.messages, transcript.partial]);
   }
 
   async streamSnapshot(ref: SessionRouteRef): Promise<SessionStreamSnapshot> {
@@ -237,9 +273,10 @@ export class DurableChatService {
   }
 
   async transcriptSnapshot(ref: SessionRouteRef, page?: { limit?: number }): Promise<SessionTranscriptSnapshot> {
-    const { result, seq } = await (await this.#for(ref)).request("transcript");
+    const connection = await this.#for(ref);
+    const { result, seq } = await connection.request("transcript");
     const transcript = hostTranscript(result);
-    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(transcript.messages, { limit: page?.limit ?? 100 }), status: { ...transcript.status, sessionId: ref.id } };
+    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(transcript.messages.map(displayPromptMessage), { limit: page?.limit ?? 100 }), status: { ...browserStatus(transcript.status, connection), sessionId: ref.id } };
   }
 
   /**
@@ -248,21 +285,130 @@ export class DurableChatService {
    */
   async prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string }): Promise<void> {
     const operationId = options?.operationId;
-    if (typeof text !== "string" || text.trim() === "") throw new Error("text field must be a non-empty string");
-    if (Array.isArray(attachments) && attachments.length > 0) throw new DurableChatUnavailable("Attachments");
+    if (typeof text !== "string") throw new Error("text field must be a non-empty string");
     if (streamingBehavior !== undefined && streamingBehavior !== "steer" && streamingBehavior !== "followUp") throw new Error("streamingBehavior must be steer or followUp");
+    // As a legacy Chat: images go inline (resized by Pi), named [PIC_n] in a trailing legend unless a command takes them.
+    const parsed = parsePromptAttachments(attachments, { enforceInlineSizeLimit: false });
+    if (text.trim() === "" && parsed.length === 0) throw new Error("text field must be a non-empty string");
     const connection = await this.#for(ref);
-    const expanded = expandSkills(text, this.#skills.get(ref.id) ?? []);
-    await connection.request("prompt", { operationId: operationId ?? randomUUID(), text: expanded, ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }) });
+    if (parsed.length > 0) this.#require(connection, "attachments.images", "Attachments");
+    const explicit = hasExplicitPromptImageReference(attachments);
+    const images = (await attachmentsToInlineImages(parsed, explicit)).map((entry) => entry.image);
+    const templates = this.#templates.get(ref.id) ?? [];
+    const command = text.trim();
+    const references = parsed.map((attachment) => attachment.reference);
+    // A leading template takes its arguments raw (no inline skills, no image tokens), as Pi expands it.
+    const template = isTemplateCommand(command, templates);
+    const body = template ? (explicit ? removeImageReferenceTokensFromText(command, references) : command).trim() : text;
+    const skilled = template ? body : expandSkills(body, this.#skills.get(ref.id) ?? []);
+    const expanded = expandPromptTemplate(skilled, templates);
+    const providerText = !explicit || template ? expanded : appendInlineImageReferenceMapping(expanded, references);
+    await connection.request("prompt", {
+      operationId: operationId ?? randomUUID(), text: providerText,
+      ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }),
+      ...(images.length === 0 ? {} : {
+        images,
+        attachments: parsed.map((attachment) => ({ reference: attachment.reference, mimeType: attachment.mimeType, ...(attachment.name === undefined ? {} : { name: attachment.name }) })),
+      }),
+    });
+  }
+
+  /** Files saved into the Chat's workspace, exactly as a legacy Chat saves them (the prompt then names their paths). */
+  async saveAttachments(ref: SessionRouteRef, attachments: unknown, folder?: string): Promise<SavedPromptAttachment[]> {
+    const parsed = parsePromptAttachments(attachments, { enforceInlineSizeLimit: false, allowFileAttachments: true });
+    if (parsed.length === 0) return [];
+    await this.#for(ref);
+    const globalConfig = this.deps.config === undefined ? {} : (await this.deps.config.read()).effectiveConfig;
+    const effectiveFolder = folder ?? (await loadEffectiveProjectAttachmentsConfig(ref.cwd, globalConfig)).defaultFolder;
+    return saveAttachmentsToWorkspace(ref.cwd, parsed, effectiveFolder === undefined ? {} : { folder: effectiveFolder });
+  }
+
+  /** `!cmd` / `!!cmd` in the Chat's workspace; the host streams shell events and records the result. */
+  async shell(ref: SessionRouteRef, text: string): Promise<void> {
+    const connection = await this.#for(ref);
+    this.#require(connection, "shell", "Shell commands");
+    await connection.request("shell", { text });
+  }
+
+  async availableThinkingLevels(ref: SessionRouteRef): Promise<ClientThinkingLevel[]> {
+    const connection = await this.#for(ref);
+    if (!connection.capabilities.has("thinking")) return [];
+    const { result } = await connection.request("thinkingLevels");
+    return Array.isArray(result) ? result.filter((level): level is ClientThinkingLevel => typeof level === "string") : [];
+  }
+
+  async setThinkingLevel(ref: SessionRouteRef, level: string): Promise<ClientSessionStatus> {
+    const connection = await this.#for(ref);
+    this.#require(connection, "thinking", "Changing the thinking level");
+    await connection.request("setThinkingLevel", { level });
+    return this.status(ref);
+  }
+
+  async cycleThinkingLevel(ref: SessionRouteRef): Promise<ClientSessionStatus> {
+    const connection = await this.#for(ref);
+    this.#require(connection, "thinking", "Changing the thinking level");
+    await connection.request("cycleThinkingLevel");
+    return this.status(ref);
+  }
+
+  /** Remove, recall (`edit`) or toggle a queued message, against the queue the browser showed (as legacy Chats). */
+  async mutateQueueMessage(ref: SessionRouteRef, mutation: SessionQueueMessageMutation): Promise<ClientSessionStatus> {
+    const connection = await this.#for(ref);
+    this.#require(connection, "queue.edit", "Editing a queued message");
+    const queued = hostStatus((await connection.request("status")).result).queuedMessages;
+    const current = queued.map(displayQueuedMessage);
+    if (current.length !== mutation.expectedQueue.length || current.some((entry, index) => {
+      const expected = mutation.expectedQueue[index];
+      if (expected === undefined) return true;
+      return entry.kind !== expected.kind || entry.text !== expected.text
+        || (mutation.action === "edit" && index === mutation.index && (entry.hasAttachments === true) !== (expected.hasAttachments === true));
+    })) throw new Error("Queued messages changed; refresh the queue and try again");
+    if (mutation.index >= current.length) throw new Error("Invalid queue index");
+    await this.#mutateQueue(connection, mutation.action === "edit" ? "recall" : mutation.action, mutation.index, queued);
+    return this.status(ref);
+  }
+
+  /** Send a queued follow-up at the next steering boundary; an unknown or already-steering message changes nothing. */
+  async promoteQueuedMessage(ref: SessionRouteRef, target: { kind: string; text: string }): Promise<ClientSessionStatus> {
+    const connection = await this.#for(ref);
+    this.#require(connection, "queue.promote", "Promoting a queued message");
+    const queued = hostStatus((await connection.request("status")).result).queuedMessages;
+    const index = queued.map(displayQueuedMessage).findIndex((message) => message.kind === target.kind && message.text === target.text);
+    if (index !== -1 && queued[index]?.kind === "followUp") await this.#mutateQueue(connection, "promote", index, queued);
+    return this.status(ref);
+  }
+
+  async promoteAllQueuedMessages(ref: SessionRouteRef): Promise<ClientSessionStatus> {
+    const connection = await this.#for(ref);
+    this.#require(connection, "queue.promote", "Promoting queued messages");
+    const queued = hostStatus((await connection.request("status")).result).queuedMessages;
+    const index = queued.findIndex((message) => message.kind === "followUp");
+    if (index !== -1) await this.#mutateQueue(connection, "promoteAll", index, queued);
+    return this.status(ref);
+  }
+
+  /** The host withdraws and re-admits durably, against the exact queued IDs this request saw. */
+  async #mutateQueue(connection: DurableHostConnection, action: string, index: number, queued: readonly QueuedSessionMessage[]): Promise<void> {
+    const expected = queued.map((message) => (isRecord(message) ? message["id"] : undefined));
+    await connection.request("mutateQueue", { editId: randomUUID(), action, index, expected });
+  }
+
+  #require(connection: DurableHostConnection, capability: DurableHostCapability, operation: string): void {
+    if (!connection.capabilities.has(capability)) throw new DurableChatUnavailable(operation);
   }
 
   /** Slash commands of a Durable Chat: Working Mode and the workspace's skills. */
   async commands(ref: SessionRouteRef): Promise<ClientCommand[]> {
     await this.#for(ref);
     return [
-      { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" },
+      { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" as const },
+      ...(this.#templates.get(ref.id) ?? []).map((template) => ({
+        name: template.name, source: "prompt" as const,
+        ...(template.description === undefined ? {} : { description: template.description }),
+        ...(template.argumentHint === undefined ? {} : { argumentHint: template.argumentHint }),
+      })),
       ...(this.#skills.get(ref.id) ?? []).map((skill) => ({ name: `skill:${skill.name}`, ...(skill.description === undefined ? {} : { description: skill.description }), source: "skill" as const })),
-    ];
+    ].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** `/mode …` runs in the host; `/skill:…` is a prompt; every other command is not available yet. */
@@ -273,7 +419,7 @@ export class DurableChatService {
       const { result } = await (await this.#for(ref)).request("mode", { args: trimmed.slice("/mode".length).trim() });
       return commandResult(result);
     }
-    if (name.startsWith("skill:")) {
+    if (name.startsWith("skill:") || isTemplateCommand(trimmed, this.#templates.get(ref.id) ?? [])) {
       await this.prompt(ref, trimmed);
       return { type: "done" };
     }
@@ -379,7 +525,7 @@ export class DurableChatService {
     mkdirSync(this.deps.storesDir, { recursive: true, mode: 0o700 });
     const connection = new DurableHostConnection(
       this.deps.launch(record, storeDir),
-      (event) => { this.#onEvent(record.id, event); },
+      (event) => { this.#onEvent(record.id, event, connection); },
       () => this.deps.events.currentSeq(record.id),
       (error) => {
         this.#connections.delete(record.id);
@@ -394,6 +540,7 @@ export class DurableChatService {
       });
       if (loaded !== undefined) {
         this.#skills.set(record.id, loaded.skillList);
+        this.#templates.set(record.id, loaded.promptList ?? []);
         await connection.request("configure", { resources: loaded.resources });
       }
       return connection;
@@ -403,7 +550,7 @@ export class DurableChatService {
     return opened;
   }
 
-  #onEvent(sessionId: string, event: SessionUiEvent | HostAttentionEvent): void {
+  #onEvent(sessionId: string, event: SessionUiEvent | HostAttentionEvent, connection: DurableHostConnection): void {
     const record = this.deps.locator.durable(sessionId);
     if (record === undefined) return;
     const scope = { id: sessionId, cwd: record.cwd };
@@ -417,7 +564,7 @@ export class DurableChatService {
       return;
     }
     if (event.type === "status.update") {
-      const status = { ...event.status, sessionId };
+      const status = { ...browserStatus(event.status, connection), sessionId };
       this.deps.events.publish(sessionId, { type: "status.update", status }, scope);
       this.deps.events.publishGlobal({ type: "status.update", status });
       if (status.messageCount !== undefined && status.messageCount !== record.messageCount) {
@@ -425,7 +572,7 @@ export class DurableChatService {
       }
       return;
     }
-    this.deps.events.publish(sessionId, event, scope);
+    this.deps.events.publish(sessionId, event.type === "message.end" ? { ...event, message: displayPromptMessage(event.message) } : event, scope);
     if (event.type === "agent.start" || event.type === "agent.end") {
       const active = event.type === "agent.start";
       const activity = { sessionId, phase: active ? "active" as const : "idle" as const, label: active ? "agent running" : "idle", at: new Date().toISOString() };
@@ -436,6 +583,38 @@ export class DurableChatService {
       if (isRecord(event.message) && event.message["role"] === "user") this.deps.locator.update(sessionId, { firstMessage: textOf(event.message["content"]) });
     }
   }
+}
+
+function isTemplateCommand(text: string, templates: readonly { name: string }[]): boolean {
+  const name = /^\/(\S+)/.exec(text)?.[1];
+  return name !== undefined && templates.some((template) => template.name === name);
+}
+
+/** The browser's view of a user message: without PI WEB's trailing image legend (legacy `displayPromptMessage`). */
+function displayPromptMessage(message: unknown): unknown {
+  if (!isRecord(message) || message["role"] !== "user") return message;
+  const content = message["content"];
+  if (typeof content === "string") return { ...message, content: stripInlineImageReferenceMapping(content) };
+  if (!Array.isArray(content)) return message;
+  return { ...message, content: content.map((part: unknown) => isRecord(part) && part["type"] === "text" && typeof part["text"] === "string" ? { ...part, text: stripInlineImageReferenceMapping(part["text"]) } : part) };
+}
+
+/** A queued message as the browser sees it: no host ID, no image legend. */
+function displayQueuedMessage(message: QueuedSessionMessage): QueuedSessionMessage {
+  return {
+    kind: message.kind, text: stripInlineImageReferenceMapping(message.text),
+    ...(message.hasAttachments === undefined ? {} : { hasAttachments: message.hasAttachments }),
+    ...(message.attachmentCount === undefined ? {} : { attachmentCount: message.attachmentCount }),
+  };
+}
+
+/** Host status for the browser; a host without queue edits disables those controls with a reason. */
+function browserStatus(status: HostTranscript["status"], connection: DurableHostConnection): HostTranscript["status"] {
+  return {
+    ...status,
+    queuedMessages: status.queuedMessages.map(displayQueuedMessage),
+    ...(connection.capabilities.has("queue.edit") ? {} : { queueMessageActionsUnavailable: "Editing queued messages is not available in this Durable Chat host yet." }),
+  };
 }
 
 /** A host-side notification request: the daemon turns it into PI WEB's global `session.attention`. */

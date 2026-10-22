@@ -19,7 +19,11 @@ export interface DurableChatResourceSet {
   resources: DurableChatResources;
   /** Every loaded skill, for `/skill:name` expansion and the command list. */
   skillList: (InlineSkill & { description?: string })[];
+  /** Prompt templates (global, project and package `prompts/`), for `/name args` expansion and the command list. */
+  promptList?: DurablePromptTemplate[];
 }
+
+export interface DurablePromptTemplate { name: string; description?: string; argumentHint?: string; content: string }
 
 /**
  * Load a Durable Chat's resources the way a legacy Chat's session does: Pi's `DefaultResourceLoader` for the
@@ -29,7 +33,7 @@ export interface DurableChatResourceSet {
 export async function loadDurableChatResources(cwd: string, agentDir: string): Promise<DurableChatResourceSet> {
   const settingsManager = SettingsManager.create(cwd, agentDir);
   const trusted = await resolveWebProjectTrusted({ cwd, trustStore: new ProjectTrustStore(agentDir), settingsManager });
-  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir, { projectTrusted: trusted }), noExtensions: true, noThemes: true, noPromptTemplates: true });
+  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir, { projectTrusted: trusted }), noExtensions: true, noThemes: true });
   await loader.reload();
   const agentsFiles = loader.getAgentsFiles().agentsFiles;
   const skills = loader.getSkills().skills;
@@ -52,7 +56,70 @@ export async function loadDurableChatResources(cwd: string, agentDir: string): P
       ],
     },
     skillList: skills.map((skill) => ({ name: skill.name, filePath: skill.filePath, baseDir: skill.baseDir, ...(skill.description === "" ? {} : { description: skill.description }) })),
+    promptList: loader.getPrompts().prompts.map((template) => ({
+      name: template.name, content: template.content,
+      ...(template.description === "" ? {} : { description: template.description }),
+      ...(template.argumentHint === undefined ? {} : { argumentHint: template.argumentHint }),
+    })),
   };
+}
+
+/**
+ * The thinking level of a new Durable Chat, as Pi picks one for a new session: the model's own setting, else the
+ * default thinking level, else Pi's default (`medium`). The host clamps it to the model.
+ */
+export function durableThinkingLevel(cwd: string, agentDir: string, model: string): string {
+  const settings = SettingsManager.create(cwd, agentDir);
+  const [provider = "", id = ""] = model.split("/", 2);
+  return settings.getModelThinkingLevel(provider, id) ?? settings.getDefaultThinkingLevel() ?? "medium";
+}
+
+/** `/name args` naming a template expands as Pi's `expandPromptTemplate` does (it is not exported); others stay. */
+export function expandPromptTemplate(text: string, templates: readonly DurablePromptTemplate[]): string {
+  const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text);
+  const template = match === null ? undefined : templates.find((candidate) => candidate.name === match[1]);
+  return template === undefined ? text : substituteArgs(template.content, parseCommandArgs(match?.[2] ?? ""));
+}
+
+/** Pi's `parseCommandArgs`: bash-style arguments, quotes kept together, quoted empty strings kept. */
+function parseCommandArgs(argsString: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let hasToken = false;
+  let inQuote: string | undefined;
+  for (const char of argsString) {
+    if (inQuote !== undefined) {
+      if (char === inQuote) inQuote = undefined;
+      else current += char;
+    } else if (char === "\"" || char === "'") {
+      inQuote = char;
+      hasToken = true;
+    } else if (/\s/.test(char)) {
+      if (hasToken) { args.push(current); current = ""; hasToken = false; }
+    } else {
+      current += char;
+      hasToken = true;
+    }
+  }
+  if (hasToken) args.push(current);
+  return args;
+}
+
+/** Pi's `substituteArgs`: $1, $@, $ARGUMENTS, ${N:-default}, ${@:-default}, ${@:N}, ${@:N:L}; no recursive substitution. */
+function substituteArgs(content: string, args: string[]): string {
+  const all = args.join(" ");
+  return content.replace(/\$\{(\d+|ARGUMENTS|@):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)/g, (_match, defaultTarget: string | undefined, defaultValue: string, sliceStart: string | undefined, sliceLength: string | undefined, simple: string) => {
+    if (defaultTarget !== undefined) {
+      const value = defaultTarget === "@" || defaultTarget === "ARGUMENTS" ? all : args[Number.parseInt(defaultTarget, 10) - 1];
+      return value !== undefined && value !== "" ? value : defaultValue;
+    }
+    if (sliceStart !== undefined) {
+      const start = Math.max(0, Number.parseInt(sliceStart, 10) - 1);
+      return (sliceLength === undefined ? args.slice(start) : args.slice(start, start + Number.parseInt(sliceLength, 10))).join(" ");
+    }
+    if (simple === "ARGUMENTS" || simple === "@") return all;
+    return args[Number.parseInt(simple, 10) - 1] ?? "";
+  });
 }
 
 /**

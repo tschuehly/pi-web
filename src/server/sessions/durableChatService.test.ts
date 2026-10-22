@@ -121,7 +121,8 @@ describe("Durable Chats", () => {
     hub.addGlobal({ OPEN: 1, readyState: 1, send: (payload) => { global.push(JSON.parse(payload)); }, terminate: () => undefined, on: () => undefined });
     only(launched).push({ type: "message.end", message: { role: "user", content: "Fix the build", entryId: "8" } });
     only(launched).push({ type: "status.update", status: { ...status, messageCount: 1 } });
-    expect(global).toContainEqual({ type: "status.update", status: { ...status, messageCount: 1, sessionId: chat.id } });
+    // A host that names no queue capability (slice 2) gets its queue controls disabled with a reason.
+    expect(global.find((event) => typeof event === "object" && event !== null && "type" in event && event.type === "status.update")).toMatchObject({ status: { ...status, messageCount: 1, sessionId: chat.id, queueMessageActionsUnavailable: "Editing queued messages is not available in this Durable Chat host yet." } });
     expect(locator.durable(chat.id)).toMatchObject({ firstMessage: "Fix the build", messageCount: 1 });
     expect(durable.list("/work/a")[0]?.name).toBe("Durable · Fix the build");
   });
@@ -136,7 +137,7 @@ describe("Durable Chats", () => {
     expect(prompts.map((request) => request.params?.["text"])).toEqual(["first", "second"]);
     expect(prompts[1]?.params?.["mode"]).toBe("followUp");
     expect(new Set(prompts.map((request) => request.params?.["operationId"])).size).toBe(2);
-    await expect(durable.prompt(ref, "with image", undefined, [{ name: "a.png" }])).rejects.toThrow(/Attachments is not available in Durable Chats yet/);
+    await expect(durable.prompt(ref, "with image", undefined, [{ kind: "image", mimeType: "image/png", data: "iVBORw0KGgo=" }])).rejects.toThrow(/Attachments is not available in Durable Chats yet/);
     await expect(durable.prompt({ id: chat.id, cwd: "/elsewhere" }, "x")).rejects.toThrow("Session not found");
   });
 

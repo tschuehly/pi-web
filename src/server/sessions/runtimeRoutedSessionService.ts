@@ -6,7 +6,8 @@ import { DurableChatUnavailable, type DurableChatService } from "./durableChatSe
  * Routes each Chat's operations to the runtime its locator names, fixed at creation; Chats without a Durable record
  * stay on the legacy service. Catalog-wide reads merge both; catalog-wide mutations stay legacy-only in slice 1.
  * Durable Chats answer only the operations they support and reject the rest visibly. Slice 2 adds questions,
- * attention, commands (/mode, /skill:), model switching and effect resolution.
+ * attention, commands (/mode, /skill:), model switching and effect resolution. Slice 3 (composer) adds queue edits
+ * and promotion, inline and saved attachments with media, thinking levels, `!` shell commands and prompt templates.
  */
 export function createRuntimeRoutedSessionService(legacy: SessionRouteService, durable: DurableChatService): SessionRouteService {
   const isDurable = (ref: SessionRouteRef) => durable.owns(ref.id);
@@ -49,7 +50,7 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     deleteArchivedMany: (refs) => legacy.deleteArchivedMany(refs),
 
     messages: (ref, page) => isDurable(ref) ? durable.messages(ref, page) : legacy.messages(ref, page),
-    media: (ref, mediaId) => isDurable(ref) ? Promise.resolve(undefined) : legacy.media(ref, mediaId),
+    media: (ref, mediaId) => isDurable(ref) ? durable.media(ref, mediaId) : legacy.media(ref, mediaId),
     status: (ref) => isDurable(ref) ? durable.status(ref) : legacy.status(ref),
     openAsks: (ref) => isDurable(ref) ? durable.openAsks(ref) : legacy.openAsks(ref),
     attentionRequest: (ref) => isDurable(ref) ? durable.attentionRequest(ref) : legacy.attentionRequest(ref),
@@ -59,10 +60,10 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     notificationInbox: (ref) => isDurable(ref) ? emptyInbox(ref) : legacy.notificationInbox(ref),
     dismissNotification: (ref, request) => isDurable(ref) ? emptyInbox(ref) : legacy.dismissNotification(ref, request),
     dismissAllNotifications: (ref, request) => isDurable(ref) ? emptyInbox(ref) : legacy.dismissAllNotifications(ref, request),
-    promoteQueuedMessage: (ref, target) => isDurable(ref) ? unavailable("Promoting a queued message") : legacy.promoteQueuedMessage(ref, target),
-    promoteAllQueuedMessages: (ref) => isDurable(ref) ? unavailable("Promoting queued messages") : legacy.promoteAllQueuedMessages(ref),
+    promoteQueuedMessage: (ref, target) => isDurable(ref) ? durable.promoteQueuedMessage(ref, target) : legacy.promoteQueuedMessage(ref, target),
+    promoteAllQueuedMessages: (ref) => isDurable(ref) ? durable.promoteAllQueuedMessages(ref) : legacy.promoteAllQueuedMessages(ref),
     clearQueue: (ref) => isDurable(ref) ? durable.clearQueue(ref) : legacy.clearQueue(ref),
-    mutateQueueMessage: (ref, mutation) => isDurable(ref) ? unavailable("Editing a queued message") : legacy.mutateQueueMessage(ref, mutation),
+    mutateQueueMessage: (ref, mutation) => isDurable(ref) ? durable.mutateQueueMessage(ref, mutation) : legacy.mutateQueueMessage(ref, mutation),
     submitAsk: (ref, askId, submission, operationId) => isDurable(ref) ? durable.submitAsk(ref, askId, submission, operationId) : legacy.submitAsk(ref, askId, submission, operationId),
     cancelAsk: (ref, askId, operationId) => isDurable(ref) ? durable.cancelAsk(ref, askId, operationId) : legacy.cancelAsk(ref, askId, operationId),
     answerDialog: (ref, dialogId, value) => isDurable(ref) ? unavailable("Extension dialogs") : legacy.answerDialog(ref, dialogId, value),
@@ -76,13 +77,13 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     setModelEnabled: (ref, provider, modelId, enabled) => isDurable(ref) ? unavailable("Changing the enabled models") : legacy.setModelEnabled(ref, provider, modelId, enabled),
     setModelScope: (ref, mode) => isDurable(ref) ? unavailable("Changing the enabled models") : legacy.setModelScope(ref, mode),
     cycleModel: (ref, direction) => isDurable(ref) ? unavailable("Cycling models") : legacy.cycleModel(ref, direction),
-    availableThinkingLevels: (ref) => isDurable(ref) ? Promise.resolve([]) : legacy.availableThinkingLevels(ref),
-    setThinkingLevel: (ref, level) => isDurable(ref) ? unavailable("Changing the thinking level") : legacy.setThinkingLevel(ref, level),
-    cycleThinkingLevel: (ref) => isDurable(ref) ? unavailable("Changing the thinking level") : legacy.cycleThinkingLevel(ref),
+    availableThinkingLevels: (ref) => isDurable(ref) ? durable.availableThinkingLevels(ref) : legacy.availableThinkingLevels(ref),
+    setThinkingLevel: (ref, level) => isDurable(ref) ? durable.setThinkingLevel(ref, level) : legacy.setThinkingLevel(ref, level),
+    cycleThinkingLevel: (ref) => isDurable(ref) ? durable.cycleThinkingLevel(ref) : legacy.cycleThinkingLevel(ref),
     commands: (ref) => isDurable(ref) ? durable.commands(ref) : legacy.commands(ref),
     prompt: (ref, text, streamingBehavior, attachments, options) => isDurable(ref) ? durable.prompt(ref, text, streamingBehavior, attachments, options) : legacy.prompt(ref, text, streamingBehavior, attachments, options),
-    saveAttachments: (ref, attachments, folder) => isDurable(ref) ? unavailable("Attachments") : legacy.saveAttachments(ref, attachments, folder),
-    shell: (ref, text) => isDurable(ref) ? unavailable("Shell commands") : legacy.shell(ref, text),
+    saveAttachments: (ref, attachments, folder) => isDurable(ref) ? durable.saveAttachments(ref, attachments, folder) : legacy.saveAttachments(ref, attachments, folder),
+    shell: (ref, text) => isDurable(ref) ? durable.shell(ref, text) : legacy.shell(ref, text),
     runCommand: (ref, text) => isDurable(ref) ? durable.runCommand(ref, text) : legacy.runCommand(ref, text),
     respondToCommand: (ref, requestId, value) => isDurable(ref) ? unavailable("Commands") : legacy.respondToCommand(ref, requestId, value),
     navigateTree: (ref, request) => isDurable(ref) ? unavailable("Tree navigation") : legacy.navigateTree(ref, request),

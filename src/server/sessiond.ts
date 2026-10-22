@@ -20,7 +20,7 @@ import { PiSessionService } from "./sessions/piSessionService.js";
 import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGateway.js";
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
 import { DurableChatService, forkDurableHost } from "./sessions/durableChatService.js";
-import { loadDurableChatResources } from "./sessions/durableChatResources.js";
+import { durableThinkingLevel, loadDurableChatResources } from "./sessions/durableChatResources.js";
 import { createRuntimeRoutedSessionService } from "./sessions/runtimeRoutedSessionService.js";
 import { SessionRuntimeLocator } from "./sessions/sessionRuntimeLocator.js";
 import { SessionNotificationStore } from "./sessions/sessionNotificationStore.js";
@@ -385,10 +385,13 @@ async function createSessionDaemonRuntime() {
         agentDir: daemonEnvironment["PI_WEB_DURABLE_AGENT_DIR"] ?? activeAgentProfile.dir,
         // Trials and tests: offer the scripted model next to the Claude models.
         scripted: daemonEnvironment["PI_WEB_DURABLE_SCRIPTED"] === "1",
+        // A new Chat's thinking level comes from the active profile's settings, as for legacy Chats.
+        thinkingLevel: (cwd, model) => durableThinkingLevel(cwd, activeAgentProfile.dir, model),
       }),
       storesDir: join(piWebDataDir(daemonEnvironment), "durable"),
       // The same Pi loader as legacy Chats, against the daemon's active agent profile.
       resources: (cwd) => loadDurableChatResources(cwd, activeAgentProfile.dir),
+      config: configService,
       logger: app.log,
     });
     durableChatsForFailedConstruction = durableChats;
