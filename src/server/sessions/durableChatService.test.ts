@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostProcess } from "./durableChatService.js";
+import { DURABLE_HOST_PROTOCOL, DurableChatService, durableHostArgs, type DurableHostProcess } from "./durableChatService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 import type { DurableChatResourceSet } from "./durableChatResources.js";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
@@ -192,7 +192,8 @@ describe("Durable Chats", () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
-    only(launched).answer = (request) => request.method === "mode" ? { type: "done", message: "Working Mode applies with the next prompt." } : status;
+    only(launched).answer = (request) => request.method === "mode" ? { type: "done", message: "Working Mode applies with the next prompt." }
+      : request.method === "command" ? { type: "unsupported", message: `/${String(request.params?.["name"])} is not available in Durable Chats yet` } : status;
     await expect(durable.runCommand(ref, "/mode attention focused")).resolves.toEqual({ type: "done", message: "Working Mode applies with the next prompt." });
     expect(only(launched).requests.find((request) => request.method === "mode")?.params).toEqual({ args: "attention focused" });
     await expect(durable.runCommand(ref, "/tree")).resolves.toEqual({ type: "unsupported", message: "/tree is not available in Durable Chats yet" });
@@ -214,6 +215,33 @@ describe("Durable Chats", () => {
     expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "session"]);
     await expect(durable.runCommand(ref, "/compact")).resolves.toEqual({ type: "unsupported", message: "/compact is not available in this Durable Chat's host" });
     expect(launched[1]?.requests.some((request) => request.method === "compact")).toBe(false);
+  });
+
+  it("lists and runs installed Pi package commands in the host; a refused one keeps the host's reason (P118 P126 P134)", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    only(launched).answer = (request) => {
+      if (request.method === "commands") return [{ name: "ping", description: "Send a Telegram notification" }, { name: "monitors" }];
+      if (request.method === "command") return request.params?.["name"] === "google-account"
+        ? { type: "unsupported", message: "/google-account is not available in Durable Chats: deferred" }
+        : { type: "done" };
+      return status;
+    };
+    const commands = await durable.commands(ref);
+    expect(commands).toEqual(expect.arrayContaining([
+      { name: "ping", description: "Send a Telegram notification", source: "extension" },
+      { name: "monitors", source: "extension" },
+    ]));
+    expect(commands.map((command) => command.name)).toEqual(["mode", "monitors", "name", "ping", "session"]);
+    await expect(durable.runCommand(ref, "/ping deploy done")).resolves.toEqual({ type: "done" });
+    expect(only(launched).requests.find((request) => request.method === "command")?.params).toMatchObject({ name: "ping", args: "deploy done" });
+    await expect(durable.runCommand(ref, "/google-account")).resolves.toEqual({ type: "unsupported", message: "/google-account is not available in Durable Chats: deferred" });
+  });
+
+  it("starts every Durable Chat host with the installed Pi packages", () => {
+    expect(durableHostArgs({ id: "c1", cwd: "/work/a" }, "/stores/s1", { model: "faux" })).toContain("--packages");
+    expect(durableHostArgs({ id: "c1", cwd: "/work/a" }, "/stores/s1", { model: "faux", thinking: "high" })).toEqual(expect.arrayContaining(["--packages", "--thinking", "high"]));
   });
 
   it("validates answers with PI WEB's ask store and has the host commit them under the client's operation id", async () => {
@@ -287,7 +315,8 @@ describe("Durable Chats", () => {
     const ref = { id: chat.id, cwd: chat.cwd };
     only(launched).answer = (request) => request.method === "commands"
       ? [{ name: "quota-check", description: "Check Claude quota" }]
-      : request.method === "command" ? { type: "done", message: "Claude quota telemetry is fresh." } : status;
+      : request.method === "command" ? (request.params?.["name"] === "quota-check" ? { type: "done", message: "Claude quota telemetry is fresh." } : { type: "unsupported", message: `/${String(request.params?.["name"])} is not available in Durable Chats yet` })
+      : status;
     await expect(durable.commands(ref)).resolves.toEqual([
       expect.objectContaining({ name: "mode" }),
       expect.objectContaining({ name: "name" }),
@@ -305,7 +334,7 @@ describe("Durable Chats", () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
-    only(launched).answer = (request) => { if (request.method === "commands") throw new Error("Unknown method commands"); return status; };
+    only(launched).answer = (request) => { if (request.method === "commands" || request.method === "command") throw new Error(`Unknown method ${request.method}`); return status; };
     expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "session"]);
     await expect(durable.runCommand(ref, "/quota-check")).resolves.toEqual({ type: "unsupported", message: "/quota-check is not available in Durable Chats yet" });
   });
@@ -339,6 +368,7 @@ describe("Durable Chats", () => {
     hub.addGlobal({ OPEN: 1, readyState: 1, send: (payload) => { global.push(JSON.parse(payload)); }, terminate: () => undefined, on: () => undefined });
     only(launched).answer = (request) => request.method === "transcript"
       ? { messages: [{ role: "user", content: "hi" }, { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "bash", arguments: {} }] }, { role: "toolResult", content: [] }, { role: "assistant", content: [{ type: "text", text: "done" }] }], partial: null, status: { ...status, tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, total: 15 }, cost: 0.25 } }
+      : request.method === "command" ? { type: "unsupported", message: `/${String(request.params?.["name"])} is not available in Durable Chats yet` }
       : status;
     await expect(durable.runCommand(ref, "/name")).resolves.toEqual({ type: "unsupported", message: "Usage: /name <session name>" });
     const named = await durable.runCommand(ref, "/name Release prep");

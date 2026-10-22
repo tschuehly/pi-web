@@ -116,9 +116,19 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry"),
       PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
     });
-    // Pi's compaction setting, read by Durable Chats as by legacy ones: keep only the newest turn, so a short scripted
-    // Chat has history to compact. Legacy fixture Chats send no model requests here.
-    if (durableHost !== undefined && durableHost !== "") await writeJson(join(root, "agent", "settings.json"), { compaction: { keepRecentTokens: 1 } });
+    // Optional: installed Pi packages the Durable host binds (pi-process-monitor only: no network, no messages out),
+    // with HOME in the fixture root so watcher leases stay out of the owner's ~/.pi/agent/state.
+    const piPackages = process.env["PI_WEB_E2E_PI_PACKAGES"];
+    if (piPackages !== undefined && piPackages !== "") {
+      await mkdir(join(root, "home"), { recursive: true });
+      Object.assign(env, { HOME: join(root, "home") });
+    }
+    // Pi's settings, read by Durable Chats as by legacy ones. Compaction keeps only the newest turn, so a short scripted
+    // Chat has history to compact (legacy fixture Chats send no model requests here); packages names the bound package.
+    if (durableHost !== undefined && durableHost !== "") await writeJson(join(root, "agent", "settings.json"), {
+      compaction: { keepRecentTokens: 1 },
+      ...(piPackages !== undefined && piPackages !== "" ? { packages: [join(piPackages, "pi-process-monitor")] } : {}),
+    });
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),

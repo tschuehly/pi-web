@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_PROJECT_ID } from "./isolatedPiWeb";
@@ -226,4 +226,29 @@ test("a Durable Chat compacts on /compact and continues after compact_and_contin
   await checkVisible();
   await page.reload();
   await checkVisible();
+});
+
+// P133 P134 P135: an installed Pi package (pi-process-monitor) in a Durable Chat. Needs PI_WEB_E2E_PI_PACKAGES=<dir holding
+// the installed pi-process-monitor>, which the isolated PI WEB lists in its agent settings.
+test("a Durable Chat runs an installed package's tool, shows its pings and its command output", async ({ page }) => {
+  test.skip(process.env["PI_WEB_E2E_PI_PACKAGES"] === undefined, "PI_WEB_E2E_PI_PACKAGES is not set");
+  const base = process.env["PI_WEB_E2E_BASE_URL"];
+  const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
+  const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
+  if (base === undefined || workspaceId === undefined || project === undefined) throw new Error("Isolated PI WEB was not started");
+  test.setTimeout(60_000);
+  const log = join(project, "durable-watch.log");
+  await writeFile(log, "");
+  await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
+  await page.getByRole("button", { name: "New Durable Chat" }).click();
+  await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
+  await send(page, `call:monitor ${JSON.stringify({ source: { type: "tail", path: log }, options: { notifyOn: ["DONE"], coalesceSeconds: 0, label: "e2e-job" } })}`);
+  await expect(chat(page).getByText("done after monitor").first()).toBeVisible();
+  await appendFile(log, "build DONE\n");
+  await expect(chat(page).getByText(/\[watcher \S+ · e2e-job\] build DONE/).first()).toBeVisible();
+  await expect(chat(page).getByText(/ok: \[watcher/).first()).toBeVisible();
+  await send(page, "/monitors");
+  await expect(chat(page).getByText(/\[file\] state=claimed/).first()).toBeVisible();
+  await page.reload();
+  await expect(chat(page).getByText(/\[watcher \S+ · e2e-job\] build DONE/).first()).toBeVisible();
 });

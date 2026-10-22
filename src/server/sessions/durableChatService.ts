@@ -36,6 +36,14 @@ export interface DurableHostProcess {
 /** Starts the host process that owns one Chat family's store. */
 export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string) => DurableHostProcess;
 
+/** Host arguments: the family store, workspace, model, Chat ID and a new Chat's thinking level; every host runs the installed Pi packages it binds. */
+export function durableHostArgs(record: Pick<DurableChatRecord, "id" | "cwd">, storeDir: string, options: { model: string; scripted?: boolean; thinking?: string }): string[] {
+  return [
+    "--store", storeDir, "--cwd", record.cwd, "--model", options.model, "--session-id", record.id, "--packages",
+    ...(options.thinking === undefined ? [] : ["--thinking", options.thinking]), ...(options.scripted === true ? ["--scripted"] : []),
+  ];
+}
+
 /**
  * Fork the Workbench Durable host (`chat-host-main.ts`) for one family store, with an IPC channel, the agent-visible
  * environment and the daemon's Pi agent directory, so it reads the same Claude subscription login. Host output goes
@@ -49,8 +57,7 @@ export function forkDurableHost(options: { entry: string; model: string; agentDi
       // No inherited loader flags (tsx): the host is plain Node with type stripping and its own pinned dependencies.
       // A new Chat starts at the thinking level Pi would pick; a reopened one keeps its own (the host ignores this).
       const thinking = options.thinkingLevel ?? ((cwd: string, model: string) => durableThinkingLevel(cwd, options.agentDir, model));
-      const args = ["--store", storeDir, "--cwd", record.cwd, "--model", options.model, "--session-id", record.id, "--thinking", thinking(record.cwd, options.model), ...(options.scripted === true ? ["--scripted"] : [])];
-      return fork(options.entry, args, {
+      return fork(options.entry, durableHostArgs(record, storeDir, { ...options, thinking: thinking(record.cwd, options.model) }), {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
         env: { ...process.env, PI_CODING_AGENT_DIR: options.agentDir },
@@ -418,7 +425,7 @@ export class DurableChatService {
 
   /**
    * Slash commands of a Durable Chat: /name, /session, /compact where the host supports it, Working Mode, the host's
-   * Workbench commands, prompt templates and the workspace's skills.
+   * commands (its own, like /quota-check, and the installed Pi packages'), prompt templates and the workspace's skills.
    */
   async commands(ref: SessionRouteRef): Promise<ClientCommand[]> {
     const connection = await this.#for(ref);
@@ -438,9 +445,9 @@ export class DurableChatService {
   }
 
   /**
-   * `/mode …` and the host's commands (`/quota-check`) run in the host, each run under a fresh operation id; `/skill:…`
-   * and templates are prompts; `/name` names the Chat in the catalog; `/session` reports its stats as a legacy Chat
-   * does; every other command is not available yet.
+   * `/name`, `/session`, `/compact` and `/mode …` as listed; `/skill:…` and templates are prompts; every other command
+   * goes to the host's one dispatcher under a fresh operation id: its own (`/quota-check`), an installed Pi package's,
+   * or a visible refusal with the host's reason.
    */
   async runCommand(ref: SessionRouteRef, text: string): Promise<ClientCommandResult> {
     const trimmed = text.trim();
@@ -459,16 +466,18 @@ export class DurableChatService {
       const { result } = await connection.request("compact", instructions === "" ? {} : { instructions });
       return commandResult(result);
     }
-    if ((await this.#hostCommands(ref)).some((command) => command.name === name)) {
-      const args = trimmed.slice(name.length + 1).trim();
-      const { result } = await (await this.#for(ref)).request("command", { name, args, operationId: randomUUID() });
-      return commandResult(result);
-    }
     if (name.startsWith("skill:") || isTemplateCommand(trimmed, this.#templates.get(ref.id) ?? [])) {
       await this.prompt(ref, trimmed);
       return { type: "done" };
     }
-    return { type: "unsupported", message: `/${name} is not available in Durable Chats yet` };
+    const connection = await this.#for(ref);
+    const reply = await connection.request("command", { name, args: rest, operationId: randomUUID() }).catch((error: unknown) => {
+      // An older host without the dispatcher runs no commands.
+      if (error instanceof Error && error.message === "Unknown method command") return undefined;
+      throw error;
+    });
+    if (reply === undefined) return { type: "unsupported", message: `/${name} is not available in Durable Chats yet` };
+    return commandResult(reply.result);
   }
 
   /** The commands the host offers; a host without any (an older build) offers none. */
