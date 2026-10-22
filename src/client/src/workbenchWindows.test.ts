@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampGridRatio, closeChats, emptyWindow, focusChat, moveChats, gridPage, gridRatio, gridRatioFromDrag, gridRatioFromKeyboard, resizeGrid, gridPageCount, gridPageLead, gridTiles, openChat, orderedChats, parseWindowStore, toggleLayout, toggleMaximized, updateChat, windowGroups, workstreamTabTarget, type WindowChat, type WindowStore } from "./workbenchWindows";
+import { clampGridRatio, closeChats, emptyWindow, focusChat, moveChats, gridPage, gridRatio, gridRatioFromDrag, gridRatioFromKeyboard, resizeGrid, gridPageCount, gridPageLead, gridTiles, openChat, orderedChats, parseWindowStore, toggleLayout, toggleMaximized, updateChat, windowChatSummary, windowGroups, workstreamTabTarget, type WindowChat, type WindowStore } from "./workbenchWindows";
 
 const release = { id: "ws-release", title: "Release" };
 const docs = { id: "ws-docs", title: "Docs" };
@@ -210,5 +210,15 @@ describe("stored windows", () => {
     expect(parseWindowStore(JSON.stringify({ bad: { name: 3 }, ok: { name: "W", chats: [{ sessionId: "s" }, chat("c")], focused: "gone", layout: "sideways" } }))).toEqual({
       ok: { name: "W", chats: [chat("c")], focused: undefined, layout: "tabs", maximized: false, lastActive: {} },
     });
+  });
+});
+
+describe("windowChatSummary", () => {
+  it("names a window by its Chats, the focused one first, two at most and a count for the rest", () => {
+    const store = windowWith(chat("a"), chat("b"), chat("c"), chat("d"));
+    const window = focusChat(store, "w1", "c")["w1"] ?? emptyWindow("x");
+    expect(windowChatSummary(window)).toBe("Chat c · Chat a +2");
+    expect(windowChatSummary(windowWith(chat("a"))["w1"] ?? emptyWindow("x"))).toBe("Chat a");
+    expect(windowChatSummary(emptyWindow("Window 3"))).toBe("Window 3");
   });
 });

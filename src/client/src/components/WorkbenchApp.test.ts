@@ -2618,7 +2618,7 @@ describe("window tabs", () => {
     app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2"], label: "Release", clientX: 0, clientY: 0 } }));
     await app.updateComplete;
     const items = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])];
-    expect(items.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Window 2 (closed)", "Close 2 Chats"]);
+    expect(items.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Install guide (closed)", "Close 2 Chats"]);
     items[1]?.click();
     await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]?.chats.map((chat) => chat.sessionId)).toEqual(["b1", "a1", "a2"]);

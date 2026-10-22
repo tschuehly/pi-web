@@ -33,7 +33,7 @@ import { sessionTitle } from "../sessionLabels";
 import { sessionPersistenceState } from "../sessionPersistence";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
-import { closeChats, focusChat, GRID_MIN_TILE, gridRatio, gridRatioBounds, gridRatioFromDrag, gridRatioFromKeyboard, gridTiles, moveChats, orderedChats, resizeGrid, toggleLayout, toggleMaximized, updateChat, type GridAxis, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
+import { closeChats, focusChat, GRID_MIN_TILE, gridRatio, gridRatioBounds, gridRatioFromDrag, gridRatioFromKeyboard, gridTiles, moveChats, orderedChats, resizeGrid, toggleLayout, toggleMaximized, updateChat, windowChatSummary, type GridAxis, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
 import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import type { ChatRevealTarget } from "./ChatView";
 import { hasUnacknowledgedSend, type PromptEditor } from "./PromptEditor";
@@ -859,7 +859,7 @@ export class WorkbenchApp extends LitElement {
     return html`
       <div class="window-menu" role="menu" aria-label=${menu.label} style=${styleMap({ left: `${String(menu.left)}px`, top: `${String(menu.top)}px` })}>
         ${shared ? html`<button role="menuitem" @click=${() => { this.moveToNewWindow(menu.sessionIds); }}>Move to new window</button>` : nothing}
-        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id); }}>Move to ${other.name}${this.windows.isAlive(id) ? "" : " (closed)"}</button>`)}
+        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id); }}>Move to ${windowChatSummary(other)}${this.windows.isAlive(id) ? "" : " (closed)"}</button>`)}
         ${shared ? html`<hr>` : nothing}
         ${sizing ? html`<button role="menuitem" @click=${() => { this.windowMenu = undefined; void this.updateWindow(toggleMaximized); }}>${window.maximized ? "Restore grid" : "Full size"}</button>` : nothing}
         <button role="menuitem" @click=${() => { this.closeWindowChats(menu.sessionIds); }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>
@@ -2132,7 +2132,7 @@ export class WorkbenchApp extends LitElement {
     /* Full size and close take room only while the bar is hovered or holds focus, leaving the title the width; the menu stays put at the end. */
     .tile-actions { flex: 0 0 auto; display: none; gap: 2px; }
     .tile-bar:hover .tile-actions, .tile-bar:focus-within .tile-actions { display: flex; }
-    .tile-bar .icon-button { width: 24px; height: 24px; min-height: 0; padding: 4px; }
+    .tile-bar .icon-button { width: 24px; height: 24px; min-height: 0; padding: 0; }
     workbench-chat-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1 1 auto; }
     .grid[data-tabs] .tile-bar { display: none; }
     .grid[hidden] { display: grid; position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
@@ -2142,7 +2142,7 @@ export class WorkbenchApp extends LitElement {
     .swipe-peek { position: absolute; inset: 0; z-index: 2; visibility: hidden; display: flex; align-items: center; justify-content: center; gap: 10px; background: var(--pi-bg); color: var(--pi-muted); font-size: 14px; pointer-events: none; }
     .swipe-peek strong { color: var(--pi-text); font-weight: 600; }
     .window-menu { position: fixed; z-index: 40; min-width: 220px; display: grid; padding: 4px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 10px 30px var(--pi-shadow); }
-    .window-menu button { min-height: 0; padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; font-size: 13px; }
+    .window-menu button { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 0; padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; font-size: 13px; }
     .window-menu button:hover, .window-menu button:focus-visible { background: var(--pi-surface-hover); }
     .window-menu hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--pi-border-muted); }
     .chooser { flex: 1 1 0; min-width: 0; box-sizing: border-box; height: 100%; overflow: auto; display: grid; place-items: start center; padding: min(10vh, 72px) 24px 32px; }

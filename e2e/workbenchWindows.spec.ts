@@ -775,6 +775,19 @@ test("one click on a resting tile's menu focuses the tile and opens its menu, Fi
   await expect(page.locator("workbench-settings-panel.chat-settings .popover")).toHaveCount(0);
 });
 
+test("a tile's Full size and Close icons sit centred in their buttons", async ({ page }) => {
+  await openGrid(page, [NOTES, RELEASE]);
+  const bar = page.locator(`.tile[data-session="${RELEASE}"] > .tile-bar`);
+  await bar.hover();
+  const offsets = await bar.locator(".tile-actions .icon-button").evaluateAll((buttons) => buttons.map((button) => {
+    const outer = button.getBoundingClientRect();
+    const icon = button.querySelector("svg")?.getBoundingClientRect();
+    return icon === undefined ? Infinity : Math.max(Math.abs(icon.x + icon.width / 2 - (outer.x + outer.width / 2)), Math.abs(icon.y + icon.height / 2 - (outer.y + outer.height / 2)));
+  }));
+  expect(offsets).toHaveLength(2);
+  for (const offset of offsets) expect(offset).toBeLessThanOrEqual(0.5);
+});
+
 /** The Chat tile and the neighbour preview beside it during a swipe. */
 const swipeStage = (page: Page) => page.locator("pi-workbench-app").evaluate((app) => {
   const tile = app.shadowRoot?.querySelector<HTMLElement>('.grid > .tile[data-focused="true"]');
