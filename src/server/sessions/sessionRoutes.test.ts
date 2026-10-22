@@ -7,6 +7,7 @@ import { ASK_USER_ID_MAX_LENGTH, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTI
 import type {
   AskUserCloseResponse,
   AskUserSubmission,
+  SessionAttentionRequest,
   ExtensionDialogAnswer,
   ExtensionDialogCloseResponse,
   MessagePage,
@@ -1048,7 +1049,32 @@ describe("session routes", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ pendingAsks: [] });
-      expect(routeService.calls).toEqual([{ openAsks: { id: "session-1", cwd: requestCwd } }]);
+      expect(routeService.calls).toEqual([{ openAsks: { id: "session-1", cwd: requestCwd } }, { attentionRequest: { id: "session-1", cwd: requestCwd } }]);
+
+      routeService.attentionResponse = { id: "attention-1", reason: "Review the PR" };
+      const restored = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
+      expect(restored.json()).toEqual({ pendingAsks: [], attentionRequest: { id: "attention-1", reason: "Review the PR" } });
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it("acknowledges one attention request through its route and rejects a request without its id", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+
+    try {
+      const requestCwd = resolve("/repo");
+      const acknowledged = await routeApp.inject({ method: "POST", url: "/sessions/session-1/attention/acknowledge", payload: { cwd: requestCwd, requestId: "attention-1" } });
+      const invalid = await routeApp.inject({ method: "POST", url: "/sessions/session-1/attention/acknowledge", payload: { cwd: requestCwd } });
+
+      expect(acknowledged.statusCode).toBe(200);
+      expect(acknowledged.json()).toEqual({ acknowledged: true });
+      expect(invalid.statusCode).toBe(400);
+      expect(routeService.calls).toEqual([{ acknowledgeAttention: { id: "session-1", cwd: requestCwd }, requestId: "attention-1" }]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -1719,6 +1745,17 @@ class CapturingRouteSessionService implements SessionRouteService {
   openAsks(lookup: SessionRouteRef) {
     this.calls.push({ openAsks: lookup });
     return Promise.resolve([]);
+  }
+
+  attentionResponse: SessionAttentionRequest | undefined;
+  attentionRequest(lookup: SessionRouteRef) {
+    this.calls.push({ attentionRequest: lookup });
+    return this.attentionResponse;
+  }
+
+  acknowledgeAttention(lookup: SessionRouteRef, requestId: string) {
+    this.calls.push({ acknowledgeAttention: lookup, requestId });
+    return true;
   }
 
   status(lookup: SessionRouteRef) {

@@ -74,21 +74,51 @@ const dialog: PendingExtensionDialog = { dialogId: "dialog-1", kind: "confirm", 
 const session: SessionInfo = { id: "session-1", name: "Build Chat", cwd: "/repo", path: "/sessions/1.jsonl", created: "2026-09-20T00:00:00Z", modified: "2026-09-20T00:00:00Z", messageCount: 1, firstMessage: "Hello" };
 
 describe("DesktopNotificationController", () => {
-  it("suppresses foreground activity and notifies only a selected Chat completion transition", () => {
+  it("stays quiet when a selected Chat's turn ends, in the foreground or not", () => {
     const test = harness();
     const streaming = state({ status: status(true) });
     test.controller.sync(initialAppState(), streaming);
     test.controller.activate(streaming);
+    const completed = state({ status: status(false), messages: [{ entryId: "reply-1", role: "assistant", parts: [{ type: "text", text: "The result is ready." }] }] });
 
     test.setBackground(false);
-    const completed = state({ status: status(false), messages: [{ role: "assistant", parts: [{ type: "text", text: "The result is ready.\nMore detail" }] }] });
     test.controller.sync(streaming, completed);
-    expect(test.notifications).toHaveLength(0);
-
     test.setBackground(true);
     test.controller.sync(completed, streaming);
     test.controller.sync(streaming, completed);
-    expect(test.notifications.map(({ title, options }) => [title, options.body])).toEqual([["Build Chat", "Finished · The result is ready."]]);
+
+    expect(test.notifications).toHaveLength(0);
+  });
+
+  it("notifies once that the selected Chat needs the owner, treating hydration as a baseline, and opens the Chat on click", () => {
+    const test = harness();
+    const hydrated = state({ status: { ...status(false), attentionRequest: { id: "attention-1", reason: "Old request" } } });
+    test.controller.sync(initialAppState(), hydrated);
+    test.controller.activate(hydrated);
+    test.controller.sync(hydrated, hydrated);
+    expect(test.notifications).toHaveLength(0);
+
+    const requested = state({ status: { ...status(false), attentionRequest: { id: "attention-2", reason: "  Log in to npm so I can publish.\nDetails follow" } } });
+    test.controller.sync(hydrated, requested);
+    test.controller.sync(requested, requested);
+
+    expect(test.notifications.map(({ title, options }): unknown[] => [title, options.body, options.data])).toEqual([["Build Chat", "Needs you · Log in to npm so I can publish.", { machineId: "local", sessionId: "session-1" }]]);
+    test.notifications[0]?.handle.onclick?.(new Event("click"));
+    expect(test.openChat).toHaveBeenCalledExactlyOnceWith("local", "session-1", undefined);
+  });
+
+  it("notifies that another Chat needs the owner from its global attention event, and opens that Chat on click", () => {
+    const test = harness();
+    const selected = state();
+    test.controller.sync(initialAppState(), selected);
+    test.controller.activate(selected);
+    const event = { type: "session.attention" as const, sessionId: "session-2", cwd: "/other", sessionName: "Other Chat", kind: "attention" as const, id: "attention-1", detail: "Review the release PR before I merge." };
+    test.controller.attention(selected, event, "local");
+    test.controller.attention(selected, event, "local");
+
+    expect(test.notifications.map(({ title, options }): unknown[] => [title, options.body, options.data])).toEqual([["Other Chat", "Needs you · Review the release PR before I merge.", { machineId: "local", sessionId: "session-2" }]]);
+    test.notifications[0]?.handle.onclick?.(new Event("click"));
+    expect(test.openChat).toHaveBeenCalledExactlyOnceWith("local", "session-2", undefined);
   });
 
   it("treats reconnect hydration as a baseline and deduplicates asks, dialogs, and errors", () => {
@@ -116,12 +146,12 @@ describe("DesktopNotificationController", () => {
     ]);
   });
 
-  it("uses Workstream or directory names when a Chat has no name, and trims reply previews", () => {
+  it("uses Workstream or directory names when a Chat has no name", () => {
     const test = harness();
-    const selected = state({ selectedSession: { ...session, name: "", firstMessage: "" }, workspaces: [], messages: [{ role: "assistant", parts: [{ type: "text", text: `${"x".repeat(140)}\nnext line` }] }] });
-    test.controller.activate(state({ ...selected, status: status(true) }));
-    test.controller.sync(state({ ...selected, status: status(true) }), selected);
-    expect(test.notifications[0]).toMatchObject({ title: "repo", options: { body: `Finished · ${"x".repeat(119)}…` } });
+    const selected = state({ selectedSession: { ...session, name: "", firstMessage: "" }, workspaces: [] });
+    test.controller.activate(selected);
+    test.controller.sessionError(selected, "failed", 1);
+    expect(test.notifications[0]).toMatchObject({ title: "repo", options: { body: "Error · failed" } });
     const workstream = harness(undefined, () => "Deploy project");
     workstream.controller.activate(selected);
     workstream.controller.sessionError(selected, "failed", 1);
@@ -161,16 +191,14 @@ describe("DesktopNotificationController", () => {
 
   it("carries the related message to the click so the Chat can reveal it, and none for errors", () => {
     const test = harness();
-    const idle = state({ messages: [{ entryId: "reply-1", role: "assistant", parts: [{ type: "text", text: "Done" }] }] });
+    const idle = state();
     test.controller.sync(initialAppState(), idle);
-    test.controller.activate(state({ status: status(true) }));
-    test.controller.sync(idle, idle);
+    test.controller.activate(idle);
     test.controller.sync(idle, state({ pendingAsks: [ask], pendingDialogs: [dialog] }));
     test.controller.attention(idle, { type: "session.attention", sessionId: "session-2", cwd: "/other", kind: "ask", id: "unsafe id/../", detail: "?" }, "local");
     test.controller.sessionError(idle, "failed", 7);
 
     expect(test.notifications.map((notification): unknown => notification.options.data)).toEqual([
-      { machineId: "local", sessionId: "session-1", message: "entry:reply-1" },
       { machineId: "local", sessionId: "session-1", message: "ask:ask-1" },
       { machineId: "local", sessionId: "session-1", message: "dialog:dialog-1" },
       { machineId: "local", sessionId: "session-2" },
@@ -178,7 +206,6 @@ describe("DesktopNotificationController", () => {
     ]);
     for (const notification of test.notifications) notification.handle.onclick?.(new Event("click"));
     expect(test.openChat.mock.calls).toEqual([
-      ["local", "session-1", "entry:reply-1"],
       ["local", "session-1", "ask:ask-1"],
       ["local", "session-1", "dialog:dialog-1"],
       ["local", "session-2", undefined],

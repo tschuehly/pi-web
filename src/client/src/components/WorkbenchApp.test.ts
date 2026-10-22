@@ -2371,8 +2371,8 @@ describe("window tabs", () => {
     const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "a", question: "A?", options: [] }, { id: "b", question: "B?", options: [] }] };
     vi.clearAllMocks();
     const status = vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
-    let answerA1: (asks: typeof ask[]) => void = () => undefined;
-    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => ref.id === "a1" ? new Promise((resolve) => { answerA1 = resolve; }) : Promise.resolve([]));
+    let answerA1: (asks: { pendingAsks: typeof ask[] }) => void = () => undefined;
+    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => ref.id === "a1" ? new Promise((resolve) => { answerA1 = resolve; }) : Promise.resolve({ pendingAsks: [] }));
     const sockets: SilentWebSocket[] = [];
     vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
     window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
@@ -2389,7 +2389,7 @@ describe("window tabs", () => {
     realtime?.onopen?.();
     await vi.waitFor(() => { expect(openAsks.mock.calls.map(([ref]) => ref.id).sort()).toEqual(["a1", "b1"]); });
     // A selection that lands as the answer arrives does not drop it.
-    answerA1([ask]);
+    answerA1({ pendingAsks: [ask] });
     workstreamTab(app, "Docs").click();
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
     workstreamTab(app, "Release").click();
@@ -2397,6 +2397,44 @@ describe("window tabs", () => {
     await vi.waitFor(async () => { await app.updateComplete; expect(count("a1")).toBe("2"); });
     // Status and transcript reads open a cold Chat in the daemon, which would replay its recorded answers.
     for (const read of [status, vi.mocked(api.messages), vi.mocked(api.transcriptSnapshot), vi.mocked(api.streamSnapshot)]) expect(read.mock.calls.map(([ref]) => ref.id)).not.toContain("a1");
+  });
+
+  it("restores a background Chat's unacknowledged attention request as needs you after a reload", async () => {
+    await mountWithWorkstreamChats();
+    document.body.replaceChildren();
+    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    vi.clearAllMocks();
+    vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
+    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], attentionRequest: { id: "attention-1", reason: "Review the release PR" } } : { pendingAsks: [] }));
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    const dot = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"]`)?.getAttribute("data-status");
+
+    sockets.at(-1)?.onopen?.();
+
+    await vi.waitFor(async () => { await app.updateComplete; expect(dot("a1")).toBe("needs"); });
+    expect(dot("a2")).not.toBe("needs");
+  });
+
+  it("acknowledges the selected Chat's attention request once the owner sees it, and not while the window is in the background", async () => {
+    const app = await mountWithWorkstreamChats();
+    const acknowledge = vi.spyOn(api, "acknowledgeAttention").mockResolvedValue(undefined);
+    const focused = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+
+    receive({ type: "status.update", status: { ...idleStatus("b1"), attentionRequest: { id: "attention-1", reason: "Review the release PR" } } });
+    await vi.waitFor(() => { expect(getState(app).status?.attentionRequest?.id).toBe("attention-1"); });
+    expect(acknowledge).not.toHaveBeenCalled();
+
+    focused.mockReturnValue(true);
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
+
+    await vi.waitFor(() => { expect(acknowledge).toHaveBeenCalledExactlyOnceWith({ id: "b1", cwd: workspace.path }, "attention-1", "local"); });
   });
 
   it("puts the Chat's tools in the tab row, naming its folder in the Files tooltip, and gives them back to the tile in a grid", async () => {

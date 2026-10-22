@@ -65,13 +65,13 @@ function askEvents(events: CapturingSessionEventHub) {
 
 describe("ask_user registration", () => {
   it("offers ask_user whenever the capability is configured, including to restricted tracked children", () => {
-    const askUser = { open: vi.fn(), update: vi.fn(), withdraw: vi.fn() };
+    const askUser = { open: vi.fn(), update: vi.fn(), withdraw: vi.fn(), requestAttention: vi.fn() };
 
     const unrestricted = createPiWebCustomToolDefinitions("/workspace", true, undefined, undefined, askUser);
     const restricted = createPiWebCustomToolDefinitions("/workspace", false, undefined, undefined, askUser);
 
-    expect(unrestricted.map((definition) => definition.name)).toEqual(["edit", "ask_user"]);
-    expect(restricted.map((definition) => definition.name)).toEqual(["edit", "ask_user"]);
+    expect(unrestricted.map((definition) => definition.name)).toEqual(["edit", "ask_user", "request_attention"]);
+    expect(restricted.map((definition) => definition.name)).toEqual(["edit", "ask_user", "request_attention"]);
   });
 
   it("omits ask_user when the capability is disabled", () => {

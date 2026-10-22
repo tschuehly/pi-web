@@ -4,7 +4,7 @@ import { styleMap } from "lit/directives/style-map.js";
 import { customElement, state } from "lit/decorators.js";
 import { api, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
-import type { PendingAskUser } from "../../../shared/apiTypes";
+import type { SessionOpenAsks } from "../../../shared/apiTypes";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
@@ -284,7 +284,20 @@ export class WorkbenchApp extends LitElement {
     await this.load(route);
   }
 
-  private readonly onPageAttention = (): void => { this.desktopNotifications.clearVisible(this.app); };
+  private readonly onPageAttention = (): void => { this.desktopNotifications.clearVisible(this.app); this.acknowledgeSeenAttention(); };
+
+  /** Attention request ids this window already acknowledged, so a request is sent once. */
+  private readonly acknowledgedAttention = new Set<string>();
+
+  /** The owner sees the Chat on screen in a visible, focused window: its attention request has done its job. */
+  private acknowledgeSeenAttention(): void {
+    const session = this.app.selectedSession;
+    const request = this.app.status?.sessionId === session?.id ? this.app.status?.attentionRequest : undefined;
+    if (session === undefined || request === undefined || document.hidden || !document.hasFocus() || this.acknowledgedAttention.has(request.id)) return;
+    this.acknowledgedAttention.add(request.id);
+    // ponytail: ids stay in the set for the window's lifetime; one short id per request.
+    api.acknowledgeAttention({ id: session.id, cwd: session.cwd }, request.id, selectedMachineId(this.app)).catch(() => { this.acknowledgedAttention.delete(request.id); });
+  }
 
   /** The macOS app reveals a message in the Chat this window already shows without reloading it. */
   private readonly onNativeNotificationOpen = (event: Event): void => {
@@ -628,6 +641,7 @@ export class WorkbenchApp extends LitElement {
     }
     this.desktopNotifications.sync(previous, this.app);
     this.trackWindowChats(previous);
+    this.acknowledgeSeenAttention();
   }
 
   /** Keeps this window's open Chats in step with the Chat on screen, and marks the ones that finished out of view. */
@@ -877,7 +891,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   private chatTabStatuses(): Record<string, ChatTabStatus> {
-    return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, chatTabStatus(this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId], this.unreadChats.has(chat.sessionId))]));
+    return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, chatTabStatus(this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId] ?? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)], this.unreadChats.has(chat.sessionId))]));
   }
 
   /** The selected Chat's live open asks, and every other Chat's as its last status reported them, else as read when the window connected. */
@@ -886,7 +900,7 @@ export class WorkbenchApp extends LitElement {
       const runtime = this.runtimeFor(chat.sessionId, chat.machineId);
       if (runtime?.ready === true) return runtime.state.pendingAsks;
       const status = this.app.sessionStatuses[chat.sessionId];
-      return status === undefined ? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)] : status.pendingAsks;
+      return status === undefined ? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)]?.pendingAsks : status.pendingAsks;
     };
     return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, openQuestionCount(asks(chat))]));
   }
@@ -1108,8 +1122,8 @@ export class WorkbenchApp extends LitElement {
     this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, () => { this.refreshWindowChatAsks(machineId); }, machineId);
   }
 
-  /** Open asks read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
-  @state() private restoredAsks: Record<string, readonly PendingAskUser[]> = {};
+  /** Open asks and attention requests read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
+  @state() private restoredAsks: Record<string, SessionOpenAsks> = {};
 
   /** Open-ask reads in flight, by machine-scoped session key. */
   private readonly askRequests = new Set<string>();
