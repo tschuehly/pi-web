@@ -135,9 +135,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       Object.assign(env, {
         PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_WEB_DURABLE_AGENT_DIR: durableAgent, PI_TELEMETRY_DIR: join(root, "telemetry"),
         PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
-        // Subagents: routed children answer on the scripted model under their routed names, and routing reads a fixture
-        // quota snapshot (specs refresh it), never quota-axi.
-        PI_DURABLE_SCRIPTED_PROVIDERS: "1", PI_WORKBENCH_QUOTA_CACHE: join(root, "quota-cache.json"),
+        // Subagents: routing reads a fixture quota snapshot (specs refresh it), never quota-axi; routed children answer
+        // through the mock like any Chat.
+        PI_WORKBENCH_QUOTA_CACHE: join(root, "quota-cache.json"),
       });
       process.env["PI_WEB_E2E_QUOTA_CACHE"] = join(root, "quota-cache.json");
     }
