@@ -251,7 +251,9 @@ export class WorkbenchWindowController {
       // A pending reservation cannot be moved; only its dead creator may be recovered here.
       if (holder !== undefined && (reservation === undefined || await this.isHeld(holder))) return false;
       try {
-        const claimed = openChat(reservation === undefined ? latest : closeChats(latest, reservationWindow, [reservation.sessionId]), this.windowId, chat);
+        // Open before closing the reservation, so the window never drops to one Chat and keeps its layout.
+        const opened = openChat(latest, this.windowId, chat);
+        const claimed = reservation === undefined ? opened : closeChats(opened, reservationWindow, [reservation.sessionId]);
         this.write(focus ? claimed : focusChat(claimed, this.windowId, latest[this.windowId]?.focused ?? chat.sessionId));
       } catch (error) {
         if (latest[this.windowId]?.chats.some((held) => held.sessionId === chat.sessionId) !== true) throw error;
