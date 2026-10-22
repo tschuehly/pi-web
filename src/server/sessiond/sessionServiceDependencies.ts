@@ -22,6 +22,8 @@ export interface SessionServiceDependencyInput {
   unreadStore: NonNullable<PiSessionServiceDependencies["unreadStore"]>;
   /** Notifies the machine status projection that unread state changed. */
   onUnreadChanged: NonNullable<PiSessionServiceDependencies["onUnreadChanged"]>;
+  /** Unarchived Chats another runtime owns (Durable Chats) per workspace; they share the unread catalog. */
+  externalSessionIds: NonNullable<PiSessionServiceDependencies["externalSessionIds"]>;
   /** Read-only view of the background refresher; see the assembly below. */
   catalogRefreshStatus: NonNullable<PiSessionServiceDependencies["catalogRefreshStatus"]>;
   /** Live global config reader for request-time defaults (attachments and session naming). */
@@ -67,6 +69,7 @@ export function sessionServiceDependencies(input: SessionServiceDependencyInput)
     notificationStore: input.notificationStore,
     unreadStore: input.unreadStore,
     onUnreadChanged: input.onUnreadChanged,
+    externalSessionIds: input.externalSessionIds,
     // Read-only, so session startup can tell a waiting user that provider
     // model lists are refreshing at the same time.
     catalogRefreshStatus: input.catalogRefreshStatus,

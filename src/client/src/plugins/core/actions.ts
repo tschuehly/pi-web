@@ -1,6 +1,7 @@
 import { isSessionActive } from "../../../../shared/activity";
 import type { AppState } from "../../appState";
-import { isArchivableSessionInfo, isTransientNewSessionInfo } from "../../sessionPersistence";
+import { isArchivableSessionInfo, isTransientNewSessionInfo, sessionPersistenceState } from "../../sessionPersistence";
+import { chatSupports } from "../../../../shared/apiTypes";
 import { canDeleteWorkspace, isWorkspaceDeletionPending } from "../../workspaceDeletion";
 import type { PluginAction } from "../types";
 
@@ -209,6 +210,8 @@ function hasTransientNewSession(context: { state: AppState }): boolean {
 }
 
 function hasReloadableSession(context: { state: AppState }): boolean {
-  if (!isArchivableSessionInfo(context.state.selectedSession, context.state.status)) return false;
+  const { selectedSession, status } = context.state;
+  if (selectedSession === undefined || selectedSession.archived === true || sessionPersistenceState(selectedSession, status) !== "persisted") return false;
+  if (!chatSupports(status?.sessionId === selectedSession.id ? status : selectedSession, "reload")) return false;
   return !isSessionActive(context.state.status, context.state.activity);
 }

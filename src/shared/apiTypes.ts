@@ -642,6 +642,42 @@ export interface SessionInfo extends SessionRef {
   parentSessionPath?: string;
   archived?: boolean;
   archivedAt?: string;
+  /** Durable Chats: the gated operations this Chat supports (see {@link chatSupports}); absent for legacy Chats. */
+  capabilities?: ChatCapability[];
+}
+
+/**
+ * Chat operations a Durable Chat may not support yet, with the label its rejection names. A Durable Chat reports
+ * the ones its host supports (`capabilities` on its listing and status); the browser hides or disables the control
+ * of every other one. Legacy Chats report no list: they support all of them.
+ */
+export const CHAT_CAPABILITY_LABELS = {
+  "queue.promote": "Promoting queued messages",
+  "queue.edit": "Editing a queued message",
+  dialogs: "Extension dialogs",
+  "warnings.dismiss": "Dismissing warnings",
+  defaults: "Session defaults",
+  "models.enabled": "Changing the enabled models",
+  "models.cycle": "Cycling models",
+  thinking: "Changing the thinking level",
+  attachments: "Attachments",
+  shell: "Shell commands",
+  "commands.respond": "Commands",
+  tree: "Tree navigation",
+  fork: "Forking",
+  reload: "Reloading",
+  "detach-parent": "Detaching",
+  archive: "Archiving",
+} as const;
+export type ChatCapability = keyof typeof CHAT_CAPABILITY_LABELS;
+
+export function isChatCapability(value: unknown): value is ChatCapability {
+  return typeof value === "string" && Object.hasOwn(CHAT_CAPABILITY_LABELS, value);
+}
+
+/** Whether a Chat (its listing or status) supports a gated operation: legacy Chats support all. */
+export function chatSupports(source: { capabilities?: readonly ChatCapability[] | undefined } | undefined, capability: ChatCapability): boolean {
+  return source?.capabilities === undefined || source.capabilities.includes(capability);
 }
 
 export interface ArchiveSessionsResponse {
@@ -1296,6 +1332,8 @@ export interface SessionStatus {
    * marks it done, not done, or to retry.
    */
   unresolvedEffects?: SessionUnresolvedEffect[];
+  /** Durable Chats: the gated operations this Chat supports (see {@link chatSupports}); absent for legacy Chats. */
+  capabilities?: ChatCapability[];
   /**
    * Up to the 32 oldest currently running executions observed by the session
    * daemon. Newer starts are omitted while the bound is full; a later start can

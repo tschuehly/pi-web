@@ -308,6 +308,23 @@ describe("PiWebApp model dialog", () => {
   });
 });
 
+describe("PiWebApp dialogs in a Durable Chat", () => {
+  it("offers no default pins or enabled-model edits the Chat does not support", async () => {
+    const app = new PiWebApp();
+    const selectedSession = { ...session("session-1"), path: "durable:session-1", capabilities: [] };
+    setAppState(app, { selectedSession, sessions: [selectedSession], status: { ...sessionStatus(selectedSession.id, { provider: "faux", id: "faux-1" }), capabilities: [] } });
+    vi.spyOn(SessionController.prototype, "listModels").mockResolvedValue([{ provider: "faux", id: "faux-1" }]);
+    vi.spyOn(SessionController.prototype, "listModelCatalog").mockResolvedValue([{ provider: "faux", id: "faux-1", enabled: true }]);
+    vi.spyOn(SessionController.prototype, "listThinkingLevels").mockResolvedValue([]);
+    await callAppMethod(app, "openModelDialog");
+    expect(appModelDialog(app)).toMatchObject({ noDefaults: true, fixedScope: true, defaultsLoading: false });
+    await callAppMethod(app, "openThinkingDialog");
+    const state: unknown = Reflect.get(app, "state");
+    if (!isAppState(state)) throw new Error("Missing app state");
+    expect(state.thinkingDialog).toMatchObject({ noDefaults: true, defaultsLoading: false });
+  });
+});
+
 describe("startup default orchestration", () => {
   it("saves a model default without selecting it or closing the dialog", async () => {
     const app = new PiWebApp();

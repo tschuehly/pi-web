@@ -21,10 +21,12 @@ function legacyService(): { service: SessionRouteService; calls: string[] } {
     start: legacyChat,
     locate: { cwd: "/work/a" },
     notificationCatalog: { daemonInstanceId: "daemon-1", catalogRevision: 4, sessions: [] },
+    archiveMany: { archived: true, archivedSessionIds: [legacyChat.id], failures: [], generatedAt: "2026-10-22T00:00:00.000Z" },
+    deleteArchivedMany: { deleted: true, deletedSessionIds: [], failures: [], generatedAt: "2026-10-22T00:00:00.000Z" },
   };
   const handler: ProxyHandler<object> = {
     get: (_target, name: string) => (...args: unknown[]) => {
-      calls.push(`${name}${name === "start" ? JSON.stringify(args[1] ?? null) : ""}`);
+      calls.push(`${name}${name === "start" ? JSON.stringify(args[1] ?? null) : name === "archiveMany" || name === "deleteArchivedMany" ? JSON.stringify(args[0]) : ""}`);
       return Promise.resolve(answers[name]);
     },
   };
@@ -43,7 +45,11 @@ class ReadyHost extends EventEmitter implements DurableHostProcess {
     if (typeof message !== "object" || message === null || !("id" in message) || !("method" in message) || typeof message.method !== "string") return false;
     const { id, method } = message;
     this.methods.push(method);
-    queueMicrotask(() => { this.emit("message", { id, result: method === "status" ? { isStreaming: false, queuedMessages: [], pendingMessageCount: 0 } : null }); });
+    const result = method === "status" ? { isStreaming: false, queuedMessages: [], pendingMessageCount: 0 } : null;
+    queueMicrotask(() => {
+      this.emit("message", { id, result });
+      if (method === "close") this.emit("exit", 0, null);
+    });
     return true;
   }
   kill(): boolean { return true; }
@@ -110,5 +116,19 @@ describe("runtime-routed session service", () => {
     expect((await routed.list("/work/a", { sessionId: durableChat.id })).map((chat) => chat.id)).toEqual([durableChat.id]);
     expect((await routed.listRecent(1)).map((chat) => chat.id)).toEqual([durableChat.id]);
     await expect(routed.locate(durableChat.id)).resolves.toEqual({ cwd: "/work/a" });
+  });
+
+  it("refuses archiving a Durable Chat visibly, and reports Durable Chats as failures in bulk archive without touching legacy for them", async () => {
+    const { routed, calls } = await router();
+    const durableChat = await routed.start("/work/a", { runtime: "durable" });
+    await expect(Promise.resolve().then(() => routed.archive(durableChat))).rejects.toThrow("Archiving is not available in Durable Chats yet");
+    await expect(Promise.resolve().then(() => routed.restore(durableChat))).rejects.toThrow("Archiving is not available in Durable Chats yet");
+    const bulk = await routed.archiveMany([{ id: legacyChat.id, cwd: "/work/a" }, { id: durableChat.id, cwd: "/work/a" }]);
+    expect(bulk.archivedSessionIds).toEqual([legacyChat.id]);
+    expect(bulk.failures).toEqual([{ sessionId: durableChat.id, error: "Archiving is not available in Durable Chats yet" }]);
+    expect(calls).toContain(`archiveMany${JSON.stringify([{ id: legacyChat.id, cwd: "/work/a" }])}`);
+    const deleted = await routed.deleteArchivedMany([{ id: durableChat.id, cwd: "/work/a" }]);
+    expect(deleted.failures).toEqual([{ sessionId: durableChat.id, error: "Archiving is not available in Durable Chats yet" }]);
+    expect(calls.filter((call) => call === "archive" || call === "restore")).toEqual([]);
   });
 });

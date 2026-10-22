@@ -69,8 +69,8 @@ export interface AppState {
   workspaceDeletionRuns: Record<string, TerminalCommandRun>;
   commandDialog: Extract<CommandResult, { type: "select" }> | undefined;
   treeDialog: SessionTreeSnapshot | undefined;
-  modelDialog: { instanceId: number; origin: ModelDialogOrigin; title: string; options: CommandOption[]; catalog: SessionModelCatalogEntry[]; selectedValue?: string; defaultValue?: string; defaultsLoading?: boolean } | undefined;
-  thinkingDialog: { title: string; options: CommandOption[]; selectedValue?: string; origin?: ModelDialogOrigin; defaultValue?: string; defaultsLoading?: boolean } | undefined;
+  modelDialog: { instanceId: number; origin: ModelDialogOrigin; title: string; options: CommandOption[]; catalog: SessionModelCatalogEntry[]; selectedValue?: string; defaultValue?: string; defaultsLoading?: boolean; /** The Chat cannot save defaults (a Durable Chat may not yet): no default pins. */ noDefaults?: true; /** The Chat cannot change the enabled models: no toggles or presets. */ fixedScope?: true } | undefined;
+  thinkingDialog: { title: string; options: CommandOption[]; selectedValue?: string; origin?: ModelDialogOrigin; defaultValue?: string; defaultsLoading?: boolean; noDefaults?: true } | undefined;
   authDialog: AuthDialogState | undefined;
   actionPaletteOpen: boolean;
   projectDialogOpen: boolean;

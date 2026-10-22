@@ -114,6 +114,26 @@ describe("session action eligibility", () => {
   });
 });
 
+describe("Durable Chat capability gating", () => {
+  it("offers Archive and Reload from disk only when the Chat supports them; legacy Chats keep both", async () => {
+    const durable = session("durable", { path: "durable:durable", persisted: true, capabilities: [] });
+    const legacy = session("legacy", { persisted: true });
+    const list = sessionList([durable, legacy], new Set());
+    document.body.append(list);
+    const titles = async (id: string) => {
+      setComponentState(list, "openMenuSessionId", undefined);
+      await list.updateComplete;
+      await openSessionMenu(list, id);
+      return [...(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".action-menu-panel button") ?? [])].map((button) => button.textContent.trim());
+    };
+    const durableMenu = await titles(durable.id);
+    expect(durableMenu).not.toContain("Archive");
+    expect(durableMenu).not.toContain("Reload from disk");
+    expect(await titles(legacy.id)).toEqual(expect.arrayContaining(["Archive", "Reload from disk"]));
+    expect(isArchivableSessionInfo({ ...durable, capabilities: ["archive"] })).toBe(true);
+  });
+});
+
 describe("mark-as-read actions", () => {
   it("offers Mark as read in the menu of an unread current session and forwards it", async () => {
     const unread = session("unread");

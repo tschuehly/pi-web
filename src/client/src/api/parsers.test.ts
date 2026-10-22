@@ -758,6 +758,16 @@ describe("API parsers", () => {
     ]);
   });
 
+  it("keeps a Durable Chat's capability list on its status and listing, dropping unknown names, and none for legacy Chats", () => {
+    expect(parseSessionStatus(statusWire()).capabilities).toBeUndefined();
+    expect(parseSessionStatus({ ...statusWire(), capabilities: ["attachments", "teleport"] }).capabilities).toEqual(["attachments"]);
+    expect(parseSessionStatus({ ...statusWire(), capabilities: [] }).capabilities).toEqual([]);
+    const info = { id: "d1", path: "durable:d1", cwd: "/repo", created: "now", modified: "now", messageCount: 0, firstMessage: "" };
+    expect(parseSessionInfo(info).capabilities).toBeUndefined();
+    expect(parseSessionInfo({ ...info, capabilities: ["shell"] }).capabilities).toEqual(["shell"]);
+    expect(() => parseSessionStatus({ ...statusWire(), capabilities: "all" })).toThrow();
+  });
+
   it("parses a bounded attention request and the open-asks read that restores it", () => {
     const attentionRequest = { id: "attention-1", reason: "Review the release PR" };
     expect(parseSessionStatus(statusWire()).attentionRequest).toBeUndefined();

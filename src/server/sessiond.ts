@@ -331,7 +331,12 @@ async function createSessionDaemonRuntime() {
       if (companionOptions === undefined) throw new Error("PI WEB companion backends are not ready during daemon startup");
       return companionOptions;
     }));
+    // Opt-in Durable Chats (Phase B trial): only with a configured host entry; otherwise routes see the legacy service.
+    const durableHostEntry = daemonEnvironment["PI_WEB_DURABLE_HOST"];
+    const durableLocator = durableHostEntry === undefined || durableHostEntry === "" ? undefined : new SessionRuntimeLocator(piWebDataDir(daemonEnvironment));
     const sessions = new PiSessionService(eventHub, sessionServiceDependencies({
+      // Durable Chats share the unread catalog, so cwd reconciliation keeps theirs.
+      externalSessionIds: (cwd) => durableLocator?.all().filter((record) => record.cwd === cwd).map((record) => record.id) ?? [],
       modelRuntime: auth.runtime,
       sessionEvents,
       agentDir: activeAgentProfile.dir,
@@ -373,10 +378,8 @@ async function createSessionDaemonRuntime() {
       }),
     }));
     sessionsForFailedConstruction = sessions;
-    // Opt-in Durable Chats (Phase B trial): only with a configured host entry; otherwise routes see the legacy service.
-    const durableHostEntry = daemonEnvironment["PI_WEB_DURABLE_HOST"];
-    const durableChats = durableHostEntry === undefined || durableHostEntry === "" ? undefined : new DurableChatService({
-      locator: new SessionRuntimeLocator(piWebDataDir(daemonEnvironment)),
+    const durableChats = durableHostEntry === undefined || durableHostEntry === "" || durableLocator === undefined ? undefined : new DurableChatService({
+      locator: durableLocator,
       events: eventHub,
       launch: forkDurableHost({
         entry: durableHostEntry,
@@ -389,6 +392,7 @@ async function createSessionDaemonRuntime() {
       storesDir: join(piWebDataDir(daemonEnvironment), "durable"),
       // The same Pi loader as legacy Chats, against the daemon's active agent profile.
       resources: (cwd) => loadDurableChatResources(cwd, activeAgentProfile.dir),
+      unread: (sessionId, cwd, change) => sessions.observeExternalSession(sessionId, cwd, change),
       logger: app.log,
     });
     durableChatsForFailedConstruction = durableChats;

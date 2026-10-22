@@ -2,9 +2,11 @@ import { fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
+import { type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
 import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, SessionAttentionEvent, SessionAttentionRequest, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
 import type { ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, SessionStreamSnapshot, SessionTranscriptSnapshot } from "../types.js";
 import type { DurableChatResourceSet } from "./durableChatResources.js";
+import { BUILTIN_COMMANDS } from "./builtinCommands.js";
 import { expandSkills } from "./durableChatResources.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
@@ -53,7 +55,7 @@ export function forkDurableHost(options: { entry: string; model: string; agentDi
 
 interface HostEvents {
   publish(sessionId: string, event: SessionUiEvent, mediaScope?: { id: string; cwd: string }): void;
-  publishGlobal(event: { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | SessionAttentionEvent): void;
+  publishGlobal(event: { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string } | SessionAttentionEvent): void;
   currentSeq(sessionId: string): number;
 }
 
@@ -76,6 +78,8 @@ export class DurableChatUnavailable extends Error {
  */
 class DurableHostConnection {
   readonly ready: Promise<void>;
+  /** The gated operations the host reported it supports (`ready.capabilities`); none when it reports no list. */
+  capabilities: ChatCapability[] = [];
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
@@ -97,6 +101,8 @@ class DurableHostConnection {
       if (!isRecord(message)) return;
       if (isRecord(message["ready"])) {
         const protocol = message["ready"]["protocol"];
+        const capabilities = message["ready"]["capabilities"];
+        if (Array.isArray(capabilities)) this.capabilities = capabilities.filter(isChatCapability);
         if (protocol === DURABLE_HOST_PROTOCOL) markReady();
         else {
           failReady(new Error(`Durable host speaks protocol ${String(protocol)}, this daemon ${String(DURABLE_HOST_PROTOCOL)}`));
@@ -176,10 +182,17 @@ export class DurableChatService {
     storesDir: string;
     /** AGENTS.md, APPEND_SYSTEM.md and skills for a workspace, from Pi's loader; sent to each host as it opens. */
     resources?: (cwd: string) => Promise<DurableChatResourceSet>;
+    /**
+     * The daemon's unread catalog (the legacy service's, shared): committed run starts and ends, and a host exit.
+     * Turn ends of a Durable Chat mark it unread exactly as a legacy Chat's do.
+     */
+    unread?: (sessionId: string, cwd: string, change: "active" | "idle" | "closed") => Promise<void>;
     logger?: { warn(object: object, message: string): void };
   }) {}
 
   readonly #skills = new Map<string, DurableChatResourceSet["skillList"]>();
+  /** Last reported capabilities per Chat, so its listing gates controls before its host is asked again. */
+  readonly #capabilities = new Map<string, ChatCapability[]>();
 
   owns(sessionId: string): boolean {
     return this.deps.locator.durable(sessionId) !== undefined;
@@ -203,12 +216,25 @@ export class DurableChatService {
       // Not a filesystem path: browsers never receive store locations.
       path: `durable:${record.id}`,
       persisted: true,
-      name: record.firstMessage === "" ? "Durable Chat" : `Durable · ${record.firstMessage.slice(0, 60)}`,
+      name: record.name !== undefined ? `Durable · ${record.name}` : record.firstMessage === "" ? "Durable Chat" : `Durable · ${record.firstMessage.slice(0, 60)}`,
       created: record.created,
       modified: record.modified,
       messageCount: record.messageCount,
       firstMessage: record.firstMessage,
+      capabilities: this.#capabilities.get(record.id) ?? [],
     };
+  }
+
+  #record(ref: SessionRouteRef): DurableChatRecord {
+    const record = this.deps.locator.durable(ref.id);
+    if (record?.cwd !== ref.cwd) throw new Error("Session not found");
+    return record;
+  }
+
+  async #unread(record: DurableChatRecord, change: "active" | "idle" | "closed"): Promise<void> {
+    await this.deps.unread?.(record.id, record.cwd, change).catch((error: unknown) => {
+      this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat unread state failed to update");
+    });
   }
 
   list(cwd: string, sessionId?: string): ClientSession[] {
@@ -228,7 +254,7 @@ export class DurableChatService {
 
   async status(ref: SessionRouteRef): Promise<ClientSessionStatus> {
     const { result } = await (await this.#for(ref)).request("status");
-    return { ...hostStatus(result), sessionId: ref.id };
+    return { ...hostStatus(result), sessionId: ref.id, capabilities: this.#capabilities.get(ref.id) ?? [] };
   }
 
   async streamSnapshot(ref: SessionRouteRef): Promise<SessionStreamSnapshot> {
@@ -239,7 +265,7 @@ export class DurableChatService {
   async transcriptSnapshot(ref: SessionRouteRef, page?: { limit?: number }): Promise<SessionTranscriptSnapshot> {
     const { result, seq } = await (await this.#for(ref)).request("transcript");
     const transcript = hostTranscript(result);
-    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(transcript.messages, { limit: page?.limit ?? 100 }), status: { ...transcript.status, sessionId: ref.id } };
+    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(transcript.messages, { limit: page?.limit ?? 100 }), status: { ...transcript.status, sessionId: ref.id, capabilities: this.#capabilities.get(ref.id) ?? [] } };
   }
 
   /**
@@ -256,19 +282,26 @@ export class DurableChatService {
     await connection.request("prompt", { operationId: operationId ?? randomUUID(), text: expanded, ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }) });
   }
 
-  /** Slash commands of a Durable Chat: Working Mode and the workspace's skills. */
+  /** Slash commands of a Durable Chat: /name, /session, Working Mode and the workspace's skills. */
   async commands(ref: SessionRouteRef): Promise<ClientCommand[]> {
     await this.#for(ref);
     return [
+      ...BUILTIN_COMMANDS.filter((command) => command.name === "name" || command.name === "session"),
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" },
       ...(this.#skills.get(ref.id) ?? []).map((skill) => ({ name: `skill:${skill.name}`, ...(skill.description === undefined ? {} : { description: skill.description }), source: "skill" as const })),
     ];
   }
 
-  /** `/mode …` runs in the host; `/skill:…` is a prompt; every other command is not available yet. */
+  /**
+   * `/mode …` runs in the host; `/skill:…` is a prompt; `/name` names the Chat in the catalog; `/session` reports its
+   * stats as a legacy Chat does; every other command is not available yet.
+   */
   async runCommand(ref: SessionRouteRef, text: string): Promise<ClientCommandResult> {
     const trimmed = text.trim();
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
+    const rest = trimmed.slice(name.length + 1).trim();
+    if (name === "name") return this.#name(ref, rest);
+    if (name === "session") return { type: "done", message: await this.#stats(ref) };
     if (name === "mode") {
       const { result } = await (await this.#for(ref)).request("mode", { args: trimmed.slice("/mode".length).trim() });
       return commandResult(result);
@@ -278,6 +311,32 @@ export class DurableChatService {
       return { type: "done" };
     }
     return { type: "unsupported", message: `/${name} is not available in Durable Chats yet` };
+  }
+
+  #name(ref: SessionRouteRef, name: string): ClientCommandResult {
+    if (name === "") return { type: "unsupported", message: "Usage: /name <session name>" };
+    this.deps.locator.update(ref.id, { name });
+    const session = this.info(this.#record(ref));
+    const event = { type: "session.name" as const, sessionId: ref.id, ...(session.name === undefined ? {} : { name: session.name }) };
+    this.deps.events.publish(ref.id, event);
+    this.deps.events.publishGlobal(event);
+    return { type: "done", message: `Session named: ${name}`, session };
+  }
+
+  /** PI WEB's `/session` lines (`sessionCommandService.ts`), counted from the Chat's transcript and usage. */
+  async #stats(ref: SessionRouteRef): Promise<string> {
+    const { result } = await (await this.#for(ref)).request("transcript");
+    const { messages, status } = hostTranscript(result);
+    const role = (name: string) => messages.filter((message) => isRecord(message) && message["role"] === name);
+    const toolCalls = role("assistant").flatMap((message): unknown[] => (isRecord(message) && Array.isArray(message["content"]) ? message["content"] : []))
+      .filter((part) => isRecord(part) && part["type"] === "toolCall").length;
+    return [
+      `Session: ${ref.id}`,
+      `Messages: ${String(messages.length)} (${String(role("user").length)} user, ${String(role("assistant").length)} assistant)`,
+      `Tool calls: ${String(toolCalls)}`,
+      `Tokens: ↑${String(status.tokens.input)} ↓${String(status.tokens.output)} total ${String(status.tokens.total)}`,
+      `Cost: $${status.cost.toFixed(4)}`,
+    ].join("\n");
   }
 
   async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[]> {
@@ -367,9 +426,7 @@ export class DurableChatService {
   }
 
   #for(ref: SessionRouteRef): Promise<DurableHostConnection> {
-    const record = this.deps.locator.durable(ref.id);
-    if (record?.cwd !== ref.cwd) throw new Error("Session not found");
-    return this.#connection(record);
+    return this.#connection(this.#record(ref));
   }
 
   #connection(record: DurableChatRecord): Promise<DurableHostConnection> {
@@ -384,10 +441,12 @@ export class DurableChatService {
       (error) => {
         this.#connections.delete(record.id);
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host exited");
+        void this.#unread(record, "closed");
         this.deps.events.publish(record.id, { type: "agent.end" });
       },
     );
     const opened = connection.ready.then(async () => {
+      this.#capabilities.set(record.id, connection.capabilities);
       const loaded = await this.deps.resources?.(record.cwd).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
@@ -417,7 +476,7 @@ export class DurableChatService {
       return;
     }
     if (event.type === "status.update") {
-      const status = { ...event.status, sessionId };
+      const status = { ...event.status, sessionId, capabilities: this.#capabilities.get(sessionId) ?? [] };
       this.deps.events.publish(sessionId, { type: "status.update", status }, scope);
       this.deps.events.publishGlobal({ type: "status.update", status });
       if (status.messageCount !== undefined && status.messageCount !== record.messageCount) {
@@ -428,6 +487,8 @@ export class DurableChatService {
     this.deps.events.publish(sessionId, event, scope);
     if (event.type === "agent.start" || event.type === "agent.end") {
       const active = event.type === "agent.start";
+      // The host emits these after the committed run start and end; a reopened store replays neither.
+      void this.#unread(record, active ? "active" : "idle");
       const activity = { sessionId, phase: active ? "active" as const : "idle" as const, label: active ? "agent running" : "idle", at: new Date().toISOString() };
       this.deps.events.publish(sessionId, { type: "activity.update", activity }, scope);
       this.deps.events.publishGlobal({ type: "activity.update", activity });

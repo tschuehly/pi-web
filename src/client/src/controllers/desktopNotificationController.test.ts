@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { initialAppState, type AppState } from "../appState";
 import type { PendingAskUser, PendingExtensionDialog, SessionInfo, SessionStatus } from "../api";
 import type { PiWebNativeHost } from "../nativeHost";
+import { parseSessionAttentionEvent } from "../api/parsers";
 import {
   desktopNotifications,
   DesktopNotificationController,
@@ -388,6 +389,42 @@ describe("DesktopNotificationController", () => {
     expect(adapter.permission()).toBe("default");
     expect(desktopNotifications(host, storage).permission()).toBe("default");
     expect(controller.diagnostic).toContain("delivery failed");
+  });
+
+  it("delivers a Durable Chat's attention through the native bridge once; a reload or reconnect re-notifies nothing already seen", async () => {
+    // The exact global event DurableChatService publishes for a committed request_attention (durableChatService.test.ts).
+    const wire = { type: "session.attention", sessionId: "durable-1", cwd: "/work/a", sessionName: "Durable · Fix the build", kind: "attention", id: "att-1", detail: "Please review" };
+    const host = nativeHost();
+    const storage = memoryStorage();
+    const adapter = desktopNotifications(host, storage);
+    await adapter.requestPermission();
+    const controller = new DesktopNotificationController({ ...adapter, isBackground: () => true });
+    const selected = state();
+    controller.sync(initialAppState(), selected);
+    controller.activate(selected);
+    controller.attention(selected, parseSessionAttentionEvent(wire), "local");
+    controller.attention(selected, parseSessionAttentionEvent(wire), "local");
+    await vi.waitFor(() => { expect(host.notify).toHaveBeenCalledOnce(); });
+    expect(host.notify).toHaveBeenCalledWith("Durable · Fix the build", "Needs you · Please review", { machineId: "local", sessionId: "durable-1" });
+    controller.attention(selected, parseSessionAttentionEvent({ ...wire, kind: "ask", id: "ask-1", detail: "Which target?" }), "local");
+    await vi.waitFor(() => { expect(host.notify).toHaveBeenCalledTimes(2); });
+    expect(host.notify).toHaveBeenLastCalledWith("Durable · Fix the build", "Question · Which target?", { machineId: "local", sessionId: "durable-1", message: "ask:ask-1" });
+
+    // A reloaded page opens the Durable Chat: its still-open request is hydration, not news; a newer one notifies once.
+    const reloaded = new DesktopNotificationController({ ...desktopNotifications(host, storage), isBackground: () => true });
+    const durableSession = { ...session, id: "durable-1", path: "durable:durable-1", name: "Durable · Fix the build" };
+    const open = state({ selectedSession: durableSession, status: { ...status(false), sessionId: "durable-1", attentionRequest: { id: "att-1", reason: "Please review" } } });
+    reloaded.sync(initialAppState(), open);
+    reloaded.activate(open);
+    reloaded.sync(open, open);
+    const acknowledged = state({ selectedSession: durableSession, status: { ...status(false), sessionId: "durable-1" } });
+    reloaded.sync(open, acknowledged);
+    expect(host.notify).toHaveBeenCalledTimes(2);
+    const newer = state({ selectedSession: durableSession, status: { ...status(false), sessionId: "durable-1", attentionRequest: { id: "att-2", reason: "Log in again" } } });
+    reloaded.sync(acknowledged, newer);
+    reloaded.sync(newer, newer);
+    await vi.waitFor(() => { expect(host.notify).toHaveBeenCalledTimes(3); });
+    expect(host.notify).toHaveBeenLastCalledWith("Durable · Fix the build", "Needs you · Log in again", { machineId: "local", sessionId: "durable-1" });
   });
 
   it("falls back to browser notifications unless both native capabilities exist", () => {

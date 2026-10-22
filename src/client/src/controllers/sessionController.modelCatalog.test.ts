@@ -50,6 +50,25 @@ describe("SessionController startup defaults", () => {
   });
 });
 
+describe("SessionController in a Durable Chat without the capability", () => {
+  it("skips session defaults and model/thinking cycling instead of reporting a rejected request", async () => {
+    const durable = { ...oldSession, path: `durable:${oldSession.id}`, capabilities: [] };
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: durable, sessions: [durable] };
+    const calls: string[] = [];
+    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, {
+      ...defaultApi,
+      getSessionDefaults: () => { calls.push("defaults"); return Promise.reject(new Error("Session defaults is not available in Durable Chats yet")); },
+      cycleModel: () => { calls.push("cycleModel"); return Promise.reject(new Error("rejected")); },
+      cycleThinkingLevel: () => { calls.push("cycleThinking"); return Promise.reject(new Error("rejected")); },
+    });
+    expect(await controller.getSessionDefaults()).toBeUndefined();
+    await controller.cycleModel("forward");
+    await controller.cycleThinkingLevel();
+    expect(calls).toEqual([]);
+    expect(state.browserErrors).toEqual({});
+  });
+});
+
 describe("SessionController model catalog", () => {
   it("lists the machine's catalog with per-model enabled state", async () => {
     const calls: { sessionId: string; machineId: string }[] = [];

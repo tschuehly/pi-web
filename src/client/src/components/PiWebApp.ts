@@ -40,7 +40,7 @@ import { SessionUnreadController } from "../sessionUnread";
 import { initialSessionWarningVisibilityState, reconcileSessionWarningVisibility, toggleSessionWarnings } from "../sessionWarningVisibility";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { ServerNoticesController, visibleServerNotices } from "../serverNotices";
-import type { ServerNotice, SessionEffectResolution } from "../../../shared/apiTypes";
+import { chatSupports, type ChatCapability, type ServerNotice, type SessionEffectResolution } from "../../../shared/apiTypes";
 import type { ApplicationPanelContext, PluginNavigationPatchDestination, PluginNavigationOptions, ContributionQueryValue, PiWebPluginRegistration, PluginMachine, PluginPromptEditor, QualifiedContributionId, PluginRuntimeContext, SessionLabelContext, SessionLabelItem, WorkspaceFilesCapabilityV1, WorkspaceHost, WorkspaceInvalidation, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelNavigationV1, WorkspacePanelTerminal, WorkspacePluginBinding, WorkspaceTerminalCommandInput } from "../plugins/types";
 import { CLASSIC_THEME_ID, applyPiWebTheme, clearStoredThemePreference, effectiveThemePreference, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
 import { corePlugin } from "../plugins/core";
@@ -3384,7 +3384,8 @@ export class PiWebApp extends LitElement {
     const session = this.state.selectedSession;
     if (session === undefined) return;
     const origin: ModelDialogOrigin = { machineId: selectedMachineId(this.state), sessionId: session.id, cwd: session.cwd };
-    const [{ models, catalog }, defaults] = await Promise.all([this.loadModelDialogData(), this.sessions.getSessionDefaults()]);
+    const hasDefaults = this.selectedChatSupports("defaults");
+    const [{ models, catalog }, defaults] = await Promise.all([this.loadModelDialogData(), hasDefaults ? this.sessions.getSessionDefaults() : undefined]);
     if (!this.modelDialogOriginIsCurrent(origin)) return;
     const selectedValue = this.currentModelValue();
     this.setState({
@@ -3392,13 +3393,21 @@ export class PiWebApp extends LitElement {
         instanceId: ++this.modelDialogInstanceId,
         origin,
         title: "Select Model",
-        defaultsLoading: defaults === undefined,
+        defaultsLoading: hasDefaults && defaults === undefined,
+        ...(hasDefaults ? {} : { noDefaults: true as const }),
+        ...(this.selectedChatSupports("models.enabled") ? {} : { fixedScope: true as const }),
         ...(defaults?.defaultProvider !== undefined && defaults.defaultModel !== undefined ? { defaultValue: `${defaults.defaultProvider}/${defaults.defaultModel}` } : {}),
         ...(selectedValue !== undefined ? { selectedValue } : {}),
         options: this.modelDialogOptions(models),
         catalog,
       },
     });
+  }
+
+  /** A Durable Chat hides what it does not support yet; its status is the latest word, else its listing. */
+  private selectedChatSupports(capability: ChatCapability): boolean {
+    const { selectedSession, status } = this.state;
+    return chatSupports(status !== undefined && status.sessionId === selectedSession?.id ? status : selectedSession, capability);
   }
 
   private async loadModelDialogData(): Promise<{ models: SessionModel[]; catalog: SessionModelCatalogEntry[] }> {
@@ -3500,14 +3509,16 @@ export class PiWebApp extends LitElement {
     const session = this.state.selectedSession;
     if (session === undefined) return;
     const origin: ModelDialogOrigin = { machineId: selectedMachineId(this.state), sessionId: session.id, cwd: session.cwd };
-    const [levels, defaults] = await Promise.all([this.sessions.listThinkingLevels(), this.sessions.getSessionDefaults()]);
+    const hasDefaults = this.selectedChatSupports("defaults");
+    const [levels, defaults] = await Promise.all([this.sessions.listThinkingLevels(), hasDefaults ? this.sessions.getSessionDefaults() : undefined]);
     if (!this.modelDialogOriginIsCurrent(origin)) return;
     const current = this.state.status?.thinkingLevel ?? "off";
     this.setState({
       thinkingDialog: {
         title: "Select Thinking Level",
         origin,
-        defaultsLoading: defaults === undefined,
+        defaultsLoading: hasDefaults && defaults === undefined,
+        ...(hasDefaults ? {} : { noDefaults: true as const }),
         ...(defaults?.defaultThinkingLevel === undefined ? {} : { defaultValue: defaults.defaultThinkingLevel }),
         selectedValue: current,
         options: levels.map((level) => { const description = thinkingDescription(level); return { value: level, label: `${level}${level === current ? " ✓ current" : ""}`, ...(description === undefined ? {} : { description }) }; }),
@@ -4041,8 +4052,8 @@ export class PiWebApp extends LitElement {
             ${this.renderStatusBar(state)}
             </conversation-layout>
             ${state.commandDialog !== undefined ? html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value)} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>` : null}
-            ${state.modelDialog !== undefined ? html`<model-picker title=${state.modelDialog.title} .options=${state.modelDialog.options} .catalog=${state.modelDialog.catalog} .defaultValue=${state.modelDialog.defaultValue} .defaultsLoading=${state.modelDialog.defaultsLoading === true} .onSetDefault=${this.handleSetDefaultModel} .selectedValue=${state.modelDialog.selectedValue} .onPick=${(value: string) => { void this.pickModel(value); }} .onToggleEnabled=${this.handleToggleModelEnabled} .onSetScope=${this.handleSetModelScope} .onCancel=${() => { this.setState({ modelDialog: undefined }); }}></model-picker>` : null}
-            ${state.thinkingDialog !== undefined ? html`<command-picker title=${state.thinkingDialog.title} .options=${state.thinkingDialog.options} .defaultValue=${state.thinkingDialog.defaultValue} .defaultsLoading=${state.thinkingDialog.defaultsLoading === true} .onSetDefault=${this.handleSetDefaultThinking} .selectedValue=${state.thinkingDialog.selectedValue} .onPick=${(value: string) => { void this.pickThinking(value); }} .onCancel=${() => { this.setState({ thinkingDialog: undefined }); }}></command-picker>` : null}
+            ${state.modelDialog !== undefined ? html`<model-picker title=${state.modelDialog.title} .options=${state.modelDialog.options} .catalog=${state.modelDialog.catalog} .defaultValue=${state.modelDialog.defaultValue} .defaultsLoading=${state.modelDialog.defaultsLoading === true} .onSetDefault=${state.modelDialog.noDefaults === true ? undefined : this.handleSetDefaultModel} .selectedValue=${state.modelDialog.selectedValue} .onPick=${(value: string) => { void this.pickModel(value); }} .onToggleEnabled=${state.modelDialog.fixedScope === true ? undefined : this.handleToggleModelEnabled} .onSetScope=${state.modelDialog.fixedScope === true ? undefined : this.handleSetModelScope} .onCancel=${() => { this.setState({ modelDialog: undefined }); }}></model-picker>` : null}
+            ${state.thinkingDialog !== undefined ? html`<command-picker title=${state.thinkingDialog.title} .options=${state.thinkingDialog.options} .defaultValue=${state.thinkingDialog.defaultValue} .defaultsLoading=${state.thinkingDialog.defaultsLoading === true} .onSetDefault=${state.thinkingDialog.noDefaults === true ? undefined : this.handleSetDefaultThinking} .selectedValue=${state.thinkingDialog.selectedValue} .onPick=${(value: string) => { void this.pickThinking(value); }} .onCancel=${() => { this.setState({ thinkingDialog: undefined }); }}></command-picker>` : null}
           ` : state.selectedSession !== undefined && this.isChatVisible() && this.sessions.isChatLoadDeferred
             ? html`<div class="empty" role="status">Loading conversation…</div>`
             : html`<div class="empty">${this.sessionEmptyMessage()}</div>`}

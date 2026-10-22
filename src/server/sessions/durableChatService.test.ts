@@ -27,9 +27,9 @@ class FakeHost extends EventEmitter implements DurableHostProcess {
   readonly requests: Request[] = [];
   answer: (request: Request) => unknown = (request) => (request.method === "status" ? status : null);
 
-  constructor(protocol = DURABLE_HOST_PROTOCOL) {
+  constructor(protocol = DURABLE_HOST_PROTOCOL, capabilities?: unknown) {
     super();
-    queueMicrotask(() => { this.emit("message", { ready: { protocol } }); });
+    queueMicrotask(() => { this.emit("message", { ready: { protocol, ...(capabilities === undefined ? {} : { capabilities }) } }); });
   }
 
   send(message: unknown): boolean {
@@ -59,20 +59,24 @@ class FakeHost extends EventEmitter implements DurableHostProcess {
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
-async function service(make: (launch: number) => FakeHost = () => new FakeHost(), resources?: DurableChatResourceSet): Promise<{ durable: DurableChatService; hub: SessionEventHub; locator: SessionRuntimeLocator; launched: FakeHost[]; root: string }> {
+type UnreadCall = [sessionId: string, cwd: string, change: "active" | "idle" | "closed"];
+
+async function service(make: (launch: number) => FakeHost = () => new FakeHost(), resources?: DurableChatResourceSet): Promise<{ durable: DurableChatService; hub: SessionEventHub; locator: SessionRuntimeLocator; launched: FakeHost[]; root: string; unread: UnreadCall[] }> {
   const root = await mkdtemp(join(tmpdir(), "pi-web-durable-"));
   roots.push(root);
   const hub = new SessionEventHub();
   const locator = new SessionRuntimeLocator(root);
   const launched: FakeHost[] = [];
+  const unread: UnreadCall[] = [];
   const durable = new DurableChatService({
     locator,
     events: hub,
     launch: () => { const host = make(launched.length); launched.push(host); return host; },
     storesDir: join(root, "durable"),
     ...(resources === undefined ? {} : { resources: () => Promise.resolve(resources) }),
+    unread: (sessionId, cwd, change) => { unread.push([sessionId, cwd, change]); return Promise.resolve(); },
   });
-  return { durable, hub, locator, launched, root };
+  return { durable, hub, locator, launched, root, unread };
 }
 
 
@@ -121,7 +125,7 @@ describe("Durable Chats", () => {
     hub.addGlobal({ OPEN: 1, readyState: 1, send: (payload) => { global.push(JSON.parse(payload)); }, terminate: () => undefined, on: () => undefined });
     only(launched).push({ type: "message.end", message: { role: "user", content: "Fix the build", entryId: "8" } });
     only(launched).push({ type: "status.update", status: { ...status, messageCount: 1 } });
-    expect(global).toContainEqual({ type: "status.update", status: { ...status, messageCount: 1, sessionId: chat.id } });
+    expect(global).toContainEqual({ type: "status.update", status: { ...status, messageCount: 1, sessionId: chat.id, capabilities: [] } });
     expect(locator.durable(chat.id)).toMatchObject({ firstMessage: "Fix the build", messageCount: 1 });
     expect(durable.list("/work/a")[0]?.name).toBe("Durable · Fix the build");
   });
@@ -164,6 +168,8 @@ describe("Durable Chats", () => {
     const ref = { id: chat.id, cwd: chat.cwd };
     expect(only(launched).requests[0]).toMatchObject({ method: "configure", params: { resources: { projectContext: "Project-specific instructions and guidelines:" } } });
     await expect(durable.commands(ref)).resolves.toEqual([
+      expect.objectContaining({ name: "name", source: "builtin" }),
+      expect.objectContaining({ name: "session", source: "builtin" }),
       expect.objectContaining({ name: "mode", source: "extension" }),
       { name: "skill:tidy", description: "Tidy up", source: "skill" },
     ]);
@@ -244,5 +250,56 @@ describe("Durable Chats", () => {
     expect(exited).toBe(true);
     await durable.status(ref);
     expect(launched).toHaveLength(2);
+  });
+
+  it("feeds committed turn starts and ends into the shared unread catalog; a host exit only forgets the running latch", async () => {
+    const { durable, launched, unread } = await service();
+    const chat = await durable.start("/work/a");
+    only(launched).push({ type: "agent.start" });
+    only(launched).push({ type: "agent.end" });
+    only(launched).push({ type: "agent.start" });
+    only(launched).kill();
+    await Promise.resolve();
+    expect(unread).toEqual([[chat.id, "/work/a", "active"], [chat.id, "/work/a", "idle"], [chat.id, "/work/a", "active"], [chat.id, "/work/a", "closed"]]);
+  });
+
+  it("names the Chat with /name in the catalog and tells every browser, reports /session stats, and lists both commands", async () => {
+    const { durable, hub, launched, locator } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const global: unknown[] = [];
+    hub.addGlobal({ OPEN: 1, readyState: 1, send: (payload) => { global.push(JSON.parse(payload)); }, terminate: () => undefined, on: () => undefined });
+    only(launched).answer = (request) => request.method === "transcript"
+      ? { messages: [{ role: "user", content: "hi" }, { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "bash", arguments: {} }] }, { role: "toolResult", content: [] }, { role: "assistant", content: [{ type: "text", text: "done" }] }], partial: null, status: { ...status, tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, total: 15 }, cost: 0.25 } }
+      : status;
+    await expect(durable.runCommand(ref, "/name")).resolves.toEqual({ type: "unsupported", message: "Usage: /name <session name>" });
+    const named = await durable.runCommand(ref, "/name Release prep");
+    expect(named).toMatchObject({ type: "done", message: "Session named: Release prep", session: { id: chat.id, name: "Durable · Release prep" } });
+    expect(locator.durable(chat.id)?.name).toBe("Release prep");
+    expect(global).toContainEqual({ type: "session.name", sessionId: chat.id, name: "Durable · Release prep" });
+    only(launched).push({ type: "message.end", message: { role: "user", content: "first words", entryId: "1" } });
+    expect(durable.list("/work/a")[0]?.name).toBe("Durable · Release prep");
+    await expect(durable.runCommand(ref, "/session")).resolves.toEqual({ type: "done", message: [
+      `Session: ${chat.id}`, "Messages: 4 (1 user, 2 assistant)", "Tool calls: 1", "Tokens: ↑10 ↓5 total 15", "Cost: $0.2500",
+    ].join("\n") });
+    const names = (await durable.commands(ref)).map((command) => command.name);
+    expect(names).toEqual(expect.arrayContaining(["mode", "name", "session"]));
+    await expect(durable.runCommand(ref, "/export")).resolves.toEqual({ type: "unsupported", message: "/export is not available in Durable Chats yet" });
+  });
+
+  it("reports the gated operations the host supports on status, transcript and listing; a host without a list supports none", async () => {
+    const { durable, hub, launched } = await service((launch) => new FakeHost(DURABLE_HOST_PROTOCOL, launch === 0 ? ["attachments", "teleport"] : undefined));
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    only(launched).answer = (request) => request.method === "transcript" ? { messages: [], partial: null, status } : status;
+    expect((await durable.status(ref)).capabilities).toEqual(["attachments"]);
+    expect((await durable.transcriptSnapshot(ref)).status.capabilities).toEqual(["attachments"]);
+    expect(durable.list("/work/a")[0]?.capabilities).toEqual(["attachments"]);
+    const global: unknown[] = [];
+    hub.addGlobal({ OPEN: 1, readyState: 1, send: (payload) => { global.push(JSON.parse(payload)); }, terminate: () => undefined, on: () => undefined });
+    only(launched).push({ type: "status.update", status });
+    expect(global).toContainEqual({ type: "status.update", status: { ...status, sessionId: chat.id, capabilities: ["attachments"] } });
+    await durable.stop(ref);
+    expect((await durable.status(ref)).capabilities).toEqual([]);
   });
 });

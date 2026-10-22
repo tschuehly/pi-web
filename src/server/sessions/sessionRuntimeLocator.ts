@@ -17,6 +17,8 @@ export interface DurableChatRecord {
   /** Listing projection, refreshed from host events; the host's store stays the authority. */
   firstMessage: string;
   messageCount: number;
+  /** Set with `/name`. */
+  name?: string;
 }
 
 interface LocatorFile {
@@ -55,7 +57,7 @@ export class SessionRuntimeLocator {
     return record;
   }
 
-  update(sessionId: string, change: Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount">>): void {
+  update(sessionId: string, change: Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name">>): void {
     const record = this.#chats.get(sessionId);
     if (record === undefined) return;
     this.#chats.set(sessionId, { ...record, ...change });
@@ -101,5 +103,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isDurableChatRecord(value: unknown): value is DurableChatRecord {
   return isRecord(value) && value["runtime"] === "durable"
     && ["id", "cwd", "storeId", "created", "modified", "firstMessage"].every((key) => typeof value[key] === "string")
-    && typeof value["messageCount"] === "number";
+    && typeof value["messageCount"] === "number"
+    && (value["name"] === undefined || typeof value["name"] === "string");
 }

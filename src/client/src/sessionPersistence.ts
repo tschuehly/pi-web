@@ -1,4 +1,5 @@
 import type { SessionInfo, SessionStatus } from "./api";
+import { chatSupports } from "../../shared/apiTypes";
 import { isCachedNewSessionInfo } from "./cachedNewSessions";
 
 export type SessionPersistenceState = "persisted" | "transient" | "unknown";
@@ -17,8 +18,10 @@ export function sessionPersistenceState(session: SessionInfo | undefined, status
   return "unknown";
 }
 
+/** A Durable Chat cannot be archived until it reports the capability. */
 export function isArchivableSessionInfo(session: SessionInfo | undefined, status?: SessionStatus): boolean {
-  return session !== undefined && session.archived !== true && sessionPersistenceState(session, status) === "persisted";
+  return session !== undefined && session.archived !== true && sessionPersistenceState(session, status) === "persisted"
+    && chatSupports(status?.sessionId === session.id ? status : session, "archive");
 }
 
 export function isTransientNewSessionInfo(session: SessionInfo | undefined, status?: SessionStatus): boolean {

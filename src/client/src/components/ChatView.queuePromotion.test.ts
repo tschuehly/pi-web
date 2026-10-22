@@ -32,6 +32,20 @@ describe("ChatView queued-message promotion", () => {
     expect(promoteAll).toHaveBeenCalledOnce();
   });
 
+  it("hides promotion controls in a Durable Chat that does not support promoting queued messages", async () => {
+    const view = await renderView({ ...status([{ kind: "followUp", text: "queued" }]), capabilities: [] });
+    view.onPromoteQueuedMessage = vi.fn();
+    view.onPromoteAllQueuedMessages = vi.fn();
+    await view.updateComplete;
+
+    expect(view.shadowRoot?.querySelector(".queued-send-now-button")).toBeNull();
+    expect(view.shadowRoot?.querySelector(".queued-send-all-button")).toBeNull();
+    view.onQueuedMessageAction = vi.fn(() => Promise.resolve());
+    await view.updateComplete;
+    expect(view.shadowRoot?.querySelector('[aria-label="Recall queued message"]')).toBeNull();
+    expect(view.shadowRoot?.querySelector('[aria-label="Copy queued message"]')).not.toBeNull();
+  });
+
   it("removes promotion controls once every queued message is already steering", async () => {
     const view = await renderView(status([{ kind: "steer", text: "already steering" }]));
     view.onPromoteQueuedMessage = vi.fn();
