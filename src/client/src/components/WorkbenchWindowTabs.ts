@@ -178,6 +178,8 @@ export class WorkbenchWindowTabs extends LitElement {
     const activeKey = current === undefined ? groups[0]?.key : workstreamKey(current);
     const activeGroup = groups.find((group) => group.key === activeKey) ?? groups[0];
     const tabs = window.layout === "tabs";
+    const solo = window.chats.length === 1 ? window.chats[0] : undefined;
+    if (solo !== undefined) return this.renderSoloBar(window, solo);
     // A Grid on screen gives its tiles the whole window: Add and the layout move to each Chat's menu, a row stays only for pages.
     if (!tabs && this.selected !== undefined) return this.renderGridPager(window);
     const workstreamTabs = groups.length >= 2;
@@ -208,6 +210,28 @@ export class WorkbenchWindowTabs extends LitElement {
           <div class="tabs chats lower" role="tablist" aria-label=${chatsLabel(lowerChats)}>
             ${lowerChats.chats.map((chat) => this.renderChatTab(chat))}
           </div>`}
+      </nav>
+    `;
+  }
+
+  /** One Chat needs no layout: its name, status and Workstream, its tools, and Add. A second Chat turns the window into a Grid. */
+  private renderSoloBar(window: WorkbenchWindow, chat: WindowChat) {
+    const open = () => { this.select(chat.sessionId); };
+    const move = this.moveHandlers([chat.sessionId], chat.title);
+    return html`
+      <nav aria-label=${window.name} @dragover=${this.onDragOver} @drop=${this.onDrop}>
+        <div class="bar">
+          <div class=${chat.workstream === undefined ? "solo" : "solo tinted"} style=${workstreamStyle(chat.workstream?.id)} data-session=${chat.sessionId} data-status=${this.status(chat)} role="button" tabindex="0" aria-current=${this.selected === chat.sessionId ? "page" : "false"} title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`} draggable="true"
+            @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}>
+            ${this.renderChatMarker(chat)}
+            <span class="title">${chat.title}</span>
+            ${chat.workstream === undefined ? nothing : html`<span class="solo-ws">${chat.workstream.title}</span>`}
+          </div>
+          <slot name="tools"></slot>
+          <div class="actions">
+            <button class="add" title="Open or start a Chat (⌘T)" aria-pressed=${this.selected === undefined} @click=${() => { this.emit("window-home", undefined); }}>${renderBuiltinTabIcon("plus")}Add</button>
+          </div>
+        </div>
       </nav>
     `;
   }
@@ -331,6 +355,10 @@ export class WorkbenchWindowTabs extends LitElement {
     .segmented button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); }
     .segmented button:hover { color: var(--pi-text); }
     .segmented button[aria-pressed="true"] { background: var(--pi-surface-hover); color: var(--pi-text); }
+    .solo { flex: 1 1 auto; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 6px 6px 0 0; color: var(--pi-text); font-weight: 500; white-space: nowrap; cursor: pointer; }
+    .solo .title { flex: 0 1 auto; }
+    .solo-ws { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--pi-muted); font-weight: 400; }
+    .solo:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -4px; }
     .lead { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding-left: 10px; }
     .window-name { color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
     .pager-row { display: flex; justify-content: center; height: 22px; align-items: center; }

@@ -97,11 +97,11 @@ describe("moving Chats between windows", () => {
     expect(moved["w2"] === undefined ? undefined : workstreamTabTarget(moved["w2"], release.id)).toBe("a1");
   });
 
-  it("creates a missing target window with the next free name and the source's layout", () => {
-    const moved = moveChats(toggleLayout(windowWith(chat("a"), chat("b")), "w1"), "w1", "new", ["b"]);
+  it("creates a missing target window with the next free name, a Grid for two Chats", () => {
+    const moved = moveChats(windowWith(chat("a"), chat("b"), chat("c")), "w1", "new", ["b", "c"]);
 
     expect(moved["new"]).toMatchObject({ name: "Window 2", layout: "grid", focused: "b" });
-    expect(ids(moved["new"]?.chats ?? [])).toEqual(["b"]);
+    expect(ids(moved["new"]?.chats ?? [])).toEqual(["b", "c"]);
   });
 
   it("leaves the store alone for a move to the same window or of Chats it does not hold", () => {
@@ -134,8 +134,9 @@ describe("grid", () => {
   });
 
   it("switches layouts, leaving full size behind, and toggles full size only in a grid", () => {
-    const tabs = windowWith(chat("a"), chat("b"));
+    const tabs = toggleLayout(windowWith(chat("a"), chat("b")), "w1");
 
+    expect(tabs["w1"]?.layout).toBe("tabs");
     expect(toggleMaximized(tabs, "w1")).toBe(tabs);
     const grid = toggleLayout(tabs, "w1");
     expect(grid["w1"]?.layout).toBe("grid");
@@ -220,5 +221,33 @@ describe("windowChatSummary", () => {
     expect(windowChatSummary(window)).toBe("Chat c · Chat a +2");
     expect(windowChatSummary(windowWith(chat("a"))["w1"] ?? emptyWindow("x"))).toBe("Chat a");
     expect(windowChatSummary(emptyWindow("Window 3"))).toBe("Window 3");
+  });
+});
+
+describe("one-Chat window", () => {
+  it("keeps one Chat out of any layout, turns into a Grid at the second Chat, and back when one is left", () => {
+    const one = windowWith(chat("a"));
+    expect(one["w1"]).toMatchObject({ layout: "tabs", maximized: false });
+    expect(toggleLayout(one, "w1")).toBe(one);
+
+    const two = openChat(one, "w1", chat("b"));
+    expect(two["w1"]?.layout).toBe("grid");
+    const tabs = toggleLayout(two, "w1");
+    expect(openChat(tabs, "w1", chat("c"))["w1"]?.layout).toBe("tabs");
+
+    const maximized = toggleMaximized(two, "w1");
+    expect(closeChats(maximized, "w1", ["b"])["w1"]).toMatchObject({ layout: "tabs", maximized: false });
+  });
+
+  it("gives a window a moved Chat joins its Grid, and a window left with one Chat none", () => {
+    const store = openChat(openChat(openChat(windowWith(chat("a"), chat("b")), "w2", chat("x")), "w1", chat("c")), "w1", chat("d"));
+    const moved = moveChats(toggleLayout(store, "w1"), "w1", "w2", ["c"]);
+    expect(moved["w2"]?.layout).toBe("grid");
+    expect(moveChats(moved, "w1", "new", ["a"])["new"]?.layout).toBe("tabs");
+  });
+
+  it("reads a stored one-Chat Grid as a one-Chat window", () => {
+    const stored = { w1: { ...emptyWindow("Window 1", "grid"), chats: [chat("a")], focused: "a", maximized: true } };
+    expect(parseWindowStore(JSON.stringify(stored))["w1"]).toMatchObject({ layout: "tabs", maximized: false });
   });
 });
