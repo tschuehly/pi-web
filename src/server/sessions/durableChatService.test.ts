@@ -37,7 +37,11 @@ class FakeHost extends EventEmitter implements DurableHostProcess {
     const request = message;
     this.requests.push(request);
     queueMicrotask(() => {
-      this.emit("message", { id: request.id, result: this.answer(request) });
+      try {
+        this.emit("message", { id: request.id, result: this.answer(request) });
+      } catch (error) {
+        this.emit("message", { id: request.id, error: { message: error instanceof Error ? error.message : String(error) } });
+      }
       // A real host closes its store, replies, then exits a little later.
       if (request.method === "close") setTimeout(() => { this.emit("exit", 0, null); }, this.exitDelayMs);
     });
@@ -245,5 +249,43 @@ describe("Durable Chats", () => {
     expect(exited).toBe(true);
     await durable.status(ref);
     expect(launched).toHaveLength(2);
+  });
+
+  // P086 /quota-check: host-listed commands, run in the host under a fresh operation id.
+  it("lists the host's Workbench commands and runs them in the host; /mode and unknown commands keep their paths", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    only(launched).answer = (request) => request.method === "commands"
+      ? [{ name: "quota-check", description: "Check Claude quota" }]
+      : request.method === "command" ? { type: "done", message: "Claude quota telemetry is fresh." } : status;
+    await expect(durable.commands(ref)).resolves.toEqual([
+      expect.objectContaining({ name: "mode" }),
+      { name: "quota-check", description: "Check Claude quota", source: "extension" },
+    ]);
+    await expect(durable.runCommand(ref, "/quota-check  repair ")).resolves.toEqual({ type: "done", message: "Claude quota telemetry is fresh." });
+    const command = only(launched).requests.find((request) => request.method === "command");
+    expect(command?.params).toMatchObject({ name: "quota-check", args: "repair" });
+    expect(String(command?.params?.["operationId"])).toMatch(/^[0-9a-f-]{36}$/);
+    await expect(durable.runCommand(ref, "/tree")).resolves.toEqual({ type: "unsupported", message: "/tree is not available in Durable Chats yet" });
+  });
+
+  it("keeps working with a host that lists no commands", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    only(launched).answer = (request) => { if (request.method === "commands") throw new Error("Unknown method commands"); return status; };
+    await expect(durable.commands(ref)).resolves.toEqual([expect.objectContaining({ name: "mode" })]);
+    await expect(durable.runCommand(ref, "/quota-check")).resolves.toEqual({ type: "unsupported", message: "/quota-check is not available in Durable Chats yet" });
+  });
+
+  // P073: the host's shell activity reaches the browser's status unchanged.
+  it("passes the host's running shell calls through to status", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const shell = { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-10-22T10:00:00.000Z" };
+    only(launched).answer = () => ({ ...status, activeToolExecutions: [shell] });
+    await expect(durable.status(ref)).resolves.toMatchObject({ activeToolExecutions: [shell] });
   });
 });

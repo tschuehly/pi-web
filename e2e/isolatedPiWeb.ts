@@ -111,7 +111,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const durableHost = process.env["PI_WEB_E2E_DURABLE_HOST"];
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_") && !key.startsWith("GIT_")));
     // Its telemetry goes to the fixture root, never to the owner's ~/.pi/agent/telemetry.
-    if (durableHost !== undefined && durableHost !== "") Object.assign(env, { PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry") });
+    // PI_TMP, Workstreams and free disk space are fixture-local too.
+    if (durableHost !== undefined && durableHost !== "") Object.assign(env, {
+      PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry"),
+      PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
+    });
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),
