@@ -256,16 +256,20 @@ export class DurableChatService {
     await connection.request("prompt", { operationId: operationId ?? randomUUID(), text: expanded, ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }) });
   }
 
-  /** Slash commands of a Durable Chat: Working Mode and the workspace's skills. */
+  /** Slash commands of a Durable Chat: Working Mode, the host's Workbench commands and the workspace's skills. */
   async commands(ref: SessionRouteRef): Promise<ClientCommand[]> {
-    await this.#for(ref);
+    const hostCommands = await this.#hostCommands(ref);
     return [
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" },
+      ...hostCommands.map((command) => ({ ...command, source: "extension" as const })),
       ...(this.#skills.get(ref.id) ?? []).map((skill) => ({ name: `skill:${skill.name}`, ...(skill.description === undefined ? {} : { description: skill.description }), source: "skill" as const })),
     ];
   }
 
-  /** `/mode …` runs in the host; `/skill:…` is a prompt; every other command is not available yet. */
+  /**
+   * `/mode …` and the host's commands (`/quota-check`) run in the host, each run under a fresh
+   * operation id; `/skill:…` is a prompt; every other command is not available yet.
+   */
   async runCommand(ref: SessionRouteRef, text: string): Promise<ClientCommandResult> {
     const trimmed = text.trim();
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
@@ -273,11 +277,26 @@ export class DurableChatService {
       const { result } = await (await this.#for(ref)).request("mode", { args: trimmed.slice("/mode".length).trim() });
       return commandResult(result);
     }
+    if ((await this.#hostCommands(ref)).some((command) => command.name === name)) {
+      const args = trimmed.slice(name.length + 1).trim();
+      const { result } = await (await this.#for(ref)).request("command", { name, args, operationId: randomUUID() });
+      return commandResult(result);
+    }
     if (name.startsWith("skill:")) {
       await this.prompt(ref, trimmed);
       return { type: "done" };
     }
     return { type: "unsupported", message: `/${name} is not available in Durable Chats yet` };
+  }
+
+  /** The commands the host offers; a host without any (an older build) offers none. */
+  async #hostCommands(ref: SessionRouteRef): Promise<{ name: string; description?: string }[]> {
+    const result = await (await this.#for(ref)).request("commands").then((reply) => reply.result, () => []);
+    return Array.isArray(result)
+      ? result.filter(isRecord).flatMap((command) => typeof command["name"] === "string"
+        ? [{ name: command["name"], ...(typeof command["description"] === "string" ? { description: command["description"] } : {}) }]
+        : [])
+      : [];
   }
 
   async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[]> {
