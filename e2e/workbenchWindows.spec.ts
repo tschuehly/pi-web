@@ -46,6 +46,8 @@ async function openSeededWindow(page: Page, oneWorkstream = false, crowded = fal
 const shownChat = (page: Page) => page.locator('.tile[data-focused="true"] main.chat-shell');
 const workstreamTab = (page: Page, name: string) => page.locator("workbench-window-tabs .workstream-tab", { hasText: name });
 const chatTab = (page: Page, name: string) => page.locator("workbench-window-tabs .chat-tab", { hasText: name });
+/** A one-Chat window's slim bar names its Chat instead of tabs. */
+const soloBar = (page: Page) => page.locator("workbench-window-tabs .solo");
 /** The selected Chat's toolbar, slotted into the window's tab row in Tabs. */
 const tabRowTools = (page: Page) => page.locator("workbench-window-tabs > .chat-tools");
 /** The burger that holds a Chat's tools, in the tab row or a Grid tile's bar. */
@@ -124,9 +126,9 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await page.getByRole("menuitem", { name: "Move to new window" }).click();
   const moved = await popup;
   await expect(shownChat(moved)).toHaveAttribute("data-session", NOTES);
-  await expect(moved.locator("workbench-window-tabs .chat-tab .title")).toHaveText(["Where are the notes?"]);
-  // A single Workstream needs no Workstream row: one row of Chat tabs and tools.
-  await expect(moved.locator("workbench-window-tabs .workstream-tab")).toHaveCount(0);
+  // One Chat needs no tabs or layout switch: a slim bar with its name, its tools and Add.
+  await expect(soloBar(moved).locator(".title")).toHaveText("Where are the notes?");
+  await expect(moved.locator("workbench-window-tabs [role=tab], workbench-window-tabs .segmented")).toHaveCount(0);
   await expect(chatMenu(tabRowTools(moved))).toBeVisible();
   expect(new URL(moved.url()).searchParams.get("win")).not.toBe("e2e");
   await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
@@ -865,7 +867,7 @@ test("Back to a Chat moved to another window shows it there, which keeps it", as
   await page.goBack();
   await expect.poll(() => new URL(page.url()).searchParams.get("session")).toBe(RELEASE);
   await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
-  await expect(moved.locator("workbench-window-tabs .chat-tab .title")).toHaveText(["Where are the notes?"]);
+  await expect(soloBar(moved).locator(".title")).toHaveText("Where are the notes?");
   await expect(shownChat(moved)).toHaveAttribute("data-session", NOTES);
   const stored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, { chats: { sessionId: string }[] }>, STORE_KEY);
   expect(stored["e2e"]?.chats.map((chat) => chat.sessionId)).not.toContain(NOTES);
@@ -941,7 +943,7 @@ test("r7: full storage keeps unsaved edits through heartbeats and a refused move
   // Two genuine heartbeat intervals must not replay an older durable draft.
   await page.waitForTimeout(21_000);
   await expect(composer(page)).toHaveText("stored prefix and important unsaved edits");
-  await page.locator("workbench-window-tabs .chat-tab").click({ button: "right" });
+  await soloBar(page).click({ button: "right" });
   const popup = context.waitForEvent("page");
   await page.getByRole("menuitem", { name: "Move to new window", exact: true }).click();
   const target = await popup;
@@ -1024,11 +1026,11 @@ test("a Chat with an unacknowledged send stays in its window, which restores the
     await page.getByRole("button", { name: "Send message", exact: true }).click();
     await expect(composer(page)).not.toContainText("do not lose me");
     const pagesBefore = context.pages().length;
-    await page.locator("workbench-window-tabs .chat-tab").click({ button: "right" });
+    await soloBar(page).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Move to new window", exact: true }).click();
     await expect(page.getByRole("alert").filter({ hasText: "still being sent" })).toBeVisible();
     expect(context.pages()).toHaveLength(pagesBefore);
-    await page.locator("workbench-window-tabs .chat-tab").click({ button: "right" });
+    await soloBar(page).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Close", exact: true }).click();
     await expect(shownChat(page)).toHaveAttribute("data-session", NOTES);
     release();
@@ -1055,6 +1057,10 @@ for (const scenario of ["move", "reselect", "missed-startup", "images-and-send"]
     await page.locator("workbench-window-tabs button.add").click();
     await page.getByRole("button", { name: "New Chat", exact: true }).click();
     await expect(shownChat(page)).toHaveAttribute("data-session", /^creating:/);
+    // The second Chat turns the window into a Grid; these steps reselect through tabs, so switch to Tabs.
+    await expect(page.locator(".grid > .tile")).toHaveCount(2);
+    await page.keyboard.press("Control+g");
+    await expect(page.locator("workbench-window-tabs .chat-tab")).toHaveCount(2);
     const tempId = await shownChat(page).getAttribute("data-session");
     await expect.poll(() => row?.id).toBeTruthy();
     if (row === undefined || tempId === null) throw new Error("New Chat did not start");
