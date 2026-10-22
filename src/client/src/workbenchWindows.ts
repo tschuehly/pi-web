@@ -101,6 +101,15 @@ export function orderedChats(window: WorkbenchWindow): WindowChat[] {
   return windowGroups(window).flatMap((group) => group.chats);
 }
 
+/** Names a window by what it holds: its focused Chat, then tab order, two titles at most and a count for the rest. */
+export function windowChatSummary(window: WorkbenchWindow): string {
+  const chats = orderedChats(window);
+  const titles = [...chats.filter((chat) => chat.sessionId === window.focused), ...chats.filter((chat) => chat.sessionId !== window.focused)].map((chat) => chat.title);
+  if (titles.length === 0) return window.name;
+  const rest = titles.length - 2;
+  return `${titles.slice(0, 2).join(" · ")}${rest > 0 ? ` +${String(rest)}` : ""}`;
+}
+
 /** The Chat a Workstream tab opens: its last-active Chat while still open here, else its first. */
 export function workstreamTabTarget(window: WorkbenchWindow, key: string): string | undefined {
   const group = windowGroups(window).find((candidate) => candidate.key === key);
@@ -113,9 +122,10 @@ export function openChat(store: WindowStore, windowId: string, chat: WindowChat)
   const next = withoutChats(ensureWindow(store, windowId), [chat.sessionId], windowId);
   const window = cloneWindow(next[windowId] ?? emptyWindow(nextWindowName(next)));
   const index = window.chats.findIndex((candidate) => candidate.sessionId === chat.sessionId);
+  const before = window.chats.length;
   if (index === -1) window.chats.push(chat);
   else window.chats[index] = { ...chat, workstream: chat.workstream ?? window.chats[index]?.workstream };
-  return { ...next, [windowId]: focus(window, chat.sessionId) };
+  return { ...next, [windowId]: focus(fitLayout(window, before), chat.sessionId) };
 }
 
 export function focusChat(store: WindowStore, windowId: string, sessionId: string): WindowStore {
@@ -144,7 +154,7 @@ export function closeChats(store: WindowStore, windowId: string, sessionIds: rea
   if (window === undefined) return store;
   const closing = new Set(sessionIds);
   const order = orderedChats(window).map((chat) => chat.sessionId);
-  const next = fitGridSplit(cloneWindow(window), window.chats.filter((chat) => !closing.has(chat.sessionId)));
+  const next = fitLayout(fitGridSplit(cloneWindow(window), window.chats.filter((chat) => !closing.has(chat.sessionId))), window.chats.length);
   if (window.focused === undefined || !closing.has(window.focused)) return { ...store, [windowId]: next };
   const index = order.indexOf(window.focused);
   const successor = order.slice(index + 1).find((id) => !closing.has(id)) ?? order.slice(0, index).reverse().find((id) => !closing.has(id));
@@ -161,14 +171,21 @@ export function moveChats(store: WindowStore, sourceId: string, targetId: string
   const first = moving[0];
   if (first === undefined) return store;
   const closed = closeChats(store, sourceId, sessionIds);
-  const target = cloneWindow(closed[targetId] ?? emptyWindow(nextWindowName(closed), source.layout));
+  const target = cloneWindow(closed[targetId] ?? emptyWindow(nextWindowName(closed)));
+  const before = target.chats.length;
   target.chats.push(...moving.filter((chat) => !target.chats.some((candidate) => candidate.sessionId === chat.sessionId)));
-  return { ...closed, [targetId]: focus(target, first.sessionId) };
+  return { ...closed, [targetId]: focus(fitLayout(target, before), first.sessionId) };
+}
+
+/** One Chat has no layout (stored as plain Tabs); a window reaching two Chats becomes a Grid. */
+function fitLayout(window: WorkbenchWindow, before: number): WorkbenchWindow {
+  if (window.chats.length < 2) return { ...window, layout: "tabs", maximized: false };
+  return before < 2 ? { ...window, layout: "grid", maximized: false } : window;
 }
 
 export function toggleLayout(store: WindowStore, windowId: string): WindowStore {
   const window = store[windowId];
-  return window === undefined ? store : { ...store, [windowId]: { ...cloneWindow(window), layout: window.layout === "grid" ? "tabs" : "grid", maximized: false } };
+  return window === undefined || window.chats.length < 2 ? store : { ...store, [windowId]: { ...cloneWindow(window), layout: window.layout === "grid" ? "tabs" : "grid", maximized: false } };
 }
 
 export function toggleMaximized(store: WindowStore, windowId: string): WindowStore {
@@ -254,7 +271,7 @@ export function parseWindowStore(raw: string | null): WindowStore {
   const store: WindowStore = {};
   for (const [id, value] of Object.entries(parsed)) {
     const window = parseWindow(value);
-    if (window !== undefined) store[id] = window;
+    if (window !== undefined) store[id] = window.chats.length < 2 ? fitLayout(window, window.chats.length) : window;
   }
   return store;
 }

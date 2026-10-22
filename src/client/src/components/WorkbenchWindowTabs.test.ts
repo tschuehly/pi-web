@@ -14,7 +14,7 @@ function workingSet(focused: string): WorkbenchWindow {
   const store = [chat("a1", release), chat("a2", release), chat("x")].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") });
   const window = focusChat(store, "w", focused)["w"];
   if (window === undefined) throw new Error("missing window");
-  return window;
+  return { ...window, layout: "tabs" };
 }
 
 async function mount(selected: string | undefined, window = workingSet(selected ?? "a1")): Promise<{ tabs: WorkbenchWindowTabs; root: ShadowRoot; events: string[] }> {
@@ -37,6 +37,20 @@ const isClose = (event: Event): event is CustomEvent<ChatTabCloseDetail> => even
 const keydown = (element: Element | null | undefined, key: string) => element?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
 
 describe("window tabs", () => {
+  it("shows one Chat as a slim bar: its status, title and Workstream, its tools and Add, but no tab or layout switch", async () => {
+    const one = openChat({ w: emptyWindow("Window 1", "grid") }, "w", chat("a1", release))["w"] ?? emptyWindow("x");
+    const { root, events } = await mount(undefined, one);
+
+    expect(root.querySelector('.solo[data-session="a1"] .title')?.textContent).toBe("Chat a1");
+    expect(root.querySelector(".solo .solo-ws")?.textContent).toBe("Release");
+    expect(root.querySelector(".solo .dot")?.getAttribute("aria-label")).toBe("Working");
+    expect(root.querySelector("slot[name=tools]")).not.toBeNull();
+    expect(root.querySelector(".add")).not.toBeNull();
+    expect(root.querySelectorAll("[role=tab], .segmented, .close")).toHaveLength(0);
+    root.querySelector<HTMLElement>(".solo")?.click();
+    expect(events).toEqual(["select a1"]);
+  });
+
   it("shows Workstreams on top and the selected Workstream's Chats beneath, with status dots", async () => {
     const { root } = await mount("a2");
 
@@ -89,6 +103,7 @@ describe("window tabs", () => {
 
   it("ends the first row in the slotted Chat tools and the actions, the tabs of a lone Workstream's Chats tinted", async () => {
     const releaseOnly = [chat("a1", release), chat("a2", release)].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") })["w"];
+    if (releaseOnly !== undefined) releaseOnly.layout = "tabs";
     const { root } = await mount("a1", releaseOnly);
     const bar = root.querySelector(".bar");
 
@@ -109,6 +124,7 @@ describe("window tabs", () => {
   it("puts Chats without a Workstream on top as their own tabs, and drops the second row for a single-Chat tab", async () => {
     const docs = { id: "docs", title: "Docs" };
     const window = [chat("a1", release), chat("d1", docs), chat("x"), chat("y")].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") })["w"];
+    if (window !== undefined) window.layout = "tabs";
     const { root, events } = await mount("x", window);
 
     expect([...root.querySelectorAll(".workstreams [role=tab]")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")]))
@@ -258,5 +274,10 @@ describe("chat tab status", () => {
     expect(chatTabStatus(status({ isStreaming: true }), true)).toBe("running");
     expect(chatTabStatus(status({}), true)).toBe("done");
     expect(chatTabStatus(undefined, false)).toBe("idle");
+  });
+
+  it("shows needs you while the agent's attention request is unacknowledged", () => {
+    expect(chatTabStatus(status({ isStreaming: true, attentionRequest: { id: "a", reason: "Review the PR" } }), true)).toBe("needs");
+    expect(chatTabStatus({ attentionRequest: { id: "a", reason: "Review the PR" } }, false)).toBe("needs");
   });
 });

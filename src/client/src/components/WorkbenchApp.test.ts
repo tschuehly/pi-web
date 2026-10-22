@@ -159,7 +159,7 @@ describe("Chat in a folder", () => {
     const app = new WorkbenchApp();
     document.body.append(app);
     await vi.waitFor(() => { expect(shownWorkstream(app)).toBe("Source learning"); });
-    expect(tabsRoot(app).querySelector(".chat-tab")?.classList.contains("tinted")).toBe(true);
+    expect(tabsRoot(app).querySelector(".solo")?.classList.contains("tinted")).toBe(true);
     expect(getState(app).selectedProject).toBeUndefined();
     expect(getState(app).selectedWorkspace?.path).toBe(current.cwd);
     expect(app.shadowRoot?.querySelector(".files-toggle")?.getAttribute("title")).toBe("Files \u2014 nested (/outside/nested)");
@@ -2168,6 +2168,11 @@ describe("window tabs", () => {
       [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? [])].find((button) => button.textContent.includes(title))?.click();
       // Docs holds one Chat, so its only tab is the Workstream tab on top.
       await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(sessionId); });
+      // A second Chat turns the window into a Grid; these tests start from Tabs.
+      if (sessionId === "a2") {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
+        await vi.waitFor(async () => { await app.updateComplete; expect(tabsRoot(app).querySelector("button.add")).not.toBeNull(); });
+      }
     }
     await vi.waitFor(async () => { await app.updateComplete; expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]); });
     // Restore the working set with only its selected tab loaded. Tests can then hold genuine first-open requests.
@@ -2380,8 +2385,8 @@ describe("window tabs", () => {
     const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "a", question: "A?", options: [] }, { id: "b", question: "B?", options: [] }] };
     vi.clearAllMocks();
     const status = vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
-    let answerA1: (asks: typeof ask[]) => void = () => undefined;
-    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => ref.id === "a1" ? new Promise((resolve) => { answerA1 = resolve; }) : Promise.resolve([]));
+    let answerA1: (asks: { pendingAsks: typeof ask[] }) => void = () => undefined;
+    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => ref.id === "a1" ? new Promise((resolve) => { answerA1 = resolve; }) : Promise.resolve({ pendingAsks: [] }));
     const sockets: SilentWebSocket[] = [];
     vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
     window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
@@ -2398,7 +2403,7 @@ describe("window tabs", () => {
     realtime?.onopen?.();
     await vi.waitFor(() => { expect(openAsks.mock.calls.map(([ref]) => ref.id).sort()).toEqual(["a1", "b1"]); });
     // A selection that lands as the answer arrives does not drop it.
-    answerA1([ask]);
+    answerA1({ pendingAsks: [ask] });
     workstreamTab(app, "Docs").click();
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
     workstreamTab(app, "Release").click();
@@ -2406,6 +2411,44 @@ describe("window tabs", () => {
     await vi.waitFor(async () => { await app.updateComplete; expect(count("a1")).toBe("2"); });
     // Status and transcript reads open a cold Chat in the daemon, which would replay its recorded answers.
     for (const read of [status, vi.mocked(api.messages), vi.mocked(api.transcriptSnapshot), vi.mocked(api.streamSnapshot)]) expect(read.mock.calls.map(([ref]) => ref.id)).not.toContain("a1");
+  });
+
+  it("restores a background Chat's unacknowledged attention request as needs you after a reload", async () => {
+    await mountWithWorkstreamChats();
+    document.body.replaceChildren();
+    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    vi.clearAllMocks();
+    vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
+    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], attentionRequest: { id: "attention-1", reason: "Review the release PR" } } : { pendingAsks: [] }));
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    const dot = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"]`)?.getAttribute("data-status");
+
+    sockets.at(-1)?.onopen?.();
+
+    await vi.waitFor(async () => { await app.updateComplete; expect(dot("a1")).toBe("needs"); });
+    expect(dot("a2")).not.toBe("needs");
+  });
+
+  it("acknowledges the selected Chat's attention request once the owner sees it, and not while the window is in the background", async () => {
+    const app = await mountWithWorkstreamChats();
+    const acknowledge = vi.spyOn(api, "acknowledgeAttention").mockResolvedValue(undefined);
+    const focused = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+
+    receive({ type: "status.update", status: { ...idleStatus("b1"), attentionRequest: { id: "attention-1", reason: "Review the release PR" } } });
+    await vi.waitFor(() => { expect(getState(app).status?.attentionRequest?.id).toBe("attention-1"); });
+    expect(acknowledge).not.toHaveBeenCalled();
+
+    focused.mockReturnValue(true);
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
+
+    await vi.waitFor(() => { expect(acknowledge).toHaveBeenCalledExactlyOnceWith({ id: "b1", cwd: workspace.path }, "attention-1", "local"); });
   });
 
   it("puts the Chat's tools in the tab row, naming its folder in the Files tooltip, and gives them back to the tile in a grid", async () => {
@@ -2627,7 +2670,7 @@ describe("window tabs", () => {
     app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2"], label: "Release", clientX: 0, clientY: 0 } }));
     await app.updateComplete;
     const items = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])];
-    expect(items.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Window 2 (closed)", "Close 2 Chats"]);
+    expect(items.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Install guide (closed)", "Close 2 Chats"]);
     items[1]?.click();
     await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]?.chats.map((chat) => chat.sessionId)).toEqual(["b1", "a1", "a2"]);
@@ -3405,7 +3448,7 @@ function tabsRoot(app: WorkbenchApp): ShadowRoot {
 
 const paneChats = (app: WorkbenchApp): (string | undefined)[] => [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])].map((pane) => pane instanceof WorkbenchChatPane ? pane.app?.selectedSession?.id : undefined);
 const workstreamTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".workstream-tab")].map((tab) => tab.textContent.replace(/\s+/gu, ""));
-const chatTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".chat-tab .title")].map((title) => title.textContent);
+const chatTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".chat-tab .title, .solo .title")].map((title) => title.textContent);
 
 function workstreamTab(app: WorkbenchApp, title: string): HTMLElement {
   const tab = [...tabsRoot(app).querySelectorAll<HTMLElement>(".workstream-tab")].find((candidate) => candidate.querySelector(".title")?.textContent === title);
@@ -3704,7 +3747,10 @@ function setState(app: WorkbenchApp, state: AppState): void {
 
 /** The Workstream the one-row tab strip names for the Chat on screen, through its Chats' label. */
 function shownWorkstream(app: WorkbenchApp): string | undefined {
-  const label = app.shadowRoot?.querySelector("workbench-window-tabs")?.shadowRoot?.querySelector(".tabs.chats")?.getAttribute("aria-label");
+  const root = app.shadowRoot?.querySelector("workbench-window-tabs")?.shadowRoot;
+  const solo = root?.querySelector(".solo");
+  if (solo !== null && solo !== undefined) return solo.querySelector(".solo-ws")?.textContent ?? undefined;
+  const label = root?.querySelector(".tabs.chats")?.getAttribute("aria-label");
   return label === undefined || label === null || label === "No Workstream Chats" ? undefined : label.replace(/ Chats$/u, "");
 }
 

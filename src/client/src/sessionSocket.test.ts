@@ -94,6 +94,7 @@ describe("notification socket guards", () => {
     const event = { type: "session.attention", sessionId: "session-2", cwd: "/repo", sessionName: "Other Chat", kind: "dialog", id: "dialog-1", detail: "Continue?" };
     expect(parseRealtimeSocketEvent(event)).toEqual(event);
     expect(parseSessionSocketEvent(event)).toBeUndefined();
+    expect(parseRealtimeSocketEvent({ ...event, kind: "attention", id: "attention-1" })).toEqual({ ...event, kind: "attention", id: "attention-1" });
     for (const invalid of [{ ...event, kind: "complete" }, { ...event, id: "" }, { ...event, detail: "x".repeat(121) }, { ...event, sessionName: 1 }, { ...event, cwd: "" }]) {
       expect(parseRealtimeSocketEvent(invalid)).toBeUndefined();
     }

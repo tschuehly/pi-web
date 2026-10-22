@@ -281,6 +281,7 @@ export const sessionsApi = {
   status: (session: SessionRef, machineId = "local") => request(sessionQueryPath(session, "status", machineId), parseSessionStatus),
   /** Open asks of a Chat, read without opening it: unlike `status`, a cold Chat stays cold. */
   openAsks: (session: SessionRef, machineId = "local") => request(sessionQueryPath(session, "asks", machineId), parseOpenAsks),
+  acknowledgeAttention: (session: SessionRef, requestId: string, machineId = "local") => request(sessionPath(session, "attention/acknowledge", machineId), () => undefined, { method: "POST", body: sessionBody(session, { requestId }) }),
   streamSnapshot: (session: SessionRef, machineId = "local") => request(streamSnapshotPath(session, machineId), parseSessionStreamSnapshot),
   transcriptSnapshot: (session: SessionRef, options?: { limit?: number }, machineId = "local") => request(transcriptSnapshotPath(session, options, machineId), parseSessionTranscriptSnapshot),
   promoteQueuedMessage: (session: SessionRef, target: QueuedSessionMessage, machineId = "local") => request(sessionPath(session, "queue/promote", machineId), parseSessionStatus, { method: "POST", body: sessionBody(session, { kind: target.kind, text: target.text }) }),
