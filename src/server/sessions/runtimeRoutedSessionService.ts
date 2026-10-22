@@ -9,7 +9,7 @@ import { DurableChatUnavailable, type DurableChatService } from "./durableChatSe
  * Durable Chats answer only the operations they support and reject the rest visibly. Slice 2 adds questions,
  * attention, commands (/mode, /skill:), model switching and effect resolution. Slice 3 (composer) adds queue edits
  * and promotion, inline and saved attachments with media, thinking levels, `!` shell commands and prompt templates;
- * slice 3 (attention) unread, /name and /session.
+ * slice 3 (attention) unread, /name and /session. Slice 4 adds history navigation (/tree, go back to a message).
  */
 interface McpAuthService {
   mcpAuthServers(ref: SessionRef): Promise<McpAuthServersResponse>;
@@ -118,7 +118,7 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     shell: (ref, text) => isDurable(ref) ? durable.shell(ref, text) : legacy.shell(ref, text),
     runCommand: (ref, text) => isDurable(ref) ? durable.runCommand(ref, text) : legacy.runCommand(ref, text),
     respondToCommand: (ref, requestId, value) => isDurable(ref) ? unavailable("commands.respond") : legacy.respondToCommand(ref, requestId, value),
-    navigateTree: (ref, request) => isDurable(ref) ? unavailable("tree") : legacy.navigateTree(ref, request),
+    navigateTree: (ref, request) => isDurable(ref) ? durable.navigateTree(ref, request) : legacy.navigateTree(ref, request),
     forkFromTree: (ref, request) => isDurable(ref) ? unavailable("fork") : legacy.forkFromTree(ref, request),
     abort: (ref) => isDurable(ref) ? durable.abort(ref) : legacy.abort(ref),
     stop: (ref) => isDurable(ref) ? durable.stop(ref) : legacy.stop(ref),

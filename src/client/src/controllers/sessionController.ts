@@ -1296,7 +1296,7 @@ export class SessionController {
   }
 
   /** Whether the selected Chat supports a gated operation (a Durable Chat may not yet); its status is the latest word. */
-  private selectedSupports(capability: ChatCapability): boolean {
+  selectedSupports(capability: ChatCapability): boolean {
     const { selectedSession, status } = this.getState();
     return chatSupports(status !== undefined && status.sessionId === selectedSession?.id ? status : selectedSession, capability);
   }

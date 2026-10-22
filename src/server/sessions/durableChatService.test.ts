@@ -199,6 +199,52 @@ describe("Durable Chats", () => {
     await expect(durable.runCommand(ref, "/tree")).resolves.toEqual({ type: "unsupported", message: "/tree is not available in Durable Chats yet" });
   });
 
+  it("opens /tree and navigates in the host when it reports tree navigation, projecting its entries as legacy Chats do (P044, P046)", async () => {
+    const { durable, launched } = await service(() => new FakeHost(DURABLE_HOST_PROTOCOL, ["tree"]));
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const at = "2026-10-22T10:00:00.000Z";
+    const nodes = [
+      { id: "8", parentId: null, timestamp: at, type: "message", message: { role: "user", content: "first" } },
+      { id: "12", parentId: "8", timestamp: at, type: "message", message: { role: "assistant", content: [{ type: "text", text: "ok: first" }] } },
+      { id: "13", parentId: "12", timestamp: at, type: "message", message: { role: "user", content: "second" } },
+      { id: "24", parentId: "12", timestamp: at, type: "message", message: { role: "user", content: "second v2" } },
+    ];
+    only(launched).answer = (request) => request.method === "tree" ? { type: "tree", nodes, activeLeafId: "24" }
+      : request.method === "navigate" ? { editorText: "second\n\nImage blocks immediately following this text map in order as follows:\n1. [PIC_1]" } : status;
+    expect((await durable.commands(ref)).map((command) => command.name)).toContain("tree");
+    await expect(durable.runCommand(ref, "/tree")).resolves.toEqual({
+      type: "tree",
+      tree: {
+        nodes: [
+          { id: "8", parentId: null, kind: "user", summary: "first", timestamp: at },
+          { id: "12", parentId: "8", kind: "assistant", summary: "ok: first", timestamp: at },
+          { id: "13", parentId: "12", kind: "user", summary: "second", timestamp: at },
+          { id: "24", parentId: "12", kind: "user", summary: "second v2", timestamp: at },
+        ],
+        activeLeafId: "24",
+        activePathIds: ["8", "12", "24"],
+      },
+    });
+    await expect(durable.navigateTree(ref, { targetId: "13", expectedLeafId: "24", summary: { mode: "none" }, retainCheckpoint: true }))
+      .resolves.toEqual({ cancelled: false, editorText: "second" });
+    expect(only(launched).requests.find((request) => request.method === "navigate")?.params).toEqual({ targetId: "13", expectedLeafId: "24", retainCheckpoint: true });
+    // Branch summaries are not offered (unused): refused visibly, never sent to the host.
+    await expect(durable.navigateTree(ref, { targetId: "8", expectedLeafId: "24", summary: { mode: "default" } })).rejects.toThrow("Branch summaries is not available in Durable Chats yet");
+    expect(only(launched).requests.filter((request) => request.method === "navigate")).toHaveLength(1);
+    // The host's refusal while busy reaches the user as a command result.
+    only(launched).answer = (request) => request.method === "tree" ? { type: "unsupported", message: "Cannot open the session tree while the session is active. Stop current activity and try /tree again." } : status;
+    await expect(durable.runCommand(ref, "/tree")).resolves.toEqual({ type: "unsupported", message: "Cannot open the session tree while the session is active. Stop current activity and try /tree again." });
+  });
+
+  it("refuses tree navigation visibly when the host does not report it", async () => {
+    const { durable } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    expect((await durable.commands(ref)).map((command) => command.name)).not.toContain("tree");
+    await expect(durable.navigateTree(ref, { targetId: "1", expectedLeafId: null, summary: { mode: "none" } })).rejects.toThrow("Tree navigation is not available in Durable Chats yet");
+  });
+
   it("offers and runs /compact only when the host reports the compact capability", async () => {
     const { durable, launched } = await service((launch) => new FakeHost(DURABLE_HOST_PROTOCOL, launch === 0 ? ["compact", "tool-groups"] : []));
     const chat = await durable.start("/work/a");

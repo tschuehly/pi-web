@@ -283,6 +283,20 @@ describe("session-tree-navigator action step", () => {
     expect(footerButton(navigator, "Continue from here")).toBeTruthy();
   });
 
+  it("offers only what the Chat supports: without forking or branch summaries, Continue alone, with no summary choice", async () => {
+    const onNavigate = vi.fn<NavigateCallback>(() => Promise.resolve({ cancelled: false }));
+    const navigator = await mountNavigator({ onNavigate, forking: false, summaries: false });
+    await advanceToAction(navigator);
+
+    expect(operationRadio(navigator, "continue").checked).toBe(true);
+    expect(navigator.renderRoot.querySelector("input[name='session-tree-operation'][value='fork']")).toBeNull();
+    expect(fieldsetByLegend(navigator, "Abandoned branch summary")).toBeNull();
+    expect(navigator.renderRoot.querySelector("input[name='session-tree-summary']")).toBeNull();
+    footerButton(navigator, "Continue from here").click();
+    await settleRenderedDialog(navigator);
+    expect(onNavigate).toHaveBeenCalledWith("active", { mode: "none" });
+  });
+
   it("explains user-message restoration for same-session continuation and forks", async () => {
     const navigator = await mountNavigator();
     treeItem(navigator, "root").click();
@@ -621,6 +635,8 @@ interface MountedNavigatorProps {
   onFork?: ForkCallback;
   onAbort?: () => Promise<void>;
   onCancel?: () => void;
+  forking?: boolean;
+  summaries?: boolean;
 }
 
 async function mountNavigator(props: MountedNavigatorProps = {}): Promise<SessionTreeNavigator> {
@@ -631,6 +647,8 @@ async function mountNavigator(props: MountedNavigatorProps = {}): Promise<Sessio
   if (props.onFork !== undefined) element.onFork = props.onFork;
   if (props.onAbort !== undefined) element.onAbort = props.onAbort;
   if (props.onCancel !== undefined) element.onCancel = props.onCancel;
+  if (props.forking !== undefined) element.forking = props.forking;
+  if (props.summaries !== undefined) element.summaries = props.summaries;
   document.body.append(element);
   await settleRenderedDialog(element);
   return element;

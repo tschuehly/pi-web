@@ -2306,6 +2306,8 @@ export class PiWebApp extends LitElement {
         .tree=${state.treeDialog}
         .onNavigate=${(targetId: string, summaryChoice: SessionTreeSummaryChoice) => this.navigateSessionTree(targetId, summaryChoice)}
         .onFork=${(entryId: string) => this.forkSessionTree(entryId)}
+        .forking=${this.selectedChatSupports("fork")}
+        .summaries=${this.selectedChatSupports("tree.summary")}
         .onAbort=${() => this.sessions.abortTreeNavigation()}
         .onCancel=${() => { this.closeSessionTreeNavigator(); }}
       ></session-tree-navigator>

@@ -664,6 +664,7 @@ export const CHAT_CAPABILITY_LABELS = {
   shell: "Shell commands",
   "commands.respond": "Commands",
   tree: "Tree navigation",
+  "tree.summary": "Branch summaries",
   fork: "Forking",
   reload: "Reloading",
   "detach-parent": "Detaching",

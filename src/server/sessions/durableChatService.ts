@@ -9,7 +9,8 @@ import type { PiWebConfig } from "../../config.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
 import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
 import type { SessionMedia, SessionMediaIndex } from "./sessionMediaIndex.js";
-import type { ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, ClientThinkingLevel, SessionStreamSnapshot, SessionTranscriptSnapshot } from "../types.js";
+import type { ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, ClientSessionTreeNavigateRequest, ClientSessionTreeNavigateResult, ClientThinkingLevel, SessionStreamSnapshot, SessionTranscriptSnapshot } from "../types.js";
+import { projectSessionTree, type ProjectableSessionTreeNode } from "./sessionTreeProjection.js";
 import type { DurableChatResourceSet } from "./durableChatResources.js";
 import { durableThinkingLevel, expandPromptTemplate, expandSkills } from "./durableChatResources.js";
 import { BUILTIN_COMMANDS } from "./builtinCommands.js";
@@ -432,7 +433,7 @@ export class DurableChatService {
     const hostCommands = await this.#hostCommands(ref);
     return [
       ...(connection.capabilities.includes("compact") ? [{ name: "compact", description: "Manually compact session context", argumentHint: "[instructions]", source: "builtin" as const }] : []),
-      ...BUILTIN_COMMANDS.filter((command) => command.name === "name" || command.name === "session"),
+      ...BUILTIN_COMMANDS.filter((command) => command.name === "name" || command.name === "session" || (command.name === "tree" && connection.capabilities.includes("tree"))),
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" as const },
       ...hostCommands.map((command) => ({ ...command, source: "extension" as const })),
       ...(this.#templates.get(ref.id) ?? []).map((template) => ({
@@ -466,6 +467,11 @@ export class DurableChatService {
       const { result } = await connection.request("compact", instructions === "" ? {} : { instructions });
       return commandResult(result);
     }
+    if (name === "tree") {
+      const connection = await this.#for(ref);
+      if (!connection.capabilities.includes("tree")) return { type: "unsupported", message: "/tree is not available in Durable Chats yet" };
+      return hostTree((await connection.request("tree")).result);
+    }
     if (name.startsWith("skill:") || isTemplateCommand(trimmed, this.#templates.get(ref.id) ?? [])) {
       await this.prompt(ref, trimmed);
       return { type: "done" };
@@ -478,6 +484,21 @@ export class DurableChatService {
     });
     if (reply === undefined) return { type: "unsupported", message: `/${name} is not available in Durable Chats yet` };
     return commandResult(reply.result);
+  }
+
+  /**
+   * Continue the Chat from an earlier entry: the host selects or forks the branch, revision-checked against the leaf
+   * the browser showed and refused while work is pending. Branch summaries are not offered (unused in legacy Chats).
+   */
+  async navigateTree(ref: SessionRouteRef, request: ClientSessionTreeNavigateRequest): Promise<ClientSessionTreeNavigateResult> {
+    const connection = await this.#for(ref);
+    this.#require(connection, "tree");
+    if (request.summary.mode !== "none") this.#require(connection, "tree.summary");
+    const { result } = await connection.request("navigate", {
+      targetId: request.targetId, expectedLeafId: request.expectedLeafId, ...(request.retainCheckpoint === true ? { retainCheckpoint: true } : {}),
+    });
+    const editorText = isRecord(result) && typeof result["editorText"] === "string" ? stripInlineImageReferenceMapping(result["editorText"]) : undefined;
+    return { cancelled: false, ...(editorText === undefined ? {} : { editorText }) };
   }
 
   /** The commands the host offers; a host without any (an older build) offers none. */
@@ -722,6 +743,25 @@ function commandResult(value: unknown): ClientCommandResult {
   if (isRecord(value) && value["type"] === "done") return { type: "done", ...(typeof value["message"] === "string" ? { message: value["message"] } : {}) };
   if (isRecord(value) && value["type"] === "unsupported" && typeof value["message"] === "string") return { type: "unsupported", message: value["message"] };
   throw new Error("Durable host sent a malformed command result");
+}
+
+/** The host's history as Pi-shaped entries, projected with the legacy tree projection; or its visible refusal. */
+function hostTree(value: unknown): ClientCommandResult {
+  if (isRecord(value) && value["type"] === "unsupported" && typeof value["message"] === "string") return { type: "unsupported", message: value["message"] };
+  if (!isRecord(value) || value["type"] !== "tree" || !Array.isArray(value["nodes"])) throw new Error("Durable host sent a malformed session tree");
+  const nodes = new Map<string, { entry: unknown; children: ProjectableSessionTreeNode[] }>();
+  const roots: ProjectableSessionTreeNode[] = [];
+  for (const entry of value["nodes"]) {
+    if (!isRecord(entry) || typeof entry["id"] !== "string") throw new Error("Durable host sent a malformed session-tree entry");
+    const node = { entry, children: [] };
+    nodes.set(entry["id"], node);
+    const parent = typeof entry["parentId"] === "string" ? nodes.get(entry["parentId"]) : undefined;
+    (parent?.children ?? roots).push(node);
+  }
+  const leaf = value["activeLeafId"];
+  const tree = projectSessionTree(roots, typeof leaf === "string" ? leaf : null);
+  if (tree.nodes.length === 0) return { type: "unsupported", message: "Cannot navigate an empty session tree." };
+  return { type: "tree", tree };
 }
 
 function textOf(content: unknown): string {

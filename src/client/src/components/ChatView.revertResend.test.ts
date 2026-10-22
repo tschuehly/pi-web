@@ -24,6 +24,18 @@ describe("ChatView revert-to-here and edit-and-resend actions (Workbench message
     expect(view.shadowRoot?.querySelector('[title="Clone session from this message"]')).toBeNull();
   });
 
+  it("offers Revert and Edit & resend on a Durable Chat only once its host reports tree navigation", async () => {
+    const messages: ChatLine[] = [{ role: "user", parts: [{ type: "text", text: "hi" }], entryId: "entry-1" }];
+    const view = await renderView(messages, false, vi.fn(() => Promise.resolve()));
+    const status = { sessionId: "session-1", persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 1, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    view.status = { ...status, capabilities: [] };
+    await view.updateComplete;
+    expect(view.shadowRoot?.querySelectorAll('[aria-label="Revert to here"], [aria-label="Edit and resend"]')).toHaveLength(0);
+    view.status = { ...status, capabilities: ["tree"] };
+    await view.updateComplete;
+    expect(view.shadowRoot?.querySelectorAll('[aria-label="Revert to here"], [aria-label="Edit and resend"]')).toHaveLength(2);
+  });
+
   it("disables both actions while the Chat is busy and goes back to the entry otherwise", async () => {
     const actOnMessage = vi.fn(() => Promise.resolve());
     const messages: ChatLine[] = [{ role: "user", parts: [{ type: "text", text: "hi" }], entryId: "entry-1" }];
