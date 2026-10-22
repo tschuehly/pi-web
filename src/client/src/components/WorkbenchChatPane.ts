@@ -5,6 +5,7 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import type { AskUserSubmission, ExtensionDialogAnswer, PromptAttachment, QueuedSessionMessage, SessionTreeSummaryChoice } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import type { AppState } from "../appState";
+import { DEFAULT_CHAT_BEHAVIORS, type ChatBehaviors } from "../chatBehaviors";
 import { latestWorkingModeSelection } from "../chatMessages";
 import type { WorkbenchChatSession } from "../controllers/workbenchSessionFocus";
 import type { PromptEditorTextReplacement } from "../controllers/sessionController";
@@ -27,6 +28,12 @@ import "./GoalStatusChip";
 import "./PromptEditor";
 import "./SessionTreeNavigator";
 import "./WorkbenchQuestionChips";
+
+/**
+ * WebKit's native scroll anchoring moves a tile's reading place whenever a sibling tile shows, hides or re-renders, and a
+ * Grid ↔ Tabs switch reflows every tile: Workbench Chats keep the reading place themselves.
+ */
+const WORKBENCH_CHAT_BEHAVIORS: ChatBehaviors = Object.freeze({ ...DEFAULT_CHAT_BEHAVIORS, holdReadingPlace: true });
 
 /** One mounted Chat in every layout. Focus changes its window tools, never its runtime or DOM. */
 @customElement("workbench-chat-pane")
@@ -144,6 +151,7 @@ export class WorkbenchChatPane extends LitElement {
         <div class="chat-column">
           <chat-view
             .dense=${this.dense}
+            .behaviors=${WORKBENCH_CHAT_BEHAVIORS}
             .contentRendering=${this.contentRendering}
             .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)}
             .sessionId=${session.id}

@@ -46,6 +46,7 @@ To enable or disable a capability for a requested change, edit its value in `DEF
 | `codeBlocks.previews` | Allow plugin fence inspection and eligible previews independently of source presentation |
 | `rememberDisclosures` | Retain open/closed group choices |
 | `visualEffects` | Apply chat sticky headers and decorative effects |
+| `holdReadingPlace` | Turn native scroll anchoring off and keep a paused reader's place across late formatting and transcript resizes (Workbench; off by default) |
 
 ### Code-block restoration results
 

@@ -346,12 +346,44 @@ class PrependFlow {
   }
 }
 
+/**
+ * With `holdReadingPlace` the host turns native scroll anchoring off and this flow keeps a paused reader's place instead:
+ * it notes the anchor after each scroll and just before known late layout (formatting), and re-applies it when layout or
+ * the transcript's size changes (Grid ↔ Tabs reflow, deferred Markdown above the reader).
+ */
+class ReadingPlaceFlow {
+  private place: ChatAnchorScrollPosition | undefined;
+
+  constructor(private readonly host: ChatScrollFlowsHost, private readonly controller: ChatScrollController) {}
+
+  capture(): void {
+    if (!this.host.getBehaviors().holdReadingPlace) return;
+    const scroller = this.host.getScroller();
+    const anchor = scroller === undefined ? undefined : findScrollAnchor(scroller, this.host.getAnchors());
+    this.place = scroller === undefined || anchor === undefined ? undefined : captureScrollPosition(scroller, anchor);
+  }
+
+  /** Returns whether the held place was re-applied. */
+  reapply(): boolean {
+    const place = this.place;
+    if (!this.host.getBehaviors().holdReadingPlace || place === undefined) return false;
+    const result = this.controller.restoreExplicitPosition(place, this.host.getScroller(), this.host.getAnchors());
+    if (result.status === "missing") this.place = undefined;
+    return result.status === "restored";
+  }
+
+  release(): void {
+    this.place = undefined;
+  }
+}
+
 /** Plain scroll effects; the parent owns rendering, input adapters, and history's in-flight guard. */
 export class ChatScrollFlows {
   private readonly tail: TailFlow;
   private readonly position: PositionFlow;
   private readonly history: HistoryFlow;
   private readonly prepend: PrependFlow;
+  private readonly reading: ReadingPlaceFlow;
   private started = false;
   private disposed = false;
 
@@ -362,13 +394,15 @@ export class ChatScrollFlows {
   ) {
     const controller = new ChatScrollController(positionOptions.storage, positionOptions.saveScheduler);
     this.tail = new TailFlow(host, frames);
-    this.position = new PositionFlow(host, frames, controller, () => { this.tail.syncFollowingAfterNavigation(); }, () => {
+    this.reading = new ReadingPlaceFlow(host, controller);
+    this.position = new PositionFlow(host, frames, controller, () => { this.tail.syncFollowingAfterNavigation(); this.reading.capture(); }, () => {
       this.tail.pause();
       this.tail.recordScrollBaseline();
     });
     this.history = new HistoryFlow(host, frames);
     this.prepend = new PrependFlow(host, frames, controller, () => {
       this.tail.recordScrollBaseline();
+      this.reading.capture();
       this.history.schedule();
     });
   }
@@ -385,6 +419,7 @@ export class ChatScrollFlows {
       this.tail.reset();
       this.history.reset();
       this.prepend.cancel();
+      this.reading.release();
     } else if (change.prepend && !this.position.restoring) {
       this.history.cancel();
       this.tail.cancel();
@@ -408,6 +443,8 @@ export class ChatScrollFlows {
   onScroll(): void {
     if (this.disposed) return;
     if (!this.position.restoring) this.tail.onScroll();
+    if (this.tail.followingLive) this.reading.release();
+    else this.reading.capture();
     this.position.scheduleSave();
     if (!this.position.restoring && !this.prepend.pending) this.history.schedule();
   }
@@ -432,8 +469,15 @@ export class ChatScrollFlows {
     this.tail.schedule();
   }
 
+  /** Content is about to change layout: note a paused reader's place so onViewportResize can keep it. */
+  holdReadingPlace(): void {
+    if (this.disposed || this.tail.followingLive || this.position.restoring || this.prepend.pending) return;
+    this.reading.capture();
+  }
+
   onViewportResize(): void {
     if (this.disposed) return;
+    if (!this.tail.followingLive && !this.position.restoring && !this.prepend.pending && this.reading.reapply()) this.tail.recordScrollBaseline();
     if (this.position.restoring) this.position.retry(false);
     else {
       if (!this.prepend.pending) {
@@ -493,6 +537,7 @@ export class ChatScrollFlows {
     if (this.disposed) return;
     this.position.save();
     this.disposed = true;
+    this.reading.release();
     this.position.reset();
     this.tail.cancel();
     this.history.cancel();

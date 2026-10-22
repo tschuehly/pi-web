@@ -218,3 +218,15 @@ it("defers offscreen plugin callbacks and aborts active previews when they leave
   await settleDeferredContent(host);
   expect(host.renderRoot.querySelector("pre")?.textContent).toBe("source");
 });
+
+it("announces a formatting swap before it moves layout, so a scroller without native anchoring can hold its place", async () => {
+  const view = new FormattedText();
+  view.text = "**Readable**";
+  document.body.append(view);
+  await view.updateComplete;
+  const seen: string[] = [];
+  view.addEventListener("content-layout-will-change", () => { seen.push(`will:${String(view.renderRoot.querySelector("strong") !== null)}`); });
+  view.addEventListener("content-layout-changed", () => { seen.push(`changed:${String(view.renderRoot.querySelector("strong") !== null)}`); });
+  await advanceContentFrame(view);
+  expect(seen).toEqual(["will:false", "changed:true"]);
+});

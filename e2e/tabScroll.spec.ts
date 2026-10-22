@@ -100,3 +100,35 @@ test("keeps each Grid tile's reading place when focus moves between tiles", asyn
   await page.waitForTimeout(1200);
   near(await place(), before, "LONG focused again");
 });
+
+test("keeps a bottom-pinned Chat at its bottom while the composer grows and shrinks the transcript", async ({ page }) => {
+  await openWindow(page);
+  await expect(transcript(page).locator("article").first()).toBeVisible();
+  await expect.poll(async () => (await transcript(page).evaluate(readingPlace)).atBottom).toBe(true);
+  const height = () => transcript(page).evaluate((chat) => chat.clientHeight);
+  const before = await height();
+  await shown(page).locator("prompt-editor .cm-content").click();
+  for (let line = 0; line < 6; line += 1) await page.keyboard.press("Shift+Enter");
+  // Only the transcript shrank: no window resize tells the Chat about it.
+  await expect.poll(height).toBeLessThan(before - 40);
+  await page.waitForTimeout(400);
+  expect((await transcript(page).evaluate(readingPlace)).atBottom).toBe(true);
+});
+
+test("returns to the same reading place after filtering to Human only and back to Everything", async ({ page }) => {
+  await openWindow(page);
+  await expect(transcript(page).locator("article").first()).toBeVisible();
+  await transcript(page).hover();
+  for (let step = 0; step < 3; step += 1) { await page.mouse.wheel(0, -900); await page.waitForTimeout(150); }
+  await page.waitForTimeout(800);
+  const before = await transcript(page).evaluate(readingPlace);
+  expect(before.atBottom).toBe(false);
+  const filter = async (label: string) => {
+    await shown(page).locator("chat-view .filter-toggle").click();
+    await shown(page).locator("chat-view .filter-options button", { hasText: label }).click();
+    await page.waitForTimeout(600);
+  };
+  await filter("Human only");
+  await filter("Everything");
+  expect(await transcript(page).evaluate(readingPlace)).toEqual(before);
+});

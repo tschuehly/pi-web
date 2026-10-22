@@ -77,6 +77,12 @@ export class FormattedText extends LitElement {
     return html`<div class=${className} dir="auto" @load=${this.onImageLoad} @click=${this.onFormattedClick}><div class="enhanced-content" ?hidden=${this.replacing}>${this.content}</div><span class="pending-source" ?hidden=${!showSource}>${showSource ? this.text : ""}</span></div>`;
   }
 
+  protected override update(changes: PropertyValues<this>): void {
+    // Lets a scroller without native anchoring note the reading place before this swap moves it.
+    if (this.layoutChanged) this.dispatchEvent(new CustomEvent("content-layout-will-change", { bubbles: true, composed: true }));
+    super.update(changes);
+  }
+
   override updated(): void {
     if (this.phase !== "done" && !this.scheduled) {
       this.scheduled = true;

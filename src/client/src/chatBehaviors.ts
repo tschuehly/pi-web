@@ -10,6 +10,8 @@ export interface ChatBehaviors {
   readonly codeBlocks: CodeBlockPolicy;
   readonly rememberDisclosures: boolean;
   readonly visualEffects: boolean;
+  /** Turn native scroll anchoring off and keep a paused reader's place across late layout and transcript resizes explicitly. */
+  readonly holdReadingPlace: boolean;
 }
 
 export const DEFAULT_CHAT_BEHAVIORS: ChatBehaviors = Object.freeze({
@@ -21,4 +23,5 @@ export const DEFAULT_CHAT_BEHAVIORS: ChatBehaviors = Object.freeze({
   codeBlocks: Object.freeze({ ...PLAIN_CODE_BLOCK_POLICY, presentation: "code", overflow: "scroll", copy: true, previews: true }),
   rememberDisclosures: true,
   visualEffects: true,
+  holdReadingPlace: false,
 });

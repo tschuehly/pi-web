@@ -258,9 +258,13 @@ export class ChatView extends LitElement {
   private touchY: number | undefined;
   private loadMoreRequested = false;
   private readonly onViewportResize = () => { this.scrollFlows.onViewportResize(); };
+  // Composer growth, drawers and Grid dividers shrink the transcript without resizing the window.
+  private readonly transcriptResize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(this.onViewportResize);
+  private observedTranscript: Element | undefined;
   // Formatting completes independently of message updates. Reuse the existing
   // layout/restore flow without making content loading wait for enhancement.
   private readonly onContentLayoutChanged = () => { this.scrollFlows.onViewportResize(); };
+  private readonly onContentLayoutWillChange = () => { this.scrollFlows.holdReadingPlace(); };
   private readonly handleScroll = () => {
     this.scrollFlows.onScroll();
     // The Reply button follows its selection.
@@ -364,6 +368,8 @@ export class ChatView extends LitElement {
 
   override disconnectedCallback(): void {
     this.scrollFlows.dispose();
+    this.transcriptResize?.disconnect();
+    this.observedTranscript = undefined;
     this.messageActionController.reset();
     window.removeEventListener("resize", this.onViewportResize);
     window.removeEventListener("pagehide", this.onPageHide);
@@ -413,6 +419,11 @@ export class ChatView extends LitElement {
   }
 
   protected override updated(changed: Map<string, unknown>): void {
+    if (this.chat !== undefined && this.chat !== this.observedTranscript) {
+      this.transcriptResize?.disconnect();
+      this.transcriptResize?.observe(this.chat);
+      this.observedTranscript = this.chat;
+    }
     if (changed.has("loadingMore") && !this.loadingMore) this.loadMoreRequested = false;
     if (changed.has("hasMore") && !this.hasMore) this.loadMoreRequested = false;
     this.scrollFlows.afterRender({
@@ -423,6 +434,8 @@ export class ChatView extends LitElement {
         : changed.has("pendingAsks") && this.isNewPendingAsk(changed.get("pendingAsks")) ? "ask" : false,
     });
     if (changed.has("revealTarget") || changed.has("sessionId") || changed.has("messages") || changed.has("pendingAsks") || changed.has("pendingDialogs")) this.scheduleReveal();
+    // A filtered view is a projection: returning to Everything returns to the place saved when it was left.
+    if (changed.get("transcriptFilter") !== undefined && this.transcriptFilter === "everything") this.scrollFlows.restorePosition();
     if (changed.has("followingLive") || changed.has("behaviors") || changed.has("onNavigationChange")) {
       this.onNavigationChange?.(this.renderNavigation());
     }
@@ -472,8 +485,10 @@ export class ChatView extends LitElement {
       <div class=${this.behaviors.visualEffects ? "chat-wrap" : "chat-wrap plain"}>
         ${this.renderTranscriptFilter()}
         <div class="chat" @click=${this.onQuoteSourceClick} @image-open=${(event: CustomEvent<ImageOpenDetail>) => { this.openImageZoom(event.detail.src, event.detail.alt); }}
-          @scroll=${this.behaviors.rememberPosition || this.behaviors.followTail || this.behaviors.automaticHistory || this.replySelection !== undefined ? this.handleScroll : undefined}
+          ?data-holds-place=${this.behaviors.holdReadingPlace}
+          @scroll=${this.behaviors.rememberPosition || this.behaviors.followTail || this.behaviors.automaticHistory || this.behaviors.holdReadingPlace || this.replySelection !== undefined ? this.handleScroll : undefined}
           @toggle=${this.behaviors.followTail ? this.handleDisclosureToggle : undefined}
+          @content-layout-will-change=${this.onContentLayoutWillChange}
           @content-layout-changed=${this.onContentLayoutChanged}
           @wheel=${this.handlesScrollIntent ? this.handleWheel : undefined}
           @touchstart=${this.handlesScrollIntent ? this.handleTouchStart : undefined}
@@ -911,6 +926,8 @@ export class ChatView extends LitElement {
 
   // Workbench additions on the base chat theme: filter, reply, reveal, folds, cards, and the dense grid tile.
   static override styles = [chatStyles, css`
+    /* holdReadingPlace: the scroll flows keep the reading place, so the browser must not move it too. */
+    .chat[data-holds-place] { overflow-anchor: none; }
     [data-notification-reveal] { animation: notification-reveal 2s ease-out; }
     @keyframes notification-reveal { from { box-shadow: 0 0 0 2px var(--pi-accent); background-color: var(--pi-selection-bg); } }
     @media (prefers-reduced-motion: reduce) { [data-notification-reveal] { animation: none; outline: 2px solid var(--pi-accent); } }

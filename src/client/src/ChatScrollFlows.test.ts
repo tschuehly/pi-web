@@ -521,6 +521,50 @@ describe("tail and forms", () => {
     expect(f.frames.pending).toBe(0);
   });
 
+  it("holdReadingPlace keeps a paused reader's place across late formatting and transcript resizes", () => {
+    const f = fixture({ ...DEFAULT_CHAT_BEHAVIORS, holdReadingPlace: true });
+    f.start(); f.frames.flush();
+    f.flows.onUpIntent();
+    f.state.anchors = [f.element(180, "reading")];
+    f.state.top = 200; f.flows.onScroll();
+    // Formatting above the anchor grows it by 40px; the browser (anchoring off) leaves scrollTop alone.
+    f.flows.holdReadingPlace();
+    f.state.height += 40;
+    f.state.anchors = [f.element(220, "reading")];
+    f.flows.onViewportResize(); // ChatView reports content-layout-changed and transcript resizes here
+    expect(f.state.top).toBe(240);
+    // A reflow (Grid ↔ Tabs) moves it again without a scroll: the noted place still holds.
+    f.state.anchors = [f.element(200, "reading")];
+    f.flows.onViewportResize();
+    expect(f.state.top).toBe(220);
+    expect(f.flows.followingLive).toBe(false);
+    // The reader's own scroll is the new place.
+    f.state.top = 100; f.flows.onScroll();
+    f.flows.onViewportResize();
+    expect(f.state.top).toBe(100);
+  });
+
+  it("leaves reading-place layout to the browser without holdReadingPlace, and never holds while following", () => {
+    const off = fixture();
+    off.start(); off.frames.flush();
+    off.flows.onUpIntent();
+    off.state.anchors = [off.element(180, "reading")];
+    off.state.top = 200; off.flows.onScroll();
+    off.flows.holdReadingPlace();
+    off.state.anchors = [off.element(220, "reading")];
+    off.flows.onViewportResize();
+    expect(off.state.top).toBe(200);
+
+    const following = fixture({ ...DEFAULT_CHAT_BEHAVIORS, holdReadingPlace: true });
+    following.start(); following.frames.flush();
+    following.state.anchors = [following.element(700, "tail")];
+    following.flows.onScroll();
+    following.flows.holdReadingPlace();
+    following.state.anchors = [following.element(740, "tail")];
+    following.flows.onViewportResize(); following.frames.flush();
+    expect(following.state.top).toBe(following.state.height - following.state.viewport);
+  });
+
   it("does not change modes because layout changed the scroll range or anchored position", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, followTail: true });
     f.start(); f.frames.flush();
