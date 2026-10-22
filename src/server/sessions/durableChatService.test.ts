@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostProcess } from "./durableChatService.js";
+import { DURABLE_HOST_PROTOCOL, DurableChatService, durableHostArgs, type DurableHostProcess } from "./durableChatService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 import type { DurableChatResourceSet } from "./durableChatResources.js";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
@@ -176,10 +176,36 @@ describe("Durable Chats", () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
-    only(launched).answer = (request) => request.method === "mode" ? { type: "done", message: "Working Mode applies with the next prompt." } : status;
+    only(launched).answer = (request) => request.method === "mode" ? { type: "done", message: "Working Mode applies with the next prompt." }
+      : request.method === "command" ? { type: "unsupported", message: `${String(request.params?.["text"])} is not available in Durable Chats yet` } : status;
     await expect(durable.runCommand(ref, "/mode attention focused")).resolves.toEqual({ type: "done", message: "Working Mode applies with the next prompt." });
     expect(only(launched).requests.find((request) => request.method === "mode")?.params).toEqual({ args: "attention focused" });
     await expect(durable.runCommand(ref, "/tree")).resolves.toEqual({ type: "unsupported", message: "/tree is not available in Durable Chats yet" });
+  });
+
+  it("lists and runs installed Pi package commands in the host; a refused one keeps the host's reason (P118 P126 P134)", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    only(launched).answer = (request) => {
+      if (request.method === "commands") return [{ name: "ping", description: "Send a Telegram notification" }, { name: "monitors" }];
+      if (request.method === "command") return request.params?.["text"] === "/google-account"
+        ? { type: "unsupported", message: "/google-account is not available in Durable Chats: deferred" }
+        : { type: "done" };
+      return status;
+    };
+    await expect(durable.commands(ref)).resolves.toEqual([
+      expect.objectContaining({ name: "mode", source: "extension" }),
+      { name: "ping", description: "Send a Telegram notification", source: "extension" },
+      { name: "monitors", source: "extension" },
+    ]);
+    await expect(durable.runCommand(ref, "/ping deploy done")).resolves.toEqual({ type: "done" });
+    expect(only(launched).requests.find((request) => request.method === "command")?.params).toEqual({ text: "/ping deploy done" });
+    await expect(durable.runCommand(ref, "/google-account")).resolves.toEqual({ type: "unsupported", message: "/google-account is not available in Durable Chats: deferred" });
+  });
+
+  it("starts every Durable Chat host with the installed Pi packages", () => {
+    expect(durableHostArgs({ id: "c1", cwd: "/work/a" }, "/stores/s1", { model: "faux" })).toContain("--packages");
   });
 
   it("validates answers with PI WEB's ask store and has the host commit them under the client's operation id", async () => {

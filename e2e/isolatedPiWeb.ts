@@ -112,6 +112,14 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_") && !key.startsWith("GIT_")));
     // Its telemetry goes to the fixture root, never to the owner's ~/.pi/agent/telemetry.
     if (durableHost !== undefined && durableHost !== "") Object.assign(env, { PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry") });
+    // Optional: installed Pi packages the Durable host binds (pi-process-monitor only: no network, no messages out),
+    // with HOME in the fixture root so watcher leases stay out of the owner's ~/.pi/agent/state.
+    const piPackages = process.env["PI_WEB_E2E_PI_PACKAGES"];
+    if (piPackages !== undefined && piPackages !== "") {
+      await writeJson(join(root, "agent", "settings.json"), { packages: [join(piPackages, "pi-process-monitor")] });
+      await mkdir(join(root, "home"), { recursive: true });
+      Object.assign(env, { HOME: join(root, "home") });
+    }
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),

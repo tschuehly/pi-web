@@ -28,6 +28,11 @@ export interface DurableHostProcess {
 /** Starts the host process that owns one Chat family's store. */
 export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string) => DurableHostProcess;
 
+/** Host arguments: the family store, workspace, model and Chat ID; every host runs the installed Pi packages it binds. */
+export function durableHostArgs(record: Pick<DurableChatRecord, "id" | "cwd">, storeDir: string, options: { model: string; scripted?: boolean }): string[] {
+  return ["--store", storeDir, "--cwd", record.cwd, "--model", options.model, "--session-id", record.id, "--packages", ...(options.scripted === true ? ["--scripted"] : [])];
+}
+
 /**
  * Fork the Workbench Durable host (`chat-host-main.ts`) for one family store, with an IPC channel, the agent-visible
  * environment and the daemon's Pi agent directory, so it reads the same Claude subscription login. Host output goes
@@ -39,8 +44,7 @@ export function forkDurableHost(options: { entry: string; model: string; agentDi
     const log = openSync(join(storeDir, "host.log"), "a", 0o600);
     try {
       // No inherited loader flags (tsx): the host is plain Node with type stripping and its own pinned dependencies.
-      const args = ["--store", storeDir, "--cwd", record.cwd, "--model", options.model, "--session-id", record.id, ...(options.scripted === true ? ["--scripted"] : [])];
-      return fork(options.entry, args, {
+      return fork(options.entry, durableHostArgs(record, storeDir, options), {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
         env: { ...process.env, PI_CODING_AGENT_DIR: options.agentDir },
@@ -256,16 +260,20 @@ export class DurableChatService {
     await connection.request("prompt", { operationId: operationId ?? randomUUID(), text: expanded, ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }) });
   }
 
-  /** Slash commands of a Durable Chat: Working Mode and the workspace's skills. */
+  /** Slash commands of a Durable Chat: Working Mode, the installed Pi packages' commands the host runs, the skills. */
   async commands(ref: SessionRouteRef): Promise<ClientCommand[]> {
-    await this.#for(ref);
+    const { result } = await (await this.#for(ref)).request("commands");
+    const packageCommands = Array.isArray(result) ? result.filter(isRecord).flatMap((command) => typeof command["name"] === "string"
+      ? [{ name: command["name"], ...(typeof command["description"] === "string" ? { description: command["description"] } : {}), source: "extension" as const }]
+      : []) : [];
     return [
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" },
+      ...packageCommands,
       ...(this.#skills.get(ref.id) ?? []).map((skill) => ({ name: `skill:${skill.name}`, ...(skill.description === undefined ? {} : { description: skill.description }), source: "skill" as const })),
     ];
   }
 
-  /** `/mode …` runs in the host; `/skill:…` is a prompt; every other command is not available yet. */
+  /** `/mode …` runs in the host; `/skill:…` is a prompt; any other command is the host's (package commands or a visible refusal). */
   async runCommand(ref: SessionRouteRef, text: string): Promise<ClientCommandResult> {
     const trimmed = text.trim();
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
@@ -277,7 +285,8 @@ export class DurableChatService {
       await this.prompt(ref, trimmed);
       return { type: "done" };
     }
-    return { type: "unsupported", message: `/${name} is not available in Durable Chats yet` };
+    const { result } = await (await this.#for(ref)).request("command", { text: trimmed });
+    return commandResult(result);
   }
 
   async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[]> {
