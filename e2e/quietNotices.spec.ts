@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
-import { E2E_NOTICE_CHATS, E2E_PROJECT_ID } from "./isolatedPiWeb";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { E2E_NOTICE_CHATS, E2E_NOTICE_FIRST_LINE_END, E2E_PROJECT_ID } from "./isolatedPiWeb";
 
 // Set PI_WEB_E2E_SCREENSHOTS to a folder to keep review screenshots of quiet notices in a Chat and a 3-tile Grid.
 const SHOTS = process.env["PI_WEB_E2E_SCREENSHOTS"];
@@ -57,6 +57,42 @@ test("folds consecutive notices into one line, keeps a lone notice quiet and a f
   await expect(fold.locator(".notice").first()).toBeHidden();
   await fold.locator("> summary").click();
   await expect(fold.locator(".notice").first()).toContainText("Disk low: 9 GB free.");
-  await expect(transcript(page).locator(".notice:not(.notice-fold .notice)")).toHaveText("#74 Comment on the hero: make the headline shorter.");
+  await expect(transcript(page).locator(".notice:not(.notice-fold .notice)")).toHaveText(["#74 Comment on the hero: make the headline shorter.", /#75 Decision/u]);
   await expect(transcript(page).locator("article.msg.system.error")).toContainText("Model response failed: rate limited, retry later");
+});
+
+/** Whether a notice's first line ends inside its row: nothing overflows and the last character lies within the article. */
+async function firstLineEndVisible(preview: Locator): Promise<boolean> {
+  return preview.evaluate((element, end) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node: Node | null = null;
+    for (let next = walker.nextNode(); next !== null; next = walker.nextNode()) if ((next.textContent ?? "").trim() !== "") node = next;
+    const text = node?.textContent ?? "";
+    if (node === null || !text.trimEnd().endsWith(end)) return false;
+    const range = document.createRange();
+    range.setStart(node, text.trimEnd().length - 1);
+    range.setEnd(node, text.trimEnd().length);
+    const last = range.getBoundingClientRect();
+    const row = element.closest("article")?.getBoundingClientRect();
+    return element.scrollWidth <= element.clientWidth && row !== undefined && last.width > 0 && last.right <= row.right && last.left >= row.left;
+  }, E2E_NOTICE_FIRST_LINE_END);
+}
+
+test("an expanded notice or notice fold shows the whole first line in a Grid tile", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openWindow(page, "grid");
+  await expect(page.locator(".grid > .tile")).toHaveCount(3);
+  const lone = transcript(page).locator("details.notice:not(.notice-fold .notice)");
+  await expect(lone.locator("> summary")).toContainText("#75 Decision");
+  // Collapsed, the long first line stays one ellipsized line.
+  expect(await firstLineEndVisible(lone.locator("> summary .disclosure-preview"))).toBe(false);
+  await lone.locator("> summary").click();
+  expect(await firstLineEndVisible(lone.locator("> summary .disclosure-preview"))).toBe(true);
+
+  const fold = transcript(page).locator("details.notice-fold");
+  await fold.locator("> summary").click();
+  const folded = fold.locator("details.notice", { hasText: "#73 Decision" });
+  expect(await firstLineEndVisible(folded.locator("> summary .disclosure-preview"))).toBe(true);
+  await folded.locator("> summary").click();
+  expect(await firstLineEndVisible(folded.locator("> summary .disclosure-preview"))).toBe(true);
 });

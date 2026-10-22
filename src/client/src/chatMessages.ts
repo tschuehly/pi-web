@@ -79,11 +79,17 @@ export function normalizeMessage(message: unknown): ChatLine[] {
 
   const visible = parts.filter((part) => part.type !== "empty");
   const displayRole = role === "assistant" && visible.length > 0 && visible.every((part) => part.type === "skillRead") ? "skill" : role;
-  const lines = visible.length > 0 ? [withMessageMeta({ role: displayRole, parts: visible, ...(source === undefined ? {} : { source }) }, message)] : [];
+  const severity = isReportedFailure(message) ? { severity: "error" as const } : {};
+  const lines = visible.length > 0 ? [withMessageMeta({ role: displayRole, parts: visible, ...(source === undefined ? {} : { source }), ...severity }, message)] : [];
   const errorLine = assistantErrorLine(message);
   const cacheMissNotice = role === "assistant" ? getString(message, "cacheMissNotice") : undefined;
   const noticeLine: ChatLine | undefined = cacheMissNotice === undefined || cacheMissNotice === "" ? undefined : { ...textMessage("system", cacheMissNotice), severity: "warning" };
   return [...lines, ...[errorLine, noticeLine].flatMap((line) => line === undefined ? [] : [withMessageMeta(line, message)])];
+}
+
+/** A custom message whose details report a failed Worker receipt; it must stay prominent, never fold among routine notices. */
+function isReportedFailure(message: unknown): boolean {
+  return getString(message, "role") === "custom" && getString(getProperty(message, "details"), "receiptStatus") === "failed";
 }
 
 function subagentCompletionText(message: unknown): string | undefined {

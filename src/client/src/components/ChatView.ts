@@ -1990,6 +1990,11 @@ export class ChatView extends LitElement {
     .notice > summary:hover, .notice[open] > summary, .notice-fold > summary:hover, .notice-fold[open] > summary { color: var(--pi-text); }
     .notice > summary:focus-visible, .notice-fold > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; border-radius: 4px; }
     .notice > summary .chevron .tab-icon, .notice-fold > summary .chevron .tab-icon { width: 12px; height: 12px; }
+    /* Expanded, a notice's first line wraps so its end stays readable; an open fold drops its preview because its body repeats it in full. */
+    .notice[open] > summary, .notice-fold[open] .notice > summary { align-items: flex-start; }
+    .notice[open] > summary .chevron, .notice-fold[open] .notice > summary .chevron { margin-block-start: 0.2em; }
+    .notice[open] > summary .disclosure-preview, .notice-fold[open] .notice > summary .disclosure-preview { white-space: normal; overflow-wrap: anywhere; }
+    .notice-fold[open] > summary .disclosure-preview { display: none; }
     details.notice > formatted-text { margin: 2px 0 0 17px; }
     .notice-fold { margin: 0 0 6px; color: var(--pi-muted); font-size: 12px; line-height: 1.4; }
     .notice-fold-count { flex: 0 0 auto; font-weight: 600; }

@@ -92,9 +92,11 @@ describe("chat message normalization", () => {
       { ...notice, role: "system" },
       { ...notice, customType: "other" },
       { ...notice, details: { attention: "receipt-failure" } },
-      { ...notice, details: { attention: "terminal-results", receiptStatus: "failed" } },
       { ...notice, details: undefined },
     ]) expect(normalizeMessages([other])).toEqual([{ role: "system", entryId: "wake-1", parts: [{ type: "text", text: content }] }]);
+    // A failed Worker receipt is a failure, not a routine notice.
+    expect(normalizeMessages([{ ...notice, details: { attention: "terminal-results", receiptStatus: "failed" } }]))
+      .toEqual([{ role: "system", entryId: "wake-1", severity: "error", parts: [{ type: "text", text: content }] }]);
   });
 
   it("projects persisted background bash completions separately and falls back on malformed details", () => {

@@ -342,11 +342,12 @@ describe("ChatView transcript density", () => {
     expect(card?.querySelector("summary")?.textContent).toBe("Subagents finished");
     expect(card?.closest("article")?.querySelector(".msg-header")).toBeNull();
     expect(card?.querySelector(".subagent-completion-instruction")?.textContent).toBe(content);
-    // The receipt-failure child completion is an ordinary notice and folds with the next one.
-    expect(root.querySelector("details.notice-fold > summary")?.textContent).toContain("2 notices");
-    expect(Array.from(root.querySelectorAll<FormattedText>("details.notice-fold article.notice-line formatted-text"), (text) => text.text)).toEqual([
-      "Receipt failed; inspect worker_status", "Other system notice",
-    ]);
+    // A failed receipt is an error: it never folds with the ordinary notice after it.
+    expect(root.querySelector("details.notice-fold")).toBeNull();
+    const failure = root.querySelector<HTMLElement>("article.msg.system.error:not(.notice-line)");
+    expect(failure?.querySelector(".msg-header")).not.toBeNull();
+    expect(failure?.querySelector<FormattedText>("formatted-text")?.text).toBe("Receipt failed; inspect worker_status");
+    expect(root.querySelector<FormattedText>("article.msg.notice-line formatted-text")?.text).toBe("Other system notice");
     card?.querySelector("summary")?.click();
     expect(card?.open).toBe(true);
   });

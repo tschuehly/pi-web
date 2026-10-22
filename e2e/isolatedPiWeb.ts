@@ -230,7 +230,11 @@ async function seedLongChat(sessionDir: string, cwd: string, sessionId: string):
   await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 }
 
-/** Replies and tool steps with three consecutive notices (two Disk low, one Atelier Decision), one lone Atelier Comment and a failed model response between them. */
+/** Makes a notice's first line far wider than a Grid tile; its end must stay readable once expanded. */
+export const E2E_NOTICE_FIRST_LINE_END = "DO NOT publish until security approval";
+const LONG_FIRST_LINE_TAIL = `after the final copy review, the legal sign-off on the pricing table, the German and Japanese localisation pass, the accessibility audit of the download flow and the CDN cache warm-up, and ${E2E_NOTICE_FIRST_LINE_END}`;
+
+/** Replies and tool steps with three consecutive notices (two Disk low, one Atelier Decision), one lone Atelier Comment and a failed model response between them, then a lone multi-line Atelier Decision. */
 async function seedNoticeChat(sessionDir: string, cwd: string, sessionId: string, question: string): Promise<void> {
   const ms = Date.now();
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -254,13 +258,14 @@ async function seedNoticeChat(sessionDir: string, cwd: string, sessionId: string
   assistant([{ type: "text", text: "Only 9 GB free. I'll clear the build caches first." }]);
   notice("storage-guard", "Disk low: 9 GB free. Clear caches before large builds.");
   notice("storage-guard", "Disk low: 8 GB free. Clear caches before large builds.");
-  notice("atelier:immediate", "#73 Decision “Release layout”: Two columns\nThe owner picked the two-column layout for the release page.", { page: "release.html", seqs: [73], replay: false });
+  notice("atelier:immediate", `#73 Decision “Release layout”: Two columns ${LONG_FIRST_LINE_TAIL}\nThe owner picked the two-column layout for the release page.`, { page: "release.html", seqs: [73], replay: false });
   bash("call-clean", "rm -rf node_modules/.cache dist", "");
   assistant([{ type: "text", text: "Cleared 14 GB. The release page now uses the two-column layout." }]);
   notice("atelier:immediate", "#74 Comment on the hero: make the headline shorter.", { page: "release.html", seqs: [74], replay: false });
   assistant([], "error", { errorMessage: "rate limited, retry later" });
   message({ role: "user", content: [{ type: "text", text: "Shorten the headline too." }] });
   assistant([{ type: "text", text: "Done: the headline is now “Release 2.0”." }]);
+  notice("atelier:immediate", `#75 Decision “Launch”: Ship Friday ${LONG_FIRST_LINE_TAIL}\nThe owner chose Friday.`, { page: "release.html", seqs: [75], replay: false });
   await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 }
 
