@@ -101,6 +101,15 @@ export function orderedChats(window: WorkbenchWindow): WindowChat[] {
   return windowGroups(window).flatMap((group) => group.chats);
 }
 
+/** Names a window by what it holds: its focused Chat, then tab order, two titles at most and a count for the rest. */
+export function windowChatSummary(window: WorkbenchWindow): string {
+  const chats = orderedChats(window);
+  const titles = [...chats.filter((chat) => chat.sessionId === window.focused), ...chats.filter((chat) => chat.sessionId !== window.focused)].map((chat) => chat.title);
+  if (titles.length === 0) return window.name;
+  const rest = titles.length - 2;
+  return `${titles.slice(0, 2).join(" · ")}${rest > 0 ? ` +${String(rest)}` : ""}`;
+}
+
 /** The Chat a Workstream tab opens: its last-active Chat while still open here, else its first. */
 export function workstreamTabTarget(window: WorkbenchWindow, key: string): string | undefined {
   const group = windowGroups(window).find((candidate) => candidate.key === key);
