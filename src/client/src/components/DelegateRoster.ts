@@ -36,15 +36,21 @@ function shortModel(model: string | undefined): string | undefined {
 }
 
 const MODEL_NICKNAMES: readonly (readonly [RegExp, string])[] = [[/opus/u, "Opus"], [/sonnet/u, "Sonnet"], [/fable/u, "Fable"], [/haiku/u, "Haiku"], [/astra/u, "Astra"], [/sol\b/u, "Sol"], [/luna/u, "Luna"], [/grok/u, "Grok"]];
-const EFFORT_LETTERS: Readonly<Record<string, string>> = { minimal: "Min", low: "L", medium: "M", high: "H", xhigh: "XH", max: "Max" };
+const SIGNAL_BARS = ["M2 20h.01", "M7 20v-4", "M12 20v-8", "M17 20V8", "M22 4v16"];
+const ZAP = "M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z";
+/** Lucide signal-zero … signal for minimal … xhigh; max adds a zap. */
+const EFFORT_BARS: Readonly<Record<string, number>> = { minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, max: 5 };
 
-/** "Opus H": the model's nickname (one version of each is in use) and an effort letter; unknown models keep their short id. */
-function modelLabel(model: string | undefined, effort: string | undefined): string | undefined {
+/** The model's nickname (one version of each is in use); unknown models keep their short id. */
+function modelNickname(model: string | undefined): string | undefined {
   const short = shortModel(model);
-  if (short === undefined) return undefined;
-  const nickname = MODEL_NICKNAMES.find(([pattern]) => pattern.test(short))?.[1] ?? short;
-  const letter = effort === undefined ? undefined : EFFORT_LETTERS[effort];
-  return letter === undefined ? nickname : `${nickname} ${letter}`;
+  return short === undefined ? undefined : MODEL_NICKNAMES.find(([pattern]) => pattern.test(short))?.[1] ?? short;
+}
+
+function effortIcon(effort: string | undefined): TemplateResult | typeof nothing {
+  const bars = effort === undefined ? undefined : EFFORT_BARS[effort];
+  if (bars === undefined || effort === undefined) return nothing;
+  return html`<svg class="effort" role="img" aria-label=${`${effort} effort`} viewBox="0 0 24 24">${SIGNAL_BARS.slice(0, bars).map((d) => svg`<path d=${d}></path>`)}</svg>${effort === "max" ? html`<svg class="effort zap" aria-hidden="true" viewBox="0 0 24 24">${svg`<path d=${ZAP}></path>`}</svg>` : nothing}`;
 }
 
 function since(iso: string | undefined, now: number): number | undefined {
@@ -144,8 +150,8 @@ export class DelegateRoster extends LitElement {
   private renderDelegate(item: DelegateActivityItem, outcome: DelegateOutcome, now: number): TemplateResult {
     const kind = item.kind === "worker" ? "Worker" : "Subagent";
     const details = [kind, item.role, shortModel(item.model), item.effort].filter(Boolean).join(" · ");
-    const label = modelLabel(item.model, item.effort);
-    const model = label === undefined || item.model === undefined ? undefined : { label, title: item.effort === undefined ? item.model : `${item.model} · ${item.effort} effort` };
+    const nickname = modelNickname(item.model);
+    const model = nickname === undefined || item.model === undefined ? undefined : { label: html`${nickname}${effortIcon(item.effort)}`, title: item.effort === undefined ? item.model : `${item.model} · ${item.effort} effort` };
     const reportAge = since(item.reportedAt ?? item.startedAt, now);
     const ended = item.endedAt === undefined ? undefined : Date.parse(item.endedAt);
     if (outcome !== "running") {
@@ -173,7 +179,7 @@ export class DelegateRoster extends LitElement {
   }
 
   private renderRow(row: {
-    key: string; tone: Tone; shape: TemplateResult; iconLabel: string; name: string; nameTitle?: string; model?: { label: string; title: string } | undefined;
+    key: string; tone: Tone; shape: TemplateResult; iconLabel: string; name: string; nameTitle?: string; model?: { label: TemplateResult; title: string } | undefined;
     report: string | undefined; reportLabel?: string; fallback?: string; status: unknown; statusTitle?: string | undefined; quiet?: boolean;
     elapsed: number | undefined; elapsedLabel?: string;
   }): TemplateResult {
@@ -242,7 +248,9 @@ export class DelegateRoster extends LitElement {
     .kind { display: flex; color: var(--tone); }
     .icon { width: 14px; height: 14px; }
     .who { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-    .model { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; white-space: nowrap; }
+    .model { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px; color: var(--pi-muted); font-size: 11px; white-space: nowrap; }
+    .model .effort { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .model .effort.zap { width: 10px; height: 10px; margin-left: -2px; stroke-width: 2; }
     .name { min-width: 0; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
     .report { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .report.fallback { color: var(--pi-muted); font-style: italic; }
