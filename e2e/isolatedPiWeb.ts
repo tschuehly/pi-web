@@ -110,7 +110,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     // Optional: the Workbench Durable host entry (chat-host-main.ts) enables Durable Chats with its scripted faux model.
     const durableHost = process.env["PI_WEB_E2E_DURABLE_HOST"];
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_") && !key.startsWith("GIT_")));
-    if (durableHost !== undefined && durableHost !== "") Object.assign(env, { PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux" });
+    // Its telemetry goes to the fixture root, never to the owner's ~/.pi/agent/telemetry.
+    if (durableHost !== undefined && durableHost !== "") Object.assign(env, { PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry") });
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),

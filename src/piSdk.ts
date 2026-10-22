@@ -26,6 +26,7 @@ export const {
   createToolSearchExtension,
   defineTool,
   formatDimensionNote,
+  formatSkillsForPrompt,
   hasTrustRequiringProjectResources,
   readStoredCredential,
   resizeImage,

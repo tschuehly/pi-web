@@ -1292,6 +1292,11 @@ export interface SessionStatus {
    */
   attentionRequest?: SessionAttentionRequest;
   /**
+   * Durable Chats: interrupted unsafe tool calls that may have run. Each blocks its tool in this Chat until the user
+   * marks it done, not done, or to retry.
+   */
+  unresolvedEffects?: SessionUnresolvedEffect[];
+  /**
    * Up to the 32 oldest currently running executions observed by the session
    * daemon. Newer starts are omitted while the bound is full; a later start can
    * be admitted after an older row ends. Labels are generic and never contain
@@ -1513,6 +1518,16 @@ export interface ModelScopeChangedEvent {
   type: "models.changed";
   revision: number;
 }
+
+/** A Durable Chat's interrupted unsafe tool call; `arguments` is the call's stored JSON, shortened. */
+export interface SessionUnresolvedEffect {
+  id: string;
+  toolName: string;
+  arguments: string;
+}
+
+/** How the user resolves a {@link SessionUnresolvedEffect}. */
+export type SessionEffectResolution = "done" | "not-done" | "retry";
 
 /** An agent's `request_attention` call: it needs the user, with no decision to ask. */
 export interface SessionAttentionRequest {

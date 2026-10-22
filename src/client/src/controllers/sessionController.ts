@@ -1,6 +1,8 @@
 import { api as defaultApi, type AskUserCloseResponse, type AskUserSubmission, type CommandResult, type ExtensionDialogAnswer, type ExtensionDialogCloseReason, type ExtensionDialogCloseResponse, type ExtensionDialogOutcome, type MessagePage, type PendingAskUser, type PendingExtensionDialog, type PromptAttachment, type QueuedSessionMessage, type SessionActivity, type SessionBulkFailure, type SessionCleanupExecuteResponse, type SessionInfo, type SessionModelCatalogEntry, type SessionModelScopeMode, type SessionRef, type SessionStatus, type SessionStreamSnapshot, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSnapshot, type SessionTreeSummaryChoice, type Workspace } from "../api";
 import type { AppState, ClosedExtensionDialog } from "../appState";
 import { NetworkRequestError } from "../api/http";
+import { retriesOperations, withOperationRetry } from "../api/operationRetry";
+import type { SessionEffectResolution } from "../../../shared/apiTypes";
 import { BrowserErrorReporter, sessionBrowserErrorScope, workspaceBrowserErrorScope, type SessionBrowserErrorOwner } from "../browserErrors";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
 import { textMessage } from "../chatMessages";
@@ -672,7 +674,11 @@ export class SessionController {
         const saved = await this.api.saveAttachments(session, attachments, machineId, folder);
         const references = saved.map((file) => `${file.reference === undefined ? "" : `${file.reference} `}${fileReference(file.path)}`).join(" ");
         const body = text === "" ? references : `${text}\n\n${references}`;
-        await this.api.prompt(session, body, streamingBehavior, machineId);
+        if (retriesOperations(session)) await withOperationRetry((operationId) => this.api.prompt(session, body, streamingBehavior, machineId, undefined, operationId));
+        else await this.api.prompt(session, body, streamingBehavior, machineId);
+      } else if (retriesOperations(session)) {
+        // One operation ID per send: a retry after a lost response is admitted once (queued sends included).
+        await withOperationRetry((operationId) => this.api.prompt(session, text, streamingBehavior, machineId, attachments, operationId));
       } else {
         await this.api.prompt(session, text, streamingBehavior, machineId, attachments);
       }
@@ -1472,7 +1478,25 @@ export class SessionController {
 
   /** Send the answers the user entered for the session's open ask. */
   submitAsk(askId: string, submission: AskUserSubmission): Promise<void> {
-    return this.closeOpenAsk(askId, (session, machineId) => this.api.submitAsk(session, askId, submission, machineId));
+    return this.closeOpenAsk(askId, (session, machineId) => retriesOperations(session)
+      ? withOperationRetry((operationId) => this.api.submitAsk(session, askId, submission, machineId, operationId))
+      : this.api.submitAsk(session, askId, submission, machineId));
+  }
+
+  /** Mark an interrupted tool call of a Durable Chat done, not done, or to retry; the Chat's tool is unblocked. */
+  async resolveEffect(taskId: string, resolution: SessionEffectResolution): Promise<void> {
+    const state = this.getState();
+    const session = state.selectedSession;
+    if (session === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) return;
+    const machineId = selectedMachineId(state);
+    const errorOwner = this.captureSessionErrorOwner(session);
+    const selectionSeq = this.selectionSeq;
+    try {
+      const status = await this.api.resolveEffect(session, taskId, resolution, machineId);
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(status);
+    } catch (error) {
+      this.reportSessionError(session, machineId, error, errorOwner);
+    }
   }
 
   /** Close the session's open ask without answering it. */

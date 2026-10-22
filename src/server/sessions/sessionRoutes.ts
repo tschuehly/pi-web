@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type AskUserAnswer, type AskUserSubmission, type ExtensionDialogAnswerRequest, type ExtensionDialogCancelRequest, type SessionBulkMutationRequest, type SessionBulkMutationRef, type SessionCleanupRequest, type SessionModelScopeMode, type SessionTreeForkRequest, type SessionTreeNavigateRequest, type SessionTreeSummaryChoice, type SessionUnreadAcknowledgeRequest } from "../../shared/apiTypes.js";
+import { ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type AskUserAnswer, type AskUserCloseResponse, type AskUserSubmission, type ExtensionDialogAnswerRequest, type ExtensionDialogCancelRequest, type SessionBulkMutationRequest, type SessionBulkMutationRef, type SessionCleanupRequest, type SessionModelScopeMode, type SessionTreeForkRequest, type SessionTreeNavigateRequest, type SessionTreeSummaryChoice, type SessionUnreadAcknowledgeRequest } from "../../shared/apiTypes.js";
 import { parseSessionDefaultsUpdate } from "../../shared/sessionDefaults.js";
 import { projectBrowserMessageResponse, projectBrowserStreamSnapshot, projectBrowserTranscriptSnapshot, type BrowserImageProjector } from "../browserMessageProjection.js";
 import { isSessionMediaId, SESSION_MEDIA_MODE } from "../../shared/sessionMedia.js";
@@ -9,6 +9,7 @@ import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 import { parseQueueMessageMutation } from "./queuedMessageMutation.js";
 import type { SessionRouteRef, SessionRouteService } from "./sessionService.js";
 import { normalizeSessionCleanupRequest } from "./sessionCleanup.js";
+import { OperationReceipts } from "./operationReceipts.js";
 
 interface SessionQuery {
   cwd?: string;
@@ -47,6 +48,9 @@ const MAX_NOTIFICATION_DAEMON_ID_LENGTH = 512;
 const MAX_NOTIFICATION_ID_LENGTH = 1024;
 
 export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRouteService, eventHub: SessionEventHub, prefix = ""): void {
+  // A retried send, queue or answer under the client's operation ID joins its first attempt.
+  const promptReceipts = new OperationReceipts<void>();
+  const askReceipts = new OperationReceipts<AskUserCloseResponse>();
   app.get<{ Querystring: SessionListQuery }>(`${prefix}/sessions`, async (request, reply) => {
     if (request.query.cwd === undefined || request.query.cwd === "") return reply.code(400).send({ error: "cwd query parameter is required" });
     try {
@@ -256,14 +260,14 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
     if (ref === undefined) return reply;
     const pendingAsks = await sessions.openAsks(ref);
-    const attentionRequest = sessions.attentionRequest(ref);
+    const attentionRequest = await sessions.attentionRequest(ref);
     return attentionRequest === undefined ? { pendingAsks } : { pendingAsks, attentionRequest };
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; requestId?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/attention/acknowledge`, (request, reply) => {
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; requestId?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/attention/acknowledge`, async (request, reply) => {
     try {
       const body = requireRecord(request.body);
-      return { acknowledged: sessions.acknowledgeAttention(sessionRefFromBody(request.params.sessionId, body), requireBoundedId(body["requestId"], "requestId")) };
+      return { acknowledged: await sessions.acknowledgeAttention(sessionRefFromBody(request.params.sessionId, body), requireBoundedId(body["requestId"], "requestId")) };
     } catch (error) {
       return reply.code(400).send({ error: errorMessage(error) });
     }
@@ -410,7 +414,10 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   app.post<{ Params: { sessionId: string }; Body: PromptRequestBody | undefined }>(`${prefix}/sessions/:sessionId/prompt`, async (request, reply) => {
     try {
       const body = optionalRecord(request.body);
-      await sessions.prompt(sessionRefFromBody(request.params.sessionId, body), body["text"], body["streamingBehavior"], body["attachments"]);
+      const ref = sessionRefFromBody(request.params.sessionId, body);
+      const operationId = optionalOperationId(body);
+      await promptReceipts.run(`prompt:${ref.id}`, operationId, [body["text"], body["streamingBehavior"], body["attachments"]], () =>
+        sessions.prompt(ref, body["text"], body["streamingBehavior"], body["attachments"], operationId === undefined ? undefined : { operationId }));
       return { accepted: true };
     } catch (error) {
       return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
@@ -458,7 +465,10 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     try {
       const body = requireRecord(request.body);
       const askId = requireBoundedId(body["askId"], "askId");
-      return await sessions.submitAsk(sessionRefFromBody(request.params.sessionId, body), askId, askUserSubmissionFromBody(body));
+      const ref = sessionRefFromBody(request.params.sessionId, body);
+      const submission = askUserSubmissionFromBody(body);
+      const operationId = optionalOperationId(body);
+      return await askReceipts.run(`ask:${ref.id}`, operationId, ["submit", askId, submission], () => sessions.submitAsk(ref, askId, submission, operationId));
     } catch (error) {
       return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
     }
@@ -467,7 +477,22 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/cancel`, async (request, reply) => {
     try {
       const body = requireRecord(request.body);
-      return await sessions.cancelAsk(sessionRefFromBody(request.params.sessionId, body), requireBoundedId(body["askId"], "askId"));
+      const ref = sessionRefFromBody(request.params.sessionId, body);
+      const askId = requireBoundedId(body["askId"], "askId");
+      const operationId = optionalOperationId(body);
+      return await askReceipts.run(`ask:${ref.id}`, operationId, ["cancel", askId], () => sessions.cancelAsk(ref, askId, operationId));
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; taskId?: unknown; resolution?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/effects/resolve`, async (request, reply) => {
+    try {
+      const body = requireRecord(request.body);
+      const resolution = body["resolution"];
+      if (resolution !== "done" && resolution !== "not-done" && resolution !== "retry") throw new Error("resolution field must be done, not-done or retry");
+      if (sessions.resolveEffect === undefined) throw new Error("Resolving interrupted tool calls is not available");
+      return await sessions.resolveEffect(sessionRefFromBody(request.params.sessionId, body), requireBoundedId(body["taskId"], "taskId"), resolution);
     } catch (error) {
       return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
     }
@@ -772,6 +797,15 @@ function askUserAnswerFromValue(value: unknown): AskUserAnswer {
     values: values.map((entry) => requireBoundedId(entry, "values entry")),
     ...(otherText === undefined ? {} : { otherText }),
   };
+}
+
+/** The client's optional ID for a send or answer: one bounded, non-blank token. */
+function optionalOperationId(body: Record<string, unknown>): string | undefined {
+  const value = body["operationId"];
+  if (value === undefined) return undefined;
+  const id = requireBoundedId(value, "operationId");
+  if (!/^[A-Za-z0-9:._-]+$/.test(id)) throw new Error("operationId field must be letters, digits, or : . _ -");
+  return id;
 }
 
 function requireBoundedId(value: unknown, field: string): string {

@@ -9,6 +9,8 @@ import type { TranscriptRenderContext } from "./chatTranscriptTemplates";
 import { ChatDisclosureController } from "../chatDisclosure";
 import { writeClipboardText } from "../clipboard";
 import { chatSessionWarningRows, renderSessionWarnings } from "./chat/SessionWarnings";
+import { renderUnresolvedEffects } from "./chat/UnresolvedEffects";
+import type { SessionEffectResolution } from "../../../shared/apiTypes";
 export { chatSessionWarningRows } from "./chat/SessionWarnings";
 import { type QueuedMessageAction, type QueuedMessageActionTarget } from "../queuedMessageActions";
 import { chatQueuedMessageSections, renderQueuedMessageSection, type QueuedMessageSection } from "./chat/QueuedMessages";
@@ -235,6 +237,8 @@ export class ChatView extends LitElement {
   @property({ type: Boolean }) queuedMessageActionPending = false;
   @state() private queuedCopyFeedback = "";
   @property({ attribute: false }) onDismissWarning?: (dismissId: string) => void;
+  /** Resolve an interrupted tool call of a Durable Chat (done, not done, retry). */
+  @property({ attribute: false }) onResolveEffect?: (id: string, resolution: SessionEffectResolution) => void;
   @property({ attribute: false }) onDismissNotification?: (notificationId: string) => void;
   @property({ attribute: false }) onDismissAllNotifications?: () => void;
   @property({ type: Boolean }) warningsVisible = true;
@@ -584,6 +588,7 @@ export class ChatView extends LitElement {
 
   private renderTopNotices() {
     return html`<div class="top-notices">
+      ${renderUnresolvedEffects(this.status?.unresolvedEffects, this.onResolveEffect)}
       ${this.renderWarnings()}
       <session-notification-tray
         .sessionId=${this.sessionId}

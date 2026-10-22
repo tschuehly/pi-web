@@ -25,6 +25,7 @@ export const chatStyles = css`
   .session-warning-head { display: flex; align-items: center; gap: 8px; min-height: 16px; color: var(--warning-colour); }
   .session-warning-icon { flex: 0 0 auto; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .session-warning-body { min-width: 0; display: grid; gap: 3px; }
+  .unresolved-effect-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   .session-warning-message { margin: 0; overflow-wrap: anywhere; }
   .session-warning-path { margin: 0; color: var(--pi-muted); font-size: 12px; font-family: var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); overflow-wrap: anywhere; }
   .session-warning-source { color: var(--pi-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }

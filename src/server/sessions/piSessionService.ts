@@ -3223,7 +3223,8 @@ export class PiSessionService implements SessionRouteService {
     });
   }
 
-  async prompt(ref: PiSessionRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { echoUserMessage?: boolean }): Promise<void> {
+  // `options.operationId` is not used here: the route's in-memory receipts dedupe a retried legacy send.
+  async prompt(ref: PiSessionRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { echoUserMessage?: boolean; operationId?: string }): Promise<void> {
     const incomingPromptText = requirePromptText(text);
     // Command-forwarded prompts (e.g. /skill:*) are expanded by the agent, which
     // streams the canonical message back. The client doesn't render the raw

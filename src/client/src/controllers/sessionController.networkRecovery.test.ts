@@ -118,6 +118,28 @@ describe("silent session read recovery", () => {
     expect(Object.values(h.getState().browserErrors)).toEqual([{ scope: sessionScope, message: String(failure) }]);
   });
 
+  it("retries a Durable Chat's send and answer under one operation id each, and never a legacy Chat's", async () => {
+    const durableSession = { ...oldSession, path: `durable:${oldSession.id}` };
+    const prompt = vi.fn<typeof defaultApi.prompt>().mockRejectedValueOnce(networkFailure()).mockRejectedValueOnce(new HttpRequestError("Session daemon unavailable", 502)).mockResolvedValue({ accepted: true });
+    const submitAsk = vi.fn<typeof defaultApi.submitAsk>().mockRejectedValueOnce(networkFailure()).mockResolvedValue({ result: "closed", sessionStatus: status(oldSession.id) });
+    const h = setup({ prompt, submitAsk });
+    h.setState({ selectedSession: durableSession, sessions: [durableSession] });
+
+    const sent = h.controller.send("hello");
+    await vi.runAllTimersAsync();
+    expect(await sent).toBe(true);
+    const ids = prompt.mock.calls.map((call) => call[5]);
+    expect(ids).toHaveLength(3);
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).toMatch(/^op-/);
+
+    const answered = h.controller.submitAsk("ask-1", { answers: [], revision: "r1" });
+    await vi.runAllTimersAsync();
+    await answered;
+    expect(submitAsk.mock.calls.map((call) => call[4])).toEqual([expect.stringMatching(/^op-/), submitAsk.mock.calls[0]?.[4]]);
+    expect(h.getState().browserErrors).toEqual({});
+  });
+
   it("uses silent network recovery on a session socket reconnect", async () => {
     const h = setup();
     const socket = new EmitSocket();

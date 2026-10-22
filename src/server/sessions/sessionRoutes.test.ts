@@ -631,6 +631,59 @@ describe("session routes", () => {
     }
   });
 
+  it("treats a retried send or answer under the same operation id as the same operation", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const prompt = routeService.prompt.bind(routeService);
+    routeService.prompt = async (...args) => { await held; return prompt(...args); };
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    const send = (payload: Record<string, unknown>) => routeApp.inject({ method: "POST", url: "/sessions/session-1/prompt", payload: { cwd: "/repo", ...payload } });
+    try {
+      // The retry arrives while the first attempt is still in flight: both get its answer, the service runs once.
+      const first = send({ text: "hello", operationId: "op-1" });
+      const retry = send({ text: "hello", operationId: "op-1" });
+      release();
+      expect((await first).json()).toEqual({ accepted: true });
+      expect((await retry).json()).toEqual({ accepted: true });
+      expect((await send({ text: "hello", operationId: "op-1" })).json()).toEqual({ accepted: true });
+      expect(routeService.calls).toEqual([{ lookup: { id: "session-1", cwd: resolve("/repo") }, text: "hello", operationId: "op-1" }]);
+      const changed = await send({ text: "changed", operationId: "op-1" });
+      expect(changed.statusCode).toBe(400);
+      expect(changed.json()).toEqual({ error: "Operation op-1 was already used with a different request" });
+      expect((await send({ text: "x", operationId: "bad id!" })).statusCode).toBe(400);
+
+      const answer = { cwd: "/repo", askId: "ask-1", answers: [{ id: "db", values: ["pg"] }], revision: "r1", operationId: "op-a" };
+      await routeApp.inject({ method: "POST", url: "/sessions/session-1/ask/submit", payload: answer });
+      const retried = await routeApp.inject({ method: "POST", url: "/sessions/session-1/ask/submit", payload: answer });
+      expect(retried.json()).toMatchObject({ result: "closed" });
+      expect(routeService.submitAskCalls).toHaveLength(1);
+      expect(routeService.submitAskOperations).toEqual(["op-a"]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it("forwards an effect resolution and rejects unknown resolutions", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    try {
+      const resolved = await routeApp.inject({ method: "POST", url: "/sessions/session-1/effects/resolve", payload: { cwd: "/repo", taskId: "13", resolution: "not-done" } });
+      expect(resolved.statusCode).toBe(200);
+      expect(routeService.calls).toEqual([{ resolveEffect: { id: "session-1", cwd: resolve("/repo") }, taskId: "13", resolution: "not-done" }]);
+      const invalid = await routeApp.inject({ method: "POST", url: "/sessions/session-1/effects/resolve", payload: { cwd: "/repo", taskId: "13", resolution: "maybe" } });
+      expect(invalid.statusCode).toBe(400);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
   it("rejects malformed ask payloads before calling the service", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1689,9 +1742,11 @@ class CapturingRouteSessionService implements SessionRouteService {
   reloadError: Error | undefined;
   clearQueueError: Error | undefined;
 
-  submitAsk(lookup: SessionRouteRef, askId: string, submission: AskUserSubmission): Promise<AskUserCloseResponse> {
+  readonly submitAskOperations: (string | undefined)[] = [];
+  submitAsk(lookup: SessionRouteRef, askId: string, submission: AskUserSubmission, operationId?: string): Promise<AskUserCloseResponse> {
     if (this.askError !== undefined) return Promise.reject(this.askError);
     this.submitAskCalls.push({ lookup, askId, submission });
+    this.submitAskOperations.push(operationId);
     return Promise.resolve({ result: "closed", sessionStatus: idleStatus(lookup) });
   }
 
@@ -1921,9 +1976,14 @@ class CapturingRouteSessionService implements SessionRouteService {
   cycleThinkingLevel(): never { throw unusedRouteMethod("cycleThinkingLevel"); }
   commands(): Promise<[]> { return Promise.resolve([]); }
 
-  prompt(lookup: SessionRouteRef, text: unknown, _streamingBehavior?: unknown, attachments?: unknown): Promise<void> {
-    this.calls.push(attachments === undefined ? { lookup, text } : { lookup, text, attachments });
+  prompt(lookup: SessionRouteRef, text: unknown, _streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string }): Promise<void> {
+    this.calls.push({ lookup, text, ...(attachments === undefined ? {} : { attachments }), ...(options?.operationId === undefined ? {} : { operationId: options.operationId }) });
     return Promise.resolve();
+  }
+
+  resolveEffect(lookup: SessionRouteRef, taskId: string, resolution: string): Promise<SessionStatus> {
+    this.calls.push({ resolveEffect: lookup, taskId, resolution });
+    return Promise.resolve(idleStatus(lookup));
   }
 
   saveAttachments(_lookup: SessionRouteRef, attachments: unknown, folder?: string) {

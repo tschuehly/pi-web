@@ -94,9 +94,10 @@ describe("runtime-routed session service", () => {
   it("rejects operations Durable Chats do not support yet without touching the legacy runtime", async () => {
     const { routed, calls } = await router();
     const ref = await routed.start("/work/a", { runtime: "durable" });
-    await expect(Promise.resolve().then(() => routed.setModel(ref, "anthropic", "claude-opus-5-5"))).rejects.toThrow("Switching models is not available in Durable Chats yet");
-    await expect(Promise.resolve().then(() => routed.submitAsk(ref, "q-1", { answers: [] }))).rejects.toThrow(/not available in Durable Chats yet/);
-    expect(routed.attentionRequest(ref)).toBeUndefined();
+    await expect(Promise.resolve().then(() => routed.cycleModel(ref, "forward"))).rejects.toThrow("Cycling models is not available in Durable Chats yet");
+    await expect(Promise.resolve().then(() => routed.navigateTree(ref, { targetId: "1", expectedLeafId: null, summary: { mode: "none" } }))).rejects.toThrow(/not available in Durable Chats yet/);
+    // Questions and attention are answered by the Chat's host (none open here).
+    await expect(routed.attentionRequest(ref)).resolves.toBeUndefined();
     await expect(routed.openAsks(ref)).resolves.toEqual([]);
     await expect(routed.notificationInbox(ref)).resolves.toMatchObject({ daemonInstanceId: "daemon-1", notifications: [] });
     expect(calls).toEqual(["notificationCatalog"]);

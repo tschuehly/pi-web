@@ -20,6 +20,7 @@ import { PiSessionService } from "./sessions/piSessionService.js";
 import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGateway.js";
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
 import { DurableChatService, forkDurableHost } from "./sessions/durableChatService.js";
+import { loadDurableChatResources } from "./sessions/durableChatResources.js";
 import { createRuntimeRoutedSessionService } from "./sessions/runtimeRoutedSessionService.js";
 import { SessionRuntimeLocator } from "./sessions/sessionRuntimeLocator.js";
 import { SessionNotificationStore } from "./sessions/sessionNotificationStore.js";
@@ -382,8 +383,12 @@ async function createSessionDaemonRuntime() {
         model: daemonEnvironment["PI_WEB_DURABLE_MODEL"] ?? "anthropic/claude-sonnet-5-5",
         // The host reads only the Claude subscription login (auth.json, under Pi's own lock) from this directory.
         agentDir: daemonEnvironment["PI_WEB_DURABLE_AGENT_DIR"] ?? activeAgentProfile.dir,
+        // Trials and tests: offer the scripted model next to the Claude models.
+        scripted: daemonEnvironment["PI_WEB_DURABLE_SCRIPTED"] === "1",
       }),
       storesDir: join(piWebDataDir(daemonEnvironment), "durable"),
+      // The same Pi loader as legacy Chats, against the daemon's active agent profile.
+      resources: (cwd) => loadDurableChatResources(cwd, activeAgentProfile.dir),
       logger: app.log,
     });
     durableChatsForFailedConstruction = durableChats;

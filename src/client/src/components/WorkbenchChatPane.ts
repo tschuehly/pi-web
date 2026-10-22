@@ -3,7 +3,7 @@ import type { MessageActionAvailabilityContext } from "../../../plugin-api";
 import { runWorkbenchDisplayedMessageAction, runWorkbenchMessageAction, workbenchMessageActionContext, WORKBENCH_MESSAGE_ACTIONS } from "../workbenchMessageActions";
 import { customElement, property, query, state } from "lit/decorators.js";
 import type { AskUserSubmission, ExtensionDialogAnswer, PromptAttachment, QueuedSessionMessage, SessionTreeSummaryChoice } from "../api";
-import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
+import type { PromptAttachmentDelivery, SessionEffectResolution } from "../../../shared/apiTypes";
 import type { AppState } from "../appState";
 import { DEFAULT_CHAT_BEHAVIORS, type ChatBehaviors } from "../chatBehaviors";
 import { latestWorkingModeSelection } from "../chatMessages";
@@ -187,6 +187,7 @@ export class WorkbenchChatPane extends LitElement {
             .onQueuedMessageAction=${session.archived === true ? undefined : this.actOnQueuedMessage}
             .queuedMessageActionPending=${this.queuedActionTarget !== undefined || this.revertPending}
             .onDismissWarning=${(dismissId: string) => { void sessions.dismissWarning(dismissId); }}
+            .onResolveEffect=${session.archived === true ? undefined : (id: string, resolution: SessionEffectResolution) => { void sessions.resolveEffect(id, resolution); }}
             .onDismissNotification=${(notificationId: string) => { void notifications.dismissNotification(notificationId); }}
             .onDismissAllNotifications=${() => { void notifications.dismissAll(); }}
             .onLoadMore=${() => { void sessions.loadEarlierMessages(); }}

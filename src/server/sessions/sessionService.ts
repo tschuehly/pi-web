@@ -70,10 +70,10 @@ export interface SessionRouteService {
   status(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   /** Open asks read without opening the session, so a cold one never starts. */
   openAsks(ref: SessionRouteRef): Promise<PendingAskUser[]>;
-  /** The running session's unacknowledged `request_attention`, read without opening it. */
-  attentionRequest(ref: SessionRouteRef): SessionAttentionRequest | undefined;
+  /** The running session's unacknowledged `request_attention`, read without opening it (a Durable Chat asks its host). */
+  attentionRequest(ref: SessionRouteRef): SessionAttentionRequest | undefined | Promise<SessionAttentionRequest | undefined>;
   /** Clears the attention request with this id; false when it is gone or a newer one replaced it. */
-  acknowledgeAttention(ref: SessionRouteRef, requestId: string): boolean;
+  acknowledgeAttention(ref: SessionRouteRef, requestId: string): boolean | Promise<boolean>;
   streamSnapshot(ref: SessionRouteRef): Promise<SessionStreamSnapshot>;
   transcriptSnapshot(ref: SessionRouteRef, page?: { limit?: number }): Promise<SessionTranscriptSnapshot>;
   notificationCatalog(): SessionNotificationCatalogSnapshot | Promise<SessionNotificationCatalogSnapshot>;
@@ -88,8 +88,9 @@ export interface SessionRouteService {
   promoteAllQueuedMessages(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   clearQueue(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   mutateQueueMessage(ref: SessionRouteRef, mutation: SessionQueueMessageMutation): Promise<ClientSessionStatus>;
-  submitAsk(ref: SessionRouteRef, askId: string, submission: AskUserSubmission): Promise<AskUserCloseResponse>;
-  cancelAsk(ref: SessionRouteRef, askId: string): Promise<AskUserCloseResponse>;
+  /** `operationId`: the client's ID for this answer, so a retried request is the same operation. */
+  submitAsk(ref: SessionRouteRef, askId: string, submission: AskUserSubmission, operationId?: string): Promise<AskUserCloseResponse>;
+  cancelAsk(ref: SessionRouteRef, askId: string, operationId?: string): Promise<AskUserCloseResponse>;
   answerDialog(ref: SessionRouteRef, dialogId: string, value: ExtensionDialogAnswer): Promise<ExtensionDialogCloseResponse>;
   cancelDialog(ref: SessionRouteRef, dialogId: string): Promise<ExtensionDialogCloseResponse>;
   dismissWarning(ref: SessionRouteRef, dismissId: string): Promise<ClientSessionStatus>;
@@ -108,7 +109,8 @@ export interface SessionRouteService {
   setThinkingLevel(ref: SessionRouteRef, level: string): Promise<ClientSessionStatus>;
   cycleThinkingLevel(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   commands(ref: SessionRouteRef): Promise<ClientCommand[]>;
-  prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown): Promise<void>;
+  /** `options.operationId`: the client's ID for this send, so a retried request is the same operation. */
+  prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string }): Promise<void>;
   saveAttachments(ref: SessionRouteRef, attachments: unknown, folder?: string): Promise<SavedPromptAttachment[]>;
   cleanupPreview(request: NormalizedSessionCleanupRequest): Promise<ClientSessionCleanupPreviewResponse>;
   cleanup(request: NormalizedSessionCleanupRequest): Promise<ClientSessionCleanupExecuteResponse>;
@@ -126,4 +128,6 @@ export interface SessionRouteService {
   restore(ref: SessionRouteRef): Promise<void>;
   reload(ref: SessionRouteRef): Promise<void>;
   detachParent(ref: SessionRouteRef): Promise<void>;
+  /** Resolve an interrupted unsafe tool call that may have run (Durable Chats only; absent elsewhere). */
+  resolveEffect?(ref: SessionRouteRef, taskId: string, resolution: "done" | "not-done" | "retry"): Promise<ClientSessionStatus>;
 }

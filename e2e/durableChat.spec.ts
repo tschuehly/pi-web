@@ -67,3 +67,78 @@ test("a Durable Chat streams, runs tools, queues, stops and reloads to the same 
   await expect(chat(page).getByText(/Tool bash was aborted/).first()).toBeVisible();
   await expect.poll(() => transcriptText(page)).toBe(before);
 });
+
+const ASK = {
+  context: "Two deploy targets match the request.",
+  questions: [{ id: "target", question: "Which target?", options: [{ value: "prod", label: "Production", recommended: true }, { value: "staging", label: "Staging" }] }],
+};
+
+test("a Durable Chat keeps Working Mode, answers a question, switches models and resolves an interrupted call", async ({ page }) => {
+  const base = process.env["PI_WEB_E2E_BASE_URL"];
+  const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
+  const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
+  if (base === undefined || workspaceId === undefined || project === undefined) throw new Error("Isolated PI WEB was not started");
+  test.setTimeout(90_000);
+  await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
+  await page.getByRole("button", { name: "New Durable Chat" }).click();
+  await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
+  const sessionId = new URL(page.url()).searchParams.get("session") ?? "";
+  await send(page, "start");
+  await expect(chat(page).getByText("ok: start").first()).toBeVisible();
+
+  // Working Mode: the selection survives a reload and rides with the next prompt as a Working Mode card.
+  const modeTrigger = page.getByRole("button", { name: /^Working Mode — / });
+  await modeTrigger.click();
+  await page.getByRole("dialog", { name: "Working Mode" }).getByRole("radio", { name: "Focused" }).click();
+  await expect(modeTrigger).toHaveAttribute("title", /Attention: Focused|Focused/);
+  await page.reload();
+  await expect(page.getByRole("button", { name: /^Working Mode — / })).toHaveAttribute("title", /Focused/);
+  await send(page, "with mode");
+  await expect(chat(page).getByText("ok: with mode").first()).toBeVisible();
+  await expect(chat(page).locator("details.working-mode-card").first()).toContainText("Focused");
+
+  // A question round-trip: chips above the composer, an answer, the model hears it once.
+  await send(page, `call:ask_user ${JSON.stringify(ASK)}`);
+  const chip = page.locator("workbench-question-chips .chip");
+  await expect(chip).toHaveCount(1);
+  await page.reload();
+  await expect(chip).toHaveCount(1);
+  await chip.first().click();
+  const drawer = page.locator("workbench-question-chips .drawer");
+  await drawer.locator('input[value="staging"]').check();
+  await drawer.getByRole("button", { name: "Send answers" }).click();
+  await expect(chip).toHaveCount(0);
+  await expect(chat(page).getByText(/ok: The user submitted answers to question set/).first()).toBeVisible();
+
+  // Model switching: a Claude subscription model is stored for the Chat (no request is sent), then back to the scripted one.
+  const modelTrigger = page.getByRole("button", { name: /^Model: / });
+  await modelTrigger.click();
+  await page.getByRole("combobox", { name: "Search models" }).fill("claude");
+  await page.getByRole("listbox", { name: "Models" }).getByRole("option").first().click();
+  await expect(page.getByRole("button", { name: /^Model: anthropic\// })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: /^Model: anthropic\// })).toBeVisible();
+  await page.getByRole("button", { name: /^Model: / }).click();
+  await page.getByRole("combobox", { name: "Search models" }).fill("faux");
+  await page.getByRole("listbox", { name: "Models" }).getByRole("option").first().click();
+  await expect(page.getByRole("button", { name: /^Model: faux\// })).toBeVisible();
+  await send(page, "after switch");
+  await expect(chat(page).getByText("ok: after switch").first()).toBeVisible();
+
+  // An unsafe bash interrupted by a host restart blocks bash until the user resolves it in the Chat.
+  // Barrier: the effect itself, so the tool is running when the host is stopped.
+  await send(page, 'call:bash {"command":"echo deploy >> resolve-effects.log; sleep 30"}');
+  await expect.poll(() => readFile(join(project, "resolve-effects.log"), "utf8").catch(() => "")).toBe("deploy\n");
+  const stopped = await page.request.post(`${base}api/sessions/${encodeURIComponent(sessionId)}/stop`, { data: { cwd: project } });
+  expect(stopped.ok()).toBe(true);
+  await page.reload();
+  const card = chat(page).locator(".unresolved-effects");
+  await expect(card).toContainText("Needs reconciliation");
+  await expect(card).toContainText("echo deploy");
+  await card.getByRole("button", { name: "Retry" }).click();
+  await expect(card).toHaveCount(0);
+  await expect(chat(page).getByText(/The user resolved the interrupted bash call/).first()).toBeVisible();
+  await page.reload();
+  await expect(chat(page).locator(".unresolved-effects")).toHaveCount(0);
+  expect((await readFile(join(project, "resolve-effects.log"), "utf8")).trim().split("\n")).toEqual(["deploy"]);
+});

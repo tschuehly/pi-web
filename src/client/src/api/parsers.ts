@@ -545,6 +545,19 @@ function optionalAttentionRequest(value: unknown): Pick<SessionStatus, "attentio
   return { attentionRequest: { id: requireBoundedNonEmptyString(record, "id", ASK_USER_ID_MAX_LENGTH), reason: requireBoundedNonEmptyString(record, "reason", ASK_USER_TEXT_MAX_LENGTH) } };
 }
 
+function optionalUnresolvedEffects(value: unknown): Pick<SessionStatus, "unresolvedEffects"> | object {
+  if (value === undefined) return {};
+  const effects = arrayOf((entry: unknown) => {
+    const record = requireRecord(entry);
+    return {
+      id: requireBoundedNonEmptyString(record, "id", ASK_USER_ID_MAX_LENGTH),
+      toolName: requireBoundedNonEmptyString(record, "toolName", ASK_USER_ID_MAX_LENGTH),
+      arguments: requireString(record, "arguments").slice(0, ASK_USER_TEXT_MAX_LENGTH),
+    };
+  })(value);
+  return effects.length === 0 ? {} : { unresolvedEffects: effects };
+}
+
 function optionalPendingDialogs(value: unknown): Pick<SessionStatus, "pendingDialogs"> | object {
   if (value === undefined) return {};
   const dialogs = arrayOf(parsePendingExtensionDialog)(value);
@@ -656,6 +669,7 @@ export function parseSessionStatus(value: unknown): SessionStatus {
     ...optionalPendingAsks(record["pendingAsks"], record["pendingAsk"]),
     ...optionalPendingDialogs(record["pendingDialogs"]),
     ...optionalAttentionRequest(record["attentionRequest"]),
+    ...optionalUnresolvedEffects(record["unresolvedEffects"]),
     ...optionalActiveToolExecutions(record["activeToolExecutions"]),
     ...optionalExtensionStatuses(record["extensionStatuses"]),
     ...optionalField("suggestedInput", optionalString(record, "suggestedInput")),
