@@ -155,7 +155,7 @@ function restoreAfterModalClose(registered: RegisteredModalLayer): void {
   // A background Chat's dialog can finish after focus moved elsewhere, even while the document has no active control.
   // A closed dialog is display:none itself, so ask whether its container is hidden.
   const container = composedParentElement(element);
-  if (container instanceof HTMLElement && isHiddenOrInertInComposedTree(container)) return;
+  if (container instanceof HTMLElement && container.isConnected && isHiddenOrInertInComposedTree(container)) return;
   const ownerDocument = element.ownerDocument;
   const active = deepActiveElement(ownerDocument);
   const focusWasReset = active === null || active === ownerDocument.body || active === ownerDocument.documentElement;

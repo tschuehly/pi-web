@@ -15,7 +15,8 @@ test.beforeEach(async ({ page }) => {
 
 test("completions escape layout clipping, preserve editor focus, and disappear on session changes", async ({ page }) => {
   const input = page.locator("prompt-editor .cm-content");
-  for (const trigger of ["/", "@", "#"]) {
+  // The Workbench composer offers slash commands and skills; it has no @ file or # model completions.
+  for (const trigger of ["/"]) {
     await typeComposerText(input, trigger);
     const suggestion = page.locator("autocomplete-menu button").first();
     await expect(suggestion).toBeVisible();
