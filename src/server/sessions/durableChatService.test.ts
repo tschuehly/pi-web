@@ -159,16 +159,14 @@ describe("Durable Chats", () => {
     const { durable, launched } = await service(undefined, {
       resources: { projectContext: "Project-specific instructions and guidelines:", sources: [] },
       compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
-      projectTrusted: false,
       skillList: [{ name: "tidy", filePath, baseDir: skillDir, description: "Tidy up" }],
     });
     const chat = await durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
     expect(only(launched).requests[0]).toMatchObject({ method: "configure", params: {
       resources: { projectContext: "Project-specific instructions and guidelines:" },
-      // Pi's compaction settings and trust decision: the host compacts like a legacy Chat and reads .pi/mcp.json only when trusted.
+      // Pi's compaction settings: the host compacts like a legacy Chat.
       compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
-      mcp: { projectTrusted: false },
     } });
     await expect(durable.commands(ref)).resolves.toEqual([
       expect.objectContaining({ name: "mode", source: "extension" }),
@@ -190,11 +188,11 @@ describe("Durable Chats", () => {
   });
 
   it("offers and runs /compact only when the host reports the compact capability", async () => {
-    const { durable, launched } = await service((launch) => new FakeHost(DURABLE_HOST_PROTOCOL, launch === 0 ? ["compact", "mcp"] : []));
+    const { durable, launched } = await service((launch) => new FakeHost(DURABLE_HOST_PROTOCOL, launch === 0 ? ["compact", "tool-groups"] : []));
     const chat = await durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
     only(launched).answer = (request) => request.method === "compact" ? { type: "done" } : status;
-    await expect(durable.capabilities(ref)).resolves.toEqual(["compact", "mcp"]);
+    await expect(durable.capabilities(ref)).resolves.toEqual(["compact", "tool-groups"]);
     expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "compact"]);
     await expect(durable.runCommand(ref, "/compact Keep the test names")).resolves.toEqual({ type: "done" });
     await expect(durable.runCommand(ref, "/compact")).resolves.toEqual({ type: "done" });

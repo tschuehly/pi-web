@@ -262,7 +262,7 @@ export class DurableChatService {
     await connection.request("prompt", { operationId: operationId ?? randomUUID(), text: expanded, ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }) });
   }
 
-  /** Host-reported capabilities of a Chat (e.g. `compact`, `mcp`), so controls light up only where they work. */
+  /** Host-reported capabilities of a Chat (e.g. `compact`, `tool-groups`), so controls light up only where they work. */
   async capabilities(ref: SessionRouteRef): Promise<string[]> {
     return [...(await this.#for(ref)).capabilities];
   }
@@ -413,7 +413,7 @@ export class DurableChatService {
       });
       if (loaded !== undefined) {
         this.#skills.set(record.id, loaded.skillList);
-        await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction, mcp: { projectTrusted: loaded.projectTrusted } });
+        await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction });
       }
       return connection;
     });
