@@ -1,4 +1,5 @@
-import type { SessionNotificationInboxSnapshot } from "../../shared/apiTypes.js";
+import type { McpAuthServersResponse, OAuthFlowState, SessionNotificationInboxSnapshot, SessionRef } from "../../shared/apiTypes.js";
+import type { McpAuthFlowService } from "./mcpAuthFlowService.js";
 import type { SessionRouteRef, SessionRouteService } from "./sessionService.js";
 import { DurableChatUnavailable, type DurableChatService } from "./durableChatService.js";
 
@@ -8,6 +9,26 @@ import { DurableChatUnavailable, type DurableChatService } from "./durableChatSe
  * Durable Chats answer only the operations they support and reject the rest visibly. Slice 2 adds questions,
  * attention, commands (/mode, /skill:), model switching and effect resolution.
  */
+interface McpAuthService {
+  mcpAuthServers(ref: SessionRef): Promise<McpAuthServersResponse>;
+  startMcpAuth(ref: SessionRef, mode: "login" | "logout", serverName?: string): Promise<OAuthFlowState>;
+  mcpAuthFlows: Pick<McpAuthFlowService, "get" | "respond" | "cancel">;
+}
+
+/**
+ * MCP sign-in routes for both runtimes: a Durable Chat's host does not run OAuth, so its sign-in requests fail with a
+ * reason instead of reaching the legacy service (which does not know the Chat); its status lists the servers that
+ * need sign-in as unavailable.
+ */
+export function routeMcpAuth(legacy: McpAuthService, durable: Pick<DurableChatService, "owns">): McpAuthService {
+  const unavailable = (): never => { throw new DurableChatUnavailable("MCP sign-in"); };
+  return {
+    mcpAuthServers: (ref) => durable.owns(ref.id) ? Promise.reject(new DurableChatUnavailable("MCP sign-in")) : legacy.mcpAuthServers(ref),
+    startMcpAuth: (ref, mode, serverName) => durable.owns(ref.id) ? Promise.resolve().then(unavailable) : legacy.startMcpAuth(ref, mode, serverName),
+    mcpAuthFlows: legacy.mcpAuthFlows,
+  };
+}
+
 export function createRuntimeRoutedSessionService(legacy: SessionRouteService, durable: DurableChatService): SessionRouteService {
   const isDurable = (ref: SessionRouteRef) => durable.owns(ref.id);
   const unavailable = (operation: string): never => { throw new DurableChatUnavailable(operation); };

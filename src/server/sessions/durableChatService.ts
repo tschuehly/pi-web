@@ -76,6 +76,8 @@ export class DurableChatUnavailable extends Error {
  */
 class DurableHostConnection {
   readonly ready: Promise<void>;
+  /** Optional operations the host reported (Workbench `chat-session.ts` `CAPABILITIES`); absent ones stay blocked. */
+  capabilities: ReadonlySet<string> = new Set();
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
@@ -97,7 +99,11 @@ class DurableHostConnection {
       if (!isRecord(message)) return;
       if (isRecord(message["ready"])) {
         const protocol = message["ready"]["protocol"];
-        if (protocol === DURABLE_HOST_PROTOCOL) markReady();
+        if (protocol === DURABLE_HOST_PROTOCOL) {
+          const reported = message["ready"]["capabilities"];
+          this.capabilities = new Set(Array.isArray(reported) ? reported.filter((name): name is string => typeof name === "string") : []);
+          markReady();
+        }
         else {
           failReady(new Error(`Durable host speaks protocol ${String(protocol)}, this daemon ${String(DURABLE_HOST_PROTOCOL)}`));
           process.kill("SIGTERM");
@@ -256,11 +262,17 @@ export class DurableChatService {
     await connection.request("prompt", { operationId: operationId ?? randomUUID(), text: expanded, ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }) });
   }
 
-  /** Slash commands of a Durable Chat: Working Mode and the workspace's skills. */
+  /** Host-reported capabilities of a Chat (e.g. `compact`, `mcp`), so controls light up only where they work. */
+  async capabilities(ref: SessionRouteRef): Promise<string[]> {
+    return [...(await this.#for(ref)).capabilities];
+  }
+
+  /** Slash commands of a Durable Chat: Working Mode, /compact where the host supports it, and the workspace's skills. */
   async commands(ref: SessionRouteRef): Promise<ClientCommand[]> {
-    await this.#for(ref);
+    const connection = await this.#for(ref);
     return [
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" },
+      ...(connection.capabilities.has("compact") ? [{ name: "compact", description: "Manually compact session context", argumentHint: "[instructions]", source: "builtin" as const }] : []),
       ...(this.#skills.get(ref.id) ?? []).map((skill) => ({ name: `skill:${skill.name}`, ...(skill.description === undefined ? {} : { description: skill.description }), source: "skill" as const })),
     ];
   }
@@ -271,6 +283,13 @@ export class DurableChatService {
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
     if (name === "mode") {
       const { result } = await (await this.#for(ref)).request("mode", { args: trimmed.slice("/mode".length).trim() });
+      return commandResult(result);
+    }
+    if (name === "compact") {
+      const connection = await this.#for(ref);
+      if (!connection.capabilities.has("compact")) return { type: "unsupported", message: "/compact is not available in this Durable Chat's host" };
+      const instructions = trimmed.slice("/compact".length).trim();
+      const { result } = await connection.request("compact", instructions === "" ? {} : { instructions });
       return commandResult(result);
     }
     if (name.startsWith("skill:")) {
@@ -394,7 +413,7 @@ export class DurableChatService {
       });
       if (loaded !== undefined) {
         this.#skills.set(record.id, loaded.skillList);
-        await connection.request("configure", { resources: loaded.resources });
+        await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction, mcp: { projectTrusted: loaded.projectTrusted } });
       }
       return connection;
     });

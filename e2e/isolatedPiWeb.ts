@@ -112,6 +112,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_") && !key.startsWith("GIT_")));
     // Its telemetry goes to the fixture root, never to the owner's ~/.pi/agent/telemetry.
     if (durableHost !== undefined && durableHost !== "") Object.assign(env, { PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_TELEMETRY_DIR: join(root, "telemetry") });
+    // Pi's compaction setting, read by Durable Chats as by legacy ones: keep only the newest turn, so a short scripted
+    // Chat has history to compact. Legacy fixture Chats send no model requests here.
+    if (durableHost !== undefined && durableHost !== "") await writeJson(join(root, "agent", "settings.json"), { compaction: { keepRecentTokens: 1 } });
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),
