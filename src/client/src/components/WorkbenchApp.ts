@@ -5,6 +5,7 @@ import { customElement, state } from "lit/decorators.js";
 import { api, configApi, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
 import type { SessionOpenAsks } from "../../../shared/apiTypes";
+import { PI_WEB_CAPABILITIES, supportsPiWebCapability } from "../../../shared/capabilities";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
@@ -105,6 +106,8 @@ export class WorkbenchApp extends LitElement {
   /** The navigation still loading; a newer navigation ends its Loading. */
   @state() private loadingAt: number | undefined = 0;
   @state() private showAgentSessions = false;
+  /** Machines whose session daemon can create Durable Chats. */
+  @state() private durableChatMachines = new Set<string>();
   @state() private showAllSessions = false;
   @state() private sessionInfoCopied = false;
   @state() private chooserView: "project" | "other" | "all" = "project";
@@ -481,7 +484,7 @@ export class WorkbenchApp extends LitElement {
     }
   }
 
-  private async startSessionWithOptions(options?: { startupToken?: string; propagateError?: boolean }): Promise<SessionInfo | undefined> {
+  private async startSessionWithOptions(options?: { startupToken?: string; propagateError?: boolean; runtime?: "durable" }): Promise<SessionInfo | undefined> {
     const generation = this.beginNavigation();
     const chat = this.createChatSession({ ...initialAppState(), machines: this.app.machines, projects: this.app.projects, sessionStatuses: this.app.sessionStatuses, sessionActivities: this.app.sessionActivities, selectedMachine: this.app.selectedMachine, selectedProject: this.app.selectedProject, selectedWorkspace: this.app.selectedWorkspace, workspaces: this.app.workspaces, sessions: this.app.sessions });
     this.focused.focus(chat);
@@ -565,6 +568,7 @@ export class WorkbenchApp extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.stylesheetRuntime.connect(this.ownerDocument);
+    void this.loadDurableChatSupport("local");
     void this.loadClientConfig();
     window.addEventListener("popstate", this.onPopState);
     window.addEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
@@ -1544,8 +1548,15 @@ export class WorkbenchApp extends LitElement {
     }, this.workstreamWatchDelay);
   }
 
-  private async startSession(): Promise<void> {
-    const session = await this.startSessionWithOptions();
+  /** Offer New Durable Chat only where the session daemon advertises it; a failed check just hides the button. */
+  private async loadDurableChatSupport(machineId: string): Promise<void> {
+    try {
+      if (supportsPiWebCapability(await api.runtime(machineId), PI_WEB_CAPABILITIES.durableChats)) this.durableChatMachines = new Set([...this.durableChatMachines, machineId]);
+    } catch { /* Runtime unknown: keep offering only legacy Chats. */ }
+  }
+
+  private async startSession(runtime?: "durable"): Promise<void> {
+    const session = await this.startSessionWithOptions(runtime === undefined ? undefined : { runtime });
     if (session !== undefined && this.app.selectedSession?.id === session.id) await this.focusChatComposer();
   }
 
@@ -1897,6 +1908,7 @@ export class WorkbenchApp extends LitElement {
           ${this.chooserView === "all" ? html`<all-sessions .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-session=${(event: CustomEvent<SessionInfo>) => { void this.openAllSession(event.detail); }}></all-sessions>` : this.chooserView === "other" ? html`<workstream-chooser .serviceMachineId=${serviceMachineId} .serviceProjectId=${serviceProjectId} .serviceWorkspaceId=${serviceWorkspaceId} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
             <div class="new-chat">
               <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
+              ${this.durableChatMachines.has(serviceMachineId) ? html`<button title="A Chat on the Durable runtime (trial)" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession("durable"); }}>New Durable Chat</button>` : null}
               <label>in
                 <select aria-label="Workspace" @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value); }}>
                   ${this.app.workspaces.map((workspace) => html`<option value=${workspace.id}>${this.app.projects.find((candidate) => candidate.id === workspace.projectId)?.name ?? ""} · ${workspace.label}${workspace.isMain ? " (main)" : ""}</option>`)}

@@ -74,6 +74,8 @@ export type MachineStatus = "unknown" | "online" | "offline" | "error";
  */
 export const PI_WEB_CAPABILITIES = {
   pluginLifecycle: "plugins.lifecycle",
+  /** The session daemon can create opt-in Durable Chats (`POST /sessions` with `runtime: "durable"`). */
+  durableChats: "sessions.durable-chats",
 } as const;
 
 export type PiWebCapability = typeof PI_WEB_CAPABILITIES[keyof typeof PI_WEB_CAPABILITIES];

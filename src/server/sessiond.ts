@@ -19,6 +19,9 @@ import { ModelCatalogRefresher } from "./sessions/modelCatalogRefresher.js";
 import { PiSessionService } from "./sessions/piSessionService.js";
 import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGateway.js";
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
+import { DurableChatService, forkDurableHost } from "./sessions/durableChatService.js";
+import { createRuntimeRoutedSessionService } from "./sessions/runtimeRoutedSessionService.js";
+import { SessionRuntimeLocator } from "./sessions/sessionRuntimeLocator.js";
 import { SessionNotificationStore } from "./sessions/sessionNotificationStore.js";
 import { SessionArchiveStore, defaultSessionArchiveFilePath } from "./sessions/sessionArchiveStore.js";
 import { WorkstreamLaunchStore } from "./sessions/workstreamLaunchStore.js";
@@ -40,7 +43,7 @@ import {
   PI_WEB_HOST_WORKSPACES_CAPABILITY,
 } from "../server-plugin-api.js";
 import { getPiWebRuntimeComponent } from "./piWebStatus.js";
-import { SESSIOND_RUNTIME_CAPABILITIES } from "../shared/capabilities.js";
+import { PI_WEB_CAPABILITIES, SESSIOND_RUNTIME_CAPABILITIES } from "../shared/capabilities.js";
 import { agentSessionDirEnvOverride, effectivePiWebConfig, maxUploadBytes, offlineModeEnabled, piWebDataDir, sessionArchiveDirectory, PI_CODING_AGENT_DIR_ENV, PI_CODING_AGENT_SESSION_DIR_ENV } from "../config.js";
 import { createFilePiWebConfigService } from "./configRoutes.js";
 import { createActiveAgentProfileDescriptor } from "../sessiond/activeAgentProfile.js";
@@ -239,6 +242,7 @@ async function createSessionDaemonRuntime() {
     lateHostCapabilities: [PI_WEB_HOST_WORKSPACES_CAPABILITY, PI_WEB_HOST_PI_SESSIONS_CAPABILITY, PI_WEB_HOST_PI_SESSION_EVENTS_CAPABILITY, PI_WEB_HOST_CATALOG_CAPABILITY],
   });
   let sessionsForFailedConstruction: PiSessionService | undefined;
+  let durableChatsForFailedConstruction: DurableChatService | undefined;
   let projectLifecycleForFailedConstruction: ProjectLifecycleService | undefined;
   try {
     const notificationStore = new SessionNotificationStore();
@@ -366,6 +370,22 @@ async function createSessionDaemonRuntime() {
       }),
     }));
     sessionsForFailedConstruction = sessions;
+    // Opt-in Durable Chats (Phase B trial): only with a configured host entry; otherwise routes see the legacy service.
+    const durableHostEntry = daemonEnvironment["PI_WEB_DURABLE_HOST"];
+    const durableChats = durableHostEntry === undefined || durableHostEntry === "" ? undefined : new DurableChatService({
+      locator: new SessionRuntimeLocator(piWebDataDir(daemonEnvironment)),
+      events: eventHub,
+      launch: forkDurableHost({
+        entry: durableHostEntry,
+        model: daemonEnvironment["PI_WEB_DURABLE_MODEL"] ?? "anthropic/claude-sonnet-5-5",
+        // The host reads only the Claude subscription login (auth.json, under Pi's own lock) from this directory.
+        agentDir: daemonEnvironment["PI_WEB_DURABLE_AGENT_DIR"] ?? activeAgentProfile.dir,
+      }),
+      storesDir: join(piWebDataDir(daemonEnvironment), "durable"),
+      logger: app.log,
+    });
+    durableChatsForFailedConstruction = durableChats;
+    const routeSessions = durableChats === undefined ? sessions : createRuntimeRoutedSessionService(sessions, durableChats);
     // Test-only opt-in for a separate daemon whose state and socket are inside
     // a controlled fixture root. No route can create an ask in a live daemon.
     if (daemonEnvironment["PI_WEB_FIXTURE_PENDING_ASK_MANIFEST"] !== undefined) {
@@ -416,13 +436,15 @@ async function createSessionDaemonRuntime() {
       // the captured pre-scrub daemon environment and the config snapshot this
       // daemon actually honors, so it stays accurate for this daemon lifetime
       // and clears only when the inputs are removed and the daemon restarts.
-      ...getPiWebRuntimeComponent("sessiond", SESSIOND_RUNTIME_CAPABILITIES, deprecatedAgentInputs),
+      ...getPiWebRuntimeComponent("sessiond", durableChats === undefined ? SESSIOND_RUNTIME_CAPABILITIES : [...SESSIOND_RUNTIME_CAPABILITIES, PI_WEB_CAPABILITIES.durableChats], deprecatedAgentInputs),
       activeAgentProfile,
     });
     let disposed = false;
     const shutdown = async (): Promise<void> => {
       if (disposed) return;
       disposed = true;
+      // Durable hosts close their stores first; admitted work stays pending and reopens paused.
+      await durableChats?.dispose().catch((error: unknown) => { app.log.error({ err: error }, "Durable Chat hosts did not close cleanly"); });
       await runSessionDaemonShutdown({
         logger: app.log,
         dependencies: {
@@ -448,9 +470,10 @@ async function createSessionDaemonRuntime() {
       await stateOwnership.release();
     };
     projectLifecycle.scheduleCleanup(); // One delayed pass for existing persisted unread, if any.
-    return { eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, serverNotices, unreadStore, activeAgentProfile, runtimeComponent, catalogRefresher, serverPlugins, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals, shutdown };
+    return { eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, routeSessions, serverNotices, unreadStore, activeAgentProfile, runtimeComponent, catalogRefresher, serverPlugins, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals, shutdown };
   } catch (error) {
     await projectLifecycleForFailedConstruction?.closeAll();
+    await durableChatsForFailedConstruction?.dispose().catch(() => undefined);
     try {
       await serverPlugins.stop();
     } catch (disposeError) {
@@ -465,14 +488,14 @@ async function createSessionDaemonRuntime() {
   }
 }
 
-function registerSessionDaemonRoutes({ eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, serverNotices, runtimeComponent, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals }: SessionDaemonRuntime): void {
+function registerSessionDaemonRoutes({ eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, routeSessions, serverNotices, runtimeComponent, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals }: SessionDaemonRuntime): void {
   registerProjectMutationRoutes(app, projectLifecycle);
   registerPluginCatalogRoutes(app, { projects, workspaces: workspaceProviders, sessions });
   registerMachineStatusRoutes(app, machineStatus);
   registerServerNoticeRoutes(app, serverNotices);
   registerAuthRoutes(app, auth);
   registerMcpAuthRoutes(app, sessions);
-  registerSessionRoutes(app, sessions, eventHub);
+  registerSessionRoutes(app, routeSessions, eventHub);
   registerWorkspaceCatalogRoutes(app, {
     projects,
     workspaces: workspaceProviders,

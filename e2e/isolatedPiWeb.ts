@@ -107,7 +107,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
+    // Optional: the Workbench Durable host entry (chat-host-main.ts) enables Durable Chats with its scripted faux model.
+    const durableHost = process.env["PI_WEB_E2E_DURABLE_HOST"];
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PI_") && !key.startsWith("GIT_")));
+    if (durableHost !== undefined && durableHost !== "") Object.assign(env, { PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux" });
     Object.assign(env, {
       PI_WEB_DATA_DIR: dataDir,
       PI_WEB_CONFIG: join(root, "config.json"),
@@ -137,6 +140,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     process.env["PI_WEB_E2E_SIBLING_FILE"] = siblingFile;
     process.env["PI_WEB_E2E_PROJECT_DIR"] = project;
     process.env["PI_WEB_E2E_WORKSPACE_ID"] = workspaceId;
+    process.env["PI_WEB_E2E_BASE_URL"] = baseUrl;
     process.env["PI_WEB_E2E_ADHOC_CHAT_URL"] = `${baseUrl}?${new URLSearchParams({ session: E2E_ADHOC_SESSION_ID, view: "chat" }).toString()}`;
     return teardown;
   } catch (error) {

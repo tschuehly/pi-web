@@ -70,7 +70,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Body: { cwd?: unknown; startupToken?: unknown } | undefined }>(`${prefix}/sessions`, async (request, reply) => {
+  app.post<{ Body: { cwd?: unknown; startupToken?: unknown; runtime?: unknown } | undefined }>(`${prefix}/sessions`, async (request, reply) => {
     try {
       const body = requireRecord(request.body);
       // An opaque label the caller uses to recognise its own construction's
@@ -79,7 +79,9 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       const startupToken = body["startupToken"] === undefined ? undefined : requireNonEmptyString(body, "startupToken");
       // The daemon keeps and lists the token, so it must stay a short, plain label.
       if (startupToken !== undefined && !/^[A-Za-z0-9:._-]{1,128}$/.test(startupToken)) throw new Error("startupToken field must be at most 128 letters, digits, or : . _ -");
-      return await sessions.start(normalizeRequestCwd(requireString(body, "cwd")), optionalField("startupToken", startupToken));
+      const runtime = body["runtime"];
+      if (runtime !== undefined && runtime !== "legacy" && runtime !== "durable") throw new Error("runtime field must be legacy or durable");
+      return await sessions.start(normalizeRequestCwd(requireString(body, "cwd")), { ...optionalField("startupToken", startupToken), ...(runtime === "durable" ? { runtime } : {}) });
     } catch (error) {
       return reply.code(400).send({ error: errorMessage(error) });
     }

@@ -59,8 +59,9 @@ export interface SessionRouteService {
   /**
    * Create a session. Most startup tokens are ephemeral progress labels;
    * Workstream launch tokens are reserved and recorded for exact reconciliation.
+   * `runtime: "durable"` opts this one new Chat into the Durable runtime; omitted, the Chat is a legacy Chat.
    */
-  start(cwd: string, options?: { startupToken?: string }): Promise<ClientSession>;
+  start(cwd: string, options?: { startupToken?: string; runtime?: "durable" }): Promise<ClientSession>;
   /** Unknown never proves non-creation. Only a live or persisted exact match is found. */
   lookupWorkstreamLaunch(token: string, cwd: string): Promise<{ status: "found"; sessionId: string; cwd: string } | { status: "unknown" }>;
   messages(ref: SessionRouteRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage>;

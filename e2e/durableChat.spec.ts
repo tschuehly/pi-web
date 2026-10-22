@@ -1,0 +1,69 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { expect, test, type Page } from "@playwright/test";
+import { E2E_PROJECT_ID } from "./isolatedPiWeb";
+
+// A Durable Chat beside the seeded legacy Chats: create → send → stream → tool → queued follow-up → Stop → reload.
+// Needs the Workbench Durable host: PI_WEB_E2E_DURABLE_HOST=<pi-workbench>/packages/durable-pilot/src/chat-host-main.ts.
+// The host runs its scripted faux model (packages/durable-pilot/src/faux.ts): `gen` streams a long answer,
+// `call:<tool> <json>` calls a tool, and a tool result is answered with `done after <tool>`.
+test.skip(process.env["PI_WEB_E2E_DURABLE_HOST"] === undefined, "PI_WEB_E2E_DURABLE_HOST is not set");
+
+const editor = (page: Page) => page.locator("prompt-editor .cm-content");
+const chat = (page: Page) => page.locator("chat-view");
+
+async function send(page: Page, text: string, button = "Send message"): Promise<void> {
+  await editor(page).click();
+  // Inserted whole: typed braces would trigger the editor's bracket closing.
+  await page.keyboard.insertText(text);
+  await page.getByRole("button", { name: button }).click();
+}
+
+/** The Chat's rendered text through its shadow roots, without clock times. */
+function transcriptText(page: Page): Promise<string> {
+  return chat(page).first().evaluate((root) => {
+    const walk = (node: Node): string => node.nodeType === Node.TEXT_NODE
+      ? node.textContent ?? ""
+      : [...(node instanceof Element && node.shadowRoot !== null ? node.shadowRoot.childNodes : []), ...node.childNodes].map(walk).join(" ");
+    return walk(root).replace(/\s+/g, " ").replace(/\d+:\d+ [AP]M|[A-Z][a-z]{2} \d+, \d+ at [^·]*/g, "").replace(/Showing messages \S+ – \S+ of \S+ /, "").trim();
+  });
+}
+
+test("a Durable Chat streams, runs tools, queues, stops and reloads to the same state", async ({ page }) => {
+  const base = process.env["PI_WEB_E2E_BASE_URL"];
+  const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
+  const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
+  if (base === undefined || workspaceId === undefined || project === undefined) throw new Error("Isolated PI WEB was not started");
+  test.setTimeout(60_000);
+  await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
+  await page.getByRole("button", { name: "New Durable Chat" }).click();
+  await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
+
+  // Streaming: a partial answer shows while the run is still going.
+  await send(page, "gen");
+  await expect(chat(page).getByText(/word3 /).first()).toBeVisible();
+  const partial = await transcriptText(page);
+  await expect(chat(page).getByText(/word119/).first()).toBeVisible();
+  expect(partial).not.toContain("word119");
+
+  // A core tool in the Chat's workspace.
+  await send(page, 'call:bash {"command":"echo tool-ran > durable-tool.txt; cat durable-tool.txt"}');
+  await expect(chat(page).getByText("done after bash").first()).toBeVisible();
+  expect(await readFile(join(project, "durable-tool.txt"), "utf8")).toBe("tool-ran\n");
+
+  // A running tool, a queued follow-up, then Stop: the follow-up returns to the composer and is never sent.
+  await send(page, 'call:bash {"command":"echo running; sleep 30"}');
+  await expect(chat(page).getByText("running").first()).toBeVisible();
+  await send(page, "the follow-up", "Queue follow-up");
+  await expect(page.getByText("the follow-up").first()).toBeVisible();
+  await page.getByRole("button", { name: "Stop current work" }).click();
+  await expect(editor(page)).toHaveText("the follow-up");
+  await expect(chat(page).getByText(/Tool bash was aborted/).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop current work" })).toBeDisabled();
+  const before = await transcriptText(page);
+  expect(before).not.toMatch(/user the follow-up/);
+
+  await page.reload();
+  await expect(chat(page).getByText(/Tool bash was aborted/).first()).toBeVisible();
+  await expect.poll(() => transcriptText(page)).toBe(before);
+});

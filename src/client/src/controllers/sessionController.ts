@@ -324,7 +324,7 @@ export class SessionController {
     await this.startSessionWithOptions(options);
   }
 
-  async startSessionWithOptions(options?: { updateUrl?: boolean | undefined; startupToken?: string | undefined; propagateError?: boolean | undefined }): Promise<SessionInfo | undefined> {
+  async startSessionWithOptions(options?: { updateUrl?: boolean | undefined; startupToken?: string | undefined; propagateError?: boolean | undefined; runtime?: "durable" | undefined }): Promise<SessionInfo | undefined> {
     const workspace = this.getState().selectedWorkspace;
     if (!workspace) return;
     const machineId = selectedMachineId(this.getState());
@@ -343,7 +343,9 @@ export class SessionController {
     // published-token handoffs; freshness also protects unpublished starts.
     pending.navigation = this.beginNavigationOperation?.(PENDING_SESSION_START_SCOPE);
     try {
-      const session = await this.api.startSession(workspace.path, machineId, pending.startupToken);
+      const session = options?.runtime === undefined
+        ? await this.api.startSession(workspace.path, machineId, pending.startupToken)
+        : await this.api.startSession(workspace.path, machineId, pending.startupToken, options.runtime);
       await this.resolvePendingSessionStart(pending.tempId, session);
       return session;
     } catch (error) {

@@ -1704,7 +1704,9 @@ export class PiSessionService implements SessionRouteService {
     });
   }
 
-  async start(cwd: string, options: StartSessionOptions = {}): Promise<ClientSession> {
+  async start(cwd: string, options: StartSessionOptions & { runtime?: "durable" } = {}): Promise<ClientSession> {
+    // Only the runtime router creates Durable Chats; a daemon without one must not quietly start a legacy Chat instead.
+    if (options.runtime === "durable") throw new Error("Durable Chats are not enabled on this session daemon");
     const token = options.startupToken;
     if (token === undefined || !isWorkstreamLaunchToken(token)) return this.startSession(cwd, options);
     if (this.workstreamLaunchStore === undefined) throw new Error("Workstream launch tracking is unavailable");
