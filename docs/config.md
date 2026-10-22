@@ -391,7 +391,11 @@ The agent revises an open set with `ask_user` `update: <askId>` (sending only `u
 
 Open sets are held by the session daemon, so they survive a browser disconnect, reload, or web/API restart. After a session-daemon restart they are rebuilt from the transcript when the Chat is opened; answered, withdrawn, and tree-closed sets stay closed.
 
-Restart the session daemon after changing `askUser` or after upgrading PI WEB to a version that introduces this tool. For the systemd user service, run `systemctl --user restart pi-web-sessiond`.
+The same setting offers `request_attention`, for when an agent needs you without a decision to ask: finished work to review, a login or credential, a manual check only you can do, or being blocked. It returns immediately with a short reason. You get a **Needs you** desktop notification, and the Chat's tab shows the needs-you dot until you view the Chat or send it a message. The request is held by the session daemon like open sets, so it survives a reload; it ends with the session runtime, including a session-daemon restart.
+
+Desktop notifications fire for questions, dialogs, errors, and attention requests, not when a turn ends.
+
+Restart the session daemon after changing `askUser` or after upgrading PI WEB to a version that introduces these tools. For the systemd user service, run `systemctl --user restart pi-web-sessiond`.
 
 ### Extension dialogs
 

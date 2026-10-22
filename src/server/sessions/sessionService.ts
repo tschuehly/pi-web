@@ -4,6 +4,7 @@ import type {
   ExtensionDialogAnswer,
   ExtensionDialogCloseResponse,
   PendingAskUser,
+  SessionAttentionRequest,
   SavedPromptAttachment,
   SessionBulkArchiveResponse,
   SessionBulkDeleteArchivedResponse,
@@ -67,6 +68,10 @@ export interface SessionRouteService {
   status(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   /** Open asks read without opening the session, so a cold one never starts. */
   openAsks(ref: SessionRouteRef): Promise<PendingAskUser[]>;
+  /** The running session's unacknowledged `request_attention`, read without opening it. */
+  attentionRequest(ref: SessionRouteRef): SessionAttentionRequest | undefined;
+  /** Clears the attention request with this id; false when it is gone or a newer one replaced it. */
+  acknowledgeAttention(ref: SessionRouteRef, requestId: string): boolean;
   streamSnapshot(ref: SessionRouteRef): Promise<SessionStreamSnapshot>;
   transcriptSnapshot(ref: SessionRouteRef, page?: { limit?: number }): Promise<SessionTranscriptSnapshot>;
   notificationCatalog(): SessionNotificationCatalogSnapshot | Promise<SessionNotificationCatalogSnapshot>;

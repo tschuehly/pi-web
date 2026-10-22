@@ -1237,6 +1237,12 @@ export interface SessionStatus {
    */
   pendingDialogs?: PendingExtensionDialog[];
   /**
+   * The agent's latest unacknowledged `request_attention` call. Daemon-owned,
+   * so it survives browser reload; cleared when the user views the Chat or
+   * sends it a message.
+   */
+  attentionRequest?: SessionAttentionRequest;
+  /**
    * Up to the 32 oldest currently running executions observed by the session
    * daemon. Newer starts are omitted while the bound is full; a later start can
    * be admitted after an older row ends. Labels are generic and never contain
@@ -1452,13 +1458,26 @@ export interface ModelScopeChangedEvent {
   revision: number;
 }
 
+/** An agent's `request_attention` call: it needs the user, with no decision to ask. */
+export interface SessionAttentionRequest {
+  id: string;
+  /** Trimmed, at most {@link ASK_USER_TEXT_MAX_LENGTH} characters. */
+  reason: string;
+}
+
+/** A Chat's open asks and attention request, read without opening it. */
+export interface SessionOpenAsks {
+  pendingAsks: PendingAskUser[];
+  attentionRequest?: SessionAttentionRequest;
+}
+
 export interface SessionAttentionEvent {
   type: "session.attention";
   sessionId: string;
   cwd: string;
   sessionName?: string;
-  kind: "ask" | "dialog" | "error";
-  /** Ask/dialog id or per-session error sequence stamp. */
+  kind: "ask" | "dialog" | "error" | "attention";
+  /** Ask/dialog/attention request id or per-session error sequence stamp. */
   id: string;
   /** A short first-line preview, never a full prompt or transcript. */
   detail: string;

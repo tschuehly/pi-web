@@ -10,9 +10,9 @@ export type ChatTabStatus = "needs" | "running" | "done" | "idle";
 
 const STATUS_LABELS: Record<ChatTabStatus, string> = { needs: "Needs you", running: "Working", done: "Done while you were away", idle: "Idle" };
 
-/** Needs you › working › done while you were away (`unread`) › idle. */
-export function chatTabStatus(status: SessionStatus | undefined, unread: boolean): ChatTabStatus {
-  if ((status?.pendingAsks?.length ?? 0) > 0 || status?.pendingAsk !== undefined || (status?.pendingDialogs?.length ?? 0) > 0) return "needs";
+/** Needs you › working › done while you were away (`unread`) › idle. A partial status is what a restored Chat read without opening it. */
+export function chatTabStatus(status: Partial<SessionStatus> | undefined, unread: boolean): ChatTabStatus {
+  if ((status?.pendingAsks?.length ?? 0) > 0 || status?.pendingAsk !== undefined || (status?.pendingDialogs?.length ?? 0) > 0 || status?.attentionRequest !== undefined) return "needs";
   if (status?.isStreaming === true || status?.isCompacting === true || status?.isBashRunning === true) return "running";
   return unread ? "done" : "idle";
 }

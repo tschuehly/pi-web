@@ -252,7 +252,18 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/asks`, async (request, reply) => {
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
     if (ref === undefined) return reply;
-    return { pendingAsks: await sessions.openAsks(ref) };
+    const pendingAsks = await sessions.openAsks(ref);
+    const attentionRequest = sessions.attentionRequest(ref);
+    return attentionRequest === undefined ? { pendingAsks } : { pendingAsks, attentionRequest };
+  });
+
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; requestId?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/attention/acknowledge`, (request, reply) => {
+    try {
+      const body = requireRecord(request.body);
+      return { acknowledged: sessions.acknowledgeAttention(sessionRefFromBody(request.params.sessionId, body), requireBoundedId(body["requestId"], "requestId")) };
+    } catch (error) {
+      return reply.code(400).send({ error: errorMessage(error) });
+    }
   });
 
   app.get<{ Params: { sessionId: string }; Querystring: MessageQuery }>(`${prefix}/sessions/:sessionId/transcript-snapshot`, async (request, reply) => {

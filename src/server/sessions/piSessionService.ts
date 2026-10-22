@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import {
@@ -82,6 +83,8 @@ import type {
   SessionUnreadAcknowledgeRequest,
   SessionUnreadCatalogSnapshot,
   SessionWarning,
+  SessionAttentionEvent,
+  SessionAttentionRequest,
 } from "../../shared/apiTypes.js";
 import type { SessionDefaults, SessionDefaultsUpdate } from "../../shared/apiTypes.js";
 import { parseSessionDefaults, parseSessionDefaultsUpdate } from "../../shared/sessionDefaults.js";
@@ -92,6 +95,7 @@ import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import { readSessionHeaderSummary } from "./sessionFileHeader.js";
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
 import { createAskUserToolDefinition, type AskUserToolDeps } from "./askUserTool.js";
+import { createRequestAttentionToolDefinition, type RequestAttentionToolDeps } from "./requestAttentionTool.js";
 import { openAsksFromTranscript } from "./openAsksFromTranscript.js";
 import { ASK_USER_CLOSED_CUSTOM_TYPE, ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
 import { PendingExtensionDialogStore, type ExtensionDialogCancelReason } from "./pendingExtensionDialogStore.js";
@@ -821,17 +825,20 @@ export function createPiWebCustomToolDefinitions(
   delegationEnabled: boolean,
   spawn?: SpawnSessionFn,
   subsessions?: SubsessionToolDeps,
-  askUser?: AskUserToolDeps,
+  userTools?: UserToolDeps,
 ) {
   return [
     createPiWebEditToolDefinition(cwd),
     ...(delegationEnabled && spawn !== undefined ? [createSpawnSessionToolDefinition(cwd, { spawn })] : []),
     ...(delegationEnabled && subsessions !== undefined ? createSubsessionToolDefinitions(cwd, subsessions) : []),
-    // Asking the user is not delegation: the questions land in the session the
-    // user is already watching, so tracked children may ask too.
-    ...(askUser === undefined ? [] : [createAskUserToolDefinition(askUser)]),
+    // Reaching the user is not delegation: questions and attention requests land
+    // in the session the user is already watching, so tracked children may use them too.
+    ...(userTools === undefined ? [] : [createAskUserToolDefinition(userTools), createRequestAttentionToolDefinition(userTools)]),
   ];
 }
+
+/** The tools that reach the user, `ask_user` and `request_attention`, offered together under `askUser`. */
+export type UserToolDeps = AskUserToolDeps & RequestAttentionToolDeps;
 
 /**
  * Error collected from a `project_trust` handler, mirroring the per-extension
@@ -1026,7 +1033,7 @@ function createDefaultRuntimeFactory(
   sessionManagers: Pick<PiSessionManagerGateway, "open">,
   spawn?: SpawnSessionFn,
   subsessions?: SubsessionToolDeps,
-  askUser?: AskUserToolDeps,
+  userTools?: UserToolDeps,
   appendSystemPromptSections: readonly string[] = [],
 ): PiWebCreateAgentSessionRuntimeFactory {
   const resourceLoaderOptions = piWebResourceLoaderOptions(appendSystemPromptSections);
@@ -1079,7 +1086,7 @@ function createDefaultRuntimeFactory(
     services.diagnostics.push(...modelOptions.diagnostics);
     const resolvedDelegationToolsEnabled = delegationToolsEnabled
       ?? await sessionAllowsDelegationTools(sessionManager, sessionManagers);
-    const customTools = createPiWebCustomToolDefinitions(cwd, resolvedDelegationToolsEnabled, spawn, subsessions, askUser);
+    const customTools = createPiWebCustomToolDefinitions(cwd, resolvedDelegationToolsEnabled, spawn, subsessions, userTools);
     const result = await createAgentSessionFromServices({
       services,
       sessionManager,
@@ -1226,6 +1233,8 @@ export class PiSessionService implements SessionRouteService {
   private readonly unpersistedTreeBranchLeaves = new WeakMap<PiAgentSession, string | null>();
   /** Latest prepared text belongs to the session, never to a browser's unsent draft. */
   private readonly suggestedInputs = new Map<string, string>();
+  /** Latest unacknowledged `request_attention` per session; like open asks, it lives as long as the runtime. */
+  private readonly attentionRequests = new Map<string, SessionAttentionRequest>();
   /** Counts async operations that may append an entry before they settle. */
   private readonly sessionEntryMutationCounts = new WeakMap<PiAgentSession, number>();
   /** Exempt only a command's own prompt receipt while it invokes guarded session control. */
@@ -1343,7 +1352,7 @@ export class PiSessionService implements SessionRouteService {
         read: (parentSessionId, sessionId, query, parentSessionFile) => this.readSubsession(parentSessionId, sessionId, query, parentSessionFile),
       },
       deps.askUserEnabled === true
-        ? { open: (input) => this.openAsk(input), update: (input) => this.updateAsk(input), withdraw: (sessionId, askId) => this.withdrawAsk(sessionId, askId) }
+        ? { open: (input) => this.openAsk(input), update: (input) => this.updateAsk(input), withdraw: (sessionId, askId) => this.withdrawAsk(sessionId, askId), requestAttention: (sessionId, reason) => this.requestAttention(sessionId, reason) }
         : undefined,
       deps.appendSystemPromptSections ?? [],
     );
@@ -1511,6 +1520,7 @@ export class PiSessionService implements SessionRouteService {
     this.startupSessions.clear();
     this.startupTokens.clear();
     this.suggestedInputs.clear();
+    this.attentionRequests.clear();
     this.activities.clear();
     this.compactionPromptQueues.clear();
     this.runtimePromptProvenance.clear();
@@ -1935,7 +1945,7 @@ export class PiSessionService implements SessionRouteService {
     return model;
   }
 
-  private publishAttention(session: PiAgentSession, kind: "ask" | "dialog" | "error", id: string, detail: string): void {
+  private publishAttention(session: PiAgentSession, kind: SessionAttentionEvent["kind"], id: string, detail: string): void {
     this.events.publishGlobal({
       type: "session.attention", sessionId: session.sessionId, cwd: session.sessionManager.getCwd(),
       ...(session.sessionName === undefined ? {} : { sessionName: session.sessionName.slice(0, 120) }),
@@ -1964,6 +1974,30 @@ export class PiSessionService implements SessionRouteService {
     if (session !== undefined) this.publishAttention(session, "ask", ask.askId, ask.questions[0]?.question ?? "Needs an answer");
     this.publishStatusForSessionId(input.sessionId);
     return ask;
+  }
+
+  /** Record the session's attention request, replacing an earlier one, and notify every browser. Never waits for the user. */
+  requestAttention(sessionId: string, reason: string): SessionAttentionRequest {
+    const request = { id: randomUUID(), reason };
+    this.attentionRequests.set(sessionId, request);
+    const session = this.active.get(sessionId)?.runtime.session ?? this.startupSessions.get(sessionId);
+    if (session !== undefined) this.publishAttention(session, "attention", request.id, reason);
+    this.publishStatusForSessionId(sessionId);
+    return request;
+  }
+
+  attentionRequest(ref: PiSessionRef): SessionAttentionRequest | undefined {
+    const sessionId = this.activeForRef(ref)?.runtime.session.sessionId;
+    return sessionId === undefined ? undefined : this.attentionRequests.get(sessionId);
+  }
+
+  /** Clears the request the user saw; a newer request stays, so it is never cleared unseen. */
+  acknowledgeAttention(ref: PiSessionRef, requestId: string): boolean {
+    const session = this.activeForRef(ref)?.runtime.session;
+    if (session === undefined || this.attentionRequests.get(session.sessionId)?.id !== requestId) return false;
+    this.attentionRequests.delete(session.sessionId);
+    this.publishStatus(session);
+    return true;
   }
 
   /** Revise or confirm an open ask; browsers replace the card with the same id. */
@@ -2866,6 +2900,8 @@ export class PiSessionService implements SessionRouteService {
     await this.assertWritable(ref);
     const session = await this.getOrOpen(ref);
     this.assertTreeNavigationInactive(session, "send a prompt");
+    // Sending a message answers whatever the agent needed the user for.
+    if (this.attentionRequests.delete(session.sessionId)) this.publishStatus(session);
     // The server catalog is authoritative: client command data can be stale or
     // unavailable. Strip staged tokens before Pi parses a known command, while
     // slash-leading prose keeps normal named-image legend semantics.
@@ -3823,6 +3859,7 @@ export class PiSessionService implements SessionRouteService {
     if (pendingOpens.length > 0) await Promise.allSettled(pendingOpens);
     const active = this.active.get(sessionId);
     this.suggestedInputs.delete(sessionId);
+    this.attentionRequests.delete(sessionId);
     if (notificationPolicy.kind === "clear") {
       const generation = active === undefined ? undefined : this.notificationGenerationBySession.get(active.runtime.session);
       const mutations = generation === undefined
@@ -5204,6 +5241,7 @@ export class PiSessionService implements SessionRouteService {
     const extensionStatuses = this.extensionStatuses.get(session);
     const activeToolExecutions = this.activeToolExecutionSnapshot(session);
     const suggestedInput = this.suggestedInputs.get(session.sessionId);
+    const attentionRequest = this.attentionRequests.get(session.sessionId);
     return {
       sessionId: session.sessionId,
       persisted: sessionFileExists(session.sessionFile),
@@ -5222,6 +5260,7 @@ export class PiSessionService implements SessionRouteService {
       ...(warnings.length === 0 ? {} : { warnings }),
       ...(pendingAsks[0] === undefined ? {} : { pendingAsks, pendingAsk: pendingAsks[0] }),
       ...(pendingDialogs.length === 0 ? {} : { pendingDialogs }),
+      ...(attentionRequest === undefined ? {} : { attentionRequest }),
       ...(activeToolExecutions.length === 0 ? {} : { activeToolExecutions }),
       ...(extensionStatuses === undefined || extensionStatuses.size === 0 ? {} : { extensionStatuses: Object.fromEntries(extensionStatuses) }),
       ...(suggestedInput === undefined ? {} : { suggestedInput }),

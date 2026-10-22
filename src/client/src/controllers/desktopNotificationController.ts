@@ -24,13 +24,14 @@ export interface DesktopNotificationStorage {
   removeItem(key: string): void;
 }
 
-export type DesktopNotificationKind = "complete" | "ask" | "dialog" | "error";
+export type DesktopNotificationKind = SessionAttentionEvent["kind"];
+
+const KIND_LABELS: Record<DesktopNotificationKind, string> = { ask: "Question", dialog: "Dialog", error: "Error", attention: "Needs you" };
 
 export class DesktopNotificationController {
   private sessionKey: string | undefined;
   diagnostic: string | undefined;
   private armed = false;
-  private streaming: boolean | undefined;
   private readonly seen = new Set<string>();
   private readonly recentErrors = new Map<string, number>();
   private readonly open = new Map<string, Set<DesktopNotificationHandle>>();
@@ -79,14 +80,8 @@ export class DesktopNotificationController {
     }
     if (!this.armed || nextKey === undefined) return;
 
-    const nextStreaming = next.status?.isStreaming;
-    if (this.streaming === true && nextStreaming === false) {
-      const replyLine = [...next.messages].reverse().find((line) => line.role === "assistant");
-      const reply = replyLine?.parts.filter((part) => part.type === "text").map((part) => part.text).join("");
-      this.notifySelected(next, "complete", `Finished · ${preview(reply ?? "")}`, replyLine?.entryId === undefined ? undefined : `entry:${replyLine.entryId}`);
-    }
-    this.streaming = nextStreaming;
-
+    const request = next.status?.attentionRequest;
+    if (request !== undefined && this.mark(nextKey, "attention", request.id)) this.notifySelected(next, "attention", `${KIND_LABELS.attention} · ${firstLine(request.reason)}`);
     for (const ask of next.pendingAsks) {
       if (!this.mark(nextKey, "ask", ask.askId)) continue;
       this.notifySelected(next, "ask", `Question · ${ask.questions[0]?.question ?? "Needs an answer"}`, `ask:${ask.askId}`);
@@ -104,7 +99,8 @@ export class DesktopNotificationController {
     const key = selectedSessionKey(state);
     if (key !== this.sessionKey) this.reset(key);
     this.armed = key !== undefined;
-    this.streaming = state.status?.isStreaming;
+    const request = state.status?.attentionRequest;
+    if (key !== undefined && request !== undefined) this.mark(key, "attention", request.id);
     if (key !== undefined) for (const ask of state.pendingAsks) this.mark(key, "ask", ask.askId);
     if (key !== undefined) for (const dialog of state.pendingDialogs) this.mark(key, "dialog", dialog.dialogId);
   }
@@ -123,8 +119,7 @@ export class DesktopNotificationController {
   attention(state: AppState, event: SessionAttentionEvent, machineId: string): void {
     const key = machineSessionKey(machineId, event.sessionId);
     if (key === selectedSessionKey(state) || !this.mark(key, event.kind, event.id)) return;
-    const reason = event.kind === "ask" ? "Question" : event.kind === "dialog" ? "Dialog" : "Error";
-    this.notify(machineId, event.sessionId, event.cwd, event.sessionName, event.kind, `${reason} · ${event.detail}`, event.kind === "error" ? undefined : `${event.kind}:${event.id}`);
+    this.notify(machineId, event.sessionId, event.cwd, event.sessionName, event.kind, `${KIND_LABELS[event.kind]} · ${event.detail}`, event.kind === "ask" || event.kind === "dialog" ? `${event.kind}:${event.id}` : undefined);
   }
 
   private mark(key: string, kind: SessionAttentionEvent["kind"], id: string): boolean {
@@ -140,7 +135,6 @@ export class DesktopNotificationController {
   private reset(sessionKey: string | undefined): void {
     this.sessionKey = sessionKey;
     this.armed = false;
-    this.streaming = undefined;
   }
 
   private notifySelected(state: AppState, tag: DesktopNotificationKind, body: string, anchor?: string): void {
@@ -149,7 +143,7 @@ export class DesktopNotificationController {
     this.notify(selectedMachineId(state), session.id, session.cwd, session.name === undefined || session.name.trim() === "" ? this.workstreamTitle() : session.name, tag, body, anchor);
   }
 
-  /** `anchor` names the message to reveal on click: `entry:<entryId>`, `ask:<askId>`, or `dialog:<dialogId>`. */
+  /** `anchor` names the message to reveal on click: `ask:<askId>` or `dialog:<dialogId>`. */
   private notify(machineId: string, sessionId: string, cwd: string, name: string | undefined, tag: DesktopNotificationKind, body: string, anchor?: string): void {
     const message = anchor !== undefined && NOTIFICATION_ANCHOR.test(anchor) ? anchor : undefined;
     if (this.browser.permission() !== "granted" || !this.browser.isBackground()) return;
@@ -198,9 +192,9 @@ export class DesktopNotificationController {
   }
 }
 
-function preview(text: string): string {
-  const firstLine = text.trim().split(/\r?\n/u)[0]?.trim() ?? "";
-  return firstLine.length === 0 ? "Response complete" : firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
+/** Matches the daemon's global attention preview, so both delivery paths read the same. */
+function firstLine(text: string): string {
+  return text.trim().split(/\r?\n/u)[0]?.slice(0, 120) ?? "";
 }
 
 /** The native app accepts the same anchors and drops the notification otherwise. */

@@ -259,4 +259,9 @@ describe("chat tab status", () => {
     expect(chatTabStatus(status({}), true)).toBe("done");
     expect(chatTabStatus(undefined, false)).toBe("idle");
   });
+
+  it("shows needs you while the agent's attention request is unacknowledged", () => {
+    expect(chatTabStatus(status({ isStreaming: true, attentionRequest: { id: "a", reason: "Review the PR" } }), true)).toBe("needs");
+    expect(chatTabStatus({ attentionRequest: { id: "a", reason: "Review the PR" } }, false)).toBe("needs");
+  });
 });
