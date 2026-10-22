@@ -207,7 +207,9 @@ async function createSessionDaemonRuntime() {
   }
   // Reconcile local bundled sources before plugin/resource snapshots can load
   // an obsolete copy. Failures remain non-fatal and are logged per package.
-  await reconcileAutoInstallablePiPackages({
+  // Trial instances share the owner's real agent profile (one auth.json and lock) and set this to "0" so
+  // their bundled package paths never land in its settings.json; see pi-workbench docs/contracts/harness.md.
+  if (process.env["PI_WEB_PI_PACKAGE_AUTO_INSTALL"] !== "0") await reconcileAutoInstallablePiPackages({
     profileDir: activeAgentProfile.dir,
     ...createAutoInstallPiPackageProfile(activeAgentProfile.dir),
     dismissalChecker: new PiPackageDismissalStore(piPackageDismissalStorePath(daemonEnvironment)),
