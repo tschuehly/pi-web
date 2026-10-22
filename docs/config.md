@@ -189,6 +189,7 @@ Rows with JSON key `—` are runtime-only environment variables, not config-file
 | Managed data directory | — | `PI_WEB_DATA_DIR` | Process/env | Not supported locally | Restart web/API and session daemon |
 | Git hook instance namespace | — | `PI_WEB_INSTANCE_NAMESPACE` | Session daemon env | Not supported locally | Restart session daemon; see [running multiple instances](#git-instance-namespace) |
 | Session daemon socket | — | `PI_WEB_SESSIOND_SOCKET` | Web/API + session daemon env | Not supported locally | Restart daemon and web/API; both must match |
+| Bundled Pi package auto-install | on | `PI_WEB_PI_PACKAGE_AUTO_INSTALL=0` turns it off | Session daemon env | — | Restart daemon. Set it for a second instance that shares the real agent profile, so its package paths never reach that profile's `settings.json` |
 | Session daemon TCP port | — | `PI_WEB_SESSIOND_PORT` | Session daemon env | Not supported locally | Restart session daemon; set `PI_WEB_SESSIOND_URL` for web/API too |
 | Session daemon TCP host | — | `PI_WEB_SESSIOND_HOST` | Session daemon env | Not supported locally | Restart session daemon |
 | Web-to-daemon URL | — | `PI_WEB_SESSIOND_URL` | Web/API env | Not supported locally | Restart web/API |
