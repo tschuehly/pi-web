@@ -79,9 +79,12 @@ export async function call(page: Page, name: string, args: Record<string, unknow
 export async function requests(script: string): Promise<JournalEntry[]> {
   return (await mock.journal()).filter((r) => typeof r.answeredBy === "object" && r.answeredBy.script === script);
 }
+type ToolSchema = { name: string; parameters?: { properties?: Record<string, unknown> }; input_schema?: { properties?: Record<string, unknown> } };
+// Top-level `tools`, plus Responses `additional_tools` input items: pi-ai 1.4's Codex transport declares tools there.
 export function tools(request: JournalEntry) {
-  const body = request.body as { tools: { name: string; parameters?: { properties?: Record<string, unknown> }; input_schema?: { properties?: Record<string, unknown> } }[] };
-  return (body.tools ?? []).map((t) => ({ name: t.name.replace(/^mcp__[^_]+__/, "").toLowerCase(), properties: (t.parameters ?? t.input_schema)?.properties ?? {} }));
+  const body = request.body as { tools?: ToolSchema[]; input?: { type?: string; tools?: ToolSchema[] }[] };
+  const declared = [...(body.tools ?? []), ...(Array.isArray(body.input) ? body.input : []).flatMap((item) => item.type === "additional_tools" ? item.tools ?? [] : [])];
+  return declared.map((t) => ({ name: t.name.replace(/^mcp__[^_]+__/, "").toLowerCase(), properties: (t.parameters ?? t.input_schema)?.properties ?? {} }));
 }
 export async function killHost(page: Page) {
   const id = new URL(page.url()).searchParams.get("session")!;
