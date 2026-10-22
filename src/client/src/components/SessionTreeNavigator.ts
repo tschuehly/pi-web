@@ -50,6 +50,9 @@ export class SessionTreeNavigator extends LitElement {
   @property({ attribute: false }) onFork?: (entryId: string) => Promise<SessionTreeForkResult>;
   @property({ attribute: false }) onAbort?: () => Promise<void>;
   @property({ attribute: false }) onCancel?: () => void;
+  /** Whether the Chat can fork into a new session and summarize the branch it leaves (a Durable Chat may not yet). */
+  @property({ attribute: false }) forking = true;
+  @property({ attribute: false }) summaries = true;
 
   @state() private selectedId: string | undefined;
   @state() private foldedIds: ReadonlySet<string> = new Set();
@@ -198,9 +201,9 @@ export class SessionTreeNavigator extends LitElement {
           <fieldset ?disabled=${this.busy}>
             <legend>How would you like to continue?</legend>
             ${this.renderOperationOption("continue", "Continue in this session", "Branch from the selected entry in this session file and keep its other branches.")}
-            ${this.renderOperationOption("fork", "Fork into a new session", "Create and switch to a separate session file while leaving the original unchanged.")}
+            ${this.forking ? this.renderOperationOption("fork", "Fork into a new session", "Create and switch to a separate session file while leaving the original unchanged.") : null}
           </fieldset>
-          ${this.operation === "continue" ? html`
+          ${this.operation === "continue" && this.summaries ? html`
             <fieldset ?disabled=${this.busy}>
               <legend>Abandoned branch summary</legend>
               ${this.renderSummaryOption("none", "No summary", "Switch branches without adding a summary entry.")}

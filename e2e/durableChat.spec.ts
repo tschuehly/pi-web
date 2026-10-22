@@ -154,13 +154,14 @@ test("a Durable Chat shows the controls its host names, hides unsupported ones, 
   await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
   const first = new URL(page.url()).searchParams.get("session") ?? "";
 
-  // Capability gating from the host's ready list: a capability it names (attachments) shows its control; one it does
-  // not name (fork, tree) stays hidden while copy, which needs none, shows.
+  // Capability gating from the host's ready list: a capability it names (attachments, tree) shows its control; one it
+  // does not name (fork) stays hidden while copy, which needs none, shows.
   await send(page, "start");
   await expect(chat(page).getByText("ok: start").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Attach files" })).toBeVisible();
   await expect(chat(page).locator('[aria-label="Copy user message"]').first()).toBeAttached();
-  await expect(chat(page).locator('[aria-label="Clone session from this message"], [aria-label="Go back to this message"]')).toHaveCount(0);
+  await expect(chat(page).locator('[aria-label="Clone session from this message"]')).toHaveCount(0);
+  await expect(chat(page).locator('[aria-label="Revert to here"]').first()).toBeAttached();
 
   // /name names the Chat in the catalog.
   await send(page, "/name Release prep");

@@ -235,6 +235,8 @@ export class WorkbenchChatPane extends LitElement {
           .tree=${state.treeDialog}
           .onNavigate=${async (target: string, summary: SessionTreeSummaryChoice) => { const result = await sessions.navigateTree(target, summary); if (!result.cancelled && this.focused) this.promptEditor?.focusInput(); return result; }}
           .onFork=${(entry: string) => sessions.forkFromTree(entry)}
+          .forking=${sessions.selectedSupports("fork")}
+          .summaries=${sessions.selectedSupports("tree.summary")}
           .onAbort=${() => sessions.abortTreeNavigation()}
           .onCancel=${() => { sessions.closeTreeDialog(); this.promptEditor?.focusInput(); }}
         ></session-tree-navigator>`}

@@ -53,6 +53,20 @@ describe("PiWebApp session tree wiring", () => {
     expect(focusChatComposer).toHaveBeenCalledTimes(2);
   });
 
+  it("offers forking and branch summaries only where the Chat supports them (a Durable Chat with tree navigation alone)", () => {
+    const app = createApp();
+    const legacy = renderSessionTreeNavigator(app, setAppTree(app, tree()));
+    expect(templateValueAfterMarker(legacy, ".forking=")).toBe(true);
+    expect(templateValueAfterMarker(legacy, ".summaries=")).toBe(true);
+    const state = setAppTree(app, tree());
+    if (state.selectedSession === undefined) throw new Error("Expected a selected Chat");
+    const durable = { ...state.selectedSession, capabilities: ["tree" as const] };
+    if (!Reflect.set(app, "state", { ...state, selectedSession: durable, sessions: [durable] })) throw new Error("Could not set a Durable Chat");
+    const rendered = renderSessionTreeNavigator(app, { ...state, selectedSession: durable, sessions: [durable] });
+    expect(templateValueAfterMarker(rendered, ".forking=")).toBe(false);
+    expect(templateValueAfterMarker(rendered, ".summaries=")).toBe(false);
+  });
+
   it("routes fork requests through SessionController and propagates results and failures", async () => {
     const app = createApp();
     const state = setAppTree(app, tree());

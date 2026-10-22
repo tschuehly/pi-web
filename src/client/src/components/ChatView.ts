@@ -652,11 +652,14 @@ export class ChatView extends LitElement {
     });
   }
 
-  /** Core clone and go-back need forking and tree navigation, which a Durable Chat may not support yet. */
+  /**
+   * Core clone needs forking; go-back (and the Workbench's Revert and Edit & resend) needs tree navigation, which a
+   * Durable Chat may not support yet. Plugin registration prefixes core IDs with `core:`; Workbench's own do not.
+   */
   private supportedMessageActions(): readonly RegisteredMessageAction[] {
-    const needs: Record<string, "fork" | "tree"> = { "core:message.fork": "fork", "core:message.back": "tree" };
+    const needs: Record<string, "fork" | "tree"> = { "message.fork": "fork", "message.back": "tree", "message.edit": "tree" };
     return this.messageActions.filter((action) => {
-      const capability = action.binding.registrationPluginId === "core" ? needs[action.id] : undefined;
+      const capability = action.binding.registrationPluginId === "core" ? needs[action.id.replace(/^core:/, "")] : undefined;
       return capability === undefined || chatSupports(this.status, capability);
     });
   }
