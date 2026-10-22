@@ -10,7 +10,7 @@ import { ChatDisclosureController } from "../chatDisclosure";
 import { writeClipboardText } from "../clipboard";
 import { chatSessionWarningRows, renderSessionWarnings } from "./chat/SessionWarnings";
 import { renderUnresolvedEffects } from "./chat/UnresolvedEffects";
-import type { SessionEffectResolution } from "../../../shared/apiTypes";
+import { chatSupports, type SessionEffectResolution } from "../../../shared/apiTypes";
 export { chatSessionWarningRows } from "./chat/SessionWarnings";
 import { type QueuedMessageAction, type QueuedMessageActionTarget } from "../queuedMessageActions";
 import { chatQueuedMessageSections, renderQueuedMessageSection, type QueuedMessageSection } from "./chat/QueuedMessages";
@@ -193,7 +193,7 @@ export class ChatView extends LitElement {
     machineId: this.machineId,
     sessionId: this.sessionId,
     connected: this.isConnected,
-    actions: this.messageActions,
+    actions: this.supportedMessageActions(),
     availability: this.messageActionContext,
     onEntry: this.onMessageAction,
     onDisplay: this.onDisplayedMessageAction,
@@ -645,10 +645,19 @@ export class ChatView extends LitElement {
       unavailable: this.status?.queueMessageActionsUnavailable,
       onClear: this.onClearServerQueue === undefined ? undefined : this.handleClearServerQueue,
       onCopy: (text) => { void this.copyQueuedMessage(text); },
-      onAction: this.onQueuedMessageAction === undefined ? undefined : (action, index, messages) => { this.actOnQueuedMessage(action, index, messages); },
-      onPromote: this.onPromoteQueuedMessage,
-      onPromoteAll: this.onPromoteAllQueuedMessages,
+      onAction: this.onQueuedMessageAction === undefined || !chatSupports(this.status, "queue.edit") ? undefined : (action, index, messages) => { this.actOnQueuedMessage(action, index, messages); },
+      onPromote: chatSupports(this.status, "queue.promote") ? this.onPromoteQueuedMessage : undefined,
+      onPromoteAll: chatSupports(this.status, "queue.promote") ? this.onPromoteAllQueuedMessages : undefined,
       compacting: this.status?.isCompacting === true,
+    });
+  }
+
+  /** Core clone and go-back need forking and tree navigation, which a Durable Chat may not support yet. */
+  private supportedMessageActions(): readonly RegisteredMessageAction[] {
+    const needs: Record<string, "fork" | "tree"> = { "core:message.fork": "fork", "core:message.back": "tree" };
+    return this.messageActions.filter((action) => {
+      const capability = action.binding.registrationPluginId === "core" ? needs[action.id] : undefined;
+      return capability === undefined || chatSupports(this.status, capability);
     });
   }
 

@@ -234,3 +234,24 @@ it.each(["disabled", "sending"] as const)("opens the file picker and respects th
   button.click();
   expect(open).toHaveBeenCalledOnce();
 });
+
+it("hides attachments and blocks shell input visibly in a Durable Chat that supports neither", async () => {
+  const editor = new PromptEditor();
+  editor.status = { sessionId: "durable-1", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0, capabilities: [] };
+  const onSend = vi.fn();
+  editor.onSend = onSend;
+  document.body.append(editor);
+  await editor.updateComplete;
+  expect(editor.renderRoot.querySelector('button[aria-label="Attach files"]')).toBeNull();
+
+  editor.replaceText("!ls");
+  await editor.updateComplete;
+  expect(editor.renderRoot.querySelector(".mode-hint")?.textContent).toBe("Shell commands are not available in this Chat yet");
+  expect(editor.renderRoot.querySelector<HTMLButtonElement>(".send-button")?.disabled).toBe(true);
+
+  editor.status = { ...editor.status, capabilities: ["attachments", "shell"] };
+  await editor.updateComplete;
+  expect(editor.renderRoot.querySelector('button[aria-label="Attach files"]')).not.toBeNull();
+  expect(editor.renderRoot.querySelector(".mode-hint")?.textContent).toBe("Shell command");
+  expect(editor.renderRoot.querySelector<HTMLButtonElement>(".send-button")?.disabled).toBe(false);
+});

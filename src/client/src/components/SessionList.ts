@@ -3,11 +3,12 @@ import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { SessionActivity, SessionInfo, SessionStatus } from "../api";
+import { chatSupports } from "../../../shared/apiTypes";
 import { isCachedNewSessionInfo } from "../cachedNewSessions";
 import { sessionTitle as sessionLabel } from "../sessionLabels";
 import type { SessionLabelItem } from "../plugins/types";
 import { renderSessionLabelItems } from "./sessionLabel";
-import { isArchivableSessionInfo, isTransientNewSessionInfo } from "../sessionPersistence";
+import { isArchivableSessionInfo, isTransientNewSessionInfo, sessionPersistenceState } from "../sessionPersistence";
 import { normalizeSessionPath } from "../sessionPaths";
 import { isSessionActive } from "../../../shared/activity";
 import { CORE_STATUS_FLAGS, type StatusFlags } from "../../../shared/machineStatus";
@@ -509,6 +510,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
     const { session } = row;
     const status = this.statuses[session.id];
     const canArchive = isArchivableSessionInfo(session, status);
+    const persisted = session.archived !== true && sessionPersistenceState(session, status) === "persisted";
     const isWorking = sessionRowActivityKind(session, status, this.activities[session.id], false, this.sessionFlags) === "session";
     const canDeleteTransient = isTransientNewSessionInfo(session, status);
     const descendantCount = descendantCounts?.get(session.id) ?? 0;
@@ -522,7 +524,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
         ${session.archived === true
           ? html`
             <button class="ui-button ui-menu-item" title="Restore session" @click=${() => { this.openMenuSessionId = undefined; this.onRestore?.(session); }}>Restore</button>
-            <button class="danger ui-button ui-menu-item" title="Permanently delete archived session" @click=${() => { this.openMenuSessionId = undefined; this.confirmDeleteArchived(session); }}>Delete archived session</button>
+            ${chatSupports(session, "archive") ? html`<button class="danger ui-button ui-menu-item" title="Permanently delete archived session" @click=${() => { this.openMenuSessionId = undefined; this.confirmDeleteArchived(session); }}>Delete archived session</button>` : null}
           `
           : canDeleteTransient
             ? html`<button class="ui-button ui-menu-item" title="Delete transient new session" @click=${() => { this.openMenuSessionId = undefined; this.onDelete?.(session); }}>Delete</button>`
@@ -532,8 +534,8 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
                 <button class="ui-button ui-menu-item" title="Archive session" @click=${() => { this.openMenuSessionId = undefined; this.onArchive?.(session); }}>Archive</button>
                 ${descendantCount > 0 ? html`<button class="ui-button ui-menu-item" title="Archive this session and its descendants" @click=${() => { this.openMenuSessionId = undefined; this.confirmArchiveWithDescendants(session, descendantCount); }}>Archive with descendants (${descendantCount})</button>` : null}
               ` : null}
-              ${session.parentSessionPath !== undefined ? html`<button class="ui-button ui-menu-item" title="Detach from parent" @click=${() => { this.openMenuSessionId = undefined; this.onDetachParent?.(session); }}>Detach from parent</button>` : null}
-              ${canArchive ? html`<button class="ui-button ui-menu-item" title=${isWorking ? "Stop current session activity before reloading from disk" : "Reload session from disk without refreshing Pi runtime resources"} ?disabled=${isWorking} @click=${() => { this.openMenuSessionId = undefined; this.onReload?.(session); }}>Reload from disk</button>` : null}
+              ${session.parentSessionPath !== undefined && chatSupports(session, "detach-parent") ? html`<button class="ui-button ui-menu-item" title="Detach from parent" @click=${() => { this.openMenuSessionId = undefined; this.onDetachParent?.(session); }}>Detach from parent</button>` : null}
+              ${persisted && chatSupports(session, "reload") ? html`<button class="ui-button ui-menu-item" title=${isWorking ? "Stop current session activity before reloading from disk" : "Reload session from disk without refreshing Pi runtime resources"} ?disabled=${isWorking} @click=${() => { this.openMenuSessionId = undefined; this.onReload?.(session); }}>Reload from disk</button>` : null}
             `}
       </div>
     `;

@@ -7,7 +7,7 @@ import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
-import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
+import { chatSupports, type PromptAttachmentDelivery } from "../../../shared/apiTypes";
 import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE } from "../promptAttachmentCapture";
 import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
@@ -257,6 +257,9 @@ export class PromptEditor extends LitElement {
   override render() {
     const shellInputMode = this.promptChips.length === 0 && this.currentInputMode.kind === "shell" ? this.currentInputMode : undefined;
     const shellMode = shellInputMode !== undefined;
+    // A Durable Chat hides what its host does not support yet; shell input stays visible but cannot be sent.
+    const attachable = chatSupports(this.status, "attachments");
+    const shellBlocked = shellMode && !chatSupports(this.status, "shell");
     const steersInput = this.defaultSendBehavior() === "steer";
     const alternate = this.canSteer && !this.isCompacting ? (steersInput ? "followUp" : "steer") : undefined;
     const queuesInput = this.canSteer || this.isCompacting;
@@ -297,7 +300,7 @@ export class PromptEditor extends LitElement {
             <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Take a new photo" @click=${() => { this.openAttachmentPicker(this.attachmentCameraInput); }}><span class="attach-source-icon" aria-hidden="true">${renderCameraIcon()}</span><span class="attach-source-label">Camera</span></button>
             <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Browse documents and other files" @click=${() => { this.openAttachmentPicker(this.attachmentInput); }}><span class="attach-source-icon" aria-hidden="true">${renderAttachIcon()}</span><span class="attach-source-label">Files</span></button>
           </div>
-          ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
+          ${shellBlocked ? html`<div class="mode-hint">Shell commands are not available in this Chat yet</div>` : shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
           ${this.renderPromptChips()}
           ${this.dense ? null : this.renderAttachments()}
@@ -306,8 +309,8 @@ export class PromptEditor extends LitElement {
       `;
     const composerActions = html`
           <div class="composer-actions">
-            <button type="button" class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" aria-controls=${sourceMenu ? "attach-source-panel" : nothing} aria-expanded=${sourceMenu ? String(this.attachSourceOpen) : nothing} @click=${() => { this.handleAttachClick(); }}>${renderAttachIcon()}</button>
-            <button type="button" class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
+            ${attachable ? html`<button type="button" class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" aria-controls=${sourceMenu ? "attach-source-panel" : nothing} aria-expanded=${sourceMenu ? String(this.attachSourceOpen) : nothing} @click=${() => { this.handleAttachClick(); }}>${renderAttachIcon()}</button>` : null}
+            <button type="button" class="icon-button send-button" ?disabled=${busy || shellBlocked} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
             ${alternate === "followUp" ? html`<button type="button" class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
             ${alternate === "steer" ? html`<button type="button" class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}</button>` : null}
             ${this.dense && !this.canStop ? null : html`<button type="button" class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>`}
@@ -370,7 +373,7 @@ export class PromptEditor extends LitElement {
 
   private renderCompactStatus() {
     if (this.status === undefined) return null;
-    return html`<model-effort-picker ?compact=${this.dense} .status=${this.status} .thinkingLevels=${this.thinkingLevels} .loadModels=${this.loadModels} .onSetModel=${this.onSetModel} .onSetThinkingLevel=${this.onSetThinkingLevel}></model-effort-picker>`;
+    return html`<model-effort-picker ?compact=${this.dense} .status=${this.status} .thinkingLevels=${this.thinkingLevels} .loadModels=${this.loadModels} .onSetModel=${this.onSetModel} .onSetThinkingLevel=${chatSupports(this.status, "thinking") ? this.onSetThinkingLevel : undefined}></model-effort-picker>`;
   }
 
   private renderActivityBadge() {
@@ -508,6 +511,7 @@ export class PromptEditor extends LitElement {
   }
 
   private async handlePaste(event: ClipboardEvent) {
+    if (!chatSupports(this.status, "attachments")) return;
     const files = filesFromDataTransfer(event.clipboardData);
     if (files.length === 0) return;
     event.preventDefault();
@@ -520,6 +524,7 @@ export class PromptEditor extends LitElement {
   }
 
   private async handleDrop(event: DragEvent) {
+    if (!chatSupports(this.status, "attachments")) return;
     const files = filesFromDataTransfer(event.dataTransfer);
     if (files.length === 0) return;
     event.preventDefault();
@@ -1029,6 +1034,7 @@ export class PromptEditor extends LitElement {
 
   private send(streamingBehavior?: "steer" | "followUp") {
     if (this.disabled || this.sending || this.chipSendingKey === this.composerKey()) return;
+    if (this.promptChips.length === 0 && this.currentInputMode.kind === "shell" && !chatSupports(this.status, "shell")) return;
     if (this.pendingImageReferences.length > 0) {
       this.attachmentError = "Wait for image attachments to finish loading.";
       return;
@@ -1181,6 +1187,7 @@ function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus
     || a.model?.provider !== b.model?.provider
     || a.thinkingLevel !== b.thinkingLevel
     || a.extensionStatuses?.[WORKING_MODE_STATUS_KEY] !== b.extensionStatuses?.[WORKING_MODE_STATUS_KEY]
+    || a.capabilities?.join() !== b.capabilities?.join()
     || (showsActivity && activitySummary(a).label !== activitySummary(b).label)) return false;
   return !showUsage || (a.tokens.input === b.tokens.input
     && a.tokens.output === b.tokens.output

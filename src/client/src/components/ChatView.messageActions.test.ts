@@ -79,6 +79,16 @@ async function settle(view: ChatView) {
 }
 
 describe("plugin-defined transcript message actions", () => {
+  it("hides clone and go-back in a Durable Chat that does not support forking or tree navigation; copy stays", async () => {
+    const { view } = await mount();
+    view.status = { sessionId: base.session.id, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0, capabilities: [] };
+    await settle(view);
+    expect(buttons(view).map((button) => button.getAttribute("aria-label"))).toEqual(["Copy user message"]);
+    view.status = { ...view.status, capabilities: ["fork", "tree"] };
+    await settle(view);
+    expect(buttons(view)).toHaveLength(3);
+  });
+
   it("preserves core confirmation for cloning through the public callback", async () => {
     const label = "Clone session from this message";
     const { view, context } = await mount();

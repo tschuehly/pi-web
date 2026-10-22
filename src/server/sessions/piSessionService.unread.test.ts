@@ -393,6 +393,49 @@ describe("PiSessionService daemon-owned unread state", () => {
     }
   });
 
+  it("records unread for Chats another runtime owns in the same catalog and keeps them through cwd reconciliation", async () => {
+    const unreadStore = new SessionUnreadStore({ createCatalogId: () => "catalog-test" });
+    const hub = new CapturingSessionEventHub();
+    const service = new PiSessionService(hub, {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fakeRuntime("session-1").runtime),
+      sessionManager: sessionGateway([sessionRecord("session-1")]),
+      archiveStore: emptyArchiveStore(),
+      heartbeatIntervalMs: 60_000,
+      unreadStore,
+      externalSessionIds: (cwd) => (resolve(cwd) === WORKSPACE_CWD ? ["durable-1"] : []),
+    });
+    try {
+      // A host exit forgets the running latch: no completion is manufactured.
+      await service.observeExternalSession("durable-1", "/workspace", "active");
+      await service.observeExternalSession("durable-1", "/workspace", "closed");
+      await service.observeExternalSession("durable-1", "/workspace", "idle");
+      expect((await service.unreadCatalog()).sessions).toEqual([]);
+
+      await service.observeExternalSession("durable-1", "/workspace", "active");
+      await service.observeExternalSession("durable-1", "/workspace", "idle");
+      const [summary] = (await service.unreadCatalog()).sessions;
+      expect(summary).toMatchObject({ sessionId: "durable-1", cwd: WORKSPACE_CWD });
+      expect(unreadEvents(hub).at(-1)).toMatchObject({ sessionId: "durable-1", unread: { sessionId: "durable-1" } });
+
+      await service.list("/workspace");
+      expect((await service.unreadCatalog()).sessions.map((entry) => entry.sessionId)).toEqual(["durable-1"]);
+
+      // Viewing an older completion cannot clear a newer one.
+      const order = summary?.completionOrder ?? 0;
+      await service.observeExternalSession("durable-1", "/workspace", "active");
+      await service.observeExternalSession("durable-1", "/workspace", "idle");
+      await service.acknowledgeUnread("durable-1", { cwd: "/workspace", catalogId: "catalog-test", throughCompletionOrder: order });
+      expect((await service.unreadCatalog()).sessions.map((entry) => entry.sessionId)).toEqual(["durable-1"]);
+      const latest = (await service.unreadCatalog()).sessions[0]?.completionOrder ?? 0;
+      await service.acknowledgeUnread("durable-1", { cwd: "/workspace", catalogId: "catalog-test", throughCompletionOrder: latest });
+      expect((await service.unreadCatalog()).sessions).toEqual([]);
+    } finally {
+      await service.dispose();
+    }
+  });
+
   it("excludes live tracked sub-sessions, then restores ordinary tracking after detach", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-web-unread-live-subsessions-"));
     tempRoots.push(root);

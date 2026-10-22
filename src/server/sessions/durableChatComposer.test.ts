@@ -11,7 +11,7 @@ import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 // Slice 3 group A: the composer of a Durable Chat (queue edits, attachments and media, thinking levels, `!` shell,
 // prompt templates) through PI WEB's Durable service, against a host double that names its capabilities.
 
-const ALL = ["queue.edit", "queue.promote", "attachments.images", "thinking", "shell"];
+const ALL = ["queue.edit", "queue.promote", "attachments", "thinking", "shell"];
 const LEGEND = "\n\nImage blocks immediately following this text map in order as follows:\n1. [PIC_1]";
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const base = { persisted: true, isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
@@ -77,7 +77,7 @@ describe("Durable Chat composer", () => {
     const { durable, ref } = await chat({ capabilities: undefined });
     const expectedQueue = [{ kind: "followUp" as const, text: "x" }];
     await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue })).rejects.toThrow("Editing a queued message is not available in Durable Chats yet");
-    await expect(durable.promoteQueuedMessage(ref, { kind: "followUp", text: "x" })).rejects.toThrow("Promoting a queued message is not available");
+    await expect(durable.promoteQueuedMessage(ref, { kind: "followUp", text: "x" })).rejects.toThrow("Promoting queued messages is not available");
     await expect(durable.setThinkingLevel(ref, "high")).rejects.toThrow("Changing the thinking level is not available");
     await expect(durable.shell(ref, "!ls")).rejects.toThrow("Shell commands is not available");
     await expect(durable.prompt(ref, "see", undefined, [{ kind: "image", mimeType: "image/png", data: PNG }])).rejects.toThrow("Attachments is not available");
@@ -164,7 +164,7 @@ describe("Durable Chat composer", () => {
       skillList: [{ name: "tidy", filePath: join(skillDir, "SKILL.md"), baseDir: skillDir }],
       promptList: [{ name: "review", description: "Review code", argumentHint: "<path>", content: "Review $1 (all: $@) ${2:-carefully}" }],
     } });
-    expect((await durable.commands(ref)).map((command) => [command.name, command.source])).toEqual([["mode", "extension"], ["review", "prompt"], ["skill:tidy", "skill"]]);
+    expect((await durable.commands(ref)).map((command) => [command.name, command.source])).toEqual([["mode", "extension"], ["name", "builtin"], ["review", "prompt"], ["session", "builtin"], ["skill:tidy", "skill"]]);
     await expect(durable.runCommand(ref, '/review src "two words" /skill:tidy')).resolves.toEqual({ type: "done" });
     await durable.prompt(ref, "/review lib");
     await durable.prompt(ref, "/unknown x");

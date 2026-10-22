@@ -2,7 +2,7 @@ import { api as defaultApi, type AskUserCloseResponse, type AskUserSubmission, t
 import type { AppState, ClosedExtensionDialog } from "../appState";
 import { NetworkRequestError } from "../api/http";
 import { retriesOperations, withOperationRetry } from "../api/operationRetry";
-import type { SessionEffectResolution } from "../../../shared/apiTypes";
+import { chatSupports, type ChatCapability, type SessionEffectResolution } from "../../../shared/apiTypes";
 import { BrowserErrorReporter, sessionBrowserErrorScope, workspaceBrowserErrorScope, type SessionBrowserErrorOwner } from "../browserErrors";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
 import { textMessage } from "../chatMessages";
@@ -1295,9 +1295,15 @@ export class SessionController {
     }
   }
 
+  /** Whether the selected Chat supports a gated operation (a Durable Chat may not yet); its status is the latest word. */
+  private selectedSupports(capability: ChatCapability): boolean {
+    const { selectedSession, status } = this.getState();
+    return chatSupports(status !== undefined && status.sessionId === selectedSession?.id ? status : selectedSession, capability);
+  }
+
   async getSessionDefaults() {
     const session = this.getState().selectedSession;
-    if (!session || session.archived === true) return undefined;
+    if (!session || session.archived === true || !this.selectedSupports("defaults")) return undefined;
     const machineId = selectedMachineId(this.getState());
     const errorOwner = this.captureSessionErrorOwner(session);
     try {
@@ -1336,7 +1342,7 @@ export class SessionController {
 
   async cycleModel(direction: "forward" | "backward") {
     const session = this.getState().selectedSession;
-    if (!session || session.archived === true) return;
+    if (!session || session.archived === true || !this.selectedSupports("models.cycle")) return;
     const machineId = selectedMachineId(this.getState());
     const errorOwner = this.captureSessionErrorOwner(session);
     try {
@@ -1386,7 +1392,7 @@ export class SessionController {
 
   async cycleThinkingLevel() {
     const session = this.getState().selectedSession;
-    if (!session || session.archived === true) return;
+    if (!session || session.archived === true || !this.selectedSupports("thinking")) return;
     const machineId = selectedMachineId(this.getState());
     const errorOwner = this.captureSessionErrorOwner(session);
     try {

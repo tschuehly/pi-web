@@ -1205,6 +1205,11 @@ export interface PiSessionServiceDependencies {
    */
   onUnreadChanged?: (hasNewCompletion: boolean) => void;
   /**
+   * Ids of a workspace's Chats another runtime owns (Durable Chats): their unread state lives in this catalog too and
+   * survives cwd reconciliation.
+   */
+  externalSessionIds?: (cwd: string) => readonly string[];
+  /**
    * Lets session startup report that provider model lists are refreshing while
    * a session is being constructed. Omit to report the startup phase alone.
    */
@@ -1332,6 +1337,7 @@ export class PiSessionService implements SessionRouteService {
   private readonly config: Pick<PiWebConfigService, "read"> | undefined;
   private readonly unreadPublicationRetryInitialMs: number;
   private readonly onUnreadChanged: ((hasNewCompletion: boolean) => void) | undefined;
+  private readonly externalSessionIds: (cwd: string) => readonly string[];
   private readonly pendingUnreadMutations: SessionUnreadMutation[] = [];
   private unreadPublication: Promise<void> | undefined;
   private unreadPublicationFailure: unknown;
@@ -1356,6 +1362,7 @@ export class PiSessionService implements SessionRouteService {
     this.notificationStore = deps.notificationStore ?? new SessionNotificationStore();
     this.unreadStore = deps.unreadStore ?? new SessionUnreadStore();
     this.onUnreadChanged = deps.onUnreadChanged;
+    this.externalSessionIds = deps.externalSessionIds ?? (() => []);
     this.pendingAskStore = deps.pendingAskStore ?? new PendingAskStore();
     this.pendingExtensionDialogStore = deps.pendingExtensionDialogStore ?? new PendingExtensionDialogStore();
     this.extensionDialogsTimeoutMs = deps.extensionDialogsTimeoutMs ?? DEFAULT_EXTENSION_DIALOGS_TIMEOUT_MS;
@@ -1453,6 +1460,19 @@ export class PiSessionService implements SessionRouteService {
     });
     await this.publishUnreadMutations(result.mutations);
     return this.unreadStore.durableCatalogSnapshot();
+  }
+
+  /**
+   * Unread for a Chat another runtime owns, from its committed turn state: a run that started and ended is one
+   * completion; `closed` (its host went away) only drops the running latch.
+   */
+  async observeExternalSession(sessionId: string, cwd: string, change: "active" | "idle" | "closed"): Promise<void> {
+    const canonicalCwd = canonicalizeStoredCwd(cwd);
+    if (change === "closed") {
+      this.unreadStore.forgetActivity(sessionId, canonicalCwd);
+      return;
+    }
+    await this.publishUnreadMutations(this.unreadStore.observeActivityState(sessionId, canonicalCwd, change === "active"));
   }
 
   notificationInbox(ref: PiSessionRef): SessionNotificationInboxSnapshot {
@@ -4240,7 +4260,7 @@ export class PiSessionService implements SessionRouteService {
   }
 
   private reconcilableSessionIds(cwd: string, listedSessionIds: string[], archivedById: Map<string, ArchivedSessionRecord>): string[] {
-    const sessionIds = new Set(listedSessionIds);
+    const sessionIds = new Set([...listedSessionIds, ...this.externalSessionIds(cwd)]);
     for (const active of new Set(this.active.values())) {
       const session = active.runtime.session;
       if (session.sessionManager.getCwd() === cwd && !archivedById.has(session.sessionId)) sessionIds.add(session.sessionId);

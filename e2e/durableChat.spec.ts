@@ -142,3 +142,55 @@ test("a Durable Chat keeps Working Mode, answers a question, switches models and
   await expect(chat(page).locator(".unresolved-effects")).toHaveCount(0);
   expect((await readFile(join(project, "resolve-effects.log"), "utf8")).trim().split("\n")).toEqual(["deploy"]);
 });
+
+test("a Durable Chat shows the controls its host names, hides unsupported ones, takes /name, marks unread and needs-you on its tab, and refuses archiving", async ({ page }) => {
+  const base = process.env["PI_WEB_E2E_BASE_URL"];
+  const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
+  const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
+  if (base === undefined || workspaceId === undefined || project === undefined) throw new Error("Isolated PI WEB was not started");
+  test.setTimeout(90_000);
+  await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
+  await page.getByRole("button", { name: "New Durable Chat" }).click();
+  await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
+  const first = new URL(page.url()).searchParams.get("session") ?? "";
+
+  // Capability gating from the host's ready list: a capability it names (attachments) shows its control; one it does
+  // not name (fork, tree) stays hidden while copy, which needs none, shows.
+  await send(page, "start");
+  await expect(chat(page).getByText("ok: start").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Attach files" })).toBeVisible();
+  await expect(chat(page).locator('[aria-label="Copy user message"]').first()).toBeAttached();
+  await expect(chat(page).locator('[aria-label="Clone session from this message"], [aria-label="Go back to this message"]')).toHaveCount(0);
+
+  // /name names the Chat in the catalog.
+  await send(page, "/name Release prep");
+  await expect.poll(async () => (await (await page.request.get(`${base}api/sessions?${new URLSearchParams({ cwd: project }).toString()}`)).json() as { id: string; name?: string }[]).find((s) => s.id === first)?.name).toBe("Durable · Release prep");
+
+  // A turn that ends and an attention request while another Chat is open: unread, then needs you, on the first Chat's tab.
+  await send(page, "gen");
+  await page.getByRole("button", { name: "Add" }).click();
+  await page.getByRole("button", { name: "New Durable Chat" }).click();
+  await expect(page).not.toHaveURL(new RegExp(`session=${first}`));
+  // The window is a Grid now: each tile's header dot carries the Chat's status.
+  const tab = page.locator(`section.tile[data-session="${first}"] .dot`).first();
+  await expect.poll(async () => (await (await page.request.get(`${base}api/sessions/unread`)).json() as { sessions: { sessionId: string }[] }).sessions.map((s) => s.sessionId)).toContain(first);
+  await expect(tab).toHaveAttribute("data-status", "done");
+  const prompt = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/prompt`, { data: { cwd: project, text: 'call:request_attention {"reason":"Please review the diff"}' } });
+  expect(prompt.ok()).toBe(true);
+  await expect(tab).toHaveAttribute("data-status", "needs");
+  await page.locator(`section.tile[data-session="${first}"]`).click();
+  await expect.poll(async () => (await (await page.request.get(`${base}api/sessions/${encodeURIComponent(first)}/asks?${new URLSearchParams({ cwd: project }).toString()}`)).json() as { attentionRequest?: unknown }).attentionRequest).toBeUndefined();
+  await expect(tab).toHaveAttribute("data-status", "idle");
+  // The daemon's unread catalog (PI WEB's list view and the app badge) clears by the exact completion it was shown.
+  const catalog = await (await page.request.get(`${base}api/sessions/unread`)).json() as { catalogId: string; sessions: { sessionId: string; completionOrder: number }[] };
+  const order = catalog.sessions.find((s) => s.sessionId === first)?.completionOrder ?? 0;
+  const stale = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/unread/acknowledge`, { data: { cwd: project, catalogId: catalog.catalogId, throughCompletionOrder: order - 1 } });
+  expect(((await stale.json()) as { sessions: { sessionId: string }[] }).sessions.map((s) => s.sessionId)).toContain(first);
+  const acknowledged = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/unread/acknowledge`, { data: { cwd: project, catalogId: catalog.catalogId, throughCompletionOrder: order } });
+  expect(((await acknowledged.json()) as { sessions: { sessionId: string }[] }).sessions.map((s) => s.sessionId)).not.toContain(first);
+
+  // Archiving is not ported (unused): its controls are hidden and the route refuses visibly.
+  const archived = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/archive`, { data: { cwd: project } });
+  expect(archived.ok()).toBe(false);
+  expect(await archived.text()).toContain("Archiving is not available in Durable Chats yet");
+});

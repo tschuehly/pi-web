@@ -2,6 +2,7 @@ import { fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
+import { CHAT_CAPABILITY_LABELS, type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
 import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
 import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 import type { PiWebConfig } from "../../config.js";
@@ -11,6 +12,7 @@ import type { SessionMedia, SessionMediaIndex } from "./sessionMediaIndex.js";
 import type { ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, ClientThinkingLevel, SessionStreamSnapshot, SessionTranscriptSnapshot } from "../types.js";
 import type { DurableChatResourceSet } from "./durableChatResources.js";
 import { durableThinkingLevel, expandPromptTemplate, expandSkills } from "./durableChatResources.js";
+import { BUILTIN_COMMANDS } from "./builtinCommands.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import { appendInlineImageReferenceMapping } from "./piSessionService.js";
 import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
@@ -19,12 +21,6 @@ import type { SessionRouteRef } from "./sessionService.js";
 
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
 export const DURABLE_HOST_PROTOCOL = 2;
-
-/**
- * Optional host operations, named by the host in its ready message (Workbench `chat-session.ts` `CAPABILITIES`). An
- * operation the Chat's host does not name is refused visibly, as an unsupported one.
- */
-export type DurableHostCapability = "queue.edit" | "queue.promote" | "attachments.images" | "thinking" | "shell";
 
 /** How the owner resolves an interrupted unsafe tool call that may have run. */
 export type DurableEffectResolution = "done" | "not-done" | "retry";
@@ -69,7 +65,7 @@ interface HostEvents {
   publish(sessionId: string, event: SessionUiEvent, mediaScope?: { id: string; cwd: string }): void;
   /** Image references of published events; a media read binds the Chat's images from its transcript. */
   readonly mediaIndex?: SessionMediaIndex;
-  publishGlobal(event: { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | SessionAttentionEvent): void;
+  publishGlobal(event: { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string } | SessionAttentionEvent): void;
   currentSeq(sessionId: string): number;
 }
 
@@ -92,11 +88,14 @@ export class DurableChatUnavailable extends Error {
  */
 class DurableHostConnection {
   readonly ready: Promise<void>;
+  /**
+   * The gated operations the host names in its ready message (Workbench `chat-session.ts` `CAPABILITIES`, names from
+   * `CHAT_CAPABILITY_LABELS`); none when it reports no list. Each one is refused and its control hidden until named.
+   */
+  capabilities: ChatCapability[] = [];
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
-  /** Optional operations the host named when ready. */
-  capabilities: ReadonlySet<string> = new Set();
   #next = 1;
   #exited: Error | undefined;
   readonly #pending = new Map<number, { resolve: (reply: { result: unknown; seq: number }) => void; reject: (error: Error) => void }>();
@@ -116,7 +115,7 @@ class DurableHostConnection {
       if (isRecord(message["ready"])) {
         const protocol = message["ready"]["protocol"];
         const capabilities = message["ready"]["capabilities"];
-        if (Array.isArray(capabilities)) this.capabilities = new Set(capabilities.filter((name): name is string => typeof name === "string"));
+        if (Array.isArray(capabilities)) this.capabilities = capabilities.filter(isChatCapability);
         if (protocol === DURABLE_HOST_PROTOCOL) markReady();
         else {
           failReady(new Error(`Durable host speaks protocol ${String(protocol)}, this daemon ${String(DURABLE_HOST_PROTOCOL)}`));
@@ -198,11 +197,18 @@ export class DurableChatService {
     resources?: (cwd: string) => Promise<DurableChatResourceSet>;
     /** PI WEB config, for the attachment folder of a save request that names none (as legacy Chats). */
     config?: { read(): { effectiveConfig: PiWebConfig } | Promise<{ effectiveConfig: PiWebConfig }> };
+    /**
+     * The daemon's unread catalog (the legacy service's, shared): committed run starts and ends, and a host exit.
+     * Turn ends of a Durable Chat mark it unread exactly as a legacy Chat's do.
+     */
+    unread?: (sessionId: string, cwd: string, change: "active" | "idle" | "closed") => Promise<void>;
     logger?: { warn(object: object, message: string): void };
   }) {}
 
   readonly #skills = new Map<string, DurableChatResourceSet["skillList"]>();
   readonly #templates = new Map<string, NonNullable<DurableChatResourceSet["promptList"]>>();
+  /** Last reported capabilities per Chat, so its listing gates controls before its host is asked again. */
+  readonly #capabilities = new Map<string, ChatCapability[]>();
 
   owns(sessionId: string): boolean {
     return this.deps.locator.durable(sessionId) !== undefined;
@@ -226,12 +232,25 @@ export class DurableChatService {
       // Not a filesystem path: browsers never receive store locations.
       path: `durable:${record.id}`,
       persisted: true,
-      name: record.firstMessage === "" ? "Durable Chat" : `Durable · ${record.firstMessage.slice(0, 60)}`,
+      name: record.name !== undefined ? `Durable · ${record.name}` : record.firstMessage === "" ? "Durable Chat" : `Durable · ${record.firstMessage.slice(0, 60)}`,
       created: record.created,
       modified: record.modified,
       messageCount: record.messageCount,
       firstMessage: record.firstMessage,
+      capabilities: this.#capabilities.get(record.id) ?? [],
     };
+  }
+
+  #record(ref: SessionRouteRef): DurableChatRecord {
+    const record = this.deps.locator.durable(ref.id);
+    if (record?.cwd !== ref.cwd) throw new Error("Session not found");
+    return record;
+  }
+
+  async #unread(record: DurableChatRecord, change: "active" | "idle" | "closed"): Promise<void> {
+    await this.deps.unread?.(record.id, record.cwd, change).catch((error: unknown) => {
+      this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat unread state failed to update");
+    });
   }
 
   list(cwd: string, sessionId?: string): ClientSession[] {
@@ -291,7 +310,7 @@ export class DurableChatService {
     const parsed = parsePromptAttachments(attachments, { enforceInlineSizeLimit: false });
     if (text.trim() === "" && parsed.length === 0) throw new Error("text field must be a non-empty string");
     const connection = await this.#for(ref);
-    if (parsed.length > 0) this.#require(connection, "attachments.images", "Attachments");
+    if (parsed.length > 0) this.#require(connection, "attachments");
     const explicit = hasExplicitPromptImageReference(attachments);
     const images = (await attachmentsToInlineImages(parsed, explicit)).map((entry) => entry.image);
     const templates = this.#templates.get(ref.id) ?? [];
@@ -317,7 +336,7 @@ export class DurableChatService {
   async saveAttachments(ref: SessionRouteRef, attachments: unknown, folder?: string): Promise<SavedPromptAttachment[]> {
     const parsed = parsePromptAttachments(attachments, { enforceInlineSizeLimit: false, allowFileAttachments: true });
     if (parsed.length === 0) return [];
-    await this.#for(ref);
+    this.#require(await this.#for(ref), "attachments");
     const globalConfig = this.deps.config === undefined ? {} : (await this.deps.config.read()).effectiveConfig;
     const effectiveFolder = folder ?? (await loadEffectiveProjectAttachmentsConfig(ref.cwd, globalConfig)).defaultFolder;
     return saveAttachmentsToWorkspace(ref.cwd, parsed, effectiveFolder === undefined ? {} : { folder: effectiveFolder });
@@ -326,27 +345,27 @@ export class DurableChatService {
   /** `!cmd` / `!!cmd` in the Chat's workspace; the host streams shell events and records the result. */
   async shell(ref: SessionRouteRef, text: string): Promise<void> {
     const connection = await this.#for(ref);
-    this.#require(connection, "shell", "Shell commands");
+    this.#require(connection, "shell");
     await connection.request("shell", { text });
   }
 
   async availableThinkingLevels(ref: SessionRouteRef): Promise<ClientThinkingLevel[]> {
     const connection = await this.#for(ref);
-    if (!connection.capabilities.has("thinking")) return [];
+    if (!connection.capabilities.includes("thinking")) return [];
     const { result } = await connection.request("thinkingLevels");
     return Array.isArray(result) ? result.filter((level): level is ClientThinkingLevel => typeof level === "string") : [];
   }
 
   async setThinkingLevel(ref: SessionRouteRef, level: string): Promise<ClientSessionStatus> {
     const connection = await this.#for(ref);
-    this.#require(connection, "thinking", "Changing the thinking level");
+    this.#require(connection, "thinking");
     await connection.request("setThinkingLevel", { level });
     return this.status(ref);
   }
 
   async cycleThinkingLevel(ref: SessionRouteRef): Promise<ClientSessionStatus> {
     const connection = await this.#for(ref);
-    this.#require(connection, "thinking", "Changing the thinking level");
+    this.#require(connection, "thinking");
     await connection.request("cycleThinkingLevel");
     return this.status(ref);
   }
@@ -354,7 +373,7 @@ export class DurableChatService {
   /** Remove, recall (`edit`) or toggle a queued message, against the queue the browser showed (as legacy Chats). */
   async mutateQueueMessage(ref: SessionRouteRef, mutation: SessionQueueMessageMutation): Promise<ClientSessionStatus> {
     const connection = await this.#for(ref);
-    this.#require(connection, "queue.edit", "Editing a queued message");
+    this.#require(connection, "queue.edit");
     const queued = hostStatus((await connection.request("status")).result).queuedMessages;
     const current = queued.map(displayQueuedMessage);
     if (current.length !== mutation.expectedQueue.length || current.some((entry, index) => {
@@ -371,7 +390,7 @@ export class DurableChatService {
   /** Send a queued follow-up at the next steering boundary; an unknown or already-steering message changes nothing. */
   async promoteQueuedMessage(ref: SessionRouteRef, target: { kind: string; text: string }): Promise<ClientSessionStatus> {
     const connection = await this.#for(ref);
-    this.#require(connection, "queue.promote", "Promoting a queued message");
+    this.#require(connection, "queue.promote");
     const queued = hostStatus((await connection.request("status")).result).queuedMessages;
     const index = queued.map(displayQueuedMessage).findIndex((message) => message.kind === target.kind && message.text === target.text);
     if (index !== -1 && queued[index]?.kind === "followUp") await this.#mutateQueue(connection, "promote", index, queued);
@@ -380,7 +399,7 @@ export class DurableChatService {
 
   async promoteAllQueuedMessages(ref: SessionRouteRef): Promise<ClientSessionStatus> {
     const connection = await this.#for(ref);
-    this.#require(connection, "queue.promote", "Promoting queued messages");
+    this.#require(connection, "queue.promote");
     const queued = hostStatus((await connection.request("status")).result).queuedMessages;
     const index = queued.findIndex((message) => message.kind === "followUp");
     if (index !== -1) await this.#mutateQueue(connection, "promoteAll", index, queued);
@@ -393,14 +412,15 @@ export class DurableChatService {
     await connection.request("mutateQueue", { editId: randomUUID(), action, index, expected });
   }
 
-  #require(connection: DurableHostConnection, capability: DurableHostCapability, operation: string): void {
-    if (!connection.capabilities.has(capability)) throw new DurableChatUnavailable(operation);
+  #require(connection: DurableHostConnection, capability: ChatCapability): void {
+    if (!connection.capabilities.includes(capability)) throw new DurableChatUnavailable(CHAT_CAPABILITY_LABELS[capability]);
   }
 
   /** Slash commands of a Durable Chat: Working Mode, the host's Workbench commands and the workspace's skills. */
   async commands(ref: SessionRouteRef): Promise<ClientCommand[]> {
     const hostCommands = await this.#hostCommands(ref);
     return [
+      ...BUILTIN_COMMANDS.filter((command) => command.name === "name" || command.name === "session"),
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" as const },
       ...hostCommands.map((command) => ({ ...command, source: "extension" as const })),
       ...(this.#templates.get(ref.id) ?? []).map((template) => ({
@@ -413,12 +433,16 @@ export class DurableChatService {
   }
 
   /**
-   * `/mode …` and the host's commands (`/quota-check`) run in the host, each run under a fresh
-   * operation id; `/skill:…` is a prompt; every other command is not available yet.
+   * `/mode …` and the host's commands (`/quota-check`) run in the host, each run under a fresh operation id; `/skill:…`
+   * and templates are prompts; `/name` names the Chat in the catalog; `/session` reports its stats as a legacy Chat
+   * does; every other command is not available yet.
    */
   async runCommand(ref: SessionRouteRef, text: string): Promise<ClientCommandResult> {
     const trimmed = text.trim();
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
+    const rest = trimmed.slice(name.length + 1).trim();
+    if (name === "name") return this.#name(ref, rest);
+    if (name === "session") return { type: "done", message: await this.#stats(ref) };
     if (name === "mode") {
       const { result } = await (await this.#for(ref)).request("mode", { args: trimmed.slice("/mode".length).trim() });
       return commandResult(result);
@@ -443,6 +467,32 @@ export class DurableChatService {
         ? [{ name: command["name"], ...(typeof command["description"] === "string" ? { description: command["description"] } : {}) }]
         : [])
       : [];
+  }
+
+  #name(ref: SessionRouteRef, name: string): ClientCommandResult {
+    if (name === "") return { type: "unsupported", message: "Usage: /name <session name>" };
+    this.deps.locator.update(ref.id, { name });
+    const session = this.info(this.#record(ref));
+    const event = { type: "session.name" as const, sessionId: ref.id, ...(session.name === undefined ? {} : { name: session.name }) };
+    this.deps.events.publish(ref.id, event);
+    this.deps.events.publishGlobal(event);
+    return { type: "done", message: `Session named: ${name}`, session };
+  }
+
+  /** PI WEB's `/session` lines (`sessionCommandService.ts`), counted from the Chat's transcript and usage. */
+  async #stats(ref: SessionRouteRef): Promise<string> {
+    const { result } = await (await this.#for(ref)).request("transcript");
+    const { messages, status } = hostTranscript(result);
+    const role = (name: string) => messages.filter((message) => isRecord(message) && message["role"] === name);
+    const toolCalls = role("assistant").flatMap((message): unknown[] => (isRecord(message) && Array.isArray(message["content"]) ? message["content"] : []))
+      .filter((part) => isRecord(part) && part["type"] === "toolCall").length;
+    return [
+      `Session: ${ref.id}`,
+      `Messages: ${String(messages.length)} (${String(role("user").length)} user, ${String(role("assistant").length)} assistant)`,
+      `Tool calls: ${String(toolCalls)}`,
+      `Tokens: ↑${String(status.tokens.input)} ↓${String(status.tokens.output)} total ${String(status.tokens.total)}`,
+      `Cost: $${status.cost.toFixed(4)}`,
+    ].join("\n");
   }
 
   async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[]> {
@@ -532,9 +582,7 @@ export class DurableChatService {
   }
 
   #for(ref: SessionRouteRef): Promise<DurableHostConnection> {
-    const record = this.deps.locator.durable(ref.id);
-    if (record?.cwd !== ref.cwd) throw new Error("Session not found");
-    return this.#connection(record);
+    return this.#connection(this.#record(ref));
   }
 
   #connection(record: DurableChatRecord): Promise<DurableHostConnection> {
@@ -549,10 +597,12 @@ export class DurableChatService {
       (error) => {
         this.#connections.delete(record.id);
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host exited");
+        void this.#unread(record, "closed");
         this.deps.events.publish(record.id, { type: "agent.end" });
       },
     );
     const opened = connection.ready.then(async () => {
+      this.#capabilities.set(record.id, connection.capabilities);
       const loaded = await this.deps.resources?.(record.cwd).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
@@ -594,6 +644,8 @@ export class DurableChatService {
     this.deps.events.publish(sessionId, event.type === "message.end" ? { ...event, message: displayPromptMessage(event.message) } : event, scope);
     if (event.type === "agent.start" || event.type === "agent.end") {
       const active = event.type === "agent.start";
+      // The host emits these after the committed run start and end; a reopened store replays neither.
+      void this.#unread(record, active ? "active" : "idle");
       const activity = { sessionId, phase: active ? "active" as const : "idle" as const, label: active ? "agent running" : "idle", at: new Date().toISOString() };
       this.deps.events.publish(sessionId, { type: "activity.update", activity }, scope);
       this.deps.events.publishGlobal({ type: "activity.update", activity });
@@ -627,12 +679,13 @@ function displayQueuedMessage(message: QueuedSessionMessage): QueuedSessionMessa
   };
 }
 
-/** Host status for the browser; a host without queue edits disables those controls with a reason. */
-function browserStatus(status: HostTranscript["status"], connection: DurableHostConnection): HostTranscript["status"] {
+/** Host status for the browser: the host's capabilities gate its controls; without queue edits it says why. */
+function browserStatus(status: HostTranscript["status"], connection: DurableHostConnection): HostTranscript["status"] & { capabilities: ChatCapability[] } {
   return {
     ...status,
     queuedMessages: status.queuedMessages.map(displayQueuedMessage),
-    ...(connection.capabilities.has("queue.edit") ? {} : { queueMessageActionsUnavailable: "Editing queued messages is not available in this Durable Chat host yet." }),
+    capabilities: connection.capabilities,
+    ...(connection.capabilities.includes("queue.edit") ? {} : { queueMessageActionsUnavailable: "Editing queued messages is not available in this Durable Chat host yet." }),
   };
 }
 
