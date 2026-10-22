@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime } from "../../piSdk.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelSelectionResponse } from "../../shared/apiTypes.js";
 import { registerAuthRoutes } from "./authRoutes.js";

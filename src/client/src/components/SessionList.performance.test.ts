@@ -3,6 +3,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../api";
 import * as sessionPaths from "../sessionPaths";
+import { installPopoverFake } from "./anchoredPopup.testSupport";
+installPopoverFake();
 import { SessionList } from "./SessionList";
 
 afterEach(() => {

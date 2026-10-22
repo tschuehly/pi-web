@@ -8,7 +8,7 @@ import type { MachineStatusSnapshot } from "../../../shared/machineStatus";
 import { writeClipboardText } from "../clipboard";
 import type { WorkspaceLabelItem } from "../plugins/types";
 import { canDeleteWorkspace } from "../workspaceDeletion";
-import { ActionMenuPositionController } from "./actionMenu";
+import { createActionMenuController } from "./actionMenu";
 import { hasStatusUnread, renderActionActivityIndicator, statusActivityKind } from "./activityBadge";
 import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
@@ -48,28 +48,13 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
   @property({ attribute: false }) onFocusNextSection?: () => void | Promise<void>;
   @property({ attribute: false }) onCancelKeyboardNavigation?: () => void | Promise<void>;
   @state() private openMenuWorkspaceId: string | undefined;
-  private readonly menuPosition = new ActionMenuPositionController(this, () => {
+  readonly actionMenu = createActionMenuController(this, () => {
     if (this.openMenuWorkspaceId === undefined) return undefined;
     const row = [...this.renderRoot.querySelectorAll<HTMLElement>("[data-workspace-id]")].find((item) => item.dataset["workspaceId"] === this.openMenuWorkspaceId);
     return row?.querySelector<HTMLElement>(".action-menu-toggle") ?? undefined;
-  });
+  }, () => { this.openMenuWorkspaceId = undefined; });
   @state() private copiedDetailKey: string | undefined;
   @state() private trustByWorkspaceId: Record<string, WorkspaceTrustState> = {};
-
-  private readonly onDocumentClick = (event: MouseEvent) => {
-    if (event.composedPath().includes(this)) return;
-    this.openMenuWorkspaceId = undefined;
-  };
-
-  override connectedCallback(): void {
-    super.connectedCallback();
-    document.addEventListener("click", this.onDocumentClick);
-  }
-
-  override disconnectedCallback(): void {
-    document.removeEventListener("click", this.onDocumentClick);
-    super.disconnectedCallback();
-  }
 
   private focusedControl: HTMLElement | undefined;
   private focusAfterReorder: HTMLElement | undefined;
@@ -185,7 +170,7 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
           @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleMenu(workspace.id); }}
         >⋯</button>
         ${open ? html`
-          <div class="action-menu-panel workspace-menu-panel ui-menu" id=${menuId} style=${this.menuPosition.style} @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
+          <div popover="auto" class="action-menu-panel workspace-menu-panel ui-menu" id=${menuId} @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
             ${this.renderWorkspaceActions(workspace, index)}
             ${this.renderWorkspaceDetails(label, items, workspace)}
           </div>

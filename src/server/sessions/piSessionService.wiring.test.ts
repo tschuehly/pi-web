@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentSessionServices, CreateAgentSessionServicesOptions, InlineExtension } from "@earendil-works/pi-coding-agent";
+import type { AgentSessionServices, CreateAgentSessionServicesOptions, InlineExtension } from "../../piSdk.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPiSessionManagerGateway } from "./piSessionManagerGateway.js";
 import { PiSessionService } from "./piSessionService.js";
@@ -16,8 +16,8 @@ const { captureServices, builtinFactories } = vi.hoisted(() => ({
   ] satisfies InlineExtension[],
 }));
 
-vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@earendil-works/pi-coding-agent")>(),
+vi.mock("../../piSdk.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../piSdk.js")>(),
   createAgentSessionServices: captureServices,
 }));
 

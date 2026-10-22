@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { runAgentLoop, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
-import { ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { ExtensionToolContext, ToolDefinition } from "../../piSdk.js";
 import { stubExtensionToolContext } from "./piSessionService.testSupport.js";
 import { Type } from "pi-web-typebox";
 import { describe, expect, it, vi } from "vitest";

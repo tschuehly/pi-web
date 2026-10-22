@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { ExtensionCommandContextActions } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContextActions } from "../../piSdk.js";
 import type { SessionUiEvent } from "../../shared/apiTypes.js";
 import type { ClientCommandResult, ClientSession, ClientSessionTreeSnapshot } from "../types.js";
 import { isBuiltinCommand } from "./builtinCommands.js";

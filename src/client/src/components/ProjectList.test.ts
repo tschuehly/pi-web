@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Project } from "../api";
 import type { MachineStatusSnapshot } from "../../../shared/machineStatus";
 import { machineStatusSnapshot } from "../machineStatus.testSupport";
+import { installPopoverFake } from "./anchoredPopup.testSupport";
+installPopoverFake();
 import { ProjectList } from "./ProjectList";
 
 afterEach(() => {

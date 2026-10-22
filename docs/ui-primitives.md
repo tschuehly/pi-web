@@ -48,11 +48,23 @@ class ExampleToolbar extends LitElement {
 }
 ```
 
-Popup surfaces use a single-column layout, size to their widest item by default, and are constrained to the available space. Positioning controllers may provide a tighter maximum width; consumers should not add separate sizing rules just because the popup lives in a flex or grid container.
+Popup surfaces use a single-column layout, size to their widest item by default, and are constrained to the available space. `AnchoredPopupController` owns their native popover presentation, anchoring, viewport constraints, and open-only layout subscriptions. Consumers provide the anchor, panel, placement options, and close callback; they should not add separate stacking or positioning rules just because the popup lives in a flex or grid container. The panel stays in its existing themed DOM root rather than being moved to the document body.
 
 A popup item uses both `ui-button` and `ui-menu-item` on its native button. A checkbox option uses `ui-menu-item` on its native label, containing its input. Add `danger` for a destructive action. Keep placement, open/close state, and event handling in the owning component or its existing controller.
 
 `ui-menu` describes the surface, not an ARIA role. Do not add `role="menu"` unless the owner implements the corresponding keyboard behavior.
+
+## Surface ownership
+
+Use three distinct models rather than coordinating application-wide `z-index` values:
+
+- **Local decoration** stays with the layout that owns its boundary. `ConversationLayout` owns transcript/composer placement and the activity indicator across their shared border; `ChatView` owns transcript scrolling and content.
+- **Anchored popup** uses `AnchoredPopupController` in `components/anchoredPopup.ts`. Native popovers escape ancestor clipping and stacking contexts. Shared positioning handles scrolling across shadow roots, resizing, and visual-viewport changes. Completion panels preserve editor focus; action panels retain their own keyboard behavior. Nested popups close from the innermost outward on Escape.
+- **Modal dialog** uses `ModalSurface` backed by native `<dialog>.showModal()`. Browser modality makes background content inert. The modal registry coordinates active ownership and safe focus restoration; it does not establish a global CSS stacking scale.
+
+A popup may open only within the active modal's composed subtree, or in the ordinary application when no modal is active. Opening a modal dismisses unrelated popups. Hiding, making inert, or removing an owner closes its popup. Keep popup state in sync through the close callback, including browser light dismissal. Application layout must not inspect a child's menu-open state or raise entire panels to make a popup visible.
+
+Local sticky headers, shadows, and decorations can still use small stacking values inside their owner. They must not determine popup or modal precedence. Native plugin dialogs participate in the same modality boundary without importing private host modules.
 
 ## Sidebar list surfaces
 
@@ -60,7 +72,7 @@ A popup item uses both `ui-button` and `ui-menu-item` on its native button. A ch
 
 ## Dialog patterns
 
-Use the existing `ModalSurface` component for focus trapping, Escape, backdrop dismissal, and dialog naming. The content patterns in `ui/dialogStyles.ts` compose with that surface; they do not add another modal controller or wrapper.
+Use the existing `ModalSurface` component for native modality, focus placement/restoration, Escape, backdrop dismissal, and dialog naming. The content patterns in `ui/dialogStyles.ts` compose with that surface; they do not add another modal controller or wrapper.
 
 - `uiDialogStyles` provides common header, close button, search row, scrollable body, and footer treatment. It includes `uiButtonStyles`.
 - `uiSelectionStyles` provides gapless option rows, composite rows with separate pin/checkbox actions, descriptions, and empty states. Combine it with `uiDialogStyles` for selections such as models, thinking levels, and Actions.
@@ -72,7 +84,7 @@ Selection lists use `ui-selection-list`; each native choice button uses `ui-butt
 
 Form content uses `ui-dialog-body ui-form-body`. Labels use `ui-form-field`, text inputs use `ui-input`, and checkbox labels use `ui-checkbox-field`. A native form that wraps the complete dialog uses `ui-form`. Its footer uses `ui-dialog-footer`, with native `ui-button` actions and `ui-button--primary` for the submit action. Interior action groups can use `ui-form-actions`. Labels, validation messages, input types, submit behavior, and callbacks remain local.
 
-Keep only content-specific rules in each dialog. Existing dimension differences can use the internal composition properties `--ui-dialog-width`, `--ui-dialog-max-height`, `--ui-dialog-top`, and `--ui-dialog-z`; do not copy the common backdrop or header styles. These primitives use the base theme; selected themes can override their presentation through the existing contributed stylesheet mechanism.
+Keep only content-specific rules in each dialog. Existing dimension differences can use the internal composition properties `--ui-dialog-width`, `--ui-dialog-max-height`, and `--ui-dialog-top`; do not copy the common backdrop or header styles. These primitives use the base theme; selected themes can override their presentation through the existing contributed stylesheet mechanism.
 
 ## Settings and configuration groups
 
@@ -90,7 +102,7 @@ Chat uses flat transcript sections rather than nested card outlines. Put breathi
 
 `uiTranscriptStyles` owns the frameless surface and full-width disclosure treatment (32px for every input type). Consumers own grouping, indentation, native disclosure state, and layout. Give sticky headings an opaque tone matching their section so scrolled text cannot show through them. Transcript patterns are internal and are not part of the browser-plugin UI styles capability.
 
-Chat navigation arrows render as one bordered group anchored to the message input's top-right, with a divider between the arrows. The bottom-right attachment button matches an individual arrow's 28px size for every pointer type, and stays anchored as the input grows, without a separate row between transcript and composer. `ChatView` retains scroll ownership and supplies its controls through `onNavigationChange`; `PromptEditor.chatNavigation` renders them with shared `chatNavigationStyles`. The non-interactive activity indicator is 18px tall, centred horizontally and vertically across the chat/composer border, and disappears when idle. The indicator overlays the border without adding padding or a separate row. The editor keeps a two-line text minimum even when empty or containing one line. Vertical padding belongs to the editor frame, outside the scroller, so long drafts retain top and bottom clearance at the 220px height cap.
+Chat navigation arrows render as one bordered group anchored to the message input's top-right, with a divider between the arrows. The bottom-right attachment button matches an individual arrow's 28px size for every pointer type, and stays anchored as the input grows, without a separate row between transcript and composer. `ChatView` retains scroll ownership and supplies its controls through `onNavigationChange`; `PromptEditor.chatNavigation` renders them with shared `chatNavigationStyles`. The non-interactive activity indicator is 18px tall, centred horizontally and vertically across the chat/composer border, and disappears when idle. `ConversationLayout` positions the indicator over the shared border without adding padding or a separate row; neither the transcript nor composer is raised above the other to accommodate it. The editor keeps a two-line text minimum even when empty or containing one line. Vertical padding belongs to the editor frame, outside the scroller, so long drafts retain top and bottom clearance at the 220px height cap.
 
 ### Activity-group layout contract
 

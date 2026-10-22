@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createEventBus } from "@earendil-works/pi-coding-agent";
+import { createEventBus } from "../../piSdk.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import plugin from "../../../examples/session-bridge-plugin/src/server.js";
 import { collectReview } from "../../../examples/session-bridge-plugin/src/reviewRun.js";
@@ -129,7 +129,10 @@ describe("review backend", () => {
       const record = await fixture.request("start");
       if (!isReview(record)) throw new Error("Missing review");
       const store = new ReviewStore(fixture.dataDirectory);
-      await vi.waitFor(async () => { expect(await store.read(reviewScope("project", "workspace"), record.id)).toMatchObject({ status: "failed" }); });
+      // The backend owns the task and its durable writes. Drain it rather than
+      // imposing a one-second polling deadline on real filesystem syncs.
+      await fixture.activation.dispose();
+      expect(await store.read(reviewScope("project", "workspace"), record.id)).toMatchObject({ status: "failed" });
     } finally { await fixture.stop(); }
   });
   it("reports stale running files as interrupted, and invalid operations cannot create sessions", async () => {

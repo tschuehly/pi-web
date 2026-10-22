@@ -222,6 +222,8 @@ pi-web workspaces notify --project ID --plugin git
 
 Use **Settings → Pi packages** to install, update, or remove a package. Enter its npm, git/URL, or local package source. Use **Settings → PI WEB plugins** to enable or disable its web integration and see whether it is active or needs a restart.
 
+Relays and Workflows are managed bundled packages, not independently versioned installs. At session-daemon startup, PI WEB updates their configured sources in the active agent profile to the running installation while preserving resource filters. Removing them through **Settings → Pi packages** is remembered; absent packages stay removed.
+
 | Change | What to do next |
 | --- | --- |
 | Install or edit a browser-only plugin | Reload the browser page |

@@ -4,7 +4,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { Project } from "../api";
 import type { MachineStatusSnapshot } from "../../../shared/machineStatus";
-import { ActionMenuPositionController } from "./actionMenu";
+import { createActionMenuController } from "./actionMenu";
 import { hasStatusUnread, renderActionActivityIndicator, statusActivityKind } from "./activityBadge";
 import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
@@ -32,25 +32,11 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
   @property({ attribute: false }) onFocusNextSection?: () => void | Promise<void>;
   @property({ attribute: false }) onCancelKeyboardNavigation?: () => void | Promise<void>;
   @state() private openMenuProjectId: string | undefined;
-  private readonly menuPosition = new ActionMenuPositionController(this, () => {
+  readonly actionMenu = createActionMenuController(this, () => {
     if (this.openMenuProjectId === undefined) return undefined;
     const row = [...this.renderRoot.querySelectorAll<HTMLElement>("[data-project-id]")].find((item) => item.dataset["projectId"] === this.openMenuProjectId);
     return row?.querySelector<HTMLElement>(".action-menu-toggle") ?? undefined;
-  });
-  private readonly onDocumentClick = (event: MouseEvent) => {
-    if (event.composedPath().includes(this)) return;
-    this.openMenuProjectId = undefined;
-  };
-
-  override connectedCallback(): void {
-    super.connectedCallback();
-    document.addEventListener("click", this.onDocumentClick);
-  }
-
-  override disconnectedCallback(): void {
-    document.removeEventListener("click", this.onDocumentClick);
-    super.disconnectedCallback();
-  }
+  }, () => { this.openMenuProjectId = undefined; });
 
   private focusedControl: HTMLElement | undefined;
   private focusAfterReorder: HTMLElement | undefined;
@@ -101,7 +87,7 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
                 <div class="action-menu">
                   <button class="ui-button ui-button--icon action-menu-toggle" title="Project actions" aria-label=${`Actions for ${project.name}`} @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleMenu(project.id); }}>⋯</button>
                   ${this.openMenuProjectId === project.id ? html`
-                    <div class="action-menu-panel ui-menu" style=${this.menuPosition.style} @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
+                    <div popover="auto" class="action-menu-panel ui-menu" @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
                       ${this.onMove === undefined ? null : html`
                         <button class="ui-button ui-menu-item" data-move ?disabled=${index === 0} @click=${() => { this.onMove?.(project, -1); }}>Move up</button>
                         <button class="ui-button ui-menu-item" data-move ?disabled=${index === this.projects.length - 1} @click=${() => { this.onMove?.(project, 1); }}>Move down</button>

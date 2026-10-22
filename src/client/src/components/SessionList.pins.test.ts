@@ -2,6 +2,8 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../api";
+import { installPopoverFake } from "./anchoredPopup.testSupport";
+installPopoverFake();
 import { pinnedSessionRows, SessionList, sessionRowsForCurrentTree } from "./SessionList";
 
 afterEach(() => {

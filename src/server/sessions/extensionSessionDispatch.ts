@@ -1,4 +1,4 @@
-import type { ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, ExtensionFactory } from "../../piSdk.js";
 import { isKnownThinkingLevel } from "../../shared/thinkingLevels.js";
 import { requireSessionUiMetadata } from "./sessionMetadata.js";
 import { requireInitialSessionName } from "./sessionNameGenerator.js";

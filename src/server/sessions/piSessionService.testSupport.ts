@@ -1,4 +1,4 @@
-import { ModelRuntime, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, type ExtensionUIContext } from "../../piSdk.js";
 
 /** Local type for ReadonlySessionManager — it's defined in pi-coding-agent's session-manager.d.ts but not re-exported. */
 export interface LocalReadonlySessionManager {
@@ -357,7 +357,7 @@ export function stubReadonlySessionManager(
 // eslint-disable @typescript-eslint/consistent-type-assertions
 export function stubExtensionToolContext(
   patch: { sessionManager?: Partial<LocalReadonlySessionManager> } & Record<string, unknown> = {},
-): import("@earendil-works/pi-coding-agent").ExtensionToolContext {
+): import("../../piSdk.js").ExtensionToolContext {
   const { sessionManager, model, thinkingLevel, ...rest } = patch;
   // @ts-expect-error -- pi 0.99+ ExtensionToolContext uses unique-symbol-based TranscriptContext from a nested pi-coding-agent dependency.
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
@@ -383,5 +383,5 @@ export function stubExtensionToolContext(
     getSystemPrompt: () => "",
     thinkingLevel,
     ...rest,
-  } as import("@earendil-works/pi-coding-agent").ExtensionToolContext;
+  } as import("../../piSdk.js").ExtensionToolContext;
 }

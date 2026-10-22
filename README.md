@@ -9,11 +9,18 @@
 
 Run agents where your code, tools, credentials, and build caches live. Supervise multiple sessions from any browser, even after disconnecting.
 
-![PI WEB desktop screenshot](docs/assets/pi-web-desktop.png)
+![The same PI WEB workspace in PI WEB Dark, PI WEB Light, Paper, and Graphite themes](docs/assets/pi-web-themes.gif)
+
+<p align="center">
+  <img src="docs/assets/pi-web-tablet-pi-web-dark.png" alt="PI WEB on tablet, with sessions beside chat" width="400" />
+  <img src="docs/assets/pi-web-mobile-pi-web-dark.png" alt="PI WEB on phone, with chat and message controls" width="139" />
+</p>
+
+[Explore devices and themes](https://pi-web.dev/)
 
 ## Quick start
 
-Requires Node.js 22.19.0+, npm, Pi Coding Agent 1.x configured for your user, git, Python 3 for saving workspace files (see [requirements](docs/install.html#requirements)), and the development tools your agents need.
+Requires Node.js 22.19.0+, npm, Pi Coding Agent installed and configured for your user, git, Python 3 for saving workspace files (see [requirements](docs/install.html#requirements)), and the development tools your agents need.
 
 ```bash
 npm install -g @jmfederico/pi-web --allow-scripts=node-pty

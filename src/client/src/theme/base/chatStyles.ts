@@ -9,7 +9,7 @@ export const chatStyles = css`
   ${uiTranscriptStyles}
   ${chatNavigationStyles}
   @layer pi-web-base {
-  :host { position: relative; z-index: 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: visible; color: var(--pi-text); font: 14px var(--pi-font, system-ui, sans-serif); }
+  :host { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: visible; color: var(--pi-text); font: 14px var(--pi-font, system-ui, sans-serif); }
   .chat-wrap { --pi-chat-jump-size: 28px; position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: visible; display: flex; flex-direction: column; }
   .top-notices { box-sizing: border-box; flex: 0 0 auto; max-height: 40%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid var(--pi-border); background: var(--pi-bg-overlay); }
   /* Empty notification hosts retain live regions without leaving a visible stack boundary. */
@@ -36,13 +36,6 @@ export const chatStyles = css`
   .chat-wrap.plain .msg-header, .chat-wrap.plain .event-group > summary { position: static; top: auto; }
   .chat-wrap.plain *, .chat-wrap.plain *::before, .chat-wrap.plain *::after { transition: none !important; animation: none !important; box-shadow: none !important; text-shadow: none !important; filter: none !important; backdrop-filter: none !important; transform: none !important; border-radius: 0 !important; }
   .chat-wrap.plain .chat-image { --pi-image-radius: 0; }
-  /* Straddle the composer border without reserving a separate row. */
-  .activity-dock { position: absolute; bottom: -9px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: 4px; max-width: calc(100% - 16px); height: 18px; min-width: 0; box-sizing: border-box; background: var(--pi-success-surface); color: var(--pi-text); padding: 1px 6px; font-size: 11px; line-height: 16px; pointer-events: none; }
-  .chat-wrap.plain .activity-dock { left: 8px; right: 8px; width: max-content; margin-inline: auto; }
-  .activity-dock.active .dot { color: var(--pi-success); }
-  .activity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
-  .activity-dock.active .dot { width: 5px; height: 5px; animation: pulse 1s ease-in-out infinite; opacity: 1; }
   .msg { --ui-transcript-bg: var(--pi-bg); display: flow-root; max-width: 100%; min-width: 0; margin: 0; padding: 12px 16px 16px; overflow: visible; }
   .chat > .msg:last-child, .chat > .session-activity:last-child { margin-bottom: 0; }
   .msg.conversation-message { padding: 12px; --ui-transcript-bg: var(--pi-chat-conversation-bg, color-mix(in srgb, var(--pi-muted) 6%, var(--pi-bg))); --formatted-link-color: color-mix(in srgb, var(--pi-accent) 45%, var(--pi-text) 55%); --formatted-muted-color: color-mix(in srgb, var(--pi-text-secondary) 80%, var(--pi-text) 20%); border-inline-start: 3px solid var(--pi-chat-conversation-border, color-mix(in srgb, var(--pi-muted) 55%, var(--pi-border) 45%)); padding-inline-start: 12px; }
@@ -130,6 +123,5 @@ export const chatStyles = css`
   summary { cursor: pointer; color: var(--pi-muted); }
   pre { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; direction: ltr; text-align: left; unicode-bidi: isolate; }
   .shell-output { color: var(--pi-text); font: 13px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); line-height: 1.45; direction: ltr; text-align: left; unicode-bidi: isolate; }
-  @keyframes pulse { 0%, 100% { transform: scale(.75); opacity: .55; } 50% { transform: scale(1.2); opacity: 1; } }
   }
 `;

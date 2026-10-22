@@ -1,6 +1,7 @@
 import { stylesheetIntegrationCapability } from "../../plugins/styles";
 import { css, html, LitElement } from "lit";
-import { customElement, query } from "lit/decorators.js";
+import { AnchoredPopupController } from "../anchoredPopup";
+import { customElement, query, state } from "lit/decorators.js";
 import { uiButtonStyles } from "../ui/controlStyles";
 
 /** Expands parent-owned actions to the left without changing transcript layout. */
@@ -14,59 +15,37 @@ export class MessageActionsMenu extends LitElement {
   @query("button") private trigger!: HTMLButtonElement;
   @query("[popover]") private panel!: HTMLDivElement;
 
+  @state() private expanded = false;
+  readonly popup = new AnchoredPopupController(this, () => this.expanded ? {
+    anchor: this.trigger, panel: this.panel,
+    onClose: () => { this.expanded = false; this.removeAttribute("open"); },
+    options: { placement: "left-end", padding: 8 },
+  } : undefined);
+
   override disconnectedCallback() {
-    this.removeViewportListeners();
+    this.expanded = false;
     this.removeAttribute("open");
     if (this.hasUpdated) this.trigger.setAttribute("aria-expanded", "false");
     super.disconnectedCallback();
   }
 
   close() {
-    if (!this.hasAttribute("open")) return;
-    this.panel.hidePopover();
+    if (!this.expanded) return;
+    this.popup.close();
     this.trigger.focus();
   }
 
-  private readonly positionPanel = () => {
-    const margin = 8;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    const trigger = this.trigger.getBoundingClientRect();
-    this.panel.style.maxWidth = `${String(Math.max(0, trigger.left - margin))}px`;
-    this.panel.style.maxHeight = `${String(Math.max(0, height - margin * 2))}px`;
-    const panel = this.panel.getBoundingClientRect();
-    this.panel.style.left = `${String(Math.max(margin, Math.min(trigger.left - panel.width, width - margin - panel.width)))}px`;
-    this.panel.style.top = `${String(Math.max(margin, Math.min(trigger.bottom - panel.height, height - margin - panel.height)))}px`;
-  };
-
-  private addViewportListeners() {
-    window.addEventListener("resize", this.positionPanel);
-    window.addEventListener("scroll", this.positionPanel, true);
+  private toggle() {
+    this.expanded = !this.expanded;
+    this.toggleAttribute("open", this.expanded);
   }
-
-  private removeViewportListeners() {
-    window.removeEventListener("resize", this.positionPanel);
-    window.removeEventListener("scroll", this.positionPanel, true);
-  }
-
-  private readonly handleToggle = (event: ToggleEvent) => {
-    const open = event.newState === "open" && this.isConnected;
-    this.toggleAttribute("open", open);
-    this.trigger.setAttribute("aria-expanded", String(open));
-    if (open) {
-      this.positionPanel();
-      this.addViewportListeners();
-    } else {
-      this.removeViewportListeners();
-    }
-  };
 
   override render() {
     return html`
       <button type="button" class="ui-button ui-button--small ui-button--icon"
-        aria-label="Message actions" aria-expanded="false" aria-controls="actions"
-        popovertarget="actions"><span aria-hidden="true">⋯</span></button>
-      <div id="actions" popover="auto" @toggle=${this.handleToggle}><slot></slot></div>
+        aria-label="Message actions" aria-expanded=${String(this.expanded)} aria-controls="actions"
+        @click=${() => { this.toggle(); }}><span aria-hidden="true">⋯</span></button>
+      <div id="actions" popover="auto"><slot></slot></div>
     `;
   }
 

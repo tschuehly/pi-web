@@ -1,4 +1,4 @@
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { ExtensionFactory } from "../../piSdk.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 beforeEach(() => {
@@ -6,12 +6,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.doUnmock("@earendil-works/pi-coding-agent");
+  vi.doUnmock("../../piSdk.js");
   vi.resetModules();
 });
 
 async function loadFactories(sdkExports: Record<string, unknown>) {
-  vi.doMock("@earendil-works/pi-coding-agent", () => sdkExports);
+  vi.doMock("../../piSdk.js", () => sdkExports);
   return (await import("./builtinExtensionFactories.js")).getBuiltinExtensionFactories;
 }
 

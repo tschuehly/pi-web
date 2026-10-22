@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { installPopoverFake } from "../anchoredPopup.testSupport";
+installPopoverFake();
 import { trustApi, type Machine, type Project, type SessionInfo, type Workspace } from "../../api";
 import type { MachineStatusSnapshot } from "../../../../shared/machineStatus";
 import { machineStatusSnapshot } from "../../machineStatus.testSupport";

@@ -6,13 +6,15 @@ import { homedir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { isatty } from "node:tty";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { effectivePiWebConfig, isHostAbsoluteAgentDir, PI_CODING_AGENT_DIR_ENV } from "./config.js";
 import { detectPiWebInstallation } from "./server/piWebStatus.js";
 import { SessionDaemonClient } from "./sessiond/sessionDaemonClient.js";
 import type { PiWebInstallationInfo } from "./shared/apiTypes.js";
 import { nativeServiceManagerRefs } from "./nativeServices/servicePlan.js";
+import { piRuntimeCliPath } from "./piRuntime.js";
+
+const selectedPiCliPath = await piRuntimeCliPath();
 
 const PACKAGE_NAME = "@jmfederico/pi-web";
 const UPDATE_HANDOFF_LABEL_PREFIX = "com.pi-web.update";
@@ -74,8 +76,8 @@ function defaultDependencies(): PiWebUpdateDependencies {
     writeFile: (path, contents) => writeFile(path, contents, { encoding: "utf8", mode: 0o600 }),
     removeFile: (path) => rm(path, { force: true }),
     readFile: (path) => readFile(path, "utf8"),
-    // Use this installation's Pi, not an unrelated (or older) `pi` on PATH.
-    piCliPath: fileURLToPath(new URL("./cli.js", import.meta.resolve("@earendil-works/pi-coding-agent"))),
+    // Use the selected package's declared CLI, not a different pi on PATH.
+    piCliPath: selectedPiCliPath,
     interactive: isatty(0) && isatty(1),
     async agentDir() {
       const active = await new SessionDaemonClient().getActiveAgentProfile();

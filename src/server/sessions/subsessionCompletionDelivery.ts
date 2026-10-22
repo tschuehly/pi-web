@@ -1,4 +1,4 @@
-import type { CustomMessageEntryDraft, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { CustomMessageEntryDraft, ExtensionFactory } from "../../piSdk.js";
 
 export interface SubsessionCompletionDeliveryDeps {
   prepare(parentSessionId: string, parentSessionFile?: string): Promise<CustomMessageEntryDraft | undefined>;

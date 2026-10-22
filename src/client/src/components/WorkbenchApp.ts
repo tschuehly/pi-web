@@ -2215,6 +2215,8 @@ export class WorkbenchApp extends LitElement {
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     .chat-and-files { position: relative; display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
     .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
+    /* The composer side of the conversation boundary: Activity, goal, open asks and the composer stack above each other. */
+    .composer-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     /* Zero basis: the transcript takes what is left, so the question chips and drawer never shrink for it. */
     chat-view { flex: 1 1 0; min-height: 0; overflow: hidden; }
     delegate-roster, prompt-editor { flex: 0 0 auto; }

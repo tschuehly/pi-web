@@ -14,6 +14,8 @@ import {
   templateValues,
   type TemplateEventHandler,
 } from "../templateInspection.testSupport";
+import { installPopoverFake } from "./anchoredPopup.testSupport";
+installPopoverFake();
 import { SessionList, sessionRowActivityKind, sessionRowsForCurrentTree, sessionRowUnread, unreadSessionCount } from "./SessionList";
 
 afterEach(() => {

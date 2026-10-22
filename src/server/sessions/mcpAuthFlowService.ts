@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import type { ExtensionUIDialogOptions } from "@earendil-works/pi-coding-agent";
+import type { ExtensionUIDialogOptions } from "../../piSdk.js";
 import type { McpAuthServerOption, OAuthFlowState } from "../../shared/apiTypes.js";
 
 const execution = new AsyncLocalStorage<{ service: McpAuthFlowService; token: symbol; discovery?: boolean }>();

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAssistantMessageEventStream, Type, type AssistantMessage } from "@earendil-works/pi-ai";
-import { createAgentSession, createEventBus, DefaultResourceLoader, defineTool, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, createEventBus, DefaultResourceLoader, defineTool, SessionManager, SettingsManager } from "../../piSdk.js";
 import { expect, it, vi } from "vitest";
 import type { PluginBackend, PluginPeer } from "../../plugin-api.js";
 import { createCompanionBackend, type ServerPluginPeerRequestContextV5 } from "../../server-plugin-api.js";

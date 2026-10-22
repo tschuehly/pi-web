@@ -76,8 +76,11 @@ export class VisibleContentController implements ReactiveController {
     this.host.ownerDocument.addEventListener("visibilitychange", this.refresh);
     if (typeof IntersectionObserver !== "undefined") {
       this.observer = new IntersectionObserver((entries) => {
-        const entry = entries.find((entry) => entry.target === this.target);
-        if (entry !== undefined) this.intersecting = entry.isIntersecting;
+        // A batch can contain several transitions for one target. The oldest
+        // entry can leave visible content waiting forever for another change.
+        for (const entry of entries) {
+          if (entry.target === this.target) this.intersecting = entry.isIntersecting;
+        }
         this.refresh();
       });
     } else {
@@ -89,6 +92,9 @@ export class VisibleContentController implements ReactiveController {
   }
 
   hostUpdated(): void {
+    // Lit may finish a pending update after detach. Do not cache an unobserved
+    // target that would prevent the new observer from observing it on reconnect.
+    if (!this.host.isConnected) return;
     const target = this.getTarget();
     if (target === this.target) return;
     if (this.target !== undefined) this.observer?.unobserve(this.target);

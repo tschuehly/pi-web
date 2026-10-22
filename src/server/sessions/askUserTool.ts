@@ -1,5 +1,5 @@
 import { Type, type Static } from "pi-web-typebox";
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "../../piSdk.js";
 import {
   ASK_USER_CONTEXT_MAX_LENGTH,
   ASK_USER_ID_MAX_LENGTH,

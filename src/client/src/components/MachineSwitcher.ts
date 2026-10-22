@@ -4,7 +4,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { Machine, MachineHealth, MachineStatus } from "../api";
 import { rollUpStatusFlags, type MachineStatusSnapshot } from "../../../shared/machineStatus";
 import { browserGatewayDisplayUrl, machineIconUrl } from "../instanceIdentity";
-import { actionMenuPanelStyle } from "./actionMenu";
+import { AnchoredPopupController } from "./anchoredPopup";
 import { hasStatusUnread, renderActivityIndicator, statusActivityKind } from "./activityBadge";
 import { canRemoveMachine } from "./MachineList";
 import type { KeyboardNavigableSection } from "./navigationFocus";
@@ -29,25 +29,20 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
   @property({ attribute: false }) onFocusNextSection?: () => void | Promise<void>;
   @property({ attribute: false }) onCancelKeyboardNavigation?: () => void | Promise<void>;
   @state() private open = false;
-  @state() private menuStyle = "";
   @state() private openActionsMachineId: string | undefined;
-  @state() private actionMenuStyle = "";
-
-  private readonly onDocumentClick = (event: MouseEvent) => {
-    if (event.composedPath().includes(this)) return;
-    this.open = false;
-    this.openActionsMachineId = undefined;
-  };
-
-  override connectedCallback(): void {
-    super.connectedCallback();
-    document.addEventListener("click", this.onDocumentClick);
-  }
-
-  override disconnectedCallback(): void {
-    document.removeEventListener("click", this.onDocumentClick);
-    super.disconnectedCallback();
-  }
+  readonly popup = new AnchoredPopupController(this, () => {
+    const anchor = this.switcherButton();
+    const panel = this.renderRoot.querySelector<HTMLElement>(".machine-switcher-menu");
+    return this.open && anchor && panel ? {
+      anchor, panel, onClose: () => { this.open = false; this.openActionsMachineId = undefined; },
+      options: { placement: "below-start", padding: 8, width: 280 },
+    } : undefined;
+  });
+  readonly actionsPopup = new AnchoredPopupController(this, () => {
+    const panel = this.renderRoot.querySelector<HTMLElement>(".machine-option-actions-panel");
+    const anchor = panel?.parentElement?.querySelector<HTMLElement>(".machine-option-actions-toggle");
+    return anchor && panel ? { anchor, panel, onClose: () => { this.openActionsMachineId = undefined; }, options: { minWidth: 120 } } : undefined;
+  });
 
   protected override updated(changed: PropertyValues<this>): void {
     if (changed.has("machines") && this.open && this.selectedMachine() === undefined) this.open = false;
@@ -58,7 +53,7 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
   async focusSelectedOrFirst(): Promise<boolean> {
     const button = this.switcherButton();
     if (button === null) return false;
-    return await this.openMenuAndFocusOption(button);
+    return await this.openMenuAndFocusOption();
   }
 
   override render() {
@@ -78,7 +73,7 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
           title=${`${selected.name} · ${machineSubtitle(selected)} · ${machineStatusLabel(status)}`}
           aria-label=${this.machineSwitcherAriaLabel(selected)}
           aria-expanded=${String(this.open)}
-          @click=${(event: MouseEvent) => { this.toggleMenu(event.currentTarget); }}
+          @click=${() => { this.toggleMenu(); }}
           @keydown=${(event: KeyboardEvent) => { this.handleSwitcherButtonKeydown(event); }}
         >
           ${this.renderMachineIcon(selected)}
@@ -91,7 +86,7 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
           <span class="machine-chevron" aria-hidden="true">▾</span>
         </button>
         ${this.open ? html`
-          <div class="machine-switcher-menu ui-menu" style=${this.menuStyle} @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
+          <div popover="auto" class="machine-switcher-menu ui-menu" @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
             ${this.machines.map((machine) => this.renderMachineOption(machine))}
           </div>
         ` : null}
@@ -125,10 +120,10 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
               title="Machine actions"
               aria-label=${`Actions for ${machine.name}`}
               aria-expanded=${String(actionsOpen)}
-              @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleActionsMenu(machine.id, event.currentTarget); }}
+              @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleActionsMenu(machine.id); }}
             >⋯</button>
             ${actionsOpen ? html`
-              <div class="machine-option-actions-panel ui-menu" style=${this.actionMenuStyle} @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
+              <div popover="auto" class="machine-option-actions-panel ui-menu" @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
                 <button class="danger ui-button ui-menu-item" title=${`Remove ${machine.name}`} @click=${() => { this.removeMachine(machine); }}>Remove</button>
               </div>
             ` : null}
@@ -202,7 +197,7 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       event.stopPropagation();
-      void this.openMenuAndFocusOption(event.currentTarget);
+      void this.openMenuAndFocusOption();
       return;
     }
     if (event.key === "ArrowRight" && this.onFocusNextSection !== undefined) {
@@ -250,8 +245,7 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     }
   }
 
-  private toggleMenu(target: EventTarget | null): void {
-    this.menuStyle = machineSwitcherMenuStyle(target);
+  private toggleMenu(): void {
     this.open = !this.open;
     this.openActionsMachineId = undefined;
   }
@@ -263,8 +257,7 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     return true;
   }
 
-  private async openMenuAndFocusOption(target: EventTarget | null): Promise<boolean> {
-    this.menuStyle = machineSwitcherMenuStyle(target);
+  private async openMenuAndFocusOption(): Promise<boolean> {
     this.open = true;
     this.openActionsMachineId = undefined;
     await this.updateComplete;
@@ -308,12 +301,11 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     return Array.from(this.renderRoot.querySelectorAll<HTMLElement>(".machine-option-main"));
   }
 
-  private toggleActionsMenu(machineId: string, target: EventTarget | null): void {
+  private toggleActionsMenu(machineId: string): void {
     if (this.openActionsMachineId === machineId) {
       this.openActionsMachineId = undefined;
       return;
     }
-    this.actionMenuStyle = actionMenuPanelStyle(target, { constrainTo: "viewport" });
     this.openActionsMachineId = machineId;
   }
 
@@ -356,7 +348,6 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     .machine-option-main .machine-icon { width: 14px; height: 14px; }
     .machine-info { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 6px; border: 0; border-radius: 0; background: transparent; color: var(--pi-text); padding: 6px 10px; }
     .machine-info-url { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
-    .machine-switcher-menu { position: fixed; z-index: 10000; min-width: min(280px, calc(100vw - 16px)); }
     .machine-option { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; }
     .machine-option + .machine-option { border-top: 1px solid var(--pi-border-muted); }
     .machine-option.no-actions { grid-template-columns: minmax(0, 1fr); }
@@ -366,7 +357,6 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     .machine-option-main small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pi-muted); }
     .machine-option-actions { position: relative; align-self: stretch; }
     .machine-option-actions-toggle { height: 100%; }
-    .machine-option-actions-panel { position: fixed; z-index: 10001; min-width: min(120px, calc(100vw - 16px)); }
     .machine-option.selected .machine-option-main { background: var(--pi-selection-bg); }
     @keyframes pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
   `];
@@ -388,18 +378,4 @@ function machineTitle(machine: Machine): string {
 function machineSubtitle(machine: Machine): string {
   if (machine.kind === "local") return browserGatewayDisplayUrl();
   return machine.baseUrl ?? "Remote Pi Web";
-}
-
-function machineSwitcherMenuStyle(target: EventTarget | null): string {
-  if (typeof HTMLElement === "undefined" || typeof window === "undefined" || !(target instanceof HTMLElement)) return "";
-  const trigger = target.getBoundingClientRect();
-  const viewportPadding = 8;
-  const menuWidth = Math.min(280, Math.max(0, window.innerWidth - viewportPadding * 2));
-  const left = Math.min(Math.max(viewportPadding, trigger.left), Math.max(viewportPadding, window.innerWidth - viewportPadding - menuWidth));
-  const availableBelow = Math.max(0, window.innerHeight - trigger.bottom - viewportPadding);
-  return [`top: ${px(trigger.bottom)};`, `left: ${px(left)};`, `width: ${px(menuWidth)};`, `max-height: ${px(availableBelow)};`].join(" ");
-}
-
-function px(value: number): string {
-  return `${String(Math.round(value))}px`;
 }

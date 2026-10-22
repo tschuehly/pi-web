@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionUIContext } from "../../piSdk.js";
 import type { PendingExtensionDialog, SessionUiEvent } from "../../shared/apiTypes.js";
 import { PiSessionService, type PiAgentSession } from "./piSessionService.js";
 import { PendingExtensionDialogStore, PendingExtensionDialogValidationError } from "./pendingExtensionDialogStore.js";

@@ -3,7 +3,7 @@ import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { Machine, MachineHealth } from "../api";
 import type { MachineStatusSnapshot } from "../../../shared/machineStatus";
-import { actionMenuPanelStyle } from "./actionMenu";
+import { createActionMenuController } from "./actionMenu";
 import { hasStatusUnread, renderActionActivityIndicator, statusActivityKind } from "./activityBadge";
 import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
@@ -30,22 +30,10 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
   @property({ attribute: false }) onFocusNextSection?: () => void | Promise<void>;
   @property({ attribute: false }) onCancelKeyboardNavigation?: () => void | Promise<void>;
   @state() private openMenuMachineId: string | undefined;
-  @state() private menuStyle = "";
-
-  private readonly onDocumentClick = (event: MouseEvent) => {
-    if (event.composedPath().includes(this)) return;
-    this.openMenuMachineId = undefined;
-  };
-
-  override connectedCallback(): void {
-    super.connectedCallback();
-    document.addEventListener("click", this.onDocumentClick);
-  }
-
-  override disconnectedCallback(): void {
-    document.removeEventListener("click", this.onDocumentClick);
-    super.disconnectedCallback();
-  }
+  readonly actionMenu = createActionMenuController(this, () => {
+    const row = [...this.renderRoot.querySelectorAll<HTMLElement>("[data-machine-id]")].find((item) => item.dataset["machineId"] === this.openMenuMachineId);
+    return row?.querySelector<HTMLElement>(".action-menu-toggle") ?? undefined;
+  }, () => { this.openMenuMachineId = undefined; });
 
   protected override updated(changed: PropertyValues<this>): void {
     if (changed.has("machines") && this.openMenuMachineId !== undefined && !this.machines.some((machine) => machine.id === this.openMenuMachineId)) this.openMenuMachineId = undefined;
@@ -79,6 +67,7 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
         class=${`action-row machine-row ${this.selected?.id === machine.id ? "selected" : ""} ${hasRemoveAction ? "" : "no-actions"}`}
         tabindex="0"
         title=${machine.baseUrl ?? machine.name}
+        data-machine-id=${machine.id}
         @click=${(event: MouseEvent) => { activateSelectableRow(event, () => this.onSelect?.(machine)); }}
         @keydown=${(event: KeyboardEvent) => { this.handleMachineKeydown(event, machine); }}
       >
@@ -112,10 +101,10 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
           aria-label=${`Actions for ${machine.name}`}
           aria-expanded=${String(open)}
           aria-controls=${menuId}
-          @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleMenu(machine.id, event.currentTarget); }}
+          @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleMenu(machine.id); }}
         >⋯</button>
         ${open ? html`
-          <div class="action-menu-panel machine-menu-panel ui-menu" id=${menuId} style=${this.menuStyle} @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
+          <div popover="auto" class="action-menu-panel machine-menu-panel ui-menu" id=${menuId} @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
             <button class="danger ui-button ui-menu-item" title=${`Remove ${machine.name}`} @click=${() => { this.removeMachine(machine); }}>Remove</button>
           </div>
         ` : null}
@@ -130,12 +119,11 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
     return html`<button class="ui-button ui-toolbar-title section-toggle" aria-expanded=${String(!this.collapsed)} @click=${() => { this.onToggleCollapsed?.(); }}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} Machines</span>${this.collapsed ? html`<small class="section-selected" title=${selectedTitle}>${selectedSummary}</small>` : null}</span><small class="section-count">${this.machines.length}</small></button>`;
   }
 
-  private toggleMenu(machineId: string, target: EventTarget | null): void {
+  private toggleMenu(machineId: string): void {
     if (this.openMenuMachineId === machineId) {
       this.openMenuMachineId = undefined;
       return;
     }
-    this.menuStyle = actionMenuPanelStyle(target, { constrainTo: "viewport" });
     this.openMenuMachineId = machineId;
   }
 

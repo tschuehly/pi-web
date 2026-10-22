@@ -1,5 +1,5 @@
 import { resolve as resolvePath } from "node:path";
-import { createEventBus } from "@earendil-works/pi-coding-agent";
+import { createEventBus } from "../../piSdk.js";
 import { describe, expect, it, vi } from "vitest";
 import { createCompanionBackend, type ServerPluginPeerRequestContextV5, type ServerPluginPeerV5, type JsonValue } from "../../server-plugin-api.js";
 import { PluginBackendRegistry } from "../plugins/pluginBackendRegistry.js";

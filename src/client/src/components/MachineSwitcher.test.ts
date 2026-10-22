@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Machine, MachineHealth, MachineStatus } from "../api";
 import type { MachineStatusSnapshot } from "../../../shared/machineStatus";
 import { machineStatusSnapshot } from "../machineStatus.testSupport";
+import { installPopoverFake } from "./anchoredPopup.testSupport";
+installPopoverFake();
 import { MachineSwitcher } from "./MachineSwitcher";
 
 afterEach(() => {
@@ -132,6 +134,30 @@ describe("machine-switcher status indicator", () => {
     const dot = switcher.shadowRoot?.querySelector(".machine-info .activity-indicator.unread");
     expect(dot).not.toBeNull();
   });
+});
+
+it("keeps nested machine actions in the parent popup and closes only the top popup on Escape", async () => {
+  const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], {});
+  switcher.onRemove = () => undefined;
+  await switcher.updateComplete;
+  switcherButton(switcher).click(); await switcher.updateComplete;
+  const actions = optionFor(switcher, "remote-a").querySelector<HTMLButtonElement>(".machine-option-actions-toggle");
+  if (!actions) throw new Error("Missing machine actions");
+  actions.click(); await switcher.updateComplete;
+  const child = switcher.shadowRoot?.querySelector<HTMLElement>(".machine-option-actions-panel");
+  const parent = switcher.shadowRoot?.querySelector<HTMLElement>(".machine-switcher-menu");
+  expect(parent?.contains(child ?? null)).toBe(true);
+  child?.querySelector("button")?.focus();
+  child?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+  await switcher.updateComplete;
+  expect(switcher.shadowRoot?.querySelector(".machine-option-actions-panel")).toBeNull();
+  expect(switcher.shadowRoot?.querySelector(".machine-switcher-menu")).toBe(parent);
+  expect(actions.getAttribute("aria-expanded")).toBe("false");
+  expect(switcher.shadowRoot?.activeElement).toBe(actions);
+  actions.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+  await switcher.updateComplete;
+  expect(switcher.shadowRoot?.querySelector(".machine-switcher-menu")).toBeNull();
+  expect(switcherButton(switcher).getAttribute("aria-expanded")).toBe("false");
 });
 
 describe("machine icons", () => {

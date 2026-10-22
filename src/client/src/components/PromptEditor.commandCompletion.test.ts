@@ -2,6 +2,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
 import { PromptEditor } from "./PromptEditor";
+import { installPopoverFake } from "./anchoredPopup.testSupport";
+
+installPopoverFake();
 
 afterEach(() => {
   document.body.replaceChildren();

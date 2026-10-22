@@ -25,12 +25,12 @@ function viewport() {
     takeRecords(): IntersectionObserverEntry[] { return []; }
     disconnect() { for (const [target, entry] of targets) if (entry.observer === this) targets.delete(target); }
   });
-  return (target: Element, isIntersecting: boolean) => {
+  return (target: Element, ...intersections: boolean[]) => {
     const entry = targets.get(target);
-    entry?.callback([{
+    entry?.callback(intersections.map((isIntersecting) => ({
       target, isIntersecting, time: performance.now(), intersectionRatio: isIntersecting ? 1 : 0,
       boundingClientRect: target.getBoundingClientRect(), intersectionRect: new DOMRectReadOnly(), rootBounds: null,
-    }], entry.observer);
+    })), entry.observer);
   };
 }
 
@@ -129,6 +129,75 @@ it("formats only intersecting content and coalesces invisible updates to the lat
   await settleDeferredContent(view);
   expect(format).toHaveBeenCalledOnce();
   expect(view.renderRoot.querySelector("strong")?.textContent).toBe("Latest");
+});
+
+async function mountPendingMarkdown(kind: "chat" | "public") {
+  const view = kind === "chat" ? new FormattedText() : new ContentRenderingBoundary();
+  if (view instanceof FormattedText) view.text = "**Rendered**";
+  else {
+    view.source = "**Rendered**";
+    view.renderContent = () => html`<strong>Rendered</strong>`;
+  }
+  document.body.append(view);
+  await view.updateComplete;
+  const target = view instanceof FormattedText ? view : view.querySelector(".content-rendering-body");
+  if (target === null) throw new Error("Missing Markdown visibility target");
+  return { view, target };
+}
+
+it.each(["chat", "public"] as const)("uses the latest batched visibility for %s Markdown", async (kind) => {
+  const intersect = viewport();
+  const { view, target } = await mountPendingMarkdown(kind);
+
+  // One notification may contain several transitions for the same target.
+  intersect(target, false, true);
+  await settleDeferredContent(view);
+  expect(view.renderRoot.querySelector("strong")?.textContent).toBe("Rendered");
+});
+
+it.each(["chat", "public"] as const)("keeps %s Markdown deferred when the latest batched visibility is offscreen", async (kind) => {
+  const intersect = viewport();
+  const { view, target } = await mountPendingMarkdown(kind);
+
+  intersect(target, true, false);
+  await settleDeferredContent(view);
+  expect(view.renderRoot.querySelector("strong")).toBeNull();
+  expect(view.renderRoot.textContent).toContain("**Rendered**");
+  intersect(target, true);
+  await settleDeferredContent(view);
+  expect(view.renderRoot.querySelector("strong")?.textContent).toBe("Rendered");
+});
+
+it.each(["chat", "public"] as const)("resumes cancelled %s Markdown without a source change", async (kind) => {
+  const intersect = viewport();
+  const { view, target } = await mountPendingMarkdown(kind);
+
+  intersect(target, true);
+  await view.updateComplete;
+  intersect(target, false);
+  await settleDeferredContent(view);
+  expect(view.renderRoot.querySelector("strong")).toBeNull();
+  intersect(target, true);
+  await settleDeferredContent(view);
+  expect(view.renderRoot.querySelector("strong")?.textContent).toBe("Rendered");
+});
+
+it.each(["chat", "public"] as const)("resumes %s Markdown after an update completes while detached", async (kind) => {
+  const intersect = viewport();
+  const { view, target } = await mountPendingMarkdown(kind);
+  if (view instanceof FormattedText) view.text = "**Replacement**";
+  else {
+    view.source = "**Replacement**";
+    view.renderContent = () => html`<strong>Replacement</strong>`;
+  }
+  view.remove();
+  await view.updateComplete;
+  document.body.append(view);
+  await view.updateComplete;
+  // Only targets registered by the reconnected observer receive notifications.
+  intersect(target, true);
+  await settleDeferredContent(view);
+  expect(view.renderRoot.querySelector("strong")?.textContent).toBe("Replacement");
 });
 
 it("cancels queued formatting on detach and resumes the latest content on reconnect", async () => {

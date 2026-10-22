@@ -1,4 +1,4 @@
-import type { EventBus } from "@earendil-works/pi-coding-agent";
+import type { EventBus } from "../../piSdk.js";
 import type { PluginBackend, PluginBackendScope, PluginPeer, PluginPeerChannel, PluginPeerChannelClose, PluginPeerChannelOptions } from "../../shared/pluginApiTypes.js";
 import type { JsonValue } from "../../server-plugin-api.js";
 import { cloneBoundedPluginBackendJson, PLUGIN_BACKEND_CHANNEL_DATA_JSON_MAX_BYTES, PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES, PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_BYTES, PLUGIN_BACKEND_CHANNEL_DRAIN_TIMEOUT_MS, PLUGIN_BACKEND_CHANNEL_SERVER_TO_BROWSER_QUEUE_MAX_BYTES, serializePluginBackendChannelDataEnvelope, serializePluginBackendChannelReadyEnvelope } from "../../shared/pluginBackendProtocol.js";

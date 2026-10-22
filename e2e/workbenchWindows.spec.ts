@@ -1097,7 +1097,7 @@ for (const scenario of ["move", "reselect", "missed-startup", "images-and-send"]
         await expect(composer(page)).toHaveText("source first prompt");
         await expect(shownChat(page)).toHaveAttribute("data-session", tempId);
       } else if (scenario === "images-and-send") {
-        await shownChat(page).locator('prompt-editor input[type="file"]').setInputFiles({ name: "source.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
+        await shownChat(page).locator('prompt-editor input.attachment-input').setInputFiles({ name: "source.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
         await expect(page.locator("prompt-editor .attachment-chip")).toHaveCount(1);
       }
       const target = await context.newPage();

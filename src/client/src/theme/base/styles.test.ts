@@ -9,6 +9,7 @@ import { uiNoticeStyles } from "./noticeStyles";
 import { uiTranscriptStyles } from "./transcriptStyles";
 import { uiTranscriptCardStyles } from "./transcriptCardStyles";
 import { chatStyles } from "./chatStyles";
+import { conversationLayoutStyles } from "./conversationLayoutStyles";
 import { chatNavigationStyles } from "./chatNavigationStyles";
 import { sidebarListStyles } from "./sidebarListStyles";
 import { formattedTextStyles } from "./formattedTextStyles";
@@ -25,7 +26,7 @@ describe("base theme cascade boundary", () => {
   // unlayered default would outrank selected theme rules in participating roots.
   const styles = {
     ...controls, ...dialogs, uiFormStyles, uiFileListStyles, uiSettingsStyles,
-    uiNoticeStyles, uiTranscriptStyles, uiTranscriptCardStyles, chatStyles,
+    uiNoticeStyles, uiTranscriptStyles, uiTranscriptCardStyles, chatStyles, conversationLayoutStyles,
     chatNavigationStyles, sidebarListStyles, formattedTextStyles,
     codeBlockFrameStyles, sessionNotificationTrayStyles, appStyles, workspacePanelStyles, listStyles, statusBarStyles,
     autocompleteStyles, promptEditorLayoutStyles,

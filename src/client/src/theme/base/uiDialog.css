@@ -1,4 +1,4 @@
-  :host { --ui-dialog-top: min(12dvh, 90px); --ui-dialog-bottom: max(16px, env(safe-area-inset-bottom)); position: fixed; inset: 0; z-index: var(--ui-dialog-z, 30); color: var(--pi-text); font: 14px var(--pi-font, system-ui, sans-serif); }
+  :host { --ui-dialog-top: min(12dvh, 90px); --ui-dialog-bottom: max(16px, env(safe-area-inset-bottom)); position: fixed; inset: 0; color: var(--pi-text); font: 14px var(--pi-font, system-ui, sans-serif); }
   modal-surface {
     --modal-surface-place-items: start center;
     --modal-surface-backdrop-padding: var(--ui-dialog-top) 16px var(--ui-dialog-bottom);

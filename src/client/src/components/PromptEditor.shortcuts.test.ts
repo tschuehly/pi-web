@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPOSER_SEND_DESKTOP, COMPOSER_SEND_MOBILE } from "../composerShortcuts";
+import { installPopoverFake } from "./anchoredPopup.testSupport";
 import { machineSessionKey } from "../machineKeys";
 import { saveDraft } from "../promptDraftStorage";
 import { PROMPT_ENTER_PREFERENCE_STORAGE_KEY, type PromptEnterPreference } from "../promptEnterBehavior";
 import { PromptEditor } from "./PromptEditor";
 import { api, type SlashCommand } from "../api";
+
+installPopoverFake();
 
 beforeEach(() => {
   localStorage.clear();
@@ -272,11 +275,11 @@ describe("composer keyboard handling", () => {
     await vi.waitFor(() => {
       const menu = editor.shadowRoot?.querySelector("autocomplete-menu");
       expect(menu?.shadowRoot?.textContent).toContain("/tree");
-      expect(editor.hasAttribute("completion-menu-open")).toBe(true);
+      expect(menu?.shadowRoot?.querySelector("[popover]")).not.toBeNull();
     });
     press(editor, "Enter");
     await editor.updateComplete;
-    expect(editor.hasAttribute("completion-menu-open")).toBe(false);
+    expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.querySelector("[popover]")).toBeNull();
     expect(editor.view?.state.doc.toString()).toBe("/tree ");
     expect(editor.onSend).not.toHaveBeenCalled();
   });
@@ -377,10 +380,38 @@ describe("composer keyboard handling", () => {
     expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("/tree");
   });
 
+  it("reconciles native completion dismissal with editor shortcuts without moving focus", async () => {
+    vi.spyOn(api, "commands").mockResolvedValue([{ name: "tree", source: "builtin" }]);
+    const editor = await mount("enter");
+    editor.sessionId = "test-session"; editor.cwd = "/repo"; await editor.updateComplete;
+    editor.view?.focus();
+    editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: "/tr" }, selection: { anchor: 3 } });
+    await vi.waitFor(() => {
+      expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.querySelector("[popover]")).not.toBeNull();
+    });
+    const panel = editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.querySelector<HTMLElement>("[popover]");
+    panel?.hidePopover();
+    await editor.updateComplete;
+    expect(editor.view?.hasFocus).toBe(true);
+    press(editor, "Enter");
+    expect(editor.onSend).toHaveBeenCalledOnce();
+  });
+
   it("does not submit while composing", async () => {
     const editor = await mount(undefined);
     press(editor, "Enter", { isComposing: true });
     expect(editor.onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps Enter as newline on a wide touch screen and requires explicit Shift to send", async () => {
+    const editor = await mount(undefined, true, 1200);
+    press(editor, "Enter");
+    press(editor, "Enter", { shiftKey: true });
+    expect(editor.view?.state.doc.toString()).toBe("Hello\n\n");
+    expect(editor.onSend).not.toHaveBeenCalled();
+    press(editor, "Shift", { shiftKey: true });
+    press(editor, "Enter", { shiftKey: true });
+    expect(editor.onSend).toHaveBeenCalledOnce();
   });
 
   it("ignores touch autocapitalization but accepts explicit Shift+Enter", async () => {

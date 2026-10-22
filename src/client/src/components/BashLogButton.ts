@@ -44,7 +44,7 @@ export class BashLogButton extends LitElement {
       return;
     }
     if (this.registration === undefined) {
-      this.registration = registerRenderedModal({ element: dialog, nativeTopLayer: true, focus: () => { this.renderRoot.querySelector<HTMLElement>(".close")?.focus(); } });
+      this.registration = registerRenderedModal({ element: dialog, focus: () => { this.renderRoot.querySelector<HTMLElement>(".close")?.focus(); } });
       if (!dialog.open) dialog.showModal();
     }
     this.registration.focus();

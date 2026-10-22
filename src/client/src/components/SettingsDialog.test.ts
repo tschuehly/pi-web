@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { installNativeDialogFake } from "./nativeDialog.testSupport";
+installNativeDialogFake();
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { configApi, piPackagesApi, pluginsApi } from "../api";

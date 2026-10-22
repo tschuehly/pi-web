@@ -3,7 +3,7 @@
 import { Type } from "pi-web-typebox";
 import { KNOWN_THINKING_LEVELS } from "../../shared/thinkingLevels.js";
 import type { SessionUiMetadata } from "../../shared/pluginApiTypes.js";
-import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionContext } from "../../piSdk.js";
 
 export interface SpawnSessionResult {
   sessionId: string;

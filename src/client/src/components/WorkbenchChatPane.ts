@@ -22,6 +22,7 @@ import type { PromptEditor } from "./PromptEditor";
 import { focusTopModal } from "./modalLayerRegistry";
 import "./AuthDialog";
 import "./ChatView";
+import "./ConversationLayout";
 import "./CommandPicker";
 import "./DelegateRoster";
 import "./GoalStatusChip";
@@ -58,9 +59,9 @@ export class WorkbenchChatPane extends LitElement {
   protected override createRenderRoot(): HTMLElement { return this; }
 
   protected override updated(changed: PropertyValues<this>): void {
-    if (changed.has("focused") && this.focused) void this.updateComplete.then(() => {
-      // The outgoing pane must hide its modal before the incoming pane chooses the top layer.
-      if (this.focused && this.isConnected) focusTopModal(this.ownerDocument);
+    // Shown or hidden: native dialogs of hidden Chats leave the top layer and the visible Chat's return to it.
+    if (changed.has("focused") && changed.get("focused") !== undefined) void this.updateComplete.then(() => {
+      if (this.isConnected) focusTopModal(this.ownerDocument);
     });
   }
 
@@ -149,7 +150,7 @@ export class WorkbenchChatPane extends LitElement {
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${machineId} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         ${state.error === "" ? nothing : html`<div class="chat-error" role="alert">${state.error}</div>`}
-        <div class="chat-column">
+        <conversation-layout class="chat-column" .status=${state.status} .activity=${state.activity} .sending=${state.sendingPrompts[session.id] === true} .visualEffects=${WORKBENCH_CHAT_BEHAVIORS.visualEffects}>
           <chat-view
             .dense=${this.dense}
             workbench
@@ -195,6 +196,7 @@ export class WorkbenchChatPane extends LitElement {
             .onDisplayedMessageAction=${runWorkbenchDisplayedMessageAction}
             .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
           ></chat-view>
+          <div class="composer-area" slot="composer">
           <delegate-roster ?compact=${this.dense} .status=${state.status} .collapsed=${this.rosterCollapsed} .onToggleCollapsed=${this.toggleRoster}></delegate-roster>
           <goal-status-chip .status=${state.status}></goal-status-chip>
           <workbench-question-chips .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
@@ -224,7 +226,8 @@ export class WorkbenchChatPane extends LitElement {
             .onSetThinkingLevel=${(level: string) => sessions.setThinkingLevel(level)}
             .onRunCommand=${(command: string) => sessions.runCommand(command)}
           ></prompt-editor>
-        </div>
+          </div>
+        </conversation-layout>
         <div ?hidden=${!this.focused} ?inert=${!this.focused}>
         ${state.commandDialog === undefined ? nothing : html`<command-picker ?inert=${!this.focused} .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { sessions.cancelCommand(); }}></command-picker>`}
         ${state.treeDialog === undefined ? nothing : html`<session-tree-navigator ?inert=${!this.focused}

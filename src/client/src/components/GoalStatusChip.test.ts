@@ -179,7 +179,8 @@ describe("GoalStatusChip", () => {
   it("keeps the upward disclosure scrollable below the composer menu and clear of its resize handle", () => {
     expect(GoalStatusChip.styles.cssText).toMatch(/details\[open\]\s*\{[^}]*z-index:\s*4/);
     expect(promptEditorStyles.cssText).toMatch(/:host\s*\{[^}]*z-index:\s*5/);
-    expect(autocompleteStyles.cssText).toMatch(/\.menu\s*\{[^}]*z-index:\s*10/);
+    // The completion menu is a native popover in the top layer, above both.
+    expect(autocompleteStyles.cssText).not.toMatch(/\.menu\s*\{[^}]*position:\s*absolute/);
     expect(GoalStatusChip.styles.cssText).toMatch(/:host\s*\{[^}]*padding:\s*3px 8px 2px;[^}]*border-top:\s*1px solid var\(--pi-border-muted\)/);
     expect(promptEditorStyles.cssText).toMatch(/\.editor-resize-handle\s*\{[^}]*top:\s*-4px/);
     expect(GoalStatusChip.styles.cssText).toMatch(/\.sheet\s*\{[^}]*max-height:\s*var\(--goal-sheet-max-height, 0px\)[^}]*overflow:\s*auto[^}]*border-radius:\s*9px 9px 0 0/);

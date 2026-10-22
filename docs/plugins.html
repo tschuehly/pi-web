@@ -127,6 +127,7 @@ Here's what I want:
                 <li>Follow the reload or restart guidance shown there.</li>
               </ol>
               <p>Browser-only changes need a page reload. Server-backed changes need a restart of the target session daemon, then a page reload. <strong>A daemon restart can interrupt active sessions and terminals.</strong> Check active work first. Reloading the page or using Pi's <code>/reload</code> does not activate server-plugin changes.</p>
+              <p>Relays and Workflows are managed bundled packages, not independently versioned installs. At session-daemon startup, PI WEB updates their configured sources in the active agent profile to the running installation while preserving resource filters. Removing them through <strong>Settings → Pi packages</strong> is remembered; absent packages stay removed.</p>
               <h3 id="pi-packages-extensions-and-plugins">Packages, extensions, and plugins</h3>
               <span id="packages-vs-plugins"></span><span id="pi-packages"></span>
               <p>A <strong>Pi package</strong> is an installable bundle. A <strong>Pi extension</strong> changes agent behavior; a <strong>PI WEB plugin</strong> adds web tools. One package can include both. Disabling its web plugin leaves its extensions, skills, and prompts available.</p>

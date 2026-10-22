@@ -440,10 +440,11 @@ export class ChatView extends LitElement {
   }
 
   protected override updated(changed: Map<string, unknown>): void {
-    if (this.chat !== undefined && this.chat !== this.observedTranscript) {
+    const transcript = this.chat ?? undefined;
+    if (transcript !== undefined && transcript !== this.observedTranscript) {
       this.transcriptResize?.disconnect();
-      this.transcriptResize?.observe(this.chat);
-      this.observedTranscript = this.chat;
+      this.transcriptResize?.observe(transcript);
+      this.observedTranscript = transcript;
     }
     if (changed.has("loadingMore") && !this.loadingMore) this.loadMoreRequested = false;
     if (changed.has("hasMore") && !this.hasMore) this.loadMoreRequested = false;
@@ -535,7 +536,6 @@ export class ChatView extends LitElement {
           ${this.renderExtensionDialogs()}
         </div>
         ${this.renderReplySelection()}
-        ${this.renderActivityDock()}
         ${this.workbench && this.messages.length > 0 ? html`<conversation-meter ?dense=${this.dense}></conversation-meter>` : nothing}
         ${this.onNavigationChange !== undefined ? nothing : this.workbench ? this.renderScrollToBottom() : this.renderNavigation()}
       </div>
@@ -556,8 +556,9 @@ export class ChatView extends LitElement {
     if (!this.workbench || this.meterFrame !== undefined) return;
     this.meterFrame = requestAnimationFrame(() => {
       this.meterFrame = undefined;
-      const meter = this.meter;
-      const chat = this.chat;
+      // @query yields null before the element renders.
+      const meter = this.meter ?? undefined;
+      const chat = this.chat ?? undefined;
       if (meter === undefined || chat === undefined) return;
       const position = conversationMeterPosition({ messageStart: this.messageStart, loaded: this.messages.length, total: this.messageTotal, hasMore: this.hasMore, following: this.followingLive,
         firstVisibleIndex: () => {
@@ -620,28 +621,6 @@ export class ChatView extends LitElement {
       || this.status?.isCompacting === true
       || this.status?.isBashRunning === true
       || this.activity?.phase === "active";
-  }
-
-  private renderActivityDock() {
-    if (this.isSendingPrompt) {
-      return html`
-        <div class="activity-dock active" aria-live="polite">
-          <span class="dot"></span>
-          <span class="activity-text">Sending your message…</span>
-        </div>
-      `;
-    }
-    const state = this.activityState();
-    if (state === undefined) return null;
-    if (state === "idle" && this.activity?.phase !== "active") return null;
-    // An idle activity report (e.g. "tool complete") is history, not work in progress.
-    if (this.activity?.phase === "idle" && (this.status === undefined || state === "idle")) return null;
-    return html`
-      <div class=${this.activity?.phase === "error" ? "activity-dock" : "activity-dock active"} aria-live="polite">
-        <span class="dot"></span>
-        <span class="activity-text">${this.activityText(state)}</span>
-      </div>
-    `;
   }
 
   private renderQueuedMessages() {
@@ -720,23 +699,6 @@ export class ChatView extends LitElement {
         ${this.pendingMessageCount > 0 ? html`<small>${this.pendingMessageCount} queued ${this.pendingMessageCount === 1 ? "message" : "messages"}</small>` : null}
       </aside>
     `;
-  }
-
-  private activityState(): string | undefined {
-    const status = this.status;
-    if (status === undefined) return this.activity?.label;
-    if (status.isCompacting) return "compacting";
-    if (status.isBashRunning) return "bash";
-    if (status.isStreaming) return "running";
-    if (status.pendingMessageCount > 0) return "queued";
-    return "idle";
-  }
-
-  private activityText(state: string): string {
-    const activity = this.activity;
-    if (activity === undefined) return state;
-    if (state !== "idle" && activity.phase === "idle") return state;
-    return activity.detail !== undefined && activity.detail !== "" ? `${activity.label}: ${activity.detail}` : activity.label;
   }
 
   private renderHistoryBoundary() {

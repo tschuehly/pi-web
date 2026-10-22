@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installPopoverFake } from "./anchoredPopup.testSupport";
+installPopoverFake();
+
 import { trustApi } from "../api";
 import { ProjectList } from "./ProjectList";
 import { WorkspaceList } from "./WorkspaceList";
@@ -173,6 +176,9 @@ describe("open action menu positioning", () => {
 
     bottom = 250;
     document.body.append(list);
+    await settle(list);
+    expect(menu()).toBeNull();
+    toggle.click();
     await settle(list);
     expect(menu()?.style.top).toBe("250px");
     expect(frames.size).toBe(0);

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { stripFrontmatter } from "@earendil-works/pi-coding-agent";
+import { stripFrontmatter } from "../../piSdk.js";
 import { promptSlashMentions } from "../../shared/promptSlashMentions.js";
 
 export interface InlineSkill {

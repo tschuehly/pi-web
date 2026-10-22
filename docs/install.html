@@ -107,12 +107,12 @@
               <h2>Requirements</h2>
               <ul>
                 <li><strong>Node.js 22.19.0 or newer</strong> and npm.</li>
-                <li><strong>Pi Coding Agent <code>1.x</code></strong> installed/configured so the <code>pi</code> command works for your user.</li>
+                <li><strong>Pi Coding Agent</strong> installed through npm and configured so the <code>pi</code> command works for your user. Binary-only installations without the Node SDK are not supported.</li>
                 <li><strong>Python 3</strong> on the web/API service's PATH to save workspace files. The save helper requires descriptor-relative file operations (available on macOS and Linux); saves fail closed without them. Existing files larger than 512 KiB cannot be saved through the editor because they cannot be version-checked.</li>
                 <li>A shell login environment that exposes Node, npm, Pi, git, and any tools your agents need.</li>
                 <li>For the automatic installer: a supported per-user service manager.</li>
               </ul>
-              <p>PI WEB requires Pi 1.x; Pi 0.x and Pi 2.x are outside the supported dependency range. When upgrading from Pi 0.x, update Pi and PI WEB together, then restart the web/API service before the session daemon. Restarting the daemon interrupts active sessions.</p>
+              <p>PI WEB reuses your existing Pi installation; it does not install a separate Pi engine or pin its version. After upgrading or downgrading Pi in that installation, restart the web/API service before the session daemon to use the changed version. Restarting the daemon interrupts active sessions. If a Pi upgrade causes compatibility problems, you can downgrade Pi. If Pi was previously installed only as part of PI WEB, install Pi itself before updating PI WEB.</p>
               <div class="callout warning">
                 <strong>Important PATH detail:</strong>
                 PI WEB services run through a non-interactive login shell with <code>-lc</code>. Setup that only lives in
@@ -162,7 +162,7 @@
             <section id="pi-package">
               <h2>Install through Pi</h2>
               <p>PI WEB is also published as a Pi package. This exposes a <code>/pi-web</code> command inside Pi.</p>
-              <p>You do not need a separate global npm install; manage the services with <code>/pi-web</code> inside Pi.</p>
+              <p>You do not need a separate global npm install; manage the services with <code>/pi-web</code> inside Pi. The commands and installed services use that same Pi installation. If you move Pi to a different installation path, run <code>/pi-web install</code> again to update the service definitions.</p>
               <div class="code-card">
                 <div class="copy-row">
                   <strong>Pi package path</strong>

@@ -4,7 +4,7 @@ import { EditorSelection, EditorState, Compartment, Prec } from "@codemirror/sta
 import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
 import { indentOnInput, indentUnit } from "@codemirror/language";
 import { stylesheetIntegrationCapability } from "../plugins/styles";
-import { LitElement, html, type PropertyValues, type TemplateResult } from "lit";
+import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
@@ -24,7 +24,8 @@ import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUs
 import { composerKeyboardSubmissionEnabled, composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
-import { renderActivityIcon, renderAttachIcon, renderContextRing, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
+import { AnchoredPopupController } from "./anchoredPopup";
+import { renderActivityIcon, renderAttachIcon, renderCameraIcon, renderContextRing, renderPhotosIcon, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
 import "./WorkingModeControls";
 import "./ModelEffortPicker";
 import { formatCost, formatTokenCount } from "../utils/format";
@@ -53,6 +54,16 @@ export function promptEditorMaximumHeight(viewportHeight: number, interfaceScale
 export function promptEditorDragHeight(startHeight: number, startY: number, currentY: number, interfaceScale: number, maximumHeight: number): number {
   const scale = Number.isFinite(interfaceScale) && interfaceScale > 0 ? interfaceScale : 1;
   return clampNumber(startHeight + ((startY - currentY) / scale), PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
+}
+
+// Image inputs let mobile browsers offer photo-library sources; capture is a
+// separate camera preference, not a guarantee of a specific native chooser.
+// https://web.dev/articles/media-capturing-images
+// Keep the direct file dialog for fine-pointer devices, regardless of width.
+const ATTACH_SOURCE_MENU_MEDIA_QUERY = "(pointer: coarse)";
+
+function createAttachSourceMenuMedia(): Pick<MediaQueryList, "matches"> | undefined {
+  return typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia(ATTACH_SOURCE_MENU_MEDIA_QUERY) : undefined;
 }
 
 // Text nodes inside contenteditable can become iOS keyboard context, even in
@@ -121,6 +132,10 @@ export class PromptEditor extends LitElement {
   @query(".editor-resize-handle") private editorResizeHandle?: HTMLElement;
   @query(".markdown-editor") private editorHost?: HTMLDivElement;
   @query(".attachment-input") private attachmentInput?: HTMLInputElement;
+  @query(".attachment-image-input") private attachmentImageInput?: HTMLInputElement;
+  @query(".attachment-camera-input") private attachmentCameraInput?: HTMLInputElement;
+  @query(".attach-source-panel") private attachSourcePanel?: HTMLDivElement;
+  @query(".attach-button") private attachButton?: HTMLButtonElement;
   // `draft` is the live document text but is intentionally NOT reactive: it
   // changes on every keystroke and the visible text is owned by CodeMirror, not
   // by Lit's render. Re-rendering the surrounding template on each keystroke is
@@ -138,6 +153,16 @@ export class PromptEditor extends LitElement {
   @state() private chipSendingKey: string | undefined = undefined;
   @state() private chipError: string | undefined = undefined;
   @state() private attachmentMenuOpen = false;
+  @state() private attachSourceOpen = false;
+  private readonly attachPopup = new AnchoredPopupController(this, () => {
+    if (!this.attachSourceOpen || !this.attachButton || !this.attachSourcePanel) return undefined;
+    return {
+      anchor: this.attachButton,
+      panel: this.attachSourcePanel,
+      onClose: () => { this.attachSourceOpen = false; },
+      options: { minWidth: 210 },
+    };
+  });
   private attachmentSeq = 0;
   private nextImageReference = 1;
   private pendingImageReferences: readonly string[] = [];
@@ -162,6 +187,7 @@ export class PromptEditor extends LitElement {
   private readonly onResizeViewport = (): void => { this.reconcileEditorHeight(); };
 
   protected override willUpdate(changed: PropertyValues<this>) {
+    if (this.busy || changed.has("sessionId") || changed.has("machineId")) this.attachSourceOpen = false;
     if (!changed.has("sessionId") && !changed.has("machineId")) return;
     // Every edit already wrote through; saving again on leave would overwrite what another window stored meanwhile.
     const currentKey = draftStorageKey(this.machineId, this.sessionId);
@@ -204,16 +230,18 @@ export class PromptEditor extends LitElement {
     this.createEditor();
   }
 
+  private get busy(): boolean {
+    return this.disabled || this.sending || this.chipSendingKey === this.composerKey();
+  }
+
   protected override updated(changed: PropertyValues) {
-    // Expose menu visibility so the shell can lift the composer above the
-    // transcript's activity badge without changing the idle stacking order.
-    if (changed.has("completions")) this.toggleAttribute("completion-menu-open", this.completions.length > 0);
     if (changed.has("disabled")) this.updateEditorDisabledState();
     if (changed.has("dense")) this.editor?.dispatch({ effects: this.placeholderCompartment.reconfigure(this.placeholder()) });
     if (changed.has("sessionId") || changed.has("machineId")) this.syncEditorDoc();
   }
 
   override disconnectedCallback(): void {
+    this.attachSourceOpen = false;
     window.removeEventListener("resize", this.onResizeViewport);
     window.visualViewport?.removeEventListener("resize", this.onResizeViewport);
     this.editorHeightObserver?.disconnect();
@@ -232,7 +260,8 @@ export class PromptEditor extends LitElement {
     const steersInput = this.defaultSendBehavior() === "steer";
     const alternate = this.canSteer && !this.isCompacting ? (steersInput ? "followUp" : "steer") : undefined;
     const queuesInput = this.canSteer || this.isCompacting;
-    const busy = this.disabled || this.sending || this.chipSendingKey === this.composerKey();
+    const busy = this.busy;
+    const sourceMenu = createAttachSourceMenuMedia()?.matches === true;
     const maximumHeight = this.maximumEditorHeight();
     const currentHeight = this.currentEditorHeight(maximumHeight);
     const editorHeightStyle = `--prompt-editor-maximum-height: ${String(maximumHeight)}px${this.manualEditorHeight === undefined ? "" : `; --prompt-editor-manual-height: ${String(this.manualEditorHeight)}px`}`;
@@ -261,16 +290,23 @@ export class PromptEditor extends LitElement {
           <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${editorHeightStyle} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
           ${this.chatNavigation === undefined || this.dense ? null : html`<div class="editor-chat-navigation">${this.chatNavigation}</div>`}
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
+          <input class="attachment-image-input" type="file" multiple accept="image/*" hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
+          <input class="attachment-camera-input" type="file" accept="image/*" capture="environment" hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
+          <div id="attach-source-panel" class="attach-source-panel ui-menu" popover="auto" role="group" aria-label="Attachment source">
+            <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Choose from your photo library" @click=${() => { this.openAttachmentPicker(this.attachmentImageInput); }}><span class="attach-source-icon" aria-hidden="true">${renderPhotosIcon()}</span><span class="attach-source-label">Photos</span></button>
+            <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Take a new photo" @click=${() => { this.openAttachmentPicker(this.attachmentCameraInput); }}><span class="attach-source-icon" aria-hidden="true">${renderCameraIcon()}</span><span class="attach-source-label">Camera</span></button>
+            <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Browse documents and other files" @click=${() => { this.openAttachmentPicker(this.attachmentInput); }}><span class="attach-source-icon" aria-hidden="true">${renderAttachIcon()}</span><span class="attach-source-label">Files</span></button>
+          </div>
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
           ${this.renderPromptChips()}
           ${this.dense ? null : this.renderAttachments()}
-          <autocomplete-menu .items=${this.currentCompletions()} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
+          <autocomplete-menu .onClose=${() => { this.closeCompletions(); }} .items=${this.currentCompletions()} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
         </div>
       `;
     const composerActions = html`
           <div class="composer-actions">
-            <button type="button" class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
+            <button type="button" class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" aria-controls=${sourceMenu ? "attach-source-panel" : nothing} aria-expanded=${sourceMenu ? String(this.attachSourceOpen) : nothing} @click=${() => { this.handleAttachClick(); }}>${renderAttachIcon()}</button>
             <button type="button" class="icon-button send-button" ?disabled=${busy} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
             ${alternate === "followUp" ? html`<button type="button" class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
             ${alternate === "steer" ? html`<button type="button" class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}</button>` : null}
@@ -489,6 +525,22 @@ export class PromptEditor extends LitElement {
     event.preventDefault();
     const position = this.editor?.posAtCoords({ x: event.clientX, y: event.clientY }) ?? this.editor?.state.selection.main.head ?? this.draft.length;
     await this.addAttachmentFiles(files, position);
+  }
+
+  private handleAttachClick(): void {
+    if (this.busy) return;
+    if (createAttachSourceMenuMedia()?.matches === true) {
+      this.attachSourceOpen = !this.attachSourceOpen;
+      return;
+    }
+    this.attachmentInput?.click();
+  }
+
+  private openAttachmentPicker(input: HTMLInputElement | undefined): void {
+    if (this.busy) return;
+    this.attachPopup.close();
+    this.attachButton?.focus();
+    input?.click();
   }
 
   private async handleFileInput(event: Event) {

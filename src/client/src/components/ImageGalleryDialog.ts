@@ -50,7 +50,6 @@ export class ImageGalleryDialog extends LitElement {
       if (this.modalRegistration === undefined) {
         const registration = registerRenderedModal({
           element: dialog,
-          nativeTopLayer: true,
           focus: () => {
             const close = this.renderRoot.querySelector<HTMLElement>(".image-zoom-close");
             (close ?? dialog).focus();

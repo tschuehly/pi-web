@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAssistantMessageEventStream, InMemoryCredentialStore, type AssistantMessage } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime } from "../../piSdk.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PiWebConfigResponse, PiWebConfigValues } from "../../shared/apiTypes.js";
 import { appendInlineImageReferenceMapping, PiSessionService, stripInlineImageReferenceMapping } from "./piSessionService.js";

@@ -1104,8 +1104,13 @@ export class TerminalPanel extends LitElement {
     .terminal-tabs > button:hover:not(:disabled) { background: var(--pi-surface); color: var(--pi-text); }
     .terminal-tabs > button.selected { border-color: var(--pi-border-muted); background: var(--pi-surface); color: var(--pi-text); box-shadow: inset 0 -2px var(--pi-text-secondary); }
     .terminal-tabs > button:focus-visible { outline: 2px solid var(--pi-text-secondary); outline-offset: -3px; }
-    /* Rendering owns accessory visibility so saved choices work at every screen size. */
-    .terminal-soft-keys { display: block; }
+    /* These accessories work around touch input limitations, not small screens.
+       Keep Done reachable if touch availability changes during copy mode. */
+    .copy-mode-toggle:not(.selected), .soft-keys-toggle, .terminal-soft-keys { display: none; }
+    @media (any-pointer: coarse) {
+      .copy-mode-toggle:not(.selected), .soft-keys-toggle { display: inline-flex; }
+      .terminal-soft-keys { display: block; }
+    }
     button { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 180px; border: 1px solid var(--pi-border); border-radius: 7px; background: var(--pi-surface); color: var(--pi-text); padding: 5px 7px; cursor: pointer; }
     button.selected { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     button.new { flex: 0 0 auto; color: var(--pi-muted); }
@@ -1125,7 +1130,8 @@ export class TerminalPanel extends LitElement {
     .command-run-notice kbd { border: 1px solid var(--pi-border); border-radius: 4px; background: var(--pi-bg); padding: 0 4px; font: 11px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     .command-run-notice button { justify-self: end; max-width: none; }
     .terminal-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: var(--pi-terminal-bg); }
-    .terminal-host { position: absolute; inset: 0; padding: 6px; box-sizing: border-box; overflow: hidden; }
+    /* FitAddon measures the host's CSS size without subtracting its padding. */
+    .terminal-host { position: absolute; inset: 6px; overflow: hidden; }
     .terminal-host.copying { visibility: hidden; pointer-events: none; }
     .terminal-copy-view { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; background: var(--pi-terminal-bg); color: var(--pi-terminal-text); }
     .terminal-copy-toolbar { box-sizing: border-box; flex: 0 0 auto; display: flex; align-items: center; gap: 0; min-width: 0; min-height: 32px; padding: 0; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-bg); color: var(--pi-muted); font: 12px var(--pi-font, system-ui, sans-serif); }

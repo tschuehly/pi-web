@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAgentSessionServices, createAgentSessionFromServices, createAgentSessionRuntime, createMcpExtension, SessionManager, SettingsManager, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionServices, createAgentSessionFromServices, createAgentSessionRuntime, createMcpExtension, SessionManager, SettingsManager, type ExtensionUIContext } from "../../piSdk.js";
 import { expect, it, vi } from "vitest";
 import { McpAuthFlowService } from "./mcpAuthFlowService.js";
 import { createTestModelRuntime, testModel } from "./piSessionService.testSupport.js";

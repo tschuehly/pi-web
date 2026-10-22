@@ -11,6 +11,7 @@ import {
   launchdRuntimeDetails,
   managedServiceProbeEnvironment,
   nodeVersionCheck,
+  nativeServiceEnvironment,
   parseVersionOptions,
   regularFileExists,
   runReadinessCliCommand,
@@ -36,6 +37,21 @@ afterEach(() => {
   } else {
     process.env["PI_WEB_CONFIG"] = originalPiWebConfig;
   }
+});
+
+describe("native service environment", () => {
+  it("keeps the selected Pi installation for services without copying unrelated environment", () => {
+    expect(nativeServiceEnvironment("/config.json", {
+      PI_WEB_PI_PACKAGE_DIR: "/existing/pi installation",
+      PATH: "/caller/bin",
+    })).toEqual({ PI_WEB_CONFIG: "/config.json", PI_WEB_PI_PACKAGE_DIR: "/existing/pi installation" });
+  });
+
+  it("does not invent a Pi installation or require an explicit config", () => {
+    expect(nativeServiceEnvironment(undefined, {})).toEqual({});
+    expect(nativeServiceEnvironment(undefined, { PI_WEB_PI_PACKAGE_DIR: "/existing/pi" }))
+      .toEqual({ PI_WEB_PI_PACKAGE_DIR: "/existing/pi" });
+  });
 });
 
 describe("version arguments", () => {

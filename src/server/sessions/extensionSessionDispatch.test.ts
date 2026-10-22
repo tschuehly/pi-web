@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, ExtensionHandler, SessionShutdownEvent, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionHandler, SessionShutdownEvent, SessionStartEvent } from "../../piSdk.js";
 import { describe, expect, it, vi } from "vitest";
 import { KNOWN_THINKING_LEVELS } from "../../shared/thinkingLevels.js";
 import { createExtensionSessionDispatch, SESSION_DISPATCH_CHANNEL } from "./extensionSessionDispatch.js";

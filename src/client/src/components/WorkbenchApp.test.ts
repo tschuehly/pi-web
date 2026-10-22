@@ -30,6 +30,9 @@ import { WorkbenchWindowController, WINDOW_CHANNEL, WINDOW_ID_LOCK_PREFIX, WINDO
 import { WorkbenchChatSession, WorkbenchSessionFocus } from "../controllers/workbenchSessionFocus";
 import { FakeLocks } from "../controllers/webLocks.testSupport";
 import { moveChats, openChat, parseWindowStore } from "../workbenchWindows";
+import { installNativeDialogFake } from "./nativeDialog.testSupport";
+
+installNativeDialogFake();
 
 // Browser plugin modules load by URL import; serve the bundled Mermaid source instead.
 vi.mock("../plugins/external", async (importOriginal) => {
@@ -675,7 +678,7 @@ describe("Workbench Chat chooser", () => {
     const openAsk = (askId: string) => ({ askId, askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, context: "Why", questions: [{ id: "db", question: "Which database?", options: [] }] });
     setState(app, { ...getState(app), selectedSession: current, pendingAsks: [openAsk("abc-1"), openAsk("def-2")], sessionStatuses: { other: { ...idleStatus("other"), pendingAsks: [openAsk("xyz-9")] } } });
     await app.updateComplete;
-    const chips = app.shadowRoot?.querySelector<WorkbenchQuestionChips>(".chat-column > workbench-question-chips");
+    const chips = app.shadowRoot?.querySelector<WorkbenchQuestionChips>(".chat-column > .composer-area > workbench-question-chips");
 
     expect(chips?.nextElementSibling?.localName).toBe("prompt-editor");
     expect(chips?.asks.map((ask) => ask.askId)).toEqual(["abc-1", "def-2"]);
@@ -2551,7 +2554,7 @@ describe("window tabs", () => {
     chip?.click();
 
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
-    const shellChips = () => app.shadowRoot?.querySelector<WorkbenchQuestionChips>('.tile[data-focused="true"] .chat-column > workbench-question-chips');
+    const shellChips = () => app.shadowRoot?.querySelector<WorkbenchQuestionChips>('.tile[data-focused="true"] .composer-area > workbench-question-chips');
     expect(shellChips()).toBe(chipsBefore);
     await vi.waitFor(async () => { await shellChips()?.updateComplete; expect(shellChips()?.shadowRoot?.querySelector('.drawer ask-user-card[data-ask="abc-1"]')).not.toBeNull(); });
   });

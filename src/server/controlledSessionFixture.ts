@@ -3,7 +3,7 @@ import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "../piSdk.js";
 
 const execFileAsync = promisify(execFile);
 export const CONTROLLED_FIXTURE_CLOCK = "2026-08-08T07:02:41.000Z";

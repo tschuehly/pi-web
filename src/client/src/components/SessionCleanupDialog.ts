@@ -49,6 +49,8 @@ export class SessionCleanupDialog extends LitElement {
           ${this.renderForm(validation.ok ? "" : validation.error)}
           ${this.renderMessage()}
           ${this.preview === undefined ? null : this.renderPreview(this.preview)}
+        </div>
+        <div class="feedback" role="status" aria-atomic="true">
           ${this.result === undefined ? null : this.renderResult(this.result)}
         </div>
         <footer>
@@ -211,9 +213,9 @@ export class SessionCleanupDialog extends LitElement {
   }
 
   static override styles = css`
-    :host { position: fixed; inset: 0; z-index: 30; color: var(--pi-text); font: 14px var(--pi-font, system-ui, sans-serif); }
+    :host { position: fixed; inset: 0; color: var(--pi-text); font: 14px var(--pi-font, system-ui, sans-serif); }
     modal-surface { --modal-surface-backdrop-padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); --modal-surface-width: min(760px, 100%); --modal-surface-max-height: min(760px, 100%); --modal-surface-radius: 14px; }
-    header, footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--pi-border); }
+    header, footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--pi-border); }
     footer { border-top: 1px solid var(--pi-border); border-bottom: 0; justify-content: end; }
     .body { flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; gap: 14px; padding: 16px; }
     .eyebrow { display: block; color: var(--pi-muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -229,7 +231,8 @@ export class SessionCleanupDialog extends LitElement {
     .warning, .dialog-error, .result { border: 1px solid var(--pi-border); border-radius: 10px; padding: 10px 12px; }
     .warning { border-color: var(--pi-warning-border); background: var(--pi-warning-surface); color: var(--pi-text); }
     .dialog-error { border-color: var(--pi-danger); background: color-mix(in srgb, var(--pi-danger) 10%, var(--pi-bg)); color: var(--pi-danger); }
-    .result { border-color: var(--pi-success-border); background: var(--pi-success-bg); }
+    .feedback { flex-shrink: 0; }
+    .result { margin: 12px 16px; border-color: var(--pi-success-border); background: var(--pi-success-bg); }
     .preview { display: grid; gap: 10px; min-width: 0; }
     .selection-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
     .selection-controls span { color: var(--pi-muted); }

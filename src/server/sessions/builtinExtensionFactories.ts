@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { McpAuthFlowService } from "./mcpAuthFlowService.js";
-import { createCodemodeExtension, createMcpExtension, createToolSearchExtension, type InlineExtension } from "@earendil-works/pi-coding-agent";
+import { createCodemodeExtension, createMcpExtension, createToolSearchExtension, type InlineExtension } from "../../piSdk.js";
 
 // Pi 1.x guarantees these exports. Create factories lazily and share them across
 // session resource loaders; missing exports must not silently disable builtins.
