@@ -102,6 +102,7 @@ import { type AuthChange } from "./authService.js";
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import { parsePersistedChildSubsessionLink, parsePersistedParentSubsessionLink, type PersistedChildSubsessionLink, type PersistedParentSubsessionLink } from "./subsessionProvenance.js";
 import { readSessionHeaderSummary } from "./sessionFileHeader.js";
+import { DAEMON_RESTART_CUSTOM_TYPE, renderDaemonRestartMessage, takeInterruptedTurns, writeInterruptedTurns, type InterruptedTurn, type InterruptedTurnsRecord } from "./interruptedTurns.js";
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
 import { createAskUserToolDefinition, type AskUserToolDeps } from "./askUserTool.js";
 import { createRequestAttentionToolDefinition, type RequestAttentionToolDeps } from "./requestAttentionTool.js";
@@ -1195,6 +1196,11 @@ export interface PiSessionServiceDependencies {
   now?: () => Date;
   /** Daemon-lifetime notification state, injected by sessiond in production. */
   notificationStore?: SessionNotificationStore;
+  /**
+   * Where shutdown records the sessions that were mid-turn so the next startup
+   * can resume them. Omit to neither record nor resume.
+   */
+  interruptedTurnsFile?: string;
   /** Durable daemon-owned unread state; defaults to an in-memory store in tests. */
   unreadStore?: SessionUnreadStore;
   /** Initial retry delay for durable unread publication failures. */
@@ -1305,6 +1311,7 @@ export class PiSessionService implements SessionRouteService {
   private readonly subsessionNotifyArmed = new Map<string, boolean>();
   private readonly archiveStore: SessionArchiveRepository;
   private readonly workstreamLaunchStore: WorkstreamLaunchStore | undefined;
+  private readonly interruptedTurnsFile: string | undefined;
   private readonly agentDir: string;
   private readonly sessionManager: PiSessionManagerGateway;
   private readonly createRuntime: PiWebCreateAgentSessionRuntimeFactory;
@@ -1343,6 +1350,7 @@ export class PiSessionService implements SessionRouteService {
   constructor(private readonly events: SessionEventHub, deps: PiSessionServiceDependencies) {
     this.archiveStore = deps.archiveStore ?? new SessionArchiveStore();
     this.workstreamLaunchStore = deps.workstreamLaunchStore;
+    this.interruptedTurnsFile = deps.interruptedTurnsFile;
     this.agentDir = deps.agentDir;
     this.sessionManager = deps.sessionManager;
     this.modelRuntime = deps.modelRuntime;
@@ -1547,6 +1555,9 @@ export class PiSessionService implements SessionRouteService {
     const pendingOpens = this.pendingSessionOpenPromises();
     if (pendingOpens.length > 0) await Promise.allSettled(pendingOpens);
     const activeSessions = Array.from(new Set(this.active.values()));
+    // Decided now, while busy state is intact; awaited only before aborting so
+    // no event publication slips in ahead of unsubscribe. Never rejects.
+    const recordingInterruptedTurns = this.recordInterruptedTurns(activeSessions.map((active) => active.runtime.session));
     for (const active of activeSessions) {
       this.forgetUnreadActivity(active.runtime.session);
       this.activeToolExecutions.delete(active.runtime.session);
@@ -1575,6 +1586,7 @@ export class PiSessionService implements SessionRouteService {
       active.runtime.setRebindSession(undefined);
       this.workspaceActivity?.removeSession(active.runtime.session.sessionId, active.runtime.session.sessionManager.getCwd());
       try {
+        await recordingInterruptedTurns;
         await this.abortSessionOperations(active.runtime.session);
       } finally {
         await active.runtime.dispose();
@@ -1585,6 +1597,58 @@ export class PiSessionService implements SessionRouteService {
       await this.activityMarker.dispose();
     });
     await this.publishUnreadMutations([]);
+  }
+
+  /** Before shutdown aborts them, remember the sessions that were mid-turn. */
+  private async recordInterruptedTurns(sessions: PiAgentSession[]): Promise<void> {
+    if (this.interruptedTurnsFile === undefined) return;
+    const interrupted: InterruptedTurn[] = sessions.filter((session) => this.hasActiveWork(session)).map((session) => ({
+      sessionId: session.sessionId,
+      cwd: session.sessionManager.getCwd(),
+      ...(session.sessionFile === undefined || session.sessionFile === "" ? {} : { sessionFile: session.sessionFile }),
+    }));
+    if (interrupted.length === 0) return;
+    try {
+      await writeInterruptedTurns(this.interruptedTurnsFile, { shutdownAt: this.now().toISOString(), sessions: interrupted });
+    } catch (error: unknown) {
+      this.logger.info({ err: error }, "Could not record interrupted turns for resume after restart");
+    }
+  }
+
+  /**
+   * Startup counterpart of {@link recordInterruptedTurns}: consume the record
+   * once and wake each recorded session with one system-authored message. A
+   * session that cannot be reopened is logged and skipped. Never throws.
+   */
+  async resumeInterruptedTurns(): Promise<void> {
+    if (this.interruptedTurnsFile === undefined) return;
+    let record: InterruptedTurnsRecord | undefined;
+    try {
+      record = await takeInterruptedTurns(this.interruptedTurnsFile);
+    } catch (error: unknown) {
+      this.logger.info({ err: error }, "Could not read interrupted turns; nothing resumed");
+      return;
+    }
+    if (record === undefined) return;
+    const content = renderDaemonRestartMessage(record.shutdownAt);
+    await Promise.all(record.sessions.map(async ({ sessionId, cwd, sessionFile }) => {
+      try {
+        const ref = { id: sessionId, cwd };
+        await this.assertWritable(ref);
+        const session = sessionFile !== undefined && (await readSessionHeaderSummary(sessionFile))?.id === sessionId
+          ? (await this.openExistingSession(sessionId, cwd, () => this.sessionManager.open(sessionFile))).runtime.session
+          : await this.getOrOpen(ref);
+        // followUp: an undelivered ask answer may already be starting a turn on open.
+        await this.runSessionEntryMutation(session, "resume the interrupted turn", () => session.sendCustomMessage(
+          { customType: DAEMON_RESTART_CUSTOM_TYPE, content, display: true },
+          { triggerTurn: true, deliverAs: "followUp" },
+        ));
+        this.publishStatus(session);
+        this.logger.info({ sessionId }, "Resumed a turn interrupted by the daemon restart");
+      } catch (error: unknown) {
+        this.logger.info({ sessionId, cwd, err: error }, "Could not resume a turn interrupted by the daemon restart");
+      }
+    }));
   }
 
   async listRecent(limit: number): Promise<ClientSession[]> {
