@@ -3,7 +3,8 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export type WorkstreamLaunchRecord =
-  | { token: string; cwd: string; status: "pending" }
+  /** A Durable launch names the Chat ID it reserved, so a retry or reconcile finds that Chat instead of orphaning it. */
+  | { token: string; cwd: string; status: "pending"; sessionId?: string }
   | { token: string; cwd: string; status: "created"; sessionId: string };
 
 export function isWorkstreamLaunchToken(token: string): boolean {
@@ -25,12 +26,12 @@ export class WorkstreamLaunchStore {
     return join(this.directory, `${createHash("sha256").update(token).digest("hex")}.json`);
   }
 
-  async reserve(token: string, cwd: string): Promise<void> {
+  async reserve(token: string, cwd: string, sessionId?: string): Promise<void> {
     const path = this.path(token);
     if (!cwd) throw new Error("Workstream launch cwd is required");
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     try {
-      await writeFile(path, JSON.stringify({ token, cwd, status: "pending" }), { flag: "wx", mode: 0o600 });
+      await writeFile(path, JSON.stringify({ token, cwd, status: "pending", ...(sessionId === undefined ? {} : { sessionId }) }), { flag: "wx", mode: 0o600 });
     } catch (error) {
       if (isNodeError(error, "EEXIST")) throw new Error("Workstream launch token is already reserved; look it up instead", { cause: error });
       throw error;
@@ -45,6 +46,7 @@ export class WorkstreamLaunchStore {
       return;
     }
     if (!sessionId) throw new Error("Workstream launch session id is required");
+    if (current.sessionId !== undefined && current.sessionId !== sessionId) throw new Error("Workstream launch token is reserved for another session");
     const path = this.path(token);
     const temp = join(this.directory, `.${randomUUID()}.tmp`);
     try {
@@ -64,7 +66,10 @@ export class WorkstreamLaunchStore {
     let value: unknown;
     try { value = JSON.parse(content); } catch { throw new Error("Invalid Workstream launch record"); }
     if (typeof value !== "object" || value === null || !("token" in value) || value.token !== token || !("cwd" in value) || typeof value.cwd !== "string" || value.cwd === "" || !("status" in value)) throw new Error("Invalid Workstream launch record");
-    if (value.status === "pending") return { token, cwd: value.cwd, status: "pending" };
+    if (value.status === "pending") {
+      if (!("sessionId" in value)) return { token, cwd: value.cwd, status: "pending" };
+      if (typeof value.sessionId === "string" && value.sessionId !== "") return { token, cwd: value.cwd, status: "pending", sessionId: value.sessionId };
+    }
     if (value.status === "created" && "sessionId" in value && typeof value.sessionId === "string" && value.sessionId !== "") return { token, cwd: value.cwd, sessionId: value.sessionId, status: "created" };
     throw new Error("Invalid Workstream launch record");
   }

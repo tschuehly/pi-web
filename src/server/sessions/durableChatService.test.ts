@@ -641,7 +641,7 @@ describe("Durable Chats: composer and attention parity (fleet P028 P030 P031 P03
   it("P031 falls back to the prompt's first words when the title request fails, and never overrides an owner's /name", async () => {
     const { durable, launched } = await service();
     const failing = await durable.start("/work/a");
-    only(launched).answer = (request) => { if (request.method === "complete") throw new Error("model unavailable"); return request.method === "status" ? status : null; };
+    only(launched).answer = (request) => { if (request.method === "complete") throw new Error("model unavailable"); return request.method === "redact" ? request.params?.["text"] : request.method === "status" ? status : null; };
     await durable.prompt({ id: failing.id, cwd: "/work/a" }, "Fix the flaky login test in CI today please");
     await vi.waitFor(() => { expect(durable.list("/work/a", failing.id)[0]?.name).toBe("Durable · Fix the flaky login test in"); });
 
@@ -652,6 +652,39 @@ describe("Durable Chats: composer and attention parity (fleet P028 P030 P031 P03
     await durable.prompt({ id: named.id, cwd: "/work/b" }, "Fix the flaky login test");
     expect(host.requests.some((request) => request.method === "complete")).toBe(false);
     expect(durable.list("/work/b")[0]?.name).toBe("Durable · Mine");
+  });
+
+  it("N3 builds the fallback title from the prompt as the host's redactor masks it; with no redactor answer the Chat stays untitled", async () => {
+    const secret = `ghp_${"F4llb4ckS3cr3t".repeat(3)}`;
+    const prompt = `Use ${secret} to deploy the login service today`;
+    const { durable, hub, launched, locator } = await service();
+    const chat = await durable.start("/work/a");
+    const host = only(launched);
+    // The host's redactor (Workbench `sealed(redact)`): a whole-text mask before any formatting.
+    host.answer = (request) => {
+      if (request.method === "complete") throw new Error("model unavailable");
+      if (request.method === "redact") return String(request.params?.["text"]).replace(/ghp_[A-Za-z0-9]+/g, "[REDACTED:github-token]");
+      return request.method === "status" ? status : null;
+    };
+    const events = globalEvents(hub);
+    await durable.prompt({ id: chat.id, cwd: "/work/a" }, prompt);
+    await vi.waitFor(() => { expect(locator.durable(chat.id)?.nameSource).toBe("auto"); });
+    expect(host.requests.find((request) => request.method === "redact")?.params).toEqual({ text: prompt });
+    expect(locator.durable(chat.id)?.name).toBe("Use REDACTED:github-token to deploy the login");
+    const body = secret.slice(4, 16);
+    expect(JSON.stringify(locator.durable(chat.id))).not.toContain(body);
+    expect(JSON.stringify(events)).not.toContain(body);
+
+    // A host without a redactor (or one that died with the title request): no fallback title at all.
+    const second = await durable.start("/work/b");
+    const old = launched[1];
+    if (old === undefined) throw new Error("second host");
+    old.answer = (request) => { if (request.method === "complete" || request.method === "redact") throw new Error("Unknown method"); return request.method === "status" ? status : null; };
+    await durable.prompt({ id: second.id, cwd: "/work/b" }, prompt);
+    await vi.waitFor(() => { expect(old.requests.some((request) => request.method === "redact")).toBe(true); });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(locator.durable(second.id)?.name).toBeUndefined();
+    expect(JSON.stringify(events)).not.toContain(body);
   });
 
   it("P032 applies a Workstream checkpoint title without a turn, unless the owner named the Chat", async () => {
@@ -684,6 +717,54 @@ describe("Durable Chats: composer and attention parity (fleet P028 P030 P031 P03
     expect(durable.list("/work/a")).toHaveLength(1);
     // A plain startup token is only echoed, as for legacy Chats.
     await expect(durable.start("/work/a", "token-1")).resolves.toMatchObject({ startupToken: "token-1" });
+  });
+
+  it("N5 a launch whose confirmation failed stays recoverable: its pending token names the Chat, and a restarted daemon finds and confirms it without a second Chat", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-web-launches-"));
+    roots.push(root);
+    const store = new WorkstreamLaunchStore(join(root, "launches"));
+    const failing: Pick<WorkstreamLaunchStore, "reserve" | "confirm" | "lookup"> = {
+      reserve: (...args) => store.reserve(...args),
+      lookup: (token) => store.lookup(token),
+      confirm: () => Promise.reject(new Error("EIO: launch record write failed")),
+    };
+    const { durable, locator, root: dataDir } = await service(undefined, undefined, { launches: failing });
+    await expect(durable.start("/work/a", "pi-web:fleet-2")).rejects.toThrow(/EIO/);
+    const orphan = only(locator.all());
+    // The reservation already names the Chat it was made for.
+    await expect(store.lookup("pi-web:fleet-2")).resolves.toEqual({ token: "pi-web:fleet-2", cwd: "/work/a", status: "pending", sessionId: orphan.id });
+
+    // The daemon restarts: everything is rebuilt from disk.
+    const restartedLocator = new SessionRuntimeLocator(dataDir);
+    const hosts: FakeHost[] = [];
+    const restarted = new DurableChatService({ locator: restartedLocator, events: new SessionEventHub(), launch: () => { const host = new FakeHost(); hosts.push(host); return host; }, storesDir: join(dataDir, "durable"), launches: new WorkstreamLaunchStore(join(root, "launches")) });
+    // Reconcile (lookup) finds it without opening its host; a retried launch confirms it and returns the same Chat.
+    await expect(restarted.lookupWorkstreamLaunch("pi-web:fleet-2", "/work/a")).resolves.toEqual({ status: "found", sessionId: orphan.id, cwd: "/work/a" });
+    await expect(restarted.lookupWorkstreamLaunch("pi-web:fleet-2", "/work/b")).resolves.toBeUndefined();
+    expect(hosts).toHaveLength(0);
+    await expect(restarted.start("/work/a", "pi-web:fleet-2")).resolves.toMatchObject({ id: orphan.id, startupToken: "pi-web:fleet-2" });
+    await expect(store.lookup("pi-web:fleet-2")).resolves.toEqual({ token: "pi-web:fleet-2", cwd: "/work/a", status: "created", sessionId: orphan.id });
+    expect(restartedLocator.all().map((record) => record.id)).toEqual([orphan.id]);
+    // Once confirmed the token is single-use again, and another workspace cannot claim it.
+    await expect(restarted.start("/work/a", "pi-web:fleet-2")).rejects.toThrow(/already reserved/);
+    expect(restartedLocator.all()).toHaveLength(1);
+  });
+
+  it("N5 a launch whose host never opened keeps its reserved Chat ID: a retry creates that Chat, never a different one", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-web-launches-"));
+    roots.push(root);
+    const launches = new WorkstreamLaunchStore(join(root, "launches"));
+    const { durable, locator } = await service((launch) => new FakeHost(launch === 0 ? DURABLE_HOST_PROTOCOL + 1 : DURABLE_HOST_PROTOCOL), undefined, { launches });
+    await expect(durable.start("/work/a", "pi-web:fleet-3")).rejects.toThrow(/protocol/);
+    expect(locator.all()).toEqual([]);
+    const pending = await launches.lookup("pi-web:fleet-3");
+    expect(pending).toMatchObject({ status: "pending", cwd: "/work/a" });
+    await expect(durable.lookupWorkstreamLaunch("pi-web:fleet-3", "/work/a")).resolves.toBeUndefined();
+    await expect(durable.start("/work/b", "pi-web:fleet-3")).rejects.toThrow(/already reserved/);
+    const chat = await durable.start("/work/a", "pi-web:fleet-3");
+    expect(pending?.status === "pending" ? pending.sessionId : undefined).toBe(chat.id);
+    expect(locator.all().map((record) => record.id)).toEqual([chat.id]);
+    await expect(launches.lookup("pi-web:fleet-3")).resolves.toMatchObject({ status: "created", sessionId: chat.id });
   });
 
   it("P028 retains a host's package warnings in the Chat's notification inbox; dismissals follow the legacy watermark rules", async () => {

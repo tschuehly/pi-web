@@ -266,31 +266,46 @@ export class DurableChatService {
   }
 
   /**
-   * A Workstream launch token is reserved before the Chat exists and bound to it once its host runs, as for legacy
-   * Chats: a retried launch looks the token up instead of creating a second Chat.
+   * A Workstream launch token is reserved, naming the Chat ID it is for, before the Chat exists, and bound to it once
+   * its host runs. A confirmed token is single-use, as for legacy Chats (look it up instead). A launch that stopped in
+   * between (a failed confirmation, a host that never opened, a daemon that died) stays recoverable: lookup finds its
+   * Chat, and a retry with the same token in the same workspace finishes that Chat instead of creating another.
    */
   async start(cwd: string, startupToken?: string): Promise<ClientSession> {
     const launch = startupToken !== undefined && isWorkstreamLaunchToken(startupToken) ? startupToken : undefined;
     const launches = this.deps.launches;
+    const location = canonicalizeStoredCwd(cwd);
+    let id: string = randomUUID();
     if (launch !== undefined) {
       if (launches === undefined) throw new Error("Workstream launch tracking is unavailable");
-      await launches.reserve(launch, canonicalizeStoredCwd(cwd));
+      try {
+        await launches.reserve(launch, location, id);
+      } catch (error) {
+        const reserved = await launches.lookup(launch);
+        if (reserved?.status !== "pending" || reserved.sessionId === undefined || reserved.cwd !== location) throw error;
+        id = reserved.sessionId;
+      }
     }
-    const record = this.deps.locator.create(cwd);
+    const existing = this.deps.locator.durable(id);
+    const record = existing ?? this.deps.locator.create(cwd, id);
     try {
       await this.#connection(record);
     } catch (error) {
-      this.deps.locator.remove(record.id);
+      // Only a record this call made: a recovered Chat may already be in use.
+      if (existing === undefined) this.deps.locator.remove(record.id);
       throw error;
     }
-    if (launch !== undefined) await launches?.confirm(launch, canonicalizeStoredCwd(cwd), record.id);
-    return { ...this.info(record), ...(startupToken === undefined ? {} : { startupToken }) };
+    if (launch !== undefined) await launches?.confirm(launch, location, record.id);
+    return { ...this.info(this.deps.locator.durable(record.id) ?? record), ...(startupToken === undefined ? {} : { startupToken }) };
   }
 
-  /** The Durable Chat a launch token created in this workspace; undefined when it names none (ask legacy Chats). */
+  /**
+   * The Durable Chat a launch token created in this workspace, or reserved and created before its confirmation was
+   * lost; undefined when it names none (ask legacy Chats). Never opens the Chat's host.
+   */
   async lookupWorkstreamLaunch(token: string, cwd: string): Promise<{ status: "found"; sessionId: string; cwd: string } | undefined> {
     const record = await this.deps.launches?.lookup(token);
-    if (record?.status !== "created" || !this.owns(record.sessionId) || !cwdPathsEqual(record.cwd, cwd)) return undefined;
+    if (record?.sessionId === undefined || !this.owns(record.sessionId) || !cwdPathsEqual(record.cwd, cwd)) return undefined;
     return { status: "found", sessionId: record.sessionId, cwd: record.cwd };
   }
 
@@ -664,7 +679,9 @@ export class DurableChatService {
   /**
    * Legacy title rules for an untitled Chat: its first prompt with title text gets a short title from the configured
    * naming model (default the Chat's own), asked through the Chat's host outside the conversation; on failure, the
-   * prompt's first words. ponytail: no goal title after five prompts yet (legacy `auto-final`).
+   * first words of the prompt as the host's redactor masks it (whole, before formatting cuts a secret into pieces no
+   * redactor knows), or no title when the host cannot redact. ponytail: no goal title after five prompts yet (legacy
+   * `auto-final`).
    */
   #maybeTitle(ref: SessionRouteRef, text: string, connection: DurableHostConnection): void {
     const record = this.#record(ref);
@@ -684,10 +701,15 @@ export class DurableChatService {
     })().catch((error: unknown) => {
       this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat naming failed; using the first-message fallback");
       return undefined;
-    }).then((name) => {
-      this.#titling.delete(record.id);
-      this.#applyGeneratedName(record.id, name ?? fallbackSessionName(titleText), "auto", undefined);
-    });
+    }).then(async (name) => name ?? fallbackSessionName((await connection.request("redact", { text: titleText })).result))
+      .catch((error: unknown) => {
+        this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat title fallback could not be redacted; leaving the Chat untitled");
+        return undefined;
+      })
+      .then((name) => {
+        this.#titling.delete(record.id);
+        this.#applyGeneratedName(record.id, name, "auto", undefined);
+      });
   }
 
   /** PI WEB's `/session` lines (`sessionCommandService.ts`), counted from the Chat's transcript and usage. */

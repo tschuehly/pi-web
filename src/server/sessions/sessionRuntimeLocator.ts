@@ -50,8 +50,7 @@ export class SessionRuntimeLocator {
   }
 
   /** Record a new Durable Chat before its host opens the store, so a crash in between leaves a findable record. */
-  create(cwd: string, now = new Date()): DurableChatRecord {
-    const id = randomUUID();
+  create(cwd: string, id: string = randomUUID(), now = new Date()): DurableChatRecord {
     const at = now.toISOString();
     const record: DurableChatRecord = { id, cwd, runtime: "durable", storeId: id, created: at, modified: at, firstMessage: "", messageCount: 0 };
     this.#chats.set(id, record);
