@@ -61,6 +61,8 @@ export type JournalEntry = {
   violations: string[];
   /** The script turn that answered; `echo` for an unscripted request: `echo: <first line of the last user text, ≤ 60 chars>`, or `Mock title`. */
   answeredBy: { script: string; turn: number } | "echo" | "rejected";
+  /** Wire tool names the mock answered with, in order (after aliasing to the request's declared names). */
+  toolCalls: string[];
   status: number;
   /** `pending` while streaming or held at a barrier; `client-closed` when the caller went away first (Stop, a killed host). */
   outcome: "pending" | "completed" | "error" | "dropped" | "client-closed";

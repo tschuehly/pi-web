@@ -116,7 +116,7 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
     const entry: JournalEntry = {
       seq: ++seq, at: new Date().toISOString(), provider, kind, transport: "http", method: req.method ?? "POST", path,
       ...(typeof body["model"] === "string" ? { model: body["model"] } : {}),
-      headers, auth: authKind(req.headers), body, violations, answeredBy: "echo", status: 200, outcome: "pending",
+      headers, auth: authKind(req.headers), body, violations, answeredBy: "echo", toolCalls: [], status: 200, outcome: "pending",
       lastUserText: userTexts.at(-1) ?? "",
     };
     journal.push(entry);
@@ -167,7 +167,7 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
   server.on("upgrade", (req, socket) => {
     journal.push({
       seq: ++seq, at: new Date().toISOString(), provider: "openai-codex", kind: "chat", transport: "websocket", method: req.method ?? "GET", path: new URL(req.url ?? "/", "http://mock").pathname,
-      headers: redactHeaders(req.headers), auth: authKind(req.headers), body: null, violations: [], answeredBy: "rejected", status: 501, outcome: "error", lastUserText: "",
+      headers: redactHeaders(req.headers), auth: authKind(req.headers), body: null, violations: [], answeredBy: "rejected", toolCalls: [], status: 501, outcome: "error", lastUserText: "",
     });
     socket.end("HTTP/1.1 501 Not Implemented\r\nconnection: close\r\ncontent-length: 0\r\n\r\n");
   });
@@ -192,7 +192,8 @@ type Writer = {
   started: boolean;
   text(text: string): void;
   thinking(text: string): void;
-  toolCall(name: string, args: Record<string, unknown>, id: string | undefined): void;
+  /** Streams the call under the request's declared wire name and returns that name. */
+  toolCall(name: string, args: Record<string, unknown>, id: string | undefined): string;
   finish(stopReason: StopReason, usage: Usage): void;
   streamError(spec: ErrorSpec): void;
   httpError(spec: ErrorSpec): void;
@@ -219,7 +220,7 @@ async function play(steps: Step[], writer: Writer, entry: JournalEntry, res: Ser
     else if ("thinking" in step) writer.thinking(step.thinking);
     else {
       calledTool = true;
-      writer.toolCall(step.toolCall.name, step.toolCall.args ?? {}, step.toolCall.id);
+      entry.toolCalls.push(writer.toolCall(step.toolCall.name, step.toolCall.args ?? {}, step.toolCall.id));
     }
   }
   if (res.destroyed) return;
@@ -270,8 +271,13 @@ function declaredTools(body: Json): Json[] {
     }
   };
   walk(body["tools"]);
+  // Tools added mid-conversation are declared by their transcript tool_addition block (pi-ai 1.4 native tool changes).
+  for (const block of messageBlocks(body)) if (block["type"] === "tool_addition") walk([toolChange(block)["definition"]]);
   return out;
 }
+
+const messageBlocks = (body: Json): Json[] => asArray(body["messages"]).flatMap((message) => isObject(message) ? asArray(message["content"]).filter(isObject) : []);
+const toolChange = (block: Json): Json => isObject(block["tool"]) ? block["tool"] : {};
 
 const ids = () => {
   let n = 0;
@@ -294,7 +300,9 @@ function anthropicWriter(res: ServerResponse, body: Json): Writer {
       start();
       const json = JSON.stringify(args);
       const half = Math.ceil(json.length / 2);
-      block({ type: "tool_use", id: callId ?? id("toolu"), name: wireToolName(name, declared), input: {} }, [json.slice(0, half), json.slice(half)].map((part) => ({ type: "input_json_delta", partial_json: part })));
+      const wire = wireToolName(name, declared);
+      block({ type: "tool_use", id: callId ?? id("toolu"), name: wire, input: {} }, [json.slice(0, half), json.slice(half)].map((part) => ({ type: "input_json_delta", partial_json: part })));
+      return wire;
     },
     finish: (stopReason, usage) => {
       start();
@@ -351,8 +359,13 @@ function claudeViolations(headers: IncomingMessage["headers"], body: Json): stri
     else if (!CLAUDE_CODE_TOOLS.includes(name) && !name.startsWith("mcp__") && name !== "__pi_deferred_placeholder__") out.push(`${where} ${name} must be a Claude Code tool or an mcp__ alias`);
   };
   for (const tool of asArray(body["tools"])) if (isObject(tool) && tool["type"] === undefined) checkName(tool["name"], "tool");
-  for (const message of asArray(body["messages"])) {
-    for (const block of isObject(message) ? asArray(message["content"]) : []) if (isObject(block) && block["type"] === "tool_use") checkName(block["name"], "tool_use");
+  for (const block of messageBlocks(body)) {
+    if (block["type"] === "tool_use") checkName(block["name"], "tool_use");
+    // pi-ai 1.4 adds by `tool.definition`, removes (and 1.0 adds) by `tool.name` reference.
+    else if (block["type"] === "tool_addition" || block["type"] === "tool_removal") {
+      const tool = toolChange(block);
+      checkName(isObject(tool["definition"]) ? tool["definition"]["name"] : tool["name"], String(block["type"]));
+    }
   }
   return out;
 }
@@ -409,12 +422,13 @@ function codexWriter(res: ServerResponse, body: Json): Writer {
         item({ type: "custom_tool_call", id: itemId, call_id: call, name: wire, input: "" },
           [["response.custom_tool_call_input.delta", { delta: input }], ["response.custom_tool_call_input.done", { input }]],
           { type: "custom_tool_call", id: itemId, call_id: call, name: wire, input, status: "completed" });
-        return;
+        return wire;
       }
       const json = JSON.stringify(args);
       item({ type: "function_call", id: itemId, call_id: call, name: wire, arguments: "", status: "in_progress" },
         [["response.function_call_arguments.delta", { delta: json }], ["response.function_call_arguments.done", { arguments: json }]],
         { type: "function_call", id: itemId, call_id: call, name: wire, arguments: json, status: "completed" });
+      return wire;
     },
     finish: (stopReason, usage) => {
       start();
