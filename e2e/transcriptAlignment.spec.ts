@@ -5,7 +5,7 @@ import { E2E_ALL_KINDS_CHAT, E2E_MORE_CHATS, E2E_PROJECT_ID } from "./isolatedPi
 
 // The Workbench "one left rail" rule, checked on one Chat holding every transcript kind, in Tabs and a 3-tile Grid, light and dark:
 // every block starts at the transcript edge, spans to its right edge, is square and unfilled, and draws a 3px bar;
-// content starts at one x; every fold uses the hanging Lucide chevron; one gap separates blocks.
+// every heading label and message body line starts at one x (icons excluded); every fold uses the hanging Lucide chevron; one gap separates blocks.
 // Set PI_WEB_E2E_ALIGNMENT to a folder to also write the measurements (JSON) and screenshots.
 const OUT = process.env["PI_WEB_E2E_ALIGNMENT"];
 const FOCUSED = E2E_ALL_KINDS_CHAT.id;
@@ -50,7 +50,7 @@ const KINDS: { kind: string; selector: string; nested?: true }[] = [
   { kind: "tool image output", selector: "article.tool-image-output" },
 ];
 
-interface Row { kind: string; nested: boolean; found: boolean; left?: number; right?: number; bar?: string; barColour?: string; background?: string; radius?: string; contentStart?: number | undefined; marker?: string; gap?: number | undefined; afterBlock?: boolean }
+interface Row { kind: string; nested: boolean; found: boolean; left?: number; right?: number; bar?: string; barColour?: string; background?: string; radius?: string; contentStart?: number | undefined; bodyStarts?: number[] | undefined; marker?: string; gap?: number | undefined; afterBlock?: boolean }
 interface Markers { summaries: number; withoutChevron: string[]; nativeMarkers: string[]; beforeMarkers: string[]; glyphs: number; chevronLefts: number[] }
 
 async function measure(page: Page): Promise<{ chatWidth: number; workbench: boolean; dense: boolean; rows: Row[]; markers: Markers }> {
@@ -82,18 +82,20 @@ async function measure(page: Page): Promise<{ chatWidth: number; workbench: bool
       for (const child of children(element)) { const found = paintedBox(child); if (found !== undefined) return found; }
       return undefined;
     };
-    /** Visible content in document order, crossing shadow roots: text and icons; the fold chevron, message action strips and hidden labels are chrome. */
-    const contentRects = (element: Element, out: DOMRect[] = []): DOMRect[] => {
+    /** Visible content in document order, crossing shadow roots; the fold chevron, message action strips and hidden labels are chrome.
+     *  With `textOnly`, icons are skipped too: SVGs and symbol-only text such as ✓ ✖ ●, so a label is measured where its words start. */
+    const contentRects = (element: Element, textOnly = false, out: DOMRect[] = []): DOMRect[] => {
       if (getComputedStyle(element).display === "none" || element.matches(".visually-hidden, .conversation-header, pi-message-actions-menu, .chevron")) return out;
-      if (element instanceof SVGSVGElement) { const rect = element.getBoundingClientRect(); if (rect.width > 1) out.push(rect); return out; }
+      if (element instanceof SVGSVGElement) { const rect = element.getBoundingClientRect(); if (!textOnly && rect.width > 1) out.push(rect); return out; }
       const nodes = element instanceof HTMLDetailsElement && !element.open ? children(element)
         : [...(element.shadowRoot ? Array.from(element.shadowRoot.childNodes) : []), ...Array.from(element.childNodes)];
       for (const node of nodes) {
-        if (node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "") {
+        const text = node.nodeType === Node.TEXT_NODE ? (node.textContent ?? "").trim() : "";
+        if (text !== "" && !(textOnly && /^[\p{S}\p{P}\s]+$/u.test(text))) {
           const range = document.createRange();
           range.selectNodeContents(node);
           out.push(...Array.from(range.getClientRects()).filter((r) => r.width > 1 && r.height > 0));
-        } else if (node instanceof Element) contentRects(node, out);
+        } else if (node instanceof Element) contentRects(node, textOnly, out);
       }
       return out;
     };
@@ -133,7 +135,10 @@ async function measure(page: Page): Promise<{ chatWidth: number; workbench: bool
       const rect = (box ?? element).getBoundingClientRect();
       const style = getComputedStyle(box ?? element);
       const sides = [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth];
-      const content = contentRects(element)[0];
+      const content = contentRects(element, true)[0];
+      // A message's body (below its role and time heading): its first and leftmost line must sit on the same column as every heading.
+      const body = element.querySelector(".conversation-body");
+      const bodyRects = body === null ? [] : Array.from(body.children).filter((child) => !child.matches(".msg-heading")).flatMap((child) => contentRects(child, true));
       const block = element.matches("summary") ? element.parentElement ?? element : element;
       const previous = (() => { for (let prev = block.previousElementSibling; prev !== null; prev = prev.previousElementSibling) if (prev.getBoundingClientRect().height > 0) return prev; return null; })();
       return {
@@ -144,6 +149,7 @@ async function measure(page: Page): Promise<{ chatWidth: number; workbench: bool
         background: box !== undefined && fill(style) ? style.backgroundColor : "none",
         radius: style.borderTopLeftRadius,
         contentStart: content === undefined ? undefined : round(content.left - chatRect.left),
+        bodyStarts: bodyRects.length === 0 ? undefined : [round(bodyRects[0].left - chatRect.left), round(Math.min(...bodyRects.map((r) => r.left)) - chatRect.left)],
         marker: marker(findSummary(element)),
         gap: previous === null ? undefined : round(ink(block).top - ink(previous).bottom),
         afterBlock: previous !== null && isBlock(previous),
@@ -216,9 +222,10 @@ for (const layout of ["tabs", "grid"] as const) {
       expect(blocks.filter((row) => row.bar !== "3px").map((row) => `${row.kind}: ${String(row.bar)}`), "3px left bar").toEqual([]);
       expect(blocks.filter((row) => row.background !== "none").map((row) => `${row.kind}: ${String(row.background)}`), "no fill").toEqual([]);
       expect(rows.filter((row) => row.nested && row.bar !== "none").map((row) => row.kind), "nested blocks draw no second bar").toEqual([]);
-      // One content column for every kind, nested ones included.
-      const starts = rows.map((row) => row.contentStart ?? NaN);
-      expect(spread(starts), `content starts: ${rows.map((row) => `${row.kind}=${String(row.contentStart)}`).join(", ")}`).toBeLessThanOrEqual(1);
+      // One text column for every kind, nested ones included: each heading's first word, and each message body's first and leftmost line.
+      const starts = rows.flatMap((row) => [row.contentStart ?? NaN, ...(row.bodyStarts ?? [])]);
+      expect(rows.filter((row) => row.kind.endsWith("message") && row.bodyStarts === undefined).map((row) => row.kind), "message bodies measured").toEqual([]);
+      expect(spread(starts), `text starts: ${rows.map((row) => `${row.kind}=${[row.contentStart, ...(row.bodyStarts ?? [])].map(String).join("/")}`).join(", ")}`).toBeLessThanOrEqual(1);
       // One marker: every rendered summary leads with the Lucide chevron, all at one x; no native, CSS or glyph marker.
       expect(markers.summaries).toBeGreaterThan(5);
       expect(markers.withoutChevron, "summaries without the chevron").toEqual([]);

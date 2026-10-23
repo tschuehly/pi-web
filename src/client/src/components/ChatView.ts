@@ -1034,7 +1034,7 @@ export class ChatView extends LitElement {
     :host([dense]) .tool-fold { padding-block: 1px; }
     :host([dense]) .thinking-group > .thinking-text { padding-block: 4px; }
     :host([dense]) .exchange-history > summary, :host([dense]) .exchange-boundary { padding-block: 4px; }
-    /* Workbench presentation: one left rail, an inline role and time, wrapped tool output, one scroll-to-bottom button. */
+    /* Workbench presentation: one left rail, a role and time line above each message, wrapped tool output, one scroll-to-bottom button. */
     .msg-heading { display: none; }
     :host([workbench]) { --pi-tool-output-white-space: pre-wrap; --pi-tool-output-overflow-wrap: anywhere; }
     /* One left rail (Thomas's option B): every block spans the transcript, square and unfilled, with a 3px bar whose colour names its kind.
@@ -1082,9 +1082,9 @@ export class ChatView extends LitElement {
     .scroll-to-bottom:hover, .scroll-to-bottom:focus-visible { border-color: var(--pi-accent); color: var(--pi-text-bright); }
     .scroll-to-bottom:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .scroll-to-bottom svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    /* Dense tiles: the role and time float inline at the start of the first line. */
+    /* Dense tiles: the role and time sit on their own smaller line above the body, on the same text column. */
     :host([workbench][dense]) .conversation-body { padding-block: 3px; }
-    :host([workbench][dense]) .msg-heading { float: left; height: 21px; margin: 0 8px 0 0; }
+    :host([workbench][dense]) .msg-heading { margin-bottom: 2px; }
     :host([workbench][dense]) .msg-role { font-size: 10px; font-weight: 700; letter-spacing: .04em; }
     :host([workbench][dense]) .msg-time { font-size: 10px; }
     :host([dense]) conversation-meter { opacity: 0; transition: opacity .15s ease; }

@@ -187,7 +187,7 @@ function renderThinkingGroup(context: TranscriptRenderContext, group: Extract<Ch
   }
   return html`
     <details class="msg event-group thinking-group thinking ui-transcript-surface ui-transcript-activity" data-index=${group.startIndex} data-scroll-anchor-id=${anchor ?? nothing} ?open=${open} @toggle=${toggle}>
-      <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}<svg class="thinking-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 14a5 5 0 1 1 8-1H9l-3 2v-1Z"/><circle cx="4" cy="17" r="1"/></svg>Thinking</summary>
+      <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}Thinking</summary>
       ${cache(open ? segments.map((segment, offset) => {
         const body = { ...group, messages: segment.members };
         if (segment.kind === "thinking") {
@@ -305,7 +305,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
         return html`
           <details class="part thinking ui-transcript-surface ui-transcript-activity" ?open=${live(open)}
             @toggle=${(event: Event) => { context.disclosure.toggle(disclosureKey, event, true); }}>
-            <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}<svg class="thinking-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 14a5 5 0 1 1 8-1H9l-3 2v-1Z"/><circle cx="4" cy="17" r="1"/></svg>Thinking</summary>
+            <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}Thinking</summary>
             ${open ? html`<formatted-text .imagesEnabled=${context.behaviors.loadImages} .codeBlocks=${context.behaviors.codeBlocks} .intentKey=${intentKey} .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .text=${text}></formatted-text>` : nothing}
           </details>
         `;
@@ -347,7 +347,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
       // Lucide sliders-horizontal.
       return html`
         <details class="part working-mode-card">
-          <summary>${renderDisclosureChevron()}<svg class="working-mode-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 5H3"></path><path d="M12 19H3"></path><path d="M14 3v4"></path><path d="M16 17v4"></path><path d="M21 12h-9"></path><path d="M21 19h-5"></path><path d="M21 5h-7"></path><path d="M8 10v4"></path><path d="M8 12H3"></path></svg><span class="working-mode-summary">${summary}</span></summary>
+          <summary>${renderDisclosureChevron()}<span class="working-mode-summary">${summary}</span><svg class="working-mode-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 5H3"></path><path d="M12 19H3"></path><path d="M14 3v4"></path><path d="M16 17v4"></path><path d="M21 12h-9"></path><path d="M21 19h-5"></path><path d="M21 5h-7"></path><path d="M8 10v4"></path><path d="M8 12H3"></path></svg></summary>
           ${part.dials.some((dial) => dial.guidance !== undefined)
             ? html`<dl>${part.dials.map((dial) => html`<dt>${dial.label} — ${dial.value}</dt><dd>${dial.guidance ?? "Starting setting; no extra guidance."}</dd>`)}</dl>`
             : html`<p>Every dial is at its starting setting; no extra guidance applies.</p>`}
@@ -388,7 +388,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
       const open = context.disclosure.isOpen(key, part.isError);
       return html`
       <details class=${`part tool-result ui-transcript-surface ui-transcript-activity ui-transcript-tool${part.isError ? " error" : ""}`} ?open=${live(open)} @toggle=${(event: Event) => { context.disclosure.toggle(key, event, part.isError); }}>
-        <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}${part.isError ? "✖" : "✓"} ${toolActionLabel(part.toolName)} result${part.isError ? " · Failed" : ""}</summary>
+        <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}${toolActionLabel(part.toolName)} result${part.isError ? " · Failed" : ""} ${part.isError ? "✖" : "✓"}</summary>
         ${open ? html`<formatted-text .imagesEnabled=${context.behaviors.loadImages} .codeBlocks=${context.behaviors.codeBlocks} .intentKey=${intentKey} .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .text=${part.text}></formatted-text>` : nothing}
       </details>
     `;
@@ -417,8 +417,8 @@ function renderBackgroundBash(context: TranscriptRenderContext, part: Extract<Ch
   const { details } = part;
   return html`
     <details class="part background-bash-card">
-      <summary>${renderDisclosureChevron()}<span aria-hidden="true">${details.state === "complete" ? "✓" : details.state === "cancelled" ? "○" : "✖"}</span>
-        <span>${details.state} · exit ${details.exitCode === undefined ? "unknown" : String(details.exitCode)} · ${String(details.elapsedSeconds)}s</span>
+      <summary>${renderDisclosureChevron()}<span>${details.state} · exit ${details.exitCode === undefined ? "unknown" : String(details.exitCode)} · ${String(details.elapsedSeconds)}s</span>
+        <span aria-hidden="true">${details.state === "complete" ? "✓" : details.state === "cancelled" ? "○" : "✖"}</span>
         ${details.description === undefined ? html`<code class="background-bash-command" title=${details.command}>${details.command}</code>`
           : html`<span class="background-bash-command" title=${details.command}>${details.description}</span>`}
         <bash-log-button .logPath=${details.logPath} .machineId=${context.machineId}></bash-log-button>

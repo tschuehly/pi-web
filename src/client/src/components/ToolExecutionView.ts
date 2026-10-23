@@ -88,8 +88,8 @@ export class ToolExecutionView extends LitElement {
 
     const header = html`
           <div class="tool-title">
-            <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
             <strong>${toolActionLabel(execution.toolName)}</strong>
+            <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
             ${this.renderHeaderTarget(target, row.argument)}
             ${row.result === undefined ? null : html`<span class="row-result">· ${row.result}</span>`}
             ${log === undefined ? null : html`<bash-log-button .logPath=${log} .machineId=${this.machineId} @click=${(event: Event) => { event.preventDefault(); }}></bash-log-button>`}
