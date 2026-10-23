@@ -396,7 +396,7 @@ async function createSessionDaemonRuntime() {
       }),
       storesDir: join(piWebDataDir(daemonEnvironment), "durable"),
       // The same Pi loader as legacy Chats, against the daemon's active agent profile.
-      resources: (cwd) => loadDurableChatResources(cwd, activeAgentProfile.dir),
+      resources: (cwd, contributed) => loadDurableChatResources(cwd, activeAgentProfile.dir, contributed),
       config: configService,
       unread: (sessionId, cwd, change) => sessions.observeExternalSession(sessionId, cwd, change),
       notifications: notificationStore,
