@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { DURABLE_HOST_PROTOCOL, DurableChatService, durableHostArgs, type DurableHostProcess } from "./durableChatService.js";
+import { DURABLE_HOST_PROTOCOL, DurableChatService, durableHostArgs, type DurableHostProcess, forkDurableHost } from "./durableChatService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 import type { DurableChatResourceSet } from "./durableChatResources.js";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
@@ -368,6 +368,51 @@ describe("Durable Chats", () => {
     await durable.status(ref);
     expect(launched).toHaveLength(2);
   });
+
+  it("kills a host whose close and SIGTERM both hang, so stop settles, the owner exits and the next host can take the store", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-web-durable-stuck-"));
+    roots.push(root);
+    // A real host process whose close joins work that ignores cancellation: it never answers close and ignores SIGTERM.
+    // It owns the store exclusively, as the Durable store lock does: a second owner refuses while the first is alive.
+    const entry = join(root, "stuck-host.mjs");
+    await writeFile(entry, `
+      import { existsSync, readFileSync, writeFileSync } from "node:fs";
+      import { join } from "node:path";
+      const store = process.argv[process.argv.indexOf("--store") + 1];
+      const owner = join(store, "owner");
+      const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+      if (existsSync(owner) && alive(Number(readFileSync(owner, "utf8")))) process.exit(3);
+      writeFileSync(owner, String(process.pid));
+      process.on("SIGTERM", () => {});
+      process.on("message", (message) => { if (message.method !== "close") process.send({ id: message.id, result: message.method === "status" ? ${JSON.stringify(status)} : null }); });
+      setInterval(() => {}, 1000);
+      process.send({ ready: { protocol: ${String(DURABLE_HOST_PROTOCOL)} } });
+    `);
+    const locator = new SessionRuntimeLocator(root);
+    const launch = forkDurableHost({ entry, model: "faux", agentDir: root, thinkingLevel: () => "medium" });
+    const exits: (NodeJS.Signals | null)[] = [];
+    const durable = new DurableChatService({
+      locator,
+      events: new SessionEventHub(),
+      launch: (record, storeDir) => {
+        const host = launch(record, storeDir);
+        host.on("exit", (_code, signal) => { exits.push(signal); });
+        return host;
+      },
+      storesDir: join(root, "durable"),
+      closeGraceMs: 100,
+    });
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+
+    const started = Date.now();
+    await durable.stop(ref);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(exits).toEqual(["SIGKILL"]);
+    await durable.status(ref);
+    await durable.dispose();
+    expect(exits).toEqual(["SIGKILL", "SIGKILL"]);
+  }, 15_000);
 
   // P086 /quota-check: host-listed commands, run in the host under a fresh operation id.
   it("lists the host's Workbench commands and runs them in the host; /mode and unknown commands keep their paths", async () => {
