@@ -53,7 +53,8 @@ describe("ChatView transcript density", () => {
     const root = requireShadowRoot(view);
     const card = root.querySelector<HTMLDetailsElement>("details.subagent-completion");
     expect(card?.open).toBe(false);
-    expect(card?.querySelector("summary")?.textContent).toBe("Subagents finished");
+    // The summary leads with the chevron icon, whose template whitespace is text.
+    expect(card?.querySelector("summary")?.textContent.trim()).toBe("Subagents finished");
     expect(card?.closest("article")?.querySelector(".msg-header")).toBeNull();
     expect(card?.querySelector(".subagent-completion-instruction")?.textContent).toBe(content);
     // A failed receipt is an error: it never folds with the ordinary notice after it.

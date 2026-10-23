@@ -104,8 +104,10 @@ test("cards line up with message bars and one routine step needs no Activity fol
   await card.evaluate((element) => { const history = element.closest("details"); if (history !== null && history !== element) history.open = true; });
   await expect(card).toBeVisible();
   const [cardLeft, messageLeft] = await card.evaluate((element) => {
-    const assistant = element.closest("article")?.parentElement?.querySelector("article.msg.assistant");
-    return [element.getBoundingClientRect().left, assistant?.getBoundingClientRect().left];
+    // Under the Workbench rail the card's shell article draws the bar, as every block does.
+    const shell = element.closest("article");
+    const assistant = shell?.parentElement?.querySelector("article.msg.assistant");
+    return [shell?.getBoundingClientRect().left, assistant?.getBoundingClientRect().left];
   });
   expect(cardLeft).toBe(messageLeft);
   await expect(transcript(page).locator("details.activity-group")).toHaveCount(0);

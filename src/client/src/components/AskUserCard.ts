@@ -459,9 +459,10 @@ export class AskUserCard extends LitElement {
     .card {
       --question-number-column: 25px;
       --question-copy-gap: 5px;
-      border: 1px solid var(--pi-border);
-      border-radius: 10px;
-      background: var(--pi-surface);
+      /* A transcript that draws its own frame (the Workbench rail) replaces these and aligns text with --ui-transcript-inline-start. */
+      border: var(--ask-card-border, 1px solid var(--pi-border));
+      border-radius: var(--ask-card-radius, 10px);
+      background: var(--ask-card-bg, var(--pi-surface));
     }
     .card-header {
       position: sticky;
@@ -472,10 +473,10 @@ export class AskUserCard extends LitElement {
       justify-content: space-between;
       gap: 12px;
       min-height: 22px;
-      padding: 7px 10px 6px;
+      padding: 7px 10px 6px var(--ui-transcript-inline-start, 10px);
       border-bottom: 1px solid color-mix(in srgb, var(--pi-border-muted) 35%, transparent);
-      border-radius: 9px 9px 0 0;
-      background: var(--pi-surface);
+      border-radius: var(--ask-card-radius, 9px) var(--ask-card-radius, 9px) 0 0;
+      background: var(--ask-card-bg, var(--pi-surface));
       box-shadow: 0 8px 18px var(--pi-shadow-soft);
     }
     h2, h3, p { margin-top: 0; }
@@ -493,7 +494,7 @@ export class AskUserCard extends LitElement {
     .stale { color: var(--pi-warning); font-weight: 650; }
     .question-ref { color: var(--pi-muted); font-size: 11px; font-weight: 500; }
     .recommended { margin-inline-start: 4px; padding: 1px 6px; border-radius: 999px; background: var(--pi-success-bg); color: var(--pi-success); font-size: 11px; font-weight: 650; }
-    .ask-context { display: block; padding: 12px 16px 0; }
+    .ask-context { display: block; padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
     /* In the question drawer: the set's context beside its questions, stacked again when narrow. */
     :host([context-beside]) .open-card:has(.ask-context) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
     :host([context-beside]) .open-card .card-header { grid-column: 1 / -1; }
@@ -505,7 +506,7 @@ export class AskUserCard extends LitElement {
       min-width: 0;
       margin: 0;
       border: 0;
-      padding: 0 16px 16px;
+      padding: 0 16px 16px var(--ui-transcript-inline-start, 16px);
       background: transparent;
     }
     /* Its own element: a fieldset's top border would paint through the middle of its legend. */
@@ -614,9 +615,9 @@ export class AskUserCard extends LitElement {
       text-underline-offset: 2px;
     }
     .confirmation-actions { flex: 0 0 auto; display: flex; gap: 7px; }
-    .record-summary { margin: 0; color: var(--pi-muted); padding: 12px 16px; font-size: 12px; }
+    .record-summary { margin: 0; color: var(--pi-muted); padding: 12px 16px 12px var(--ui-transcript-inline-start, 16px); font-size: 12px; }
     .record-questions { display: grid; }
-    .record-question { min-width: 0; padding: 14px 16px; }
+    .record-question { min-width: 0; padding: 14px 16px 14px var(--ui-transcript-inline-start, 16px); }
     .record-question + .record-question { border-top: 1px solid var(--pi-border-muted); }
     .record-question h3 { display: grid; grid-template-columns: var(--question-number-column) minmax(0, 1fr); align-items: start; gap: var(--question-copy-gap); margin-bottom: 8px; font-size: 14px; line-height: 1.35; }
     .record-answers { display: grid; gap: 4px; margin: 0; padding-left: 22px; line-height: 1.4; }
@@ -626,9 +627,9 @@ export class AskUserCard extends LitElement {
     @container (max-width: 580px) {
       :host([context-beside]) .open-card:has(.ask-context) { display: block; }
       :host([context-beside]) .open-card .ask-context { position: static; max-height: none; padding: 12px 12px 0; border-right: 0; }
-      fieldset.question { padding: 0 12px 14px; }
-      .record-question { padding: 14px 12px; }
-      .record-summary, .ask-context { padding-inline: 12px; }
+      fieldset.question { padding: 0 12px 14px var(--ui-transcript-inline-start, 12px); }
+      .record-question { padding: 14px 12px 14px var(--ui-transcript-inline-start, 12px); }
+      .record-summary, .ask-context { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
       .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
       :host([context-beside]) .form-footer { border-radius: 0 0 9px 9px; }
       .partial-confirmation { align-items: stretch; flex-direction: column; }

@@ -82,10 +82,11 @@ describe("Workbench transcript on the upstream chat surface", () => {
       { role: "system", entryId: "s", parts: [{ type: "subagentCompletion", text: "Collect results" }] },
     ]);
     expect(root.querySelector(".working-mode-card dt")?.textContent).toContain("Pace — fast");
-    expect(root.querySelector(".goal-lifecycle summary")?.textContent).toBe("Goal started");
+    // The summary leads with the chevron icon, whose template whitespace is text.
+    expect(root.querySelector(".goal-lifecycle summary")?.textContent.trim()).toBe("Goal started");
     expect(root.querySelector(".background-bash-card summary")?.textContent).toContain("failed · exit 1 · 3s");
     expect(root.querySelector(".background-bash-card bash-log-button")).toHaveProperty("logPath", "/tmp/job.log");
-    expect(root.querySelector(".subagent-completion summary")?.textContent).toBe("Subagents finished");
+    expect(root.querySelector(".subagent-completion summary")?.textContent.trim()).toBe("Subagents finished");
     expect(root.querySelectorAll(".msg-header")).toHaveLength(0);
   });
 
