@@ -35,6 +35,24 @@ function shortModel(model: string | undefined): string | undefined {
   return model?.split("/").at(-1)?.replace(/-\d{8}$/, "");
 }
 
+const MODEL_NICKNAMES: readonly (readonly [RegExp, string])[] = [[/opus/u, "Opus"], [/sonnet/u, "Sonnet"], [/fable/u, "Fable"], [/haiku/u, "Haiku"], [/astra/u, "Astra"], [/sol\b/u, "Sol"], [/luna/u, "Luna"], [/grok/u, "Grok"]];
+const SIGNAL_BARS = ["M2 20h.01", "M7 20v-4", "M12 20v-8", "M17 20V8", "M22 4v16"];
+const ZAP = "M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z";
+/** Lucide signal-zero … signal for minimal … xhigh; max adds a zap. */
+const EFFORT_BARS: Readonly<Record<string, number>> = { minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, max: 5 };
+
+/** The model's nickname (one version of each is in use); unknown models keep their short id. */
+function modelNickname(model: string | undefined): string | undefined {
+  const short = shortModel(model);
+  return short === undefined ? undefined : MODEL_NICKNAMES.find(([pattern]) => pattern.test(short))?.[1] ?? short;
+}
+
+function effortIcon(effort: string | undefined): TemplateResult | typeof nothing {
+  const bars = effort === undefined ? undefined : EFFORT_BARS[effort];
+  if (bars === undefined || effort === undefined) return nothing;
+  return html`<svg class="effort" role="img" aria-label=${`${effort} effort`} viewBox="0 0 24 24">${SIGNAL_BARS.slice(0, bars).map((d) => svg`<path d=${d}></path>`)}</svg>${effort === "max" ? html`<svg class="effort zap" aria-hidden="true" viewBox="0 0 24 24">${svg`<path d=${ZAP}></path>`}</svg>` : nothing}`;
+}
+
 function since(iso: string | undefined, now: number): number | undefined {
   return iso === undefined ? undefined : now - Date.parse(iso);
 }
@@ -132,13 +150,15 @@ export class DelegateRoster extends LitElement {
   private renderDelegate(item: DelegateActivityItem, outcome: DelegateOutcome, now: number): TemplateResult {
     const kind = item.kind === "worker" ? "Worker" : "Subagent";
     const details = [kind, item.role, shortModel(item.model), item.effort].filter(Boolean).join(" · ");
+    const nickname = modelNickname(item.model);
+    const model = nickname === undefined || item.model === undefined ? undefined : { label: html`${nickname}${effortIcon(item.effort)}`, title: item.effort === undefined ? item.model : `${item.model} · ${item.effort} effort` };
     const reportAge = since(item.reportedAt ?? item.startedAt, now);
     const ended = item.endedAt === undefined ? undefined : Date.parse(item.endedAt);
     if (outcome !== "running") {
       const raw = capitalized((item.activity ?? "").replaceAll("_", " "));
       return this.renderRow({
         key: `delegate:${item.id}`, tone: outcome === "cancelled" ? "muted" : outcome, shape: ICONS[outcome], iconLabel: `${kind}, ${OUTCOME_LABEL[outcome].toLowerCase()}`,
-        name: item.name ?? "Unnamed", nameTitle: details, report: item.reportedStatus, reportLabel: "Status", fallback: "No status report received",
+        name: item.name ?? "Unnamed", nameTitle: details, model, report: item.reportedStatus, reportLabel: "Status", fallback: "No status report received",
         status: outcome === "failed" ? raw : OUTCOME_LABEL[outcome],
         statusTitle: outcome === "done" ? "Finished; its result is waiting to be collected" : `${OUTCOME_LABEL[outcome]}: ${raw.toLowerCase()}`,
         elapsed: ended === undefined || item.startedAt === undefined ? undefined : ended - Date.parse(item.startedAt),
@@ -149,7 +169,7 @@ export class DelegateRoster extends LitElement {
     const age = reportAge === undefined ? undefined : formatAge(reportAge);
     return this.renderRow({
       key: `delegate:${item.id}`, tone: "running", shape: item.kind === "worker" ? ICONS.worker : ICONS.subagent, iconLabel: `${kind}, running`,
-      name: item.name ?? "Unnamed", nameTitle: details, report: item.reportedStatus, reportLabel: "Status", fallback: "Waiting for its first status report",
+      name: item.name ?? "Unnamed", nameTitle: details, model, report: item.reportedStatus, reportLabel: "Status", fallback: "Waiting for its first status report",
       status: reportAge === undefined || age === undefined ? nothing
         : quiet ? html`${icon(ICONS.quiet, "quiet-icon")}Quiet ${formatElapsed(reportAge)}`
         : html`<span class="visually-hidden">${item.reportedAt === undefined ? "Started" : "Reported"} </span>${age}`,
@@ -159,13 +179,15 @@ export class DelegateRoster extends LitElement {
   }
 
   private renderRow(row: {
-    key: string; tone: Tone; shape: TemplateResult; iconLabel: string; name: string; nameTitle?: string;
+    key: string; tone: Tone; shape: TemplateResult; iconLabel: string; name: string; nameTitle?: string; model?: { label: TemplateResult; title: string } | undefined;
     report: string | undefined; reportLabel?: string; fallback?: string; status: unknown; statusTitle?: string | undefined; quiet?: boolean;
     elapsed: number | undefined; elapsedLabel?: string;
   }): TemplateResult {
     return html`<div class="row ${row.tone}" data-row-key=${row.key}>
       <span class="kind" role="img" aria-label=${row.iconLabel} title=${row.iconLabel}>${icon(row.shape)}</span>
-      <strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong>
+      ${row.model === undefined
+        ? html`<strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong>`
+        : html`<span class="who"><strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong><span class="model" title=${row.model.title}>${row.model.label}</span></span>`}
       ${row.report === undefined
         ? html`<span class="report fallback">${row.fallback}</span>`
         : html`<span class="report" title=${row.report}>${row.reportLabel === undefined ? nothing : html`<span class="visually-hidden">${row.reportLabel}: </span>`}${row.report}</span>`}
@@ -225,6 +247,10 @@ export class DelegateRoster extends LitElement {
     .row.muted { --tone: var(--pi-muted); }
     .kind { display: flex; color: var(--tone); }
     .icon { width: 14px; height: 14px; }
+    .who { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+    .model { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px; color: var(--pi-muted); font-size: 11px; white-space: nowrap; }
+    .model .effort { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .model .effort.zap { width: 10px; height: 10px; margin-left: -2px; stroke-width: 2; }
     .name { min-width: 0; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
     .report { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .report.fallback { color: var(--pi-muted); font-style: italic; }

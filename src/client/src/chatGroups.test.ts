@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalEntryActionHeaders, groupChatMessages, groupConsecutiveImageOutputs, summarizeChatGroup, type ChatGroup } from "./chatGroups";
+import { canonicalEntryActionHeaders, groupChatMessages, groupConsecutiveImageOutputs, splitNoticeText, summarizeChatGroup, type ChatGroup } from "./chatGroups";
 import type { ChatLine } from "./chatTypes";
 
 const text = (role: ChatLine["role"], value: string): ChatLine => ({ role, parts: [{ type: "text", text: value }] });
@@ -279,6 +279,54 @@ describe("groupChatMessages", () => {
       { role: "assistant", parts: [{ type: "toolCall", toolName: "read", summary: "newer" }] },
       text("assistant", "answer"),
     ], 8))[0]).toMatchObject({ kind: "group", startIndex: 8, endIndex: 9 });
+  });
+});
+
+describe("notice folding", () => {
+  const diskLow = text("system", "Disk low: 9 GB free.");
+  const cacheMiss: ChatLine = { ...text("system", "Prompt cache miss"), severity: "warning" };
+  const decision = text("system", "#73 Decision: Two columns\nThe owner picked two columns.");
+
+  it("folds consecutive notices, warnings included, into one notices group and keeps a lone notice a message", () => {
+    expect(legacyGroups(groupChatMessages([diskLow, cacheMiss, decision, text("assistant", "ok"), diskLow], 5))).toEqual([
+      { kind: "group", presentation: "notices", startIndex: 5, endIndex: 7, messages: [diskLow, cacheMiss, decision] },
+      { kind: "message", index: 8, message: text("assistant", "ok") },
+      { kind: "message", index: 9, message: diskLow },
+    ]);
+  });
+
+  it("splits notice groups at any non-notice between them", () => {
+    const between: ChatLine[] = [
+      text("assistant", "reply"),
+      { role: "tool", parts: [{ type: "toolExecution", toolName: "bash", summary: "df", status: "success" }] },
+      text("user", "question"),
+      { ...text("system", "Compacted history"), source: "compaction" },
+    ];
+    for (const line of between) {
+      const groups = groupChatMessages([diskLow, diskLow, line, diskLow, diskLow]);
+      expect(groups.filter((group) => group.kind === "group" && group.presentation === "notices").map((group) => group.kind === "group" ? group.messages.map((member) => member.index) : []), line.role).toEqual([[0, 1], [3, 4]]);
+    }
+  });
+
+  it("never folds error notices or special cards", () => {
+    const special: ChatLine[] = [
+      { ...text("system", "Model response failed: boom"), severity: "error" },
+      { role: "system", parts: [{ type: "workingMode", dials: [{ label: "Alignment", value: "ask" }] }] },
+      { role: "system", parts: [{ type: "goalLifecycle", details: { schemaVersion: 1, goalId: "g1", transition: "start", state: "active" } }] },
+      { role: "system", parts: [{ type: "subagentCompletion", text: "Subagents finished" }] },
+      { role: "system", parts: [{ type: "backgroundBash", details: { id: "j1", command: "npm test", state: "complete", elapsedSeconds: 1, logPath: "/x.log" }, output: "" }] },
+    ];
+    for (const line of special) {
+      const groups = groupChatMessages([diskLow, line, diskLow]);
+      expect(groups.some((group) => group.kind === "group" && group.presentation === "notices")).toBe(false);
+      expect(groups[0]).toEqual({ kind: "message", index: 0, message: diskLow });
+      expect(groups.at(-1)).toEqual({ kind: "message", index: 2, message: diskLow });
+    }
+  });
+
+  it("splits a notice into its first line and the rest", () => {
+    expect(splitNoticeText(decision)).toEqual({ first: "#73 Decision: Two columns", rest: "The owner picked two columns." });
+    expect(splitNoticeText(diskLow)).toEqual({ first: "Disk low: 9 GB free.", rest: "" });
   });
 });
 

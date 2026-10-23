@@ -46,7 +46,7 @@ it("keeps the same Info button and focus while showing and hiding a separate met
 
 it("keeps conversational roles available to assistive technology without repeated visual headings", async () => {
   const view = new ChatView();
-  view.messages = [{ ...message, role: "user", entryId: "request" }, message, { ...message, role: "system", entryId: "notice" }];
+  view.messages = [{ ...message, role: "user", entryId: "request" }, message, { ...message, role: "system", entryId: "notice", severity: "error" }]; // Plain text system lines are quiet notices without headers (ISSUE-099).
   document.body.append(view);
   await view.updateComplete;
 

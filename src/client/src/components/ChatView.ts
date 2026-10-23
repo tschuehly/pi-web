@@ -1002,6 +1002,25 @@ export class ChatView extends LitElement {
     .background-bash-output { max-height: 240px; overflow: auto; white-space: pre; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     .background-bash-log { display: flex; align-items: center; gap: 8px; }
     .background-bash-log code { overflow-wrap: anywhere; min-width: 0; }
+    /* Extension notices (Disk low, Atelier events, cache misses): one muted line; consecutive ones fold into "N notices". */
+    .msg.notice-line, .group-msg.notice-line { --pi-paragraph-gap: 2px; color: var(--pi-muted); font-size: 12px; line-height: 1.4; }
+    .msg.notice-line { margin: 0 0 6px; padding: 0 2px; }
+    .group-msg.notice-line { padding: 1px 0; }
+    .notice > summary, .notice-fold > summary { display: flex; align-items: center; gap: 5px; min-width: 0; width: fit-content; max-width: 100%; list-style: none; cursor: pointer; }
+    .notice > summary::-webkit-details-marker, .notice-fold > summary::-webkit-details-marker { display: none; }
+    .notice > summary:hover, .notice[open] > summary, .notice-fold > summary:hover, .notice-fold[open] > summary { color: var(--pi-text); }
+    .notice > summary:focus-visible, .notice-fold > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; border-radius: 4px; }
+    .notice > summary .chevron .tab-icon, .notice-fold > summary .chevron .tab-icon { width: 12px; height: 12px; }
+    /* Expanded, a notice's first line wraps so its end stays readable; an open fold drops its preview because its body repeats it in full. */
+    .notice[open] > summary, .notice-fold[open] .notice > summary { align-items: flex-start; }
+    .notice[open] > summary .chevron, .notice-fold[open] .notice > summary .chevron { margin-block-start: 0.2em; }
+    .notice > summary .disclosure-preview, .notice-fold > summary .disclosure-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .notice[open] > summary .disclosure-preview, .notice-fold[open] .notice > summary .disclosure-preview { white-space: normal; overflow-wrap: anywhere; }
+    .notice-fold[open] > summary .disclosure-preview { display: none; }
+    details.notice > formatted-text { margin: 2px 0 0 17px; }
+    .notice-fold { margin: 0 0 6px; color: var(--pi-muted); font-size: 12px; line-height: 1.4; }
+    .notice-fold-count { flex: 0 0 auto; font-weight: 600; }
+    .notice-fold > .group-body { padding: 2px 0 2px 17px; }
     .subagent-completion { color: var(--pi-muted); font-size: 12px; }
     .subagent-completion > summary { width: fit-content; }
     .subagent-completion-instruction { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text); }
@@ -1016,6 +1035,7 @@ export class ChatView extends LitElement {
     :host([dense]) .msg.conversation-layout { padding: 0; }
     :host([dense]) .conversation-body { padding: 6px 8px; }
     :host([dense]) .transcript-content { padding: 4px 8px; }
+    :host([dense]) .msg.notice-line, :host([dense]) .notice-fold { margin: 0 0 3px; }
     :host([dense]) .part + .part { margin-top: 4px; }
     :host([dense]) .msg.skill-read-shell, :host([dense]) .msg.goal-lifecycle-shell, :host([dense]) .msg.subagent-completion-shell { padding: 2px 8px; }
     :host([dense]) .tool-fold { padding: 1px 8px; }

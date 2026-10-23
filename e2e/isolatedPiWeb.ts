@@ -61,6 +61,12 @@ type SeededAsk = { askId: string; context: string; questions: readonly unknown[]
 export const E2E_LONG_CHAT = { id: "019ef4c0-0000-7000-8000-00000000e2e7", question: "Migrate the build", turns: 60 } as const;
 /** Three more Chats like `E2E_LONG_CHAT`, so a Grid can hold four long transcripts. */
 export const E2E_MORE_LONG_CHAT_IDS = ["019ef4c0-0000-7000-8000-00000000e2e8", "019ef4c0-0000-7000-8000-00000000e2e9", "019ef4c0-0000-7000-8000-00000000e2ea"] as const;
+/** Three Chats whose transcripts interleave assistant replies and tool steps with extension notices (Disk low, Atelier events) and a failed model response. */
+export const E2E_NOTICE_CHATS = [
+  { id: "019ef4c0-0000-7000-8000-00000000e2eb", question: "Free disk space and apply the release decision" },
+  { id: "019ef4c0-0000-7000-8000-00000000e2ec", question: "Check the storage budget" },
+  { id: "019ef4c0-0000-7000-8000-00000000e2ed", question: "Review the Atelier page" },
+] as const;
 export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
 export const E2E_SIBLING_BODY = "export const seededSiblingBody = true;";
 export const E2E_PLAN = [
@@ -104,6 +110,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await seedChat(sessionDir, project, E2E_ASK_CHAT.id, "One question on how they go live.", E2E_ASK_CHAT.question, 3, E2E_ASK_CHAT.ask);
     await seedChat(sessionDir, project, E2E_CROWDED_ASK_CHAT.id, "Twelve questions before it starts.", E2E_CROWDED_ASK_CHAT.question, 3, E2E_CROWDED_ASK_CHAT.ask);
     for (const id of [E2E_LONG_CHAT.id, ...E2E_MORE_LONG_CHAT_IDS]) await seedLongChat(sessionDir, project, id);
+    for (const chat of E2E_NOTICE_CHATS) await seedNoticeChat(sessionDir, project, chat.id, chat.question);
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
@@ -220,6 +227,45 @@ async function seedLongChat(sessionDir: string, cwd: string, sessionId: string):
     }
     push(assistant([{ type: "text", text: `## Step ${step}\n\nThe check passed. Changes:\n\n- updated the config\n- **renamed** the \`build\` script\n\n\`\`\`ts\n${Array.from({ length: 8 }, (_, line) => `export const step${step}Line${String(line + 1)} = ${String(line)};`).join("\n")}\n\`\`\`` }], "stop"));
   }
+  await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+}
+
+/** Makes a notice's first line far wider than a Grid tile; its end must stay readable once expanded. */
+export const E2E_NOTICE_FIRST_LINE_END = "DO NOT publish until security approval";
+const LONG_FIRST_LINE_TAIL = `after the final copy review, the legal sign-off on the pricing table, the German and Japanese localisation pass, the accessibility audit of the download flow and the CDN cache warm-up, and ${E2E_NOTICE_FIRST_LINE_END}`;
+
+/** Replies and tool steps with three consecutive notices (two Disk low, one Atelier Decision), one lone Atelier Comment and a failed model response between them, then a lone multi-line Atelier Decision. */
+async function seedNoticeChat(sessionDir: string, cwd: string, sessionId: string, question: string): Promise<void> {
+  const ms = Date.now();
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const entries: object[] = [{ type: "session", version: 3, id: sessionId, timestamp: new Date(ms).toISOString(), cwd }];
+  let parentId: string | null = null;
+  const push = (entry: object) => {
+    const id = `note${String(entries.length).padStart(5, "0")}`;
+    const at = ms + 1000 * entries.length;
+    entries.push({ id, parentId, timestamp: new Date(at).toISOString(), ...entry });
+    parentId = id;
+  };
+  const message = (body: object) => { push({ type: "message", message: { ...body, timestamp: ms + 1000 * entries.length } }); };
+  const assistant = (content: object[], stopReason = "stop", extra: object = {}) => { message({ role: "assistant", content, api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason, ...extra }); };
+  const notice = (customType: string, content: string, details: object = {}) => { push({ type: "custom_message", customType, content, display: true, details }); };
+  const bash = (id: string, command: string, output: string) => {
+    assistant([{ type: "toolCall", id, name: "bash", arguments: { command } }], "toolUse");
+    message({ role: "toolResult", toolCallId: id, toolName: "bash", content: [{ type: "text", text: output }], isError: false });
+  };
+  message({ role: "user", content: [{ type: "text", text: question }] });
+  bash("call-df", "df -h /", "/dev/disk3s5  460Gi  451Gi  9Gi  98% /");
+  assistant([{ type: "text", text: "Only 9 GB free. I'll clear the build caches first." }]);
+  notice("storage-guard", "Disk low: 9 GB free. Clear caches before large builds.");
+  notice("storage-guard", "Disk low: 8 GB free. Clear caches before large builds.");
+  notice("atelier:immediate", `#73 Decision “Release layout”: Two columns ${LONG_FIRST_LINE_TAIL}\nThe owner picked the two-column layout for the release page.`, { page: "release.html", seqs: [73], replay: false });
+  bash("call-clean", "rm -rf node_modules/.cache dist", "");
+  assistant([{ type: "text", text: "Cleared 14 GB. The release page now uses the two-column layout." }]);
+  notice("atelier:immediate", "#74 Comment on the hero: make the headline shorter.", { page: "release.html", seqs: [74], replay: false });
+  assistant([], "error", { errorMessage: "rate limited, retry later" });
+  message({ role: "user", content: [{ type: "text", text: "Shorten the headline too." }] });
+  assistant([{ type: "text", text: "Done: the headline is now “Release 2.0”." }]);
+  notice("atelier:immediate", `#75 Decision “Launch”: Ship Friday ${LONG_FIRST_LINE_TAIL}\nThe owner chose Friday.`, { page: "release.html", seqs: [75], replay: false });
   await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 }
 

@@ -3,10 +3,23 @@ import type { ChatLine, ChatPart } from "./chatTypes";
 
 /**
  * How a technical group renders: `thinking` stays open and folds routine tool calls,
- * `activity` collapses routine tool calls, `history` collapses compaction summaries;
+ * `activity` collapses routine tool calls, `history` collapses compaction summaries, `notices` folds consecutive quiet notices;
  * no presentation means visible events (failures, material writes).
  */
-export type ChatGroupPresentation = "activity" | "thinking" | "history";
+export type ChatGroupPresentation = "activity" | "thinking" | "history" | "notices";
+
+/** A text-only system line such as an extension notice (Disk low, Atelier events, cache misses); errors and history summaries stay full messages. */
+export function isQuietNotice(message: ChatLine): boolean {
+  return message.role === "system" && message.severity !== "error" && message.source === undefined
+    && message.parts.length > 0 && message.parts.every((part) => part.type === "text");
+}
+
+/** A notice's first line, shown on its own quiet line, and the rest, shown when expanded. */
+export function splitNoticeText(message: ChatLine): { first: string; rest: string } {
+  const text = message.parts.map((part) => part.type === "text" ? part.displayText ?? part.text : "").join("\n").trim();
+  const newline = text.indexOf("\n");
+  return newline < 0 ? { first: text, rest: "" } : { first: text.slice(0, newline).trim(), rest: text.slice(newline + 1).trim() };
+}
 
 export type ChatGroup =
   | { kind: "message"; message: ChatLine; index: number }
@@ -79,6 +92,17 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
     groups.push({ kind: "group", messages: [{ message, index }], startIndex: index, endIndex: index, ...(presentation === undefined ? {} : { presentation }) });
   };
 
+  // A lone notice stays a message; the second consecutive one turns both into a "notices" group.
+  const pushNotice = (message: ChatLine, index: number) => {
+    const previous = groups.at(-1);
+    if (previous?.kind === "group" && previous.presentation === "notices") {
+      previous.messages.push({ message, index });
+      previous.endIndex = index;
+    } else if (previous?.kind === "message" && isQuietNotice(previous.message)) {
+      groups[groups.length - 1] = { kind: "group", presentation: "notices", messages: [{ message: previous.message, index: previous.index }, { message, index }], startIndex: previous.index, endIndex: index };
+    } else groups.push({ kind: "message", message, index });
+  };
+
   messages.forEach((message, localIndex) => {
     const index = indexOffset + localIndex;
     const metadata = { ...(message.streamId === undefined ? {} : { streamId: message.streamId }), ...(message.entryId === undefined ? {} : { entryId: message.entryId }), ...(message.source === undefined ? {} : { source: message.source }), ...(message.severity === undefined ? {} : { severity: message.severity }), ...(message.meta === undefined ? {} : { meta: message.meta }) };
@@ -96,6 +120,7 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
       if (kind === "thinking" || kind === "activity" || kind === "history") pushGroup(splitMessage, index, kind);
       else if (kind === "event") pushGroup(splitMessage, index);
       else if (splitMessage.role === "skill" && skillContinuesThinking(groups)) pushGroup(splitMessage, index);
+      else if (isQuietNotice(splitMessage)) pushNotice(splitMessage, index);
       else if (isToolImageMessage(splitMessage)) {
         const toolName = toolNameFromParts(message.parts);
         groups.push({ kind: "tool-image", message: splitMessage, index, ...(toolName === undefined ? {} : { toolName }) });

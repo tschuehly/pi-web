@@ -4,7 +4,7 @@ import { cache } from "lit/directives/cache.js";
 import { MessageActionsMenu } from "./chat/MessageActionsMenu";
 import { renderSessionWarningIcon } from "./shared";
 import { chatToolOutputLabel } from "./chat/transcriptLabels";
-import { chatMessageHasHeader, summarizeChatGroup, type ChatDisplayGroup, type ChatGroup } from "../chatGroups";
+import { chatMessageHasHeader, isQuietNotice, splitNoticeText, summarizeChatGroup, type ChatDisplayGroup, type ChatGroup } from "../chatGroups";
 import { latestWorkingModeDials, previewFromDetails, workingModeSummary } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
 import { toolActionLabel } from "./ToolExecutionView";
@@ -68,7 +68,18 @@ function renderMessageHeading(context: TranscriptRenderContext, message: ChatLin
   return html`<div class="msg-heading"><b class="msg-role" aria-hidden="true">${message.role}</b>${time === undefined ? nothing : html`<time class="msg-time" datetime=${timestamp ?? nothing} title=${context.metadata.label(message)}>${time}</time>`}</div>`;
 }
 
+/** One quiet line; a multi-line notice expands to show the rest. */
+function renderNotice(context: TranscriptRenderContext, message: ChatLine, index: number) {
+  const { first, rest } = splitNoticeText(message);
+  const formatted = (text: string) => html`<formatted-text .intentKey=${JSON.stringify([context.machineId, context.sessionId, message.entryId ?? index, "notice"])} .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .text=${text}></formatted-text>`;
+  if (rest === "") return html`<div class="notice" dir="auto">${formatted(first)}</div>`;
+  return html`<details class="notice"><summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><span class="disclosure-preview" dir="auto">${first}</span></summary>${formatted(rest)}</details>`;
+}
+
 export function renderMessage(context: TranscriptRenderContext, message: ChatLine, index: number, entryActionHeaders: ReadonlySet<ChatLine>) {
+    if (isQuietNotice(message)) return html`
+      <article class=${`msg system notice-line${message.severity === undefined ? "" : ` ${message.severity}`}`} data-index=${index} data-scroll-anchor-id=${context.anchors.message(index, message) ?? nothing} data-entry-id=${message.entryId ?? nothing}>${renderNotice(context, message, index)}</article>
+    `;
     const hasHeader = chatMessageHasHeader(message);
     const conversationClass = hasHeader && (message.role === "user" || message.role === "assistant") ? " conversation-message conversation-layout" : "";
     const severity = message.severity === undefined ? "" : ` ${message.severity}`;
@@ -145,6 +156,12 @@ export function renderMessageGroup(context: TranscriptRenderContext, group: Extr
       <div class="event-group visible-events" data-index=${startIndex} data-scroll-anchor-id=${anchor ?? nothing}>${renderMessageGroupBody(context, group, entryActionHeaders)}</div>
     `;
     if (presentation === "thinking") return renderThinkingGroup(context, group, entryActionHeaders, disclosure);
+    if (presentation === "notices") return html`
+      <details class="event-group notice-fold" data-index=${startIndex} data-scroll-anchor-id=${anchor ?? nothing} ?open=${open} @toggle=${toggle}>
+        <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><span class="notice-fold-count">${messages.length} notices</span><span class="disclosure-preview" dir="auto">${messages.map((event) => splitNoticeText(event.message)).at(-1)?.first}</span></summary>
+        ${renderMessageGroupBody(context, group, entryActionHeaders)}
+      </details>
+    `;
     const summary = presentation === "history"
       ? html`<strong>${summarizeChatGroup(messages.map((event) => event.message))}</strong><span class="group-note">Context compacted</span>`
       : html`<strong>Activity</strong><span>${activityStepLabel(messages.map((event) => event.message))}</span>`;
@@ -214,6 +231,8 @@ export function renderMessageGroupBody(context: TranscriptRenderContext, { messa
       <div class="group-body">
         ${messages.map(({ message, index }, offset) => {
           const severity = message.severity === undefined ? "" : ` ${message.severity}`;
+          if (isQuietNotice(message)) return html`
+            <article class=${`group-msg system notice-line${severity}`} data-index=${index} data-scroll-anchor-id=${context.anchors.event(index, message) ?? nothing} data-entry-id=${message.entryId ?? nothing}>${renderNotice(context, message, index)}</article>`;
           return html`
             <section class=${`group-msg ${message.role}${severity} ui-transcript-surface`} data-index=${index} data-scroll-anchor-id=${context.anchors.event(index, message) ?? nothing} data-entry-id=${message.entryId ?? nothing}>
               ${chatMessageHasHeader(message) ? html`<div class="transcript-content">${renderMessageHeader(context, message, `${String(startIndex)}:${String(offset)}`, index, entryActionHeaders)}</div>` : null}
