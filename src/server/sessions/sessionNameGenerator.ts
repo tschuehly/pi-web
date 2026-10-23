@@ -37,8 +37,16 @@ export function sessionTitleInput(prompt: string): string | undefined {
   return argument.split(/\s+/).filter(Boolean).length <= SKILL_ONLY_MAX_ARGUMENT_WORDS ? undefined : argument;
 }
 
+/** The system prompt of every title request. */
+export const SESSION_TITLE_SYSTEM_PROMPT = "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.";
+
+/** The request text of a first-prompt title. */
+export function shortSessionNamePrompt(firstMessage: string): string {
+  return `Create a 2-6 word title for this request:\n\n${truncateInput(firstMessage)}`;
+}
+
 export function generateShortSessionName<TApi extends Api>(streamFn: StreamFn, model: Model<TApi>, firstMessage: string, options: SessionNameGenerationOptions = {}): Promise<string | undefined> {
-  return requestSessionTitle(streamFn, model, `Create a 2-6 word title for this request:\n\n${truncateInput(firstMessage)}`, options);
+  return requestSessionTitle(streamFn, model, shortSessionNamePrompt(firstMessage), options);
 }
 
 /** Regenerate a title naming the session's goal from its owner prompts and, when known, the first answer. */
@@ -57,7 +65,7 @@ async function requestSessionTitle<TApi extends Api>(
   const stream = await streamFn(
     model,
     normalizeContext({
-      systemPrompt: "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.",
+      systemPrompt: SESSION_TITLE_SYSTEM_PROMPT,
       messages: [{
         role: "user",
         content,

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_CAPABILITY_LABELS, type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
-import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
+import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionNotificationDismissAllRequest, SessionNotificationDismissRequest, SessionNotificationInboxSnapshot, SessionNotificationSummaryEvent, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
 import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 import type { PiWebConfig } from "../../config.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
@@ -15,7 +15,11 @@ import type { DurableChatResourceSet } from "./durableChatResources.js";
 import { durableThinkingLevel, expandPromptTemplate, expandSkills } from "./durableChatResources.js";
 import { BUILTIN_COMMANDS } from "./builtinCommands.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
-import { appendInlineImageReferenceMapping } from "./piSessionService.js";
+import { appendInlineImageReferenceMapping, CHECKPOINT_SESSION_TITLE_MAX_LENGTH, CHECKPOINT_TITLE_COMMAND, parseModelSpec } from "./piSessionService.js";
+import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
+import { cleanSessionName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, sessionTitleInput, shortSessionNamePrompt } from "./sessionNameGenerator.js";
+import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
+import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
 import type { DurableChatRecord, SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
@@ -73,6 +77,8 @@ interface HostEvents {
   publish(sessionId: string, event: SessionUiEvent, mediaScope?: { id: string; cwd: string }): void;
   /** Image references of published events; a media read binds the Chat's images from its transcript. */
   readonly mediaIndex?: SessionMediaIndex;
+  /** Notification inbox summaries (the daemon's shared notification catalog). */
+  publishNotificationSummary?(event: SessionNotificationSummaryEvent): void;
   publishGlobal(event: { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string } | SessionAttentionEvent): void;
   currentSeq(sessionId: string): number;
 }
@@ -110,7 +116,7 @@ class DurableHostConnection {
 
   constructor(
     private readonly process: DurableHostProcess,
-    onEvent: (event: SessionUiEvent | HostAttentionEvent) => void,
+    onEvent: (event: SessionUiEvent | HostEvent) => void,
     watermark: () => number,
     onExit: (error: Error) => void,
   ) {
@@ -210,8 +216,17 @@ export class DurableChatService {
      * Turn ends of a Durable Chat mark it unread exactly as a legacy Chat's do.
      */
     unread?: (sessionId: string, cwd: string, change: "active" | "idle" | "closed") => Promise<void>;
+    /** The daemon's notification store (shared with legacy Chats): each host's package warnings, per Chat. */
+    notifications?: SessionNotificationStore;
+    /** The daemon's Workstream launch records (shared with legacy Chats): a launch token names the Chat it created. */
+    launches?: Pick<WorkstreamLaunchStore, "reserve" | "confirm" | "lookup">;
     logger?: { warn(object: object, message: string): void };
   }) {}
+
+  /** The notification generation of each Chat's current host: a new host's inbox starts over. */
+  readonly #notificationGenerations = new Map<string, SessionNotificationGeneration>();
+  /** Chats with a title request in flight. */
+  readonly #titling = new Set<string>();
 
   readonly #skills = new Map<string, DurableChatResourceSet["skillList"]>();
   readonly #templates = new Map<string, NonNullable<DurableChatResourceSet["promptList"]>>();
@@ -222,7 +237,17 @@ export class DurableChatService {
     return this.deps.locator.durable(sessionId) !== undefined;
   }
 
+  /**
+   * A Workstream launch token is reserved before the Chat exists and bound to it once its host runs, as for legacy
+   * Chats: a retried launch looks the token up instead of creating a second Chat.
+   */
   async start(cwd: string, startupToken?: string): Promise<ClientSession> {
+    const launch = startupToken !== undefined && isWorkstreamLaunchToken(startupToken) ? startupToken : undefined;
+    const launches = this.deps.launches;
+    if (launch !== undefined) {
+      if (launches === undefined) throw new Error("Workstream launch tracking is unavailable");
+      await launches.reserve(launch, canonicalizeStoredCwd(cwd));
+    }
     const record = this.deps.locator.create(cwd);
     try {
       await this.#connection(record);
@@ -230,7 +255,44 @@ export class DurableChatService {
       this.deps.locator.remove(record.id);
       throw error;
     }
+    if (launch !== undefined) await launches?.confirm(launch, canonicalizeStoredCwd(cwd), record.id);
     return { ...this.info(record), ...(startupToken === undefined ? {} : { startupToken }) };
+  }
+
+  /** The Durable Chat a launch token created in this workspace; undefined when it names none (ask legacy Chats). */
+  async lookupWorkstreamLaunch(token: string, cwd: string): Promise<{ status: "found"; sessionId: string; cwd: string } | undefined> {
+    const record = await this.deps.launches?.lookup(token);
+    if (record?.status !== "created" || !this.owns(record.sessionId) || !cwdPathsEqual(record.cwd, cwd)) return undefined;
+    return { status: "found", sessionId: record.sessionId, cwd: record.cwd };
+  }
+
+  /** The Chat's retained notifications; undefined when its host has not run in this daemon (an empty inbox). */
+  notificationInbox(ref: SessionRouteRef): SessionNotificationInboxSnapshot | undefined {
+    return this.#inbox(ref, (store, cwd) => ({ snapshot: store.inboxSnapshot(ref.id, cwd), mutations: [] }));
+  }
+
+  dismissNotification(ref: SessionRouteRef, request: Omit<SessionNotificationDismissRequest, "cwd">): SessionNotificationInboxSnapshot | undefined {
+    return this.#inbox(ref, (store, cwd) => store.dismissNotification(ref.id, cwd, request.daemonInstanceId, request.notificationId));
+  }
+
+  dismissAllNotifications(ref: SessionRouteRef, request: Omit<SessionNotificationDismissAllRequest, "cwd">): SessionNotificationInboxSnapshot | undefined {
+    return this.#inbox(ref, (store, cwd) => store.dismissAll(ref.id, cwd, request.daemonInstanceId, request.throughOrder, request.throughOverflowWatermark));
+  }
+
+  #inbox(ref: SessionRouteRef, operate: (store: SessionNotificationStore, cwd: string) => { snapshot: SessionNotificationInboxSnapshot; mutations: SessionNotificationMutation[] }): SessionNotificationInboxSnapshot | undefined {
+    const record = this.#record(ref);
+    const store = this.deps.notifications;
+    if (store === undefined || !this.#notificationGenerations.has(record.id)) return undefined;
+    const { snapshot, mutations } = operate(store, canonicalizeStoredCwd(record.cwd));
+    this.#publishNotifications(mutations);
+    return snapshot;
+  }
+
+  #publishNotifications(mutations: readonly SessionNotificationMutation[]): void {
+    for (const mutation of mutations) {
+      this.deps.events.publish(mutation.sessionId, mutation.inboxEvent);
+      this.deps.events.publishNotificationSummary?.(mutation.summaryEvent);
+    }
   }
 
   info(record: DurableChatRecord): ClientSession {
@@ -330,6 +392,7 @@ export class DurableChatService {
     const skilled = template ? body : expandSkills(body, this.#skills.get(ref.id) ?? []);
     const expanded = expandPromptTemplate(skilled, templates);
     const providerText = !explicit || template ? expanded : appendInlineImageReferenceMapping(expanded, references);
+    this.#maybeTitle(ref, template ? body : text, connection);
     await connection.request("prompt", {
       operationId: operationId ?? randomUUID(), text: providerText,
       ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }),
@@ -455,6 +518,14 @@ export class DurableChatService {
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
     const rest = trimmed.slice(name.length + 1).trim();
     if (name === "name") return this.#name(ref, rest);
+    const checkpointTitle = CHECKPOINT_TITLE_COMMAND.exec(trimmed)?.[1];
+    if (checkpointTitle !== undefined) {
+      // A Workstream checkpoint's title for its Chat (the Workbench client sends it): no turn, as in a legacy Chat.
+      const title = checkpointTitle.replace(/\s+/g, " ").trim().slice(0, CHECKPOINT_SESSION_TITLE_MAX_LENGTH).trim();
+      const current = this.#record(ref).name;
+      if (title !== "" && title !== current) this.#applyGeneratedName(ref.id, title, "checkpoint", current);
+      return { type: "done" };
+    }
     if (name === "session") return { type: "done", message: await this.#stats(ref) };
     if (name === "mode") {
       const { result } = await (await this.#for(ref)).request("mode", { args: trimmed.slice("/mode".length).trim() });
@@ -513,12 +584,56 @@ export class DurableChatService {
 
   #name(ref: SessionRouteRef, name: string): ClientCommandResult {
     if (name === "") return { type: "unsupported", message: "Usage: /name <session name>" };
-    this.deps.locator.update(ref.id, { name });
-    const session = this.info(this.#record(ref));
-    const event = { type: "session.name" as const, sessionId: ref.id, ...(session.name === undefined ? {} : { name: session.name }) };
-    this.deps.events.publish(ref.id, event);
+    this.#record(ref);
+    return { type: "done", message: `Session named: ${name}`, session: this.#setName(ref.id, name, "manual") };
+  }
+
+  #setName(sessionId: string, name: string, nameSource: NonNullable<DurableChatRecord["nameSource"]>): ClientSession {
+    this.deps.locator.update(sessionId, { name, nameSource });
+    const record = this.deps.locator.durable(sessionId);
+    if (record === undefined) throw new Error("Session not found");
+    const session = this.info(record);
+    const event = { type: "session.name" as const, sessionId, ...(session.name === undefined ? {} : { name: session.name }) };
+    this.deps.events.publish(sessionId, event);
     this.deps.events.publishGlobal(event);
-    return { type: "done", message: `Session named: ${name}`, session };
+    return session;
+  }
+
+  /** A generated title (legacy `applyGeneratedSessionName`): only over the name it was made for, never over the owner's. */
+  #applyGeneratedName(sessionId: string, name: string | undefined, source: "auto" | "checkpoint", expectedName: string | undefined): void {
+    const record = this.deps.locator.durable(sessionId);
+    if (name === undefined || record === undefined || record.name !== expectedName) return;
+    if (record.name !== undefined && (record.nameSource ?? "manual") === "manual") return;
+    this.#setName(sessionId, name, source);
+  }
+
+  /**
+   * Legacy title rules for an untitled Chat: its first prompt with title text gets a short title from the configured
+   * naming model (default the Chat's own), asked through the Chat's host outside the conversation; on failure, the
+   * prompt's first words. ponytail: no goal title after five prompts yet (legacy `auto-final`).
+   */
+  #maybeTitle(ref: SessionRouteRef, text: string, connection: DurableHostConnection): void {
+    const record = this.#record(ref);
+    const titleText = sessionTitleInput(text);
+    if (record.name !== undefined || titleText === undefined || this.#titling.has(record.id)) return;
+    if (record.firstMessage !== "" && sessionTitleInput(record.firstMessage) !== undefined) return;
+    this.#titling.add(record.id);
+    void (async () => {
+      const naming = this.deps.config === undefined ? {} : (await this.deps.config.read()).effectiveConfig.sessionNaming ?? {};
+      const model = naming.model === undefined ? undefined : parseModelSpec(naming.model);
+      const { result } = await connection.request("complete", {
+        systemPrompt: SESSION_TITLE_SYSTEM_PROMPT, prompt: shortSessionNamePrompt(titleText),
+        maxTokens: naming.maxTokens ?? 24, reasoning: naming.thinkingLevel ?? "minimal", timeoutMs: naming.timeoutMs ?? 10_000,
+        ...(model === undefined ? {} : { model }),
+      });
+      return typeof result === "string" ? cleanSessionName(result) : undefined;
+    })().catch((error: unknown) => {
+      this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat naming failed; using the first-message fallback");
+      return undefined;
+    }).then((name) => {
+      this.#titling.delete(record.id);
+      this.#applyGeneratedName(record.id, name ?? fallbackSessionName(titleText), "auto", undefined);
+    });
   }
 
   /** PI WEB's `/session` lines (`sessionCommandService.ts`), counted from the Chat's transcript and usage. */
@@ -632,6 +747,12 @@ export class DurableChatService {
     if (existing !== undefined) return existing;
     const storeDir = join(this.deps.storesDir, record.storeId);
     mkdirSync(this.deps.storesDir, { recursive: true, mode: 0o700 });
+    // A new host starts its packages again, and with them their notices: its inbox starts over.
+    const notifications = this.deps.notifications?.registerSession(record.id, canonicalizeStoredCwd(record.cwd));
+    if (notifications !== undefined) {
+      this.#notificationGenerations.set(record.id, notifications.generation);
+      this.#publishNotifications(notifications.mutations);
+    }
     const connection = new DurableHostConnection(
       this.deps.launch(record, storeDir),
       (event) => { this.#onEvent(record.id, event, connection); },
@@ -661,7 +782,13 @@ export class DurableChatService {
     return opened;
   }
 
-  #onEvent(sessionId: string, event: SessionUiEvent | HostAttentionEvent, connection: DurableHostConnection): void {
+  #activity(sessionId: string, scope: { id: string; cwd: string }, phase: "active" | "idle" | "error", label: string): void {
+    const activity = { sessionId, phase, label, at: new Date().toISOString() };
+    this.deps.events.publish(sessionId, { type: "activity.update", activity }, scope);
+    this.deps.events.publishGlobal({ type: "activity.update", activity });
+  }
+
+  #onEvent(sessionId: string, event: SessionUiEvent | HostEvent, connection: DurableHostConnection): void {
     const record = this.deps.locator.durable(sessionId);
     if (record === undefined) return;
     const scope = { id: sessionId, cwd: record.cwd };
@@ -672,6 +799,11 @@ export class DurableChatService {
         type: "session.attention", sessionId, cwd: record.cwd, sessionName: name.slice(0, 120),
         kind: event.kind, id: event.id, detail: event.detail.trim().split(/\r?\n/u)[0]?.slice(0, 120) ?? "",
       });
+      return;
+    }
+    if (event.type === "durable.notification") {
+      const generation = this.#notificationGenerations.get(sessionId);
+      if (generation !== undefined) this.#publishNotifications(this.deps.notifications?.addNotification(generation, event.message, event.severity).mutations ?? []);
       return;
     }
     if (event.type === "status.update") {
@@ -688,10 +820,11 @@ export class DurableChatService {
       const active = event.type === "agent.start";
       // The host emits these after the committed run start and end; a reopened store replays neither.
       void this.#unread(record, active ? "active" : "idle");
-      const activity = { sessionId, phase: active ? "active" as const : "idle" as const, label: active ? "agent running" : "idle", at: new Date().toISOString() };
-      this.deps.events.publish(sessionId, { type: "activity.update", activity }, scope);
-      this.deps.events.publishGlobal({ type: "activity.update", activity });
+      this.#activity(sessionId, scope, active ? "active" : "idle", active ? "agent running" : "idle");
     }
+    // Each tool phase by name, as legacy Activity shows it; a finished tool leaves the run active until it ends.
+    if (event.type === "tool.start") this.#activity(sessionId, scope, "active", `running tool: ${event.toolName}`);
+    if (event.type === "tool.end") this.#activity(sessionId, scope, event.isError ? "error" : "active", `${event.isError ? "tool failed" : "tool complete"}: ${event.toolName}`);
     if (event.type === "message.end" && record.firstMessage === "") {
       if (isRecord(event.message) && event.message["role"] === "user") this.deps.locator.update(sessionId, { firstMessage: textOf(event.message["content"]) });
     }
@@ -733,6 +866,9 @@ function browserStatus(status: HostTranscript["status"], connection: DurableHost
 
 /** A host-side notification request: the daemon turns it into PI WEB's global `session.attention`. */
 interface HostAttentionEvent { type: "durable.attention"; kind: "ask" | "attention"; id: string; detail: string }
+/** A Pi package's warning or error outside a command: kept in the Chat's notification inbox, as in a legacy Chat. */
+interface HostNotificationEvent { type: "durable.notification"; severity: "warning" | "error"; message: string }
+type HostEvent = HostAttentionEvent | HostNotificationEvent;
 
 /** The host returns the outcome PI WEB's store computed (or, on a retry, recorded); a shape check suffices. */
 function isAskOutcome(value: unknown): value is AskUserOutcome {
@@ -775,7 +911,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** The host is local Workbench code speaking PI WEB's own event shapes; only the discriminator is checked here. */
-function isSessionUiEvent(value: unknown): value is SessionUiEvent | HostAttentionEvent {
+function isSessionUiEvent(value: unknown): value is SessionUiEvent | HostEvent {
   return isRecord(value) && typeof value["type"] === "string";
 }
 

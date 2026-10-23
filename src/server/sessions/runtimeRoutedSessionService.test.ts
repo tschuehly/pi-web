@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
 import type { ClientSession } from "../types.js";
 import { DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostProcess } from "./durableChatService.js";
@@ -94,7 +94,8 @@ describe("runtime-routed session service", () => {
     await routed.status({ id: durableChat.id, cwd: "/work/a" });
     await routed.abort({ id: durableChat.id, cwd: "/work/a" });
     expect(calls).toEqual(["prompt", "abort"]);
-    expect(hosts[0]?.methods).toEqual(["prompt", "status", "abort"]);
+    // The first prompt also asks the Chat's host for its title.
+    expect(hosts[0]?.methods).toEqual(["complete", "prompt", "status", "abort"]);
   });
 
   it("refuses MCP sign-in for a Durable Chat visibly and keeps legacy Chats on the legacy MCP auth service", async () => {
@@ -123,6 +124,17 @@ describe("runtime-routed session service", () => {
     await expect(routed.openAsks(ref)).resolves.toEqual([]);
     await expect(routed.notificationInbox(ref)).resolves.toMatchObject({ daemonInstanceId: "daemon-1", notifications: [] });
     expect(calls).toEqual(["notificationCatalog"]);
+  });
+
+  it("looks Workstream launch tokens up in Durable Chats first, then in legacy Chats", async () => {
+    const { routed, durable, calls } = await router();
+    const lookup = vi.spyOn(durable, "lookupWorkstreamLaunch");
+    lookup.mockResolvedValueOnce({ status: "found", sessionId: "durable-1", cwd: "/work/a" });
+    await expect(routed.lookupWorkstreamLaunch("pi-web:t", "/work/a")).resolves.toEqual({ status: "found", sessionId: "durable-1", cwd: "/work/a" });
+    expect(calls).toEqual([]);
+    lookup.mockResolvedValueOnce(undefined);
+    await routed.lookupWorkstreamLaunch("pi-web:u", "/work/a");
+    expect(calls).toEqual(["lookupWorkstreamLaunch"]);
   });
 
   it("lists both runtimes per workspace, answers a targeted Durable lookup itself and locates Durable Chats", async () => {

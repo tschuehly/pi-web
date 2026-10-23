@@ -205,7 +205,7 @@ function modelSpecOf(model: { provider: string; id: string }): string {
  * Parse a strict `provider/model-id` spec: split on the first `/` (model ids
  * may themselves contain `/`) and require both parts to be non-empty.
  */
-function parseModelSpec(spec: string): { provider: string; modelId: string } | undefined {
+export function parseModelSpec(spec: string): { provider: string; modelId: string } | undefined {
   const slash = spec.indexOf("/");
   if (slash <= 0 || slash === spec.length - 1) return undefined;
   return { provider: spec.slice(0, slash), modelId: spec.slice(slash + 1) };
@@ -6498,9 +6498,9 @@ function transcriptBranchIncludesEntry(entries: readonly unknown[], entryId: str
 const SESSION_NAME_CUSTOM_TYPE = "pi-web.session-name";
 /** Owner prompt count at which an automatic first-prompt title is regenerated once from the session's goal. */
 const SESSION_GOAL_TITLE_PROMPT_COUNT = 5;
-const CHECKPOINT_SESSION_TITLE_MAX_LENGTH = 80;
+export const CHECKPOINT_SESSION_TITLE_MAX_LENGTH = 80;
 /** Internal command the Workbench client sends when a Workstream checkpoint carries a sessionTitle. */
-const CHECKPOINT_TITLE_COMMAND = /^\/workstream-checkpoint-title\s+([\s\S]+)$/;
+export const CHECKPOINT_TITLE_COMMAND = /^\/workstream-checkpoint-title\s+([\s\S]+)$/;
 
 /** "auto" is a first-prompt title; "auto-final" is a title no automatic rule replaces. */
 type GeneratedSessionNameSource = "auto" | "auto-final" | "checkpoint";

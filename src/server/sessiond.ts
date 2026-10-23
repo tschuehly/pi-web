@@ -334,6 +334,8 @@ async function createSessionDaemonRuntime() {
     // Opt-in Durable Chats (Phase B trial): only with a configured host entry; otherwise routes see the legacy service.
     const durableHostEntry = daemonEnvironment["PI_WEB_DURABLE_HOST"];
     const durableLocator = durableHostEntry === undefined || durableHostEntry === "" ? undefined : new SessionRuntimeLocator(piWebDataDir(daemonEnvironment));
+    // Both runtimes record launches and notifications in the daemon's one store each.
+    const workstreamLaunchStore = new WorkstreamLaunchStore(join(piWebDataDir(daemonEnvironment), "workstream-launches"));
     const sessions = new PiSessionService(eventHub, sessionServiceDependencies({
       // Durable Chats share the unread catalog, so cwd reconciliation keeps theirs.
       externalSessionIds: (cwd) => durableLocator?.all().filter((record) => record.cwd === cwd).map((record) => record.id) ?? [],
@@ -341,7 +343,7 @@ async function createSessionDaemonRuntime() {
       sessionEvents,
       agentDir: activeAgentProfile.dir,
       archiveStore: new SessionArchiveStore(defaultSessionArchiveFilePath(daemonEnvironment), sessionArchiveDirectory(daemonEnvironment, config)),
-      workstreamLaunchStore: new WorkstreamLaunchStore(join(piWebDataDir(daemonEnvironment), "workstream-launches")),
+      workstreamLaunchStore,
       workspaceActivity,
       logger: app.log,
       ...(spawnTargets === undefined ? {} : { spawnTargets }),
@@ -396,6 +398,8 @@ async function createSessionDaemonRuntime() {
       resources: (cwd) => loadDurableChatResources(cwd, activeAgentProfile.dir),
       config: configService,
       unread: (sessionId, cwd, change) => sessions.observeExternalSession(sessionId, cwd, change),
+      notifications: notificationStore,
+      launches: workstreamLaunchStore,
       logger: app.log,
     });
     durableChatsForFailedConstruction = durableChats;

@@ -17,8 +17,10 @@ export interface DurableChatRecord {
   /** Listing projection, refreshed from host events; the host's store stays the authority. */
   firstMessage: string;
   messageCount: number;
-  /** Set with `/name`. */
+  /** Set with `/name`, a Workstream checkpoint, or generated from the first prompt. */
   name?: string;
+  /** Who set `name`; absent means the owner (`/name`), which generated titles never replace. */
+  nameSource?: "manual" | "auto" | "checkpoint";
 }
 
 interface LocatorFile {
@@ -57,7 +59,7 @@ export class SessionRuntimeLocator {
     return record;
   }
 
-  update(sessionId: string, change: Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name">>): void {
+  update(sessionId: string, change: Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource">>): void {
     const record = this.#chats.get(sessionId);
     if (record === undefined) return;
     this.#chats.set(sessionId, { ...record, ...change });
@@ -104,5 +106,6 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
   return isRecord(value) && value["runtime"] === "durable"
     && ["id", "cwd", "storeId", "created", "modified", "firstMessage"].every((key) => typeof value[key] === "string")
     && typeof value["messageCount"] === "number"
-    && (value["name"] === undefined || typeof value["name"] === "string");
+    && (value["name"] === undefined || typeof value["name"] === "string")
+    && (value["nameSource"] === undefined || value["nameSource"] === "manual" || value["nameSource"] === "auto" || value["nameSource"] === "checkpoint");
 }
