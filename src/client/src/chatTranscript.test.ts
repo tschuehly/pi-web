@@ -91,6 +91,21 @@ describe("assistant stream identity", () => {
     expect(messages).toEqual(normalizeMessages([final]));
   });
 
+  it("shows one card per tool call when the stream start or a joined partial already carries the call", () => {
+    // A Durable host starts the stream with the whole message; a join mid-stream seeds the same call from the partial.
+    const call = { type: "toolCall", id: "call-1", name: "read", arguments: { path: "a.txt" } };
+    const toolOnly = { ...start, content: [call] };
+    const result = { role: "toolResult", toolCallId: "call-1", toolName: "read", content: [{ type: "text", text: "x" }], isError: false, entryId: "18" };
+    for (const seeded of [applyTranscriptEvent([], { type: "assistant.start", message: toolOnly }) ?? [], seedStreamingPartial([], toolOnly)]) {
+      let messages = applyTranscriptEvent(seeded, { type: "message.end", message: toolOnly }) ?? seeded;
+      messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "call-1", summary: "", args: call.arguments }) ?? messages;
+      expect(messages.flatMap((line) => line.parts).filter((part) => part.type === "toolExecution")).toMatchObject([{ toolCallId: "call-1", status: "running" }]);
+      messages = applyTranscriptEvent(messages, { type: "tool.end", toolName: "read", toolCallId: "call-1", text: "x", isError: false, content: result.content }) ?? messages;
+      messages = applyTranscriptEvent(messages, { type: "message.end", message: result }) ?? messages;
+      expect(messages.flatMap((line) => line.parts).filter((part) => part.type === "toolExecution")).toMatchObject([{ toolCallId: "call-1", status: "success", resultText: "x" }]);
+    }
+  });
+
   it("keeps identity when joining an empty stream or a tool-call-only partial", () => {
     for (const content of [[], [{ type: "toolCall", id: "call-1", name: "bash", arguments: {} }]]) {
       let messages = seedStreamingPartial([], { ...start, content });

@@ -171,7 +171,9 @@ function appendToolExecutionStart(messages: ChatLine[], event: Extract<SessionUi
     ...(event.args === undefined ? {} : { args: event.args }),
     status: "running",
   };
-  return [...messages, { role: "tool", parts: [part] }];
+  // The call may already show, projected from its assistant message (a stream start or joined partial carrying it).
+  const started = updateToolExecution(messages, part.toolCallId, (existing) => ({ ...existing, ...part, summary: part.summary || existing.summary }));
+  return started !== messages ? started : [...messages, { role: "tool", parts: [part] }];
 }
 
 function mergeToolExecutionUpdate(part: ToolExecutionPart, event: Extract<SessionUiEvent, { type: "tool.update" }>): ToolExecutionPart {

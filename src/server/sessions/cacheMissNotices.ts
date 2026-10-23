@@ -46,6 +46,24 @@ export function cacheMissNoticesByEntryId(entries: readonly unknown[], models: M
   return notices;
 }
 
+/**
+ * Session entries for the cache scan from browser transcript messages (a Durable Chat's): assistant turns, keyed by their
+ * entry ID, and a compaction or context checkpoint as the context change that resets the scan. Assistant turns keep
+ * only the fields the scan reads, so a caller may hold them for live detection.
+ */
+export function cacheScanEntries(messages: readonly unknown[], keep: "whole" | "usage" = "whole"): Record<string, unknown>[] {
+  return messages.flatMap((message) => {
+    if (!isRecord(message)) return [];
+    if ((message["role"] === "system" && message["source"] === "compaction") || (message["role"] === "custom" && message["customType"] === "context-checkpoint")) {
+      return [{ type: "compaction" }];
+    }
+    if (!paidTurn(message)) return [];
+    const { role, provider, model, usage, timestamp, stopReason } = message;
+    const id = isRecord(message) && typeof message["entryId"] === "string" ? message["entryId"] : "";
+    return [{ type: "message", id, message: keep === "whole" ? message : { role, provider, model, usage, timestamp, stopReason } }];
+  });
+}
+
 /** The TUI shows no notice for aborted or failed turns. */
 function paidTurn(message: unknown): message is AssistantMessage {
   return isRecord(message) && message["role"] === "assistant" && isRecord(message["usage"])

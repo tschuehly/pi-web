@@ -14,6 +14,8 @@ import { projectSessionTree, type ProjectableSessionTreeNode } from "./sessionTr
 import type { DurableChatResourceSet } from "./durableChatResources.js";
 import { durableThinkingLevel, expandPromptTemplate, expandSkills } from "./durableChatResources.js";
 import { BUILTIN_COMMANDS } from "./builtinCommands.js";
+import { cacheMissNoticesByEntryId, cacheScanEntries, liveCacheMissNotice } from "./cacheMissNotices.js";
+import type { ModelPriceSource } from "./cacheStats.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import { appendInlineImageReferenceMapping } from "./piSessionService.js";
 import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
@@ -28,8 +30,10 @@ export type DurableEffectResolution = "done" | "not-done" | "retry";
 
 /** The part of a child process a host connection uses; tests pass a fake. */
 export interface DurableHostProcess {
-  send(message: unknown): boolean;
+  /** As `ChildProcess.send`: a closed channel's error goes to the callback, not to an "error" event. */
+  send(message: unknown, callback?: (error: Error | null) => void): boolean;
   on(event: "message", listener: (message: unknown) => void): unknown;
+  on(event: "error", listener: (error: Error) => void): unknown;
   on(event: "exit", listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
   kill(signal?: NodeJS.Signals): boolean;
 }
@@ -113,6 +117,7 @@ class DurableHostConnection {
     onEvent: (event: SessionUiEvent | HostAttentionEvent) => void,
     watermark: () => number,
     onExit: (error: Error) => void,
+    onError: (error: Error) => void = () => undefined,
   ) {
     this.exited = new Promise((resolve) => { this.#markExited = resolve; });
     let markReady!: () => void;
@@ -143,6 +148,8 @@ class DurableHostConnection {
       if (isRecord(error)) pending?.reject(new Error(typeof error["message"] === "string" ? error["message"] : "Durable host request failed"));
       else pending?.resolve({ result: message["result"], seq: watermark() });
     });
+    // An unhandled ChildProcess "error" (a failed kill, a closing channel) would take the whole daemon down.
+    process.on("error", onError);
     process.on("exit", (code, signal) => {
       this.#exited = new Error(`Durable host exited (${signal ?? String(code)})`);
       failReady(this.#exited);
@@ -163,7 +170,12 @@ class DurableHostConnection {
     const id = this.#next++;
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });
-      this.process.send({ id, method, ...(params === undefined ? {} : { params }) });
+      // The host can die between the check above and this send: its closed channel fails only this request.
+      this.process.send({ id, method, ...(params === undefined ? {} : { params }) }, (error) => {
+        if (!(error instanceof Error) || !this.#pending.has(id)) return;
+        this.#pending.delete(id);
+        reject(error);
+      });
     });
   }
 
@@ -209,6 +221,8 @@ export class DurableChatService {
     resources?: (cwd: string) => Promise<DurableChatResourceSet>;
     /** PI WEB config, for the attachment folder of a save request that names none (as legacy Chats). */
     config?: { read(): { effectiveConfig: PiWebConfig } | Promise<{ effectiveConfig: PiWebConfig }> };
+    /** Pi's prompt cache-miss notices, as legacy Chats show them: Pi's `showCacheMissNotices` for a workspace, and prices. */
+    cacheMissNotices?: { enabled(cwd: string): boolean; models: ModelPriceSource };
     /**
      * The daemon's unread catalog (the legacy service's, shared): committed run starts and ends, and a host exit.
      * Turn ends of a Durable Chat mark it unread exactly as a legacy Chat's do.
@@ -218,6 +232,9 @@ export class DurableChatService {
     /** Stop's wait before SIGTERM, and again before SIGKILL; default 5 s. */
     closeGraceMs?: number;
   }) {}
+
+  /** Each Chat's paid turns and context resets, from its last transcript read and later events, for live notices. */
+  readonly #cacheScan = new Map<string, unknown[]>();
 
   readonly #skills = new Map<string, DurableChatResourceSet["skillList"]>();
   readonly #templates = new Map<string, NonNullable<DurableChatResourceSet["promptList"]>>();
@@ -279,7 +296,7 @@ export class DurableChatService {
 
   async messages(ref: SessionRouteRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
     const { result } = await (await this.#for(ref)).request("transcript");
-    return pageMessagesAtSafeBoundary(hostTranscript(result).messages.map(displayPromptMessage), page);
+    return pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, hostTranscript(result).messages).map(displayPromptMessage), page);
   }
 
   async status(ref: SessionRouteRef): Promise<ClientSessionStatus> {
@@ -309,7 +326,33 @@ export class DurableChatService {
     const connection = await this.#for(ref);
     const { result, seq } = await connection.request("transcript");
     const transcript = hostTranscript(result);
-    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(transcript.messages.map(displayPromptMessage), { limit: page?.limit ?? 100 }), status: { ...browserStatus(transcript.status, connection), sessionId: ref.id } };
+    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, transcript.messages).map(displayPromptMessage), { limit: page?.limit ?? 100 }), status: { ...browserStatus(transcript.status, connection), sessionId: ref.id } };
+  }
+
+  /** History with Pi's cache-miss notices re-derived onto the assistant turns that paid for them (legacy `historyWithCacheMissNotices`). */
+  #withCacheMissNotices(ref: SessionRouteRef, messages: unknown[]): unknown[] {
+    const notices = this.deps.cacheMissNotices;
+    if (notices === undefined) return messages;
+    // Every event before this reply is published, so later message.end events extend exactly this history.
+    this.#cacheScan.set(ref.id, cacheScanEntries(messages, "usage"));
+    if (!notices.enabled(ref.cwd)) return messages;
+    const byEntryId = cacheMissNoticesByEntryId(cacheScanEntries(messages), notices.models);
+    if (byEntryId.size === 0) return messages;
+    return messages.map((message) => {
+      const cacheMissNotice = isRecord(message) && typeof message["entryId"] === "string" ? byEntryId.get(message["entryId"]) : undefined;
+      return cacheMissNotice === undefined || !isRecord(message) ? message : { ...message, cacheMissNotice };
+    });
+  }
+
+  /** A just-ended message with its live cache-miss notice; the scan history then includes it. */
+  #liveCacheMissNotice(sessionId: string, cwd: string, message: unknown): unknown {
+    const notices = this.deps.cacheMissNotices;
+    if (notices === undefined) return message;
+    const history = this.#cacheScan.get(sessionId) ?? [];
+    const cacheMissNotice = isRecord(message) && message["role"] === "assistant" && notices.enabled(cwd) ? liveCacheMissNotice(history, message, notices.models) : undefined;
+    // ponytail: grows by one small usage record per paid turn while the daemon runs; trim after compaction if it matters.
+    this.#cacheScan.set(sessionId, [...history, ...cacheScanEntries([message], "usage")]);
+    return cacheMissNotice === undefined || !isRecord(message) ? message : { ...message, cacheMissNotice };
   }
 
   /**
@@ -648,6 +691,7 @@ export class DurableChatService {
         void this.#unread(record, "closed");
         this.deps.events.publish(record.id, { type: "agent.end" });
       },
+      (error) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host process error"); },
     );
     const opened = connection.ready.then(async () => {
       this.#capabilities.set(record.id, connection.capabilities);
@@ -689,7 +733,7 @@ export class DurableChatService {
       }
       return;
     }
-    this.deps.events.publish(sessionId, event.type === "message.end" ? { ...event, message: displayPromptMessage(event.message) } : event, scope);
+    this.deps.events.publish(sessionId, event.type === "message.end" ? { ...event, message: displayPromptMessage(this.#liveCacheMissNotice(sessionId, record.cwd, event.message)) } : event, scope);
     if (event.type === "agent.start" || event.type === "agent.end") {
       const active = event.type === "agent.start";
       // The host emits these after the committed run start and end; a reopened store replays neither.
