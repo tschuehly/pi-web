@@ -11,7 +11,7 @@ import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachm
 import type { SessionMedia, SessionMediaIndex } from "./sessionMediaIndex.js";
 import type { ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, ClientSessionTreeNavigateRequest, ClientSessionTreeNavigateResult, ClientThinkingLevel, SessionStreamSnapshot, SessionTranscriptSnapshot } from "../types.js";
 import { projectSessionTree, type ProjectableSessionTreeNode } from "./sessionTreeProjection.js";
-import type { DurableChatResourceSet } from "./durableChatResources.js";
+import type { DurableChatResourceSet, DurableContributedResources } from "./durableChatResources.js";
 import { durableThinkingLevel, expandPromptTemplate, expandSkills } from "./durableChatResources.js";
 import { BUILTIN_COMMANDS } from "./builtinCommands.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
@@ -101,6 +101,8 @@ class DurableHostConnection {
    * `CHAT_CAPABILITY_LABELS`); none when it reports no list. Each one is refused and its control hidden until named.
    */
   capabilities: ChatCapability[] = [];
+  /** Skills and prompts the host's Pi packages contributed (`resources_discover`), named in its ready message. */
+  contributed: DurableContributedResources = { skillPaths: [], promptPaths: [] };
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
@@ -124,6 +126,7 @@ class DurableHostConnection {
         const protocol = message["ready"]["protocol"];
         const capabilities = message["ready"]["capabilities"];
         if (Array.isArray(capabilities)) this.capabilities = capabilities.filter(isChatCapability);
+        this.contributed = parseContributedResources(message["ready"]["resources"]);
         if (protocol === DURABLE_HOST_PROTOCOL) markReady();
         else {
           failReady(new Error(`Durable host speaks protocol ${String(protocol)}, this daemon ${String(DURABLE_HOST_PROTOCOL)}`));
@@ -201,8 +204,11 @@ export class DurableChatService {
     launch: DurableHostLauncher;
     /** `<data dir>/durable`: one directory per family store. */
     storesDir: string;
-    /** AGENTS.md, APPEND_SYSTEM.md and skills for a workspace, from Pi's loader; sent to each host as it opens. */
-    resources?: (cwd: string) => Promise<DurableChatResourceSet>;
+    /**
+     * AGENTS.md, APPEND_SYSTEM.md, skills and prompts for a workspace, from Pi's loader, with those the host's packages
+     * contributed; sent to each host as it opens.
+     */
+    resources?: (cwd: string, contributed?: DurableContributedResources) => Promise<DurableChatResourceSet>;
     /** PI WEB config, for the attachment folder of a save request that names none (as legacy Chats). */
     config?: { read(): { effectiveConfig: PiWebConfig } | Promise<{ effectiveConfig: PiWebConfig }> };
     /**
@@ -645,7 +651,7 @@ export class DurableChatService {
     );
     const opened = connection.ready.then(async () => {
       this.#capabilities.set(record.id, connection.capabilities);
-      const loaded = await this.deps.resources?.(record.cwd).catch((error: unknown) => {
+      const loaded = await this.deps.resources?.(record.cwd, connection.contributed).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
       });
@@ -768,6 +774,16 @@ function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content.map((part: unknown) => (isRecord(part) && typeof part["text"] === "string" ? part["text"] : "")).join("\n");
+}
+
+/** The contributed resources a host's ready message names; anything malformed is dropped. */
+function parseContributedResources(value: unknown): DurableContributedResources {
+  const paths = (list: unknown) => (Array.isArray(list) ? list : []).flatMap((entry: unknown) => {
+    if (!isRecord(entry)) return [];
+    const { path, extensionPath } = entry;
+    return typeof path === "string" && path !== "" && typeof extensionPath === "string" && extensionPath !== "" ? [{ path, extensionPath }] : [];
+  });
+  return isRecord(value) ? { skillPaths: paths(value["skillPaths"]), promptPaths: paths(value["promptPaths"]) } : { skillPaths: [], promptPaths: [] };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

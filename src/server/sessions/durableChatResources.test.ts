@@ -45,4 +45,31 @@ describe("Durable Chat resources", () => {
     expect(legacy.getExtensions().extensions.map((extension) => extension.path)).toEqual([join(pkg, "extensions", "marker.ts")]);
     expect(durable.resources.skills).toContain("<name>package-skill</name>");
   });
+
+  // P110: a host's packages contribute resources through `resources_discover`; they load as Pi's session extends them.
+  it("adds the skills and prompts a host's packages contributed, with their extension as the source", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-web-durable-resources-"));
+    roots.push(root);
+    process.env["HOME"] = root;
+    const agentDir = join(root, "agent");
+    const cwd = join(root, "project");
+    await mkdir(cwd, { recursive: true });
+    await skill(join(agentDir, "skills"), "user-skill");
+    const contributed = join(root, "package", "contributed");
+    await skill(contributed, "contributed-skill");
+    await mkdir(join(root, "package", "prompts"), { recursive: true });
+    await writeFile(join(root, "package", "prompts", "contributed-prompt.md"), "---\ndescription: Contributed prompt\n---\nDo $1.\n");
+    const extensionPath = join(root, "package", "probe.ts");
+
+    const durable = await loadDurableChatResources(cwd, agentDir, {
+      skillPaths: [{ path: contributed, extensionPath }],
+      promptPaths: [{ path: join(root, "package", "prompts"), extensionPath }],
+    });
+
+    expect(durable.skillList.map((entry) => entry.name).sort()).toEqual(["contributed-skill", "user-skill"]);
+    expect(durable.resources.skills).toContain("<name>contributed-skill</name>");
+    expect(durable.promptList?.map((template) => template.name)).toContain("contributed-prompt");
+    // Without contributions nothing extra appears.
+    expect((await loadDurableChatResources(cwd, agentDir)).skillList.map((entry) => entry.name)).toEqual(["user-skill"]);
+  });
 });

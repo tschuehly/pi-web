@@ -85,7 +85,8 @@ function validStatusTime(value: unknown): value is string {
     && Number.isFinite(Date.parse(value));
 }
 
-export interface BackgroundBashStatusItem { id: string; elapsedSeconds: number; bytes: number; command?: string; description?: string; output?: string; logPath?: string }
+/** `toolCallId`: the running `bash` call that launched the job, when the publisher names it (Durable Chats). */
+export interface BackgroundBashStatusItem { id: string; elapsedSeconds: number; bytes: number; command?: string; description?: string; output?: string; logPath?: string; toolCallId?: string }
 
 // Optional preview text: kept only when it is a bounded string, otherwise dropped without rejecting the job.
 const previewText = (value: unknown, max: number): string | undefined => typeof value === "string" && value.length <= max ? value : undefined;
@@ -107,7 +108,8 @@ export function parseBackgroundBashStatusSnapshot(text: string | undefined): Bac
     const description = previewText(entry["description"], 120);
     const output = previewText(entry["output"], 1_200);
     const logPath = previewText(entry["logPath"], 1_024);
-    jobs.push({ id, elapsedSeconds, bytes, ...(command === undefined ? {} : { command }), ...(description === undefined ? {} : { description }), ...(output === undefined ? {} : { output }), ...(logPath === undefined ? {} : { logPath }) });
+    const toolCallId = safeStatusId(entry["toolCallId"], 250) ? entry["toolCallId"] : undefined;
+    jobs.push({ id, elapsedSeconds, bytes, ...(command === undefined ? {} : { command }), ...(description === undefined ? {} : { description }), ...(output === undefined ? {} : { output }), ...(logPath === undefined ? {} : { logPath }), ...(toolCallId === undefined ? {} : { toolCallId }) });
   }
   return jobs;
 }
@@ -268,8 +270,10 @@ function counted(count: number, singular: string, plural = singular): string | u
 export function activitySummary(status: Pick<SessionStatus, "extensionStatuses" | "activeToolExecutions"> | undefined) {
   const delegates = parseDelegateActivitySnapshot(status?.extensionStatuses?.[ACTIVITY_STATUS_KEY]);
   const watchers = parseWatcherStatusSnapshot(status?.extensionStatuses?.[WATCHER_STATUS_KEY]);
-  const shells = visibleShellExecutions(status?.activeToolExecutions);
   const backgroundBash = parseBackgroundBashStatusSnapshot(status?.extensionStatuses?.[BACKGROUND_BASH_STATUS_KEY]);
+  // A bash call running as a job is that job: one shell, shown with the job's description and output.
+  const launched = new Set(backgroundBash.flatMap((job) => job.toolCallId === undefined ? [] : [`tool:${job.toolCallId}`]));
+  const shells = visibleShellExecutions(status?.activeToolExecutions).filter((shell) => !launched.has(shell.id));
   const outcomes = delegates.map(delegateOutcome);
   const tally = (outcome: DelegateOutcome) => outcomes.filter((candidate) => candidate === outcome).length;
   const shellCount = shells.length + backgroundBash.length;

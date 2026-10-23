@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { basename, dirname } from "node:path";
 import { DefaultResourceLoader, formatSkillsForPrompt, ProjectTrustStore, SettingsManager, stripFrontmatter } from "../../piSdk.js";
 import { resolveWebProjectTrusted } from "./piSessionService.js";
 import { expandInlineSkillMentions, type InlineSkill } from "./inlineSkills.js";
@@ -25,19 +26,30 @@ export interface DurableChatResourceSet {
   promptList?: DurablePromptTemplate[];
 }
 
+/**
+ * Skill and prompt paths a Durable host's bound Pi packages contributed through `resources_discover`, each with the
+ * extension file that contributed it (Pi's `emitResourcesDiscover` entries). Themes are not used by PI WEB.
+ */
+export interface DurableContributedResources {
+  skillPaths: { path: string; extensionPath: string }[];
+  promptPaths: { path: string; extensionPath: string }[];
+}
+
 export interface DurablePromptTemplate { name: string; description?: string; argumentHint?: string; content: string }
 
 /**
  * Load a Durable Chat's resources the way a legacy Chat's session does: Pi's `DefaultResourceLoader` for the
  * workspace and agent directory, honoring project trust, with the same skill roots and settings packages. Extensions
- * are not loaded here (Durable Chats do not run Pi extensions), so resources an extension would add are absent.
+ * run in the host, not here: the resources its packages contributed are added as Pi's session adds them
+ * (`extendResourcesFromExtensions`), with the contributing extension as their source.
  */
-export async function loadDurableChatResources(cwd: string, agentDir: string): Promise<DurableChatResourceSet> {
+export async function loadDurableChatResources(cwd: string, agentDir: string, contributed?: DurableContributedResources): Promise<DurableChatResourceSet> {
   const settingsManager = SettingsManager.create(cwd, agentDir);
   const trusted = await resolveWebProjectTrusted({ cwd, trustStore: new ProjectTrustStore(agentDir), settingsManager });
   const trustedSettings = SettingsManager.create(cwd, agentDir, { projectTrusted: trusted });
   const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: trustedSettings, noExtensions: true, noThemes: true });
   await loader.reload();
+  if (contributed !== undefined) loader.extendResources({ skillPaths: contributed.skillPaths.map(extensionResource), promptPaths: contributed.promptPaths.map(extensionResource) });
   const agentsFiles = loader.getAgentsFiles().agentsFiles;
   const skills = loader.getSkills().skills;
   const addendum = loader.getAppendSystemPrompt().join("\n\n");
@@ -66,6 +78,11 @@ export async function loadDurableChatResources(cwd: string, agentDir: string): P
       ...(template.argumentHint === undefined ? {} : { argumentHint: template.argumentHint }),
     })),
   };
+}
+
+/** Pi's `buildExtensionResourcePaths` for one contributed path. */
+function extensionResource(entry: { path: string; extensionPath: string }) {
+  return { path: entry.path, metadata: { source: `extension:${basename(entry.extensionPath).replace(/\.(ts|js)$/, "")}`, scope: "temporary" as const, origin: "top-level" as const, baseDir: dirname(entry.extensionPath) } };
 }
 
 /**

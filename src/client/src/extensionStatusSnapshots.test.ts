@@ -223,4 +223,19 @@ describe("extension status snapshots", () => {
       { id: "a", kind: "subagent" }, { id: "b", kind: "worker" }, { id: "c", kind: "subagent", activity: "success" }, { id: "d", kind: "subagent", activity: "execution failed" },
     ], [{ logicalId: "w", handleId: "w", mode: "poll", scope: "", state: "watching", consecutiveFailures: 0, startedAt: "2026-08-02T10:00:00.000Z" }])).toBe("1 failed · 1 to collect · 2 running · 1 watcher");
   });
+
+  // P073: a Workbench bash call runs as a job; while the call runs, the job names it and Activity shows one shell.
+  it("counts a bash call and the background job it launched as one shell, keeping the job's row", () => {
+    const call = { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command" } as const;
+    const other = { id: "tool:call-2", kind: "shell", toolName: "bash", label: "Shell command" } as const;
+    const jobs = (toolCallId: unknown) => JSON.stringify({ schemaVersion: 1, jobs: [{ id: "job-1", elapsedSeconds: 1, bytes: 0, description: "Fixture activity", toolCallId }] });
+    const shown = (toolCallId: unknown, tools = [call, other]) => activitySummary({ extensionStatuses: { "pi-workbench:background-bash": jobs(toolCallId) }, activeToolExecutions: tools });
+    expect(parseBackgroundBashStatusSnapshot(jobs("call-1"))).toEqual([{ id: "job-1", elapsedSeconds: 1, bytes: 0, description: "Fixture activity", toolCallId: "call-1" }]);
+    expect(shown("call-1")).toMatchObject({ shells: [other], label: "2 shells" });
+    expect(shown("call-1", [call]).label).toBe("1 shell");
+    expect(shown("call-1", [call]).backgroundBash.map((job) => job.description)).toEqual(["Fixture activity"]);
+    // A job that names no call, or a malformed one, hides nothing.
+    expect(shown(undefined).label).toBe("3 shells");
+    expect(shown("bad id").label).toBe("3 shells");
+  });
 });

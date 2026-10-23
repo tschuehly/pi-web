@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
 import { DURABLE_HOST_PROTOCOL, DurableChatService, durableHostArgs, type DurableHostProcess } from "./durableChatService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
-import type { DurableChatResourceSet } from "./durableChatResources.js";
+import type { DurableChatResourceSet, DurableContributedResources } from "./durableChatResources.js";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
 
 const status = { persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
@@ -27,9 +27,9 @@ class FakeHost extends EventEmitter implements DurableHostProcess {
   readonly requests: Request[] = [];
   answer: (request: Request) => unknown = (request) => (request.method === "status" ? status : null);
 
-  constructor(protocol = DURABLE_HOST_PROTOCOL, capabilities?: unknown) {
+  constructor(protocol = DURABLE_HOST_PROTOCOL, capabilities?: unknown, ready: object = {}) {
     super();
-    queueMicrotask(() => { this.emit("message", { ready: { protocol, ...(capabilities === undefined ? {} : { capabilities }) } }); });
+    queueMicrotask(() => { this.emit("message", { ready: { protocol, ...(capabilities === undefined ? {} : { capabilities }), ...ready } }); });
   }
 
   send(message: unknown): boolean {
@@ -65,7 +65,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root,
 
 type UnreadCall = [sessionId: string, cwd: string, change: "active" | "idle" | "closed"];
 
-async function service(make: (launch: number) => FakeHost = () => new FakeHost(), resources?: DurableChatResourceSet): Promise<{ durable: DurableChatService; hub: SessionEventHub; locator: SessionRuntimeLocator; launched: FakeHost[]; root: string; unread: UnreadCall[] }> {
+async function service(make: (launch: number) => FakeHost = () => new FakeHost(), resources?: DurableChatResourceSet | ((cwd: string, contributed?: DurableContributedResources) => Promise<DurableChatResourceSet>)): Promise<{ durable: DurableChatService; hub: SessionEventHub; locator: SessionRuntimeLocator; launched: FakeHost[]; root: string; unread: UnreadCall[] }> {
   const root = await mkdtemp(join(tmpdir(), "pi-web-durable-"));
   roots.push(root);
   const hub = new SessionEventHub();
@@ -77,7 +77,7 @@ async function service(make: (launch: number) => FakeHost = () => new FakeHost()
     events: hub,
     launch: () => { const host = make(launched.length); launched.push(host); return host; },
     storesDir: join(root, "durable"),
-    ...(resources === undefined ? {} : { resources: () => Promise.resolve(resources) }),
+    ...(resources === undefined ? {} : { resources: typeof resources === "function" ? resources : () => Promise.resolve(resources) }),
     unread: (sessionId, cwd, change) => { unread.push([sessionId, cwd, change]); return Promise.resolve(); },
   });
   return { durable, hub, locator, launched, root, unread };
@@ -186,6 +186,18 @@ describe("Durable Chats", () => {
     await durable.prompt(ref, "/skill:tidy src only", undefined, undefined, { operationId: "op-7" });
     const prompt = only(launched).requests.find((request) => request.method === "prompt");
     expect(prompt?.params).toEqual({ operationId: "op-7", text: `<skill name="tidy" location="${filePath}">\nReferences are relative to ${skillDir}.\n\nTidy every file.\n</skill>\n\nsrc only` });
+  });
+
+  it("loads the resources the host's packages contributed in its ready message (P110); a malformed list is ignored", async () => {
+    const loads: (DurableContributedResources | undefined)[] = [];
+    const set: DurableChatResourceSet = { resources: { sources: [] }, compaction: { enabled: true, reserveTokens: 1, keepRecentTokens: 1 }, skillList: [] };
+    const contributed = { skillPaths: [{ path: "/pkg/skills", extensionPath: "/pkg/probe.ts" }], promptPaths: [], themePaths: [] };
+    const readies = [{ resources: contributed }, { resources: { skillPaths: [{ path: 7 }] } }, {}];
+    const { durable } = await service((launch) => new FakeHost(DURABLE_HOST_PROTOCOL, undefined, readies[launch]), (_cwd, given) => { loads.push(given); return Promise.resolve(set); });
+    await durable.start("/work/a");
+    await durable.start("/work/a");
+    await durable.start("/work/a");
+    expect(loads).toEqual([{ skillPaths: contributed.skillPaths, promptPaths: [] }, { skillPaths: [], promptPaths: [] }, { skillPaths: [], promptPaths: [] }]);
   });
 
   it("runs /mode in the host and refuses other commands visibly", async () => {
