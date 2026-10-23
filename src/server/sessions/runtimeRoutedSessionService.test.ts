@@ -45,7 +45,7 @@ class ReadyHost extends EventEmitter implements DurableHostProcess {
     if (typeof message !== "object" || message === null || !("id" in message) || !("method" in message) || typeof message.method !== "string") return false;
     const { id, method } = message;
     this.methods.push(method);
-    const result = method === "status" ? { isStreaming: false, queuedMessages: [], pendingMessageCount: 0 } : null;
+    const result = method === "status" ? { isStreaming: false, queuedMessages: [], pendingMessageCount: 0 } : method === "complete" ? "Routed title" : null;
     queueMicrotask(() => {
       this.emit("message", { id, result });
       if (method === "close") this.emit("exit", 0, null);
