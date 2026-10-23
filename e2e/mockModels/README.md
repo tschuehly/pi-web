@@ -56,7 +56,7 @@ await mock.script({
   - `{ delayMs }`
   - `{ error }`
   - `{ drop: true }`, which cuts the connection
-- **Tool names.** Script tools by their Pi name. The mock answers with the name the request declared: `read` becomes `Read` on the Claude path, and `ask_user` becomes `mcp__pi__ask_user` or another `mcp__<server>__ask_user` alias.
+- **Tool names.** Script tools by their Pi name. The mock answers with the name the request declared: `read` becomes `Read` on the Claude path, and `ask_user` becomes `mcp__pi__ask_user` or another `mcp__<server>__ask_user` alias. Declared names include the request's `tools` and the definition of every `tool_addition` block in `messages`, so a tool enabled mid-conversation (for example by `web_enable`) is answered with its alias too.
 - **Stop reason.** It defaults to `tool_use` when the turn calls a tool and `end_turn` otherwise. Codex maps `max_tokens` to `incomplete`.
 - **Errors.** The `error` presets are `overloaded` (529, or 503 for Codex), `rate_limit` (429), `server` (500), `invalid_request` (400) and `auth` (401). You can also pass `{ status, type?, message?, headers? }`.
   - An error before any output is an HTTP error. An error after output has started is streamed as an `error` event.
@@ -85,6 +85,7 @@ Specs wait on barriers and on UI state, never on sleeps. If a barrier is the fir
 - `body`: the request body as JSON, decompressed
 - `lastUserText`
 - `answeredBy`: `{ script, turn }`, `echo` or `rejected`
+- `toolCalls`: the wire tool names the mock answered with, in order
 - `status`
 - `outcome`: `pending`, `completed`, `error`, `dropped` or `client-closed`
 - `violations`
@@ -97,7 +98,7 @@ The mock checks the shape of every request. A request with violations gets a 400
   - `user-agent: claude-cli/…` and `x-app: cli`
   - the system prompt opens with the Claude Code identity block
   - no "pi itself", "pi .md files" or "pi packages" in the system prompt
-  - every untyped tool name and `tool_use` name is a Claude Code tool, an `mcp__` alias or Pi's deferred placeholder
+  - every untyped tool name, `tool_use` name and transcript tool-change name (`tool_addition` `tool.definition.name`, `tool_removal` `tool.name`) is a Claude Code tool, an `mcp__` alias or Pi's deferred placeholder
 - **Codex:**
   - a bearer JWT with a `chatgpt_account_id` claim that matches `chatgpt-account-id`
   - an `originator` header and `OpenAI-Beta: responses=experimental`

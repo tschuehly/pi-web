@@ -103,6 +103,11 @@ test("AC-P112 Claude package aliases round-trip canonically and do not leak to O
   await choose(page, "anthropic");
   const dynamic = await turn(page, [{ name: "web_enable", args: {} }]);
   expect(names(dynamic.journal[1]?.body), "dynamically added Claude tools also need subscription aliases").toContain("mcp__pi__web_search");
+  // The mid-conversation tool round-trips: the mock answers with the alias, Pi stores the canonical name.
+  const search = await turn(page, [{ name: "web_search", args: { query: "alias-fleet", provider: "searxng", numResults: 1, workflow: "none" } }]);
+  expect(search.journal[0]?.toolCalls).toEqual(["mcp__pi__web_search"]);
+  const stored = search.results.at(-1);
+  expect(stored?.toolName).toBe("web_search"); expect(stored?.isError, text(stored?.content)).toBe(false);
 });
 
 for (const name of ["ask_human", "notify_human"]) test(`AC-P${name === "ask_human" ? "124" : "125"} ${name} stub success/error and kill-after-send never resends`, async ({ page }) => {
