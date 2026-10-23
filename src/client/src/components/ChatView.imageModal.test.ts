@@ -135,7 +135,8 @@ describe("ChatView tool-image gallery", () => {
 
     const sources = requiredElement(view.renderRoot.querySelector<HTMLDetailsElement>(".image-output-sources"), "source details");
     expect(sources.open).toBe(false);
-    expect(sources.querySelector("summary")?.textContent).toBe("Sources (3)");
+    // The summary leads with the chevron icon, whose template whitespace is text.
+    expect(sources.querySelector("summary")?.textContent.trim()).toBe("Sources (3)");
     expect(sources.querySelector(".image-output-source")).toBeNull();
     sources.open = true;
     sources.dispatchEvent(new Event("toggle"));

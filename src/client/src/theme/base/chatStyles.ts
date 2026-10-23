@@ -107,7 +107,6 @@ export const chatStyles = css`
   .part { max-width: 100%; min-width: 0; box-sizing: border-box; overflow: visible; overflow-wrap: anywhere; }
   .part + .part { margin-top: 10px; }
   .thinking { --ui-activity-tone: var(--pi-thinking, color-mix(in srgb, #4f83b3 70%, var(--pi-text) 30%)); }
-  .thinking-icon { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; }
   .thinking > summary { font-weight: 600; }
   .tool-line > .ui-transcript-heading { font: 13px/20px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); overflow-wrap: anywhere; }
   .tool-result.error { --ui-activity-tone: var(--pi-danger); }

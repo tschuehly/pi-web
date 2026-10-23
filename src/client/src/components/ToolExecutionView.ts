@@ -5,6 +5,7 @@ import { writeClipboardText } from "../clipboard";
 import type { ToolExecutionPart } from "../chatTypes";
 import { uiButtonStyles } from "./ui/controlStyles";
 import { uiTranscriptStyles } from "./ui/transcriptStyles";
+import { renderDisclosureChevron } from "./tabIcons";
 import "./BashLogButton";
 
 const MAX_COLLAPSED_DIFF_LINES = 180;
@@ -85,26 +86,28 @@ export class ToolExecutionView extends LitElement {
     const row = toolRowSummary(execution);
     const log = execution.toolName === "bash" ? logPath(execution.details) : undefined;
 
-    return html`
-      <section class=${`tool-card ui-transcript-surface ui-transcript-activity ui-transcript-tool ${execution.status}`}>
-        <div class="tool-header ui-transcript-heading">
+    const header = html`
           <div class="tool-title">
-            <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
             <strong>${toolActionLabel(execution.toolName)}</strong>
+            <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
             ${this.renderHeaderTarget(target, row.argument)}
             ${row.result === undefined ? null : html`<span class="row-result">· ${row.result}</span>`}
-            ${log === undefined ? null : html`<bash-log-button .logPath=${log} .machineId=${this.machineId}></bash-log-button>`}
+            ${log === undefined ? null : html`<bash-log-button .logPath=${log} .machineId=${this.machineId} @click=${(event: Event) => { event.preventDefault(); }}></bash-log-button>`}
           </div>
           <div class="tool-meta">
             ${editCountLabel(execution) === undefined ? null : html`<span>${editCountLabel(execution)}</span>`}
             ${diffStats === undefined ? null : html`<span class="diff-stats"><b class="added">+${diffStats.added}</b><span>/</span><b class="removed">-${diffStats.removed}</b></span>`}
             <span class="status-label">${statusLabel(execution.status)}</span>
-          </div>
-        </div>
+          </div>`;
+    // Without a diff, the row itself opens the details; no separate "Details" line (ISSUE-104).
+    const textBody = visibleDiff === undefined ? this.renderTextBody(bodyText, execution.status === "error", target, header) : null;
 
+    return html`
+      <section class=${`tool-card ui-transcript-surface ui-transcript-activity ui-transcript-tool ${execution.status}`}>
+        ${textBody === null ? html`<div class="tool-header ui-transcript-heading">${header}</div>` : null}
         ${previewMismatch ? html`<p class="notice">Applied diff differs from the preview.</p>` : null}
         ${errorText === undefined || errorText === "" ? null : html`<pre class="error-text">${errorText}</pre>`}
-        ${visibleDiff === undefined ? this.renderTextBody(bodyText, execution.status === "error", target) : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff", target)}
+        ${visibleDiff === undefined ? textBody : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff", target)}
         ${visibleDiff !== undefined && this.orphan ? this.renderTextBody(bodyText, true, undefined) : null}
       </section>
     `;
@@ -126,14 +129,14 @@ export class ToolExecutionView extends LitElement {
     `;
   }
 
-  private renderTextBody(text: string | undefined, open: boolean, target: ToolTarget | undefined) {
+  private renderTextBody(text: string | undefined, open: boolean, target: ToolTarget | undefined, header?: unknown) {
     if ((text === undefined || text === "") && target === undefined) return null;
     const expanded = this.textOpen ?? open;
     return html`
       <details class="text-body" ?open=${expanded} @toggle=${(event: Event) => {
         if (event.currentTarget instanceof HTMLDetailsElement) this.textOpen = event.currentTarget.open;
       }}>
-        <summary class="ui-transcript-disclosure">Details</summary>
+        ${header === undefined ? html`<summary class="ui-transcript-disclosure">${renderDisclosureChevron()}Details</summary>` : html`<summary class="tool-header ui-transcript-heading">${renderDisclosureChevron()}${header}</summary>`}
         ${expanded ? html`${this.renderExpandedTarget(target)}
         ${text === undefined || text === "" ? null : html`
           <div class="detail-result">
@@ -150,7 +153,7 @@ export class ToolExecutionView extends LitElement {
     return html`
       <details class="diff-details" ?open=${this.diffOpen} @toggle=${(event: Event) => { this.onDiffToggle(event); }}>
         <summary class="ui-transcript-disclosure">
-          <span>${label}</span>
+          ${renderDisclosureChevron()}<span>${label}</span>
           <small>${String(lineCount)} ${lineCount === 1 ? "line" : "lines"}</small>
         </summary>
         ${this.diffOpen ? this.renderDiffContent(diff, label, target) : null}
@@ -212,24 +215,25 @@ export class ToolExecutionView extends LitElement {
     .added, .diff .added { color: color-mix(in srgb, var(--pi-success) 65%, var(--pi-text) 35%); }
     .removed, .diff .removed { color: color-mix(in srgb, var(--pi-danger) 65%, var(--pi-text) 35%); }
     .status-label { color: var(--pi-text-secondary); }
-    .notice { margin: 0; padding: 8px 12px; color: var(--pi-warning); }
+    .notice { margin: 0; padding: 8px 12px 8px var(--ui-transcript-inline-start, 12px); color: var(--pi-warning); }
     .muted { margin: 0; color: var(--pi-muted); }
-    .error-text { margin: 0; color: var(--pi-danger); padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
+    .error-text { margin: 0; color: var(--pi-danger); padding: 8px 8px 8px var(--ui-transcript-inline-start, 8px); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     .text-body { min-width: 0; }
     .text-body[open], .diff-details[open] { padding-bottom: 12px; }
     .text-body > summary { color: var(--pi-muted); }
-    .detail-target, .detail-result { display: grid; gap: 4px; margin: 8px 12px 0; min-width: 0; }
+    summary.tool-header { cursor: pointer; }
+    .detail-target, .detail-result { display: grid; gap: 4px; margin: 8px 12px 0 var(--ui-transcript-inline-start, 12px); min-width: 0; }
     .detail-label { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
     .text-body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); color: var(--pi-text); }
-    .detail-result pre { box-sizing: border-box; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; border: 1px solid var(--pi-border-muted); border-radius: 0; background: var(--pi-bg); padding: 8px; white-space: var(--pi-tool-output-white-space, pre); overflow-wrap: var(--pi-tool-output-overflow-wrap, normal); direction: ltr; text-align: left; unicode-bidi: isolate; }
+    .detail-result pre { box-sizing: border-box; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; border: 1px solid var(--pi-border-muted); border-radius: 0; background: var(--pi-bg); padding: 8px; margin-inline-start: -9px; /* border + padding: output text stays in the text column */ white-space: var(--pi-tool-output-white-space, pre); overflow-wrap: var(--pi-tool-output-overflow-wrap, normal); direction: ltr; text-align: left; unicode-bidi: isolate; }
     .detail-target-value { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text-secondary); font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); direction: ltr; text-align: left; unicode-bidi: isolate; }
     .diff-details { min-width: 0; max-width: 100%; }
     .diff-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; color: var(--pi-muted); }
     .diff-details > summary span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .diff-details > summary small { flex: 0 0 auto; color: var(--pi-dim); }
-    .diff-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; margin-top: 8px; color: var(--pi-muted); font-size: 12px; padding-inline: 12px; }
+    .diff-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; margin-top: 8px; color: var(--pi-muted); font-size: 12px; padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
     .diff-toolbar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .diff { box-sizing: border-box; width: calc(100% - 24px); max-width: 100%; min-width: 0; margin: 0 12px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--pi-border-muted); border-radius: 0; background: var(--pi-bg); padding: 8px 0; color: var(--pi-muted); font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); line-height: 1.45; }
+    .diff { box-sizing: border-box; width: calc(100% - 12px - var(--ui-transcript-inline-start, 12px)); max-width: 100%; min-width: 0; margin: 0 12px 0 var(--ui-transcript-inline-start, 12px); overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--pi-border-muted); border-radius: 0; background: var(--pi-bg); padding: 8px 0; color: var(--pi-muted); font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); line-height: 1.45; }
     .diff-content { display: block; width: max-content; min-width: 100%; }
     .diff span { display: block; min-height: 1.45em; padding: 0 8px; white-space: pre; }
     .diff .context { color: var(--pi-muted); }
@@ -238,7 +242,7 @@ export class ToolExecutionView extends LitElement {
     .diff .meta { color: var(--pi-dim); }
     .diff .added { background: color-mix(in srgb, var(--pi-success) 12%, transparent); }
     .diff .removed { background: color-mix(in srgb, var(--pi-danger) 12%, transparent); }
-    .show-more { justify-self: start; margin-inline: 12px; }
+    .show-more { justify-self: start; margin-inline: var(--ui-transcript-inline-start, 12px) 12px; }
   `];
 }
 

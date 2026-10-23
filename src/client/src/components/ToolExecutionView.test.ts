@@ -23,6 +23,9 @@ it("keeps command details and complete output while updating live status and err
   const details = view.renderRoot.querySelector<HTMLDetailsElement>(".text-body");
   expect(details?.open).toBe(false);
   expect(view.renderRoot.querySelector(".detail-target-value")).toBeNull();
+  // The row itself is the toggle; no separate "Details" line (ISSUE-104).
+  expect(details?.querySelector(":scope > summary.tool-header .tool-title strong")?.textContent).toBe("Ran bash command");
+  expect(view.renderRoot.textContent).not.toContain("Details");
 
   const output = "long line ".repeat(1000);
   view.execution = { ...view.execution, status: "success", resultText: output };

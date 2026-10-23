@@ -12,6 +12,11 @@ export function renderAppTabIcon(icon: AppTabIcon): TemplateResult {
   return renderBuiltinTabIcon(icon);
 }
 
+/** The transcript's one disclosure marker: a summary's first child; uiTranscriptStyles turns it when open. */
+export function renderDisclosureChevron(): TemplateResult {
+  return html`<span class="chevron">${renderBuiltinTabIcon("chevron")}</span>`;
+}
+
 export function renderBuiltinTabIcon(icon: AppTabBuiltinIcon): TemplateResult {
   switch (icon) {
     case "bell":
