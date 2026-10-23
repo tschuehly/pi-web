@@ -152,7 +152,8 @@ for (const invalid of ["batch", "empty", "oversized"] as const) {
   });
 }
 
-test("AC-P082 failed summarizer never starts the next phase", async ({ page }) => {
+// Lead decision: legacy continue-once is correct — a failed summary continues exactly once, carrying the diagnostic.
+test("AC-P082 failed summarizer continues once with the diagnostic", async ({ page }) => {
   await mock.script({ turns: ["Phase one complete.", "Phase two complete.", [{ toolCall: { name: "compact_and_continue", args: { summaryFocus: "Keep names", nextPhase: "MUST NOT START" } } }], [{ error: "invalid_request" }], "Unexpected continuation."] });
   const id = await createChat(page);
   await seed(page, id);
@@ -160,7 +161,9 @@ test("AC-P082 failed summarizer never starts the next phase", async ({ page }) =
   await expect.poll(async () => (await messages(page, id)).filter((m) => m.customType === "context-checkpoint").length).toBe(1);
   await idle(page, id);
   expect.soft(await summaries(page, id)).toHaveLength(0);
-  expect((await mock.journal({ kind: "chat" })).filter((e) => e.lastUserText.includes("Requested next phase:")).length).toBe(0);
+  const continued = (await mock.journal({ kind: "chat" })).filter((e) => e.lastUserText.includes("Requested next phase:"));
+  expect(continued).toHaveLength(1);
+  expect(continued[0]!.lastUserText).toContain("Context checkpoint failed:");
 });
 
 for (const crash of [false, true]) test(`AC-P083 usage crosses threshold, queues input, and compacts before continuing; kill ${crash}`, async ({ page }) => {
