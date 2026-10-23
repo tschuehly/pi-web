@@ -65,7 +65,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root,
 
 type UnreadCall = [sessionId: string, cwd: string, change: "active" | "idle" | "closed"];
 
-async function service(make: (launch: number) => FakeHost = () => new FakeHost(), resources?: DurableChatResourceSet): Promise<{ durable: DurableChatService; hub: SessionEventHub; locator: SessionRuntimeLocator; launched: FakeHost[]; root: string; unread: UnreadCall[] }> {
+async function service(make: (launch: number) => FakeHost = () => new FakeHost(), resources?: DurableChatResourceSet, extra: Partial<ConstructorParameters<typeof DurableChatService>[0]> = {}): Promise<{ durable: DurableChatService; hub: SessionEventHub; locator: SessionRuntimeLocator; launched: FakeHost[]; root: string; unread: UnreadCall[] }> {
   const root = await mkdtemp(join(tmpdir(), "pi-web-durable-"));
   roots.push(root);
   const hub = new SessionEventHub();
@@ -79,6 +79,7 @@ async function service(make: (launch: number) => FakeHost = () => new FakeHost()
     storesDir: join(root, "durable"),
     ...(resources === undefined ? {} : { resources: () => Promise.resolve(resources) }),
     unread: (sessionId, cwd, change) => { unread.push([sessionId, cwd, change]); return Promise.resolve(); },
+    ...extra,
   });
   return { durable, hub, locator, launched, root, unread };
 }
@@ -158,6 +159,64 @@ describe("Durable Chats", () => {
     await expect(durable.status(ref)).rejects.toThrow(/Durable host exited \(SIGTERM\)/);
     await expect(durable.status(ref)).resolves.toMatchObject({ sessionId: chat.id });
     expect(launched).toHaveLength(2);
+  });
+
+  it("fails a request sent while a killed host's IPC channel is closing, without an unhandled error, and reopens", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const first = only(launched);
+    // Node's ChildProcess.send on a closed channel: the error goes to the callback, else to an "error" event a tick later.
+    let unhandled: unknown;
+    first.send = (_message: unknown, callback?: (error: Error | null) => void): boolean => {
+      const error = Object.assign(new Error("Channel closed"), { code: "ERR_IPC_CHANNEL_CLOSED" });
+      process.nextTick(() => {
+        if (callback !== undefined) callback(error);
+        else try { first.emit("error", error); } catch (thrown) { unhandled = thrown; }
+      });
+      return false;
+    };
+    await expect(durable.status(ref)).rejects.toThrow(/Channel closed/);
+    expect(unhandled).toBeUndefined();
+    // A ChildProcess error from elsewhere (a failed kill) is contained too.
+    expect(() => first.emit("error", new Error("kill EPERM"))).not.toThrow();
+    first.kill();
+    await expect(durable.status(ref)).resolves.toMatchObject({ sessionId: chat.id });
+    expect(launched).toHaveLength(2);
+  });
+
+  it("shows Pi's cache-miss notice on a paid Durable turn, live and re-derived from history, only when enabled (P023)", async () => {
+    const turn = (entryId: string, timestamp: number, usage: { input: number; cacheRead: number }) => ({
+      role: "assistant", provider: "openai-codex", model: "gpt", content: [{ type: "text", text: "answer" }], stopReason: "stop", timestamp, entryId,
+      usage: { ...usage, cacheWrite: 0, output: 10, totalTokens: usage.input + usage.cacheRead + 10, cost: { input: usage.input * 3e-6, output: 0, cacheRead: usage.cacheRead * 0.3e-6, cacheWrite: 0, total: 0 } },
+    });
+    const warm = turn("a1", 0, { input: 100, cacheRead: 50_000 });
+    const missed = turn("a2", 60_000, { input: 50_100, cacheRead: 0 });
+    const notice = "Cache miss: 50k tokens re-billed (~$0.15)";
+    let enabled = true;
+    const { durable, hub, launched } = await service(undefined, undefined, { cacheMissNotices: { enabled: () => enabled, models: { getModel: () => undefined } } });
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const host = only(launched);
+    const published: unknown[] = [];
+    hub.add(chat.id, { OPEN: 1, readyState: 1, send: (payload) => { published.push(JSON.parse(payload)); }, terminate: () => undefined, on: () => undefined });
+    let history: unknown[] = [{ role: "user", content: "hi", entryId: "u1" }, warm];
+    host.answer = (request) => (request.method === "transcript" ? { messages: history, partial: null, status } : request.method === "status" ? status : null);
+    await durable.transcriptSnapshot(ref);
+    host.push({ type: "message.end", message: missed });
+    expect(published.at(-1)).toMatchObject({ type: "message.end", message: { entryId: "a2", cacheMissNotice: notice } });
+    history = [...history, missed];
+    const notices = async () => (await durable.messages(ref)).messages.map((message) => (typeof message === "object" && message !== null && "cacheMissNotice" in message ? message.cacheMissNotice : undefined));
+    expect(await notices()).toEqual([undefined, undefined, notice]);
+    expect((await durable.transcriptSnapshot(ref)).page.messages.at(-1)).toMatchObject({ entryId: "a2", cacheMissNotice: notice });
+    // A context reset, or the setting off, shows none.
+    history = [{ role: "user", content: "hi", entryId: "u1" }, warm, { role: "system", source: "compaction", content: "Compacted", entryId: "c1" }, missed];
+    expect(await notices()).toEqual([undefined, undefined, undefined, undefined]);
+    enabled = false;
+    history = [warm, missed];
+    expect(await notices()).toEqual([undefined, undefined]);
+    host.push({ type: "message.end", message: { ...missed, entryId: "a3" } });
+    expect(published.at(-1)).not.toHaveProperty("message.cacheMissNotice");
   });
 
   it("sends the workspace's resources before the first request and expands /skill: prompts as Pi does", async () => {

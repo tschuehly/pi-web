@@ -21,6 +21,7 @@ import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGatewa
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
 import { DurableChatService, forkDurableHost } from "./sessions/durableChatService.js";
 import { durableThinkingLevel, loadDurableChatResources } from "./sessions/durableChatResources.js";
+import { SettingsManager } from "../piSdk.js";
 import { createRuntimeRoutedSessionService, routeMcpAuth } from "./sessions/runtimeRoutedSessionService.js";
 import { SessionRuntimeLocator } from "./sessions/sessionRuntimeLocator.js";
 import { SessionNotificationStore } from "./sessions/sessionNotificationStore.js";
@@ -397,6 +398,8 @@ async function createSessionDaemonRuntime() {
       config: configService,
       unread: (sessionId, cwd, change) => sessions.observeExternalSession(sessionId, cwd, change),
       logger: app.log,
+      // As a legacy Chat's session reads it: Pi's setting for the workspace under the active profile.
+      cacheMissNotices: { enabled: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getShowCacheMissNotices(), models: auth.runtime },
     });
     durableChatsForFailedConstruction = durableChats;
     const routeSessions = durableChats === undefined ? sessions : createRuntimeRoutedSessionService(sessions, durableChats);
