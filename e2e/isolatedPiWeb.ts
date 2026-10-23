@@ -256,6 +256,7 @@ async function seedNoticeChat(sessionDir: string, cwd: string, sessionId: string
   message({ role: "user", content: [{ type: "text", text: question }] });
   bash("call-df", "df -h /", "/dev/disk3s5  460Gi  451Gi  9Gi  98% /");
   assistant([{ type: "text", text: "Only 9 GB free. I'll clear the build caches first." }]);
+  push({ type: "custom_message", customType: "background-bash", display: true, content: "Background bash job-du complete (exit 0).\nFull output: /tmp/job-du.log\n12G node_modules", details: { id: "job-du", command: "du -sh node_modules", description: "Size node_modules", state: "complete", elapsedSeconds: 3, logPath: "/tmp/job-du.log", exitCode: 0 } });
   notice("storage-guard", "Disk low: 9 GB free. Clear caches before large builds.");
   notice("storage-guard", "Disk low: 8 GB free. Clear caches before large builds.");
   notice("atelier:immediate", `#73 Decision “Release layout”: Two columns ${LONG_FIRST_LINE_TAIL}\nThe owner picked the two-column layout for the release page.`, { page: "release.html", seqs: [73], replay: false });

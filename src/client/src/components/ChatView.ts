@@ -979,7 +979,9 @@ export class ChatView extends LitElement {
     .tool-call-arguments { margin: 0; padding: 8px 12px; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     .skill-read { padding: 2px 0; color: var(--pi-purple); font-size: 12px; }
     .msg.skill-read-shell { padding: 4px 16px; }
-    .msg.goal-lifecycle-shell, .msg.subagent-completion-shell { padding: 6px 16px; }
+    .msg.subagent-completion-shell { padding: 6px 16px; }
+    /* Goal and background bash cards draw their own bar; no inline inset keeps it in line with the message bars (ISSUE-103). */
+    .msg.goal-lifecycle-shell { padding: 6px 0; }
     .msg.error, .group-msg.error { color: var(--pi-danger); }
     .msg.warning, .group-msg.warning { color: var(--pi-warning); }
     .goal-lifecycle, .background-bash-card { border-inline-start: 3px solid var(--pi-accent); padding: 6px 12px; color: var(--pi-text); background: var(--pi-surface); }
@@ -1037,13 +1039,15 @@ export class ChatView extends LitElement {
     :host([dense]) .transcript-content { padding: 4px 8px; }
     :host([dense]) .msg.notice-line, :host([dense]) .notice-fold { margin: 0 0 3px; }
     :host([dense]) .part + .part { margin-top: 4px; }
-    :host([dense]) .msg.skill-read-shell, :host([dense]) .msg.goal-lifecycle-shell, :host([dense]) .msg.subagent-completion-shell { padding: 2px 8px; }
+    :host([dense]) .msg.skill-read-shell, :host([dense]) .msg.subagent-completion-shell { padding: 2px 8px; }
+    :host([dense]) .msg.goal-lifecycle-shell { padding: 2px 0; }
     :host([dense]) .tool-fold { padding: 1px 8px; }
     :host([dense]) .thinking-group > .thinking-text { padding: 4px 8px; }
     :host([dense]) .exchange-history > summary, :host([dense]) .exchange-boundary { padding: 4px 8px; }
     /* Workbench presentation: rounded role bubbles with an inline role and time, wrapped tool output, one scroll-to-bottom button. */
     .msg-heading { display: none; }
     :host([workbench]) { --pi-tool-output-white-space: pre-wrap; --pi-tool-output-overflow-wrap: anywhere; }
+    :host([workbench]) .msg.goal-lifecycle-shell { padding-inline: var(--pi-panel-padding, 10px); }
     :host([workbench]) .msg.conversation-message { --ui-transcript-bg: var(--pi-surface); margin: 0 var(--pi-panel-padding, 10px) var(--pi-message-gap, 10px); border: 1px solid var(--pi-border); border-radius: 14px; overflow-wrap: anywhere; }
     :host([workbench]) .msg.user.conversation-message { --ui-transcript-bg: color-mix(in srgb, var(--pi-accent) 10%, var(--pi-surface)); border-color: color-mix(in srgb, var(--pi-accent) 30%, var(--pi-border)); }
     :host([workbench]) .conversation-body { padding: var(--pi-message-padding, 10px) calc(var(--pi-message-padding, 10px) + 2px); }
@@ -1058,6 +1062,7 @@ export class ChatView extends LitElement {
     .scroll-to-bottom svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     /* Dense tiles: tints instead of borders, and the role and time float inline at the start of the first line. */
     :host([workbench][dense]) .msg.conversation-message { margin: 0 6px 5px; border: 0; border-radius: 6px; }
+    :host([workbench][dense]) .msg.goal-lifecycle-shell { padding-inline: 6px; }
     :host([workbench][dense]) .msg.assistant.conversation-message { --ui-transcript-bg: transparent; }
     :host([workbench][dense]) .msg.user.conversation-message { --ui-transcript-bg: color-mix(in srgb, var(--pi-accent) 12%, transparent); }
     :host([workbench][dense]) .conversation-body { padding: 3px 8px; }

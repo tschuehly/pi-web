@@ -53,8 +53,14 @@ describe("Workbench transcript on the upstream chat surface", () => {
     ]);
     expect(root.querySelector<HTMLDetailsElement>("details.history-group")?.open).toBe(false);
     expect(root.querySelector("details.history-group summary")?.textContent).toContain("Context compacted");
+    expect(root.querySelector("details.activity-group")).toBeNull();
+    expect(root.querySelector(".visible-events tool-execution-view")).not.toBeNull();
+  });
+
+  it("folds two or more routine steps into Activity", async () => {
+    const root = await mount([tool("a", "success"), tool("b", "success"), { role: "assistant", entryId: "r", parts: [{ type: "text", text: "Answer" }] }]);
     expect(root.querySelector<HTMLDetailsElement>("details.activity-group")?.open).toBe(false);
-    expect(root.querySelector("details.activity-group summary")?.textContent).toContain("1 step");
+    expect(root.querySelector("details.activity-group summary")?.textContent).toContain("2 steps");
   });
 
   it("filters the transcript to human and assistant text", () => {

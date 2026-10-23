@@ -152,7 +152,8 @@ function headerlessShellClass(message: ChatLine): string {
 export function renderMessageGroup(context: TranscriptRenderContext, group: Extract<ChatGroup, { kind: "group" }>, defaultOpen: boolean, entryActionHeaders: ReadonlySet<ChatLine>, disclosure: TranscriptGroupDisclosure) {
     const { messages, startIndex, presentation } = group;
     const { open, anchor, toggle } = disclosure;
-    if (presentation === undefined) return html`
+    // One routine step needs no "Activity · 1 step" fold; its own row says what ran (ISSUE-101).
+    if (presentation === undefined || (presentation === "activity" && activityStepCount(messages.map((event) => event.message)) === 1)) return html`
       <div class="event-group visible-events" data-index=${startIndex} data-scroll-anchor-id=${anchor ?? nothing}>${renderMessageGroupBody(context, group, entryActionHeaders)}</div>
     `;
     if (presentation === "thinking") return renderThinkingGroup(context, group, entryActionHeaders, disclosure);
@@ -218,11 +219,15 @@ function renderToolFold(context: TranscriptRenderContext, group: Extract<ChatGro
 
 /** Calls and their results count once per tool call id. */
 function activityStepLabel(messages: readonly ChatLine[], noun = "step"): string {
+  const count = activityStepCount(messages);
+  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function activityStepCount(messages: readonly ChatLine[]): number {
   const parts = messages.flatMap((message) => message.parts).filter((part) => part.type === "toolCall" || part.type === "toolExecution" || part.type === "toolResult");
   const ids = new Set(parts.flatMap((part) => part.toolCallId === undefined ? [] : [part.toolCallId]));
   const anonymous = parts.filter((part) => part.toolCallId === undefined && part.type !== "toolResult").length;
-  const count = ids.size + anonymous;
-  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+  return ids.size + anonymous;
 }
 
 
