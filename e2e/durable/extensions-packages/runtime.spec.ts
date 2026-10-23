@@ -47,7 +47,8 @@ test("AC-P041 extension status appears, updates and clears without losing Workin
   expect((await status(page)).extensionStatuses?.["fleet-probe"]).toBe("fixture-one");
   await command(page, "/fleet-status fixture-two");
   expect((await status(page)).extensionStatuses?.["fleet-probe"]).toBe("fixture-two");
-  await expect(page.getByText("fixture-two", { exact: true })).toHaveCount(1);
+  // Lead decision: legacy PI WEB renders no arbitrary extension statuses either; parity is the status projection, beside Working Mode.
+  expect((await status(page)).extensionStatuses).toMatchObject({ "fleet-probe": "fixture-two", "working-mode": before });
   await command(page, "/fleet-status clear");
   expect((await status(page)).extensionStatuses?.["fleet-probe"]).toBeUndefined();
   expect((await status(page)).extensionStatuses?.["working-mode"]).toBe(before);
