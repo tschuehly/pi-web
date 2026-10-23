@@ -5,6 +5,8 @@ import base from "../../../playwright.config";
 
 export default defineConfig(base, {
   testDir: ".",
+  testIgnore: [],
+  outputDir: "../../../test-results/subagents-workers",
   globalSetup: "./setup.ts",
   timeout: 60_000,
   use: { trace: "on" },

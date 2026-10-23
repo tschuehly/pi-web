@@ -1,3 +1,4 @@
+// Run: PI_WEB_E2E_FLEET=1 PI_WEB_E2E_DURABLE_HOST=<chat-host-main.ts> PI_WEB_E2E_PI_PACKAGES=<packages> PILOT_CONTEXT_TOKEN=<fakeSecret below> npx playwright test e2e/durable/context-tools/
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
