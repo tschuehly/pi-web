@@ -21,6 +21,7 @@ function daemonCollaborators(patch: Partial<SessionServiceDependencyInput> = {})
     sessionEvents: new PiSessionEventConnections(),
     archiveStore: emptyArchiveStore(),
     workstreamLaunchStore: new WorkstreamLaunchStore("/tmp/pi-web-test-workstream-launches"),
+    interruptedTurnsFile: "/tmp/pi-web-test-interrupted-turns.json",
     modelRuntime: testModelRuntime,
     sessionManager: sessionGateway([]),
     workspaceActivity: new WorkspaceActivityService(),
