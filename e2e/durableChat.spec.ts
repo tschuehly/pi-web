@@ -54,7 +54,8 @@ test("a Durable Chat streams, runs tools, queues, stops and reloads to the same 
 
   // A running tool, a queued follow-up, then Stop: the follow-up returns to the composer and is never sent.
   await send(page, 'call:bash {"command":"echo running; sleep 30","description":"Run","foreground":true}');
-  await expect(chat(page).getByText("running").first()).toBeVisible();
+  // The call itself running, not the prompt that contains the word: Stop must find the tool started.
+  await expect(page.getByText("running tool: bash")).toBeVisible();
   await send(page, "the follow-up", "Queue follow-up");
   await expect(page.getByText("the follow-up").first()).toBeVisible();
   await page.getByRole("button", { name: "Stop current work" }).click();
@@ -280,6 +281,9 @@ test("a Durable Chat runs an installed package's tool, shows its pings and its c
   await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
   await page.getByRole("button", { name: "New Durable Chat" }).click();
   await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
+  // The monitor tools are a tool group, hidden until enabled, as in legacy Chats.
+  await send(page, 'call:tools_enable {"group":"monitor"}');
+  await expect(chat(page).getByText("done after tools_enable").first()).toBeVisible();
   await send(page, `call:monitor ${JSON.stringify({ source: { type: "tail", path: log }, options: { notifyOn: ["DONE"], coalesceSeconds: 0, label: "e2e-job" } })}`);
   await expect(chat(page).getByText("done after monitor").first()).toBeVisible();
   await appendFile(log, "build DONE\n");
