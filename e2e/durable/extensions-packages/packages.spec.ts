@@ -156,6 +156,8 @@ test("AC-P124 delayed phone reply and cancellation are truthful", async ({ page 
 test("AC-P133 monitor tools preserve identity, quarantine and explicit destructive approval", async ({ page }) => {
   await open(page); const log = join(env("PI_WEB_E2E_PROJECT_DIR"), `${id(page)}.log`); await writeFile(log, "");
   const args = { source: { type: "tail", path: log }, options: { reuse: "return-existing", reuseKey: id(page) } };
+  // The monitor tools are a tool group, hidden until enabled, as in legacy Chats.
+  expect((await tool(page, "tools_enable", { group: "monitor" })).isError).toBe(false);
   const created = await tool(page, "monitor", args); expect(created.isError, text(created.content)).toBe(false);
   const watcher = (created.details?.["watcher"] as { id: string; logicalId: string }); expect(watcher?.id).toBeTruthy();
   const reused = await tool(page, "monitor", args); expect((reused.details?.["watcher"] as { logicalId: string }).logicalId).toBe(watcher.logicalId);
@@ -183,6 +185,7 @@ test("AC-P134 monitor commands list, show usage and keep GC dry-run", async ({ p
 test("AC-P135 monitor ping survives host restart and stays in its owning Chat", async ({ page }) => {
   await open(page); const owner = page.url();
   const log = join(env("PI_WEB_E2E_PROJECT_DIR"), `${id(page)}-ping.log`); await writeFile(log, "");
+  expect((await tool(page, "tools_enable", { group: "monitor" })).isError).toBe(false);
   const result = await tool(page, "monitor", { source: { type: "tail", path: log }, options: { notifyOn: ["FLEET-DONE"], coalesceSeconds: 0, label: "fleet-watcher" } });
   expect(result.isError, text(result.content)).toBe(false);
   await kill(page); await appendFile(log, "FLEET-DONE\n");

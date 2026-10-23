@@ -154,8 +154,15 @@ test("AC-P006: paging preserves tool pairs and reconnect snapshot converges", as
   expect([...older.messages, ...newest.messages]).toEqual(all.messages);
   expect(newest.messages.map((m) => m.role)).toEqual(["user", "assistant", "toolResult", "assistant"]);
   await page.reload();
-  await chat(page).locator(".chat").evaluate((element) => { element.scrollTop = 0; });
-  await expect(chat(page).getByText(`${marker} turn 0`, { exact: true })).toHaveCount(1);
+  // Each entry into the top region loads one older page (ChatScrollFlows): leave and re-enter it until the first turn loads.
+  await expect.poll(async () => {
+    await chat(page).locator(".chat").evaluate(async (element) => {
+      element.scrollTop = element.scrollHeight;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      element.scrollTop = 0;
+    });
+    return chat(page).getByText(`${marker} turn 0`, { exact: true }).count();
+  }).toBe(1);
   await mock.script({ match: marker, turns: [[{ text: "Page partial streaming " }, { barrier: marker }, { text: "complete" }]] });
   await send(page, "final streaming turn");
   await mock.waitForBarrier(marker);
