@@ -96,3 +96,17 @@ test("an expanded notice or notice fold shows the whole first line in a Grid til
   await folded.locator("> summary").click();
   expect(await firstLineEndVisible(folded.locator("> summary .disclosure-preview"))).toBe(true);
 });
+
+test("cards line up with message bars and one routine step needs no Activity fold", async ({ page }) => {
+  await openWindow(page, "tabs");
+  const card = transcript(page).locator(".background-bash-card").first();
+  // The fixture's card sits in an earlier exchange; open it so both bars are laid out.
+  await card.evaluate((element) => { const history = element.closest("details"); if (history !== null && history !== element) history.open = true; });
+  await expect(card).toBeVisible();
+  const [cardLeft, messageLeft] = await card.evaluate((element) => {
+    const assistant = element.closest("article")?.parentElement?.querySelector("article.msg.assistant");
+    return [element.getBoundingClientRect().left, assistant?.getBoundingClientRect().left];
+  });
+  expect(cardLeft).toBe(messageLeft);
+  await expect(transcript(page).locator("details.activity-group")).toHaveCount(0);
+});
