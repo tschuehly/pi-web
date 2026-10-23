@@ -67,6 +67,8 @@ export const E2E_NOTICE_CHATS = [
   { id: "019ef4c0-0000-7000-8000-00000000e2ec", question: "Check the storage budget" },
   { id: "019ef4c0-0000-7000-8000-00000000e2ed", question: "Review the Atelier page" },
 ] as const;
+/** One Chat holding every transcript element kind, for the alignment audit. */
+export const E2E_ALL_KINDS_CHAT = { id: "019ef4c0-0000-7000-8000-00000000e2ee", question: "Measure every transcript kind" } as const;
 export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
 export const E2E_SIBLING_BODY = "export const seededSiblingBody = true;";
 export const E2E_PLAN = [
@@ -111,6 +113,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await seedChat(sessionDir, project, E2E_CROWDED_ASK_CHAT.id, "Twelve questions before it starts.", E2E_CROWDED_ASK_CHAT.question, 3, E2E_CROWDED_ASK_CHAT.ask);
     for (const id of [E2E_LONG_CHAT.id, ...E2E_MORE_LONG_CHAT_IDS]) await seedLongChat(sessionDir, project, id);
     for (const chat of E2E_NOTICE_CHATS) await seedNoticeChat(sessionDir, project, chat.id, chat.question);
+    await seedAllKindsChat(sessionDir, project);
     await writeFile(join(adHocFolder, "report.md"), `# Report\n\n${E2E_REPORT_BODY}\n`);
     await seedChat(sessionDir, adHocFolder, E2E_ADHOC_SESSION_ID, "It is in [the report](report.md).");
 
@@ -267,6 +270,60 @@ async function seedNoticeChat(sessionDir: string, cwd: string, sessionId: string
   message({ role: "user", content: [{ type: "text", text: "Shorten the headline too." }] });
   assistant([{ type: "text", text: "Done: the headline is now “Release 2.0”." }]);
   notice("atelier:immediate", `#75 Decision “Launch”: Ship Friday ${LONG_FIRST_LINE_TAIL}\nThe owner chose Friday.`, { page: "release.html", seqs: [75], replay: false });
+  await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+}
+
+/** Every element kind in one Chat: an earlier exchange (history fold), then compaction, thinking, tools, cards, notices and an image. */
+async function seedAllKindsChat(sessionDir: string, cwd: string): Promise<void> {
+  const { id: sessionId, question } = E2E_ALL_KINDS_CHAT;
+  const ms = Date.now();
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const image = (await readFile(join(REPO_ROOT, "docs", "assets", "pi-web-mobile.png"))).toString("base64");
+  const entries: object[] = [{ type: "session", version: 3, id: sessionId, timestamp: new Date(ms).toISOString(), cwd }];
+  let parentId: string | null = null;
+  const push = (entry: object) => {
+    const id = `kind${String(entries.length).padStart(5, "0")}`;
+    const at = ms + 1000 * entries.length;
+    entries.push({ id, parentId, timestamp: new Date(at).toISOString(), ...entry });
+    parentId = id;
+    return id;
+  };
+  const message = (body: object) => push({ type: "message", message: { ...body, timestamp: ms + 1000 * entries.length } });
+  const assistant = (content: object[], stopReason = "stop") => message({ role: "assistant", content, api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason });
+  const custom = (customType: string, content: string, details: object) => push({ type: "custom_message", customType, content, display: true, details });
+  const result = (toolCallId: string, toolName: string, content: object[], isError = false) => message({ role: "toolResult", toolCallId, toolName, content, isError });
+  const text = (value: string) => [{ type: "text", text: value }];
+
+  message({ role: "user", content: text("Earlier question in the history fold.") });
+  assistant(text("Earlier answer in the history fold."));
+  message({ role: "user", content: text(question) });
+  const kept = parentId;
+  push({ type: "compaction", summary: "The earlier work set up the fixture.", firstKeptEntryId: kept, tokensBefore: 1000 });
+  custom("working-mode", "Alignment — fast: Act without checking in.", { selection: { alignment: "fast", attention: "default", checking: "default", orchestration: "default" } });
+  assistant([{ type: "thinking", thinking: "The transcript needs one of each kind before measuring." }, { type: "toolCall", id: "call-t1", name: "bash", arguments: { command: "ls src" } }, { type: "toolCall", id: "call-t2", name: "bash", arguments: { command: "ls e2e" } }], "toolUse");
+  result("call-t1", "bash", text("client\nserver"));
+  result("call-t2", "bash", text("isolatedPiWeb.ts"));
+  assistant(text("Assistant message: the fixture lists the sources."));
+  assistant([{ type: "toolCall", id: "call-one", name: "bash", arguments: { command: "git status --short" } }], "toolUse");
+  result("call-one", "bash", text("M e2e/isolatedPiWeb.ts"));
+  assistant(text("One routine bash row above; an Activity group follows."));
+  assistant([{ type: "toolCall", id: "call-a1", name: "bash", arguments: { command: "npm run lint" } }, { type: "toolCall", id: "call-a2", name: "read", arguments: { path: "docs/notes.md" } }], "toolUse");
+  result("call-a1", "bash", text("lint ok"));
+  result("call-a2", "read", text("# Seeded notes"));
+  assistant([{ type: "toolCall", id: "call-fail", name: "bash", arguments: { command: "npm test" } }], "toolUse");
+  result("call-fail", "bash", text("1 test failed\nexit 1"), true);
+  custom("background-bash", "Background bash job-du complete (exit 0).\nFull output: /tmp/job-du.log\n12G node_modules", { id: "job-du", command: "du -sh node_modules", description: "Size node_modules", state: "complete", elapsedSeconds: 3, logPath: "/tmp/job-du.log", exitCode: 0 });
+  custom("pi-goal.lifecycle", "Goal resumed", { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" });
+  custom("pi-workbench:child-completion", "Subagent audit finished: 3 findings.", { attention: "terminal-results" });
+  const askedAt = new Date(ms).toISOString();
+  custom("pi-web.ask.answers", "Answers: Tabs", { askId: "a1", reason: "submitted", askedAt, closedAt: askedAt, questions: [{ question: { id: "layout", question: "Which layout?", options: [{ value: "tabs", label: "Tabs" }, { value: "grid", label: "Grid" }] }, answered: true, values: ["tabs"] }], answeredCount: 1, unansweredIds: [], summary: "Which layout? Tabs" });
+  custom("storage-guard", "Disk low: 9 GB free. Clear caches before large builds.", {});
+  assistant(text("A lone notice above; a notice fold below."));
+  custom("storage-guard", "Disk low: 8 GB free.", {});
+  custom("storage-guard", "Disk low: 7 GB free.", {});
+  assistant([{ type: "toolCall", id: "call-img", name: "read", arguments: { path: "docs/assets/pi-web-mobile.png" } }], "toolUse");
+  result("call-img", "read", [{ type: "text", text: "Read image file [image/png]" }, { type: "image", data: image, mimeType: "image/png" }]);
+  assistant(text("Final answer after the image."));
   await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 }
 
