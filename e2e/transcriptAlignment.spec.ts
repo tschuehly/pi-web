@@ -53,7 +53,7 @@ const KINDS: { kind: string; selector: string; nested?: true }[] = [
 interface Row { kind: string; nested: boolean; found: boolean; left?: number; right?: number; bar?: string; barColour?: string; background?: string; radius?: string; contentStart?: number | undefined; bodyStarts?: number[] | undefined; marker?: string; gap?: number | undefined; afterBlock?: boolean }
 interface Markers { summaries: number; withoutChevron: string[]; nativeMarkers: string[]; beforeMarkers: string[]; glyphs: number; chevronLefts: number[] }
 
-async function measure(page: Page): Promise<{ chatWidth: number; workbench: boolean; dense: boolean; rows: Row[]; markers: Markers }> {
+async function measure(page: Page): Promise<{ chatWidth: number; workbench: boolean; dense: boolean; rows: Row[]; markers: Markers; deep: { selector: string; x: number | undefined }[] }> {
   return transcript(page).evaluate((chat, kinds) => {
     const host = (chat.getRootNode() as ShadowRoot).host;
     const chatRect = chat.getBoundingClientRect();
@@ -177,7 +177,17 @@ async function measure(page: Page): Promise<{ chatWidth: number; workbench: bool
       glyphs: glyphs.length,
       chevronLefts: summaries.flatMap((summary) => { const chevron = summary.querySelector(":scope > .chevron"); return chevron === null ? [] : [round(chevron.getBoundingClientRect().left - chatRect.left)]; }),
     };
-    return { chatWidth: round(chat.clientWidth), workbench: host.hasAttribute("workbench"), dense: host.hasAttribute("dense"), rows, markers };
+    // Text deeper inside blocks keeps the column too: question and answer words, and expanded tool output.
+    const deepAll = (root: Element | ShadowRoot, selector: string, out: Element[] = []): Element[] => {
+      for (const node of Array.from(root.querySelectorAll("*"))) { if (node.matches(selector)) out.push(node); if (node.shadowRoot) deepAll(node.shadowRoot, selector, out); }
+      return out;
+    };
+    const deep = [".record-question h3 > span:not(.question-number)", ".question-detail", ".record-answers > li", ".detail-result pre", ".detail-label"].flatMap((selector) =>
+      deepAll(chat, selector).filter((element) => element.getClientRects().length > 0).slice(0, 1).map((element) => {
+        const first = contentRects(element, true)[0];
+        return { selector, x: first === undefined ? undefined : round(first.left - chatRect.left) };
+      }));
+    return { chatWidth: round(chat.clientWidth), workbench: host.hasAttribute("workbench"), dense: host.hasAttribute("dense"), rows, markers, deep };
   }, KINDS);
 }
 
@@ -223,9 +233,10 @@ for (const layout of ["tabs", "grid"] as const) {
       expect(blocks.filter((row) => row.background !== "none").map((row) => `${row.kind}: ${String(row.background)}`), "no fill").toEqual([]);
       expect(rows.filter((row) => row.nested && row.bar !== "none").map((row) => row.kind), "nested blocks draw no second bar").toEqual([]);
       // One text column for every kind, nested ones included: each heading's first word, and each message body's first and leftmost line.
-      const starts = rows.flatMap((row) => [row.contentStart ?? NaN, ...(row.bodyStarts ?? [])]);
+      expect(result.deep.map((entry) => entry.selector), "question records and an expanded tool result are measured").toEqual([".record-question h3 > span:not(.question-number)", ".record-answers > li", ".detail-result pre", ".detail-label"].filter((selector) => result.deep.some((entry) => entry.selector === selector)).length === 4 ? result.deep.map((entry) => entry.selector) : ["missing deep text"]);
+      const starts = [...rows.flatMap((row) => [row.contentStart ?? NaN, ...(row.bodyStarts ?? [])]), ...result.deep.map((entry) => entry.x ?? NaN)];
       expect(rows.filter((row) => row.kind.endsWith("message") && row.bodyStarts === undefined).map((row) => row.kind), "message bodies measured").toEqual([]);
-      expect(spread(starts), `text starts: ${rows.map((row) => `${row.kind}=${[row.contentStart, ...(row.bodyStarts ?? [])].map(String).join("/")}`).join(", ")}`).toBeLessThanOrEqual(1);
+      expect(spread(starts), `text starts: ${rows.map((row) => `${row.kind}=${[row.contentStart, ...(row.bodyStarts ?? [])].map(String).join("/")}`).join(", ")}; deep: ${result.deep.map((entry) => `${entry.selector}=${String(entry.x)}`).join(", ")}`).toBeLessThanOrEqual(1);
       // One marker: every rendered summary leads with the Lucide chevron, all at one x; no native, CSS or glyph marker.
       expect(markers.summaries).toBeGreaterThan(5);
       expect(markers.withoutChevron, "summaries without the chevron").toEqual([]);
