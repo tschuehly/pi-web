@@ -230,7 +230,7 @@ export class DelegateRoster extends LitElement {
     .section-name { flex: 0 0 auto; font-weight: 650; }
     .aggregate { min-width: 0; overflow: hidden; color: var(--pi-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
     /* One shared column grid: every name, report, status and time lines up across rows. */
-    .rows { display: grid; grid-template-columns: 14px fit-content(28%) minmax(0, 1fr) auto auto; grid-auto-rows: max-content; column-gap: 10px; max-height: min(28vh, 220px); overflow-y: auto; overscroll-behavior: contain;
+    .rows { display: grid; grid-template-columns: 14px fit-content(42%) minmax(0, 1fr) auto auto; grid-auto-rows: max-content; column-gap: 10px; max-height: min(28vh, 220px); overflow-y: auto; overscroll-behavior: contain;
       /* Scroll shadows: an edge shadow appears only while more rows sit beyond it. */
       background:
         linear-gradient(var(--pi-surface) 40%, transparent) top / 100% 18px no-repeat local,
