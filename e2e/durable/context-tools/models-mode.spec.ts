@@ -2,7 +2,7 @@
 import { readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { MOCK_CODEX_MODEL } from "../../mockModels/agentConfig";
-import { test, expect, mock, createChat, chooseModel, answer, send, status, url, project, killHost, command, messages, chat, idle, root } from "./support";
+import { test, expect, mock, settings, createChat, chooseModel, answer, send, status, url, project, killHost, command, messages, chat, idle, root } from "./support";
 
 test.use({ trace: "retain-on-failure", screenshot: "only-on-failure" });
 test.setTimeout(60_000);
@@ -107,13 +107,17 @@ test("AC-P023 paid cache miss is visible and survives reload", async ({ page }) 
     { steps: [{ text: "Warm cache." }], usage: { input: 50100, output: 10, cacheRead: 50000 } },
     { steps: [{ text: "Cache missed." }], usage: { input: 50100, output: 10, cacheRead: 0 } },
   ] });
-  const id = await createChat(page);
-  await chooseModel(page, MOCK_CODEX_MODEL);
-  await answer(page, id, "cache first", "Warm cache.");
-  await answer(page, id, "cache second", "Cache missed.");
-  await expect.soft(chat(page).getByText(/tokens re-billed/i).first()).toBeVisible();
-  await page.reload();
-  await expect(chat(page).getByText(/tokens re-billed/i).first()).toBeVisible();
+  // AC-P023 Given: cache-miss notices enabled (Pi's showCacheMissNotices, off by default for legacy Chats too).
+  await settings({ showCacheMissNotices: true });
+  try {
+    const id = await createChat(page);
+    await chooseModel(page, MOCK_CODEX_MODEL);
+    await answer(page, id, "cache first", "Warm cache.");
+    await answer(page, id, "cache second", "Cache missed.");
+    await expect.soft(chat(page).getByText(/tokens re-billed/i).first()).toBeVisible();
+    await page.reload();
+    await expect(chat(page).getByText(/tokens re-billed/i).first()).toBeVisible();
+  } finally { await settings({ showCacheMissNotices: false }); }
 });
 
 test("AC-P103 AC-P104 selected/applied four-axis mode and idempotent /mode send survive host kill", async ({ page }) => {
