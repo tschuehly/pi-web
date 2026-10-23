@@ -85,26 +85,28 @@ export class ToolExecutionView extends LitElement {
     const row = toolRowSummary(execution);
     const log = execution.toolName === "bash" ? logPath(execution.details) : undefined;
 
-    return html`
-      <section class=${`tool-card ui-transcript-surface ui-transcript-activity ui-transcript-tool ${execution.status}`}>
-        <div class="tool-header ui-transcript-heading">
+    const header = html`
           <div class="tool-title">
             <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
             <strong>${toolActionLabel(execution.toolName)}</strong>
             ${this.renderHeaderTarget(target, row.argument)}
             ${row.result === undefined ? null : html`<span class="row-result">· ${row.result}</span>`}
-            ${log === undefined ? null : html`<bash-log-button .logPath=${log} .machineId=${this.machineId}></bash-log-button>`}
+            ${log === undefined ? null : html`<bash-log-button .logPath=${log} .machineId=${this.machineId} @click=${(event: Event) => { event.preventDefault(); }}></bash-log-button>`}
           </div>
           <div class="tool-meta">
             ${editCountLabel(execution) === undefined ? null : html`<span>${editCountLabel(execution)}</span>`}
             ${diffStats === undefined ? null : html`<span class="diff-stats"><b class="added">+${diffStats.added}</b><span>/</span><b class="removed">-${diffStats.removed}</b></span>`}
             <span class="status-label">${statusLabel(execution.status)}</span>
-          </div>
-        </div>
+          </div>`;
+    // Without a diff, the row itself opens the details; no separate "Details" line (ISSUE-104).
+    const textBody = visibleDiff === undefined ? this.renderTextBody(bodyText, execution.status === "error", target, header) : null;
 
+    return html`
+      <section class=${`tool-card ui-transcript-surface ui-transcript-activity ui-transcript-tool ${execution.status}`}>
+        ${textBody === null ? html`<div class="tool-header ui-transcript-heading">${header}</div>` : null}
         ${previewMismatch ? html`<p class="notice">Applied diff differs from the preview.</p>` : null}
         ${errorText === undefined || errorText === "" ? null : html`<pre class="error-text">${errorText}</pre>`}
-        ${visibleDiff === undefined ? this.renderTextBody(bodyText, execution.status === "error", target) : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff", target)}
+        ${visibleDiff === undefined ? textBody : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff", target)}
         ${visibleDiff !== undefined && this.orphan ? this.renderTextBody(bodyText, true, undefined) : null}
       </section>
     `;
@@ -126,14 +128,14 @@ export class ToolExecutionView extends LitElement {
     `;
   }
 
-  private renderTextBody(text: string | undefined, open: boolean, target: ToolTarget | undefined) {
+  private renderTextBody(text: string | undefined, open: boolean, target: ToolTarget | undefined, header?: unknown) {
     if ((text === undefined || text === "") && target === undefined) return null;
     const expanded = this.textOpen ?? open;
     return html`
       <details class="text-body" ?open=${expanded} @toggle=${(event: Event) => {
         if (event.currentTarget instanceof HTMLDetailsElement) this.textOpen = event.currentTarget.open;
       }}>
-        <summary class="ui-transcript-disclosure">Details</summary>
+        ${header === undefined ? html`<summary class="ui-transcript-disclosure">Details</summary>` : html`<summary class="tool-header ui-transcript-heading">${header}</summary>`}
         ${expanded ? html`${this.renderExpandedTarget(target)}
         ${text === undefined || text === "" ? null : html`
           <div class="detail-result">
@@ -218,6 +220,8 @@ export class ToolExecutionView extends LitElement {
     .text-body { min-width: 0; }
     .text-body[open], .diff-details[open] { padding-bottom: 12px; }
     .text-body > summary { color: var(--pi-muted); }
+    summary.tool-header { cursor: pointer; list-style: none; }
+    summary.tool-header::-webkit-details-marker { display: none; }
     .detail-target, .detail-result { display: grid; gap: 4px; margin: 8px 12px 0; min-width: 0; }
     .detail-label { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
     .text-body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); color: var(--pi-text); }
