@@ -3,6 +3,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { QueuedSessionMessage, SessionInfo, SessionStatus } from "../api";
 import { initialAppState, type AppState } from "../appState";
 import { WorkbenchChatSession } from "../controllers/workbenchSessionFocus";
+import type { SessionControllerDependencies } from "../controllers/sessionController";
+import { defaultApi } from "../controllers/sessionController.testSupport";
 import type { ChatView } from "./ChatView";
 import type { PromptEditor } from "./PromptEditor";
 import { WorkbenchChatPane } from "./WorkbenchChatPane";
@@ -92,12 +94,12 @@ it("offers queue Recall, Remove and kind toggle, confirming consequences and the
   await vi.waitFor(() => { expect(mutate).toHaveBeenLastCalledWith("remove", 0, queued); });
 });
 
-async function mountPane(draft: string, role: "user" | "assistant" = "user", queuedMessages: QueuedSessionMessage[] = []) {
+async function mountPane(draft: string, role: "user" | "assistant" = "user", queuedMessages: QueuedSessionMessage[] = [], dependencies: Partial<SessionControllerDependencies> = {}) {
   const status: SessionStatus | undefined = queuedMessages.length === 0 ? undefined : { sessionId: session.id, isStreaming: true, isCompacting: false, isBashRunning: false,
     pendingMessageCount: queuedMessages.length, queuedMessages, cost: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
   const state: AppState = { ...initialAppState(), selectedSession: session, status, messages: [{ role, entryId: "entry-1", parts: [{ type: "text", text: "Hello" }] }] };
   const pane = new WorkbenchChatPane();
-  const runtime = new WorkbenchChatSession(state, (chat) => { pane.app = chat.state; }, { socket: { connect: vi.fn(), setHandler: vi.fn(), close: vi.fn() } });
+  const runtime = new WorkbenchChatSession(state, (chat) => { pane.app = chat.state; }, { socket: { connect: vi.fn(), setHandler: vi.fn(), close: vi.fn() }, ...dependencies });
   runtimes.push(runtime);
   pane.runtime = runtime;
   pane.app = runtime.state;
@@ -141,4 +143,21 @@ it("hosts the Chat in the Workbench presentation and passes the configured strea
   pane.defaultStreamingBehavior = "followUp";
   await pane.updateComplete;
   expect(editor.defaultStreamingBehavior).toBe("followUp");
+});
+
+it("shows a failed Stop (or any failed action) of this Chat in its pane until dismissed; other Chats' failures stay out (fleet P011)", async () => {
+  const abort = vi.fn(() => Promise.reject(new Error("fixture stop refused")));
+  const { pane, runtime } = await mountPane("", "user", [{ kind: "followUp", text: "queued" }], { api: { ...defaultApi, abort } });
+  await runtime.sessions.stopActiveWork();
+  await pane.updateComplete;
+  expect(abort).toHaveBeenCalledOnce();
+  const alert = pane.querySelector<HTMLElement>(".chat-error [role=alert]");
+  expect(alert?.textContent).toContain("fixture stop refused");
+  expect(runtime.state.status?.isStreaming).toBe(true);
+  alert?.querySelector<HTMLButtonElement>("button[aria-label='Dismiss error']")?.click();
+  await pane.updateComplete;
+  expect(pane.querySelector(".chat-error")).toBeNull();
+  runtime.patch({ browserErrors: { other: { scope: { kind: "session", machineId: "local", sessionId: "session-2" }, message: "elsewhere" } } });
+  await pane.updateComplete;
+  expect(pane.querySelector(".chat-error")).toBeNull();
 });

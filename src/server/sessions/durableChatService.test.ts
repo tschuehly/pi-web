@@ -2,10 +2,13 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
 import { DURABLE_HOST_PROTOCOL, DurableChatService, durableHostArgs, type DurableHostProcess, forkDurableHost } from "./durableChatService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
+import { SessionNotificationStore } from "./sessionNotificationStore.js";
+import { WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
+import { SESSION_TITLE_SYSTEM_PROMPT } from "./sessionNameGenerator.js";
 import type { DurableChatResourceSet } from "./durableChatResources.js";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
 
@@ -564,5 +567,136 @@ describe("Durable Chats", () => {
     expect(global).toMatchObject([{ type: "status.update", status: { ...status, sessionId: chat.id, capabilities: ["attachments"] } }]);
     await durable.stop(ref);
     expect((await durable.status(ref)).capabilities).toEqual([]);
+  });
+});
+
+/** Global events a browser receives, collected. */
+function globalEvents(hub: SessionEventHub): Record<string, unknown>[] {
+  const events: Record<string, unknown>[] = [];
+  hub.addGlobal({ OPEN: 1, readyState: 1, send: (payload) => { const event: unknown = JSON.parse(payload); if (typeof event === "object" && event !== null) events.push({ ...event }); }, terminate: () => undefined, on: () => undefined });
+  return events;
+}
+
+describe("Durable Chats: composer and attention parity (fleet P028 P030 P031 P032 P033)", () => {
+  it("P030 names each tool phase in the Chat's activity, as a legacy Chat does", async () => {
+    const { durable, hub, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const published = vi.spyOn(hub, "publish");
+    const host = only(launched);
+    host.push({ type: "agent.start" });
+    host.push({ type: "tool.start", toolName: "read", toolCallId: "c1", summary: "" });
+    host.push({ type: "tool.end", toolName: "read", toolCallId: "c1", text: "ok", isError: false });
+    host.push({ type: "tool.start", toolName: "bash", toolCallId: "c2", summary: "" });
+    host.push({ type: "tool.end", toolName: "bash", toolCallId: "c2", text: "boom", isError: true });
+    host.push({ type: "agent.end" });
+    const activity = published.mock.calls.map(([, event]) => event).filter((event) => event.type === "activity.update").map((event) => event.activity);
+    expect(activity.map(({ phase, label, sessionId }) => ({ phase, label, sessionId }))).toEqual([
+      { phase: "active", label: "agent running", sessionId: chat.id },
+      { phase: "active", label: "running tool: read", sessionId: chat.id },
+      { phase: "active", label: "tool complete: read", sessionId: chat.id },
+      { phase: "active", label: "running tool: bash", sessionId: chat.id },
+      { phase: "error", label: "tool failed: bash", sessionId: chat.id },
+      { phase: "idle", label: "idle", sessionId: chat.id },
+    ]);
+  });
+
+  it("P031 titles a Chat from its first substantive prompt through its host's model; later prompts and /name keep their precedence", async () => {
+    const { durable, hub, launched, locator } = await service(undefined, undefined, { config: { read: () => ({ effectiveConfig: { sessionNaming: { model: "anthropic/claude-haiku", maxTokens: 30 } } }) } });
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const host = only(launched);
+    host.answer = (request) => request.method === "complete" ? "Title: Migration review" : request.method === "status" ? status : null;
+    const events = globalEvents(hub);
+    await durable.prompt(ref, "Please review this substantial migration plan");
+    await vi.waitFor(() => { expect(durable.list("/work/a")[0]?.name).toBe("Durable · Migration review"); });
+    const complete = host.requests.filter((request) => request.method === "complete");
+    expect(complete).toHaveLength(1);
+    expect(complete[0]?.params).toMatchObject({
+      systemPrompt: SESSION_TITLE_SYSTEM_PROMPT,
+      prompt: "Create a 2-6 word title for this request:\n\nPlease review this substantial migration plan",
+      maxTokens: 30, reasoning: "minimal", model: { provider: "anthropic", modelId: "claude-haiku" },
+    });
+    expect(events).toContainEqual({ type: "session.name", sessionId: chat.id, name: "Durable · Migration review" });
+    expect(locator.durable(chat.id)).toMatchObject({ name: "Migration review", nameSource: "auto" });
+    // The first prompt is recorded; a later one asks for no new title.
+    host.push({ type: "message.end", message: { role: "user", content: "Please review this substantial migration plan", entryId: "1" } });
+    await durable.prompt(ref, "continue");
+    await durable.runCommand(ref, "/name Explicit owner title");
+    expect(locator.durable(chat.id)).toMatchObject({ name: "Explicit owner title", nameSource: "manual" });
+    expect(host.requests.filter((request) => request.method === "complete")).toHaveLength(1);
+  });
+
+  it("P031 falls back to the prompt's first words when the title request fails, and never overrides an owner's /name", async () => {
+    const { durable, launched } = await service();
+    const failing = await durable.start("/work/a");
+    only(launched).answer = (request) => { if (request.method === "complete") throw new Error("model unavailable"); return request.method === "status" ? status : null; };
+    await durable.prompt({ id: failing.id, cwd: "/work/a" }, "Fix the flaky login test in CI today please");
+    await vi.waitFor(() => { expect(durable.list("/work/a", failing.id)[0]?.name).toBe("Durable · Fix the flaky login test in"); });
+
+    const named = await durable.start("/work/b");
+    const host = launched[1];
+    if (host === undefined) throw new Error("second host");
+    await durable.runCommand({ id: named.id, cwd: "/work/b" }, "/name Mine");
+    await durable.prompt({ id: named.id, cwd: "/work/b" }, "Fix the flaky login test");
+    expect(host.requests.some((request) => request.method === "complete")).toBe(false);
+    expect(durable.list("/work/b")[0]?.name).toBe("Durable · Mine");
+  });
+
+  it("P032 applies a Workstream checkpoint title without a turn, unless the owner named the Chat", async () => {
+    const { durable, hub, launched, locator } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const events = globalEvents(hub);
+    await expect(durable.runCommand(ref, "/workstream-checkpoint-title   Checkpoint   fixture ")).resolves.toEqual({ type: "done" });
+    expect(locator.durable(chat.id)).toMatchObject({ name: "Checkpoint fixture", nameSource: "checkpoint" });
+    expect(events).toContainEqual({ type: "session.name", sessionId: chat.id, name: "Durable · Checkpoint fixture" });
+    expect(only(launched).requests.map((request) => request.method)).not.toContain("command");
+    expect(only(launched).requests.map((request) => request.method)).not.toContain("prompt");
+    await durable.runCommand(ref, "/name Owner title");
+    await expect(durable.runCommand(ref, "/workstream-checkpoint-title Later checkpoint")).resolves.toEqual({ type: "done" });
+    expect(locator.durable(chat.id)?.name).toBe("Owner title");
+  });
+
+  it("P033 binds a Workstream launch token to the Durable Chat it creates; lookups find it only in its workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-web-launches-"));
+    roots.push(root);
+    const launches = new WorkstreamLaunchStore(join(root, "launches"));
+    const { durable } = await service(undefined, undefined, { launches });
+    const chat = await durable.start("/work/a", "pi-web:fleet-1");
+    expect(chat.startupToken).toBe("pi-web:fleet-1");
+    await expect(durable.lookupWorkstreamLaunch("pi-web:fleet-1", "/work/a")).resolves.toEqual({ status: "found", sessionId: chat.id, cwd: "/work/a" });
+    await expect(durable.lookupWorkstreamLaunch("pi-web:fleet-1", "/work/b")).resolves.toBeUndefined();
+    await expect(durable.lookupWorkstreamLaunch("pi-web:other", "/work/a")).resolves.toBeUndefined();
+    // The token is single-use: a second launch with it is refused instead of creating a duplicate Chat.
+    await expect(durable.start("/work/a", "pi-web:fleet-1")).rejects.toThrow(/already reserved/);
+    expect(durable.list("/work/a")).toHaveLength(1);
+    // A plain startup token is only echoed, as for legacy Chats.
+    await expect(durable.start("/work/a", "token-1")).resolves.toMatchObject({ startupToken: "token-1" });
+  });
+
+  it("P028 retains a host's package warnings in the Chat's notification inbox; dismissals follow the legacy watermark rules", async () => {
+    const notifications = new SessionNotificationStore();
+    const { durable, hub, launched } = await service(undefined, undefined, { notifications });
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const events = globalEvents(hub);
+    only(launched).push({ type: "durable.notification", severity: "warning", message: "notice A" });
+    only(launched).push({ type: "durable.notification", severity: "error", message: "notice B" });
+    const inbox = durable.notificationInbox(ref);
+    expect(inbox?.notifications.map(({ message, severity }) => ({ message, severity }))).toEqual([{ message: "notice B", severity: "error" }, { message: "notice A", severity: "warning" }]);
+    expect(events.some((event) => event["type"] === "notifications.summary")).toBe(true);
+    only(launched).push({ type: "durable.notification", severity: "warning", message: "notice C" });
+    if (inbox === undefined) throw new Error("inbox");
+    durable.dismissNotification(ref, { daemonInstanceId: inbox.daemonInstanceId, notificationId: inbox.notifications[1]?.id ?? "" });
+    const after = durable.dismissAllNotifications(ref, { daemonInstanceId: inbox.daemonInstanceId, throughOrder: inbox.dismissThrough.order, throughOverflowWatermark: inbox.dismissThrough.overflowWatermark });
+    expect(after?.notifications.map((notification) => notification.message)).toEqual(["notice C"]);
+    expect(notifications.catalogSnapshot().sessions.map((summary) => summary.sessionId)).toEqual([chat.id]);
+    // A new host replays its packages' session_start notices: its inbox starts over instead of doubling them.
+    only(launched).kill();
+    await durable.status(ref);
+    expect(durable.notificationInbox(ref)?.notifications).toEqual([]);
+    // A Chat whose host has not run in this daemon has no inbox yet.
+    const other = { id: "missing", cwd: "/work/a" };
+    expect(() => durable.notificationInbox(other)).toThrow("Session not found");
   });
 });

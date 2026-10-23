@@ -35,7 +35,7 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
   const isDurable = (ref: SessionRouteRef) => durable.owns(ref.id);
   // Gated operations name the capability a Durable Chat reports once it supports them; the browser hides their controls.
   const unavailable = (capability: ChatCapability): never => { throw new DurableChatUnavailable(CHAT_CAPABILITY_LABELS[capability]); };
-  // Slice 1 records no notifications for Durable Chats: their inbox is always empty.
+  // A Durable Chat whose host has not run in this daemon has recorded no notifications yet: its inbox is empty.
   const emptyInbox = async (ref: SessionRouteRef): Promise<SessionNotificationInboxSnapshot> => {
     const { daemonInstanceId, catalogRevision } = await legacy.notificationCatalog();
     return {
@@ -63,7 +63,7 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
       const chat = durable.listAll().find((session) => session.id === sessionId);
       return chat === undefined ? legacy.locate(sessionId) : { cwd: chat.cwd };
     },
-    lookupWorkstreamLaunch: (token, cwd) => legacy.lookupWorkstreamLaunch(token, cwd),
+    lookupWorkstreamLaunch: async (token, cwd) => await durable.lookupWorkstreamLaunch(token, cwd) ?? legacy.lookupWorkstreamLaunch(token, cwd),
     notificationCatalog: () => legacy.notificationCatalog(),
     unreadCatalog: () => legacy.unreadCatalog(),
     acknowledgeUnread: (sessionId, request) => legacy.acknowledgeUnread(sessionId, request),
@@ -89,9 +89,9 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     acknowledgeAttention: (ref, requestId) => isDurable(ref) ? durable.acknowledgeAttention(ref, requestId) : legacy.acknowledgeAttention(ref, requestId),
     streamSnapshot: (ref) => isDurable(ref) ? durable.streamSnapshot(ref) : legacy.streamSnapshot(ref),
     transcriptSnapshot: (ref, page) => isDurable(ref) ? durable.transcriptSnapshot(ref, page) : legacy.transcriptSnapshot(ref, page),
-    notificationInbox: (ref) => isDurable(ref) ? emptyInbox(ref) : legacy.notificationInbox(ref),
-    dismissNotification: (ref, request) => isDurable(ref) ? emptyInbox(ref) : legacy.dismissNotification(ref, request),
-    dismissAllNotifications: (ref, request) => isDurable(ref) ? emptyInbox(ref) : legacy.dismissAllNotifications(ref, request),
+    notificationInbox: (ref) => isDurable(ref) ? durable.notificationInbox(ref) ?? emptyInbox(ref) : legacy.notificationInbox(ref),
+    dismissNotification: (ref, request) => isDurable(ref) ? durable.dismissNotification(ref, request) ?? emptyInbox(ref) : legacy.dismissNotification(ref, request),
+    dismissAllNotifications: (ref, request) => isDurable(ref) ? durable.dismissAllNotifications(ref, request) ?? emptyInbox(ref) : legacy.dismissAllNotifications(ref, request),
     promoteQueuedMessage: (ref, target) => isDurable(ref) ? durable.promoteQueuedMessage(ref, target) : legacy.promoteQueuedMessage(ref, target),
     promoteAllQueuedMessages: (ref) => isDurable(ref) ? durable.promoteAllQueuedMessages(ref) : legacy.promoteAllQueuedMessages(ref),
     clearQueue: (ref) => isDurable(ref) ? durable.clearQueue(ref) : legacy.clearQueue(ref),
