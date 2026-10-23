@@ -5,6 +5,8 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import type { AskUserSubmission, ExtensionDialogAnswer, PromptAttachment, QueuedSessionMessage, SessionTreeSummaryChoice } from "../api";
 import type { PromptAttachmentDelivery, SessionEffectResolution } from "../../../shared/apiTypes";
 import type { AppState } from "../appState";
+import { browserErrorContext, clearBrowserError, visibleBrowserErrors } from "../browserErrors";
+import { errorBanner } from "./errorBanner";
 import { DEFAULT_CHAT_BEHAVIORS, type ChatBehaviors } from "../chatBehaviors";
 import { latestWorkingModeSelection } from "../chatMessages";
 import type { WorkbenchChatSession } from "../controllers/workbenchSessionFocus";
@@ -150,6 +152,10 @@ export class WorkbenchChatPane extends LitElement {
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${machineId} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         ${state.error === "" ? nothing : html`<div class="chat-error" role="alert">${state.error}</div>`}
+        ${visibleBrowserErrors(state.browserErrors, browserErrorContext(state)).filter((error) => error.scope.kind === "session").map((error) => html`<div class="chat-error">${errorBanner(error.message, () => {
+          // This Chat's failed actions (Stop, send, queue edits) report here, not in the window's banner.
+          runtime.patch({ browserErrors: clearBrowserError(runtime.state.browserErrors, error.scope, error.message) });
+        })}</div>`)}
         <conversation-layout class="chat-column" .status=${state.status} .activity=${state.activity} .sending=${state.sendingPrompts[session.id] === true} .visualEffects=${WORKBENCH_CHAT_BEHAVIORS.visualEffects}>
           <chat-view
             .dense=${this.dense}
