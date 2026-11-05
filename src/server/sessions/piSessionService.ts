@@ -144,6 +144,13 @@ export interface PiSessionLogger {
 
 const noopLogger: PiSessionLogger = { info() { /* no-op */ } };
 const DEFAULT_UNREAD_PUBLICATION_RETRY_MS = 1_000;
+/** A loaded session with no work, watcher, or open question for this long is unloaded; the next access reopens it. */
+function isStatusRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export const IDLE_SESSION_UNLOAD_MS = 2 * 60 * 60 * 1000;
+const IDLE_SESSION_SWEEP_MS = 10 * 60 * 1000;
 /**
  * User-facing names for the two phases of session startup PI WEB can prove it
  * is inside: it awaits exactly one call for each, so the phase is a fact rather
@@ -1246,6 +1253,9 @@ export class PiSessionService implements SessionRouteService {
   private readonly activeToolExecutions = new WeakMap<PiAgentSession, Map<string, ActiveToolExecution>>();
   private nextActiveToolExecutionId = 0;
   private readonly heartbeat: NodeJS.Timeout;
+  private readonly idleUnloadSweep: NodeJS.Timeout;
+  /** Last status or activity publication per runtime: every event, prompt, and status change passes through one of them. */
+  private readonly lastPublishedAt = new WeakMap<PiAgentSession, number>();
   private readonly commandService: SessionCommandService<PiAgentSession>;
   /** Runtime-identity gate held while Pi may await abandoned-branch summarization. */
   private readonly treeNavigations = new WeakSet<PiAgentSession>();
@@ -1399,6 +1409,8 @@ export class PiSessionService implements SessionRouteService {
     this.createAgentRuntime = deps.createAgentRuntime ?? defaultCreateAgentRuntime;
     this.workspaceActivity = deps.workspaceActivity;
     this.heartbeat = setInterval(() => { this.publishHeartbeats(); }, deps.heartbeatIntervalMs ?? 2000);
+    this.idleUnloadSweep = setInterval(() => { void this.unloadIdleSessions(); }, IDLE_SESSION_SWEEP_MS);
+    this.idleUnloadSweep.unref();
     this.commandService = new SessionCommandService(
       (sessionId) => this.getActive(this.activeSessionRef(sessionId)),
       (sessionId, text) => this.prompt(this.activeSessionRef(sessionId), text, undefined, undefined, { echoUserMessage: false }),
@@ -1548,6 +1560,7 @@ export class PiSessionService implements SessionRouteService {
     this.unreadPublicationStopped = true;
     this.clearUnreadPublicationRetry();
     clearInterval(this.heartbeat);
+    clearInterval(this.idleUnloadSweep);
     this.clearCompactionDrainTimers();
     // Same startup-park hazard as closeActive(): settle `session_start` dialogs
     // of sessions still binding extensions before awaiting their pending opens.
@@ -4366,6 +4379,59 @@ export class PiSessionService implements SessionRouteService {
     return [...names];
   }
 
+  /** Close every loaded session idle for {@link IDLE_SESSION_UNLOAD_MS}; extensions see an ordinary session_shutdown. */
+  async unloadIdleSessions(): Promise<void> {
+    for (const [sessionId, active] of [...this.active]) {
+      // Re-checked per session: an earlier close yields, and work may start meanwhile.
+      if (active.runtime.session.sessionId !== sessionId || !this.isIdleForUnload(active.runtime.session)) continue;
+      this.logger.info({ sessionId }, "Unloading idle session");
+      try {
+        await this.closeActive(sessionId);
+      } catch (error: unknown) {
+        this.logger.info({ sessionId, err: error }, "Could not unload idle session");
+      }
+    }
+  }
+
+  private isIdleForUnload(session: PiAgentSession): boolean {
+    const sessionId = session.sessionId;
+    return this.isCurrentActiveSession(session)
+      && !this.startupSessions.has(sessionId)
+      && this.pendingSessionOpenPromises(sessionId).length === 0
+      && !this.hasActiveWork(session)
+      && this.pendingAskStore.pendingAsks(sessionId).length === 0
+      && this.pendingExtensionDialogStore.pendingDialogs(sessionId).length === 0
+      && !this.events.hasSessionSubscribers(sessionId)
+      && this.workingSubsessionIds(sessionId).length === 0
+      && (this.activeToolExecutions.get(session)?.size ?? 0) === 0
+      && !this.hasExtensionBackgroundWork(session)
+      && this.now().getTime() - (this.lastPublishedAt.get(session) ?? 0) >= IDLE_SESSION_UNLOAD_MS;
+  }
+
+  /**
+   * Background work extensions report through status keys: shutdown would kill running subagents and
+   * workers and stop job and watcher completions from waking the session. Unparseable means busy.
+   */
+  private hasExtensionBackgroundWork(session: PiAgentSession): boolean {
+    const statuses = this.extensionStatuses.get(session);
+    const list = (key: string, field: string): unknown[] | undefined => {
+      const text = statuses?.get(key);
+      if (text === undefined) return [];
+      try {
+        const value: unknown = JSON.parse(text);
+        const items = isStatusRecord(value) ? value[field] : undefined;
+        return Array.isArray(items) ? items : undefined;
+      } catch { return undefined; }
+    };
+    const jobs = list("pi-workbench:background-bash", "jobs");
+    const watchers = list("pi-process-monitor:watchers", "watchers");
+    const delegates = list("pi-workbench:activity", "items");
+    return jobs === undefined || jobs.length > 0
+      || watchers === undefined || watchers.length > 0
+      || delegates === undefined
+      || delegates.some((item) => !isStatusRecord(item) || item["endedAt"] === undefined);
+  }
+
   private async closeActive(sessionId: string, notificationPolicy: NotificationClosePolicy = CLEAR_RUNTIME_NOTIFICATIONS): Promise<void> {
     // A session whose open is parked on a `session_start` dialog holds its
     // pending open until the dialog settles; settle it first so closing cannot
@@ -5800,6 +5866,7 @@ export class PiSessionService implements SessionRouteService {
     const at = new Date().toISOString();
     const stored = detail === undefined ? { phase, label, at } : { phase, label, detail, at };
     this.activities.set(session.sessionId, stored);
+    this.lastPublishedAt.set(session, this.now().getTime());
     const activity = detail === undefined ? { sessionId: session.sessionId, phase, label, at } : { sessionId: session.sessionId, phase, label, detail, at };
     this.workspaceActivity?.applySessionActivity(session.sessionManager.getCwd(), activity);
     this.events.publish(session.sessionId, { type: "activity.update", activity });
@@ -5819,6 +5886,7 @@ export class PiSessionService implements SessionRouteService {
 
   private publishStatus(session: PiAgentSession): void {
     void this.refreshActivityMarker(session);
+    this.lastPublishedAt.set(session, this.now().getTime());
     const status = this.statusFromSession(session);
     this.clearStaleActiveActivity(session);
     this.workspaceActivity?.applySessionStatus(session.sessionManager.getCwd(), status);

@@ -35,6 +35,11 @@ export class SessionEventHub {
     });
   }
 
+  /** Whether a browser is subscribed to this session's events. */
+  hasSessionSubscribers(sessionId: string): boolean {
+    return this.socketsBySession.has(sessionId);
+  }
+
   /**
    * Frame sent to each global subscriber the moment it joins, before any live
    * event. It closes the join race for state the browser would otherwise only
