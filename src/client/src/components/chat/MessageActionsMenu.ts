@@ -35,8 +35,13 @@ export class MessageActionsMenu extends LitElement {
     this.trigger.focus();
   }
 
+  // Light dismiss closes the popover on pointerdown, before the trigger's click,
+  // so the click must toggle against the state at press time or it reopens.
+  private openAtPress: boolean | undefined;
+
   private toggle() {
-    this.expanded = !this.expanded;
+    this.expanded = !(this.openAtPress ?? this.expanded);
+    this.openAtPress = undefined;
     this.toggleAttribute("open", this.expanded);
   }
 
@@ -44,6 +49,7 @@ export class MessageActionsMenu extends LitElement {
     return html`
       <button type="button" class="ui-button ui-button--small ui-button--icon"
         aria-label="Message actions" aria-expanded=${String(this.expanded)} aria-controls="actions"
+        @pointerdown=${() => { this.openAtPress = this.expanded; }}
         @click=${() => { this.toggle(); }}><span aria-hidden="true">⋯</span></button>
       <div id="actions" popover="auto"><slot></slot></div>
     `;
