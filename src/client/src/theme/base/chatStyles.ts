@@ -88,7 +88,6 @@ export const chatStyles = css`
   .msg.conversation-layout { padding: 0; }
   .conversation-content { position: relative; min-width: 0; }
   .conversation-body { min-width: 0; padding: 12px; }
-  .conversation-layout > .msg-meta-details { padding: 6px 12px; }
   .conversation-content > .msg-header.conversation-header { position: absolute; inset-block-end: 0; inset-inline-end: 0; z-index: 6; min-height: 0; margin: 0; }
   .msg-actions { display: contents; }
   .msg-actions-strip { display: flex; flex-wrap: nowrap; width: max-content; background: var(--ui-transcript-bg, var(--pi-bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pi-text) 12%, transparent); }
@@ -96,12 +95,10 @@ export const chatStyles = css`
   .msg-actions-strip .ui-button { flex: 0 0 auto; white-space: nowrap; }
   .msg-actions [role="alert"] { max-width: 240px; padding: 4px 10px; color: var(--pi-danger); }
   .msg-fork-icon { font-size: 14px; }
-  .msg-info-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   pi-message-actions-menu { flex: 0 0 auto; }
   .label { display: block; color: var(--pi-muted); font-size: 12px; font-weight: 400; }
   .msg-header .label { min-width: 0; margin: 0; overflow-wrap: anywhere; }
-  .msg-actions-strip .ui-button:hover:not(:disabled), .msg-meta[aria-expanded="true"] { background: color-mix(in srgb, var(--pi-text) 8%, transparent); color: var(--pi-text); }
-  .msg-meta-details { clear: both; min-width: 0; padding: 6px 0; color: var(--pi-muted); font: 12px/18px var(--pi-font, system-ui, sans-serif); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+  .msg-actions-strip .ui-button:hover:not(:disabled) { background: color-mix(in srgb, var(--pi-text) 8%, transparent); color: var(--pi-text); }
   formatted-text.part { display: block; }
   formatted-text.part, .queued-message formatted-text { text-align: start; unicode-bidi: plaintext; }
   .part { max-width: 100%; min-width: 0; box-sizing: border-box; overflow: visible; overflow-wrap: anywhere; }

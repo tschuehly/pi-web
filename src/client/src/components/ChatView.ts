@@ -249,7 +249,6 @@ export class ChatView extends LitElement {
   private meterFrame: number | undefined;
   @query("pi-web-image-gallery-dialog") private imageGalleryDialog?: ImageGalleryDialog;
   @state() private followingLive = false;
-  @state() private expandedMetaKey: string | undefined;
   private readonly disclosures = new ChatDisclosureController();
   private readonly transientDisclosures = new Map<string, boolean>();
   private readonly scrollFlows = new ChatScrollFlows({
@@ -744,9 +743,7 @@ export class ChatView extends LitElement {
         toggle: (key, event, defaultOpen) => { this.onDisclosureToggle(key, event, defaultOpen); },
       },
       metadata: {
-        expandedKey: this.expandedMetaKey,
         label: (message) => this.messageMetaLabel(message),
-        expand: (key) => { this.expandedMetaKey = key; },
       },
       actions: this.messageActionController,
       askDraftSessionId: this.askDraftSessionId,
@@ -1064,7 +1061,7 @@ export class ChatView extends LitElement {
     :host([workbench]) .msg { --ui-transcript-inline-start: 0px; padding-inline: var(--rail-pad); }
     :host([workbench]) :is(.msg.event-group, .msg.conversation-layout, .msg.tool-execution-shell, .msg.ask-user-record-shell) { --ui-transcript-inline-start: var(--rail-pad); padding: 0; }
     :host([workbench]) .conversation-body { --ui-transcript-inline-start: 0px; padding: var(--pi-message-padding, 10px) var(--rail-pad); }
-    :host([workbench]) .conversation-layout > .msg-meta-details, :host([workbench]) .exchange-boundary { padding-inline: var(--rail-pad); }
+    :host([workbench]) .exchange-boundary { padding-inline: var(--rail-pad); }
     :host([workbench]) .exchange-history > summary { padding-inline: var(--rail-pad) 12px; }
     :host([workbench]) .msg.event-group > summary, :host([workbench]) :is(.tool-fold, .notice-fold) > summary { padding-inline-start: var(--rail-pad); }
     :host([workbench]) :is(.transcript-content, .group-msg.notice-line, .image-output-source, .tool-call-arguments, .part:is(details) > formatted-text) { padding-inline-start: var(--ui-transcript-inline-start); }
