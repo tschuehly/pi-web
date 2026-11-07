@@ -345,6 +345,7 @@ async function createSessionDaemonRuntime() {
       agentDir: activeAgentProfile.dir,
       archiveStore: new SessionArchiveStore(defaultSessionArchiveFilePath(daemonEnvironment), sessionArchiveDirectory(daemonEnvironment, config)),
       workstreamLaunchStore,
+      interruptedTurnsFile: join(piWebDataDir(daemonEnvironment), "interrupted-turns.json"),
       workspaceActivity,
       logger: app.log,
       ...(spawnTargets === undefined ? {} : { spawnTargets }),
@@ -555,7 +556,7 @@ function registerSessionDaemonRoutes({ durableChats, eventHub, machineStatus, st
   app.get("/runtime", () => runtimeComponent);
 }
 
-async function listenSessionDaemon({ shutdown, projects, workspaceProviders }: SessionDaemonRuntime): Promise<void> {
+async function listenSessionDaemon({ shutdown, projects, workspaceProviders, sessions }: SessionDaemonRuntime): Promise<void> {
   runtimeShutdown = shutdown;
   if (pendingShutdownSignal !== undefined) {
     await requestShutdown(pendingShutdownSignal);
@@ -584,5 +585,8 @@ async function listenSessionDaemon({ shutdown, projects, workspaceProviders }: S
     // SIGTERM can arrive as soon as the listener is ready. Quiescing provider
     // ingress cancels maintenance; that is a graceful stop, not failed startup.
     if (!shutdownStarted) throw error;
+    return;
   }
+  // Wake sessions the previous shutdown interrupted mid-turn; never blocks startup.
+  void sessions.resumeInterruptedTurns();
 }

@@ -465,11 +465,25 @@ function movedTiles(before: GridLayout, after: GridLayout) {
   });
 }
 
-/** Presses the middle of `session`'s tile transcript, which focuses it, and waits for the focus to settle. */
+/** Presses plain text in the middle of `session`'s tile transcript, which focuses it, and waits for the focus to settle.
+ *  It skips points over links, buttons and folds, which would open a pane or a fold instead of only focusing. */
 async function focusTile(page: Page, session: string): Promise<void> {
   const box = await page.locator(`.grid > .tile[data-session="${session}"]`).boundingBox();
   if (box === null) throw new Error(`tile ${session} is not on screen`);
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 3);
+  const x = box.x + box.width / 2;
+  const y = await page.evaluate(([px, top, bottom]) => {
+    for (let py = top; py < bottom; py += 8) {
+      let hit: Element | null = document.elementFromPoint(px, py);
+      while (hit?.shadowRoot) { const inner = hit.shadowRoot.elementFromPoint(px, py); if (inner === null || inner === hit) break; hit = inner; }
+      let interactive = false;
+      for (let node: Element | null = hit; node !== null; node = node.parentElement ?? ((node.getRootNode() as ShadowRoot).host ?? null)) {
+        if (node.matches("a, button, summary, input, textarea, [role=button], [contenteditable]")) interactive = true;
+      }
+      if (hit !== null && !interactive) return py;
+    }
+    throw new Error("no plain point in the tile transcript");
+  }, [x, box.y + box.height / 3, box.y + box.height * 0.6] as const);
+  await page.mouse.click(x, y);
   await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", session);
   await page.waitForTimeout(800);
 }

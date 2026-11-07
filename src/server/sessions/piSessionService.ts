@@ -102,6 +102,7 @@ import { type AuthChange } from "./authService.js";
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import { parsePersistedChildSubsessionLink, parsePersistedParentSubsessionLink, type PersistedChildSubsessionLink, type PersistedParentSubsessionLink } from "./subsessionProvenance.js";
 import { readSessionHeaderSummary } from "./sessionFileHeader.js";
+import { DAEMON_RESTART_CUSTOM_TYPE, renderDaemonRestartMessage, takeInterruptedTurns, writeInterruptedTurns, type InterruptedTurn, type InterruptedTurnsRecord } from "./interruptedTurns.js";
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
 import { createAskUserToolDefinition, type AskUserToolDeps } from "./askUserTool.js";
 import { createRequestAttentionToolDefinition, type RequestAttentionToolDeps } from "./requestAttentionTool.js";
@@ -143,6 +144,13 @@ export interface PiSessionLogger {
 
 const noopLogger: PiSessionLogger = { info() { /* no-op */ } };
 const DEFAULT_UNREAD_PUBLICATION_RETRY_MS = 1_000;
+/** A loaded session with no work, watcher, or open question for this long is unloaded; the next access reopens it. */
+function isStatusRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export const IDLE_SESSION_UNLOAD_MS = 2 * 60 * 60 * 1000;
+const IDLE_SESSION_SWEEP_MS = 10 * 60 * 1000;
 /**
  * User-facing names for the two phases of session startup PI WEB can prove it
  * is inside: it awaits exactly one call for each, so the phase is a fact rather
@@ -1195,6 +1203,11 @@ export interface PiSessionServiceDependencies {
   now?: () => Date;
   /** Daemon-lifetime notification state, injected by sessiond in production. */
   notificationStore?: SessionNotificationStore;
+  /**
+   * Where shutdown records the sessions that were mid-turn so the next startup
+   * can resume them. Omit to neither record nor resume.
+   */
+  interruptedTurnsFile?: string;
   /** Durable daemon-owned unread state; defaults to an in-memory store in tests. */
   unreadStore?: SessionUnreadStore;
   /** Initial retry delay for durable unread publication failures. */
@@ -1245,6 +1258,9 @@ export class PiSessionService implements SessionRouteService {
   private readonly activeToolExecutions = new WeakMap<PiAgentSession, Map<string, ActiveToolExecution>>();
   private nextActiveToolExecutionId = 0;
   private readonly heartbeat: NodeJS.Timeout;
+  private readonly idleUnloadSweep: NodeJS.Timeout;
+  /** Last status or activity publication per runtime: every event, prompt, and status change passes through one of them. */
+  private readonly lastPublishedAt = new WeakMap<PiAgentSession, number>();
   private readonly commandService: SessionCommandService<PiAgentSession>;
   /** Runtime-identity gate held while Pi may await abandoned-branch summarization. */
   private readonly treeNavigations = new WeakSet<PiAgentSession>();
@@ -1310,6 +1326,7 @@ export class PiSessionService implements SessionRouteService {
   private readonly subsessionNotifyArmed = new Map<string, boolean>();
   private readonly archiveStore: SessionArchiveRepository;
   private readonly workstreamLaunchStore: WorkstreamLaunchStore | undefined;
+  private readonly interruptedTurnsFile: string | undefined;
   private readonly agentDir: string;
   private readonly sessionManager: PiSessionManagerGateway;
   private readonly createRuntime: PiWebCreateAgentSessionRuntimeFactory;
@@ -1349,6 +1366,7 @@ export class PiSessionService implements SessionRouteService {
   constructor(private readonly events: SessionEventHub, deps: PiSessionServiceDependencies) {
     this.archiveStore = deps.archiveStore ?? new SessionArchiveStore();
     this.workstreamLaunchStore = deps.workstreamLaunchStore;
+    this.interruptedTurnsFile = deps.interruptedTurnsFile;
     this.agentDir = deps.agentDir;
     this.sessionManager = deps.sessionManager;
     this.modelRuntime = deps.modelRuntime;
@@ -1398,6 +1416,8 @@ export class PiSessionService implements SessionRouteService {
     this.createAgentRuntime = deps.createAgentRuntime ?? defaultCreateAgentRuntime;
     this.workspaceActivity = deps.workspaceActivity;
     this.heartbeat = setInterval(() => { this.publishHeartbeats(); }, deps.heartbeatIntervalMs ?? 2000);
+    this.idleUnloadSweep = setInterval(() => { void this.unloadIdleSessions(); }, IDLE_SESSION_SWEEP_MS);
+    this.idleUnloadSweep.unref();
     this.commandService = new SessionCommandService(
       (sessionId) => this.getActive(this.activeSessionRef(sessionId)),
       (sessionId, text) => this.prompt(this.activeSessionRef(sessionId), text, undefined, undefined, { echoUserMessage: false }),
@@ -1560,6 +1580,7 @@ export class PiSessionService implements SessionRouteService {
     this.unreadPublicationStopped = true;
     this.clearUnreadPublicationRetry();
     clearInterval(this.heartbeat);
+    clearInterval(this.idleUnloadSweep);
     this.clearCompactionDrainTimers();
     // Same startup-park hazard as closeActive(): settle `session_start` dialogs
     // of sessions still binding extensions before awaiting their pending opens.
@@ -1567,6 +1588,9 @@ export class PiSessionService implements SessionRouteService {
     const pendingOpens = this.pendingSessionOpenPromises();
     if (pendingOpens.length > 0) await Promise.allSettled(pendingOpens);
     const activeSessions = Array.from(new Set(this.active.values()));
+    // Decided now, while busy state is intact; awaited only before aborting so
+    // no event publication slips in ahead of unsubscribe. Never rejects.
+    const recordingInterruptedTurns = this.recordInterruptedTurns(activeSessions.map((active) => active.runtime.session));
     for (const active of activeSessions) {
       this.forgetUnreadActivity(active.runtime.session);
       this.activeToolExecutions.delete(active.runtime.session);
@@ -1595,6 +1619,7 @@ export class PiSessionService implements SessionRouteService {
       active.runtime.setRebindSession(undefined);
       this.workspaceActivity?.removeSession(active.runtime.session.sessionId, active.runtime.session.sessionManager.getCwd());
       try {
+        await recordingInterruptedTurns;
         await this.abortSessionOperations(active.runtime.session);
       } finally {
         await active.runtime.dispose();
@@ -1605,6 +1630,58 @@ export class PiSessionService implements SessionRouteService {
       await this.activityMarker.dispose();
     });
     await this.publishUnreadMutations([]);
+  }
+
+  /** Before shutdown aborts them, remember the sessions that were mid-turn. */
+  private async recordInterruptedTurns(sessions: PiAgentSession[]): Promise<void> {
+    if (this.interruptedTurnsFile === undefined) return;
+    const interrupted: InterruptedTurn[] = sessions.filter((session) => this.hasActiveWork(session)).map((session) => ({
+      sessionId: session.sessionId,
+      cwd: session.sessionManager.getCwd(),
+      ...(session.sessionFile === undefined || session.sessionFile === "" ? {} : { sessionFile: session.sessionFile }),
+    }));
+    if (interrupted.length === 0) return;
+    try {
+      await writeInterruptedTurns(this.interruptedTurnsFile, { shutdownAt: this.now().toISOString(), sessions: interrupted });
+    } catch (error: unknown) {
+      this.logger.info({ err: error }, "Could not record interrupted turns for resume after restart");
+    }
+  }
+
+  /**
+   * Startup counterpart of {@link recordInterruptedTurns}: consume the record
+   * once and wake each recorded session with one system-authored message. A
+   * session that cannot be reopened is logged and skipped. Never throws.
+   */
+  async resumeInterruptedTurns(): Promise<void> {
+    if (this.interruptedTurnsFile === undefined) return;
+    let record: InterruptedTurnsRecord | undefined;
+    try {
+      record = await takeInterruptedTurns(this.interruptedTurnsFile);
+    } catch (error: unknown) {
+      this.logger.info({ err: error }, "Could not read interrupted turns; nothing resumed");
+      return;
+    }
+    if (record === undefined) return;
+    const content = renderDaemonRestartMessage(record.shutdownAt);
+    await Promise.all(record.sessions.map(async ({ sessionId, cwd, sessionFile }) => {
+      try {
+        const ref = { id: sessionId, cwd };
+        await this.assertWritable(ref);
+        const session = sessionFile !== undefined && (await readSessionHeaderSummary(sessionFile))?.id === sessionId
+          ? (await this.openExistingSession(sessionId, cwd, () => this.sessionManager.open(sessionFile))).runtime.session
+          : await this.getOrOpen(ref);
+        // followUp: an undelivered ask answer may already be starting a turn on open.
+        await this.runSessionEntryMutation(session, "resume the interrupted turn", () => session.sendCustomMessage(
+          { customType: DAEMON_RESTART_CUSTOM_TYPE, content, display: true },
+          { triggerTurn: true, deliverAs: "followUp" },
+        ));
+        this.publishStatus(session);
+        this.logger.info({ sessionId }, "Resumed a turn interrupted by the daemon restart");
+      } catch (error: unknown) {
+        this.logger.info({ sessionId, cwd, err: error }, "Could not resume a turn interrupted by the daemon restart");
+      }
+    }));
   }
 
   async listRecent(limit: number): Promise<ClientSession[]> {
@@ -4325,6 +4402,59 @@ export class PiSessionService implements SessionRouteService {
     return [...names];
   }
 
+  /** Close every loaded session idle for {@link IDLE_SESSION_UNLOAD_MS}; extensions see an ordinary session_shutdown. */
+  async unloadIdleSessions(): Promise<void> {
+    for (const [sessionId, active] of [...this.active]) {
+      // Re-checked per session: an earlier close yields, and work may start meanwhile.
+      if (active.runtime.session.sessionId !== sessionId || !this.isIdleForUnload(active.runtime.session)) continue;
+      this.logger.info({ sessionId }, "Unloading idle session");
+      try {
+        await this.closeActive(sessionId);
+      } catch (error: unknown) {
+        this.logger.info({ sessionId, err: error }, "Could not unload idle session");
+      }
+    }
+  }
+
+  private isIdleForUnload(session: PiAgentSession): boolean {
+    const sessionId = session.sessionId;
+    return this.isCurrentActiveSession(session)
+      && !this.startupSessions.has(sessionId)
+      && this.pendingSessionOpenPromises(sessionId).length === 0
+      && !this.hasActiveWork(session)
+      && this.pendingAskStore.pendingAsks(sessionId).length === 0
+      && this.pendingExtensionDialogStore.pendingDialogs(sessionId).length === 0
+      && !this.events.hasSessionSubscribers(sessionId)
+      && this.workingSubsessionIds(sessionId).length === 0
+      && (this.activeToolExecutions.get(session)?.size ?? 0) === 0
+      && !this.hasExtensionBackgroundWork(session)
+      && this.now().getTime() - (this.lastPublishedAt.get(session) ?? 0) >= IDLE_SESSION_UNLOAD_MS;
+  }
+
+  /**
+   * Background work extensions report through status keys: shutdown would kill running subagents and
+   * workers and stop job and watcher completions from waking the session. Unparseable means busy.
+   */
+  private hasExtensionBackgroundWork(session: PiAgentSession): boolean {
+    const statuses = this.extensionStatuses.get(session);
+    const list = (key: string, field: string): unknown[] | undefined => {
+      const text = statuses?.get(key);
+      if (text === undefined) return [];
+      try {
+        const value: unknown = JSON.parse(text);
+        const items = isStatusRecord(value) ? value[field] : undefined;
+        return Array.isArray(items) ? items : undefined;
+      } catch { return undefined; }
+    };
+    const jobs = list("pi-workbench:background-bash", "jobs");
+    const watchers = list("pi-process-monitor:watchers", "watchers");
+    const delegates = list("pi-workbench:activity", "items");
+    return jobs === undefined || jobs.length > 0
+      || watchers === undefined || watchers.length > 0
+      || delegates === undefined
+      || delegates.some((item) => !isStatusRecord(item) || item["endedAt"] === undefined);
+  }
+
   private async closeActive(sessionId: string, notificationPolicy: NotificationClosePolicy = CLEAR_RUNTIME_NOTIFICATIONS): Promise<void> {
     // A session whose open is parked on a `session_start` dialog holds its
     // pending open until the dialog settles; settle it first so closing cannot
@@ -5759,6 +5889,7 @@ export class PiSessionService implements SessionRouteService {
     const at = new Date().toISOString();
     const stored = detail === undefined ? { phase, label, at } : { phase, label, detail, at };
     this.activities.set(session.sessionId, stored);
+    this.lastPublishedAt.set(session, this.now().getTime());
     const activity = detail === undefined ? { sessionId: session.sessionId, phase, label, at } : { sessionId: session.sessionId, phase, label, detail, at };
     this.workspaceActivity?.applySessionActivity(session.sessionManager.getCwd(), activity);
     this.events.publish(session.sessionId, { type: "activity.update", activity });
@@ -5778,6 +5909,7 @@ export class PiSessionService implements SessionRouteService {
 
   private publishStatus(session: PiAgentSession): void {
     void this.refreshActivityMarker(session);
+    this.lastPublishedAt.set(session, this.now().getTime());
     const status = this.statusFromSession(session);
     this.clearStaleActiveActivity(session);
     this.workspaceActivity?.applySessionStatus(session.sessionManager.getCwd(), status);

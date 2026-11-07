@@ -136,6 +136,13 @@ export class AnchoredPopupController implements ReactiveController {
   }
 }
 
+function cssZoom(element: HTMLElement): number {
+  // Older WebKit lacks currentCSSZoom; the interface scale is the root's zoom.
+  const root = element.ownerDocument.documentElement;
+  const zoom = "currentCSSZoom" in element ? element.currentCSSZoom : Number.parseFloat(getComputedStyle(root).zoom);
+  return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+}
+
 export function anchoredPopupStyle(anchor: HTMLElement, options: AnchoredPopupOptions = {}, panel?: HTMLElement): Record<string, string> {
   const trigger = anchor.getBoundingClientRect();
   const viewport = window.visualViewport;
@@ -146,7 +153,10 @@ export function anchoredPopupStyle(anchor: HTMLElement, options: AnchoredPopupOp
   const bottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - padding;
   const gap = options.gap ?? 0;
   const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-  const px = (value: number): string => `${String(Math.round(Math.max(0, value)))}px`;
+  // Rects and viewport sizes are in screen pixels, but the panel's own lengths are
+  // multiplied by its CSS zoom (the interface scale on the root), so convert back.
+  const zoom = cssZoom(panel ?? anchor);
+  const px = (value: number): string => `${String(Math.round(Math.max(0, value) / zoom))}px`;
   const anchorTop = clamp(trigger.top, top, bottom);
   const anchorBottom = clamp(trigger.bottom, top, bottom);
   const anchorRight = clamp(trigger.right, left, right);

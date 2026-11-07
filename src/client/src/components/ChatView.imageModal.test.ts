@@ -135,16 +135,13 @@ describe("ChatView tool-image gallery", () => {
 
     const sources = requiredElement(view.renderRoot.querySelector<HTMLDetailsElement>(".image-output-sources"), "source details");
     expect(sources.open).toBe(false);
-    expect(sources.querySelector("summary")?.textContent).toBe("Sources (3)");
+    // The summary leads with the chevron icon, whose template whitespace is text.
+    expect(sources.querySelector("summary")?.textContent.trim()).toBe("Sources (3)");
     expect(sources.querySelector(".image-output-source")).toBeNull();
     sources.open = true;
     sources.dispatchEvent(new Event("toggle"));
     await view.updateComplete;
     const second = requiredElement(sources.querySelector('[aria-label="Output 2"]'), "second source");
-    const info = requiredElement(second.querySelector<HTMLButtonElement>('[aria-label="Message information"]'), "source information");
-    info.click();
-    await view.updateComplete;
-    expect(second.querySelector(".msg-meta-details")?.textContent).toContain("second-model");
     requiredElement(second.querySelector<HTMLButtonElement>('[aria-label="Inspect output"]'), "source action").click();
     await view.updateComplete;
     expect(inspect).toHaveBeenCalledOnce();

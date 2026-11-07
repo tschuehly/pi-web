@@ -14,6 +14,8 @@ export interface SessionServiceDependencyInput {
   /** Daemon-lifetime session archive, constructed against the captured daemon environment. */
   archiveStore: NonNullable<PiSessionServiceDependencies["archiveStore"]>;
   workstreamLaunchStore: NonNullable<PiSessionServiceDependencies["workstreamLaunchStore"]>;
+  /** Shutdown records mid-turn sessions here; the next startup resumes them. */
+  interruptedTurnsFile: string;
   sessionManager: PiSessionServiceDependencies["sessionManager"];
   modelRuntime: PiSessionServiceDependencies["modelRuntime"];
   workspaceActivity: NonNullable<PiSessionServiceDependencies["workspaceActivity"]>;
@@ -57,6 +59,7 @@ export function sessionServiceDependencies(input: SessionServiceDependencyInput)
     sessionEvents: input.sessionEvents,
     archiveStore: input.archiveStore,
     workstreamLaunchStore: input.workstreamLaunchStore,
+    interruptedTurnsFile: input.interruptedTurnsFile,
     workspaceActivity: input.workspaceActivity,
     logger: input.logger,
     ...(input.spawnTargets === undefined ? {} : { spawnTargets: input.spawnTargets }),

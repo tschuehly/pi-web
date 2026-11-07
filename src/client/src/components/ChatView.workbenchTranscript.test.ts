@@ -53,8 +53,14 @@ describe("Workbench transcript on the upstream chat surface", () => {
     ]);
     expect(root.querySelector<HTMLDetailsElement>("details.history-group")?.open).toBe(false);
     expect(root.querySelector("details.history-group summary")?.textContent).toContain("Context compacted");
+    expect(root.querySelector("details.activity-group")).toBeNull();
+    expect(root.querySelector(".visible-events tool-execution-view")).not.toBeNull();
+  });
+
+  it("folds two or more routine steps into Activity", async () => {
+    const root = await mount([tool("a", "success"), tool("b", "success"), { role: "assistant", entryId: "r", parts: [{ type: "text", text: "Answer" }] }]);
     expect(root.querySelector<HTMLDetailsElement>("details.activity-group")?.open).toBe(false);
-    expect(root.querySelector("details.activity-group summary")?.textContent).toContain("1 step");
+    expect(root.querySelector("details.activity-group summary")?.textContent).toContain("2 steps");
   });
 
   it("filters the transcript to human and assistant text", () => {
@@ -76,10 +82,11 @@ describe("Workbench transcript on the upstream chat surface", () => {
       { role: "system", entryId: "s", parts: [{ type: "subagentCompletion", text: "Collect results" }] },
     ]);
     expect(root.querySelector(".working-mode-card dt")?.textContent).toContain("Pace — fast");
-    expect(root.querySelector(".goal-lifecycle summary")?.textContent).toBe("Goal started");
+    // The summary leads with the chevron icon, whose template whitespace is text.
+    expect(root.querySelector(".goal-lifecycle summary")?.textContent.trim()).toBe("Goal started");
     expect(root.querySelector(".background-bash-card summary")?.textContent).toContain("failed · exit 1 · 3s");
     expect(root.querySelector(".background-bash-card bash-log-button")).toHaveProperty("logPath", "/tmp/job.log");
-    expect(root.querySelector(".subagent-completion summary")?.textContent).toBe("Subagents finished");
+    expect(root.querySelector(".subagent-completion summary")?.textContent.trim()).toBe("Subagents finished");
     expect(root.querySelectorAll(".msg-header")).toHaveLength(0);
   });
 

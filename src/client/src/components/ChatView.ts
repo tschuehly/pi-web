@@ -40,6 +40,7 @@ import "./FormattedText";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import "./ToolExecutionView";
 import { transcriptImageSource } from "./TranscriptImage";
+import { renderDisclosureChevron } from "./tabIcons";
 import type { ImageOpenDetail } from "./ImagePresentation";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
@@ -252,7 +253,6 @@ export class ChatView extends LitElement {
   private meterFrame: number | undefined;
   @query("pi-web-image-gallery-dialog") private imageGalleryDialog?: ImageGalleryDialog;
   @state() private followingLive = false;
-  @state() private expandedMetaKey: string | undefined;
   private readonly disclosures = new ChatDisclosureController();
   private readonly transientDisclosures = new Map<string, boolean>();
   private readonly scrollFlows = new ChatScrollFlows({
@@ -526,7 +526,7 @@ export class ChatView extends LitElement {
           ${keyed(transcriptIdentity, html`
             ${exchange.history.length === 0 ? nothing : html`
               <details class="exchange-history" open>
-                <summary>Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
+                <summary>${renderDisclosureChevron()}Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
                 <div class="exchange-history-body">${renderGroups(exchange.history, 0)}</div>
               </details>
             `}
@@ -760,9 +760,7 @@ export class ChatView extends LitElement {
         toggle: (key, event, defaultOpen) => { this.onDisclosureToggle(key, event, defaultOpen); },
       },
       metadata: {
-        expandedKey: this.expandedMetaKey,
         label: (message) => this.messageMetaLabel(message),
-        expand: (key) => { this.expandedMetaKey = key; },
       },
       actions: this.messageActionController,
       askDraftSessionId: this.askDraftSessionId,
@@ -977,35 +975,32 @@ export class ChatView extends LitElement {
       .transcript-filter button:focus-visible { outline-color: Highlight; }
     }
     .filter-empty { margin: 12px 16px; color: var(--pi-muted); }
-    .exchange-history > summary { padding: 6px 16px; color: var(--pi-muted); font-size: 12px; }
+    .exchange-history > summary { display: flex; align-items: center; gap: 6px; padding: 6px 16px; color: var(--pi-muted); font-size: 12px; }
     .exchange-boundary { padding: 6px 16px; color: var(--pi-muted); font-size: 12px; }
     .msg.event-group > summary strong { color: var(--pi-text); font-weight: 600; }
     .msg.event-group > summary .group-note { margin-inline-start: auto; font-size: 11px; text-transform: uppercase; }
     .history-group { --ui-activity-tone: var(--pi-accent); }
     .thinking-group > .thinking-text { display: block; padding: 8px 12px; color: var(--pi-text-secondary); font-style: italic; }
     .tool-fold { margin: 0; padding: 2px 12px; }
-    .tool-fold > summary { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 0; border-radius: 4px; color: var(--pi-muted); font-size: 12px; list-style: none; cursor: pointer; }
-    .tool-fold > summary::-webkit-details-marker { display: none; }
+    .tool-fold > summary { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 0; border-radius: 4px; color: var(--pi-muted); font-size: 12px; cursor: pointer; }
     .tool-fold > summary:hover { color: var(--pi-text); }
     .tool-fold > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
     .tool-fold .running { color: var(--pi-text); }
     .tool-fold > .group-body { padding: 2px 0 2px 17px; }
-    .chevron { flex: 0 0 auto; display: inline-grid; transition: transform .12s ease; }
-    .chevron .tab-icon { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    details[open] > summary .chevron { transform: rotate(90deg); }
     .tool-call-arguments { margin: 0; padding: 8px 12px; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     .skill-read { padding: 2px 0; color: var(--pi-purple); font-size: 12px; }
     .msg.skill-read-shell { padding: 4px 16px; }
-    .msg.goal-lifecycle-shell, .msg.subagent-completion-shell { padding: 6px 16px; }
+    .msg.subagent-completion-shell { padding: 6px 16px; }
+    /* Goal and background bash cards draw their own bar; no inline inset keeps it in line with the message bars (ISSUE-103). */
+    .msg.goal-lifecycle-shell { padding: 6px 0; }
     .msg.error, .group-msg.error { color: var(--pi-danger); }
     .msg.warning, .group-msg.warning { color: var(--pi-warning); }
     .goal-lifecycle, .background-bash-card { border-inline-start: 3px solid var(--pi-accent); padding: 6px 12px; color: var(--pi-text); background: var(--pi-surface); }
-    .goal-lifecycle > summary, .background-bash-card > summary { cursor: pointer; }
+    .goal-lifecycle > summary, .background-bash-card > summary, .subagent-completion > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; }
     .goal-lifecycle > summary { font-weight: 600; }
     .goal-lifecycle > div { margin-top: 6px; overflow-wrap: anywhere; }
     .working-mode-card { color: var(--pi-muted); font-size: 0.9em; }
-    .working-mode-card > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; }
-    .working-mode-card > summary::-webkit-details-marker { display: none; }
+    .working-mode-card > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; }
     .working-mode-card > summary:hover, .working-mode-card[open] { color: var(--pi-text); }
     .working-mode-icon { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: var(--pi-accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .working-mode-summary { min-width: 0; overflow-wrap: anywhere; }
@@ -1013,37 +1008,85 @@ export class ChatView extends LitElement {
     .working-mode-card dt { font-weight: 600; margin-top: 6px; }
     .working-mode-card dd { margin: 2px 0 0; overflow-wrap: anywhere; }
     .working-mode-card p { margin: 8px 0 2px; }
-    .background-bash-card > summary { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .background-bash-card > summary { gap: 8px; min-width: 0; }
     .background-bash-command { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .background-bash-full-command { display: block; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
     .background-bash-output { max-height: 240px; overflow: auto; white-space: pre; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     .background-bash-log { display: flex; align-items: center; gap: 8px; }
     .background-bash-log code { overflow-wrap: anywhere; min-width: 0; }
+    /* Extension notices (Disk low, Atelier events, cache misses): one muted line; consecutive ones fold into "N notices". */
+    .msg.notice-line, .group-msg.notice-line { --pi-paragraph-gap: 2px; color: var(--pi-muted); font-size: 12px; line-height: 1.4; }
+    .msg.notice-line { margin: 0 0 6px; padding: 0 2px; }
+    .group-msg.notice-line { padding: 1px 0; }
+    .notice > summary, .notice-fold > summary { display: flex; align-items: center; gap: 5px; min-width: 0; width: fit-content; max-width: 100%; cursor: pointer; }
+    .notice > summary:hover, .notice[open] > summary, .notice-fold > summary:hover, .notice-fold[open] > summary { color: var(--pi-text); }
+    .notice > summary:focus-visible, .notice-fold > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; border-radius: 4px; }
+    /* Expanded, a notice's first line wraps so its end stays readable; an open fold drops its preview because its body repeats it in full. */
+    .notice[open] > summary, .notice-fold[open] .notice > summary { align-items: flex-start; }
+    .notice[open] > summary .chevron, .notice-fold[open] .notice > summary .chevron { align-self: flex-start; margin-block-start: 0.2em; }
+    .notice > summary .disclosure-preview, .notice-fold > summary .disclosure-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .notice[open] > summary .disclosure-preview, .notice-fold[open] .notice > summary .disclosure-preview { white-space: normal; overflow-wrap: anywhere; }
+    .notice-fold[open] > summary .disclosure-preview { display: none; }
+    details.notice > formatted-text { margin: 2px 0 0 17px; }
+    .notice-fold { margin: 0 0 6px; color: var(--pi-muted); font-size: 12px; line-height: 1.4; }
+    .notice-fold-count { flex: 0 0 auto; font-weight: 600; }
+    .notice-fold > .group-body { padding: 2px 0 2px 17px; }
     .subagent-completion { color: var(--pi-muted); font-size: 12px; }
-    .subagent-completion > summary { width: fit-content; }
+    .subagent-completion > summary { width: fit-content; max-width: 100%; }
     .subagent-completion-instruction { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text); }
     :is(.goal-lifecycle, .background-bash-card, .working-mode-card, .subagent-completion) > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .queued-send-now-button, .queued-send-all-button { color: var(--pi-warning); }
     .chat > ask-user-card.open-question-card { display: block; margin: 8px 12px; }
-    /* Dense (a grid tile): tints separate the roles; spacing halves; the filter shows on hover. */
+    /* Dense (a grid tile): spacing halves; the filter shows on hover. Dense is a Workbench tile, so the rail below applies too. */
     :host([dense]) .transcript-filter { top: 4px; right: 6px; opacity: 0; transition: opacity .12s ease; }
     :host([dense]:hover) .transcript-filter, :host([dense]) .transcript-filter:focus-within { opacity: 1; }
     :host([dense]) .filter-toggle, :host([dense]) .filter-options button { border: 0; background: var(--pi-surface-hover); }
-    :host([dense]) .msg { padding: 6px 8px 8px; }
-    :host([dense]) .msg.conversation-layout { padding: 0; }
-    :host([dense]) .conversation-body { padding: 6px 8px; }
-    :host([dense]) .transcript-content { padding: 4px 8px; }
+    :host([dense]) .msg { padding-block: 6px 8px; }
+    :host([dense]) .transcript-content { padding-block: 4px; }
     :host([dense]) .part + .part { margin-top: 4px; }
-    :host([dense]) .msg.skill-read-shell, :host([dense]) .msg.goal-lifecycle-shell, :host([dense]) .msg.subagent-completion-shell { padding: 2px 8px; }
-    :host([dense]) .tool-fold { padding: 1px 8px; }
-    :host([dense]) .thinking-group > .thinking-text { padding: 4px 8px; }
-    :host([dense]) .exchange-history > summary, :host([dense]) .exchange-boundary { padding: 4px 8px; }
-    /* Workbench presentation: rounded role bubbles with an inline role and time, wrapped tool output, one scroll-to-bottom button. */
+    :host([dense]) .msg.skill-read-shell, :host([dense]) .msg.subagent-completion-shell, :host([dense]) .msg.goal-lifecycle-shell { padding-block: 2px; }
+    :host([dense]) .tool-fold { padding-block: 1px; }
+    :host([dense]) .thinking-group > .thinking-text { padding-block: 4px; }
+    :host([dense]) .exchange-history > summary, :host([dense]) .exchange-boundary { padding-block: 4px; }
+    /* Workbench presentation: one left rail, a role and time line above each message, wrapped tool output, one scroll-to-bottom button. */
     .msg-heading { display: none; }
     :host([workbench]) { --pi-tool-output-white-space: pre-wrap; --pi-tool-output-overflow-wrap: anywhere; }
-    :host([workbench]) .msg.conversation-message { --ui-transcript-bg: var(--pi-surface); margin: 0 var(--pi-panel-padding, 10px) var(--pi-message-gap, 10px); border: 1px solid var(--pi-border); border-radius: 14px; overflow-wrap: anywhere; }
-    :host([workbench]) .msg.user.conversation-message { --ui-transcript-bg: color-mix(in srgb, var(--pi-accent) 10%, var(--pi-surface)); border-color: color-mix(in srgb, var(--pi-accent) 30%, var(--pi-border)); }
-    :host([workbench]) .conversation-body { padding: var(--pi-message-padding, 10px) calc(var(--pi-message-padding, 10px) + 2px); }
+    /* One left rail (Thomas's option B): every block spans the transcript, square and unfilled, with a 3px bar whose colour names its kind.
+       Text starts at the bar plus --rail-pad; fold chevrons hang in that gutter; nested blocks draw no second bar; one gap separates blocks. */
+    :host([workbench]) {
+      --rail-pad: 20px; --rail-gap: 8px;
+      --ui-transcript-inline-start: var(--rail-pad);
+      --ui-activity-fill: var(--pi-bg);
+      --ui-disclosure-marker-position: absolute;
+      --ui-disclosure-marker-inset: calc((var(--rail-pad) - 12px) / 2);
+      --ask-card-border: 0; --ask-card-radius: 0; --ask-card-bg: var(--pi-bg);
+    }
+    :host([workbench][dense]) { --rail-pad: 16px; --rail-gap: 4px; }
+    :host([workbench]) :is(.chat, .exchange-history-body) > :is(.msg, .notice-fold, .exchange-boundary, ask-user-card),
+    :host([workbench]) .exchange-history > summary,
+    :host([workbench]) .visible-events > .group-body > .group-msg {
+      --ui-activity-edge-width: 0px; --ui-transcript-bg: var(--pi-bg);
+      position: relative; box-sizing: border-box; margin-inline: 0; margin-block-end: 0; border: 0; border-inline-start: 3px solid var(--rail-tone, var(--pi-border)); border-radius: 0; background: transparent;
+    }
+    :host([workbench]) :is(.chat, .exchange-history, .exchange-history-body, .visible-events > .group-body) > * + * { margin-block-start: var(--rail-gap); }
+    :host([workbench]) .msg.user { --rail-tone: var(--pi-accent); }
+    :host([workbench]) .msg.assistant { --rail-tone: var(--pi-text-secondary); }
+    :host([workbench]) :is(.msg, .group-msg).error, :host([workbench]) .group-msg:has(tool-execution-view[data-status="error"], .tool-result.error) { --rail-tone: var(--pi-danger); }
+    :host([workbench]) :is(.msg.ask-user-record-shell, ask-user-card) { --rail-tone: var(--pi-warning); }
+    :host([workbench]) :is(.msg.notice-line, .notice-fold, .exchange-boundary) { --rail-tone: var(--pi-border-muted); }
+    /* Padded blocks own the gutter; unpadded ones (groups, conversation, tool and ask shells) let their headings and rows own it. */
+    :host([workbench]) .msg { --ui-transcript-inline-start: 0px; padding-inline: var(--rail-pad); }
+    :host([workbench]) :is(.msg.event-group, .msg.conversation-layout, .msg.tool-execution-shell, .msg.ask-user-record-shell) { --ui-transcript-inline-start: var(--rail-pad); padding: 0; }
+    :host([workbench]) .conversation-body { --ui-transcript-inline-start: 0px; padding: var(--pi-message-padding, 10px) var(--rail-pad); }
+    :host([workbench]) .exchange-boundary { padding-inline: var(--rail-pad); }
+    :host([workbench]) .exchange-history > summary { padding-inline: var(--rail-pad) 12px; }
+    :host([workbench]) .msg.event-group > summary, :host([workbench]) :is(.tool-fold, .notice-fold) > summary { padding-inline-start: var(--rail-pad); }
+    :host([workbench]) :is(.transcript-content, .group-msg.notice-line, .image-output-source, .tool-call-arguments, .part:is(details) > formatted-text) { padding-inline-start: var(--ui-transcript-inline-start); }
+    :host([workbench]) .thinking-group > .thinking-text { padding-inline: var(--rail-pad) 12px; }
+    :host([workbench]) .tool-fold { padding-inline: 0; }
+    :host([workbench]) :is(.tool-fold, .notice-fold) > .group-body { padding-inline-start: 0; }
+    :host([workbench]) details.notice > formatted-text { margin-inline-start: 0; }
+    :host([workbench]) :is(.goal-lifecycle, .background-bash-card) { border-inline-start: 0; padding-inline: 0; background: transparent; }
     :host([workbench]) .conversation-content > .msg-header.conversation-header { inset-block-end: 4px; inset-inline-end: 6px; }
     :host([workbench]) .msg-heading { display: flex; align-items: baseline; gap: 5px; min-width: 0; margin-bottom: 6px; overflow: hidden; color: var(--pi-muted); font-size: 12px; white-space: nowrap; }
     .msg-role { font-weight: normal; text-transform: uppercase; color: var(--pi-text-secondary); }
@@ -1053,12 +1096,9 @@ export class ChatView extends LitElement {
     .scroll-to-bottom:hover, .scroll-to-bottom:focus-visible { border-color: var(--pi-accent); color: var(--pi-text-bright); }
     .scroll-to-bottom:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .scroll-to-bottom svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    /* Dense tiles: tints instead of borders, and the role and time float inline at the start of the first line. */
-    :host([workbench][dense]) .msg.conversation-message { margin: 0 6px 5px; border: 0; border-radius: 6px; }
-    :host([workbench][dense]) .msg.assistant.conversation-message { --ui-transcript-bg: transparent; }
-    :host([workbench][dense]) .msg.user.conversation-message { --ui-transcript-bg: color-mix(in srgb, var(--pi-accent) 12%, transparent); }
-    :host([workbench][dense]) .conversation-body { padding: 3px 8px; }
-    :host([workbench][dense]) .msg-heading { float: left; height: 21px; margin: 0 8px 0 0; }
+    /* Dense tiles: the role and time sit on their own smaller line above the body, on the same text column. */
+    :host([workbench][dense]) .conversation-body { padding-block: 3px; }
+    :host([workbench][dense]) .msg-heading { margin-bottom: 2px; }
     :host([workbench][dense]) .msg-role { font-size: 10px; font-weight: 700; letter-spacing: .04em; }
     :host([workbench][dense]) .msg-time { font-size: 10px; }
     :host([dense]) conversation-meter { opacity: 0; transition: opacity .15s ease; }

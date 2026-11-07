@@ -1,14 +1,13 @@
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { cache } from "lit/directives/cache.js";
-import { MessageActionsMenu } from "./chat/MessageActionsMenu";
-import { renderSessionWarningIcon } from "./shared";
+import "./chat/MessageActionsMenu";
 import { chatToolOutputLabel } from "./chat/transcriptLabels";
-import { chatMessageHasHeader, summarizeChatGroup, type ChatDisplayGroup, type ChatGroup } from "../chatGroups";
+import { chatMessageHasHeader, isQuietNotice, splitNoticeText, summarizeChatGroup, type ChatDisplayGroup, type ChatGroup } from "../chatGroups";
 import { latestWorkingModeDials, previewFromDetails, workingModeSummary } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
 import { toolActionLabel } from "./ToolExecutionView";
-import { renderBuiltinTabIcon } from "./tabIcons";
+import { renderDisclosureChevron } from "./tabIcons";
 import "./BashLogButton";
 import type { ChatBehaviors } from "../chatBehaviors";
 import type { SessionRef } from "../api";
@@ -49,9 +48,7 @@ export interface TranscriptRenderContext {
     toggle: (key: string, event: Event, defaultOpen: boolean) => void;
   };
   metadata: {
-    expandedKey: string | undefined;
     label: (message: ChatLine) => string;
-    expand: (key: string | undefined) => void;
   };
   actions: ChatMessageActionController;
   askDraftSessionId: string;
@@ -68,7 +65,18 @@ function renderMessageHeading(context: TranscriptRenderContext, message: ChatLin
   return html`<div class="msg-heading"><b class="msg-role" aria-hidden="true">${message.role}</b>${time === undefined ? nothing : html`<time class="msg-time" datetime=${timestamp ?? nothing} title=${context.metadata.label(message)}>${time}</time>`}</div>`;
 }
 
+/** One quiet line; a multi-line notice expands to show the rest. */
+function renderNotice(context: TranscriptRenderContext, message: ChatLine, index: number) {
+  const { first, rest } = splitNoticeText(message);
+  const formatted = (text: string) => html`<formatted-text .intentKey=${JSON.stringify([context.machineId, context.sessionId, message.entryId ?? index, "notice"])} .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .text=${text}></formatted-text>`;
+  if (rest === "") return html`<div class="notice" dir="auto">${formatted(first)}</div>`;
+  return html`<details class="notice"><summary>${renderDisclosureChevron()}<span class="disclosure-preview" dir="auto">${first}</span></summary>${formatted(rest)}</details>`;
+}
+
 export function renderMessage(context: TranscriptRenderContext, message: ChatLine, index: number, entryActionHeaders: ReadonlySet<ChatLine>) {
+    if (isQuietNotice(message)) return html`
+      <article class=${`msg system notice-line${message.severity === undefined ? "" : ` ${message.severity}`}`} data-index=${index} data-scroll-anchor-id=${context.anchors.message(index, message) ?? nothing} data-entry-id=${message.entryId ?? nothing}>${renderNotice(context, message, index)}</article>
+    `;
     const hasHeader = chatMessageHasHeader(message);
     const conversationClass = hasHeader && (message.role === "user" || message.role === "assistant") ? " conversation-message conversation-layout" : "";
     const severity = message.severity === undefined ? "" : ` ${message.severity}`;
@@ -76,10 +84,9 @@ export function renderMessage(context: TranscriptRenderContext, message: ChatLin
       <article class=${`${hasHeader ? `msg ${message.role}${conversationClass}` : headerlessShellClass(message)}${severity} ui-transcript-surface`} data-index=${index} data-scroll-anchor-id=${context.anchors.message(index, message) ?? nothing} data-entry-id=${message.entryId ?? nothing}>
         ${conversationClass !== "" ? html`
           <div class="conversation-content">
-            ${renderMessageHeader(context, message, String(index), index, entryActionHeaders, message.role, true)}
+            ${renderMessageHeader(context, message, String(index), index, entryActionHeaders, message.role)}
             <div class="conversation-body">${renderMessageHeading(context, message)}${message.parts.map((part, partIndex) => renderPart(context, part, message, index, partIndex))}</div>
           </div>
-          ${renderMessageMetadata(context, message, String(index))}
         ` : html`
           ${hasHeader ? renderMessageHeader(context, message, String(index), index, entryActionHeaders) : null}
           ${message.parts.map((part, partIndex) => renderPart(context, part, message, index, partIndex))}
@@ -115,7 +122,7 @@ export function renderToolImageOutputs(context: TranscriptRenderContext, group: 
         </div>
         ${outputs.length === 1 ? null : html`
           <details class="image-output-sources" ?open=${live(sourcesOpen)} @toggle=${(event: Event) => { context.disclosure.toggle(sourcesKey, event, false); }}>
-            <summary class="ui-transcript-disclosure">Sources (${String(outputs.length)})</summary>
+            <summary class="ui-transcript-disclosure">${renderDisclosureChevron()}Sources (${String(outputs.length)})</summary>
             ${sourcesOpen ? outputs.map((output, outputIndex) => html`<section class="image-output-source" aria-label=${`Output ${String(outputIndex + 1)}`}>
               ${renderMessageHeader(context, output.message, `image-source:${String(output.index)}`, output.index, entryActionHeaders, `${chatToolOutputLabel(output.toolName)} · ${String(outputIndex + 1)}`)}
             </section>`) : nothing}
@@ -141,16 +148,23 @@ function headerlessShellClass(message: ChatLine): string {
 export function renderMessageGroup(context: TranscriptRenderContext, group: Extract<ChatGroup, { kind: "group" }>, defaultOpen: boolean, entryActionHeaders: ReadonlySet<ChatLine>, disclosure: TranscriptGroupDisclosure) {
     const { messages, startIndex, presentation } = group;
     const { open, anchor, toggle } = disclosure;
-    if (presentation === undefined) return html`
+    // One routine step needs no "Activity · 1 step" fold; its own row says what ran (ISSUE-101).
+    if (presentation === undefined || (presentation === "activity" && activityStepCount(messages.map((event) => event.message)) === 1)) return html`
       <div class="event-group visible-events" data-index=${startIndex} data-scroll-anchor-id=${anchor ?? nothing}>${renderMessageGroupBody(context, group, entryActionHeaders)}</div>
     `;
     if (presentation === "thinking") return renderThinkingGroup(context, group, entryActionHeaders, disclosure);
+    if (presentation === "notices") return html`
+      <details class="event-group notice-fold" data-index=${startIndex} data-scroll-anchor-id=${anchor ?? nothing} ?open=${open} @toggle=${toggle}>
+        <summary>${renderDisclosureChevron()}<span class="notice-fold-count">${messages.length} notices</span><span class="disclosure-preview" dir="auto">${messages.map((event) => splitNoticeText(event.message)).at(-1)?.first}</span></summary>
+        ${renderMessageGroupBody(context, group, entryActionHeaders)}
+      </details>
+    `;
     const summary = presentation === "history"
       ? html`<strong>${summarizeChatGroup(messages.map((event) => event.message))}</strong><span class="group-note">Context compacted</span>`
       : html`<strong>Activity</strong><span>${activityStepLabel(messages.map((event) => event.message))}</span>`;
     return html`
       <details class=${`msg event-group ${presentation}-group${defaultOpen ? " live" : ""} ui-transcript-surface ui-transcript-activity`} data-index=${startIndex} data-scroll-anchor-id=${anchor ?? nothing} ?open=${open} @toggle=${toggle}>
-        <summary class="ui-transcript-disclosure ui-transcript-heading">${summary}</summary>
+        <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}${summary}</summary>
         ${cache(open ? renderMessageGroupBody(context, group, entryActionHeaders) : nothing)}
       </details>
     `;
@@ -169,7 +183,7 @@ function renderThinkingGroup(context: TranscriptRenderContext, group: Extract<Ch
   }
   return html`
     <details class="msg event-group thinking-group thinking ui-transcript-surface ui-transcript-activity" data-index=${group.startIndex} data-scroll-anchor-id=${anchor ?? nothing} ?open=${open} @toggle=${toggle}>
-      <summary class="ui-transcript-disclosure ui-transcript-heading"><svg class="thinking-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 14a5 5 0 1 1 8-1H9l-3 2v-1Z"/><circle cx="4" cy="17" r="1"/></svg>Thinking</summary>
+      <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}Thinking</summary>
       ${cache(open ? segments.map((segment, offset) => {
         const body = { ...group, messages: segment.members };
         if (segment.kind === "thinking") {
@@ -193,7 +207,7 @@ function renderToolFold(context: TranscriptRenderContext, group: Extract<ChatGro
   const open = context.disclosure.isOpen(key, false);
   return html`
     <details class="tool-fold" ?open=${live(open)} @toggle=${(event: Event) => { context.disclosure.toggle(key, event, false); }}>
-      <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span>${activityStepLabel(lines, "tool call")}${running ? html` · <span class="running">running</span>` : null}</summary>
+      <summary>${renderDisclosureChevron()}${activityStepLabel(lines, "tool call")}${running ? html` · <span class="running">running</span>` : null}</summary>
       ${open ? renderMessageGroupBody(context, group, entryActionHeaders) : nothing}
     </details>
   `;
@@ -201,11 +215,15 @@ function renderToolFold(context: TranscriptRenderContext, group: Extract<ChatGro
 
 /** Calls and their results count once per tool call id. */
 function activityStepLabel(messages: readonly ChatLine[], noun = "step"): string {
+  const count = activityStepCount(messages);
+  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function activityStepCount(messages: readonly ChatLine[]): number {
   const parts = messages.flatMap((message) => message.parts).filter((part) => part.type === "toolCall" || part.type === "toolExecution" || part.type === "toolResult");
   const ids = new Set(parts.flatMap((part) => part.toolCallId === undefined ? [] : [part.toolCallId]));
   const anonymous = parts.filter((part) => part.toolCallId === undefined && part.type !== "toolResult").length;
-  const count = ids.size + anonymous;
-  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+  return ids.size + anonymous;
 }
 
 
@@ -214,6 +232,8 @@ export function renderMessageGroupBody(context: TranscriptRenderContext, { messa
       <div class="group-body">
         ${messages.map(({ message, index }, offset) => {
           const severity = message.severity === undefined ? "" : ` ${message.severity}`;
+          if (isQuietNotice(message)) return html`
+            <article class=${`group-msg system notice-line${severity}`} data-index=${index} data-scroll-anchor-id=${context.anchors.event(index, message) ?? nothing} data-entry-id=${message.entryId ?? nothing}>${renderNotice(context, message, index)}</article>`;
           return html`
             <section class=${`group-msg ${message.role}${severity} ui-transcript-surface`} data-index=${index} data-scroll-anchor-id=${context.anchors.event(index, message) ?? nothing} data-entry-id=${message.entryId ?? nothing}>
               ${chatMessageHasHeader(message) ? html`<div class="transcript-content">${renderMessageHeader(context, message, `${String(startIndex)}:${String(offset)}`, index, entryActionHeaders)}</div>` : null}
@@ -243,32 +263,16 @@ function renderGroupedParts(context: TranscriptRenderContext, message: ChatLine,
   `);
 }
 
-export function renderMessageHeader(context: TranscriptRenderContext, message: ChatLine, key: string, index: number, entryActionHeaders: ReadonlySet<ChatLine>, label: string = message.role, metadataBelow = false) {
-    const meta = context.metadata.label(message);
-    const expanded = context.metadata.expandedKey === key;
-    const detailId = `message-meta-${key}`;
+export function renderMessageHeader(context: TranscriptRenderContext, message: ChatLine, key: string, index: number, entryActionHeaders: ReadonlySet<ChatLine>, label: string = message.role) {
     const conversation = label === "user" || label === "assistant";
+    const actions = renderMessageActions(context, message, key, context.messages[index - context.messageStart] ?? message, entryActionHeaders.has(message));
     return html`
       <div class=${conversation ? "msg-header conversation-header" : "msg-header"}>
         <span class=${conversation ? "visually-hidden" : "label"}>${label}</span>
-        <pi-message-actions-menu>
-          <div class="msg-actions-strip">
-            ${renderMessageActions(context, message, key, context.messages[index - context.messageStart] ?? message, entryActionHeaders.has(message))}
-            <button type="button" class="msg-meta ui-button ui-button--icon ui-button--small" title=${meta} aria-label="Message information" aria-controls=${detailId} aria-expanded=${String(expanded)} @click=${(event: MouseEvent) => {
-              context.metadata.expand(expanded ? undefined : key);
-              const menu = event.currentTarget instanceof HTMLElement ? event.currentTarget.closest("pi-message-actions-menu") : null;
-              if (menu instanceof MessageActionsMenu) menu.close();
-            }}>${renderSessionWarningIcon("info", "msg-info-icon")}</button>
-          </div>
-        </pi-message-actions-menu>
+        ${actions === null ? null : html`<pi-message-actions-menu><div class="msg-actions-strip">${actions}</div></pi-message-actions-menu>`}
       </div>
-      ${metadataBelow ? null : renderMessageMetadata(context, message, key)}
     `;
   }
-
-function renderMessageMetadata(context: TranscriptRenderContext, message: ChatLine, key: string) {
-  return html`<div id=${`message-meta-${key}`} class="msg-meta-details" ?hidden=${context.metadata.expandedKey !== key}>${context.metadata.label(message)}</div>`;
-}
 
 export function renderPart(context: TranscriptRenderContext, part: ChatPart, message: ChatLine, messageIndex: number, partIndex: number) {
     const intentKey = JSON.stringify([context.machineId, context.sessionId, message.entryId ?? messageIndex, partIndex]);
@@ -281,7 +285,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
         return html`
           <details class="part thinking ui-transcript-surface ui-transcript-activity" ?open=${live(open)}
             @toggle=${(event: Event) => { context.disclosure.toggle(disclosureKey, event, true); }}>
-            <summary class="ui-transcript-disclosure ui-transcript-heading"><svg class="thinking-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 14a5 5 0 1 1 8-1H9l-3 2v-1Z"/><circle cx="4" cy="17" r="1"/></svg>Thinking</summary>
+            <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}Thinking</summary>
             ${open ? html`<formatted-text .imagesEnabled=${context.behaviors.loadImages} .codeBlocks=${context.behaviors.codeBlocks} .intentKey=${intentKey} .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .text=${text}></formatted-text>` : nothing}
           </details>
         `;
@@ -294,7 +298,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
       const open = context.disclosure.isOpen(key, false);
       return html`
       <details class="part skill-invocation" ?open=${live(open)} @toggle=${(event: Event) => { context.disclosure.toggle(key, event, false); }}>
-        <summary class="ui-transcript-disclosure"><b>[skill]</b> ${part.name}</summary>
+        <summary class="ui-transcript-disclosure">${renderDisclosureChevron()}<b>[skill]</b> ${part.name}</summary>
         ${open ? html`<small>${part.location}</small>
         <formatted-text .imagesEnabled=${context.behaviors.loadImages} .codeBlocks=${context.behaviors.codeBlocks} .intentKey=${intentKey} .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .text=${part.content}></formatted-text>` : nothing}
       </details>
@@ -311,7 +315,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
     `;
     if (part.type === "subagentCompletion") return html`
       <details class="part subagent-completion">
-        <summary>Subagents finished</summary>
+        <summary>${renderDisclosureChevron()}Subagents finished</summary>
         <div class="subagent-completion-instruction" dir="auto">${part.text}</div>
       </details>
     `;
@@ -323,7 +327,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
       // Lucide sliders-horizontal.
       return html`
         <details class="part working-mode-card">
-          <summary><span class="chevron">${renderBuiltinTabIcon("chevron")}</span><svg class="working-mode-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 5H3"></path><path d="M12 19H3"></path><path d="M14 3v4"></path><path d="M16 17v4"></path><path d="M21 12h-9"></path><path d="M21 19h-5"></path><path d="M21 5h-7"></path><path d="M8 10v4"></path><path d="M8 12H3"></path></svg><span class="working-mode-summary">${summary}</span></summary>
+          <summary>${renderDisclosureChevron()}<span class="working-mode-summary">${summary}</span><svg class="working-mode-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 5H3"></path><path d="M12 19H3"></path><path d="M14 3v4"></path><path d="M16 17v4"></path><path d="M21 12h-9"></path><path d="M21 19h-5"></path><path d="M21 5h-7"></path><path d="M8 10v4"></path><path d="M8 12H3"></path></svg></summary>
           ${part.dials.some((dial) => dial.guidance !== undefined)
             ? html`<dl>${part.dials.map((dial) => html`<dt>${dial.label} — ${dial.value}</dt><dd>${dial.guidance ?? "Starting setting; no extra guidance."}</dd>`)}</dl>`
             : html`<p>Every dial is at its starting setting; no extra guidance applies.</p>`}
@@ -332,7 +336,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
     }
     if (part.type === "goalLifecycle") return html`
       <details class="part goal-lifecycle">
-        <summary>${goalTransitionLabels[part.details.transition]}</summary>
+        <summary>${renderDisclosureChevron()}${goalTransitionLabels[part.details.transition]}</summary>
         <div><strong>State:</strong> ${part.details.state}</div>
         <div><strong>Goal ID:</strong> <code>${part.details.goalId}</code></div>
         ${part.details.reason === undefined ? null : html`<div><strong>Reason:</strong> ${part.details.reason}</div>`}
@@ -346,16 +350,16 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
     }
     if (part.type === "toolCall") return html`
       <details class="part tool-line ui-transcript-surface ui-transcript-activity ui-transcript-tool">
-        <summary class="ui-transcript-disclosure ui-transcript-heading"><span aria-hidden="true">▶</span> ${toolActionLabel(part.toolName)}<span class="summary">${part.summary}</span></summary>
+        <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}${toolActionLabel(part.toolName)}<span class="summary">${part.summary}</span></summary>
         ${part.args === undefined ? null : html`<pre class="tool-call-arguments">${formatToolCallArguments(part.args)}</pre>`}
       </details>
     `;
-    if (part.type === "toolExecution") return html`<tool-execution-view class="part" .machineId=${context.machineId} .execution=${part}></tool-execution-view>`;
+    if (part.type === "toolExecution") return html`<tool-execution-view class="part" data-status=${part.status} .machineId=${context.machineId} .execution=${part}></tool-execution-view>`;
     if (part.type === "toolResult") {
       // A result whose call is outside the loaded page still shows its file diff.
       const preview = previewFromDetails(part.details);
       if ((typeof part.details === "object" && part.details !== null && typeof Reflect.get(part.details, "diff") === "string") || preview?.diff !== undefined) return html`
-        <tool-execution-view class="part" .orphan=${true} .machineId=${context.machineId} .execution=${{
+        <tool-execution-view class="part" data-status=${part.isError ? "error" : "success"} .orphan=${true} .machineId=${context.machineId} .execution=${{
           type: "toolExecution", toolName: part.toolName, summary: "", status: part.isError ? "error" : "success",
           resultText: part.text, details: part.details, preview,
         }}></tool-execution-view>
@@ -364,7 +368,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
       const open = context.disclosure.isOpen(key, part.isError);
       return html`
       <details class=${`part tool-result ui-transcript-surface ui-transcript-activity ui-transcript-tool${part.isError ? " error" : ""}`} ?open=${live(open)} @toggle=${(event: Event) => { context.disclosure.toggle(key, event, part.isError); }}>
-        <summary class="ui-transcript-disclosure ui-transcript-heading">${part.isError ? "✖" : "✓"} ${toolActionLabel(part.toolName)} result${part.isError ? " · Failed" : ""}</summary>
+        <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}${toolActionLabel(part.toolName)} result${part.isError ? " · Failed" : ""} ${part.isError ? "✖" : "✓"}</summary>
         ${open ? html`<formatted-text .imagesEnabled=${context.behaviors.loadImages} .codeBlocks=${context.behaviors.codeBlocks} .intentKey=${intentKey} .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .text=${part.text}></formatted-text>` : nothing}
       </details>
     `;
@@ -393,8 +397,8 @@ function renderBackgroundBash(context: TranscriptRenderContext, part: Extract<Ch
   const { details } = part;
   return html`
     <details class="part background-bash-card">
-      <summary><span aria-hidden="true">${details.state === "complete" ? "✓" : details.state === "cancelled" ? "○" : "✖"}</span>
-        <span>${details.state} · exit ${details.exitCode === undefined ? "unknown" : String(details.exitCode)} · ${String(details.elapsedSeconds)}s</span>
+      <summary>${renderDisclosureChevron()}<span>${details.state} · exit ${details.exitCode === undefined ? "unknown" : String(details.exitCode)} · ${String(details.elapsedSeconds)}s</span>
+        <span aria-hidden="true">${details.state === "complete" ? "✓" : details.state === "cancelled" ? "○" : "✖"}</span>
         ${details.description === undefined ? html`<code class="background-bash-command" title=${details.command}>${details.command}</code>`
           : html`<span class="background-bash-command" title=${details.command}>${details.description}</span>`}
         <bash-log-button .logPath=${details.logPath} .machineId=${context.machineId}></bash-log-button>
