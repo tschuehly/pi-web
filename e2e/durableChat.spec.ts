@@ -259,7 +259,10 @@ test("a Durable Chat compacts on /compact and continues after compact_and_contin
   await send(page, `call:compact_and_continue ${JSON.stringify({ summaryFocus: "Keep the names", nextPhase: "write the docs" })}`);
   await expect(chat(page).getByText(/ok: Context checkpoint completed/).first()).toBeVisible();
   const checkVisible = async (): Promise<void> => {
-    await expect(chat(page).getByText("Continue with the requested next phase: write the docs").first()).toBeVisible();
+    // The continuation is a quiet notice: its first line shows, the next phase sits in its folded body.
+    const continuation = chat(page).locator("details.notice").filter({ hasText: "Context checkpoint completed." });
+    await expect(continuation).toHaveCount(1);
+    await expect(continuation).toContainText("Continue with the requested next phase: write the docs");
     await expect(chat(page).getByText(/ok: Context checkpoint completed/)).toHaveCount(1);
     await expect(chat(page).getByText("1 history compaction summary")).toHaveCount(2);
     for (const answer of ["ok: one", "ok: two", "ok: three"]) await expect(chat(page).getByText(answer)).toHaveCount(1);

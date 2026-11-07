@@ -159,7 +159,7 @@ test("AC-P089 review routes away from author family and refuses a same-family ov
     const model = provider === "anthropic" ? "claude-opus-5-5" : "gpt-6.1-sol";
     const script = await mock.script({ provider, match: marker, turns: ["Independent review complete."] });
     const receipt = await call(page, "subagent", scout(marker, { profile: "reviewer", cognitiveRole: "review", independentOfModel: author, background: false }));
-    expect(textOf(receipt)).toContain(`Completion receipt: ${provider}/${model}:xhigh`);
+    expect(textOf(receipt)).toContain(`Completion receipt: ${provider}/${model}:high`);
     expect(textOf(receipt)).toContain(`family ${provider === "anthropic" ? "anthropic" : "openai"}`);
     expect((await requests(script)).map((r) => [r.provider, r.model])).toEqual([[provider, model]]);
     const refused = await call(page, "subagent", scout("forbidden-same-family", { profile: "reviewer", cognitiveRole: "review", independentOfModel: author, modelOverride: author, background: false }));

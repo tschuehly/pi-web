@@ -152,7 +152,8 @@ export async function journalCount(marker: string, expected: number): Promise<vo
   }
 }
 export async function expandTools(page: Page): Promise<void> {
-  const groups = chat(page).locator("details:not([open]) > summary").filter({ hasText: /^Activity/ });
+  // Activity folds by their class: the summary's text now starts with its disclosure chevron.
+  const groups = chat(page).locator("details.activity-group:not([open]) > summary");
   while (await groups.count()) await groups.first().click();
   const details = chat(page).locator("tool-execution-view details:not([open]) > summary");
   while (await details.count()) await details.first().click();
