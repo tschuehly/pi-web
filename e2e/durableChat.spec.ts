@@ -131,8 +131,10 @@ test("a Durable Chat keeps Working Mode, answers a question, switches models and
   // when the user resumes, so the effect runs once and nothing needs reconciling. (The reconciliation card for unsafe
   // tools: the next test.)
   // Barrier: the effect itself, so the tool is running when the host is stopped.
-  await send(page, 'call:bash {"command":"echo deploy >> resolve-effects.log; sleep 3; echo deployed","description":"Deploy","foreground":true}');
-  await expect.poll(() => readFile(join(project, "resolve-effects.log"), "utf8").catch(() => "")).toBe("deploy\n");
+  // A log per Chat, so a repeated run starts from an empty one.
+  const effects = `resolve-effects-${sessionId.slice(0, 8)}.log`;
+  await send(page, `call:bash {"command":"echo deploy >> ${effects}; sleep 3; echo deployed","description":"Deploy","foreground":true}`);
+  await expect.poll(() => readFile(join(project, effects), "utf8").catch(() => "")).toBe("deploy\n");
   const stopped = await page.request.post(`${base}api/sessions/${encodeURIComponent(sessionId)}/stop`, { data: { cwd: project } });
   expect(stopped.ok()).toBe(true);
   await page.reload();
@@ -141,7 +143,7 @@ test("a Durable Chat keeps Working Mode, answers a question, switches models and
   await send(page, "resume", "Queue follow-up");
   await expect(chat(page).getByText("ok: resume").first()).toBeVisible();
   await expect(chat(page).getByText("done after bash").first()).toBeVisible();
-  expect((await readFile(join(project, "resolve-effects.log"), "utf8")).trim().split("\n")).toEqual(["deploy"]);
+  expect((await readFile(join(project, effects), "utf8")).trim().split("\n")).toEqual(["deploy"]);
 });
 
 test("P051: an unsafe write a host crash interrupted blocks write until the owner resolves it in the Chat", async ({ page }) => {
@@ -276,7 +278,7 @@ test("a Durable Chat runs an installed package's tool, shows its pings and its c
   const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
   if (base === undefined || workspaceId === undefined || project === undefined) throw new Error("Isolated PI WEB was not started");
   test.setTimeout(60_000);
-  const log = join(project, "durable-watch.log");
+  const log = join(project, `durable-watch-${String(Date.now())}.log`);
   await writeFile(log, "");
   await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
   await page.getByRole("button", { name: "New Durable Chat" }).click();

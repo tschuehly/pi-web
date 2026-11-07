@@ -65,7 +65,9 @@ test("queued messages: send now and remove; after a host restart the queue is st
   await page.getByRole("button", { name: "Send follow-up 2 now" }).click();
   await expect(queued(page).first()).toContainText("Steer 1");
   await expect(queued(page).first()).toContainText("second follow-up");
-  await queued(page).filter({ hasText: "third follow-up" }).getByRole("button", { name: "Remove queued message" }).click();
+  // Match the row that shows the text: a reused row keeps its replaced Markdown hidden until it re-formats, and the host
+  // briefly publishes the queue without the promoted message, so `hasText` can also match a stale hidden copy.
+  await queued(page).filter({ has: page.getByText("third follow-up", { exact: true }).filter({ visible: true }) }).getByRole("button", { name: "Remove queued message" }).click();
   await expect(queued(page)).toHaveCount(2);
 
   // A host restart keeps the queue; the restored Chat waits paused, and the queue is still editable.
