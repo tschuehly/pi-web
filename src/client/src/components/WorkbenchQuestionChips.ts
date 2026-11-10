@@ -4,6 +4,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { PendingAskUser } from "../../../shared/apiTypes";
 import type { AskUserCard, AskUserSubmitCallback } from "./AskUserCard";
 import "./AskUserCard";
+import { answeredCount, loadAskDraft } from "../askDrafts";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 
 // Lucide "message-circle-question" and "chevron-down" (https://lucide.dev, ISC).
@@ -14,10 +15,10 @@ const CHEVRON_DOWN_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusa
 export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined): number => (asks ?? []).reduce((sum, ask) => sum + ask.questions.length, 0);
 
 /**
- * The selected Chat's open questions as chips above its composer, one per question, oldest set first. A chip opens a
- * drawer with every set's form, each its context above its questions; while open (the reflected `open` attribute) the
- * Chat gives the drawer the transcript's whole area. Answered sets drop out because the daemon stops reporting them,
- * leaving their record in the transcript.
+ * The selected Chat's open questions as one bar above its composer ("3 open questions · 1 answered", over every open
+ * set). The bar opens a drawer with every set's form, oldest first, each its context above its questions; while open
+ * (the reflected `open` attribute) the Chat gives the drawer the transcript's whole area. Sent questions and answered
+ * sets drop out because the daemon stops reporting them, leaving their record in the transcript.
  */
 @customElement("workbench-question-chips")
 export class WorkbenchQuestionChips extends LitElement {
@@ -28,8 +29,6 @@ export class WorkbenchQuestionChips extends LitElement {
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
   /** Reflected so the Chat can hand the drawer the transcript's area. */
   @property({ type: Boolean, reflect: true }) open = false;
-  /** The chip that opened the drawer, refocused when it closes. */
-  private opener: HTMLElement | undefined;
 
   protected override willUpdate(): void {
     if (this.asks.length === 0) this.open = false;
@@ -39,22 +38,21 @@ export class WorkbenchQuestionChips extends LitElement {
     if (this.asks.length === 0) return nothing;
     const count = openQuestionCount(this.asks);
     const title = `${String(count)} open ${count === 1 ? "question" : "questions"}`;
+    // Drafts live in the browser, so the count is read back from them; cards announce edits with ask-draft-change.
+    const answered = this.asks.reduce((sum, ask) => sum + answeredCount(ask.questions, loadAskDraft(this.draftSessionId, ask.askId, undefined, ask.questions)), 0);
     const closeButton = html`<button type="button" class="close" slot="actions" title="Close questions (Esc)" aria-label="Close questions" @click=${() => { this.close(); }}>${CHEVRON_DOWN_ICON}</button>`;
     // One set lends its header line the drawer's title and close button; several keep a drawer header above them.
     const single = this.asks.length === 1;
     return html`
       ${this.open ? html`
-        <section id="question-drawer" class="drawer" aria-label="Open questions" @keydown=${this.onKeydown}>
+        <section id="question-drawer" class="drawer" aria-label="Open questions" @keydown=${this.onKeydown} @ask-draft-change=${() => { this.requestUpdate(); }}>
           ${single ? nothing : html`<header><span>${title}</span>${closeButton}</header>`}
           <div class="sets">
             ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
           </div>
         </section>` : nothing}
-      <div class="chips" role="group" aria-label="Open questions" @keydown=${this.onKeydown}>
-        ${this.asks.flatMap((ask) => ask.questions.map((question, index) => html`
-          <button type="button" class="chip" data-ask=${ask.askId} data-question=${String(index)} title=${question.question} aria-expanded=${String(this.open)} aria-controls="question-drawer"
-            @click=${(event: Event) => { if (event.currentTarget instanceof HTMLElement) this.opener = event.currentTarget; void this.openQuestion(ask.askId, index); }}>${QUESTION_ICON}<span>${question.question}</span></button>`))}
-      </div>
+      <button type="button" class="bar" aria-expanded=${String(this.open)} aria-controls="question-drawer" @keydown=${this.onKeydown}
+        @click=${() => { if (this.open) this.close(); else void this.openQuestion(this.asks[0]?.askId ?? "", 0); }}>${QUESTION_ICON}<span>${title}${answered === 0 ? nothing : html`<span class="answered"> · ${String(answered)} answered</span>`}</span></button>
     `;
   }
 
@@ -65,7 +63,7 @@ export class WorkbenchQuestionChips extends LitElement {
     this.close();
   };
 
-  /** Opens the drawer at one question, as its chip does; false when no open set asks it. */
+  /** Opens the drawer at one question (the bar opens it at the first); false when no open set asks it. */
   async openQuestion(askId: string, questionIndex: number): Promise<boolean> {
     if (this.asks.find((ask) => ask.askId === askId)?.questions[questionIndex] === undefined) return false;
     this.open = true;
@@ -78,31 +76,21 @@ export class WorkbenchQuestionChips extends LitElement {
 
   private close(): void {
     this.open = false;
-    const opener = this.opener;
-    void this.updateComplete.then(() => { (opener?.isConnected === true ? opener : this.renderRoot.querySelector<HTMLElement>(".chip"))?.focus(); });
+    void this.updateComplete.then(() => { this.renderRoot.querySelector<HTMLElement>(".bar")?.focus(); });
   }
 
   static override styles = css`
-    /* Open, the host fills the room the hidden transcript gives up; the drawer scrolls its forms, so chips and composer stay whole. */
+    /* Open, the host fills the room the hidden transcript gives up; the drawer scrolls its forms, so bar and composer stay whole. */
     :host { display: flex; flex: 0 0 auto; flex-direction: column; min-width: 0; min-height: 0; }
     :host([open]) { flex: 1 1 0; }
     svg { flex: 0 0 auto; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    /* One row however many questions are open: it scrolls sideways, and the drawer lists every question anyway. */
-    .chips { flex: 0 0 auto; display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 6px var(--pi-panel-padding, 10px) 2px; }
-    .chips::-webkit-scrollbar { display: none; }
-    /* Fades the clipped edge(s) only while the row overflows: an inactive scroll timeline applies no mask. */
-    .chips { animation: chips-edge linear both; animation-timeline: scroll(self inline); }
-    @keyframes chips-edge {
-      0% { mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
-      5%, 95% { mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
-      100% { mask-image: linear-gradient(to right, transparent, #000 32px); }
-    }
-    .chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: min(320px, 100%); height: 28px; padding: 0 11px 0 9px; border: 1px solid color-mix(in srgb, var(--pi-warning) 55%, transparent); border-radius: 999px; background: var(--pi-warning-surface); color: var(--pi-text); font: 12.5px system-ui, sans-serif; cursor: pointer; }
-    .chip svg { color: var(--pi-warning); }
-    .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .chip:hover, .chip[aria-expanded="true"] { border-color: var(--pi-warning); }
-    .chip:focus-visible, .close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    /* Fills the transcript's area between the Activity roster and the chips, flush with the Chat's edges. */
+    .bar { flex: 0 0 auto; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 2 * var(--pi-panel-padding, 10px)); height: 28px; margin: 6px var(--pi-panel-padding, 10px) 2px; padding: 0 11px 0 9px; border: 1px solid color-mix(in srgb, var(--pi-warning) 55%, transparent); border-radius: 999px; background: var(--pi-warning-surface); color: var(--pi-text); font: 12.5px system-ui, sans-serif; cursor: pointer; }
+    .bar svg { color: var(--pi-warning); }
+    .bar > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .answered { color: var(--pi-muted); }
+    .bar:hover, .bar[aria-expanded="true"] { border-color: var(--pi-warning); }
+    .bar:focus-visible, .close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    /* Fills the transcript's area between the Activity roster and the bar, flush with the Chat's edges. */
     .drawer { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--pi-surface); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
     header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); font: 12px system-ui, sans-serif; }
     .close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); cursor: pointer; }

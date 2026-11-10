@@ -2576,7 +2576,7 @@ describe("window tabs", () => {
     expect(app.shadowRoot?.querySelector('header button[aria-label="Full size"]')).toBeNull();
   });
 
-  it("puts a grid tile's own open questions as chips above its compact composer", async () => {
+  it("puts a grid tile's own open questions in a bar above its compact composer", async () => {
     vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
     const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "db", question: "Which database?", options: [] }] };
@@ -2591,7 +2591,7 @@ describe("window tabs", () => {
     expect(tile("a1")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([]);
   });
 
-  it("opens an unfocused tile's question in one click without replacing its question chips", async () => {
+  it("opens an unfocused tile's questions in one click without replacing its question bar", async () => {
     vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
     const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "db", question: "Which database?", options: [] }, { id: "why", question: "Why now?", options: [] }] };
@@ -2599,9 +2599,9 @@ describe("window tabs", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
     await settled(app);
     const sideChips = () => app.shadowRoot?.querySelector('.tile[data-session="a2"] workbench-chat-pane')?.querySelector<WorkbenchQuestionChips>("workbench-question-chips");
-    await vi.waitFor(async () => { await sideChips()?.updateComplete; expect(sideChips()?.shadowRoot?.querySelectorAll(".chip")).toHaveLength(2); });
+    await vi.waitFor(async () => { await sideChips()?.updateComplete; expect(sideChips()?.shadowRoot?.querySelector(".bar")?.textContent).toContain("2 open questions"); });
 
-    const chip = sideChips()?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".chip")[1];
+    const chip = sideChips()?.shadowRoot?.querySelector<HTMLButtonElement>(".bar");
     const chipsBefore = sideChips();
     chip?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
     chip?.click();

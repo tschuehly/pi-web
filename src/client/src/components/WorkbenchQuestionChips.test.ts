@@ -40,30 +40,43 @@ async function mount(asks: PendingAskUser[]) {
   return { chips, onSubmit };
 }
 
-const chipButtons = (chips: WorkbenchQuestionChips) => [...(chips.shadowRoot?.querySelectorAll<HTMLButtonElement>(".chip") ?? [])];
+const bar = (chips: WorkbenchQuestionChips) => chips.shadowRoot?.querySelector<HTMLButtonElement>(".bar") ?? undefined;
 const drawer = (chips: WorkbenchQuestionChips) => chips.shadowRoot?.querySelector<HTMLElement>(".drawer") ?? null;
 const cards = (chips: WorkbenchQuestionChips) => [...(chips.shadowRoot?.querySelectorAll<AskUserCard>("ask-user-card") ?? [])];
 const text = (card: AskUserCard | undefined) => card?.shadowRoot?.textContent.replace(/\s+/g, " ") ?? "";
 
-async function openWith(chips: WorkbenchQuestionChips, chip: HTMLButtonElement | undefined) {
-  chip?.click();
+async function openWith(chips: WorkbenchQuestionChips, button = bar(chips)) {
+  button?.click();
   await chips.updateComplete;
   await Promise.all(cards(chips).map((card) => card.updateComplete));
 }
 
 describe("WorkbenchQuestionChips", () => {
-  it("shows one focusable chip per open question and no drawer until one is chosen", async () => {
+  it("shows one focusable bar counting every set's open questions and no drawer until it is chosen", async () => {
     const { chips } = await mount([ask("abc-1"), twoQuestions]);
 
-    expect(chipButtons(chips).map((chip) => chip.textContent.trim())).toEqual(["Which database?", "Which database?", "Why now?"]);
-    expect(chipButtons(chips).every((chip) => chip.type === "button" && chip.tabIndex === 0 && chip.getAttribute("aria-expanded") === "false")).toBe(true);
+    expect(chips.shadowRoot?.querySelectorAll(".bar")).toHaveLength(1);
+    expect(bar(chips)?.textContent.trim()).toBe("3 open questions");
+    expect(bar(chips)?.type).toBe("button");
+    expect(bar(chips)?.getAttribute("aria-expanded")).toBe("false");
     expect(drawer(chips)).toBeNull();
     expect(openQuestionCount([ask("abc-1"), twoQuestions])).toBe(3);
   });
 
+  it("counts answered questions from the drafts and as the user answers in the drawer", async () => {
+    localStorage.setItem("pi-web:ask-draft:local:session-1:def-2", JSON.stringify({ why: { values: [], otherText: "Soon", asked: JSON.stringify(twoQuestions.questions[1]) } }));
+    const { chips } = await mount([ask("abc-1"), twoQuestions]);
+    expect(bar(chips)?.textContent.replace(/\s+/g, " ").trim()).toBe("3 open questions · 1 answered");
+
+    await openWith(chips);
+    cards(chips)[0]?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
+    await chips.updateComplete;
+    expect(bar(chips)?.textContent.replace(/\s+/g, " ").trim()).toBe("3 open questions · 2 answered");
+  });
+
   it("renders nothing for a Chat without open questions", async () => {
     const { chips } = await mount([]);
-    expect(chips.shadowRoot?.querySelector(".chips")).toBeNull();
+    expect(bar(chips)).toBeUndefined();
   });
 
   it("opens a drawer of every set with its context above the questions, recommended option, Custom and Send", async () => {
@@ -71,10 +84,10 @@ describe("WorkbenchQuestionChips", () => {
     vi.setSystemTime(new Date("2026-10-19T10:05:00.000Z"));
     const { chips } = await mount([ask("abc-1"), ask("def-2", { turnsSinceUpdate: 6, updatedAt: "2026-10-19T08:00:00.000Z" })]);
 
-    await openWith(chips, chipButtons(chips)[1]);
+    await openWith(chips);
 
     expect(drawer(chips)?.getAttribute("aria-label")).toBe("Open questions");
-    expect(chipButtons(chips)[1]?.getAttribute("aria-expanded")).toBe("true");
+    expect(bar(chips)?.getAttribute("aria-expanded")).toBe("true");
     expect(chips.hasAttribute("open")).toBe(true);
     const [first, second] = cards(chips);
     expect(AskUserCard.styles.cssText).not.toContain("context-beside");
@@ -86,19 +99,20 @@ describe("WorkbenchQuestionChips", () => {
     expect(text(first)).toContain("updated 5 min ago");
     expect(text(second)).toContain("may be stale");
     expect(second?.shadowRoot?.querySelector('button[type="submit"]')?.textContent.trim()).toBe("Send answers");
+    expect(first?.shadowRoot?.querySelector(".send-one")).toBeNull();
   });
 
-  it("focuses the chosen question in the drawer", async () => {
+  it("focuses the first question of the oldest set when the bar opens the drawer", async () => {
     const { chips } = await mount([ask("abc-1"), twoQuestions]);
     const focus = vi.spyOn(AskUserCard.prototype, "focusQuestion");
 
-    await openWith(chips, chipButtons(chips)[2]);
+    await openWith(chips);
 
-    await vi.waitFor(() => { expect(focus).toHaveBeenCalledWith(1); });
-    expect(focus.mock.contexts[0]).toBe(cards(chips)[1]);
+    await vi.waitFor(() => { expect(focus).toHaveBeenCalledWith(0); });
+    expect(focus.mock.contexts[0]).toBe(cards(chips)[0]);
   });
 
-  it("opens a question for a caller, as its chip would, and refuses one no open set asks", async () => {
+  it("opens a question for a caller and refuses one no open set asks", async () => {
     const { chips } = await mount([ask("abc-1"), twoQuestions]);
     const focus = vi.spyOn(AskUserCard.prototype, "focusQuestion");
 
@@ -108,16 +122,14 @@ describe("WorkbenchQuestionChips", () => {
 
     expect(drawer(chips)).not.toBeNull();
     expect(focus).toHaveBeenCalledWith(1);
-    expect(chipButtons(chips).map((chip) => [chip.dataset["ask"], chip.dataset["question"]])).toEqual([["abc-1", "0"], ["def-2", "0"], ["def-2", "1"]]);
+    expect(focus.mock.contexts[0]).toBe(cards(chips)[1]);
   });
 
-  it("keeps the chips to one sideways-scrolling row and, open, fills the host with a flush drawer", () => {
+  it("keeps the bar to its own size and, open, fills the host with a flush drawer", () => {
     const styles = WorkbenchQuestionChips.styles.cssText;
     expect(styles).toMatch(/:host \{[^}]*flex: 0 0 auto;[^}]*min-height: 0;/);
     expect(styles).toMatch(/:host\(\[open\]\) \{ flex: 1 1 0; \}/);
-    expect(styles).toMatch(/\.chips \{ flex: 0 0 auto;/);
-    expect(styles).toMatch(/\.chips \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/);
-    expect(styles).toMatch(/\.chip \{ flex: 0 0 auto;/);
+    expect(styles).toMatch(/\.bar \{ flex: 0 0 auto;/);
     expect(styles).toMatch(/\.drawer \{ flex: 1 1 0;[^}]*min-height: 0;/);
     expect(styles).not.toMatch(/\.drawer \{[^}]*(max-height|margin|border|box-shadow)/);
     // The flat card keeps its actions in view at the drawer's bottom.
@@ -126,7 +138,7 @@ describe("WorkbenchQuestionChips", () => {
 
   it("frames one set flat under a single header line carrying the count and close button; several sets keep a drawer header", async () => {
     const { chips } = await mount([twoQuestions]);
-    await openWith(chips, chipButtons(chips)[0]);
+    await openWith(chips);
     const [card] = cards(chips);
     expect(card?.hasAttribute("flat")).toBe(true);
     expect(drawer(chips)?.querySelector("header")).toBeNull();
@@ -139,9 +151,9 @@ describe("WorkbenchQuestionChips", () => {
     expect(cards(chips).every((each) => each.hasAttribute("flat") && each.children.length === 0)).toBe(true);
   });
 
-  it("sends one set's answers through the submit callback", async () => {
+  it("sends one set's answers, or one question's, through the submit callback", async () => {
     const { chips, onSubmit } = await mount([ask("abc-1"), ask("def-2")]);
-    await openWith(chips, chipButtons(chips)[0]);
+    await openWith(chips);
     const second = cards(chips)[1];
     second?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
     await second?.updateComplete;
@@ -149,11 +161,20 @@ describe("WorkbenchQuestionChips", () => {
     second?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
 
     await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledWith("def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1" }); });
+
+    chips.asks = [twoQuestions];
+    await chips.updateComplete;
+    const card = cards(chips)[0];
+    await card?.updateComplete;
+    card?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
+    await card?.updateComplete;
+    card?.shadowRoot?.querySelector<HTMLButtonElement>(".send-one")?.click();
+    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledWith("def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1", partial: true }); });
   });
 
-  it("closes the drawer on Esc or its close button, returning focus to the chip", async () => {
+  it("closes the drawer on Esc or its close button, returning focus to the bar", async () => {
     const { chips } = await mount([ask("abc-1"), twoQuestions]);
-    const chip = chipButtons(chips)[1];
+    const chip = bar(chips);
     await openWith(chips, chip);
 
     const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true });
@@ -173,13 +194,13 @@ describe("WorkbenchQuestionChips", () => {
 
   it("drops an answered set while keeping the other card and its draft, and folds away with the last", async () => {
     const { chips } = await mount([ask("abc-1"), ask("def-2")]);
-    await openWith(chips, chipButtons(chips)[0]);
+    await openWith(chips);
     const survivor = cards(chips)[1];
 
     chips.asks = [ask("def-2")];
     await chips.updateComplete;
     expect(cards(chips)).toEqual([survivor]);
-    expect(chipButtons(chips)).toHaveLength(1);
+    expect(bar(chips)?.textContent.trim()).toBe("1 open question");
 
     chips.asks = [];
     await chips.updateComplete;
