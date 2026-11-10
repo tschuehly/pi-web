@@ -544,15 +544,19 @@ export class AskUserCard extends LitElement {
     .question-number { justify-self: end; color: var(--pi-muted); }
     fieldset.question.answered .question-number { color: var(--pi-success); }
     .question-detail { display: block; margin: 4px 0 10px; color: var(--pi-text); overflow-wrap: anywhere; }
-    fieldset.question > .question-detail, .record-question > .question-detail {
+    fieldset.question > .question-detail {
       padding-inline-start: calc(var(--question-number-column) + var(--question-copy-gap));
     }
     .options { display: grid; gap: 7px; }
     legend + .options { margin-top: 10px; }
-    .option-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px; }
+    /* The pencil sits in the option's trailing padding, so every option, Custom and the textarea end at one edge. */
+    .option-row { position: relative; }
+    .option-row > .option { padding-inline-end: 34px; }
     .edit-option {
+      position: absolute;
+      top: 3px;
+      right: 4px;
       display: inline-flex;
-      margin-top: 4px;
       border-color: transparent;
       background: transparent;
       color: var(--pi-muted);
@@ -560,11 +564,12 @@ export class AskUserCard extends LitElement {
     }
     .edit-option:hover:not(:disabled) { color: var(--pi-text); }
     .edit-option svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    /* 1px border + 8px padding + 16px control + 5px gap = the number gutter, so option text starts where question text does. */
     .option {
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-columns: 16px minmax(0, 1fr);
       align-items: start;
-      gap: 8px;
+      gap: 5px;
       border: 1px solid transparent;
       border-radius: 8px;
       padding: 7px 8px;
@@ -577,8 +582,7 @@ export class AskUserCard extends LitElement {
     .option-copy { min-width: 0; display: grid; gap: 2px; }
     .option-label { line-height: 1.35; }
     .option-detail { color: var(--pi-muted); font-size: 12px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .other-answer { display: grid; gap: 5px; color: var(--pi-muted); font-size: 12px; padding: 4px 8px 4px 32px; }
-    .other-answer:only-child { padding-left: 0; padding-right: 0; }
+    .other-answer { display: grid; gap: 5px; color: var(--pi-muted); font-size: 12px; padding: 4px 0 4px calc(var(--question-number-column) + var(--question-copy-gap)); }
     textarea {
       box-sizing: border-box;
       width: 100%;
@@ -634,6 +638,8 @@ export class AskUserCard extends LitElement {
     .record-question h3 { display: grid; grid-template-columns: var(--question-number-column) minmax(0, 1fr); align-items: start; gap: var(--question-copy-gap); margin-bottom: 8px; font-size: 14px; line-height: 1.35; }
     /* Numbers and bullets hang in the gutter so question and answer words stay in the transcript's text column. */
     .record-question h3 { margin-inline-start: calc(-1 * (var(--question-number-column) + var(--question-copy-gap))); }
+    /* The note has no number to hang, so its heading sits in the text column like the answers. */
+    .record-note h3 { display: block; margin-inline-start: 0; }
     .record-answers { display: grid; gap: 4px; margin: 0; padding-left: 0; line-height: 1.4; }
     .other-record-text { white-space: pre-wrap; overflow-wrap: anywhere; }
     .unanswered-record { margin: 0; color: var(--pi-muted); font-style: italic; }
@@ -655,19 +661,21 @@ export class AskUserCard extends LitElement {
     :host([flat]) .ask-meta { flex: 0 1 auto; gap: 6px; font-size: 12px; }
     :host([flat]) .header-status { flex: 1 1 auto; font-size: 12px; text-align: start; }
     :host([flat]) .ask-meta::before, :host([flat]) .header-status::before { content: "·" / ""; margin-inline-end: 6px; }
-    :host([flat]) .open-card .ask-context { padding: 8px 12px; }
+    /* One reading column: numbers and controls hang in the gutter between the 12px inset and the text. */
+    :host([flat]) .card { --ask-reading-start: calc(12px + var(--question-number-column) + var(--question-copy-gap)); }
+    :host([flat]) .open-card .ask-context { padding: 8px 12px 8px var(--ask-reading-start); }
     :host([flat]) .questions { padding-top: 8px; }
     :host([flat]) .question-separator { margin-bottom: 8px; }
     :host([flat]) fieldset.question { padding: 0 12px 8px; }
     :host([flat]) .question-detail { margin: 2px 0 6px; }
     :host([flat]) legend + .options { margin-top: 6px; }
     :host([flat]) .options { gap: 2px; }
-    :host([flat]) .option { padding: 4px 8px; }
-    :host([flat]) .ask-note { padding: 0 12px 8px; }
+    :host([flat]) .option { padding-block: 4px; }
+    :host([flat]) .ask-note { padding: 0 12px 8px var(--ask-reading-start); }
     /* The drawer scrolls the questions under their actions, which stay in view. */
     :host([flat]) .form-footer { position: sticky; bottom: 0; z-index: 6; padding: 6px 12px; background: var(--pi-surface); }
     :host([flat]) .form-footer button:not(.question-jump) { padding: 5px 10px; }
-    :host([flat]) .edit-option { margin-top: 1px; }
+    :host([flat]) .edit-option { top: 1px; }
   `;
 }
 
