@@ -108,7 +108,8 @@ export class WorkbenchQuestionChips extends LitElement {
     .close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); cursor: pointer; }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .close svg { width: 16px; height: 16px; }
-    .sets { min-height: 0; overflow: auto; }
+    /* Keeps a focused field clear of the sticky Send bar. */
+    .sets { min-height: 0; overflow: auto; scroll-padding-bottom: 64px; }
     ask-user-card + ask-user-card { border-top: 1px solid var(--pi-border); }
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
     @media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
