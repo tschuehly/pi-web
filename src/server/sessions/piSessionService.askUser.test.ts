@@ -284,10 +284,11 @@ describe("PiSessionService.submitAsk", () => {
 
     const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", {
       answers: [{ id: "db", values: [], otherText: "DuckDB" }],
+      note: "Keep the migration small.",
       revision: "r1",
     });
 
-    expect(response).toMatchObject({ result: "closed", outcome: { askId: "ask-1", reason: "submitted", answeredCount: 1, unansweredIds: [] } });
+    expect(response).toMatchObject({ result: "closed", outcome: { askId: "ask-1", reason: "submitted", answeredCount: 1, unansweredIds: [], note: "Keep the migration small." } });
     expect(response.sessionStatus.sessionId).toBe(ACTIVE_SESSION_ID);
     expect(fake.calls.sendCustomMessage).toHaveLength(1);
     const [delivered] = fake.calls.sendCustomMessage;
@@ -295,6 +296,7 @@ describe("PiSessionService.submitAsk", () => {
     expect(delivered?.message.display).toBe(true);
     expect(delivered?.message.content).toContain("The user submitted answers to question set ask-1.");
     expect(delivered?.message.content).toContain(`- ask.db: Which database?\n  Answered: custom: "DuckDB"`);
+    expect(delivered?.message.content).toContain(`Note from the user: "Keep the migration small."`);
     expect(delivered?.message.content).toContain("Answered 1 of 1");
     expect(delivered?.message.content).not.toContain("still open");
     expect(delivered?.message.details).toMatchObject({ askId: "ask-1", reason: "submitted" });
@@ -345,6 +347,33 @@ describe("PiSessionService.submitAsk", () => {
     expect(redelivered?.message).toMatchObject({ customType: ASK_USER_ANSWERS_CUSTOM_TYPE, details: { askId: "ask-1", reason: "submitted" } });
     expect(redelivered?.message.content).toContain("Answered: selected pg");
     expect(redelivered?.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+    await restarted.service.dispose();
+  });
+
+  it("delivers a single answer while the other questions stay open, and a restart rebuilds them and redelivers the answer", async () => {
+    const branch: unknown[] = [];
+    const { service, store, events, fake } = askService({ withActiveSession: true, branch });
+    await service.status(sessionRef(ACTIVE_SESSION_ID));
+    const two = [...questions, { id: "why", question: "Why now?", options: [] }];
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions: two });
+    branch.push({ type: "message", message: { role: "toolResult", toolName: "ask_user", details: { ask: store.pendingAsks(ACTIVE_SESSION_ID)[0], sessionId: ACTIVE_SESSION_ID } } });
+
+    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: "r1", partial: true });
+
+    expect(response).toMatchObject({ result: "closed", outcome: { askId: "ask-1", partial: true, revision: "r2", answeredCount: 1 } });
+    expect(response.sessionStatus.pendingAsks).toEqual([expect.objectContaining({ askId: "ask-1", revision: "r2", questions: [two[1]] })]);
+    expect(askEvents(events).map(({ event }) => event.type)).toEqual(["ask.opened", "ask.opened"]);
+    const [delivered] = fake.calls.sendCustomMessage;
+    expect(delivered?.message.content).toContain("The user answered one question of question set ask-1; its other questions stay open.");
+    expect(delivered?.message.content).toContain("- ask-1 (ask.why;");
+    expect(store.pendingAsks(ACTIVE_SESSION_ID).map((ask) => ask.questions.map((question) => question.id))).toEqual([["why"]]);
+    await service.dispose();
+
+    // The follow-up never reached the branch before the daemon went away.
+    const restarted = askService({ withActiveSession: true, branch });
+    expect((await restarted.service.status(sessionRef(ACTIVE_SESSION_ID))).pendingAsks).toEqual([expect.objectContaining({ askId: "ask-1", revision: "r2", questions: [two[1]] })]);
+    await vi.waitFor(() => { expect(restarted.fake.calls.sendCustomMessage).toHaveLength(1); });
+    expect(restarted.fake.calls.sendCustomMessage[0]?.message.details).toMatchObject({ askId: "ask-1", partial: true });
     await restarted.service.dispose();
   });
 

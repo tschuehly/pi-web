@@ -3,7 +3,7 @@
 import type { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
-import { saveAskDraft } from "../askDrafts";
+import { loadAskNote, saveAskDraft } from "../askDrafts";
 import { AskUserCard, type AskUserSubmitCallback } from "./AskUserCard";
 import { settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
 
@@ -32,7 +32,9 @@ describe("ask-user-card live form", () => {
     expect(fieldsets).toHaveLength(2);
     expect(legends[0]?.textContent).toContain("Choose an editor");
     expect(fieldsets[0]?.getAttribute("aria-describedby")).toBe("ask-user-question-detail-0");
-    expect(root.querySelector("#ask-user-question-detail-0")?.textContent).toBe("Used for examples.");
+    const detail = root.querySelector<HTMLElement & { text: string }>("#ask-user-question-detail-0");
+    expect(detail?.localName).toBe("formatted-text");
+    expect(detail?.text).toBe("Used for examples.");
     expect(vim.type).toBe("radio");
     expect(code.name).toBe(vim.name);
     expect(web.type).toBe("checkbox");
@@ -102,7 +104,7 @@ describe("ask-user-card live form", () => {
     });
   });
 
-  it("edits a proposed option into the custom answer for single and multi-select questions", async () => {
+  it("edits a proposed option in its own row into the custom answer for single and multi-select questions", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([
       question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")]),
@@ -113,18 +115,24 @@ describe("ask-user-card live form", () => {
     expect(editButtons).toHaveLength(4);
     expect(editButtons[0]?.type).toBe("button");
 
-    // Radio: editing replaces the selected option with Custom.
+    // Radio: the edited row turns into the Custom answer's textarea, selected; Custom and its own textarea step aside.
     inputWithValue(root, "vim").click();
     await card.updateComplete;
     requiredElement(editButtons[1], "edit VS Code").click();
     await card.updateComplete;
     await Promise.resolve();
     const editorText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-0"), "editor textarea");
+    const editedRow = requiredElement(editorText.closest(".option-row.inline-edit"), "inline edit row");
+    expect(editedRow.previousElementSibling?.querySelector("input")?.value).toBe("vim");
     expect(editorText.value).toBe("VS Code");
+    expect(editorText.getAttribute("aria-label")).toBe("Custom answer, edited from VS Code");
     expect(root.activeElement).toBe(editorText);
     expect(editorText.selectionStart).toBe("VS Code".length);
     expect(inputWithValue(root, "vim").checked).toBe(false);
-    expect(inputWithValue(root, "code").checked).toBe(false);
+    expect(root.querySelector("#ask-user-question-0 input[value='code']")).toBeNull();
+    expect(inputWithValue(root, "__pi_web_other__").checked).toBe(false);
+    expect(root.querySelectorAll("#ask-user-question-0 textarea")).toHaveLength(1);
+    expect(root.querySelector("#ask-user-question-0 .other-answer")).toBeNull();
     editorText.value = "VS Code Insiders";
     editorText.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
 
@@ -140,11 +148,12 @@ describe("ask-user-card live form", () => {
     await card.updateComplete;
     await Promise.resolve();
     const editedStackText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-1"), "stack textarea");
+    expect(editedStackText.closest(".inline-edit")).not.toBeNull();
     expect(editedStackText.value).toBe("React");
     expect(root.activeElement).toBe(editedStackText);
-    expect(inputWithValue(root, "react").checked).toBe(false);
+    expect(inputWithValue(root, "lit").checked).toBe(true);
 
-    buttonWithText(root, "Send answers").click();
+    buttonWithText(root, "Send all").click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenCalledWith("ask-1", {
       revision: "r1",
@@ -153,6 +162,69 @@ describe("ask-user-card live form", () => {
         { id: "stack", values: ["lit"], otherText: "React" },
       ],
     });
+  });
+
+  it("reverts an inline edit with Esc or Revert to the answer from before it, keeping the drawer open", async () => {
+    const card = await mountOpenAsk(openAsk([question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")])]));
+    const root = renderRoot(card);
+    const outside = vi.fn();
+    document.body.addEventListener("keydown", outside);
+    inputWithValue(root, "vim").click();
+    await card.updateComplete;
+    requiredElement(root.querySelectorAll<HTMLButtonElement>("button[aria-label='Edit this answer']")[1], "edit VS Code").click();
+    await card.updateComplete;
+    const textarea = requiredElement(root.querySelector<HTMLTextAreaElement>(".inline-edit textarea"), "inline textarea");
+    textarea.value = "VS Code, but lighter";
+    textarea.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    // The draft holds the edit as the Custom answer, as before.
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ editor: { values: [], otherText: "VS Code, but lighter" } });
+
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true });
+    textarea.dispatchEvent(escape);
+    await card.updateComplete;
+    expect(escape.defaultPrevented).toBe(true);
+    expect(outside).not.toHaveBeenCalled();
+    expect(root.querySelector(".inline-edit")).toBeNull();
+    expect(inputWithValue(root, "vim").checked).toBe(true);
+    expect(inputWithValue(root, "code").checked).toBe(false);
+    expect(root.querySelector("textarea#ask-user-other-0")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ editor: { values: ["vim"] } });
+
+    // Without an earlier answer, Revert leaves the question unanswered.
+    const fresh = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]));
+    const freshRoot = renderRoot(fresh);
+    requiredElement(freshRoot.querySelector<HTMLButtonElement>("button[aria-label='Edit this answer']"), "edit Postgres").click();
+    await fresh.updateComplete;
+    buttonWithText(freshRoot, "Revert").click();
+    await fresh.updateComplete;
+    expect(freshRoot.querySelector(".inline-edit")).toBeNull();
+    expect(freshRoot.querySelector("[aria-live='polite']")?.textContent).toContain("0 of 1 answered");
+    document.body.removeEventListener("keydown", outside);
+  });
+
+  it("shows the pencil only on row hover or focus, as a sized icon button", () => {
+    const styles = AskUserCard.styles.cssText;
+    expect(styles).toMatch(/\.edit-option \{[^}]*width: 26px;[^}]*height: 26px;[^}]*opacity: 0;/);
+    expect(styles).toContain(".option-row:hover > .edit-option, .option-row:focus-within > .edit-option { opacity: 1; }");
+    expect(styles).toMatch(/\.edit-option:hover:not\(:disabled\) \{ background:/);
+  });
+
+  it("keeps a note on the whole set in the draft and sends it trimmed with the answers", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), onSubmit);
+    const root = renderRoot(card);
+    const note = requiredElement(root.querySelector<HTMLTextAreaElement>(".ask-note textarea"), "note");
+    expect(note.closest("form")?.querySelector(".ask-note + .form-footer")).not.toBeNull();
+
+    inputWithValue(root, "pg").click();
+    note.value = "  Ship it this week.  ";
+    note.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await card.updateComplete;
+    expect(loadAskNote("local:session-1", "ask-1")).toBe("  Ship it this week.  ");
+    buttonWithText(root, "Send answers").click();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", note: "Ship it this week.", answers: [{ id: "db", values: ["pg"] }] });
   });
 
   it("shows and submits the custom field directly when no options were supplied", async () => {
@@ -188,7 +260,7 @@ describe("ask-user-card live form", () => {
 
     inputWithValue(root, "vim").click();
     await card.updateComplete;
-    buttonWithText(root, "Send answers").click();
+    buttonWithText(root, "Send all").click();
     await card.updateComplete;
     await Promise.resolve();
 
@@ -205,6 +277,50 @@ describe("ask-user-card live form", () => {
       revision: "r1",
       answers: [{ id: "editor", values: ["vim"] }],
     });
+  });
+});
+
+describe("ask-user-card single-answer send", () => {
+  it("sends one answered question on its own as a partial submit and offers no per-question Send for a lone question", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([
+      question("editor", "Choose an editor", [option("vim", "Vim")]),
+      question("deploy", "Choose a deployment target", [option("cloud", "Cloud")]),
+    ]), onSubmit);
+    const root = renderRoot(card);
+    const sends = () => [...root.querySelectorAll<HTMLButtonElement>(".send-one")];
+    expect(sends().map((button) => button.disabled)).toEqual([true, true]);
+
+    inputWithValue(root, "cloud").click();
+    await card.updateComplete;
+    expect(sends().map((button) => button.disabled)).toEqual([true, false]);
+    sends()[1]?.click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { answers: [{ id: "deploy", values: ["cloud"] }], revision: "r1", partial: true });
+    // The sent question leaves with its focused button; focus moves to the question now in its place.
+    const focus = vi.spyOn(card, "focusQuestion");
+    card.ask = { ...openAsk([question("editor", "Choose an editor", [option("vim", "Vim")])]), revision: "r2" };
+    await card.updateComplete;
+    expect(focus).toHaveBeenCalledWith(0);
+
+    const lone = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [])]), askId: "ask-2" });
+    expect(renderRoot(lone).querySelector(".send-one")).toBeNull();
+    expect(buttonWithText(renderRoot(lone), "Send answers")).toBeDefined();
+  });
+
+  it("keeps the other questions' drafts when a partial send returns the ask under a new revision", async () => {
+    const editor = question("editor", "Choose an editor", [option("vim", "Vim")]);
+    const shell = question("shell", "Choose a shell", [option("zsh", "Zsh")]);
+    const card = await mountOpenAsk(openAsk([editor, shell]), vi.fn<AskUserSubmitCallback>());
+    inputWithValue(renderRoot(card), "vim").click();
+    inputWithValue(renderRoot(card), "zsh").click();
+    await card.updateComplete;
+
+    card.ask = { ...openAsk([shell]), revision: "r2" };
+    await card.updateComplete;
+
+    expect(inputWithValue(renderRoot(card), "zsh").checked).toBe(true);
+    expect(renderRoot(card).textContent).toContain("1 of 1 answered");
   });
 });
 
@@ -225,7 +341,7 @@ describe("ask-user-card revisions", () => {
     expect(inputWithValue(renderRoot(card), "zsh").checked).toBe(true);
     inputWithValue(renderRoot(card), "code").click();
     await card.updateComplete;
-    buttonWithText(renderRoot(card), "Send answers").click();
+    buttonWithText(renderRoot(card), "Send all").click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r2", answers: [{ id: "editor", values: ["code"] }, { id: "shell", values: ["zsh"] }] });
   });
@@ -340,6 +456,35 @@ describe("ask-user-card record mode", () => {
 
     expect(renderRoot(card).textContent).toContain("Withdrawn");
     expect(renderRoot(card).textContent).toContain("The agent withdrew these questions.");
+  });
+
+  it("labels the record of a single answer sent while the set stays open", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [{ question: question("db", "Which database?", [option("pg", "Postgres")]), answered: true, values: ["pg"] }],
+      answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.why", partial: true, revision: "r2",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+
+    expect(renderRoot(card).querySelector(".header-status")?.textContent).toBe("Answer sent · others still open");
+    expect(renderRoot(card).textContent).toContain("Postgres");
+  });
+
+  it("shows the question detail as Markdown and the user's note", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [unansweredRecord(question("db", "Which database?", [], { detail: "The **cache** store." }))],
+      note: "Ship it this week.",
+      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+
+    expect(renderRoot(card).querySelector<HTMLElement & { text: string }>(".record-question formatted-text.question-detail")?.text).toBe("The **cache** store.");
+    expect(renderRoot(card).querySelector(".record-note")?.textContent).toContain("Ship it this week.");
   });
 });
 

@@ -1716,14 +1716,10 @@ export class WorkbenchApp extends LitElement {
 
   /**
    * A size container re-styles and lays out its whole transcript twice whenever it resizes, so tiles stop being containers
-   * while a divider moves; each keeps the height it had for what measures against it (the question drawer).
+   * while a divider moves.
    */
   private toggleGridResizing(resizing: boolean): void {
     const grid = this.shadowRoot?.querySelector(".grid");
-    for (const tile of grid?.querySelectorAll<HTMLElement>(":scope > .tile") ?? []) {
-      if (resizing) tile.style.setProperty("--pi-tile-height", `${String(tile.clientHeight)}px`);
-      else tile.style.removeProperty("--pi-tile-height");
-    }
     grid?.toggleAttribute("data-resizing", resizing);
   }
 
@@ -2145,7 +2141,7 @@ export class WorkbenchApp extends LitElement {
     .grid-divider:hover::after, .grid-divider:focus-visible::after, .grid-divider[data-dragging]::after { background: var(--pi-accent); }
     .grid-divider:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pi-bg); }
-    /* Grid tracks size every tile, so it can contain its size: the question drawer measures its height against it (cqh). */
+    /* Grid tracks size every tile, so it can contain its size: the model picker measures its height against it (cqh). */
     .tile { container-type: size; }
     .grid[data-resizing] > .tile { container-type: normal; }
     /* Half the comfortable profile's spacing inside a tile; focus is only the outline, so it moves nothing. */
@@ -2229,11 +2225,16 @@ export class WorkbenchApp extends LitElement {
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     .chat-and-files { position: relative; display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
     .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
-    /* The composer side of the conversation boundary: Activity, goal, open asks and the composer stack above each other. */
+    /* The composer side of the conversation boundary: the Activity and open-asks row, goal and the composer stack above each other. */
     .composer-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    /* An open question drawer takes the transcript's whole area; chat-view stays mounted, only hidden, so its scroll position survives. */
+    .chat-column:has(> .composer-area > workbench-question-chips[open]) > chat-view { flex: 0 0 0; visibility: hidden; }
+    .chat-column:has(> .composer-area > workbench-question-chips[open])::part(transcript) { flex: 0 0 0; }
+    .chat-column:has(> .composer-area > workbench-question-chips[open])::part(composer-boundary) { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+    .chat-column:has(> .composer-area > workbench-question-chips[open]) > .composer-area { flex: 1 1 0; }
     /* Zero basis: the transcript takes what is left, so the question chips and drawer never shrink for it. */
     chat-view { flex: 1 1 0; min-height: 0; overflow: hidden; }
-    delegate-roster, prompt-editor { flex: 0 0 auto; }
+    prompt-editor { flex: 0 0 auto; }
     .files-toggle { flex: 0 0 auto; }
     .files-toggle[aria-expanded="true"], .files-toggle[aria-expanded="true"] svg { color: var(--pi-accent); }
     .files-divider { position: relative; z-index: 2; flex: 0 0 8px; background: var(--pi-border-muted); cursor: col-resize; touch-action: none; }

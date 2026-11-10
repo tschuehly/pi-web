@@ -452,7 +452,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; revision?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; note?: unknown; revision?: unknown; partial?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
     try {
       const body = requireRecord(request.body);
       const askId = requireBoundedId(body["askId"], "askId");
@@ -754,7 +754,12 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   if (answers.length > ASK_USER_QUESTION_LIMIT) throw new Error("answers field has too many entries");
   // An absent revision is not an error: the store refuses it as stale, so an older browser reloads.
   const revision = body["revision"] === undefined ? undefined : requireBoundedId(body["revision"], "revision");
-  return { answers: answers.map(askUserAnswerFromValue), ...(revision === undefined ? {} : { revision }) };
+  const note = body["note"];
+  if (note !== undefined && typeof note !== "string") throw new Error("note field must be a string");
+  if (typeof note === "string" && note.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("note field is too long");
+  const partial = body["partial"];
+  if (partial !== undefined && typeof partial !== "boolean") throw new Error("partial field must be a boolean");
+  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}) };
 }
 
 function askUserAnswerFromValue(value: unknown): AskUserAnswer {

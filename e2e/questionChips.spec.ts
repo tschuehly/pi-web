@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_ASK_CHAT, E2E_CROWDED_ASK_CHAT, E2E_MORE_CHATS, E2E_PROJECT_ID, E2E_SESSION_ID } from "./isolatedPiWeb";
 
-// Set PI_WEB_E2E_SCREENSHOTS to a folder to keep review screenshots of the question chips and drawer.
+// Set PI_WEB_E2E_SCREENSHOTS to a folder to keep review screenshots of the question bar and drawer.
 const SHOTS = process.env["PI_WEB_E2E_SCREENSHOTS"];
 const STORE_KEY = "pi-workbench.windows.v1";
 const [NOTES, ASKING, CROWDED, RELEASE] = [E2E_SESSION_ID, E2E_ASK_CHAT.id, E2E_CROWDED_ASK_CHAT.id, E2E_MORE_CHATS[0].id];
@@ -33,13 +33,12 @@ async function openWindow(page: Page, chats: readonly (readonly [string, string]
 }
 
 const shownChat = (page: Page) => page.locator('.tile[data-focused="true"] main.chat-shell');
-const chips = (page: Page) => shownChat(page).locator("workbench-question-chips .chip");
+const bar = (page: Page) => shownChat(page).locator("workbench-question-chips .bar");
 const drawer = (page: Page) => shownChat(page).locator("workbench-question-chips .drawer");
 const tabCount = (page: Page, sessionId: string) => page.locator(`workbench-window-tabs .chat-tab[data-session="${sessionId}"] .questions`);
-const [GO_LIVE, CHECKS] = E2E_ASK_CHAT.ask.questions;
 
 // Runs first: answering below closes the fixture's only open set.
-test("captures the question chips and drawer for review", async ({ browser }) => {
+test("captures the question bar and drawer for review", async ({ browser }) => {
   test.skip(SHOTS === undefined, "set PI_WEB_E2E_SCREENSHOTS to keep review screenshots");
   test.setTimeout(180_000);
   for (const scheme of ["dark", "light"] as const) {
@@ -48,10 +47,10 @@ test("captures the question chips and drawer for review", async ({ browser }) =>
         const context = await browser.newContext({ viewport: { width, height: 820 }, colorScheme: scheme });
         const page = await context.newPage();
         await openAskingWindow(page, ASKING, layout);
-        await expect(chips(page)).toHaveCount(2);
+        await expect(bar(page)).toHaveText("2 open questions");
         await page.waitForTimeout(600);
         await page.screenshot({ path: join(SHOTS ?? "", `${layout}-${String(width)}-${scheme}-closed.png`) });
-        await chips(page).first().click();
+        await bar(page).click();
         await expect(drawer(page)).toBeVisible();
         await page.waitForTimeout(600);
         // The drawer stays within its tile, the composer below it still on screen.
@@ -61,23 +60,23 @@ test("captures the question chips and drawer for review", async ({ browser }) =>
         expect(tile !== null && open !== null && composer !== null && open.y >= tile.y && composer.y + composer.height <= tile.y + tile.height + 1).toBe(true);
         await page.screenshot({ path: join(SHOTS ?? "", `${layout}-${String(width)}-${scheme}-open.png`) });
         if (layout === "grid") {
-          // Focusing the other tile leaves the asking Chat in a side tile, its chips above the compact composer.
+          // Focusing the other tile leaves the asking Chat in a side tile, its bar above the compact composer.
           await page.locator(`.tile[data-session="${NOTES}"] .tile-bar`).click();
-          await expect(page.locator(`.tile[data-session="${ASKING}"] workbench-chat-pane workbench-question-chips .chip`)).toHaveCount(2);
+          await expect(page.locator(`.tile[data-session="${ASKING}"] workbench-chat-pane workbench-question-chips .bar`)).toHaveText("2 open questions");
           await page.waitForTimeout(600);
           await page.screenshot({ path: join(SHOTS ?? "", `grid-${String(width)}-${scheme}-side-tile.png`) });
         }
         await context.close();
       }
     }
-    // Four tiles, the focused one asking twelve questions: one row of chips, a drawer with room for its forms.
+    // Four tiles, the focused one asking twelve questions: one bar, a drawer with room for its forms.
     const crowded = await browser.newContext({ viewport: { width: 900, height: 820 }, colorScheme: scheme });
     const shot = await crowded.newPage();
     await openCrowdedGrid(shot);
-    await expect(chips(shot)).toHaveCount(12);
+    await expect(bar(shot)).toHaveText("12 open questions");
     await shot.waitForTimeout(600);
     await shot.screenshot({ path: join(SHOTS ?? "", `crowded-grid-900-${scheme}-closed.png`) });
-    await chips(shot).nth(4).click();
+    await bar(shot).click();
     await expect(drawer(shot)).toBeVisible();
     await shot.waitForTimeout(600);
     await shot.screenshot({ path: join(SHOTS ?? "", `crowded-grid-900-${scheme}-open.png`) });
@@ -104,11 +103,11 @@ async function openCrampedDrawer(page: Page): Promise<void> {
     element.asks = [{ ...ask, questions: [{ ...first, options: first.options.map((option) => ({ ...option, detail: long })) }, { ...second, question: "Fix the support bot's prompt so it stops promising refunds it cannot grant, and which checks should run first?" }] }];
   });
   await expect(shownChat(page).locator("delegate-roster section")).toBeVisible();
-  await chips(page).first().click();
+  await bar(page).click();
   await expect(drawer(page)).toBeVisible();
 }
 
-test("fits one flat question drawer above the chips and composer in a short window", async ({ browser }) => {
+test("fits one flat question drawer above the bar and composer in a short window", async ({ browser }) => {
   const sizes = SHOTS === undefined ? [[1000, 650]] as const : [[1000, 650], [1440, 900]] as const;
   for (const scheme of SHOTS === undefined ? ["light"] as const : ["dark", "light"] as const) {
     for (const [width, height] of sizes) {
@@ -117,8 +116,8 @@ test("fits one flat question drawer above the chips and composer in a short wind
       await openCrampedDrawer(page);
       await page.waitForTimeout(400);
       if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, `flat-drawer-${String(width)}-${scheme}.png`) });
-      // The chips row and the composer stay whole on screen; the drawer gives way and scrolls.
-      for (const box of [await shownChat(page).locator("workbench-question-chips .chips").boundingBox(), await shownChat(page).locator("prompt-editor").boundingBox()]) {
+      // The bar and the composer stay whole on screen; the drawer gives way and scrolls.
+      for (const box of [await bar(page).boundingBox(), await shownChat(page).locator("prompt-editor").boundingBox()]) {
         expect(box !== null && box.y >= 0 && box.y + box.height <= height + 0.5).toBe(true);
       }
       const layout = await drawer(page).evaluate((root) => {
@@ -132,7 +131,8 @@ test("fits one flat question drawer above the chips and composer in a short wind
         const crossing = lines.filter((line) => headings.some((heading) => line.top < heading.bottom && line.bottom > heading.top && line.left < heading.right && line.right > heading.left));
         return { framed: framed.length, separators: lines.length, crossing: crossing.length };
       });
-      expect(layout).toEqual({ framed: 1, separators: 1, crossing: 0 });
+      // Nothing in the drawer draws a frame of its own, the drawer included.
+      expect(layout).toEqual({ framed: 0, separators: 1, crossing: 0 });
       await context.close();
     }
   }
@@ -145,14 +145,14 @@ test("counts an idle Chat's open questions on its tab right after a reload, with
   page.on("websocket", (socket) => { reads.push(new URL(socket.url()).pathname); });
   await openAskingWindow(page, NOTES);
   await expect(tabCount(page, ASKING)).toHaveText("2");
-  await expect(chips(page)).toHaveCount(0);
+  await expect(bar(page)).toHaveCount(0);
   expect(reads.filter((path) => path.includes(`/sessions/${ASKING}/`)).map((path) => path.split("/").at(-1))).toEqual(["asks"]);
 });
 
 test("keeps a long set's send action in view at the drawer's bottom while its questions scroll", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 820 });
   await openAskingWindow(page);
-  await chips(page).first().click();
+  await bar(page).click();
   await expect(drawer(page)).toBeVisible();
   // A long context and many questions: the drawer must scroll, or the check below proves nothing.
   await shownChat(page).locator("workbench-question-chips").evaluate((element: HTMLElement & { asks: { context: string; questions: unknown[] }[] }) => {
@@ -161,7 +161,7 @@ test("keeps a long set's send action in view at the drawer's bottom while its qu
   });
   const sets = drawer(page).locator(".sets");
   expect(await sets.evaluate((element) => element.scrollHeight > element.clientHeight + 100)).toBe(true);
-  const send = drawer(page).getByRole("button", { name: "Send answers" });
+  const send = drawer(page).getByRole("button", { name: "Send all" });
   const within = async () => {
     const [area, button] = await Promise.all([sets.boundingBox(), send.boundingBox()]);
     expect(area !== null && button !== null && button.y >= area.y && button.y + button.height <= area.y + area.height + 1).toBe(true);
@@ -171,34 +171,31 @@ test("keeps a long set's send action in view at the drawer's bottom while its qu
   await within();
 });
 
-test("keeps twelve questions to one row of chips in a crowded grid, opens a side tile's question in one click, and answers through a drawer with room", async ({ page }) => {
+test("keeps twelve questions to one bar in a crowded grid, opens a side tile's questions in one click, and answers through a drawer with room", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 820 });
   await openCrowdedGrid(page);
-  await expect(chips(page)).toHaveCount(12);
+  await expect(bar(page)).toHaveText("12 open questions");
   const composer = () => shownChat(page).locator("prompt-editor").boundingBox();
   const tile = () => page.locator('.tile[data-focused="true"]').boundingBox();
   const oneRow = async () => {
-    const boxes = await Promise.all((await chips(page).all()).map((chip) => chip.boundingBox()));
-    const strip = await shownChat(page).locator("workbench-question-chips .chips").boundingBox();
-    const below = await composer();
-    expect(new Set(boxes.map((box) => box?.y)).size).toBe(1);
+    const [strip, below] = await Promise.all([bar(page).boundingBox(), composer()]);
     expect(strip !== null && below !== null && strip.height <= 40 && strip.y + strip.height <= below.y + 1).toBe(true);
   };
   await oneRow();
 
-  // One click on a side tile's chip focuses that tile and opens its drawer at the question.
-  const sideChip = page.locator(`.tile[data-session="${ASKING}"] workbench-chat-pane workbench-question-chips .chip`).nth(1);
-  await expect(sideChip).toBeVisible();
-  await sideChip.click();
+  // One click on a side tile's bar focuses that tile and opens its drawer at the first question.
+  const sideBar = page.locator(`.tile[data-session="${ASKING}"] workbench-chat-pane workbench-question-chips .bar`);
+  await expect(sideBar).toBeVisible();
+  await sideBar.click();
   await expect(shownChat(page)).toHaveAttribute("data-session", ASKING);
   await expect(drawer(page)).toBeVisible();
-  await expect(drawer(page).locator('input[value="unit"]')).toBeFocused();
+  await expect(drawer(page).locator('input[value="wb-now"]')).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(drawer(page)).toHaveCount(0);
 
   await page.locator(`.tile[data-session="${CROWDED}"] .tile-bar`).click();
   await expect(shownChat(page)).toHaveAttribute("data-session", CROWDED);
-  await chips(page).nth(4).click();
+  await bar(page).click();
   await expect(drawer(page)).toBeVisible();
   await oneRow();
   // The drawer keeps a usable height inside its tile, above a composer still on screen; the transcript gives way.
@@ -211,49 +208,59 @@ test("keeps twelve questions to one row of chips in a crowded grid, opens a side
   const fieldsets = drawer(page).locator("ask-user-card fieldset");
   await expect(fieldsets).toHaveCount(12);
   for (const fieldset of await fieldsets.all()) await fieldset.locator('input[value="now"]').check();
-  await drawer(page).getByRole("button", { name: "Send answers" }).click();
-  await expect(chips(page)).toHaveCount(0);
+  await drawer(page).getByRole("button", { name: "Send all" }).click();
+  await expect(bar(page)).toHaveCount(0);
   await expect(tabCount(page, CROWDED)).toHaveCount(0);
 });
 
-test("answers a Chat's open questions from chips above its composer, through a drawer with the context beside them", async ({ page }) => {
+test("answers a Chat's open questions from a bar above its composer, through a drawer that takes the transcript's area", async ({ page }) => {
   await openAskingWindow(page);
-  await expect(chips(page)).toHaveText([GO_LIVE.question, CHECKS.question]);
+  await expect(bar(page)).toHaveText("2 open questions");
   await expect(tabCount(page, ASKING)).toHaveText("2");
   await expect(tabCount(page, NOTES)).toHaveCount(0);
   await expect(page.locator(".questions-toggle, workbench-questions-pane")).toHaveCount(0);
-  // The chips sit directly above the composer.
-  const chipBox = await chips(page).first().boundingBox();
+  // The bar sits directly above the composer.
+  const chipBox = await bar(page).boundingBox();
   const composerBox = await shownChat(page).locator("prompt-editor").boundingBox();
   expect(chipBox !== null && composerBox !== null && chipBox.y + chipBox.height <= composerBox.y + 1 && composerBox.y - chipBox.y < 60).toBe(true);
 
-  // Keyboard: a chip opens the drawer at its question; Esc folds it back to the chip.
-  await chips(page).nth(1).focus();
+  // Keyboard: the bar opens the drawer at the first question; Esc folds it back to the bar.
+  await bar(page).focus();
   await page.keyboard.press("Enter");
   await expect(drawer(page)).toBeVisible();
-  await expect(drawer(page).locator('input[value="unit"]')).toBeFocused();
+  await expect(drawer(page).locator('input[value="wb-now"]')).toBeFocused();
   const context = await drawer(page).locator("ask-user-card .ask-context").boundingBox();
   const question = await drawer(page).locator("ask-user-card fieldset").first().boundingBox();
-  expect(context !== null && question !== null && context.x + context.width <= question.x + 1).toBe(true);
+  // One column: the context above the questions, the transcript hidden (still mounted) while the drawer fills its area.
+  expect(context !== null && question !== null && context.y + context.height <= question.y + 1).toBe(true);
+  await expect(shownChat(page).locator("chat-view")).toBeHidden();
+  // Measured once the drawer's rise has settled.
+  await drawer(page).evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+  const [roster, open] = await Promise.all([shownChat(page).locator("delegate-roster").boundingBox(), drawer(page).boundingBox()]);
+  const header = await shownChat(page).locator("conversation-layout").boundingBox();
+  // The drawer fills the transcript's area above the Activity and questions row.
+  expect(roster !== null && open !== null && header !== null && open.y + open.height <= roster.y + 1 && open.y - header.y < 60).toBe(true);
   await expect(drawer(page).locator("ask-user-card")).toContainText("Recommended");
   await page.keyboard.press("Escape");
   await expect(drawer(page)).toHaveCount(0);
-  await expect(chips(page).nth(1)).toBeFocused();
+  await expect(shownChat(page).locator("chat-view")).toBeVisible();
+  await expect(bar(page)).toBeFocused();
 
-  // Another Chat shows none of these chips, while the asking tab keeps its count.
+  // Another Chat shows no bar, while the asking tab keeps its count.
   await page.locator(`workbench-window-tabs .chat-tab[data-session="${NOTES}"]`).click();
   await expect(shownChat(page)).toHaveAttribute("data-session", NOTES);
-  await expect(chips(page)).toHaveCount(0);
+  await expect(bar(page)).toHaveCount(0);
   await expect(tabCount(page, ASKING)).toHaveText("2");
 
   await page.locator(`workbench-window-tabs .chat-tab[data-session="${ASKING}"]`).click();
   await expect(shownChat(page)).toHaveAttribute("data-session", ASKING);
-  await chips(page).first().click();
+  await bar(page).click();
   await drawer(page).locator('input[value="wb-now"]').check();
+  await expect(bar(page)).toHaveText("2 open questions · 1 answered");
   await drawer(page).locator('input[value="unit"]').check();
   await drawer(page).locator('input[value="e2e"]').check();
-  await drawer(page).getByRole("button", { name: "Send answers" }).click();
-  await expect(chips(page)).toHaveCount(0);
+  await drawer(page).getByRole("button", { name: "Send all" }).click();
+  await expect(bar(page)).toHaveCount(0);
   await expect(tabCount(page, ASKING)).toHaveCount(0);
   await expect(shownChat(page).locator("chat-view")).toContainText("Answers sent");
 });

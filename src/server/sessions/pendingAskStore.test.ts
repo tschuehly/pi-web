@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_QUESTION_LIMIT, type AskUserQuestion } from "../../shared/apiTypes.js";
+import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_DETAIL_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, type AskUserQuestion } from "../../shared/apiTypes.js";
 import {
   PendingAskStore,
   PendingAskValidationError,
@@ -120,6 +120,23 @@ describe("PendingAskStore validation", () => {
     expect(() => store.open({ sessionId, context: "  ", questions: [question("q1")] })).toThrow(/context is required/);
     expect(() => store.open({ sessionId, context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1), questions: [question("q1")] }))
       .toThrow(/context exceeds its length limit/);
+  });
+
+  it("strips the model's own numbering from question text, never leaving it empty", () => {
+    const store = testStore();
+    const texts = ["1. Which store?", "2) Which store?", "3–4. Which store?", "3-4. Which store?", "12. ", "1.5 GB enough?", "Which store?"];
+    const ask = store.open({ sessionId, context, questions: texts.map((text, index) => question(`q${index.toString()}`, { question: text })) });
+    expect(ask.questions.map((entry) => entry.question)).toEqual(["Which store?", "Which store?", "Which store?", "Which store?", "12. ", "1.5 GB enough?", "Which store?"]);
+  });
+
+  it("bounds a question's detail longer than other prose, and an option's detail as before", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1", { detail: "x".repeat(ASK_USER_DETAIL_MAX_LENGTH) })] });
+    expect(ask.questions[0]?.detail).toHaveLength(ASK_USER_DETAIL_MAX_LENGTH);
+    expect(() => store.open({ sessionId, context, questions: [question("q1", { detail: "x".repeat(ASK_USER_DETAIL_MAX_LENGTH + 1) })] }))
+      .toThrow(/detail of question q1 exceeds its length limit/);
+    expect(() => store.open({ sessionId, context, questions: [question("q1", { options: [{ value: "a", label: "A", detail: "x".repeat(ASK_USER_TEXT_MAX_LENGTH + 1) }] })] }))
+      .toThrow(/detail of option a in question q1 exceeds its length limit/);
   });
 
   it("keeps a recommended option flag", () => {
@@ -306,6 +323,85 @@ describe("PendingAskStore submit", () => {
   });
 });
 
+describe("PendingAskStore partial submit", () => {
+  it("records only the sent answer and keeps the rest open under a new revision, the old one now stale", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1"), question("q2"), question("q3")] });
+    const recorded: unknown[] = [];
+
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q2", values: ["no"] }], partial: true }, (outcome) => recorded.push(outcome));
+
+    expect(result).toEqual({
+      status: "closed",
+      outcome: {
+        askId: "ask-1", reason: "submitted", askedAt: "2026-01-01T00:00:00.000Z", closedAt: "2026-01-01T00:00:01.000Z", context,
+        questions: [{ question: ask.questions[1], answered: true, values: ["no"] }],
+        answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.q1, ask.q3", partial: true, revision: "r2",
+      },
+      ask: { ...ask, revision: "r2", questions: [ask.questions[0], ask.questions[2]] },
+    });
+    expect(recorded).toEqual([result.status === "closed" ? result.outcome : undefined]);
+    expect(store.pendingAsks(sessionId)).toEqual([{ ...ask, revision: "r2", questions: [ask.questions[0], ask.questions[2]] }]);
+    expect(store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true })).toEqual({ status: "stale" });
+    expect(() => store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }], partial: true })).toThrow(/Unknown question id q2/);
+  });
+
+  it("closes the ask as a full submit once a partial send answers every remaining question", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true });
+
+    const result = store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }], partial: true });
+
+    expect(result.status === "closed" && result.outcome.partial === undefined && result.ask === undefined ? result.outcome.summary : undefined).toBe("Answered 1 of 1; none left unanswered");
+    expect(store.pendingAsks(sessionId)).toEqual([]);
+  });
+
+  it("sends the rest with Send all, closing what is still unanswered", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1"), question("q2"), question("q3")] });
+    store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true });
+
+    const result = store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }], note: "Later" });
+
+    expect(result.status === "closed" ? [result.outcome.summary, result.outcome.note] : undefined).toEqual(["Answered 1 of 2; unanswered: q3", "Later"]);
+    expect(store.pendingAsks(sessionId)).toEqual([]);
+  });
+
+  it("rejects a partial submit without an answer or with a note, keeping the ask unchanged", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: [] }], partial: true })).toThrow(/needs at least one answer/);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], note: "Hi", partial: true })).toThrow(/takes no note/);
+    expect(store.pendingAsks(sessionId)).toEqual([ask]);
+  });
+
+  it("keeps the ask unchanged when recording a partial send fails", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true }, () => { throw new Error("disk full"); })).toThrow("disk full");
+    expect(store.pendingAsks(sessionId)).toEqual([ask]);
+  });
+
+  it("tells the model which answer arrived and that the set stays open", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q2", values: [], otherText: "Maybe" }], partial: true });
+    if (result.status !== "closed") throw new Error("expected the answer to be sent");
+
+    expect(renderAskUserAnswersText(result.outcome)).toBe([
+      "The user answered one question of question set ask-1; its other questions stay open.",
+      "",
+      "- ask.q2: Question q2?",
+      `  Answered: custom: "Maybe"`,
+      "",
+      "Answered 1; still open: ask.q1",
+    ].join("\n"));
+  });
+});
+
 describe("PendingAskStore open asks", () => {
   it("keeps several asks of one session open, oldest first", () => {
     const store = testStore();
@@ -427,6 +523,18 @@ describe("ask outcome rendering", () => {
       "",
       "Answered 2 of 3; unanswered: q3",
     ].join("\n"));
+  });
+
+  it("carries the user's trimmed note on the outcome and into the model-facing text", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1")] });
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], note: "x".repeat(ASK_USER_OTHER_TEXT_MAX_LENGTH + 1) }))
+      .toThrow(/note exceeds its length limit/);
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], note: "  Ship it\nthis week.  " });
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+
+    expect(result.outcome.note).toBe("Ship it\nthis week.");
+    expect(renderAskUserAnswersText(result.outcome)).toContain(`  Answered: selected yes\n\nNote from the user: "Ship it\\nthis week."\n\nAnswered 1 of 1`);
   });
 
   it("tells the model a cancelled ask was closed before it was answered", () => {

@@ -16,7 +16,9 @@ export interface TranscriptAsks {
  *
  * `ask_user` tool results carry each posted or revised ask (`details.ask`, with
  * the posting `details.sessionId`) and each withdrawal (`details.withdrawn`);
- * close records and answer messages carry each submit or cancel. Only asks this
+ * close records and answer messages carry each submit or cancel. A partial send's
+ * close record (`partial`) removes only the questions it sent and moves the ask
+ * to the revision it records; its answer message leaves the ask open. Only asks this
  * session posted count, so a fork does not inherit its parent's asks, and only
  * the branch counts, so a rewind past an ask leaves it behind.
  *
@@ -40,16 +42,29 @@ export function openAsksFromTranscript(branch: readonly unknown[], sessionId: st
       if (isRecord(withdrawn) && typeof withdrawn["askId"] === "string") open.delete(withdrawn["askId"]);
     } else if (entry["type"] === "custom" && entry["customType"] === ASK_USER_CLOSED_CUSTOM_TYPE) {
       const outcome = entry["data"];
-      if (isOutcome(outcome) && open.delete(outcome.askId)) undelivered.set(outcome.askId, outcome);
+      if (!isOutcome(outcome)) continue;
+      const ask = open.get(outcome.askId);
+      if (outcome.partial === true && typeof outcome.revision === "string") {
+        // A partial send: the sent questions leave the ask, which continues under the recorded revision.
+        if (ask === undefined) continue;
+        const sent = new Set(outcome.questions.map((record) => record.question.id));
+        open.set(ask.askId, { ...ask, revision: outcome.revision, questions: ask.questions.filter((question) => !sent.has(question.id)) });
+        undelivered.set(deliveryKey(outcome.askId, outcome.partial, outcome.revision), outcome);
+      } else if (open.delete(outcome.askId)) undelivered.set(deliveryKey(outcome.askId, outcome.partial, outcome.revision), outcome);
     } else if (entry["type"] === "custom_message" && entry["customType"] === ASK_USER_ANSWERS_CUSTOM_TYPE) {
       const details = entry["details"];
       if (isRecord(details) && typeof details["askId"] === "string") {
-        open.delete(details["askId"]);
-        undelivered.delete(details["askId"]);
+        if (details["partial"] !== true) open.delete(details["askId"]);
+        undelivered.delete(deliveryKey(details["askId"], details["partial"], details["revision"]));
       }
     }
   }
   return { open: [...open.values()], undelivered: [...undelivered.values()] };
+}
+
+/** One ask can send several partial answers before it closes, so each delivery is keyed by the revision it left. */
+function deliveryKey(askId: string, partial: unknown, revision: unknown): string {
+  return partial === true && typeof revision === "string" ? `${askId}@${revision}` : askId;
 }
 
 // Shape checks only: PI WEB itself wrote these entries.

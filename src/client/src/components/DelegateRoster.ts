@@ -108,20 +108,30 @@ export class DelegateRoster extends LitElement {
     this.expandedBashJobs = next;
   }
 
+  // Slotted content shares the header line, so the roster re-renders when it comes or goes.
+  private readonly asideChanged = (): void => { this.requestUpdate(); };
+
   override render() {
     const { delegates, watchers, shells, backgroundBash, label } = activitySummary(this.status);
-    if (delegates.length + watchers.length + shells.length + backgroundBash.length === 0 || (this.compact && this.collapsed)) return null;
+    const aside = html`<slot name="aside" @slotchange=${this.asideChanged}></slot>`;
+    // No header to share: content slotted into `aside` takes the whole line alone.
+    if (delegates.length + watchers.length + shells.length + backgroundBash.length === 0 || (this.compact && this.collapsed)) {
+      return this.querySelector(":scope > [slot='aside']") === null ? aside : html`<section class="lone">${aside}</section>`;
+    }
     const now = Date.now();
     // Attention first: failures, results waiting to be collected, quiet work that may be stuck, then the rest.
     const rank = ({ item, outcome }: { item: DelegateActivityItem; outcome: DelegateOutcome }) => outcome === "running" && isQuiet(item, now) ? QUIET_ORDER : OUTCOME_ORDER[outcome];
     const ordered = delegates.map((item) => ({ item, outcome: delegateOutcome(item) })).sort((a, b) => rank(a) - rank(b));
     return html`
       <section aria-label="Activity">
-        <button type="button" class="section-toggle" aria-expanded=${String(!this.collapsed)} aria-controls="delegate-roster-rows" @click=${() => { this.onToggleCollapsed?.(); }}>
-          ${icon(ICONS.chevron, "chevron")}
-          <span class="section-name">Activity</span>
-          <small class="aggregate">${label}</small>
-        </button>
+        <div class="head">
+          <button type="button" class="section-toggle" aria-expanded=${String(!this.collapsed)} aria-controls="delegate-roster-rows" @click=${() => { this.onToggleCollapsed?.(); }}>
+            ${icon(ICONS.chevron, "chevron")}
+            <span class="section-name">Activity</span>
+            <small class="aggregate">${label}</small>
+          </button>
+          ${aside}
+        </div>
         <div class="rows" id="delegate-roster-rows" tabindex="0" role="region" aria-label="Activity entries" ?hidden=${this.collapsed}>
           ${repeat(ordered, ({ item }) => `delegate:${item.id}`, ({ item, outcome }) => this.renderDelegate(item, outcome, now))}
           ${repeat(watchers, (item) => `watcher:${item.logicalId}`, (item) => {
@@ -222,6 +232,9 @@ export class DelegateRoster extends LitElement {
     section { display: grid; gap: 2px; padding: 3px 10px 4px; border-top: 1px solid var(--pi-border-muted); font-size: 12px; line-height: 18px; }
     svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
     .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    /* The header line: Activity and slotted aside content (a Chat's question bar) split it evenly; either alone takes it all. */
+    .head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .section-toggle, ::slotted([slot="aside"]) { flex: 1 1 0; min-width: 0; }
     .section-toggle { min-width: 0; min-height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--pi-text); font: inherit; text-align: left; cursor: pointer; }
     .section-toggle:hover { background: var(--pi-surface-hover); }
     .section-toggle:focus-visible, .expand:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }

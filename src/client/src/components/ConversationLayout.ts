@@ -35,8 +35,8 @@ export class ConversationLayout extends LitElement {
   override render() {
     const activity = conversationActivityText(this.status, this.activity, this.sending);
     return html`
-      <div class="transcript"><slot></slot></div>
-      <div class="composer-boundary">
+      <div class="transcript" part="transcript"><slot></slot></div>
+      <div class="composer-boundary" part="composer-boundary">
         <slot name="composer"></slot>
         <div class=${this.visualEffects ? "activity-region" : "activity-region plain"} aria-live="polite">${activity === undefined ? nothing : html`
           <div class="activity-dock"><span class="dot"></span><span class="activity-text">${activity}</span></div>
