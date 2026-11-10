@@ -2,7 +2,10 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PendingAskUser } from "../../../shared/apiTypes";
+import type { SessionStatus } from "../api";
+import { ACTIVITY_STATUS_KEY } from "../extensionStatusSnapshots";
 import { AskUserCard, updatedAgo } from "./AskUserCard";
+import { DelegateRoster } from "./DelegateRoster";
 import { WorkbenchQuestionChips, openQuestionCount } from "./WorkbenchQuestionChips";
 
 afterEach(() => {
@@ -29,15 +32,31 @@ const twoQuestions = ask("def-2", { questions: [
   { id: "why", question: "Why now?", options: [] },
 ] });
 
-async function mount(asks: PendingAskUser[]) {
+const running: SessionStatus = {
+  sessionId: "s", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+  extensionStatuses: { [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "w", kind: "worker", name: "Rows", activity: "running" }] }) },
+};
+
+async function mount(asks: PendingAskUser[], setup?: (chips: WorkbenchQuestionChips) => void) {
   const chips = new WorkbenchQuestionChips();
   chips.asks = asks;
+  setup?.(chips);
   chips.draftSessionId = "local:session-1";
   const onSubmit = vi.fn(() => Promise.resolve());
   chips.onSubmit = onSubmit;
   document.body.append(chips);
   await chips.updateComplete;
+  await roster(chips)?.updateComplete;
   return { chips, onSubmit };
+}
+
+const roster = (chips: WorkbenchQuestionChips) => chips.shadowRoot?.querySelector<DelegateRoster>("delegate-roster") ?? undefined;
+/** The row's two halves: the roster's Activity toggle and what its header slot shows. */
+function row(chips: WorkbenchQuestionChips) {
+  const shadow = roster(chips)?.shadowRoot;
+  const slot = shadow?.querySelector<HTMLSlotElement>('slot[name="aside"]');
+  return { toggle: shadow?.querySelector(".head > .section-toggle") ?? null, aside: slot?.assignedElements() ?? [], slotParent: slot?.parentElement ?? null, rows: shadow?.querySelector<HTMLElement>("section > .rows") ?? null };
 }
 
 const bar = (chips: WorkbenchQuestionChips) => chips.shadowRoot?.querySelector<HTMLButtonElement>(".bar") ?? undefined;
@@ -125,15 +144,56 @@ describe("WorkbenchQuestionChips", () => {
     expect(focus.mock.contexts[0]).toBe(cards(chips)[1]);
   });
 
-  it("keeps the bar to its own size and, open, fills the host with a flush drawer", () => {
+  it("shares one row: Activity and the bar split the roster's header line, the entries span below, the drawer opens above", async () => {
+    const { chips } = await mount([ask("abc-1")], (each) => { each.status = running; each.rosterCollapsed = false; });
+    const both = row(chips);
+    expect(both.toggle?.textContent).toContain("Activity");
+    expect(both.aside).toEqual([bar(chips)]);
+    expect(both.slotParent?.classList.contains("head")).toBe(true);
+    // The entries are the header line's sibling, not inside either half.
+    expect(both.rows?.hidden).toBe(false);
+    expect(both.rows?.previousElementSibling?.classList.contains("head")).toBe(true);
+
+    await openWith(chips);
+    expect(chips.shadowRoot?.firstElementChild).toBe(drawer(chips));
+    expect(drawer(chips)?.nextElementSibling).toBe(roster(chips));
+
     const styles = WorkbenchQuestionChips.styles.cssText;
     expect(styles).toMatch(/:host \{[^}]*flex: 0 0 auto;[^}]*min-height: 0;/);
     expect(styles).toMatch(/:host\(\[open\]\) \{ flex: 1 1 0; \}/);
-    expect(styles).toMatch(/\.bar \{ flex: 0 0 auto;/);
+    expect(styles).toMatch(/\.bar \{[^}]*min-height: 24px;[^}]*background: transparent;/);
     expect(styles).toMatch(/\.drawer \{ flex: 1 1 0;[^}]*min-height: 0;/);
     expect(styles).not.toMatch(/\.drawer \{[^}]*(max-height|margin|border|box-shadow)/);
+    // Each half takes an even share of the line, so either alone takes all of it.
+    expect(DelegateRoster.styles.cssText).toMatch(/\.section-toggle, ::slotted\(\[slot="aside"\]\) \{ flex: 1 1 0; min-width: 0; \}/);
     // The flat card keeps its actions in view at the drawer's bottom.
     expect(AskUserCard.styles.cssText).toMatch(/:host\(\[flat\]\) \.form-footer \{ position: sticky; bottom: 0;/);
+  });
+
+  it("gives Activity the whole row without open questions, and the bar the whole row without activity", async () => {
+    const { chips } = await mount([], (each) => { each.status = running; });
+    expect(row(chips).toggle).not.toBeNull();
+    expect(row(chips).aside).toEqual([]);
+
+    const lone = (await mount([ask("abc-1")])).chips;
+    expect(row(lone).toggle).toBeNull();
+    expect(row(lone).aside).toEqual([bar(lone)]);
+    expect(row(lone).slotParent?.matches("section.lone")).toBe(true);
+
+    // A Grid tile's folded roster (its toggle lives in the composer) leaves the bar the row too.
+    const compact = (await mount([ask("abc-1")], (each) => { each.status = running; each.rosterCompact = true; })).chips;
+    expect(row(compact).toggle).toBeNull();
+    expect(row(compact).slotParent?.matches("section.lone")).toBe(true);
+
+    // Neither: no row at all.
+    const empty = (await mount([])).chips;
+    expect(roster(empty)?.shadowRoot?.querySelector("section")).toBeNull();
+
+    // Questions arriving later move into the row beside Activity.
+    chips.asks = [ask("abc-1")];
+    await chips.updateComplete;
+    await vi.waitFor(() => { expect(row(chips).aside).toEqual([bar(chips)]); });
+    expect(row(chips).toggle).not.toBeNull();
   });
 
   it("frames one set flat under a single header line carrying the count and close button; several sets keep a drawer header", async () => {

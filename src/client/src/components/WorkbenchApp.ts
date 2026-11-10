@@ -2225,7 +2225,7 @@ export class WorkbenchApp extends LitElement {
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     .chat-and-files { position: relative; display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
     .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
-    /* The composer side of the conversation boundary: Activity, goal, open asks and the composer stack above each other. */
+    /* The composer side of the conversation boundary: the Activity and open-asks row, goal and the composer stack above each other. */
     .composer-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     /* An open question drawer takes the transcript's whole area; chat-view stays mounted, only hidden, so its scroll position survives. */
     .chat-column:has(> .composer-area > workbench-question-chips[open]) > chat-view { flex: 0 0 0; visibility: hidden; }
@@ -2234,7 +2234,7 @@ export class WorkbenchApp extends LitElement {
     .chat-column:has(> .composer-area > workbench-question-chips[open]) > .composer-area { flex: 1 1 0; }
     /* Zero basis: the transcript takes what is left, so the question chips and drawer never shrink for it. */
     chat-view { flex: 1 1 0; min-height: 0; overflow: hidden; }
-    delegate-roster, prompt-editor { flex: 0 0 auto; }
+    prompt-editor { flex: 0 0 auto; }
     .files-toggle { flex: 0 0 auto; }
     .files-toggle[aria-expanded="true"], .files-toggle[aria-expanded="true"] svg { color: var(--pi-accent); }
     .files-divider { position: relative; z-index: 2; flex: 0 0 8px; background: var(--pi-border-muted); cursor: col-resize; touch-action: none; }

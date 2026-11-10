@@ -234,9 +234,12 @@ test("answers a Chat's open questions from a bar above its composer, through a d
   // One column: the context above the questions, the transcript hidden (still mounted) while the drawer fills its area.
   expect(context !== null && question !== null && context.y + context.height <= question.y + 1).toBe(true);
   await expect(shownChat(page).locator("chat-view")).toBeHidden();
+  // Measured once the drawer's rise has settled.
+  await drawer(page).evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
   const [roster, open] = await Promise.all([shownChat(page).locator("delegate-roster").boundingBox(), drawer(page).boundingBox()]);
   const header = await shownChat(page).locator("conversation-layout").boundingBox();
-  expect(roster !== null && open !== null && header !== null && open.y >= roster.y + roster.height - 1 && open.y - header.y < roster.height + 60).toBe(true);
+  // The drawer fills the transcript's area above the Activity and questions row.
+  expect(roster !== null && open !== null && header !== null && open.y + open.height <= roster.y + 1 && open.y - header.y < 60).toBe(true);
   await expect(drawer(page).locator("ask-user-card")).toContainText("Recommended");
   await page.keyboard.press("Escape");
   await expect(drawer(page)).toHaveCount(0);

@@ -680,7 +680,8 @@ describe("Workbench Chat chooser", () => {
     await app.updateComplete;
     const chips = app.shadowRoot?.querySelector<WorkbenchQuestionChips>(".chat-column > .composer-area > workbench-question-chips");
 
-    expect(chips?.nextElementSibling?.localName).toBe("prompt-editor");
+    expect(chips?.nextElementSibling?.localName).toBe("goal-status-chip");
+    expect(chips?.nextElementSibling?.nextElementSibling?.localName).toBe("prompt-editor");
     expect(chips?.asks.map((ask) => ask.askId)).toEqual(["abc-1", "def-2"]);
     expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.pendingAsks).toEqual([]);
     expect(app.shadowRoot?.querySelector(".questions-toggle, workbench-questions-pane, #workbench-questions")).toBeNull();
@@ -2587,7 +2588,7 @@ describe("window tabs", () => {
     const tile = (sessionId: string) => app.shadowRoot?.querySelector('.tile[data-session="' + sessionId + '"] workbench-chat-pane');
 
     await vi.waitFor(() => { expect(tile("a2")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([ask]); });
-    expect(tile("a2")?.querySelector("workbench-question-chips")?.nextElementSibling?.localName).toBe("prompt-editor");
+    expect(tile("a2")?.querySelector("workbench-question-chips + goal-status-chip")?.nextElementSibling?.localName).toBe("prompt-editor");
     expect(tile("a1")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([]);
   });
 
@@ -3677,7 +3678,10 @@ describe("Workbench Chat controls", () => {
     expect(shell.querySelector("header")).toBeNull();
     expect(shell.querySelector("header > goal-status-chip")).toBeNull();
     expect(shell.querySelector("header > strong")).toBeNull();
-    const roster = shell.querySelector("delegate-roster");
+    // The roster shares the question bar's row, inside the composer's question chips.
+    const row = shell.querySelector<WorkbenchQuestionChips>(".composer-area > workbench-question-chips");
+    await row?.updateComplete;
+    const roster = row?.shadowRoot?.querySelector("delegate-roster");
     if (!(roster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered");
     // Starts collapsed: the Activity header alone until opened.
     expect(roster.collapsed).toBe(true);
@@ -3686,15 +3690,15 @@ describe("Workbench Chat controls", () => {
     if (rosterToggle === null || rosterToggle === undefined) throw new Error("Delegate roster toggle was not rendered");
     rosterToggle.click();
     await app.updateComplete;
-    const collapsedRoster = app.shadowRoot?.querySelector("delegate-roster");
+    await row?.updateComplete;
+    const collapsedRoster = row?.shadowRoot?.querySelector("delegate-roster");
     if (!(collapsedRoster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered after collapse");
-    const goal = shell.querySelector("delegate-roster + goal-status-chip");
+    const goal = shell.querySelector("workbench-question-chips + goal-status-chip");
     if (!(goal instanceof GoalStatusChip)) throw new Error("Goal status chip was not rendered beside the composer");
     expect(goal.status).toBe(getState(app).status);
     await goal.updateComplete;
     expect(goal.shadowRoot?.querySelector("summary")?.textContent).toContain("Build the UI");
-    expect(goal.nextElementSibling?.tagName).toBe("WORKBENCH-QUESTION-CHIPS");
-    expect(goal.nextElementSibling?.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
+    expect(goal.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
     expect(collapsedRoster.collapsed).toBe(false);
     expect(shell.querySelector("status-bar")).toBeNull();
     expect(shell.querySelector("working-mode-controls")).toBeNull();
