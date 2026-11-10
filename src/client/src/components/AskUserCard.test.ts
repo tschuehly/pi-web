@@ -104,7 +104,7 @@ describe("ask-user-card live form", () => {
     });
   });
 
-  it("edits a proposed option into the custom answer for single and multi-select questions", async () => {
+  it("edits a proposed option in its own row into the custom answer for single and multi-select questions", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([
       question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")]),
@@ -115,18 +115,24 @@ describe("ask-user-card live form", () => {
     expect(editButtons).toHaveLength(4);
     expect(editButtons[0]?.type).toBe("button");
 
-    // Radio: editing replaces the selected option with Custom.
+    // Radio: the edited row turns into the Custom answer's textarea, selected; Custom and its own textarea step aside.
     inputWithValue(root, "vim").click();
     await card.updateComplete;
     requiredElement(editButtons[1], "edit VS Code").click();
     await card.updateComplete;
     await Promise.resolve();
     const editorText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-0"), "editor textarea");
+    const editedRow = requiredElement(editorText.closest(".option-row.inline-edit"), "inline edit row");
+    expect(editedRow.previousElementSibling?.querySelector("input")?.value).toBe("vim");
     expect(editorText.value).toBe("VS Code");
+    expect(editorText.getAttribute("aria-label")).toBe("Custom answer, edited from VS Code");
     expect(root.activeElement).toBe(editorText);
     expect(editorText.selectionStart).toBe("VS Code".length);
     expect(inputWithValue(root, "vim").checked).toBe(false);
-    expect(inputWithValue(root, "code").checked).toBe(false);
+    expect(root.querySelector("#ask-user-question-0 input[value='code']")).toBeNull();
+    expect(inputWithValue(root, "__pi_web_other__").checked).toBe(false);
+    expect(root.querySelectorAll("#ask-user-question-0 textarea")).toHaveLength(1);
+    expect(root.querySelector("#ask-user-question-0 .other-answer")).toBeNull();
     editorText.value = "VS Code Insiders";
     editorText.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
 
@@ -142,9 +148,10 @@ describe("ask-user-card live form", () => {
     await card.updateComplete;
     await Promise.resolve();
     const editedStackText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-1"), "stack textarea");
+    expect(editedStackText.closest(".inline-edit")).not.toBeNull();
     expect(editedStackText.value).toBe("React");
     expect(root.activeElement).toBe(editedStackText);
-    expect(inputWithValue(root, "react").checked).toBe(false);
+    expect(inputWithValue(root, "lit").checked).toBe(true);
 
     buttonWithText(root, "Send all").click();
     await Promise.resolve();
@@ -157,19 +164,49 @@ describe("ask-user-card live form", () => {
     });
   });
 
-  it("starts an edited answer from the option's label and its detail", async () => {
-    const card = await mountOpenAsk(openAsk([
-      question("db", "Which database?", [{ value: "pg", label: "Postgres", detail: "Runs in the existing cluster." }, option("lite", "SQLite")]),
-    ]));
+  it("reverts an inline edit with Esc or Revert to the answer from before it, keeping the drawer open", async () => {
+    const card = await mountOpenAsk(openAsk([question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")])]));
     const root = renderRoot(card);
-    const [withDetail, withoutDetail] = [...root.querySelectorAll<HTMLButtonElement>("button[aria-label='Edit this answer']")];
+    const outside = vi.fn();
+    document.body.addEventListener("keydown", outside);
+    inputWithValue(root, "vim").click();
+    await card.updateComplete;
+    requiredElement(root.querySelectorAll<HTMLButtonElement>("button[aria-label='Edit this answer']")[1], "edit VS Code").click();
+    await card.updateComplete;
+    const textarea = requiredElement(root.querySelector<HTMLTextAreaElement>(".inline-edit textarea"), "inline textarea");
+    textarea.value = "VS Code, but lighter";
+    textarea.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    // The draft holds the edit as the Custom answer, as before.
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ editor: { values: [], otherText: "VS Code, but lighter" } });
 
-    requiredElement(withDetail, "edit Postgres").click();
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true });
+    textarea.dispatchEvent(escape);
     await card.updateComplete;
-    expect(requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-0"), "custom").value).toBe("Postgres\nRuns in the existing cluster.");
-    requiredElement(withoutDetail, "edit SQLite").click();
-    await card.updateComplete;
-    expect(requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-0"), "custom").value).toBe("SQLite");
+    expect(escape.defaultPrevented).toBe(true);
+    expect(outside).not.toHaveBeenCalled();
+    expect(root.querySelector(".inline-edit")).toBeNull();
+    expect(inputWithValue(root, "vim").checked).toBe(true);
+    expect(inputWithValue(root, "code").checked).toBe(false);
+    expect(root.querySelector("textarea#ask-user-other-0")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ editor: { values: ["vim"] } });
+
+    // Without an earlier answer, Revert leaves the question unanswered.
+    const fresh = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]));
+    const freshRoot = renderRoot(fresh);
+    requiredElement(freshRoot.querySelector<HTMLButtonElement>("button[aria-label='Edit this answer']"), "edit Postgres").click();
+    await fresh.updateComplete;
+    buttonWithText(freshRoot, "Revert").click();
+    await fresh.updateComplete;
+    expect(freshRoot.querySelector(".inline-edit")).toBeNull();
+    expect(freshRoot.querySelector("[aria-live='polite']")?.textContent).toContain("0 of 1 answered");
+    document.body.removeEventListener("keydown", outside);
+  });
+
+  it("shows the pencil only on row hover or focus, as a sized icon button", () => {
+    const styles = AskUserCard.styles.cssText;
+    expect(styles).toMatch(/\.edit-option \{[^}]*width: 26px;[^}]*height: 26px;[^}]*opacity: 0;/);
+    expect(styles).toContain(".option-row:hover > .edit-option, .option-row:focus-within > .edit-option { opacity: 1; }");
+    expect(styles).toMatch(/\.edit-option:hover:not\(:disabled\) \{ background:/);
   });
 
   it("keeps a note on the whole set in the draft and sends it trimmed with the answers", async () => {

@@ -27,8 +27,9 @@ import "./FormattedText";
 import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 
-// Lucide "pencil" (https://lucide.dev, ISC).
+// Lucide "pencil" and "undo-2" (https://lucide.dev, ISC).
 const PENCIL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>`;
+const UNDO_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path></svg>`;
 
 /** "updated 5 min ago"-style age of an ISO timestamp. */
 export function updatedAgo(iso: string, now = Date.now()): string {
@@ -75,6 +76,8 @@ export class AskUserCard extends LitElement {
   @state() private note = "";
   @state() private confirmingPartialSubmit = false;
   @state() private submitting = false;
+  /** Per question id: the option edited in its own row, and the answer Revert restores. Its text is the Custom answer. */
+  @state() private inlineEdits: Record<string, { value: string; previous: AskDraftAnswer | undefined }> = {};
   private modelIdentity: string | undefined;
   /** Question index to focus once a single-answer send comes back as the ask's next revision. */
   private focusAfterRevision: number | undefined;
@@ -88,6 +91,7 @@ export class AskUserCard extends LitElement {
     this.note = this.ask === undefined || this.draftSessionId === "" ? "" : loadAskNote(this.draftSessionId, this.ask.askId);
     this.confirmingPartialSubmit = false;
     this.submitting = false;
+    this.inlineEdits = {};
     const focusIndex = this.focusAfterRevision;
     this.focusAfterRevision = undefined;
     if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0) this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
@@ -149,6 +153,8 @@ export class AskUserCard extends LitElement {
     const detailId = question.detail === undefined ? undefined : this.questionDetailId(index);
     const freeTextOnly = question.options.length === 0;
     const customSelected = freeTextOnly || this.isOtherSelected(question, answer);
+    // The edited row holds the Custom text itself, so Custom and its own textarea step aside while it lasts.
+    const inlineEdit = customSelected ? this.inlineEdits[question.id]?.value : undefined;
     const inputType = question.multiple === true ? "checkbox" : "radio";
     return html`
       <fieldset
@@ -163,7 +169,7 @@ export class AskUserCard extends LitElement {
         </legend>
         ${this.renderDetail(question.detail, detailId)}
         <div class="options">
-          ${question.options.map((option) => html`
+          ${question.options.map((option) => option.value === inlineEdit ? this.renderInlineEdit(question, index, option.label, answer?.otherText ?? "") : html`
             <div class="option-row">
               <label class="option">
                 <input
@@ -183,7 +189,7 @@ export class AskUserCard extends LitElement {
                 type="button"
                 aria-label="Edit this answer"
                 title="Edit this answer"
-                @click=${() => { this.editOption(question, index, option.detail === undefined ? option.label : `${option.label}\n${option.detail}`); }}
+                @click=${() => { this.editOption(question, index, option.value, option.detail === undefined ? option.label : `${option.label}\n${option.detail}`); }}
               >${PENCIL_ICON}</button>
             </div>
           `)}
@@ -193,13 +199,13 @@ export class AskUserCard extends LitElement {
                 type=${inputType}
                 name=${this.questionGroupName(ask, question)}
                 value="__pi_web_other__"
-                .checked=${customSelected}
+                .checked=${customSelected && inlineEdit === undefined}
                 @change=${(event: Event) => { this.changeOther(question, index, event); }}
               />
               <span class="option-copy"><span class="option-label">Custom</span></span>
             </label>
           `}
-          ${customSelected ? html`
+          ${customSelected && inlineEdit === undefined ? html`
             <label class="other-answer" for=${this.otherInputId(index)}>
               <span>Custom answer</span>
               <textarea
@@ -218,6 +224,25 @@ export class AskUserCard extends LitElement {
           </div>
         ` : null}
       </fieldset>
+    `;
+  }
+
+  /** An option being edited in place: its row becomes the Custom answer's textarea, selected, with a way back. */
+  private renderInlineEdit(question: AskUserQuestion, index: number, label: string, text: string): TemplateResult {
+    return html`
+      <div class="option-row inline-edit">
+        <span class="inline-edit-marker">${PENCIL_ICON}</span>
+        <textarea
+          id=${this.otherInputId(index)}
+          rows="2"
+          aria-label=${`Custom answer, edited from ${label}`}
+          maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)}
+          .value=${text}
+          @input=${(event: Event) => { this.changeOtherText(question, event); }}
+          @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.revertEdit(question, index); } }}
+        ></textarea>
+        <button class="revert-edit" type="button" title="Revert to the option (Esc)" @click=${() => { this.revertEdit(question, index); }}>${UNDO_ICON}Revert</button>
+      </div>
     `;
   }
 
@@ -296,6 +321,7 @@ export class AskUserCard extends LitElement {
   private changeOption(question: AskUserQuestion, value: string, event: Event): void {
     const input = event.currentTarget;
     if (!(input instanceof HTMLInputElement)) return;
+    if (question.multiple !== true) this.endInlineEdit(question);
     if (question.multiple !== true) {
       if (input.checked) this.setAnswer(question, { values: [value] });
       return;
@@ -314,6 +340,8 @@ export class AskUserCard extends LitElement {
     const input = event.currentTarget;
     if (!(input instanceof HTMLInputElement)) return;
     const current = this.answers[question.id];
+    // Choosing Custom moves an inline edit's text into Custom's own textarea.
+    this.endInlineEdit(question);
     if (question.multiple === true) {
       this.setAnswer(question, {
         values: [...(current?.values ?? [])],
@@ -325,14 +353,30 @@ export class AskUserCard extends LitElement {
     if (input.checked) void this.focusOtherInput(index);
   }
 
-  /** Starts a Custom answer from an option's label and detail; the option itself stays unchanged. */
-  private editOption(question: AskUserQuestion, index: number, text: string): void {
+  /** Starts a Custom answer from an option's label and detail, edited in that option's row; the option itself stays unchanged. */
+  private editOption(question: AskUserQuestion, index: number, value: string, text: string): void {
     const current = this.answers[question.id];
+    const previous = this.inlineEdits[question.id]?.previous ?? current;
+    this.inlineEdits = { ...this.inlineEdits, [question.id]: { value, previous } };
     this.setAnswer(question, {
       values: question.multiple === true ? [...(current?.values ?? [])] : [],
       otherText: text.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH),
     });
     void this.focusOtherInput(index, true);
+  }
+
+  /** Drops an inline edit, restoring the answer from before it began, and returns focus to the question. */
+  private revertEdit(question: AskUserQuestion, index: number): void {
+    const edit = this.inlineEdits[question.id];
+    if (edit === undefined) return;
+    this.endInlineEdit(question);
+    this.setAnswer(question, edit.previous ?? { values: [] });
+    this.focusQuestion(index);
+  }
+
+  private endInlineEdit(question: AskUserQuestion): void {
+    if (this.inlineEdits[question.id] === undefined) return;
+    this.inlineEdits = Object.fromEntries(Object.entries(this.inlineEdits).filter(([id]) => id !== question.id));
   }
 
   private changeOtherText(question: AskUserQuestion, event: Event): void {
@@ -576,19 +620,42 @@ export class AskUserCard extends LitElement {
     legend + .options { margin-top: 10px; }
     /* The pencil sits in the option's trailing padding, so every option, Custom and the textarea end at one edge. */
     .option-row { position: relative; }
-    .option-row > .option { padding-inline-end: 34px; }
+    .option-row > .option { padding-inline-end: 36px; }
     .edit-option {
       position: absolute;
-      top: 3px;
+      top: 4px;
       right: 4px;
-      display: inline-flex;
-      border-color: transparent;
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
       background: transparent;
       color: var(--pi-muted);
-      padding: 4px;
+      opacity: 0;
+      transition: opacity 120ms ease-out;
     }
-    .edit-option:hover:not(:disabled) { color: var(--pi-text); }
-    .edit-option svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    /* Shown on the row's hover or focus, so it stays keyboard reachable; touch screens always show it. */
+    .option-row:hover > .edit-option, .option-row:focus-within > .edit-option { opacity: 1; }
+    @media (hover: none) { .edit-option { opacity: 1; } }
+    .edit-option:hover:not(:disabled) { background: color-mix(in srgb, var(--pi-text) 9%, transparent); color: var(--pi-text); }
+    .option-row svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    /* The edited option keeps its row and its selected look; the pencil stands in for the control. */
+    .inline-edit {
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr);
+      gap: 5px;
+      padding: 7px 8px;
+      border: 1px solid var(--pi-accent);
+      border-radius: 8px;
+      background: var(--pi-selection-bg);
+    }
+    .inline-edit-marker { display: flex; margin-top: 3px; color: var(--pi-accent); }
+    .inline-edit textarea { min-height: 52px; background: var(--pi-surface); }
+    .revert-edit { grid-column: 2; justify-self: end; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-color: transparent; background: transparent; color: var(--pi-muted); font-size: 12px; }
+    .revert-edit:hover:not(:disabled) { color: var(--pi-text); }
     /* 1px border + 8px padding + 16px control + 5px gap = the number gutter, so option text starts where question text does. */
     .option {
       display: grid;
@@ -600,7 +667,7 @@ export class AskUserCard extends LitElement {
       padding: 7px 8px;
       cursor: pointer;
     }
-    .option:hover { border-color: var(--pi-border); background: var(--pi-surface-hover); }
+    .option:hover, :where(.option-row:hover) > .option { border-color: var(--pi-border); background: var(--pi-surface-hover); }
     .option:has(input:checked) { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     input { margin: 2px 0 0; accent-color: var(--pi-accent); }
     input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
@@ -705,6 +772,8 @@ export class AskUserCard extends LitElement {
     :host([flat]) .form-footer { position: sticky; bottom: 0; z-index: 6; padding: 6px 12px; background: var(--pi-surface); }
     :host([flat]) .form-footer button:not(.question-jump) { padding: 5px 10px; }
     :host([flat]) .edit-option { top: 1px; }
+    :host([flat]) .inline-edit { padding-block: 4px; }
+    @media (prefers-reduced-motion: reduce) { .edit-option { transition: none; } }
   `;
 }
 
