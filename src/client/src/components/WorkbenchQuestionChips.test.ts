@@ -66,7 +66,7 @@ describe("WorkbenchQuestionChips", () => {
     expect(chips.shadowRoot?.querySelector(".chips")).toBeNull();
   });
 
-  it("opens a drawer of every set with its context beside the questions, recommended option, Custom and Send", async () => {
+  it("opens a drawer of every set with its context above the questions, recommended option, Custom and Send", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-19T10:05:00.000Z"));
     const { chips } = await mount([ask("abc-1"), ask("def-2", { turnsSinceUpdate: 6, updatedAt: "2026-10-19T08:00:00.000Z" })]);
@@ -75,9 +75,10 @@ describe("WorkbenchQuestionChips", () => {
 
     expect(drawer(chips)?.getAttribute("aria-label")).toBe("Open questions");
     expect(chipButtons(chips)[1]?.getAttribute("aria-expanded")).toBe("true");
+    expect(chips.hasAttribute("open")).toBe(true);
     const [first, second] = cards(chips);
-    expect(cards(chips).every((card) => card.hasAttribute("context-beside"))).toBe(true);
-    expect(AskUserCard.styles.cssText).toMatch(/:host\(\[context-beside\]\) \.open-card:has\(\.ask-context\) \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1\.15fr\)/);
+    expect(AskUserCard.styles.cssText).not.toContain("context-beside");
+    expect(first?.shadowRoot?.querySelector(".ask-context + form .questions")).not.toBeNull();
     expect(first?.shadowRoot?.querySelector("formatted-text")).not.toBeNull();
     expect(text(first)).toContain("abc.db");
     expect(text(first)).toContain("Postgres Recommended");
@@ -110,15 +111,17 @@ describe("WorkbenchQuestionChips", () => {
     expect(chipButtons(chips).map((chip) => [chip.dataset["ask"], chip.dataset["question"]])).toEqual([["abc-1", "0"], ["def-2", "0"], ["def-2", "1"]]);
   });
 
-  it("keeps the chips to one sideways-scrolling row and the drawer at its forms' height up to 60% of the tile, shrinking only once the transcript is gone", () => {
+  it("keeps the chips to one sideways-scrolling row and, open, fills the host with a flush drawer", () => {
     const styles = WorkbenchQuestionChips.styles.cssText;
-    expect(styles).toMatch(/:host \{[^}]*flex: 0 1 auto;[^}]*min-height: 0;/);
+    expect(styles).toMatch(/:host \{[^}]*flex: 0 0 auto;[^}]*min-height: 0;/);
+    expect(styles).toMatch(/:host\(\[open\]\) \{ flex: 1 1 0; \}/);
     expect(styles).toMatch(/\.chips \{ flex: 0 0 auto;/);
     expect(styles).toMatch(/\.chips \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/);
     expect(styles).toMatch(/\.chip \{ flex: 0 0 auto;/);
-    // 60% of the tile, or of the height a Grid resize froze while tiles stop being size containers.
-    expect(styles).toMatch(/\.drawer \{[^}]*max-height: min\(calc\(0\.6 \* var\(--pi-tile-height, 100cqh\)\), 640px\);/);
-    expect(styles).toMatch(/\.drawer \{ flex: 0 1 auto;[^}]*min-height: 0;/);
+    expect(styles).toMatch(/\.drawer \{ flex: 1 1 0;[^}]*min-height: 0;/);
+    expect(styles).not.toMatch(/\.drawer \{[^}]*(max-height|margin|border|box-shadow)/);
+    // The flat card keeps its actions in view at the drawer's bottom.
+    expect(AskUserCard.styles.cssText).toMatch(/:host\(\[flat\]\) \.form-footer \{ position: sticky; bottom: 0;/);
   });
 
   it("frames one set flat under a single header line carrying the count and close button; several sets keep a drawer header", async () => {

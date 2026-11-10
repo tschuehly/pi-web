@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_QUESTION_LIMIT, type AskUserQuestion } from "../../shared/apiTypes.js";
+import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_DETAIL_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, type AskUserQuestion } from "../../shared/apiTypes.js";
 import {
   PendingAskStore,
   PendingAskValidationError,
@@ -120,6 +120,23 @@ describe("PendingAskStore validation", () => {
     expect(() => store.open({ sessionId, context: "  ", questions: [question("q1")] })).toThrow(/context is required/);
     expect(() => store.open({ sessionId, context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1), questions: [question("q1")] }))
       .toThrow(/context exceeds its length limit/);
+  });
+
+  it("strips the model's own numbering from question text, never leaving it empty", () => {
+    const store = testStore();
+    const texts = ["1. Which store?", "2) Which store?", "3–4. Which store?", "3-4. Which store?", "12. ", "1.5 GB enough?", "Which store?"];
+    const ask = store.open({ sessionId, context, questions: texts.map((text, index) => question(`q${index.toString()}`, { question: text })) });
+    expect(ask.questions.map((entry) => entry.question)).toEqual(["Which store?", "Which store?", "Which store?", "Which store?", "12. ", "1.5 GB enough?", "Which store?"]);
+  });
+
+  it("bounds a question's detail longer than other prose, and an option's detail as before", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1", { detail: "x".repeat(ASK_USER_DETAIL_MAX_LENGTH) })] });
+    expect(ask.questions[0]?.detail).toHaveLength(ASK_USER_DETAIL_MAX_LENGTH);
+    expect(() => store.open({ sessionId, context, questions: [question("q1", { detail: "x".repeat(ASK_USER_DETAIL_MAX_LENGTH + 1) })] }))
+      .toThrow(/detail of question q1 exceeds its length limit/);
+    expect(() => store.open({ sessionId, context, questions: [question("q1", { options: [{ value: "a", label: "A", detail: "x".repeat(ASK_USER_TEXT_MAX_LENGTH + 1) }] })] }))
+      .toThrow(/detail of option a in question q1 exceeds its length limit/);
   });
 
   it("keeps a recommended option flag", () => {
@@ -427,6 +444,18 @@ describe("ask outcome rendering", () => {
       "",
       "Answered 2 of 3; unanswered: q3",
     ].join("\n"));
+  });
+
+  it("carries the user's trimmed note on the outcome and into the model-facing text", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1")] });
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], note: "x".repeat(ASK_USER_OTHER_TEXT_MAX_LENGTH + 1) }))
+      .toThrow(/note exceeds its length limit/);
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], note: "  Ship it\nthis week.  " });
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+
+    expect(result.outcome.note).toBe("Ship it\nthis week.");
+    expect(renderAskUserAnswersText(result.outcome)).toContain(`  Answered: selected yes\n\nNote from the user: "Ship it\\nthis week."\n\nAnswered 1 of 1`);
   });
 
   it("tells the model a cancelled ask was closed before it was answered", () => {

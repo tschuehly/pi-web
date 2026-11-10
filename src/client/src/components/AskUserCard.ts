@@ -15,7 +15,9 @@ import {
   answeredCount,
   askedFingerprint,
   loadAskDraft,
+  loadAskNote,
   saveAskDraft,
+  saveAskNote,
   toSubmission,
   unansweredQuestions,
   type AskDraftAnswer,
@@ -69,6 +71,8 @@ export class AskUserCard extends LitElement {
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
 
   @state() private answers: AskDraftAnswers = {};
+  /** Free text on the whole set, sent with the answers. */
+  @state() private note = "";
   @state() private confirmingPartialSubmit = false;
   @state() private submitting = false;
   private modelIdentity: string | undefined;
@@ -79,6 +83,7 @@ export class AskUserCard extends LitElement {
     if (identity === this.modelIdentity) return;
     this.modelIdentity = identity;
     this.answers = this.loadCurrentDraft();
+    this.note = this.ask === undefined || this.draftSessionId === "" ? "" : loadAskNote(this.draftSessionId, this.ask.askId);
     this.confirmingPartialSubmit = false;
     this.submitting = false;
   }
@@ -110,6 +115,10 @@ export class AskUserCard extends LitElement {
           <div class="questions">
             ${ask.questions.map((question, index) => html`${index === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, index)}`)}
           </div>
+          <label class="ask-note">
+            <span>Note</span>
+            <textarea rows="2" maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)} placeholder="Optional, for the whole set" .value=${this.note} @input=${this.changeNote}></textarea>
+          </label>
           <footer class="form-footer">
             ${this.confirmingPartialSubmit && unanswered.length > 0
               ? this.renderPartialSubmitConfirmation(ask, unanswered)
@@ -147,7 +156,7 @@ export class AskUserCard extends LitElement {
           <span class="question-number">${String(index + 1)}.</span>
           <span>${question.question} <code class="question-ref" title="Reference for this question">${askQuestionRef(ask.askId, question.id)}</code></span>
         </legend>
-        ${question.detail === undefined ? null : html`<p class="question-detail" id=${detailId}>${question.detail}</p>`}
+        ${this.renderDetail(question.detail, detailId)}
         <div class="options">
           ${question.options.map((option) => html`
             <div class="option-row">
@@ -169,7 +178,7 @@ export class AskUserCard extends LitElement {
                 type="button"
                 aria-label="Edit this answer"
                 title="Edit this answer"
-                @click=${() => { this.editOption(question, index, option.label); }}
+                @click=${() => { this.editOption(question, index, option.detail === undefined ? option.label : `${option.label}\n${option.detail}`); }}
               >${PENCIL_ICON}</button>
             </div>
           `)}
@@ -200,6 +209,11 @@ export class AskUserCard extends LitElement {
         </div>
       </fieldset>
     `;
+  }
+
+  /** A question's Markdown detail, in body text like the context. */
+  private renderDetail(detail: string | undefined, id?: string): TemplateResult | null {
+    return detail === undefined ? null : html`<formatted-text class="question-detail" id=${ifDefined(id)} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
   }
 
   private renderPartialSubmitConfirmation(ask: PendingAskUser, unanswered: AskUserQuestion[]): TemplateResult {
@@ -240,6 +254,7 @@ export class AskUserCard extends LitElement {
         <div class="record-questions">
           ${outcome.questions.map((record, index) => this.renderQuestionRecord(outcome, record, index))}
         </div>
+        ${outcome.note === undefined ? null : html`<section class="record-question record-note"><h3>Note</h3><p class="other-record-text">${outcome.note}</p></section>`}
       </article>
     `;
   }
@@ -252,7 +267,7 @@ export class AskUserCard extends LitElement {
           <span class="question-number">${String(index + 1)}.</span>
           <span>${record.question.question}</span>
         </h3>
-        ${record.question.detail === undefined ? null : html`<p class="question-detail">${record.question.detail}</p>`}
+        ${this.renderDetail(record.question.detail)}
         ${answer === undefined
           ? html`<p class="unanswered-record">Unanswered</p>`
           : html`
@@ -298,12 +313,12 @@ export class AskUserCard extends LitElement {
     if (input.checked) void this.focusOtherInput(index);
   }
 
-  /** Starts a Custom answer from an option's label; the option itself stays unchanged. */
-  private editOption(question: AskUserQuestion, index: number, label: string): void {
+  /** Starts a Custom answer from an option's label and detail; the option itself stays unchanged. */
+  private editOption(question: AskUserQuestion, index: number, text: string): void {
     const current = this.answers[question.id];
     this.setAnswer(question, {
       values: question.multiple === true ? [...(current?.values ?? [])] : [],
-      otherText: label.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH),
+      otherText: text.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH),
     });
     void this.focusOtherInput(index, true);
   }
@@ -317,6 +332,13 @@ export class AskUserCard extends LitElement {
       otherText: input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH),
     });
   }
+
+  private readonly changeNote = (event: Event): void => {
+    const input = event.currentTarget;
+    if (!(input instanceof HTMLTextAreaElement)) return;
+    this.note = input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH);
+    if (this.ask !== undefined && this.draftSessionId !== "") saveAskNote(this.draftSessionId, this.ask.askId, this.note);
+  };
 
   private setAnswer(question: AskUserQuestion, answer: AskDraftAnswer): void {
     const next: AskDraftAnswers = answer.values.length === 0 && answer.otherText === undefined
@@ -346,8 +368,9 @@ export class AskUserCard extends LitElement {
       return;
     }
     const askId = ask.askId;
+    const note = this.note.trim();
     void Promise.resolve()
-      .then(() => callback(askId, { ...toSubmission(ask.questions, this.answers), revision: ask.revision }))
+      .then(() => callback(askId, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), revision: ask.revision }))
       .catch(() => {
         // The parent controller owns the visible transport error. Keeping this
         // card and its draft intact is the only recovery needed at this boundary.
@@ -495,12 +518,6 @@ export class AskUserCard extends LitElement {
     .question-ref { color: var(--pi-muted); font-size: 11px; font-weight: 500; }
     .recommended { margin-inline-start: 4px; padding: 1px 6px; border-radius: 999px; background: var(--pi-success-bg); color: var(--pi-success); font-size: 11px; font-weight: 650; }
     .ask-context { display: block; padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
-    /* In the question drawer: the set's context beside its questions, stacked again when narrow. */
-    :host([context-beside]) .open-card:has(.ask-context) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
-    :host([context-beside]) .open-card .card-header { grid-column: 1 / -1; }
-    :host([context-beside]) .open-card .ask-context { align-self: start; position: sticky; top: 40px; max-height: 60vh; overflow: auto; padding: 12px 16px; border-right: 1px solid var(--pi-border-muted); font-size: 13px; }
-    /* The drawer scrolls the questions under their actions, which stay in view. */
-    :host([context-beside]) .form-footer { position: sticky; bottom: 0; z-index: 6; border-radius: 0 0 9px 0; background: var(--pi-surface); }
     .questions { display: grid; padding-top: 8px; }
     fieldset.question {
       min-width: 0;
@@ -526,14 +543,7 @@ export class AskUserCard extends LitElement {
     }
     .question-number { justify-self: end; color: var(--pi-muted); }
     fieldset.question.answered .question-number { color: var(--pi-success); }
-    .question-detail {
-      margin: 4px 0 10px;
-      color: var(--pi-muted);
-      font-size: 12px;
-      line-height: 1.4;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
+    .question-detail { display: block; margin: 4px 0 10px; color: var(--pi-text); overflow-wrap: anywhere; }
     fieldset.question > .question-detail, .record-question > .question-detail {
       padding-inline-start: calc(var(--question-number-column) + var(--question-copy-gap));
     }
@@ -581,6 +591,8 @@ export class AskUserCard extends LitElement {
       padding: 8px;
       font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif);
     }
+    .ask-note { display: grid; gap: 5px; padding: 0 16px 12px var(--ui-transcript-inline-start, 16px); color: var(--pi-muted); font-size: 12px; }
+    .ask-note textarea { min-height: 44px; }
     .form-footer {
       display: flex;
       align-items: center;
@@ -627,13 +639,10 @@ export class AskUserCard extends LitElement {
     .unanswered-record { margin: 0; color: var(--pi-muted); font-style: italic; }
     .draft-note { margin: 7px 0 0; color: var(--pi-warning); font-size: 11px; }
     @container (max-width: 580px) {
-      :host([context-beside]) .open-card:has(.ask-context) { display: block; }
-      :host([context-beside]) .open-card .ask-context { position: static; max-height: none; padding: 12px 12px 0; border-right: 0; }
       fieldset.question { padding: 0 12px 14px var(--ui-transcript-inline-start, 12px); }
       .record-question { padding: 14px 12px 14px var(--ui-transcript-inline-start, 12px); }
-      .record-summary, .ask-context { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
+      .record-summary, .ask-context, .ask-note { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
       .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
-      :host([context-beside]) .form-footer { border-radius: 0 0 9px 9px; }
       .partial-confirmation { align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }
       .primary-action { min-height: 42px; }
@@ -646,7 +655,7 @@ export class AskUserCard extends LitElement {
     :host([flat]) .ask-meta { flex: 0 1 auto; gap: 6px; font-size: 12px; }
     :host([flat]) .header-status { flex: 1 1 auto; font-size: 12px; text-align: start; }
     :host([flat]) .ask-meta::before, :host([flat]) .header-status::before { content: "·" / ""; margin-inline-end: 6px; }
-    :host([flat]) .open-card .ask-context { top: 37px; padding: 8px 12px; }
+    :host([flat]) .open-card .ask-context { padding: 8px 12px; }
     :host([flat]) .questions { padding-top: 8px; }
     :host([flat]) .question-separator { margin-bottom: 8px; }
     :host([flat]) fieldset.question { padding: 0 12px 8px; }
@@ -654,7 +663,9 @@ export class AskUserCard extends LitElement {
     :host([flat]) legend + .options { margin-top: 6px; }
     :host([flat]) .options { gap: 2px; }
     :host([flat]) .option { padding: 4px 8px; }
-    :host([flat]) .form-footer { padding: 6px 12px; border-radius: 0; }
+    :host([flat]) .ask-note { padding: 0 12px 8px; }
+    /* The drawer scrolls the questions under their actions, which stay in view. */
+    :host([flat]) .form-footer { position: sticky; bottom: 0; z-index: 6; padding: 6px 12px; background: var(--pi-surface); }
     :host([flat]) .form-footer button:not(.question-jump) { padding: 5px 10px; }
     :host([flat]) .edit-option { margin-top: 1px; }
   `;

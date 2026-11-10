@@ -606,6 +606,7 @@ describe("session routes", () => {
           cwd: "/repo/./",
           askId: "ask-1",
           answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }],
+          note: "Ship it.",
           revision: "r3",
         },
       });
@@ -620,7 +621,7 @@ describe("session routes", () => {
       expect(routeService.submitAskCalls).toEqual([{
         lookup: { id: "session-1", cwd: resolve("/repo") },
         askId: "ask-1",
-        submission: { answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }], revision: "r3" },
+        submission: { answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }], note: "Ship it.", revision: "r3" },
       }]);
       expect(cancelled.statusCode).toBe(200);
       expect(cancelled.json()).toMatchObject({ result: "stale" });
@@ -651,6 +652,8 @@ describe("session routes", () => {
       { cwd: "/repo", askId: "ask-1", answers: new Array<unknown>(ASK_USER_QUESTION_LIMIT + 1).fill({ id: "db", values: [] }) },
       { cwd: "/repo", askId: "ask-1", answers: [], revision: 2 },
       { cwd: "/repo", askId: "ask-1", answers: [], revision: "" },
+      { cwd: "/repo", askId: "ask-1", answers: [], note: 7 },
+      { cwd: "/repo", askId: "ask-1", answers: [], note: "x".repeat(ASK_USER_OTHER_TEXT_MAX_LENGTH + 1) },
     ];
 
     try {

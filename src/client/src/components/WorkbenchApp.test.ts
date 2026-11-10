@@ -685,8 +685,18 @@ describe("Workbench Chat chooser", () => {
     expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.pendingAsks).toEqual([]);
     expect(app.shadowRoot?.querySelector(".questions-toggle, workbench-questions-pane, #workbench-questions")).toBeNull();
     expect(WorkbenchApp.styles.cssText).not.toContain("questions");
-    // Each tile contains its size, so the question drawer can take 60% of the tile's height (cqh).
     expect(WorkbenchApp.styles.cssText).toMatch(/\.tile \{ container-type: size; \}/);
+
+    // Open, the drawer takes the transcript's area: chat-view stays mounted but collapses, the composer side grows.
+    const chat = app.shadowRoot?.querySelector("chat-view");
+    const collapsed = ".chat-column:has(> .composer-area > workbench-question-chips[open]) > chat-view";
+    expect(await chips?.openQuestion("abc-1", 0)).toBe(true);
+    expect(chips?.hasAttribute("open")).toBe(true);
+    expect(app.shadowRoot?.querySelector(collapsed)).toBe(chat);
+    expect(WorkbenchApp.styles.cssText).toContain(`${collapsed} { flex: 0 0 0; visibility: hidden; }`);
+    expect(WorkbenchApp.styles.cssText).toMatch(/workbench-question-chips\[open\]\)::part\(transcript\) \{ flex: 0 0 0; \}/);
+    expect(WorkbenchApp.styles.cssText).toMatch(/workbench-question-chips\[open\]\)::part\(composer-boundary\) \{ flex: 1 1 0;/);
+    expect(WorkbenchApp.styles.cssText).toMatch(/workbench-question-chips\[open\]\) > \.composer-area \{ flex: 1 1 0; \}/);
 
     const submit = vi.spyOn(api, "submitAsk").mockResolvedValue({ result: "closed", sessionStatus: idleStatus(current.id) });
     await chips?.onSubmit?.("def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" });

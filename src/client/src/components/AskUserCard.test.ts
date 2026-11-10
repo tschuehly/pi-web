@@ -3,7 +3,7 @@
 import type { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
-import { saveAskDraft } from "../askDrafts";
+import { loadAskNote, saveAskDraft } from "../askDrafts";
 import { AskUserCard, type AskUserSubmitCallback } from "./AskUserCard";
 import { settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
 
@@ -32,7 +32,9 @@ describe("ask-user-card live form", () => {
     expect(fieldsets).toHaveLength(2);
     expect(legends[0]?.textContent).toContain("Choose an editor");
     expect(fieldsets[0]?.getAttribute("aria-describedby")).toBe("ask-user-question-detail-0");
-    expect(root.querySelector("#ask-user-question-detail-0")?.textContent).toBe("Used for examples.");
+    const detail = root.querySelector<HTMLElement & { text: string }>("#ask-user-question-detail-0");
+    expect(detail?.localName).toBe("formatted-text");
+    expect(detail?.text).toBe("Used for examples.");
     expect(vim.type).toBe("radio");
     expect(code.name).toBe(vim.name);
     expect(web.type).toBe("checkbox");
@@ -153,6 +155,39 @@ describe("ask-user-card live form", () => {
         { id: "stack", values: ["lit"], otherText: "React" },
       ],
     });
+  });
+
+  it("starts an edited answer from the option's label and its detail", async () => {
+    const card = await mountOpenAsk(openAsk([
+      question("db", "Which database?", [{ value: "pg", label: "Postgres", detail: "Runs in the existing cluster." }, option("lite", "SQLite")]),
+    ]));
+    const root = renderRoot(card);
+    const [withDetail, withoutDetail] = [...root.querySelectorAll<HTMLButtonElement>("button[aria-label='Edit this answer']")];
+
+    requiredElement(withDetail, "edit Postgres").click();
+    await card.updateComplete;
+    expect(requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-0"), "custom").value).toBe("Postgres\nRuns in the existing cluster.");
+    requiredElement(withoutDetail, "edit SQLite").click();
+    await card.updateComplete;
+    expect(requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-0"), "custom").value).toBe("SQLite");
+  });
+
+  it("keeps a note on the whole set in the draft and sends it trimmed with the answers", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), onSubmit);
+    const root = renderRoot(card);
+    const note = requiredElement(root.querySelector<HTMLTextAreaElement>(".ask-note textarea"), "note");
+    expect(note.closest("form")?.querySelector(".ask-note + .form-footer")).not.toBeNull();
+
+    inputWithValue(root, "pg").click();
+    note.value = "  Ship it this week.  ";
+    note.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await card.updateComplete;
+    expect(loadAskNote("local:session-1", "ask-1")).toBe("  Ship it this week.  ");
+    buttonWithText(root, "Send answers").click();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", note: "Ship it this week.", answers: [{ id: "db", values: ["pg"] }] });
   });
 
   it("shows and submits the custom field directly when no options were supplied", async () => {
@@ -340,6 +375,21 @@ describe("ask-user-card record mode", () => {
 
     expect(renderRoot(card).textContent).toContain("Withdrawn");
     expect(renderRoot(card).textContent).toContain("The agent withdrew these questions.");
+  });
+
+  it("shows the question detail as Markdown and the user's note", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [unansweredRecord(question("db", "Which database?", [], { detail: "The **cache** store." }))],
+      note: "Ship it this week.",
+      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+
+    expect(renderRoot(card).querySelector<HTMLElement & { text: string }>(".record-question formatted-text.question-detail")?.text).toBe("The **cache** store.");
+    expect(renderRoot(card).querySelector(".record-note")?.textContent).toContain("Ship it this week.");
   });
 });
 

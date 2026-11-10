@@ -132,7 +132,8 @@ test("fits one flat question drawer above the chips and composer in a short wind
         const crossing = lines.filter((line) => headings.some((heading) => line.top < heading.bottom && line.bottom > heading.top && line.left < heading.right && line.right > heading.left));
         return { framed: framed.length, separators: lines.length, crossing: crossing.length };
       });
-      expect(layout).toEqual({ framed: 1, separators: 1, crossing: 0 });
+      // Nothing in the drawer draws a frame of its own, the drawer included.
+      expect(layout).toEqual({ framed: 0, separators: 1, crossing: 0 });
       await context.close();
     }
   }
@@ -216,7 +217,7 @@ test("keeps twelve questions to one row of chips in a crowded grid, opens a side
   await expect(tabCount(page, CROWDED)).toHaveCount(0);
 });
 
-test("answers a Chat's open questions from chips above its composer, through a drawer with the context beside them", async ({ page }) => {
+test("answers a Chat's open questions from chips above its composer, through a drawer that takes the transcript's area", async ({ page }) => {
   await openAskingWindow(page);
   await expect(chips(page)).toHaveText([GO_LIVE.question, CHECKS.question]);
   await expect(tabCount(page, ASKING)).toHaveText("2");
@@ -234,10 +235,16 @@ test("answers a Chat's open questions from chips above its composer, through a d
   await expect(drawer(page).locator('input[value="unit"]')).toBeFocused();
   const context = await drawer(page).locator("ask-user-card .ask-context").boundingBox();
   const question = await drawer(page).locator("ask-user-card fieldset").first().boundingBox();
-  expect(context !== null && question !== null && context.x + context.width <= question.x + 1).toBe(true);
+  // One column: the context above the questions, the transcript hidden (still mounted) while the drawer fills its area.
+  expect(context !== null && question !== null && context.y + context.height <= question.y + 1).toBe(true);
+  await expect(shownChat(page).locator("chat-view")).toBeHidden();
+  const [roster, open] = await Promise.all([shownChat(page).locator("delegate-roster").boundingBox(), drawer(page).boundingBox()]);
+  const header = await shownChat(page).locator("conversation-layout").boundingBox();
+  expect(roster !== null && open !== null && header !== null && open.y >= roster.y + roster.height - 1 && open.y - header.y < roster.height + 60).toBe(true);
   await expect(drawer(page).locator("ask-user-card")).toContainText("Recommended");
   await page.keyboard.press("Escape");
   await expect(drawer(page)).toHaveCount(0);
+  await expect(shownChat(page).locator("chat-view")).toBeVisible();
   await expect(chips(page).nth(1)).toBeFocused();
 
   // Another Chat shows none of these chips, while the asking tab keeps its count.

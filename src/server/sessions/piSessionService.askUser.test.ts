@@ -284,10 +284,11 @@ describe("PiSessionService.submitAsk", () => {
 
     const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", {
       answers: [{ id: "db", values: [], otherText: "DuckDB" }],
+      note: "Keep the migration small.",
       revision: "r1",
     });
 
-    expect(response).toMatchObject({ result: "closed", outcome: { askId: "ask-1", reason: "submitted", answeredCount: 1, unansweredIds: [] } });
+    expect(response).toMatchObject({ result: "closed", outcome: { askId: "ask-1", reason: "submitted", answeredCount: 1, unansweredIds: [], note: "Keep the migration small." } });
     expect(response.sessionStatus.sessionId).toBe(ACTIVE_SESSION_ID);
     expect(fake.calls.sendCustomMessage).toHaveLength(1);
     const [delivered] = fake.calls.sendCustomMessage;
@@ -295,6 +296,7 @@ describe("PiSessionService.submitAsk", () => {
     expect(delivered?.message.display).toBe(true);
     expect(delivered?.message.content).toContain("The user submitted answers to question set ask-1.");
     expect(delivered?.message.content).toContain(`- ask.db: Which database?\n  Answered: custom: "DuckDB"`);
+    expect(delivered?.message.content).toContain(`Note from the user: "Keep the migration small."`);
     expect(delivered?.message.content).toContain("Answered 1 of 1");
     expect(delivered?.message.content).not.toContain("still open");
     expect(delivered?.message.details).toMatchObject({ askId: "ask-1", reason: "submitted" });

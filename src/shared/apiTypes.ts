@@ -762,8 +762,10 @@ export const ASK_USER_QUESTION_LIMIT = 20;
 export const ASK_USER_OPTION_LIMIT = 12;
 /** Length bound for ids: the ask id, question ids, and option values. */
 export const ASK_USER_ID_MAX_LENGTH = 128;
-/** Length bound for model-authored prose: questions, details, and option labels. */
+/** Length bound for model-authored prose: questions, option labels, and option details. */
 export const ASK_USER_TEXT_MAX_LENGTH = 1_000;
+/** Length bound for the Markdown detail under one question. */
+export const ASK_USER_DETAIL_MAX_LENGTH = 4_000;
 /** Length bound for the Markdown context an ask shows above its questions. */
 export const ASK_USER_CONTEXT_MAX_LENGTH = 4_000;
 /** Length bound for the free text a user types as a custom answer. */
@@ -798,7 +800,7 @@ export interface AskUserQuestion {
   id: string;
   /** The question itself, as one plain-text line. */
   question: string;
-  /** Optional supporting context rendered under the question. */
+  /** Markdown under the question: what it is about, an example, where it stands. The tool requires it; asks stored before that may lack it. */
   detail?: string;
   /** Offered options; may be empty when only free text makes sense. */
   options: AskUserQuestionOption[];
@@ -845,6 +847,8 @@ export interface AskUserAnswer {
 /** One submit of the open ask: answers for some or all of its questions. */
 export interface AskUserSubmission {
   answers: AskUserAnswer[];
+  /** Free text the user adds for the whole set. */
+  note?: string;
   /** {@link PendingAskUser.revision} the user answered; absent (older browsers) or mismatched makes the submit stale. */
   revision?: string;
 }
@@ -874,6 +878,8 @@ export interface AskUserOutcome {
   /** The ask's {@link PendingAskUser.context}, so the record shows it too. */
   context?: string;
   questions: AskUserQuestionRecord[];
+  /** The user's note on the whole set, trimmed; absent when none was given. */
+  note?: string;
   answeredCount: number;
   /** Ids of the questions left unanswered, in the order they were asked. */
   unansweredIds: string[];

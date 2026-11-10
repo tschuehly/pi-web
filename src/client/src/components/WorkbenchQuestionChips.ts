@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing, svg } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { customElement, property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { PendingAskUser } from "../../../shared/apiTypes";
 import type { AskUserCard, AskUserSubmitCallback } from "./AskUserCard";
@@ -15,8 +15,9 @@ export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined): 
 
 /**
  * The selected Chat's open questions as chips above its composer, one per question, oldest set first. A chip opens a
- * drawer rising from the composer with every set's form, its context beside its questions. Answered sets drop out
- * because the daemon stops reporting them, leaving their record in the transcript.
+ * drawer with every set's form, each its context above its questions; while open (the reflected `open` attribute) the
+ * Chat gives the drawer the transcript's whole area. Answered sets drop out because the daemon stops reporting them,
+ * leaving their record in the transcript.
  */
 @customElement("workbench-question-chips")
 export class WorkbenchQuestionChips extends LitElement {
@@ -25,7 +26,8 @@ export class WorkbenchQuestionChips extends LitElement {
   @property({ attribute: false }) draftSessionId = "";
   @property({ attribute: false }) onSubmit?: AskUserSubmitCallback;
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
-  @state() private open = false;
+  /** Reflected so the Chat can hand the drawer the transcript's area. */
+  @property({ type: Boolean, reflect: true }) open = false;
   /** The chip that opened the drawer, refocused when it closes. */
   private opener: HTMLElement | undefined;
 
@@ -45,7 +47,7 @@ export class WorkbenchQuestionChips extends LitElement {
         <section id="question-drawer" class="drawer" aria-label="Open questions" @keydown=${this.onKeydown}>
           ${single ? nothing : html`<header><span>${title}</span>${closeButton}</header>`}
           <div class="sets">
-            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat context-beside data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
+            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
           </div>
         </section>` : nothing}
       <div class="chips" role="group" aria-label="Open questions" @keydown=${this.onKeydown}>
@@ -81,8 +83,9 @@ export class WorkbenchQuestionChips extends LitElement {
   }
 
   static override styles = css`
-    /* The transcript above gives up its room first; past that the drawer shrinks and scrolls, so chips and composer stay whole. */
-    :host { display: flex; flex: 0 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
+    /* Open, the host fills the room the hidden transcript gives up; the drawer scrolls its forms, so chips and composer stay whole. */
+    :host { display: flex; flex: 0 0 auto; flex-direction: column; min-width: 0; min-height: 0; }
+    :host([open]) { flex: 1 1 0; }
     svg { flex: 0 0 auto; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     /* One row however many questions are open: it scrolls sideways, and the drawer lists every question anyway. */
     .chips { flex: 0 0 auto; display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 6px var(--pi-panel-padding, 10px) 2px; }
@@ -99,8 +102,8 @@ export class WorkbenchQuestionChips extends LitElement {
     .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .chip:hover, .chip[aria-expanded="true"] { border-color: var(--pi-warning); }
     .chip:focus-visible, .close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    /* Rises from the composer, as tall as its forms up to 60% of the tile (cqh, or the height a Grid resize froze), then scrolls them. */
-    .drawer { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; max-height: min(calc(0.6 * var(--pi-tile-height, 100cqh)), 640px); overflow: hidden; margin: 6px var(--pi-panel-padding, 10px) 0; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 -10px 30px var(--pi-shadow-soft); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
+    /* Fills the transcript's area between the Activity roster and the chips, flush with the Chat's edges. */
+    .drawer { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--pi-surface); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
     header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); font: 12px system-ui, sans-serif; }
     .close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); cursor: pointer; }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
