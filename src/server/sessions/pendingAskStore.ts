@@ -42,7 +42,8 @@ export interface PendingAskUpdateInput extends PendingAskOpenInput {
  * daemon-side session), which is an ordinary race a browser can lose — not an error.
  */
 export type PendingAskCloseResult =
-  | { status: "closed"; outcome: AskUserOutcome }
+  /** `ask` is present after a partial send: the ask stays open with its remaining questions. */
+  | { status: "closed"; outcome: AskUserOutcome; ask?: PendingAskUser }
   | { status: "stale" };
 
 /** Rejected input: a question set is malformed, or an answer does not fit its question. */
@@ -140,12 +141,30 @@ export class PendingAskStore {
    * naming no revision or another one is stale: the user answered questions that
    * changed, or a browser too old to say which questions it answered.
    * `record` runs before the ask closes; when it throws, the ask stays open.
+   *
+   * A partial submit ({@link AskUserSubmission.partial}) records only the answered
+   * questions (`outcome.partial`) and keeps the ask open with the rest under a new
+   * revision, which the outcome carries so a transcript rebuild lands on the same
+   * state. Answering every remaining question closes the ask as a full submit.
    */
   submit(sessionId: string, askId: string, submission: AskUserSubmission, record?: RecordOutcome): PendingAskCloseResult {
     const ask = this.asksOf(requireSessionId(sessionId)).get(askId);
     if (ask === undefined || submission.revision !== ask.revision) return { status: "stale" };
     const answers = validateSubmission(ask, submission);
     const note = normalizeNote(submission.note);
+    if (submission.partial === true) {
+      if (note !== undefined) throw new PendingAskValidationError("A partial submit takes no note; send the note with the whole set");
+      if (answers.size === 0) throw new PendingAskValidationError("A partial submit needs at least one answer");
+      const remaining = ask.questions.filter((question) => !answers.has(question.id));
+      if (remaining.length > 0) {
+        const revision = this.createRevision();
+        const outcome = partialOutcome(ask, answers, remaining, revision, this.timestamp());
+        record?.(outcome);
+        const updated: PendingAskUser = { ...ask, revision, questions: remaining };
+        this.setAsk(sessionId, updated);
+        return { status: "closed", outcome, ask: cloneAsk(updated) };
+      }
+    }
     return closed(this.close(sessionId, askId, "submitted", answers, record, note));
   }
 
@@ -226,7 +245,9 @@ function closed(outcome: AskUserOutcome | undefined): PendingAskCloseResult {
  * unanswered questions as plainly as the answered ones.
  */
 export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
-  const lead = outcome.reason === "submitted"
+  const lead = outcome.partial === true
+    ? `The user answered ${outcome.answeredCount === 1 ? "one question" : `${outcome.answeredCount.toString()} questions`} of question set ${outcome.askId}; its other questions stay open.`
+    : outcome.reason === "submitted"
     ? `The user submitted answers to question set ${outcome.askId}.`
     : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
   const note = outcome.note === undefined ? [] : ["", `Note from the user: ${JSON.stringify(outcome.note)}`];
@@ -275,6 +296,24 @@ function askUserOutcome(
     answeredCount,
     unansweredIds,
     summary: summaryLine(questions.length, answeredCount, unansweredIds),
+  };
+}
+
+/** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
+function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, remaining: readonly AskUserQuestion[], revision: string, closedAt: string): AskUserOutcome {
+  const questions = ask.questions.filter((question) => answers.has(question.id)).map((question) => questionRecord(question, answers.get(question.id)));
+  return {
+    askId: ask.askId,
+    reason: "submitted",
+    askedAt: ask.askedAt,
+    closedAt,
+    ...(ask.context === undefined ? {} : { context: ask.context }),
+    questions,
+    answeredCount: questions.length,
+    unansweredIds: [],
+    summary: `Answered ${questions.length.toString()}; still open: ${remaining.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}`,
+    partial: true,
+    revision,
   };
 }
 

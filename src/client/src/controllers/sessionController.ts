@@ -1559,9 +1559,9 @@ export class SessionController {
     try {
       const response = await close(session, machineId);
       // A closed ask's draft has nothing left to protect: the answers now live in
-      // the daemon-owned outcome. A stale submit of a still-open ask means it was
-      // revised; its card reloads the draft, dropping answers to changed questions.
-      const stillOpen = response.result === "stale" && response.sessionStatus.pendingAsks?.some((ask) => ask.askId === askId) === true;
+      // the daemon-owned outcome. An ask still open was revised or partly sent; its
+      // card reloads the draft, dropping answers to questions it no longer asks.
+      const stillOpen = response.sessionStatus.pendingAsks?.some((ask) => ask.askId === askId) === true;
       if (!stillOpen) clearAskDraft(machineSessionKey(machineId, session.id), askId);
       // Both outcomes carry the recomputed status, so no follow-up status
       // request is needed to learn what the session's open ask is now.

@@ -851,6 +851,12 @@ export interface AskUserSubmission {
   note?: string;
   /** {@link PendingAskUser.revision} the user answered; absent (older browsers) or mismatched makes the submit stale. */
   revision?: string;
+  /**
+   * Send only these answers now. The answered questions leave the ask and the rest stay open under a new
+   * revision (same askId), so any other submit for the old revision is stale. Needs at least one answer and
+   * takes no note. One that answers every remaining question closes the ask like a full submit.
+   */
+  partial?: boolean;
 }
 
 /**
@@ -885,6 +891,12 @@ export interface AskUserOutcome {
   unansweredIds: string[];
   /** One line, for example `Answered 3 of 5; unanswered: q2, q5`. */
   summary: string;
+  /**
+   * Set on a partial send ({@link AskUserSubmission.partial}): the ask stayed open. `questions` lists only the
+   * questions sent, and `revision` is the ask's revision after them, which a transcript rebuild adopts.
+   */
+  partial?: true;
+  revision?: string;
 }
 
 /**
@@ -897,7 +909,7 @@ export interface AskUserOutcome {
  */
 export interface AskUserCloseResponse {
   result: "closed" | "stale";
-  /** Present only when this call is the one that closed the ask. */
+  /** Present only when this call is the one that closed the ask, or (with `partial`) that sent part of it. */
   outcome?: AskUserOutcome;
   sessionStatus: SessionStatus;
 }

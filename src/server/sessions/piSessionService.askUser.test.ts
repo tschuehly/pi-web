@@ -350,6 +350,33 @@ describe("PiSessionService.submitAsk", () => {
     await restarted.service.dispose();
   });
 
+  it("delivers a single answer while the other questions stay open, and a restart rebuilds them and redelivers the answer", async () => {
+    const branch: unknown[] = [];
+    const { service, store, events, fake } = askService({ withActiveSession: true, branch });
+    await service.status(sessionRef(ACTIVE_SESSION_ID));
+    const two = [...questions, { id: "why", question: "Why now?", options: [] }];
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions: two });
+    branch.push({ type: "message", message: { role: "toolResult", toolName: "ask_user", details: { ask: store.pendingAsks(ACTIVE_SESSION_ID)[0], sessionId: ACTIVE_SESSION_ID } } });
+
+    const response = await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: "r1", partial: true });
+
+    expect(response).toMatchObject({ result: "closed", outcome: { askId: "ask-1", partial: true, revision: "r2", answeredCount: 1 } });
+    expect(response.sessionStatus.pendingAsks).toEqual([expect.objectContaining({ askId: "ask-1", revision: "r2", questions: [two[1]] })]);
+    expect(askEvents(events).map(({ event }) => event.type)).toEqual(["ask.opened", "ask.opened"]);
+    const [delivered] = fake.calls.sendCustomMessage;
+    expect(delivered?.message.content).toContain("The user answered one question of question set ask-1; its other questions stay open.");
+    expect(delivered?.message.content).toContain("- ask-1 (ask.why;");
+    expect(store.pendingAsks(ACTIVE_SESSION_ID).map((ask) => ask.questions.map((question) => question.id))).toEqual([["why"]]);
+    await service.dispose();
+
+    // The follow-up never reached the branch before the daemon went away.
+    const restarted = askService({ withActiveSession: true, branch });
+    expect((await restarted.service.status(sessionRef(ACTIVE_SESSION_ID))).pendingAsks).toEqual([expect.objectContaining({ askId: "ask-1", revision: "r2", questions: [two[1]] })]);
+    await vi.waitFor(() => { expect(restarted.fake.calls.sendCustomMessage).toHaveLength(1); });
+    expect(restarted.fake.calls.sendCustomMessage[0]?.message.details).toMatchObject({ askId: "ask-1", partial: true });
+    await restarted.service.dispose();
+  });
+
   it("redelivers several recorded closes one at a time on runtime start, each exactly once", async () => {
     const closed = (askId: string) => ({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: { askId, reason: "submitted", askedAt: T0, closedAt: T0, context, questions: [], answeredCount: 0, unansweredIds: [], summary: "Answered 0 of 0" } });
     const branch: unknown[] = [postedAsk("ask-1"), postedAsk("bsk-2"), closed("ask-1"), closed("bsk-2")];

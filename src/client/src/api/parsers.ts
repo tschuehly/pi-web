@@ -452,6 +452,7 @@ export function parseAskUserOutcome(value: unknown): AskUserOutcome {
     answeredCount,
     unansweredIds,
     summary: requireNonEmptyString(record, "summary"),
+    ...(record["partial"] === true ? { partial: true as const, revision: requireBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH) } : {}),
   };
 }
 

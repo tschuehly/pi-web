@@ -452,7 +452,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; note?: unknown; revision?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; note?: unknown; revision?: unknown; partial?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
     try {
       const body = requireRecord(request.body);
       const askId = requireBoundedId(body["askId"], "askId");
@@ -757,7 +757,9 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   const note = body["note"];
   if (note !== undefined && typeof note !== "string") throw new Error("note field must be a string");
   if (typeof note === "string" && note.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("note field is too long");
-  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }) };
+  const partial = body["partial"];
+  if (partial !== undefined && typeof partial !== "boolean") throw new Error("partial field must be a boolean");
+  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}) };
 }
 
 function askUserAnswerFromValue(value: unknown): AskUserAnswer {

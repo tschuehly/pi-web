@@ -146,7 +146,7 @@ describe("ask-user-card live form", () => {
     expect(root.activeElement).toBe(editedStackText);
     expect(inputWithValue(root, "react").checked).toBe(false);
 
-    buttonWithText(root, "Send answers").click();
+    buttonWithText(root, "Send all").click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenCalledWith("ask-1", {
       revision: "r1",
@@ -223,7 +223,7 @@ describe("ask-user-card live form", () => {
 
     inputWithValue(root, "vim").click();
     await card.updateComplete;
-    buttonWithText(root, "Send answers").click();
+    buttonWithText(root, "Send all").click();
     await card.updateComplete;
     await Promise.resolve();
 
@@ -240,6 +240,45 @@ describe("ask-user-card live form", () => {
       revision: "r1",
       answers: [{ id: "editor", values: ["vim"] }],
     });
+  });
+});
+
+describe("ask-user-card single-answer send", () => {
+  it("sends one answered question on its own as a partial submit and offers no per-question Send for a lone question", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([
+      question("editor", "Choose an editor", [option("vim", "Vim")]),
+      question("deploy", "Choose a deployment target", [option("cloud", "Cloud")]),
+    ]), onSubmit);
+    const root = renderRoot(card);
+    const sends = () => [...root.querySelectorAll<HTMLButtonElement>(".send-one")];
+    expect(sends().map((button) => button.disabled)).toEqual([true, true]);
+
+    inputWithValue(root, "cloud").click();
+    await card.updateComplete;
+    expect(sends().map((button) => button.disabled)).toEqual([true, false]);
+    sends()[1]?.click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { answers: [{ id: "deploy", values: ["cloud"] }], revision: "r1", partial: true });
+
+    const lone = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [])]), askId: "ask-2" });
+    expect(renderRoot(lone).querySelector(".send-one")).toBeNull();
+    expect(buttonWithText(renderRoot(lone), "Send answers")).toBeDefined();
+  });
+
+  it("keeps the other questions' drafts when a partial send returns the ask under a new revision", async () => {
+    const editor = question("editor", "Choose an editor", [option("vim", "Vim")]);
+    const shell = question("shell", "Choose a shell", [option("zsh", "Zsh")]);
+    const card = await mountOpenAsk(openAsk([editor, shell]), vi.fn<AskUserSubmitCallback>());
+    inputWithValue(renderRoot(card), "vim").click();
+    inputWithValue(renderRoot(card), "zsh").click();
+    await card.updateComplete;
+
+    card.ask = { ...openAsk([shell]), revision: "r2" };
+    await card.updateComplete;
+
+    expect(inputWithValue(renderRoot(card), "zsh").checked).toBe(true);
+    expect(renderRoot(card).textContent).toContain("1 of 1 answered");
   });
 });
 
@@ -260,7 +299,7 @@ describe("ask-user-card revisions", () => {
     expect(inputWithValue(renderRoot(card), "zsh").checked).toBe(true);
     inputWithValue(renderRoot(card), "code").click();
     await card.updateComplete;
-    buttonWithText(renderRoot(card), "Send answers").click();
+    buttonWithText(renderRoot(card), "Send all").click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r2", answers: [{ id: "editor", values: ["code"] }, { id: "shell", values: ["zsh"] }] });
   });
@@ -375,6 +414,20 @@ describe("ask-user-card record mode", () => {
 
     expect(renderRoot(card).textContent).toContain("Withdrawn");
     expect(renderRoot(card).textContent).toContain("The agent withdrew these questions.");
+  });
+
+  it("labels the record of a single answer sent while the set stays open", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [{ question: question("db", "Which database?", [option("pg", "Postgres")]), answered: true, values: ["pg"] }],
+      answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.why", partial: true, revision: "r2",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+
+    expect(renderRoot(card).querySelector(".header-status")?.textContent).toBe("Answer sent · others still open");
+    expect(renderRoot(card).textContent).toContain("Postgres");
   });
 
   it("shows the question detail as Markdown and the user's note", async () => {

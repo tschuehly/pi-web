@@ -124,7 +124,7 @@ export class AskUserCard extends LitElement {
               ? this.renderPartialSubmitConfirmation(ask, unanswered)
               : html`
                   <button class="primary-action" type="submit" ?disabled=${this.submitting}>
-                    ${this.submitting ? "Sending…" : "Send answers"}
+                    ${this.submitting ? "Sending…" : ask.questions.length > 1 ? "Send all" : "Send answers"}
                   </button>
                 `}
           </footer>
@@ -207,6 +207,11 @@ export class AskUserCard extends LitElement {
             </label>
           ` : null}
         </div>
+        ${ask.questions.length > 1 ? html`
+          <div class="question-actions">
+            <button class="send-one" type="button" ?disabled=${!answered || this.submitting} title="Send just this answer now; the other questions stay open" @click=${() => { this.submitOne(ask, question); }}>Send</button>
+          </div>
+        ` : null}
       </fieldset>
     `;
   }
@@ -238,7 +243,9 @@ export class AskUserCard extends LitElement {
   }
 
   private renderRecord(outcome: AskUserOutcome): TemplateResult {
-    const recordLabel = { submitted: "Answers sent", superseded: "Superseded", cancelled: "Cancelled", withdrawn: "Withdrawn" }[outcome.reason];
+    const recordLabel = outcome.partial === true
+      ? `${outcome.answeredCount === 1 ? "Answer" : "Answers"} sent · others still open`
+      : { submitted: "Answers sent", superseded: "Superseded", cancelled: "Cancelled", withdrawn: "Withdrawn" }[outcome.reason];
     return html`
       <article class="ui-transcript-surface card record-card" aria-labelledby="ask-user-record-heading">
         <header class="card-header">
@@ -347,6 +354,8 @@ export class AskUserCard extends LitElement {
     this.answers = next;
     this.confirmingPartialSubmit = false;
     if (this.ask !== undefined && this.draftSessionId !== "") saveAskDraft(this.draftSessionId, this.ask.askId, next);
+    // Lets a question bar outside the card recount answered questions.
+    this.dispatchEvent(new Event("ask-draft-change", { bubbles: true, composed: true }));
   }
 
   private handleSubmit(event: SubmitEvent, ask: PendingAskUser): void {
@@ -360,17 +369,18 @@ export class AskUserCard extends LitElement {
   }
 
   private submitAnswers(ask: PendingAskUser): void {
-    if (this.submitting) return;
-    this.submitting = true;
-    const callback = this.onSubmit;
-    if (callback === undefined) {
-      this.submitting = false;
-      return;
-    }
-    const askId = ask.askId;
     const note = this.note.trim();
+    this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), revision: ask.revision });
+  }
+
+  private send(ask: PendingAskUser, submission: AskUserSubmission): void {
+    if (this.submitting) return;
+    const callback = this.onSubmit;
+    if (callback === undefined) return;
+    this.submitting = true;
+    const askId = ask.askId;
     void Promise.resolve()
-      .then(() => callback(askId, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), revision: ask.revision }))
+      .then(() => callback(askId, submission))
       .catch(() => {
         // The parent controller owns the visible transport error. Keeping this
         // card and its draft intact is the only recovery needed at this boundary.
@@ -378,6 +388,13 @@ export class AskUserCard extends LitElement {
       .finally(() => {
         if (this.ask?.askId === askId) this.submitting = false;
       });
+  }
+
+  /** Sends one question's answer at once (a partial submit); the daemon keeps the other questions open under a new revision. */
+  private submitOne(ask: PendingAskUser, question: AskUserQuestion): void {
+    const answer = toSubmission([question], this.answers).answers[0];
+    if (answer === undefined) return;
+    this.send(ask, { answers: [answer], revision: ask.revision, partial: true });
   }
 
   private async showPartialSubmitConfirmation(): Promise<void> {
@@ -583,6 +600,10 @@ export class AskUserCard extends LitElement {
     .option-label { line-height: 1.35; }
     .option-detail { color: var(--pi-muted); font-size: 12px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
     .other-answer { display: grid; gap: 5px; color: var(--pi-muted); font-size: 12px; padding: 4px 0 4px calc(var(--question-number-column) + var(--question-copy-gap)); }
+    .question-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+    .send-one { padding: 3px 10px; font-size: 12px; }
+    .send-one:not(:disabled) { border-color: var(--pi-accent); color: var(--pi-accent); font-weight: 650; }
+    .send-one:disabled { cursor: default; }
     textarea {
       box-sizing: border-box;
       width: 100%;

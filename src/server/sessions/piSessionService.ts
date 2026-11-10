@@ -2252,8 +2252,10 @@ export class PiSessionService implements SessionRouteService {
    */
   private async closeAsk(session: PiAgentSession, result: PendingAskCloseResult): Promise<AskUserCloseResponse> {
     if (result.status === "stale") return { result: "stale", sessionStatus: this.statusFromSession(session) };
-    const { outcome } = result;
-    this.publishAskClosed(session.sessionId, outcome);
+    const { outcome, ask } = result;
+    // A partial send keeps the ask open under a new revision; browsers replace its card as on an update.
+    if (ask === undefined) this.publishAskClosed(session.sessionId, outcome);
+    else this.events.publish(session.sessionId, { type: "ask.opened", ask });
     await this.deliverAskOutcome(session, outcome);
     this.publishStatus(session);
     return { result: "closed", outcome, sessionStatus: this.statusFromSession(session) };
