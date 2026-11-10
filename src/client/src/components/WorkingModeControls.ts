@@ -50,7 +50,7 @@ function icon(axis: WorkingModeAxis, value: string | undefined): TemplateResult 
  * each value applies immediately and the pane stays open until Esc, an outside click, or the trigger.
  * A selection the model has not received yet marks the trigger with a dot and enables Send (`/mode send`).
  * Once the agent records alignment (`alignment_reached`) under a non-default Alignment, an "Aligned" chip follows its icon;
- * while AFK waits for that confirmation, a muted "Not aligned" chip does.
+ * while AFK waits for that confirmation, a muted "Not aligned" chip does. While aligned, the pane offers Reset alignment (`/mode unalign`).
  */
 @customElement("working-mode-controls")
 export class WorkingModeControls extends LitElement {
@@ -113,6 +113,7 @@ export class WorkingModeControls extends LitElement {
             </div>
           `)}
           <div class="actions">
+            ${aligned ? html`<button class="unalign" type="button" title="Withdraw the confirmed alignment and tell the agent now" @click=${() => { this.unalign(); }}>Reset alignment</button>` : null}
             <!-- Lucide send -->
             <button class="send" type="button" ?disabled=${!pending} title=${pending ? "Send the Working Mode change now" : "No Working Mode change to send"} @click=${() => { this.send(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg>Send</button>
           </div>
@@ -141,6 +142,12 @@ export class WorkingModeControls extends LitElement {
   /** Delivers the pending selection now: the extension steers a working agent or starts a turn when idle. */
   private send(): void {
     void this.onRunCommand?.("/mode send");
+    this.setOpen(false, true);
+  }
+
+  /** Withdraws the confirmed alignment; the extension tells the agent at once, as Send does. */
+  private unalign(): void {
+    void this.onRunCommand?.("/mode unalign");
     this.setOpen(false, true);
   }
 
@@ -196,7 +203,9 @@ export class WorkingModeControls extends LitElement {
     /* 100cqh is the Grid tile (a size container) when there is one: the pane stays inside it, above the tile bar and composer. */
     .pane { position: absolute; z-index: 20; right: 10px; bottom: calc(100% + 4px); max-height: calc(100cqh - 80px); overflow-y: auto; display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 12px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px 12px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); color: var(--pi-text); font: 12px system-ui, sans-serif; white-space: normal; }
     .axis-name { color: var(--pi-muted); }
-    .actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; padding-top: 4px; border-top: 1px solid var(--pi-border); }
+    .actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; padding-top: 4px; border-top: 1px solid var(--pi-border); }
+    .unalign { min-height: 28px; padding: 3px 10px; border: 1px solid var(--pi-border); border-radius: 6px; background: transparent; color: var(--pi-text); }
+    .unalign:hover { background: var(--pi-surface-hover); }
     .send { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 10px; border: 1px solid var(--pi-accent); border-radius: 6px; background: var(--pi-accent); color: var(--pi-accent-contrast, #fff); font-weight: 600; }
     .send:disabled { border-color: var(--pi-border); background: transparent; color: var(--pi-muted); cursor: default; }
     .values { display: flex; flex-wrap: wrap; gap: 2px; }
