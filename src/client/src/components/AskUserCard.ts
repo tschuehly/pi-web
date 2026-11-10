@@ -76,6 +76,8 @@ export class AskUserCard extends LitElement {
   @state() private confirmingPartialSubmit = false;
   @state() private submitting = false;
   private modelIdentity: string | undefined;
+  /** Question index to focus once a single-answer send comes back as the ask's next revision. */
+  private focusAfterRevision: number | undefined;
 
   protected override willUpdate(changed: PropertyValues<this>): void {
     if (!changed.has("ask") && !changed.has("outcome") && !changed.has("draftSessionId")) return;
@@ -86,6 +88,9 @@ export class AskUserCard extends LitElement {
     this.note = this.ask === undefined || this.draftSessionId === "" ? "" : loadAskNote(this.draftSessionId, this.ask.askId);
     this.confirmingPartialSubmit = false;
     this.submitting = false;
+    const focusIndex = this.focusAfterRevision;
+    this.focusAfterRevision = undefined;
+    if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0) this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
   }
 
   override render(): TemplateResult | null {
@@ -209,7 +214,7 @@ export class AskUserCard extends LitElement {
         </div>
         ${ask.questions.length > 1 ? html`
           <div class="question-actions">
-            <button class="send-one" type="button" ?disabled=${!answered || this.submitting} title="Send just this answer now; the other questions stay open" @click=${() => { this.submitOne(ask, question); }}>Send</button>
+            <button class="send-one" type="button" ?disabled=${!answered || this.submitting} title="Send just this answer now; the other questions stay open" @click=${() => { this.submitOne(ask, question, index); }}>Send</button>
           </div>
         ` : null}
       </fieldset>
@@ -384,6 +389,7 @@ export class AskUserCard extends LitElement {
       .catch(() => {
         // The parent controller owns the visible transport error. Keeping this
         // card and its draft intact is the only recovery needed at this boundary.
+        this.focusAfterRevision = undefined;
       })
       .finally(() => {
         if (this.ask?.askId === askId) this.submitting = false;
@@ -391,9 +397,11 @@ export class AskUserCard extends LitElement {
   }
 
   /** Sends one question's answer at once (a partial submit); the daemon keeps the other questions open under a new revision. */
-  private submitOne(ask: PendingAskUser, question: AskUserQuestion): void {
+  private submitOne(ask: PendingAskUser, question: AskUserQuestion, index: number): void {
     const answer = toSubmission([question], this.answers).answers[0];
     if (answer === undefined) return;
+    // The sent question leaves the form, taking the focused button with it; the next revision focuses the question in its place.
+    this.focusAfterRevision = index;
     this.send(ask, { answers: [answer], revision: ask.revision, partial: true });
   }
 

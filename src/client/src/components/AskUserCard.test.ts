@@ -260,6 +260,11 @@ describe("ask-user-card single-answer send", () => {
     sends()[1]?.click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { answers: [{ id: "deploy", values: ["cloud"] }], revision: "r1", partial: true });
+    // The sent question leaves with its focused button; focus moves to the question now in its place.
+    const focus = vi.spyOn(card, "focusQuestion");
+    card.ask = { ...openAsk([question("editor", "Choose an editor", [option("vim", "Vim")])]), revision: "r2" };
+    await card.updateComplete;
+    expect(focus).toHaveBeenCalledWith(0);
 
     const lone = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [])]), askId: "ask-2" });
     expect(renderRoot(lone).querySelector(".send-one")).toBeNull();
