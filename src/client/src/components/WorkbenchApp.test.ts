@@ -690,22 +690,26 @@ describe("Workbench Chat chooser", () => {
 
     // Open, the drawer takes the transcript's area: chat-view stays mounted but collapses, the composer side grows.
     const chat = app.shadowRoot?.querySelector("chat-view");
-    const collapsed = ".chat-column:has(> .composer-area > workbench-question-chips[open]) > chat-view";
+    // A host attribute, not `:has([open])`: WebKit never restyles `:has(...)::part(...)`, so the room stayed taken after answering.
+    const collapsed = ".chat-column[question-drawer-open] > chat-view";
+    const settle = async () => { await chips?.updateComplete; await app.updateComplete; await app.shadowRoot?.querySelector<WorkbenchChatPane>("workbench-chat-pane")?.updateComplete; };
     expect(await chips?.openQuestion("abc-1", 0)).toBe(true);
-    expect(chips?.hasAttribute("open")).toBe(true);
+    await settle();
     expect(app.shadowRoot?.querySelector(collapsed)).toBe(chat);
     expect(WorkbenchApp.styles.cssText).toContain(`${collapsed} { flex: 0 0 0; visibility: hidden; }`);
-    expect(WorkbenchApp.styles.cssText).toMatch(/workbench-question-chips\[open\]\)::part\(transcript\) \{ flex: 0 0 0; \}/);
-    expect(WorkbenchApp.styles.cssText).toMatch(/workbench-question-chips\[open\]\)::part\(composer-boundary\) \{ flex: 1 1 0;/);
-    expect(WorkbenchApp.styles.cssText).toMatch(/workbench-question-chips\[open\]\) > \.composer-area \{ flex: 1 1 0; \}/);
+    expect(WorkbenchApp.styles.cssText).toContain(".chat-column[question-drawer-open]::part(transcript) { flex: 0 0 0; }");
+    expect(WorkbenchApp.styles.cssText).toContain(".chat-column[question-drawer-open]::part(composer-boundary) { flex: 1 1 0;");
+    expect(WorkbenchApp.styles.cssText).toContain(".chat-column[question-drawer-open] > .composer-area { flex: 1 1 0; }");
+    expect(WorkbenchApp.styles.cssText).not.toContain(":has(> .composer-area");
 
     const submit = vi.spyOn(api, "submitAsk").mockResolvedValue({ result: "closed", sessionStatus: idleStatus(current.id) });
     await chips?.onSubmit?.("def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" });
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: current.id }), "def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" }, "local");
 
     setState(app, { ...getState(app), pendingAsks: [] });
-    await app.updateComplete;
+    await settle();
     expect(chips?.asks).toEqual([]);
+    expect(app.shadowRoot?.querySelector(".chat-column[question-drawer-open]")).toBeNull();
   });
 
   it("keeps Files in the side slot with its divider, width and close chevron", async () => {

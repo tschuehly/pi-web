@@ -48,6 +48,8 @@ export class WorkbenchChatPane extends LitElement {
   @property({ type: Boolean }) focused = false;
   @property() defaultStreamingBehavior: "steer" | "followUp" = "steer";
   @state() private rosterCollapsed = true;
+  /** The question drawer is open and takes the transcript's area. */
+  @state() private questionsOpen = false;
   /** A draft-replacing request in flight (go back to a message, or a queue action). One at a time; Recall and go-back lock the composer. */
   @state() private revertPending = false;
   @state() private queuedActionTarget: QueuedMessageActionTarget | undefined;
@@ -149,7 +151,7 @@ export class WorkbenchChatPane extends LitElement {
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${machineId} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         ${state.error === "" ? nothing : html`<div class="chat-error" role="alert">${state.error}</div>`}
-        <conversation-layout class="chat-column" .status=${state.status} .activity=${state.activity} .sending=${state.sendingPrompts[session.id] === true} .visualEffects=${WORKBENCH_CHAT_BEHAVIORS.visualEffects}>
+        <conversation-layout class="chat-column" ?question-drawer-open=${this.questionsOpen} .status=${state.status} .activity=${state.activity} .sending=${state.sendingPrompts[session.id] === true} .visualEffects=${WORKBENCH_CHAT_BEHAVIORS.visualEffects}>
           <chat-view
             .dense=${this.dense}
             workbench
@@ -196,7 +198,7 @@ export class WorkbenchChatPane extends LitElement {
             .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
           ></chat-view>
           <div class="composer-area" slot="composer">
-          <workbench-question-chips .status=${state.status} .rosterCompact=${this.dense} .rosterCollapsed=${this.rosterCollapsed} .onToggleRoster=${this.toggleRoster} .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
+          <workbench-question-chips @question-drawer-toggle=${(event: CustomEvent<boolean>) => { this.questionsOpen = event.detail; }} .status=${state.status} .rosterCompact=${this.dense} .rosterCollapsed=${this.rosterCollapsed} .onToggleRoster=${this.toggleRoster} .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
           <goal-status-chip .status=${state.status}></goal-status-chip>
           <prompt-editor
             .draftStorage=${this.draftStorage}
