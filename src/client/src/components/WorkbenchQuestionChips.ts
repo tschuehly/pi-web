@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
+import { LitElement, css, html, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { PendingAskUser } from "../../../shared/apiTypes";
@@ -20,8 +20,8 @@ export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined): 
  * The row above a Chat's composer: its Activity roster and, beside the roster's header, one bar for the open questions
  * ("3 open questions · 1 answered", over every open set). Hosting the roster lets the bar share its header line while
  * the roster's entries span the row below and the drawer opens above it. The bar opens a drawer with every set's form,
- * oldest first, each its context above its questions; while open (the reflected `open` attribute) the Chat gives the
- * drawer the transcript's whole area. Sent questions and answered sets drop out because the daemon stops reporting
+ * oldest first, each its context above its questions; while open (announced by `question-drawer-toggle`) the Chat gives
+ * the drawer the transcript's whole area. Sent questions and answered sets drop out because the daemon stops reporting
  * them, leaving their record in the transcript.
  */
 @customElement("workbench-question-chips")
@@ -41,6 +41,11 @@ export class WorkbenchQuestionChips extends LitElement {
 
   protected override willUpdate(): void {
     if (this.asks.length === 0) this.open = false;
+  }
+
+  protected override updated(changed: PropertyValues<this>): void {
+    // The Chat lays out on this event, not on `:has([open])`: WebKit never restyles `:has(...)::part(...)` when the attribute flips.
+    if (changed.has("open")) this.dispatchEvent(new CustomEvent<boolean>("question-drawer-toggle", { bubbles: true, detail: this.open }));
   }
 
   override render() {

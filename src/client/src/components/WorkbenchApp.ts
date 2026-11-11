@@ -2228,10 +2228,10 @@ export class WorkbenchApp extends LitElement {
     /* The composer side of the conversation boundary: the Activity and open-asks row, goal and the composer stack above each other. */
     .composer-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     /* An open question drawer takes the transcript's whole area; chat-view stays mounted, only hidden, so its scroll position survives. */
-    .chat-column:has(> .composer-area > workbench-question-chips[open]) > chat-view { flex: 0 0 0; visibility: hidden; }
-    .chat-column:has(> .composer-area > workbench-question-chips[open])::part(transcript) { flex: 0 0 0; }
-    .chat-column:has(> .composer-area > workbench-question-chips[open])::part(composer-boundary) { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
-    .chat-column:has(> .composer-area > workbench-question-chips[open]) > .composer-area { flex: 1 1 0; }
+    .chat-column[question-drawer-open] > chat-view { flex: 0 0 0; visibility: hidden; }
+    .chat-column[question-drawer-open]::part(transcript) { flex: 0 0 0; }
+    .chat-column[question-drawer-open]::part(composer-boundary) { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+    .chat-column[question-drawer-open] > .composer-area { flex: 1 1 0; }
     /* Zero basis: the transcript takes what is left, so the question chips and drawer never shrink for it. */
     chat-view { flex: 1 1 0; min-height: 0; overflow: hidden; }
     prompt-editor { flex: 0 0 auto; }
