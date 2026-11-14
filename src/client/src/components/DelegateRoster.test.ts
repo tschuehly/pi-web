@@ -237,7 +237,7 @@ describe("DelegateRoster disclosure", () => {
 });
 
 describe("model label", () => {
-  it("shows each delegate's model as its nickname plus signal bars for its effort, the full model in the tooltip", async () => {
+  it("shows each delegate's model as its nickname plus its short effort, the full model in the tooltip", async () => {
     const { shadow } = await mount(status(delegates([
       { id: "o", kind: "subagent", name: "Opus run", model: "anthropic/claude-opus-5-5", effort: "high", startedAt: new Date().toISOString() },
       { id: "a", kind: "subagent", name: "Astra run", model: "openai-codex/gpt-6-astra", effort: "xhigh", startedAt: new Date().toISOString() },
@@ -246,14 +246,11 @@ describe("model label", () => {
       { id: "n", kind: "subagent", name: "No model", startedAt: new Date().toISOString() },
     ])));
     const label = (key: string) => row(shadow, key).querySelector(".model");
-    const bars = (key: string) => label(key)?.querySelectorAll(".effort path").length;
-    expect(label("delegate:o")?.textContent.trim()).toBe("Opus");
+    const effort = (key: string) => label(key)?.querySelector(".effort")?.textContent;
+    expect(label("delegate:o")?.textContent.trim()).toBe("Opushigh");
     expect(label("delegate:o")?.querySelector(".effort")?.getAttribute("aria-label")).toBe("high effort");
-    expect(bars("delegate:o")).toBe(4);
-    expect(label("delegate:a")?.textContent.trim()).toBe("Astra");
-    expect(bars("delegate:a")).toBe(5);
-    expect(label("delegate:l")?.textContent.trim()).toBe("Luna");
-    expect(bars("delegate:l")).toBe(2);
+    expect(effort("delegate:a")).toBe("xhigh");
+    expect(effort("delegate:l")).toBe("low");
     expect(label("delegate:u")?.textContent.trim()).toBe("qwen-9b");
     expect(label("delegate:u")?.querySelector(".effort")).toBeNull();
     expect(label("delegate:n")).toBeNull();
