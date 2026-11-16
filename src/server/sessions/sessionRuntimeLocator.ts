@@ -21,6 +21,18 @@ export interface DurableChatRecord {
   name?: string;
   /** Who set `name`; absent means the owner (`/name`), which generated titles never replace. */
   nameSource?: "manual" | "auto" | "checkpoint";
+  /** The family's launchd host the daemon last attached to (Phase C1); a restarted daemon reattaches through it. */
+  host?: DurableHostAttachment;
+}
+
+/** What a launchd host's handshake proved, so a later daemon accepts only that host on that socket. */
+export interface DurableHostAttachment {
+  label: string;
+  socket: string;
+  /** The revision folder the host runs from. */
+  revision: string;
+  ownerEpoch: number;
+  pid: number;
 }
 
 interface LocatorFile {
@@ -65,6 +77,17 @@ export class SessionRuntimeLocator {
     this.#persist();
   }
 
+  /** Record the family host the daemon attached to, or forget it once that host is gone. */
+  setHost(sessionId: string, host: DurableHostAttachment | undefined): void {
+    const record = this.#chats.get(sessionId);
+    if (record === undefined) return;
+    const next: DurableChatRecord = { ...record };
+    if (host === undefined) delete next.host;
+    else next.host = host;
+    this.#chats.set(sessionId, next);
+    this.#persist();
+  }
+
   remove(sessionId: string): void {
     if (this.#chats.delete(sessionId)) this.#persist();
   }
@@ -106,5 +129,11 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
     && ["id", "cwd", "storeId", "created", "modified", "firstMessage"].every((key) => typeof value[key] === "string")
     && typeof value["messageCount"] === "number"
     && (value["name"] === undefined || typeof value["name"] === "string")
-    && (value["nameSource"] === undefined || value["nameSource"] === "manual" || value["nameSource"] === "auto" || value["nameSource"] === "checkpoint");
+    && (value["nameSource"] === undefined || value["nameSource"] === "manual" || value["nameSource"] === "auto" || value["nameSource"] === "checkpoint")
+    && (value["host"] === undefined || isHostAttachment(value["host"]));
+}
+
+function isHostAttachment(value: unknown): value is DurableHostAttachment {
+  return isRecord(value) && ["label", "socket", "revision"].every((key) => typeof value[key] === "string")
+    && typeof value["ownerEpoch"] === "number" && typeof value["pid"] === "number";
 }

@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
+import { closeSync, existsSync, openSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { connect, createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,8 @@ import { startMockModelServer, type MockModelServer } from "./mockModels/server"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LIVE_PORT = 8505;
+/** Durable hosts as launchd jobs (Phase C1) run under trial labels only, never the production prefix. */
+export const E2E_DURABLE_LABEL_PREFIX = "com.pi-workbench.durable-trial.host";
 export const E2E_PROJECT_ID = "e2e-project";
 export const E2E_SESSION_ID = "019ef4c0-0000-7000-8000-00000000e2e1";
 export const E2E_SEARCH_MATCHES = 150;
@@ -88,6 +90,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   let mock: MockModelServer | undefined;
   const teardown = async (): Promise<void> => {
     await Promise.all(children.map(stop));
+    // A session daemon a spec restarted (restartSessiond), then every launchd host job this fixture's daemons created.
+    await stopGroup(Number(await readFile(join(root, "sessiond.pid"), "utf8").catch(() => "0")));
+    await bootoutFixtureHosts(join(root, "data", "hosts"));
     await mock?.close();
     await rm(root, { recursive: true, force: true });
   };
@@ -151,6 +156,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // Workbench bash jobs stay in the fixture; the Atelier Page check (its own browser) has its own suite.
         PI_BACKGROUND_BASH_ROOT: join(root, "background-bash"), ATELIER_PAGE_CHECK: "off",
       });
+      // Opt-in: each Chat family's host as its own launchd job on an owner-only socket in <data>/hosts (Phase C1).
+      if (process.env["PI_WEB_E2E_DURABLE_LAUNCHD"] === "1") Object.assign(env, { PI_WEB_DURABLE_HOST_LAUNCHD: E2E_DURABLE_LABEL_PREFIX });
       process.env["PI_WEB_E2E_QUOTA_CACHE"] = join(root, "quota-cache.json");
     }
     // Optional: installed Pi packages the Durable host binds (pi-process-monitor only: no network, no messages out),
@@ -186,8 +193,14 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     // Bundled plugins (the daemon requires Terminal) load from the worktree's dist/; the client goes to the temp root.
     build("npm", ["run", "build:plugins"], env);
     build(bin("vite"), ["build", "--outDir", clientDist, "--emptyOutDir", "--logLevel", "error"], env);
-    children.push(start("sessiond", ["src/server/sessiond.ts"], env, root));
+    const sessiond = start("sessiond", ["src/server/sessiond.ts"], env, root);
+    children.push(sessiond);
     await waitFor(() => existsSync(socket), "session daemon socket");
+    if (env["PI_WEB_DURABLE_HOST_LAUNCHD"] !== undefined) {
+      // Specs may kill and restart the daemon (restartSessiond): its process group and environment.
+      await writeFile(join(root, "sessiond.pid"), String(sessiond.pid));
+      process.env["PI_WEB_E2E_SESSIOND_ENV"] = JSON.stringify(env);
+    }
     children.push(start("web", ["src/server/index.ts"], env, root));
     const baseUrl = `http://127.0.0.1:${String(port)}/`;
     await waitFor(async () => (await fetch(`${baseUrl}api/projects`).catch(() => undefined))?.ok === true, "web/API server");
@@ -414,6 +427,50 @@ async function stop(child: ChildProcess): Promise<void> {
   const timer = setTimeout(() => { signal("SIGKILL"); }, 3000);
   await exited;
   clearTimeout(timer);
+}
+
+/** SIGTERM a process group, SIGKILL after 3 s; nothing when it is already gone. */
+async function stopGroup(pid: number): Promise<void> {
+  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  if (pid <= 1 || !alive()) return;
+  try { process.kill(-pid, "SIGTERM"); } catch { /* already gone */ }
+  await waitFor(() => !alive(), "the session daemon to stop", 3000).catch(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } });
+}
+
+/** Unload exactly the launchd jobs whose plists this fixture's daemons wrote (labels under the trial prefix). */
+async function bootoutFixtureHosts(hosts: string): Promise<void> {
+  for (const name of await readdir(hosts).catch(() => [])) {
+    if (!name.startsWith(`${E2E_DURABLE_LABEL_PREFIX}.`) || !name.endsWith(".plist")) continue;
+    spawnSync("launchctl", ["bootout", `gui/${String(process.getuid?.())}/${name.slice(0, -".plist".length)}`]);
+  }
+}
+
+/**
+ * For a spec (Phase C1): SIGKILL the session daemon's process group, as a crash would, then start a new daemon on the
+ * same data, socket and environment; resolves once it accepts connections. Durable launchd hosts are outside the
+ * daemon's group and keep running. Needs PI_WEB_E2E_DURABLE_LAUNCHD=1.
+ */
+export async function restartSessiond(): Promise<void> {
+  const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
+  const saved = process.env["PI_WEB_E2E_SESSIOND_ENV"];
+  if (project === undefined || saved === undefined) throw new Error("Isolated PI WEB was not started with PI_WEB_E2E_DURABLE_LAUNCHD=1");
+  const root = dirname(project);
+  const env = JSON.parse(saved) as NodeJS.ProcessEnv;
+  const pidFile = join(root, "sessiond.pid");
+  const pid = Number(await readFile(pidFile, "utf8"));
+  process.kill(-pid, "SIGKILL");
+  await waitFor(() => { try { process.kill(pid, 0); return false; } catch { return true; } }, "the killed session daemon to exit");
+  // Detached with its log as stdio, so it outlives this worker; teardown stops it through sessiond.pid.
+  const log = openSync(join(root, "sessiond.log"), "a");
+  const child = spawn(bin("tsx"), ["src/server/sessiond.ts"], { cwd: REPO_ROOT, env, detached: true, stdio: ["ignore", log, log] });
+  closeSync(log);
+  child.unref();
+  await writeFile(pidFile, String(child.pid));
+  const socket = env["PI_WEB_SESSIOND_SOCKET"] ?? "";
+  await waitFor(() => new Promise<boolean>((done) => {
+    const probe = connect({ path: socket });
+    probe.once("connect", () => { probe.destroy(); done(true); }).once("error", () => { done(false); });
+  }), "the restarted session daemon");
 }
 
 async function waitFor(check: () => boolean | Promise<boolean>, what: string, timeoutMs = 30_000): Promise<void> {

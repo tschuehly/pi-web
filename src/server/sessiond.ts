@@ -19,7 +19,8 @@ import { ModelCatalogRefresher } from "./sessions/modelCatalogRefresher.js";
 import { PiSessionService } from "./sessions/piSessionService.js";
 import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGateway.js";
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
-import { DurableChatService, forkDurableHost } from "./sessions/durableChatService.js";
+import { DurableChatService, type DurableHostOptions, forkDurableHost } from "./sessions/durableChatService.js";
+import { launchdDurableHost } from "./sessions/durableHostLaunchd.js";
 import { durableThinkingLevel, loadDurableChatResources } from "./sessions/durableChatResources.js";
 import { SettingsManager } from "../piSdk.js";
 import { createRuntimeRoutedSessionService, routeMcpAuth } from "./sessions/runtimeRoutedSessionService.js";
@@ -382,18 +383,28 @@ async function createSessionDaemonRuntime() {
       }),
     }));
     sessionsForFailedConstruction = sessions;
-    const durableChats = durableHostEntry === undefined || durableHostEntry === "" || durableLocator === undefined ? undefined : new DurableChatService({
+    const durableHostOptions: DurableHostOptions | undefined = durableHostEntry === undefined || durableHostEntry === "" ? undefined : {
+      entry: durableHostEntry,
+      model: daemonEnvironment["PI_WEB_DURABLE_MODEL"] ?? "anthropic/claude-sonnet-5-5",
+      // The host reads only the Claude subscription login (auth.json, under Pi's own lock) from this directory.
+      agentDir: daemonEnvironment["PI_WEB_DURABLE_AGENT_DIR"] ?? activeAgentProfile.dir,
+      // Trials and tests: offer the scripted model next to the Claude models.
+      scripted: daemonEnvironment["PI_WEB_DURABLE_SCRIPTED"] === "1",
+      // A new Chat's thinking level comes from the active profile's settings, as for legacy Chats.
+      thinkingLevel: (cwd, model) => durableThinkingLevel(cwd, activeAgentProfile.dir, model),
+    };
+    // Phase C1: with a launchd label prefix (the Durable instance: com.pi-workbench.durable-host; trials and tests:
+    // com.pi-workbench.durable-trial.host), each family's host is its own launchd job that outlives this daemon.
+    // Without one, the daemon forks its hosts over IPC, as unit tests and the e2e fleet's host wrappers expect.
+    const durableLabelPrefix = daemonEnvironment["PI_WEB_DURABLE_HOST_LAUNCHD"];
+    const durableChats = durableHostOptions === undefined || durableLocator === undefined ? undefined : new DurableChatService({
       locator: durableLocator,
       events: eventHub,
-      launch: forkDurableHost({
-        entry: durableHostEntry,
-        model: daemonEnvironment["PI_WEB_DURABLE_MODEL"] ?? "anthropic/claude-sonnet-5-5",
-        // The host reads only the Claude subscription login (auth.json, under Pi's own lock) from this directory.
-        agentDir: daemonEnvironment["PI_WEB_DURABLE_AGENT_DIR"] ?? activeAgentProfile.dir,
-        // Trials and tests: offer the scripted model next to the Claude models.
-        scripted: daemonEnvironment["PI_WEB_DURABLE_SCRIPTED"] === "1",
-        // A new Chat's thinking level comes from the active profile's settings, as for legacy Chats.
-        thinkingLevel: (cwd, model) => durableThinkingLevel(cwd, activeAgentProfile.dir, model),
+      launch: durableLabelPrefix === undefined || durableLabelPrefix === "" ? forkDurableHost(durableHostOptions) : launchdDurableHost({
+        ...durableHostOptions,
+        labelPrefix: durableLabelPrefix,
+        hostsDir: daemonEnvironment["PI_WEB_DURABLE_HOST_DIR"] ?? join(piWebDataDir(daemonEnvironment), "hosts"),
+        locator: durableLocator,
       }),
       storesDir: join(piWebDataDir(daemonEnvironment), "durable"),
       // The same Pi loader as legacy Chats, against the daemon's active agent profile.
@@ -407,6 +418,8 @@ async function createSessionDaemonRuntime() {
       cacheMissNotices: { enabled: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getShowCacheMissNotices(), models: auth.runtime },
     });
     durableChatsForFailedConstruction = durableChats;
+    // Hosts that outlived the previous daemon (launchd) get their connection back now, not at the Chat's next read.
+    void durableChats?.reattach();
     const routeSessions = durableChats === undefined ? sessions : createRuntimeRoutedSessionService(sessions, durableChats);
     // Test-only opt-in for a separate daemon whose state and socket are inside
     // a controlled fixture root. No route can create an ask in a live daemon.

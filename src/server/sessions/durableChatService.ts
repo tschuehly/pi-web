@@ -40,10 +40,24 @@ export interface DurableHostProcess {
   on(event: "error", listener: (error: Error) => void): unknown;
   on(event: "exit", listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
   kill(signal?: NodeJS.Signals): boolean;
+  /** A host the daemon does not own (a launchd job): drop the connection and leave the host running. */
+  detach?(): void;
 }
 
-/** Starts the host process that owns one Chat family's store. */
-export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string) => DurableHostProcess;
+/**
+ * Starts (or, for a launchd host, reattaches to) the host process that owns one Chat family's store. `attachOnly`: never
+ * start one; the returned process exits when there is no live host to attach to.
+ */
+export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean }) => DurableHostProcess;
+
+/** What starts a family's host: the Workbench host entry, the model and Pi agent dir it runs with. */
+export interface DurableHostOptions { entry: string; model: string; agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
+
+/** The host's arguments for one family; a new Chat starts at the thinking level Pi would pick (a reopened one keeps its own). */
+export function durableHostLaunchArgs(options: DurableHostOptions, record: Pick<DurableChatRecord, "id" | "cwd">, storeDir: string): string[] {
+  const thinking = options.thinkingLevel ?? ((cwd: string, model: string) => durableThinkingLevel(cwd, options.agentDir, model));
+  return durableHostArgs(record, storeDir, { ...options, thinking: thinking(record.cwd, options.model) });
+}
 
 /** Host arguments: the family store, workspace, model, Chat ID and a new Chat's thinking level; every host runs the installed Pi packages it binds. */
 export function durableHostArgs(record: Pick<DurableChatRecord, "id" | "cwd">, storeDir: string, options: { model: string; scripted?: boolean; thinking?: string }): string[] {
@@ -58,15 +72,13 @@ export function durableHostArgs(record: Pick<DurableChatRecord, "id" | "cwd">, s
  * environment and the daemon's Pi agent directory, so it reads the same stored logins (Claude, ChatGPT, Copilot). Host
  * output goes to `host.log` in the store directory.
  */
-export function forkDurableHost(options: { entry: string; model: string; agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }): DurableHostLauncher {
+export function forkDurableHost(options: DurableHostOptions): DurableHostLauncher {
   return (record, storeDir) => {
     mkdirSync(storeDir, { recursive: true, mode: 0o700 });
     const log = openSync(join(storeDir, "host.log"), "a", 0o600);
     try {
       // No inherited loader flags (tsx): the host is plain Node with type stripping and its own pinned dependencies.
-      // A new Chat starts at the thinking level Pi would pick; a reopened one keeps its own (the host ignores this).
-      const thinking = options.thinkingLevel ?? ((cwd: string, model: string) => durableThinkingLevel(cwd, options.agentDir, model));
-      return fork(options.entry, durableHostArgs(record, storeDir, { ...options, thinking: thinking(record.cwd, options.model) }), {
+      return fork(options.entry, durableHostLaunchArgs(options, record, storeDir), {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
         env: { ...process.env, PI_CODING_AGENT_DIR: options.agentDir },
@@ -171,6 +183,13 @@ class DurableHostConnection {
 
   get alive(): boolean {
     return this.#exited === undefined;
+  }
+
+  /** Leave a host the daemon does not own running (see `DurableHostProcess.detach`); false for a forked host. */
+  detach(): boolean {
+    if (this.process.detach === undefined) return false;
+    this.process.detach();
+    return true;
   }
 
   async request(method: string, params?: object): Promise<{ result: unknown; seq: number }> {
@@ -808,17 +827,29 @@ export class DurableChatService {
     await (await connection?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000);
   }
 
+  /**
+   * The daemon is going away: a forked host closes its store (admitted work reopens paused); a launchd host is only
+   * detached and keeps running for the next daemon.
+   */
   async dispose(): Promise<void> {
     const connections = [...this.#connections.values()];
     this.#connections.clear();
-    await Promise.all(connections.map(async (connection) => (await connection.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000)));
+    await Promise.all(connections.map(async (pending) => {
+      const connection = await pending.catch(() => undefined);
+      if (connection?.detach() === false) await connection.close(this.deps.closeGraceMs ?? 5000);
+    }));
+  }
+
+  /** After a daemon restart: reconnect to every family host the locator names that still runs; never starts one. */
+  async reattach(): Promise<void> {
+    await Promise.all(this.deps.locator.all().filter((record) => record.host !== undefined).map((record) => this.#connection(record, true).catch(() => undefined)));
   }
 
   #for(ref: SessionRouteRef): Promise<DurableHostConnection> {
     return this.#connection(this.#record(ref));
   }
 
-  #connection(record: DurableChatRecord): Promise<DurableHostConnection> {
+  #connection(record: DurableChatRecord, attachOnly = false): Promise<DurableHostConnection> {
     const existing = this.#connections.get(record.id);
     if (existing !== undefined) return existing;
     const storeDir = join(this.deps.storesDir, record.storeId);
@@ -830,7 +861,7 @@ export class DurableChatService {
       this.#publishNotifications(notifications.mutations);
     }
     const connection = new DurableHostConnection(
-      this.deps.launch(record, storeDir),
+      attachOnly ? this.deps.launch(record, storeDir, { attachOnly }) : this.deps.launch(record, storeDir),
       (event) => { this.#onEvent(record.id, event, connection); },
       () => this.deps.events.currentSeq(record.id),
       (error) => {
