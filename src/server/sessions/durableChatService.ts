@@ -228,14 +228,15 @@ class DurableHostConnection {
    * Graceful close: the host closes its store and exits. A host that does not exit within `graceMs` gets SIGTERM (it
    * bounds its own close and exits non-zero); one still alive `graceMs` later, as when its close joins work that
    * ignores cancellation, gets SIGKILL and reopens with that work interrupted. Resolves only once the process is gone,
-   * so a host opened next for the same store never meets its lock.
+   * so a host opened next for the same store never meets its lock. `end`: the owner ends the Chat, and the host cancels
+   * the family's background jobs first; any other close (restart, idle, upgrade) leaves them running.
    */
-  async close(graceMs: number): Promise<void> {
+  async close(graceMs: number, end = false): Promise<void> {
     if (!this.alive) return;
     const terminate = setTimeout(() => { this.process.kill("SIGTERM"); }, graceMs);
     const kill = setTimeout(() => { this.process.kill("SIGKILL"); }, 2 * graceMs);
     try {
-      await this.request("close");
+      await this.request("close", end ? { end } : undefined);
     } catch {
       // Already gone, or terminated by the timers.
     }
@@ -856,25 +857,29 @@ export class DurableChatService {
   }
 
   /**
-   * End the Chat's host (Phase C3): it closes its store in order, children included, and a launchd host's job is unloaded.
+   * End the Chat's host (Phase C3): it cancels the family's background jobs and closes its store in order, children
+   * included, and a launchd host's job is unloaded.
    * Reaches the host an earlier daemon started too. The store keeps every admitted input and reopens paused on next use.
    */
   async stop(ref: SessionRouteRef): Promise<void> {
-    await this.#end(ref.id);
+    await this.#end(ref.id, true);
   }
 
   /** Stop-all: every family host, connected or only recorded by an earlier daemon, ends as `stop` ends one. */
   async stopAll(): Promise<void> {
     const recorded = this.deps.locator.all().filter((record) => record.host !== undefined).map((record) => record.id);
-    await Promise.all([...new Set([...this.#connections.keys(), ...recorded])].map((id) => this.#end(id)));
+    await Promise.all([...new Set([...this.#connections.keys(), ...recorded])].map((id) => this.#end(id, true)));
   }
 
-  /** Close a family's host in order: the connected one, else the launchd host the locator names; never starts one. */
-  async #end(sessionId: string): Promise<void> {
+  /**
+   * Close a family's host in order: the connected one, else the launchd host the locator names; never starts one.
+   * `explicit` (Chat stop, stop-all) also cancels its background jobs; an idle close or an upgrade keeps them.
+   */
+  async #end(sessionId: string, explicit = false): Promise<void> {
     const record = this.deps.locator.durable(sessionId);
     const pending = this.#connections.get(sessionId) ?? (record?.host === undefined ? undefined : this.#connection(record, true));
     this.#connections.delete(sessionId);
-    await (await pending?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000);
+    await (await pending?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, explicit);
   }
 
   /**
