@@ -1678,6 +1678,43 @@ describe("Workbench request waterfalls", () => {
     expect(realtimeSockets()).toBe(1);
   });
 
+  it("catches a retained Chat up on window resume with one snapshot instead of replaying its queued frames", async () => {
+    const chat = session("long", "Long");
+    const sessionSockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (!url.endsWith("/api/machines/local/events")) sessionSockets.push(this); } });
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "sessions").mockResolvedValue([chat]);
+    stubSelectedChat();
+    window.history.replaceState({}, "", chatUrl(chat.id));
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(chat.id); expect(Reflect.get(app, "loading")).toBe(false); expect(sessionSockets).toHaveLength(1); });
+    const focused: unknown = Reflect.get(app, "focused");
+    if (!(focused instanceof WorkbenchSessionFocus) || focused.current === undefined) throw new Error("Chat runtime unavailable");
+    const transitions = vi.spyOn(focused.current, "patch");
+    const snapshot = vi.mocked(api.transcriptSnapshot);
+    const reads = snapshot.mock.calls.length;
+    let answer: (value: Awaited<ReturnType<typeof api.transcriptSnapshot>>) => void = () => undefined;
+    snapshot.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    const lines = Array.from({ length: 50 }, (_, index) => ({ role: "assistant", content: `step ${String(index + 1)}` }));
+    const frame = (index: number) => { sessionSockets[0]?.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "message.append", message: lines[index], seq: index + 1 }) })); };
+
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => { expect(snapshot).toHaveBeenCalledTimes(reads + 1); });
+    // Frames the suspended window queued arrive around and after the catch-up snapshot that already covers them.
+    for (let index = 0; index < 25; index += 1) frame(index);
+    answer({ page: { messages: lines, start: 0, total: lines.length }, status: idleStatus(chat.id), seq: lines.length, partial: null });
+    await vi.waitFor(() => { expect(getState(app).messages).toHaveLength(50); });
+    for (let index = 25; index < 50; index += 1) frame(index);
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+
+    expect(snapshot).toHaveBeenCalledTimes(reads + 1);
+    expect(transitions.mock.calls.filter(([patch]) => patch.messages !== undefined).map(([patch]) => patch.messages?.length)).toEqual([50]);
+    expect(getState(app).messages).toHaveLength(50);
+  });
+
   it("WS-006: reloads the open Workstream header only for events about its Workstream or Chat", async () => {
     const current = session("current", "Chat", "Named chat");
     let nextSequence = 5;

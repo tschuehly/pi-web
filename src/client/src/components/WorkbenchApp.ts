@@ -7,6 +7,7 @@ import { HttpRequestError } from "../api/http";
 import type { SessionOpenAsks } from "../../../shared/apiTypes";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
+import { BrowserResumeController } from "../appShell/browserResumeController";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { desktopNotifications, DesktopNotificationController, NATIVE_NOTIFICATION_HOLDS_EVENT, NATIVE_NOTIFICATION_OPEN_EVENT, NOTIFICATION_ANCHOR } from "../controllers/desktopNotificationController";
 import type { PromptEditorTextReplacement, SessionController, SessionSelectionOptions } from "../controllers/sessionController";
@@ -130,6 +131,12 @@ export class WorkbenchApp extends LitElement {
   /** All window-wide consumers resolve through this pointer; each tile keeps its own state and controller. */
   private readonly focused = new WorkbenchSessionFocus((patch) => { this.setApp(patch, false); });
   private readonly chats = new Set<WorkbenchChatSession>();
+  /** A suspended window's socket frames would replay one by one on return; one snapshot per retained Chat supersedes them. */
+  private readonly browserResume = new BrowserResumeController({
+    onResumeSignal: () => undefined,
+    refreshAfterResume: async () => { await Promise.all([...this.chats].map((chat) => chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true }))); },
+    onRefreshError: (error) => { console.warn("Chat refresh after resume failed", error); },
+  });
   private readonly retiringChats = new Set<string>();
   private launcher: WorkbenchChatSession | undefined;
   private navigationSequence = 0;
@@ -383,6 +390,8 @@ export class WorkbenchApp extends LitElement {
     const catalog = refreshCatalog && selectedMachineId(this.app) === selectedMachineId(chat.state) && this.app.selectedWorkspace?.id === chat.state.selectedWorkspace?.id ? this.app.sessions : chat.state.sessions;
     this.windowError = "";
     this.focused.focus(chat);
+    // A retained Chat may have missed or queued frames while off screen: catch it up from one snapshot.
+    if (refreshCatalog) void chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true });
     this.setApp({ sessions: catalog }, false);
     if (this.realtimeMachineId !== selectedMachineId(this.app)) this.connectRealtime();
     this.desktopNotifications.activate(this.app);
@@ -571,6 +580,7 @@ export class WorkbenchApp extends LitElement {
     window.addEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
     window.addEventListener("focus", this.onPageAttention);
     document.addEventListener("visibilitychange", this.onPageAttention);
+    this.browserResume.connect();
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
     window.addEventListener("resize", this.onWindowResize);
     window.addEventListener("wheel", this.swipe.onWheel, { passive: false, capture: true });
@@ -626,6 +636,7 @@ export class WorkbenchApp extends LitElement {
     window.removeEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
     window.removeEventListener("focus", this.onPageAttention);
     document.removeEventListener("visibilitychange", this.onPageAttention);
+    this.browserResume.disconnect();
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
     window.removeEventListener("resize", this.onWindowResize);
     window.removeEventListener("wheel", this.swipe.onWheel, { capture: true });
