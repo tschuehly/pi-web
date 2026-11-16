@@ -1,5 +1,5 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 /** The Claude subscription and ChatGPT Codex models the mock serves by default. */
 export const MOCK_CLAUDE_MODEL = { provider: "anthropic", id: "claude-sonnet-5-5" } as const;
@@ -18,11 +18,10 @@ export async function writeMockAgentConfig(agentDir: string, mockUrl: string, op
   await writeMockProviders(agentDir, mockUrl);
   const extensions: string[] = [];
   if (options.claudeCodeUse !== undefined) {
-    // A copy, so the isolated agent dir is self-contained and the source package is only read.
-    const target = join(agentDir, "e2e-extensions", "pi-claude-code-use.ts");
-    await mkdir(join(agentDir, "e2e-extensions"), { recursive: true });
-    await copyFile(options.claudeCodeUse, target);
-    extensions.push(target);
+    // Keep sibling imports (prompt.js, tool-aliases/*) with the entry; the installed source stays read-only.
+    const target = join(agentDir, "e2e-extensions", "pi-claude-code-use");
+    await cp(dirname(options.claudeCodeUse), target, { recursive: true });
+    extensions.push(join(target, basename(options.claudeCodeUse)));
   }
   await writeFile(join(agentDir, "settings.json"), json({
     defaultProvider: MOCK_CLAUDE_MODEL.provider,

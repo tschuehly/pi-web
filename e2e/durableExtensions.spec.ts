@@ -37,7 +37,9 @@ test("a Durable Chat runs the Workbench extensions: identity, shell activity, /t
 
   // P085: a write into /tmp is blocked before it runs.
   await send(page, 'call:write {"path":"/tmp/pi-web-e2e-blocked.txt","content":"x"}');
-  await expect(chat(page).getByText(/is under an OS temp folder/).first()).toBeVisible();
+  const blockedWrite = chat(page).locator("tool-execution-view .tool-card.error").filter({ hasText: "pi-web-e2e-blocked.txt" });
+  await blockedWrite.locator("summary").click();
+  await expect(blockedWrite.getByText(/is under an OS temp folder/)).toBeVisible();
   await expect(chat(page).getByText("done after write").first()).toBeVisible();
 
   // P086: the host command is offered; a bad argument answers with its usage (no quota request is made).
