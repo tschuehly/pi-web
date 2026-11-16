@@ -110,8 +110,11 @@ async function promote(step: "promote-1" | "promote-2" | "rollback"): Promise<vo
   await restartServices(services);
 }
 
+let gate = "";
 test.afterEach(async ({ page }, info) => {
   if (info.status === info.expectedStatus) return;
+  // Background bash outlives its host by design: open the gate so a failed run leaves no job behind.
+  if (gate !== "") await writeFile(`${gate}.go`, "go").catch(() => undefined);
   const sessionId = new URL(page.url()).searchParams.get("session");
   await writeFile(info.outputPath("mock-journal.json"), JSON.stringify(await mock.journal().catch(() => []), null, 2));
   if (sessionId !== null) await writeFile(info.outputPath("transcript.json"), JSON.stringify(await messages(page, sessionId).catch(() => []), null, 2));
@@ -123,7 +126,7 @@ test("AC4: two promotions and a failed-health rollback keep host, requests, queu
   await writeFile(process.env["PI_WEB_E2E_QUOTA_CACHE"] ?? "", JSON.stringify({ version: 1, checkedAt: Date.now(), status: 0, stdout: JSON.stringify({ providers: [] }), stderr: "" }));
   const id = Date.now().toString(36);
   const [lead, worker, leaf, sub] = ["lead", "worker", "leaf", "sub"].map((name) => `c4-${name}-${id}`) as [string, string, string, string];
-  const gate = join(project(), `c4-bash-${id}`);
+  gate = join(project(), `c4-bash-${id}`);
 
   await page.goto(`${base()}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: process.env["PI_WEB_E2E_WORKSPACE_ID"] ?? "" }).toString()}`);
   await page.getByRole("button", { name: "New Durable Chat", exact: true }).click();
