@@ -90,8 +90,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   let mock: MockModelServer | undefined;
   const teardown = async (): Promise<void> => {
     await Promise.all(children.map(stop));
-    // A session daemon a spec restarted (restartSessiond), then every launchd host job this fixture's daemons created.
-    await stopGroup(Number(await readFile(join(root, "sessiond.pid"), "utf8").catch(() => "0")));
+    // Services a spec restarted (restartSessiond, restartServices), then every launchd host job this fixture's daemons created.
+    for (const name of ["sessiond", "web"]) await stopGroup(Number(await readFile(join(root, `${name}.pid`), "utf8").catch(() => "0")));
     await bootoutFixtureHosts(join(root, "data", "hosts"));
     await mock?.close();
     await rm(root, { recursive: true, force: true });
@@ -203,7 +203,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       await writeFile(join(root, "sessiond.pid"), String(sessiond.pid));
       process.env["PI_WEB_E2E_SESSIOND_ENV"] = JSON.stringify(env);
     }
-    children.push(start("web", ["src/server/index.ts"], env, root));
+    const web = start("web", ["src/server/index.ts"], env, root);
+    children.push(web);
+    if (env["PI_WEB_DURABLE_HOST_LAUNCHD"] !== undefined) await writeFile(join(root, "web.pid"), String(web.pid));
     const baseUrl = `http://127.0.0.1:${String(port)}/`;
     await waitFor(async () => (await fetch(`${baseUrl}api/projects`).catch(() => undefined))?.ok === true, "web/API server");
 
@@ -431,12 +433,12 @@ async function stop(child: ChildProcess): Promise<void> {
   clearTimeout(timer);
 }
 
-/** SIGTERM a process group, SIGKILL after 3 s; nothing when it is already gone. */
-async function stopGroup(pid: number): Promise<void> {
+/** SIGTERM a process group, SIGKILL after `graceMs`; nothing when it is already gone. */
+async function stopGroup(pid: number, graceMs = 3000): Promise<void> {
   const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
   if (pid <= 1 || !alive()) return;
   try { process.kill(-pid, "SIGTERM"); } catch { /* already gone */ }
-  await waitFor(() => !alive(), "the session daemon to stop", 3000).catch(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } });
+  await waitFor(() => !alive(), "the service to stop", graceMs).catch(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } });
 }
 
 /** Unload exactly the launchd jobs whose plists this fixture's daemons wrote (labels under the trial prefix). */
@@ -463,12 +465,43 @@ export async function restartSessiond(overrides: NodeJS.ProcessEnv = {}): Promis
   const pid = Number(await readFile(pidFile, "utf8"));
   process.kill(-pid, "SIGKILL");
   await waitFor(() => { try { process.kill(pid, 0); return false; } catch { return true; } }, "the killed session daemon to exit");
-  // Detached with its log as stdio, so it outlives this worker; teardown stops it through sessiond.pid.
-  const log = openSync(join(root, "sessiond.log"), "a");
-  const child = spawn(bin("tsx"), ["src/server/sessiond.ts"], { cwd: REPO_ROOT, env, detached: true, stdio: ["ignore", log, log] });
+  await respawn(root, "sessiond", env);
+  await sessiondListening(env);
+}
+
+/**
+ * For a spec (Phase C4): a promotion as promote-installed does it. SIGTERM both services' process groups (launchctl
+ * bootout), then start them again with `overrides`, such as a new revision's PI_WEB_DURABLE_HOST; resolves once the web
+ * API answers. `web: false` starts only the daemon: the web service never becomes healthy (a failed health check).
+ * Returns the environment the services now run with. Needs PI_WEB_E2E_DURABLE_LAUNCHD=1.
+ */
+export async function restartServices(overrides: NodeJS.ProcessEnv = {}, { web = true } = {}): Promise<NodeJS.ProcessEnv> {
+  const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
+  const saved = process.env["PI_WEB_E2E_SESSIOND_ENV"];
+  if (project === undefined || saved === undefined) throw new Error("Isolated PI WEB was not started with PI_WEB_E2E_DURABLE_LAUNCHD=1");
+  const root = dirname(project);
+  const env = { ...JSON.parse(saved) as NodeJS.ProcessEnv, ...overrides };
+  // launchd's ExitTimeOut is 20 s before SIGKILL; a daemon that detaches its hosts takes far less.
+  for (const name of ["web", "sessiond"]) await stopGroup(Number(await readFile(join(root, `${name}.pid`), "utf8").catch(() => "0")), 20_000);
+  await respawn(root, "sessiond", env);
+  await sessiondListening(env);
+  if (web) {
+    await respawn(root, "web", env);
+    await waitFor(async () => (await fetch(`http://127.0.0.1:${env["PI_WEB_PORT"] ?? ""}/api/projects`).catch(() => undefined))?.ok === true, "the restarted web/API server");
+  }
+  return env;
+}
+
+/** Detached with its log as stdio, so it outlives this worker; teardown stops it through <name>.pid. */
+async function respawn(root: string, name: "sessiond" | "web", env: NodeJS.ProcessEnv): Promise<void> {
+  const log = openSync(join(root, `${name}.log`), "a");
+  const child = spawn(bin("tsx"), [`src/server/${name === "web" ? "index" : "sessiond"}.ts`], { cwd: REPO_ROOT, env, detached: true, stdio: ["ignore", log, log] });
   closeSync(log);
   child.unref();
-  await writeFile(pidFile, String(child.pid));
+  await writeFile(join(root, `${name}.pid`), String(child.pid));
+}
+
+async function sessiondListening(env: NodeJS.ProcessEnv): Promise<void> {
   const socket = env["PI_WEB_SESSIOND_SOCKET"] ?? "";
   await waitFor(() => new Promise<boolean>((done) => {
     const probe = connect({ path: socket });
