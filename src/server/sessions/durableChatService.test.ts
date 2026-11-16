@@ -815,3 +815,63 @@ describe("Durable Chats: composer and attention parity (fleet P028 P030 P031 P03
     expect(() => durable.notificationInbox(other)).toThrow("Session not found");
   });
 });
+
+describe("Durable Chats: spawn_session (P064)", () => {
+  const set: DurableChatResourceSet = { resources: { sources: [] }, compaction: { enabled: true, reserveTokens: 1, keepRecentTokens: 1 }, skillList: [] };
+  const flush = async () => { for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve)); };
+
+  it("P064 a host's spawn request starts an independent Durable Chat in an allowed workspace, with the model and thinking level asked for, prompts it once and answers the host", async () => {
+    const resolveSpawnTarget = vi.fn((_spawning: string, requested: string | undefined) => Promise.resolve({ allowed: true as const, cwd: requested === "../b" ? "/work/b" : "/work/a" }));
+    const { durable, hub, launched, locator } = await service(undefined, set, { spawnTargets: { resolveSpawnTarget } });
+    const global = globalEvents(hub);
+    const lead = await durable.start("/work/a");
+    const host = only(launched);
+    expect(host.requests.find((request) => request.method === "configure")?.params).toMatchObject({ spawnSessions: true });
+    host.push({ type: "durable.spawn", requestId: "req-1", spawningCwd: "/work/a", prompt: "Fix the build", cwd: "../b", model: "anthropic/claude-x", thinkingLevel: "high" });
+    await vi.waitFor(() => { expect(host.requests.some((request) => request.method === "spawned")).toBe(true); });
+    expect(resolveSpawnTarget).toHaveBeenCalledWith("/work/a", "../b");
+    const child = only(locator.all().filter((record) => record.id !== lead.id));
+    expect(child.cwd).toBe("/work/b");
+    const spawnedHost = only(launched.slice(1));
+    expect(spawnedHost.requests.map((request) => request.method).filter((method) => ["setModel", "setThinkingLevel", "prompt"].includes(method))).toEqual(["setModel", "setThinkingLevel", "prompt"]);
+    expect(spawnedHost.requests.find((request) => request.method === "setModel")?.params).toEqual({ provider: "anthropic", modelId: "claude-x" });
+    expect(spawnedHost.requests.find((request) => request.method === "prompt")?.params).toMatchObject({ text: "Fix the build" });
+    expect(host.requests.find((request) => request.method === "spawned")?.params).toEqual({ requestId: "req-1", result: { sessionId: child.id, cwd: "/work/b", model: "anthropic/claude-x" } });
+    expect(global.find((event) => event["type"] === "session.created")).toMatchObject({ session: { id: child.id, cwd: "/work/b" } });
+    // The same request again (a retried event) starts nothing new.
+    host.push({ type: "durable.spawn", requestId: "req-1", spawningCwd: "/work/a", prompt: "Fix the build", cwd: "../b", model: "anthropic/claude-x", thinkingLevel: "high" });
+    await vi.waitFor(() => { expect(host.requests.filter((request) => request.method === "spawned")).toHaveLength(2); });
+    expect(locator.all()).toHaveLength(2);
+    expect(spawnedHost.requests.filter((request) => request.method === "prompt")).toHaveLength(1);
+  });
+
+  it("P064 refuses a workspace outside the project and an unknown model with the host-visible reason, leaving no Chat behind", async () => {
+    const resolveSpawnTarget = vi.fn((_spawning: string, requested: string | undefined) => Promise.resolve(requested === "/elsewhere"
+      ? { allowed: false as const, reason: "out-of-project" as const, allowedCwds: ["/work/a"] }
+      : { allowed: true as const, cwd: "/work/a" }));
+    const { durable, launched, locator } = await service((n) => {
+      const host = new FakeHost();
+      if (n === 1) host.answer = (request) => { if (request.method === "setModel") throw new Error("Unknown model nope/none"); return request.method === "status" ? status : null; };
+      return host;
+    }, set, { spawnTargets: { resolveSpawnTarget } });
+    await durable.start("/work/a");
+    const host = only(launched);
+    host.push({ type: "durable.spawn", requestId: "r-out", spawningCwd: "/work/a", prompt: "x", cwd: "/elsewhere" });
+    await vi.waitFor(() => { expect(host.requests.some((request) => request.method === "spawned")).toBe(true); });
+    expect(host.requests.find((request) => request.method === "spawned")?.params).toEqual({ requestId: "r-out", error: "cwd must be a workspace of this project. Allowed: /work/a" });
+    host.push({ type: "durable.spawn", requestId: "r-model", spawningCwd: "/work/a", prompt: "x", model: "nope/none" });
+    await vi.waitFor(() => { expect(host.requests.filter((request) => request.method === "spawned")).toHaveLength(2); });
+    expect(host.requests.filter((request) => request.method === "spawned")[1]?.params).toEqual({ requestId: "r-model", error: "Unknown model nope/none" });
+    await flush();
+    expect(locator.all()).toHaveLength(1);
+  });
+
+  it("P064 without spawn support the host is told so at configure and a stray request is refused", async () => {
+    const { durable, launched } = await service(undefined, set);
+    await durable.start("/work/a");
+    const host = only(launched);
+    expect(host.requests.find((request) => request.method === "configure")?.params).toMatchObject({ spawnSessions: false });
+    host.push({ type: "durable.spawn", requestId: "r", spawningCwd: "/work/a", prompt: "x" });
+    await vi.waitFor(() => { expect(host.requests.find((request) => request.method === "spawned")?.params).toEqual({ requestId: "r", error: "Spawning sessions is disabled" }); });
+  });
+});

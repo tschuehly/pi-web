@@ -191,7 +191,7 @@ function compareActiveToolExecutions(a: ActiveToolExecution, b: ActiveToolExecut
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-function spawnTargetError(decision: Extract<SpawnTargetDecision, { allowed: false }>): Error {
+export function spawnTargetError(decision: Extract<SpawnTargetDecision, { allowed: false }>): Error {
   if (decision.reason === "not-registered") return new Error("Spawning session is not in a registered project");
   return new Error(`cwd must be a workspace of this project. Allowed: ${decision.allowedCwds.join(", ")}`);
 }
