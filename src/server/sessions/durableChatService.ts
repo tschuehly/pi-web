@@ -17,7 +17,9 @@ import { BUILTIN_COMMANDS } from "./builtinCommands.js";
 import { cacheMissNoticesByEntryId, cacheScanEntries, liveCacheMissNotice } from "./cacheMissNotices.js";
 import type { ModelPriceSource } from "./cacheStats.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
-import { appendInlineImageReferenceMapping, CHECKPOINT_SESSION_TITLE_MAX_LENGTH, CHECKPOINT_TITLE_COMMAND, parseModelSpec } from "./piSessionService.js";
+import { appendInlineImageReferenceMapping, CHECKPOINT_SESSION_TITLE_MAX_LENGTH, CHECKPOINT_TITLE_COMMAND, parseModelSpec, spawnTargetError } from "./piSessionService.js";
+import type { SpawnTargetResolver } from "./spawnTargetResolver.js";
+import type { SpawnSessionResult } from "./spawnSessionTool.js";
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import { cleanSessionName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, sessionTitleInput, shortSessionNamePrompt } from "./sessionNameGenerator.js";
 import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
@@ -95,7 +97,7 @@ interface HostEvents {
   readonly mediaIndex?: SessionMediaIndex;
   /** Notification inbox summaries (the daemon's shared notification catalog). */
   publishNotificationSummary?(event: SessionNotificationSummaryEvent): void;
-  publishGlobal(event: { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string } | SessionAttentionEvent): void;
+  publishGlobal(event: { type: "session.created"; session: ClientSession } | { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string } | SessionAttentionEvent): void;
   currentSeq(sessionId: string): number;
 }
 
@@ -263,7 +265,9 @@ export class DurableChatService {
     notifications?: SessionNotificationStore;
     /** The daemon's Workstream launch records (shared with legacy Chats): a launch token names the Chat it created. */
     launches?: Pick<WorkstreamLaunchStore, "reserve" | "confirm" | "lookup">;
-    logger?: { warn(object: object, message: string): void };
+    logger?: { warn(object: object, message: string): void; info?(object: object, message: string): void };
+    /** The project-scoped targets of spawn_session (legacy `spawnSessions`); without it, hosts are told spawning is off. */
+    spawnTargets?: SpawnTargetResolver;
     /** Stop's wait before SIGTERM, and again before SIGKILL; default 5 s. */
     closeGraceMs?: number;
   }) {}
@@ -279,6 +283,8 @@ export class DurableChatService {
   readonly #templates = new Map<string, NonNullable<DurableChatResourceSet["promptList"]>>();
   /** Last reported capabilities per Chat, so its listing gates controls before its host is asked again. */
   readonly #capabilities = new Map<string, ChatCapability[]>();
+  /** spawn_session requests by ID, so a repeated request answers with the Chat it started instead of another. */
+  readonly #spawns = new Map<string, Promise<SpawnSessionResult>>();
 
   owns(sessionId: string): boolean {
     return this.deps.locator.durable(sessionId) !== undefined;
@@ -882,13 +888,55 @@ export class DurableChatService {
       if (loaded !== undefined) {
         this.#skills.set(record.id, loaded.skillList);
         this.#templates.set(record.id, loaded.promptList ?? []);
-        await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction });
+        await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction, spawnSessions: this.deps.spawnTargets !== undefined });
       }
       return connection;
     });
     this.#connections.set(record.id, opened);
     opened.catch(() => { if (this.#connections.get(record.id) === opened) this.#connections.delete(record.id); });
     return opened;
+  }
+
+  /** A host's spawn_session request (legacy `spawnSession`), answered with the started Chat or the refusal. */
+  async #answerSpawn(connection: DurableHostConnection, event: HostSpawnEvent): Promise<void> {
+    let pending = this.#spawns.get(event.requestId);
+    if (pending === undefined) {
+      pending = this.#spawn(event);
+      this.#spawns.set(event.requestId, pending);
+      // ponytail: successful request IDs stay for the daemon's life (one small entry per spawned Chat).
+      pending.catch(() => { this.#spawns.delete(event.requestId); });
+    }
+    const answer = await pending.then((result) => ({ result }), (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+    await connection.request("spawned", { requestId: event.requestId, ...answer }).catch((error: unknown) => {
+      this.deps.logger?.warn({ requestId: event.requestId, err: error }, "Durable Chat host did not take the spawn_session answer");
+    });
+  }
+
+  async #spawn(event: HostSpawnEvent): Promise<SpawnSessionResult> {
+    const targets = this.deps.spawnTargets;
+    if (targets === undefined) throw new Error("Spawning sessions is disabled");
+    const decision = await targets.resolveSpawnTarget(event.spawningCwd, event.cwd);
+    if (!decision.allowed) throw spawnTargetError(decision);
+    const model = event.model === undefined ? undefined : parseModelSpec(event.model);
+    if (event.model !== undefined && model === undefined) throw new Error(`Invalid model "${event.model}": expected provider/model-id`);
+    const created = await this.start(decision.cwd);
+    const ref = { id: created.id, cwd: created.cwd };
+    try {
+      if (model !== undefined) await this.setModel(ref, model.provider, model.modelId);
+      // The host clamps the level to the Chat's model, as Pi does.
+      if (event.thinkingLevel !== undefined) await (await this.#for(ref)).request("setThinkingLevel", { level: event.thinkingLevel });
+      await this.prompt(ref, event.prompt, undefined, undefined, { operationId: `spawn-${event.requestId}` });
+    } catch (error) {
+      // A refused model leaves no half-made Chat behind. shortcut: its empty store folder stays; prune if they pile up.
+      await this.stop(ref);
+      this.deps.locator.remove(ref.id);
+      throw error;
+    }
+    const record = this.deps.locator.durable(ref.id);
+    if (record !== undefined) this.deps.events.publishGlobal({ type: "session.created", session: this.info(record) });
+    this.deps.logger?.info?.({ spawningCwd: event.spawningCwd, sessionId: ref.id, cwd: ref.cwd, promptLength: event.prompt.length }, "spawn_session started a new Durable Chat");
+    const used = event.model ?? (await this.status(ref).then((status) => status.model, () => undefined).then((m) => (m?.provider === undefined || m.id === undefined ? undefined : `${m.provider}/${m.id}`)));
+    return { sessionId: ref.id, cwd: ref.cwd, ...(used === undefined ? {} : { model: used }) };
   }
 
   #activity(sessionId: string, scope: { id: string; cwd: string }, phase: "active" | "idle" | "error", label: string): void {
@@ -908,6 +956,12 @@ export class DurableChatService {
         type: "session.attention", sessionId, cwd: record.cwd, sessionName: name.slice(0, 120),
         kind: event.kind, id: event.id, detail: event.detail.trim().split(/\r?\n/u)[0]?.slice(0, 120) ?? "",
       });
+      return;
+    }
+    if (event.type === "durable.spawn") {
+      if (typeof event.requestId !== "string" || typeof event.prompt !== "string") return;
+      // Scoped by the workspace this daemon knows for the Chat, not the one the host names.
+      void this.#answerSpawn(connection, { ...event, spawningCwd: record.cwd });
       return;
     }
     if (event.type === "durable.notification") {
@@ -977,7 +1031,9 @@ function browserStatus(status: HostTranscript["status"], connection: DurableHost
 interface HostAttentionEvent { type: "durable.attention"; kind: "ask" | "attention"; id: string; detail: string }
 /** A Pi package's warning or error outside a command: kept in the Chat's notification inbox, as in a legacy Chat. */
 interface HostNotificationEvent { type: "durable.notification"; severity: "warning" | "error"; message: string }
-type HostEvent = HostAttentionEvent | HostNotificationEvent;
+/** spawn_session: start an independent Chat in a workspace of the spawning Chat's project, answered with `spawned`. */
+interface HostSpawnEvent { type: "durable.spawn"; requestId: string; spawningCwd: string; prompt: string; cwd?: string; model?: string; thinkingLevel?: string }
+type HostEvent = HostAttentionEvent | HostNotificationEvent | HostSpawnEvent;
 
 /** The host returns the outcome PI WEB's store computed (or, on a retry, recorded); a shape check suffices. */
 function isAskOutcome(value: unknown): value is AskUserOutcome {

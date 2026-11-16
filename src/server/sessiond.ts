@@ -414,6 +414,7 @@ async function createSessionDaemonRuntime() {
       notifications: notificationStore,
       launches: workstreamLaunchStore,
       logger: app.log,
+      ...(spawnTargets === undefined ? {} : { spawnTargets }),
       // As a legacy Chat's session reads it: Pi's setting for the workspace under the active profile.
       cacheMissNotices: { enabled: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getShowCacheMissNotices(), models: auth.runtime },
     });
