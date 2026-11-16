@@ -1000,14 +1000,23 @@ export class DurableChatService {
     if (!decision.allowed) throw spawnTargetError(decision);
     const model = event.model === undefined ? undefined : parseModelSpec(event.model);
     if (event.model !== undefined && model === undefined) throw new Error(`Invalid model "${event.model}": expected provider/model-id`);
-    const created = await this.start(decision.cwd);
-    const ref = { id: created.id, cwd: created.cwd };
+    // The request ID is a launch token on disk: a daemon that died mid-spawn, or before its answer reached the host,
+    // finds the Chat it started when the host asks again, instead of starting another (launch records persist).
+    const launches = this.deps.launches;
+    const token = launches === undefined ? undefined : `launch-spawn:${event.requestId}`;
+    const earlier = token === undefined ? undefined : await launches?.lookup(token);
+    const id = earlier?.status === "created" ? earlier.sessionId : (await this.start(decision.cwd, token)).id;
+    const child = this.deps.locator.durable(id);
+    if (child === undefined) throw new Error("The spawned Chat no longer exists");
+    const ref = { id, cwd: child.cwd };
     try {
       if (model !== undefined) await this.setModel(ref, model.provider, model.modelId);
       // The host clamps the level to the Chat's model, as Pi does.
       if (event.thinkingLevel !== undefined) await (await this.#for(ref)).request("setThinkingLevel", { level: event.thinkingLevel });
       await this.prompt(ref, event.prompt, undefined, undefined, { operationId: `spawn-${event.requestId}` });
     } catch (error) {
+      // A Chat a dead daemon started may already run: only a new one is undone.
+      if (earlier !== undefined) throw error;
       // A refused model leaves no half-made Chat behind. shortcut: its empty store folder stays; prune if they pile up.
       await this.stop(ref);
       this.deps.locator.remove(ref.id);
