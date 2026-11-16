@@ -566,7 +566,7 @@ export class DurableChatService {
     return [
       ...(connection.capabilities.includes("compact") ? [{ name: "compact", description: "Manually compact session context", argumentHint: "[instructions]", source: "builtin" as const }] : []),
       ...BUILTIN_COMMANDS.filter((command) => command.name === "name" || command.name === "session" || (command.name === "tree" && connection.capabilities.includes("tree"))),
-      { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now", source: "extension" as const },
+      { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now; /mode unalign clears the alignment", source: "extension" as const },
       ...hostCommands.map((command) => ({ ...command, source: "extension" as const })),
       ...(this.#templates.get(ref.id) ?? []).map((template) => ({
         name: template.name, source: "prompt" as const,
@@ -759,7 +759,8 @@ export class DurableChatService {
     const closed = close(store, ref.id);
     // A set the host no longer has open may be this operation's own earlier close: the host answers that retry.
     const outcome = closed.status === "closed" ? closed.outcome : undefined;
-    const content = outcome === undefined ? "" : [renderAskUserAnswersText(outcome), renderOpenAsksReminder(asks.filter((ask) => ask.askId !== askId))].filter((part) => part !== "").join("\n\n");
+    // The store's sets after this close, as a legacy Chat reminds: a partial send leaves its set open with the rest.
+    const content = outcome === undefined ? "" : [renderAskUserAnswersText(outcome), renderOpenAsksReminder(store.pendingAsks(ref.id))].filter((part) => part !== "").join("\n\n");
     const { result } = await connection.request("closeAsk", {
       askId, operationId: operationId ?? randomUUID(), content,
       outcome: outcome ?? { askId, reason: "stale" },

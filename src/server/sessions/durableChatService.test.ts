@@ -405,6 +405,28 @@ describe("Durable Chats", () => {
     await expect(durable.submitAsk(ref, "ask-1", { answers: [], revision: "r1" }, "op-b")).resolves.toMatchObject({ result: "stale" });
   });
 
+  it("a partial submit sends one answer and tells the model the rest of the set stays open; the host keeps it open at the new revision", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, context: "Pick", questions: [
+      { id: "db", question: "Which database?", detail: "Storage.", options: [{ value: "pg", label: "Postgres" }] },
+      { id: "cache", question: "Which cache?", detail: "Caching.", options: [{ value: "redis", label: "Redis" }] },
+    ] };
+    only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"] } : { ...status, pendingAsks: [ask] });
+    const sent = await durable.submitAsk(ref, "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: "r1", partial: true }, "op-p");
+    expect(sent).toMatchObject({ result: "closed", outcome: { askId: "ask-1", partial: true, answeredCount: 1 } });
+    const request = only(only(launched).requests.filter((r) => r.method === "closeAsk"));
+    // Only the answered question, and the new revision the set continues under at the host.
+    expect(request.params).toMatchObject({ askId: "ask-1", operationId: "op-p", revision: "r1", outcome: { partial: true, questions: [{ question: { id: "db" } }] } });
+    expect(request.params?.["outcome"]).toHaveProperty("revision");
+    expect(request.params?.["outcome"]).not.toHaveProperty("revision", "r1");
+    const content = String(request.params?.["content"]);
+    expect(content).toContain("The user answered one question of question set ask-1; its other questions stay open.");
+    // As a legacy Chat: the reminder that follows names the set still open, with only its unanswered question.
+    expect(content).toMatch(/Question sets still open for the user[^\n]*\n- ask-1 \(ask\.cache; [^)]*\): Which cache\?/);
+  });
+
   it("turns a host attention signal into one global session.attention event", async () => {
     const { durable, hub, launched } = await service();
     const chat = await durable.start("/work/a");
