@@ -49,9 +49,9 @@ describe("createAskUserToolDefinition", () => {
     expect(tool.name).toBe("ask_user");
     expect(tool.exposure).toBe("model-only");
     expect(advertised).toContain("returns immediately");
-    expect(advertised).toContain("without reading the Chat");
-    expect(advertised).toContain("at most five short lines");
-    expect(advertised).toContain("consequence in `detail`");
+    expect(advertised).toContain("none into your Chat message");
+    expect(advertised).toContain("Do not number the question text");
+    expect(advertised).not.toContain("five short lines");
     expect(advertised).toContain("update: <askId>");
     expect(advertised).toContain("withdraw: <askId>");
     expect(advertised).not.toMatch(/ends? (this|the) run|alone and last/);
@@ -71,6 +71,9 @@ describe("createAskUserToolDefinition", () => {
     });
     expect(tool.parameters).not.toHaveProperty("required");
     expect(tool.parameters).toHaveProperty("properties.questions.items.properties.options.items.properties.recommended.type", "boolean");
+    // Every question carries its own Markdown detail, so the set answers without the Chat.
+    expect(tool.parameters).toHaveProperty("properties.questions.items.required", expect.arrayContaining(["id", "question", "detail"]));
+    expect(tool.parameters).toHaveProperty("properties.questions.items.properties.detail.maxLength", 4000);
   });
 
   it("posts the set for the calling session and returns without terminating the run", async () => {

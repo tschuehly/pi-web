@@ -26,7 +26,6 @@ import "./AuthDialog";
 import "./ChatView";
 import "./ConversationLayout";
 import "./CommandPicker";
-import "./DelegateRoster";
 import "./GoalStatusChip";
 import "./PromptEditor";
 import "./SessionTreeNavigator";
@@ -51,6 +50,8 @@ export class WorkbenchChatPane extends LitElement {
   @property({ type: Boolean }) focused = false;
   @property() defaultStreamingBehavior: "steer" | "followUp" = "steer";
   @state() private rosterCollapsed = true;
+  /** The question drawer is open and takes the transcript's area. */
+  @state() private questionsOpen = false;
   /** A draft-replacing request in flight (go back to a message, or a queue action). One at a time; Recall and go-back lock the composer. */
   @state() private revertPending = false;
   @state() private queuedActionTarget: QueuedMessageActionTarget | undefined;
@@ -156,7 +157,7 @@ export class WorkbenchChatPane extends LitElement {
           // This Chat's failed actions (Stop, send, queue edits) report here, not in the window's banner.
           runtime.patch({ browserErrors: clearBrowserError(runtime.state.browserErrors, error.scope, error.message) });
         })}</div>`)}
-        <conversation-layout class="chat-column" .status=${state.status} .activity=${state.activity} .sending=${state.sendingPrompts[session.id] === true} .visualEffects=${WORKBENCH_CHAT_BEHAVIORS.visualEffects}>
+        <conversation-layout class="chat-column" ?question-drawer-open=${this.questionsOpen} .status=${state.status} .activity=${state.activity} .sending=${state.sendingPrompts[session.id] === true} .visualEffects=${WORKBENCH_CHAT_BEHAVIORS.visualEffects}>
           <chat-view
             .dense=${this.dense}
             workbench
@@ -204,9 +205,8 @@ export class WorkbenchChatPane extends LitElement {
             .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
           ></chat-view>
           <div class="composer-area" slot="composer">
-          <delegate-roster ?compact=${this.dense} .status=${state.status} .collapsed=${this.rosterCollapsed} .onToggleCollapsed=${this.toggleRoster}></delegate-roster>
+          <workbench-question-chips @question-drawer-toggle=${(event: CustomEvent<boolean>) => { this.questionsOpen = event.detail; }} .status=${state.status} .rosterCompact=${this.dense} .rosterCollapsed=${this.rosterCollapsed} .onToggleRoster=${this.toggleRoster} .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
           <goal-status-chip .status=${state.status}></goal-status-chip>
-          <workbench-question-chips .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
           <prompt-editor
             .draftStorage=${this.draftStorage}
             .defaultStreamingBehavior=${this.defaultStreamingBehavior}

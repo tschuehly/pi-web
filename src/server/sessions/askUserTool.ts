@@ -2,6 +2,7 @@ import { Type, type Static } from "pi-web-typebox";
 import { defineTool } from "../../piSdk.js";
 import {
   ASK_USER_CONTEXT_MAX_LENGTH,
+  ASK_USER_DETAIL_MAX_LENGTH,
   ASK_USER_ID_MAX_LENGTH,
   ASK_USER_OPTION_LIMIT,
   ASK_USER_QUESTION_LIMIT,
@@ -55,12 +56,12 @@ const AskUserQuestionParams = Type.Object({
   }),
   question: Type.String({
     maxLength: ASK_USER_TEXT_MAX_LENGTH,
-    description: "The question itself, as one plain-text line.",
+    description: "The question itself, as one plain-text line. Do not number it; the panel numbers the questions.",
   }),
-  detail: Type.Optional(Type.String({
-    maxLength: ASK_USER_TEXT_MAX_LENGTH,
-    description: "Optional supporting context shown under the question.",
-  })),
+  detail: Type.String({
+    maxLength: ASK_USER_DETAIL_MAX_LENGTH,
+    description: "Markdown shown under the question: what the item is, an example, and where it stands, so the question is answerable from the set alone.",
+  }),
   options: Type.Optional(Type.Array(AskUserOptionParams, {
     maxItems: ASK_USER_OPTION_LIMIT,
     description: "Options to choose from. Omit when free text is the whole answer; the browser always adds a Custom choice.",
@@ -73,7 +74,7 @@ const AskUserQuestionParams = Type.Object({
 const AskUserParams = Type.Object({
   context: Type.Optional(Type.String({
     maxLength: ASK_USER_CONTEXT_MAX_LENGTH,
-    description: "Required for a new set. Markdown shown above the questions, at most five short lines: only the finding the decision rests on, so the user can answer without reading the Chat. Put each option's consequence in its `detail` and mark the recommended option there; do not restate the options, the history, or check results here.",
+    description: "Required for a new set. Markdown shown above the questions: what all the questions share, so the user can answer without reading the Chat. Put each question's specifics in its `detail` and each option's consequence in the option's `detail`.",
   })),
   questions: Type.Optional(Type.Array(AskUserQuestionParams, {
     minItems: 1,
@@ -92,11 +93,11 @@ const AskUserParams = Type.Object({
 
 /** Shapes one schema question into the domain question; the store owns validation. */
 function toQuestion(param: Static<typeof AskUserQuestionParams>): AskUserQuestion {
-  const { detail, options, multiple } = param;
+  const { options, multiple } = param;
   return {
     id: param.id,
     question: param.question,
-    ...(detail === undefined ? {} : { detail }),
+    detail: param.detail,
     options: (options ?? []).map(toOption),
     ...(multiple === undefined ? {} : { multiple }),
   };
@@ -137,11 +138,11 @@ export function createAskUserToolDefinition(deps: AskUserToolDeps) {
     name: "ask_user",
     exposure: "model-only",
     label: "Ask user",
-    description: "Post a self-contained question set, shown as question chips above the user's composer, and return immediately. Answers arrive later as a follow-up message; the user may leave any question unanswered. Pass update: <askId> to revise or confirm an open set, or withdraw: <askId> to drop one.",
+    description: "Post a self-contained question set, shown as question chips above the user's composer, and return immediately. The set carries all explanation; your Chat message only says that questions were posted. Answers arrive later as a follow-up message; the user may leave any question unanswered. Pass update: <askId> to revise or confirm an open set, or withdraw: <askId> to drop one.",
     promptSnippet: "ask_user: post, revise, or withdraw a self-contained question set for the user; returns immediately, answers arrive later as a follow-up",
     promptGuidelines: [
       "Use ask_user to batch the decisions you need from the user into one question set rather than asking in prose. It returns immediately: keep working on anything that does not depend on the answers, and end your turn if nothing does. The answers come back as a follow-up message that wakes you; do not poll or repost.",
-      "Keep each ask_user set self-contained and short: context is at most five short lines with only the finding the decision rests on; each option states its own consequence in `detail`, and the recommended option is marked. The user must be able to answer without reading the Chat.",
+      "Put all explanation into the ask_user set and none into your Chat message, which only says that questions were posted: the panel covers the Chat. `context` holds what all questions share; each question's `detail` says what the item is, gives an example, and where it stands; each option's `detail` states its consequence, and the recommended option is marked. Do not number the question text; the panel numbers it.",
       "Keep open ask_user sets current: when the facts change, call ask_user with update: <askId> (no other fields just confirms it) or withdraw: <askId>.",
     ],
     parameters: AskUserParams,

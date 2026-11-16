@@ -26,6 +26,27 @@ function required<T>(value: T | null | undefined): T {
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
 
 describe("WorkingModeControls", () => {
+  it("offers Reset alignment only while aligned, running /mode unalign", async () => {
+    const run = vi.fn();
+    const element = new WorkingModeControls();
+    const selected = { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" } as const;
+    const snapshot = (aligned: boolean) => status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "applied", selected, applied: selected, aligned }) });
+    element.status = snapshot(false);
+    element.onRunCommand = run;
+    document.body.append(element);
+    await element.updateComplete;
+    required(root(element).querySelector<HTMLButtonElement>(".trigger")).click();
+    await element.updateComplete;
+    expect(root(element).querySelector(".pane .unalign")).toBeNull();
+
+    element.status = snapshot(true);
+    await element.updateComplete;
+    required(root(element).querySelector<HTMLButtonElement>(".pane .unalign")).click();
+    await element.updateComplete;
+    expect(run).toHaveBeenCalledExactlyOnceWith("/mode unalign");
+    expect(root(element).querySelector(".pane")).toBeNull();
+  });
+
   it("marks an unsent selection and sends it from the pane with /mode send", async () => {
     const run = vi.fn();
     const element = new WorkingModeControls();

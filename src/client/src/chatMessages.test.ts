@@ -135,6 +135,11 @@ describe("chat message normalization", () => {
     expect(groupChatMessages(normalized)).toEqual([{ kind: "message", index: 0, message: recordLine }]);
   });
 
+  it("keeps the partial flag and continuing revision of a single answer sent early", () => {
+    const single: AskUserOutcome = { ...askUserOutcome, questions: askUserOutcome.questions.slice(0, 1), answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.cache", partial: true, revision: "r2" };
+    expect(normalizeMessage({ role: "custom", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content: "text", details: single })).toEqual([{ role: "system", parts: [{ type: "askUserRecord", outcome: single }] }]);
+  });
+
   it("projects a Working Mode block into dials with guidance only for changed values", () => {
     const message = { role: "custom", customType: "working-mode", content: `<working-mode seq="1">\nThomas selected Working Mode Alignment: Align · Attention: Switching · Checking: Default · Orchestration: Workers.
 This is behavior guidance, not permission; explicit owner direction and repository instructions still apply.

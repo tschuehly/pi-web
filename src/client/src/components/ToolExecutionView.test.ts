@@ -45,8 +45,11 @@ it("keeps command details and complete output while updating live status and err
   view.execution = { ...view.execution, status: "error", resultText: "Command failed" };
   await view.updateComplete;
   expect(view.renderRoot.querySelector(".status-label")?.textContent).toBe("failed");
-  expect(view.renderRoot.querySelector(".error-text")?.textContent).toBe("Command failed");
-  expect(details.open).toBe(true);
+  expect(view.renderRoot.querySelector(".error-text")).toBeNull();
+  expect(details.open).toBe(false);
+  details.open = true; details.dispatchEvent(new Event("toggle"));
+  await view.updateComplete;
+  expect(view.renderRoot.querySelector(".detail-result pre")?.textContent).toBe("Command failed");
 });
 
 it("retains diff disclosure state, expands long diffs, and copies the full diff", async () => {

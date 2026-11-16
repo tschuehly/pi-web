@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   ASK_USER_CONTEXT_MAX_LENGTH,
+  ASK_USER_DETAIL_MAX_LENGTH,
   ASK_USER_ID_MAX_LENGTH,
   ASK_USER_OPTION_LIMIT,
   ASK_USER_OTHER_TEXT_MAX_LENGTH,
@@ -41,7 +42,8 @@ export interface PendingAskUpdateInput extends PendingAskOpenInput {
  * daemon-side session), which is an ordinary race a browser can lose — not an error.
  */
 export type PendingAskCloseResult =
-  | { status: "closed"; outcome: AskUserOutcome }
+  /** `ask` is present after a partial send: the ask stays open with its remaining questions. */
+  | { status: "closed"; outcome: AskUserOutcome; ask?: PendingAskUser }
   | { status: "stale" };
 
 /** Rejected input: a question set is malformed, or an answer does not fit its question. */
@@ -105,7 +107,7 @@ export class PendingAskStore {
     const sessionId = requireSessionId(input.sessionId);
     const context = validateContext(input.context);
     if (context === undefined) {
-      throw new PendingAskValidationError("context is required: explain the finding, the options, their consequences, and your recommendation so the user can answer without reading the Chat");
+      throw new PendingAskValidationError("context is required: say what the questions share so the user can answer without reading the Chat");
     }
     if (input.questions === undefined) throw new PendingAskValidationError("questions are required for a new question set");
     const questions = validateQuestions(input.questions);
@@ -139,12 +141,31 @@ export class PendingAskStore {
    * naming no revision or another one is stale: the user answered questions that
    * changed, or a browser too old to say which questions it answered.
    * `record` runs before the ask closes; when it throws, the ask stays open.
+   *
+   * A partial submit ({@link AskUserSubmission.partial}) records only the answered
+   * questions (`outcome.partial`) and keeps the ask open with the rest under a new
+   * revision, which the outcome carries so a transcript rebuild lands on the same
+   * state. Answering every remaining question closes the ask as a full submit.
    */
   submit(sessionId: string, askId: string, submission: AskUserSubmission, record?: RecordOutcome): PendingAskCloseResult {
     const ask = this.asksOf(requireSessionId(sessionId)).get(askId);
     if (ask === undefined || submission.revision !== ask.revision) return { status: "stale" };
     const answers = validateSubmission(ask, submission);
-    return closed(this.close(sessionId, askId, "submitted", answers, record));
+    const note = normalizeNote(submission.note);
+    if (submission.partial === true) {
+      if (note !== undefined) throw new PendingAskValidationError("A partial submit takes no note; send the note with the whole set");
+      if (answers.size === 0) throw new PendingAskValidationError("A partial submit needs at least one answer");
+      const remaining = ask.questions.filter((question) => !answers.has(question.id));
+      if (remaining.length > 0) {
+        const revision = this.createRevision();
+        const outcome = partialOutcome(ask, answers, remaining, revision, this.timestamp());
+        record?.(outcome);
+        const updated: PendingAskUser = { ...ask, revision, questions: remaining };
+        this.setAsk(sessionId, updated);
+        return { status: "closed", outcome, ask: cloneAsk(updated) };
+      }
+    }
+    return closed(this.close(sessionId, askId, "submitted", answers, record, note));
   }
 
   /**
@@ -199,11 +220,11 @@ export class PendingAskStore {
     this.openBySessionId.set(sessionId, asks);
   }
 
-  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome): AskUserOutcome | undefined {
+  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string): AskUserOutcome | undefined {
     const asks = this.openBySessionId.get(sessionId);
     const ask = asks?.get(askId);
     if (asks === undefined || ask === undefined) return undefined;
-    const outcome = askUserOutcome(ask, answers, reason, this.timestamp());
+    const outcome = askUserOutcome(ask, answers, reason, this.timestamp(), note);
     record?.(outcome);
     asks.delete(askId);
     if (asks.size === 0) this.openBySessionId.delete(sessionId);
@@ -224,10 +245,13 @@ function closed(outcome: AskUserOutcome | undefined): PendingAskCloseResult {
  * unanswered questions as plainly as the answered ones.
  */
 export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
-  const lead = outcome.reason === "submitted"
+  const lead = outcome.partial === true
+    ? `The user answered ${outcome.answeredCount === 1 ? "one question" : `${outcome.answeredCount.toString()} questions`} of question set ${outcome.askId}; its other questions stay open.`
+    : outcome.reason === "submitted"
     ? `The user submitted answers to question set ${outcome.askId}.`
     : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
-  return [lead, "", ...outcome.questions.map((record) => questionLines(outcome.askId, record)).flat(), "", outcome.summary].join("\n");
+  const note = outcome.note === undefined ? [] : ["", `Note from the user: ${JSON.stringify(outcome.note)}`];
+  return [lead, "", ...outcome.questions.map((record) => questionLines(outcome.askId, record)).flat(), ...note, "", outcome.summary].join("\n");
 }
 
 /**
@@ -256,6 +280,7 @@ function askUserOutcome(
   answers: RecordedAnswers,
   reason: AskUserCloseReason,
   closedAt: string,
+  note?: string,
 ): AskUserOutcome {
   const questions = ask.questions.map((question) => questionRecord(question, answers.get(question.id)));
   const unansweredIds = questions.filter((record) => !record.answered).map((record) => record.question.id);
@@ -267,9 +292,28 @@ function askUserOutcome(
     closedAt,
     ...(ask.context === undefined ? {} : { context: ask.context }),
     questions,
+    ...(note === undefined ? {} : { note }),
     answeredCount,
     unansweredIds,
     summary: summaryLine(questions.length, answeredCount, unansweredIds),
+  };
+}
+
+/** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
+function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, remaining: readonly AskUserQuestion[], revision: string, closedAt: string): AskUserOutcome {
+  const questions = ask.questions.filter((question) => answers.has(question.id)).map((question) => questionRecord(question, answers.get(question.id)));
+  return {
+    askId: ask.askId,
+    reason: "submitted",
+    askedAt: ask.askedAt,
+    closedAt,
+    ...(ask.context === undefined ? {} : { context: ask.context }),
+    questions,
+    answeredCount: questions.length,
+    unansweredIds: [],
+    summary: `Answered ${questions.length.toString()}; still open: ${remaining.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}`,
+    partial: true,
+    revision,
   };
 }
 
@@ -321,11 +365,12 @@ function validateQuestion(question: AskUserQuestion, id: string): AskUserQuestio
     seenValues.add(value);
     return validateOption(option, value, id);
   });
+  // Asks stored before `detail` was required restore without one.
   const detail = question.detail;
   return {
     id,
-    question: requireText(question.question, `text of question ${id}`),
-    ...(detail === undefined ? {} : { detail: requireText(detail, `detail of question ${id}`) }),
+    question: stripNumbering(requireText(question.question, `text of question ${id}`)),
+    ...(detail === undefined ? {} : { detail: requireText(detail, `detail of question ${id}`, ASK_USER_DETAIL_MAX_LENGTH) }),
     options,
     ...(question.multiple === true ? { multiple: true } : {}),
   };
@@ -373,6 +418,19 @@ function validateAnswer(question: AskUserQuestion, answer: AskUserAnswer): AskUs
   return { id: question.id, values, ...(otherText === undefined ? {} : { otherText }) };
 }
 
+/** The panel numbers questions, so a model's own "1. " / "1) " / "3–4. " prefix is dropped; text that is only a number stays. */
+function stripNumbering(text: string): string {
+  const stripped = text.replace(/^\s*\d+(?:\s*[-–]\s*\d+)?[.)]\s+/u, "");
+  return stripped.trim() === "" ? text : stripped;
+}
+
+function normalizeNote(note: string | undefined): string | undefined {
+  if (note === undefined) return undefined;
+  if (note.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new PendingAskValidationError("note exceeds its length limit");
+  const trimmed = note.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
 function normalizeOtherText(question: AskUserQuestion, otherText: string | undefined): string | undefined {
   if (otherText === undefined) return undefined;
   if (otherText.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) {
@@ -401,8 +459,8 @@ function requireId(value: string, field: string): string {
   return value;
 }
 
-function requireText(value: string, field: string): string {
+function requireText(value: string, field: string, maxLength = ASK_USER_TEXT_MAX_LENGTH): string {
   if (value.trim() === "") throw new PendingAskValidationError(`${field} must not be empty`);
-  if (value.length > ASK_USER_TEXT_MAX_LENGTH) throw new PendingAskValidationError(`${field} exceeds its length limit`);
+  if (value.length > maxLength) throw new PendingAskValidationError(`${field} exceeds its length limit`);
   return value;
 }

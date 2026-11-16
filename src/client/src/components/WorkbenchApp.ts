@@ -8,6 +8,7 @@ import type { SessionOpenAsks } from "../../../shared/apiTypes";
 import { PI_WEB_CAPABILITIES, supportsPiWebCapability } from "../../../shared/capabilities";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
+import { BrowserResumeController } from "../appShell/browserResumeController";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
 import { desktopNotifications, DesktopNotificationController, NATIVE_NOTIFICATION_HOLDS_EVENT, NATIVE_NOTIFICATION_OPEN_EVENT, NOTIFICATION_ANCHOR } from "../controllers/desktopNotificationController";
 import type { PromptEditorTextReplacement, SessionController, SessionSelectionOptions } from "../controllers/sessionController";
@@ -133,6 +134,12 @@ export class WorkbenchApp extends LitElement {
   /** All window-wide consumers resolve through this pointer; each tile keeps its own state and controller. */
   private readonly focused = new WorkbenchSessionFocus((patch) => { this.setApp(patch, false); });
   private readonly chats = new Set<WorkbenchChatSession>();
+  /** A suspended window's socket frames would replay one by one on return; one snapshot per retained Chat supersedes them. */
+  private readonly browserResume = new BrowserResumeController({
+    onResumeSignal: () => undefined,
+    refreshAfterResume: async () => { await Promise.all([...this.chats].map((chat) => chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true }))); },
+    onRefreshError: (error) => { console.warn("Chat refresh after resume failed", error); },
+  });
   private readonly retiringChats = new Set<string>();
   private launcher: WorkbenchChatSession | undefined;
   private navigationSequence = 0;
@@ -386,6 +393,8 @@ export class WorkbenchApp extends LitElement {
     const catalog = refreshCatalog && selectedMachineId(this.app) === selectedMachineId(chat.state) && this.app.selectedWorkspace?.id === chat.state.selectedWorkspace?.id ? this.app.sessions : chat.state.sessions;
     this.windowError = "";
     this.focused.focus(chat);
+    // A retained Chat may have missed or queued frames while off screen: catch it up from one snapshot.
+    if (refreshCatalog) void chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true });
     this.setApp({ sessions: catalog }, false);
     if (this.realtimeMachineId !== selectedMachineId(this.app)) this.connectRealtime();
     this.desktopNotifications.activate(this.app);
@@ -575,6 +584,7 @@ export class WorkbenchApp extends LitElement {
     window.addEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
     window.addEventListener("focus", this.onPageAttention);
     document.addEventListener("visibilitychange", this.onPageAttention);
+    this.browserResume.connect();
     window.addEventListener("keydown", this.onKeyDown, { capture: true });
     window.addEventListener("resize", this.onWindowResize);
     window.addEventListener("wheel", this.swipe.onWheel, { passive: false, capture: true });
@@ -630,6 +640,7 @@ export class WorkbenchApp extends LitElement {
     window.removeEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
     window.removeEventListener("focus", this.onPageAttention);
     document.removeEventListener("visibilitychange", this.onPageAttention);
+    this.browserResume.disconnect();
     window.removeEventListener("keydown", this.onKeyDown, { capture: true });
     window.removeEventListener("resize", this.onWindowResize);
     window.removeEventListener("wheel", this.swipe.onWheel, { capture: true });
@@ -1727,14 +1738,10 @@ export class WorkbenchApp extends LitElement {
 
   /**
    * A size container re-styles and lays out its whole transcript twice whenever it resizes, so tiles stop being containers
-   * while a divider moves; each keeps the height it had for what measures against it (the question drawer).
+   * while a divider moves.
    */
   private toggleGridResizing(resizing: boolean): void {
     const grid = this.shadowRoot?.querySelector(".grid");
-    for (const tile of grid?.querySelectorAll<HTMLElement>(":scope > .tile") ?? []) {
-      if (resizing) tile.style.setProperty("--pi-tile-height", `${String(tile.clientHeight)}px`);
-      else tile.style.removeProperty("--pi-tile-height");
-    }
     grid?.toggleAttribute("data-resizing", resizing);
   }
 
@@ -2157,7 +2164,7 @@ export class WorkbenchApp extends LitElement {
     .grid-divider:hover::after, .grid-divider:focus-visible::after, .grid-divider[data-dragging]::after { background: var(--pi-accent); }
     .grid-divider:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; }
     .tile { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--pi-bg); }
-    /* Grid tracks size every tile, so it can contain its size: the question drawer measures its height against it (cqh). */
+    /* Grid tracks size every tile, so it can contain its size: the model picker measures its height against it (cqh). */
     .tile { container-type: size; }
     .grid[data-resizing] > .tile { container-type: normal; }
     /* Half the comfortable profile's spacing inside a tile; focus is only the outline, so it moves nothing. */
@@ -2241,11 +2248,16 @@ export class WorkbenchApp extends LitElement {
     .chat-error { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); }
     .chat-and-files { position: relative; display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
     .chat-column { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
-    /* The composer side of the conversation boundary: Activity, goal, open asks and the composer stack above each other. */
+    /* The composer side of the conversation boundary: the Activity and open-asks row, goal and the composer stack above each other. */
     .composer-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    /* An open question drawer takes the transcript's whole area; chat-view stays mounted, only hidden, so its scroll position survives. */
+    .chat-column[question-drawer-open] > chat-view { flex: 0 0 0; visibility: hidden; }
+    .chat-column[question-drawer-open]::part(transcript) { flex: 0 0 0; }
+    .chat-column[question-drawer-open]::part(composer-boundary) { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+    .chat-column[question-drawer-open] > .composer-area { flex: 1 1 0; }
     /* Zero basis: the transcript takes what is left, so the question chips and drawer never shrink for it. */
     chat-view { flex: 1 1 0; min-height: 0; overflow: hidden; }
-    delegate-roster, prompt-editor { flex: 0 0 auto; }
+    prompt-editor { flex: 0 0 auto; }
     .files-toggle { flex: 0 0 auto; }
     .files-toggle[aria-expanded="true"], .files-toggle[aria-expanded="true"] svg { color: var(--pi-accent); }
     .files-divider { position: relative; z-index: 2; flex: 0 0 8px; background: var(--pi-border-muted); cursor: col-resize; touch-action: none; }

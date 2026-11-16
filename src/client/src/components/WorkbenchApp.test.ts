@@ -680,21 +680,36 @@ describe("Workbench Chat chooser", () => {
     await app.updateComplete;
     const chips = app.shadowRoot?.querySelector<WorkbenchQuestionChips>(".chat-column > .composer-area > workbench-question-chips");
 
-    expect(chips?.nextElementSibling?.localName).toBe("prompt-editor");
+    expect(chips?.nextElementSibling?.localName).toBe("goal-status-chip");
+    expect(chips?.nextElementSibling?.nextElementSibling?.localName).toBe("prompt-editor");
     expect(chips?.asks.map((ask) => ask.askId)).toEqual(["abc-1", "def-2"]);
     expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.pendingAsks).toEqual([]);
     expect(app.shadowRoot?.querySelector(".questions-toggle, workbench-questions-pane, #workbench-questions")).toBeNull();
     expect(WorkbenchApp.styles.cssText).not.toContain("questions");
-    // Each tile contains its size, so the question drawer can take 60% of the tile's height (cqh).
     expect(WorkbenchApp.styles.cssText).toMatch(/\.tile \{ container-type: size; \}/);
+
+    // Open, the drawer takes the transcript's area: chat-view stays mounted but collapses, the composer side grows.
+    const chat = app.shadowRoot?.querySelector("chat-view");
+    // A host attribute, not `:has([open])`: WebKit never restyles `:has(...)::part(...)`, so the room stayed taken after answering.
+    const collapsed = ".chat-column[question-drawer-open] > chat-view";
+    const settle = async () => { await chips?.updateComplete; await app.updateComplete; await app.shadowRoot?.querySelector<WorkbenchChatPane>("workbench-chat-pane")?.updateComplete; };
+    expect(await chips?.openQuestion("abc-1", 0)).toBe(true);
+    await settle();
+    expect(app.shadowRoot?.querySelector(collapsed)).toBe(chat);
+    expect(WorkbenchApp.styles.cssText).toContain(`${collapsed} { flex: 0 0 0; visibility: hidden; }`);
+    expect(WorkbenchApp.styles.cssText).toContain(".chat-column[question-drawer-open]::part(transcript) { flex: 0 0 0; }");
+    expect(WorkbenchApp.styles.cssText).toContain(".chat-column[question-drawer-open]::part(composer-boundary) { flex: 1 1 0;");
+    expect(WorkbenchApp.styles.cssText).toContain(".chat-column[question-drawer-open] > .composer-area { flex: 1 1 0; }");
+    expect(WorkbenchApp.styles.cssText).not.toContain(":has(> .composer-area");
 
     const submit = vi.spyOn(api, "submitAsk").mockResolvedValue({ result: "closed", sessionStatus: idleStatus(current.id) });
     await chips?.onSubmit?.("def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" });
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: current.id }), "def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" }, "local");
 
     setState(app, { ...getState(app), pendingAsks: [] });
-    await app.updateComplete;
+    await settle();
     expect(chips?.asks).toEqual([]);
+    expect(app.shadowRoot?.querySelector(".chat-column[question-drawer-open]")).toBeNull();
   });
 
   it("keeps Files in the side slot with its divider, width and close chevron", async () => {
@@ -1663,6 +1678,43 @@ describe("Workbench request waterfalls", () => {
     expect(realtimeSockets()).toBe(1);
   });
 
+  it("catches a retained Chat up on window resume with one snapshot instead of replaying its queued frames", async () => {
+    const chat = session("long", "Long");
+    const sessionSockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (!url.endsWith("/api/machines/local/events")) sessionSockets.push(this); } });
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    vi.spyOn(api, "sessions").mockResolvedValue([chat]);
+    stubSelectedChat();
+    window.history.replaceState({}, "", chatUrl(chat.id));
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(chat.id); expect(Reflect.get(app, "loading")).toBe(false); expect(sessionSockets).toHaveLength(1); });
+    const focused: unknown = Reflect.get(app, "focused");
+    if (!(focused instanceof WorkbenchSessionFocus) || focused.current === undefined) throw new Error("Chat runtime unavailable");
+    const transitions = vi.spyOn(focused.current, "patch");
+    const snapshot = vi.mocked(api.transcriptSnapshot);
+    const reads = snapshot.mock.calls.length;
+    let answer: (value: Awaited<ReturnType<typeof api.transcriptSnapshot>>) => void = () => undefined;
+    snapshot.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    const lines = Array.from({ length: 50 }, (_, index) => ({ role: "assistant", content: `step ${String(index + 1)}` }));
+    const frame = (index: number) => { sessionSockets[0]?.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "message.append", message: lines[index], seq: index + 1 }) })); };
+
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => { expect(snapshot).toHaveBeenCalledTimes(reads + 1); });
+    // Frames the suspended window queued arrive around and after the catch-up snapshot that already covers them.
+    for (let index = 0; index < 25; index += 1) frame(index);
+    answer({ page: { messages: lines, start: 0, total: lines.length }, status: idleStatus(chat.id), seq: lines.length, partial: null });
+    await vi.waitFor(() => { expect(getState(app).messages).toHaveLength(50); });
+    for (let index = 25; index < 50; index += 1) frame(index);
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+
+    expect(snapshot).toHaveBeenCalledTimes(reads + 1);
+    expect(transitions.mock.calls.filter(([patch]) => patch.messages !== undefined).map(([patch]) => patch.messages?.length)).toEqual([50]);
+    expect(getState(app).messages).toHaveLength(50);
+  });
+
   it("WS-006: reloads the open Workstream header only for events about its Workstream or Chat", async () => {
     const current = session("current", "Chat", "Named chat");
     let nextSequence = 5;
@@ -2566,7 +2618,7 @@ describe("window tabs", () => {
     expect(app.shadowRoot?.querySelector('header button[aria-label="Full size"]')).toBeNull();
   });
 
-  it("puts a grid tile's own open questions as chips above its compact composer", async () => {
+  it("puts a grid tile's own open questions in a bar above its compact composer", async () => {
     vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
     const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "db", question: "Which database?", options: [] }] };
@@ -2577,11 +2629,11 @@ describe("window tabs", () => {
     const tile = (sessionId: string) => app.shadowRoot?.querySelector('.tile[data-session="' + sessionId + '"] workbench-chat-pane');
 
     await vi.waitFor(() => { expect(tile("a2")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([ask]); });
-    expect(tile("a2")?.querySelector("workbench-question-chips")?.nextElementSibling?.localName).toBe("prompt-editor");
+    expect(tile("a2")?.querySelector("workbench-question-chips + goal-status-chip")?.nextElementSibling?.localName).toBe("prompt-editor");
     expect(tile("a1")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([]);
   });
 
-  it("opens an unfocused tile's question in one click without replacing its question chips", async () => {
+  it("opens an unfocused tile's questions in one click without replacing its question bar", async () => {
     vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
     const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "db", question: "Which database?", options: [] }, { id: "why", question: "Why now?", options: [] }] };
@@ -2589,9 +2641,9 @@ describe("window tabs", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
     await settled(app);
     const sideChips = () => app.shadowRoot?.querySelector('.tile[data-session="a2"] workbench-chat-pane')?.querySelector<WorkbenchQuestionChips>("workbench-question-chips");
-    await vi.waitFor(async () => { await sideChips()?.updateComplete; expect(sideChips()?.shadowRoot?.querySelectorAll(".chip")).toHaveLength(2); });
+    await vi.waitFor(async () => { await sideChips()?.updateComplete; expect(sideChips()?.shadowRoot?.querySelector(".bar")?.textContent).toContain("2 open questions"); });
 
-    const chip = sideChips()?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".chip")[1];
+    const chip = sideChips()?.shadowRoot?.querySelector<HTMLButtonElement>(".bar");
     const chipsBefore = sideChips();
     chip?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
     chip?.click();
@@ -3667,7 +3719,10 @@ describe("Workbench Chat controls", () => {
     expect(shell.querySelector("header")).toBeNull();
     expect(shell.querySelector("header > goal-status-chip")).toBeNull();
     expect(shell.querySelector("header > strong")).toBeNull();
-    const roster = shell.querySelector("delegate-roster");
+    // The roster shares the question bar's row, inside the composer's question chips.
+    const row = shell.querySelector<WorkbenchQuestionChips>(".composer-area > workbench-question-chips");
+    await row?.updateComplete;
+    const roster = row?.shadowRoot?.querySelector("delegate-roster");
     if (!(roster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered");
     // Starts collapsed: the Activity header alone until opened.
     expect(roster.collapsed).toBe(true);
@@ -3676,15 +3731,15 @@ describe("Workbench Chat controls", () => {
     if (rosterToggle === null || rosterToggle === undefined) throw new Error("Delegate roster toggle was not rendered");
     rosterToggle.click();
     await app.updateComplete;
-    const collapsedRoster = app.shadowRoot?.querySelector("delegate-roster");
+    await row?.updateComplete;
+    const collapsedRoster = row?.shadowRoot?.querySelector("delegate-roster");
     if (!(collapsedRoster instanceof DelegateRoster)) throw new Error("Delegate roster was not rendered after collapse");
-    const goal = shell.querySelector("delegate-roster + goal-status-chip");
+    const goal = shell.querySelector("workbench-question-chips + goal-status-chip");
     if (!(goal instanceof GoalStatusChip)) throw new Error("Goal status chip was not rendered beside the composer");
     expect(goal.status).toBe(getState(app).status);
     await goal.updateComplete;
     expect(goal.shadowRoot?.querySelector("summary")?.textContent).toContain("Build the UI");
-    expect(goal.nextElementSibling?.tagName).toBe("WORKBENCH-QUESTION-CHIPS");
-    expect(goal.nextElementSibling?.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
+    expect(goal.nextElementSibling?.tagName).toBe("PROMPT-EDITOR");
     expect(collapsedRoster.collapsed).toBe(false);
     expect(shell.querySelector("status-bar")).toBeNull();
     expect(shell.querySelector("working-mode-controls")).toBeNull();

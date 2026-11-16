@@ -62,9 +62,28 @@ export function saveAskDraft(sessionId: string, askId: string, answers: AskDraft
   }
 }
 
+/** The unsent note on the whole set; kept apart from the answers, whose keys are question ids. */
+export function loadAskNote(sessionId: string, askId: string, storage = browserStorage()): string {
+  try {
+    return storage?.getItem(`${draftStorageKey(sessionId, askId)}:note`) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveAskNote(sessionId: string, askId: string, note: string, storage = browserStorage()): void {
+  try {
+    if (note.trim() === "") storage?.removeItem(`${draftStorageKey(sessionId, askId)}:note`);
+    else storage?.setItem(`${draftStorageKey(sessionId, askId)}:note`, note);
+  } catch {
+    // Ignore localStorage quota/privacy errors.
+  }
+}
+
 export function clearAskDraft(sessionId: string, askId: string, storage = browserStorage()): void {
   try {
     storage?.removeItem(draftStorageKey(sessionId, askId));
+    storage?.removeItem(`${draftStorageKey(sessionId, askId)}:note`);
   } catch {
     // Ignore localStorage quota/privacy errors.
   }

@@ -206,12 +206,12 @@ describe("SessionController ask submission", () => {
     expect(state.pendingAsks).toEqual([supersedingAsk]);
   });
 
-  it("keeps the draft of an ask whose submit was stale because the ask was revised", async () => {
+  it.each(["stale", "closed"] as const)("keeps the draft of an ask still open after a %s submit (revised, or one answer sent)", async (result) => {
     const revised = { ...ask("ask-1"), revision: "r2" };
     let state = selectedSessionState({ pendingAsks: [ask("ask-1")] });
     const api: typeof defaultApi = {
       ...defaultApi,
-      submitAsk: () => Promise.resolve({ result: "stale", sessionStatus: statusWithAsk(oldSession.id, revised) }),
+      submitAsk: () => Promise.resolve({ result, sessionStatus: statusWithAsk(oldSession.id, revised) }),
     };
     const controller = new SessionController(
       () => state,
