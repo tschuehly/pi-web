@@ -6,7 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { DURABLE_HOST_PROTOCOL, DurableChatService } from "./durableChatService.js";
+import { DURABLE_HOST_PROTOCOL, DurableChatService, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
 import { durableHostSocketPath, launchdDurableHost } from "./durableHostLaunchd.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 
@@ -18,19 +18,20 @@ const status = { persisted: true, isStreaming: false, isCompacting: false, isBas
 
 /**
  * A host speaking the socket protocol: each start owns the store with the next epoch, answers status and close, and
- * logs every request it gets to `<store>/requests.log`.
+ * logs every request it gets to `<store>/requests.log`. Its revision is the folder of its entry; `<store>/status.json`,
+ * when present, overrides fields of its status (a busy family).
  */
 const HOST = `
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const store = arg("--store"), socketPath = arg("--socket");
 const epochFile = join(store, "epoch");
 const ownerEpoch = (existsSync(epochFile) ? Number(readFileSync(epochFile, "utf8")) : 0) + 1;
 writeFileSync(epochFile, String(ownerEpoch));
 const server = createServer((socket) => {
-  socket.write(JSON.stringify({ ready: { protocol: ${String(DURABLE_HOST_PROTOCOL)}, revision: "/revisions/fake", storeId: basename(store), ownerEpoch, pid: process.pid, capabilities: [] } }) + "\\n");
+  socket.write(JSON.stringify({ ready: { protocol: ${String(DURABLE_HOST_PROTOCOL)}, revision: dirname(process.argv[1]), storeId: basename(store), ownerEpoch, pid: process.pid, capabilities: [] } }) + "\\n");
   let buffer = "";
   socket.on("data", (chunk) => {
     buffer += chunk;
@@ -38,7 +39,8 @@ const server = createServer((socket) => {
       const request = JSON.parse(buffer.slice(0, end));
       buffer = buffer.slice(end + 1);
       appendFileSync(join(store, "requests.log"), request.method + "\\n");
-      socket.write(JSON.stringify({ id: request.id, result: request.method === "status" ? ${JSON.stringify(status)} : null }) + "\\n", () => { if (request.method === "close") process.exit(0); });
+      const override = existsSync(join(store, "status.json")) ? JSON.parse(readFileSync(join(store, "status.json"), "utf8")) : {};
+      socket.write(JSON.stringify({ id: request.id, result: request.method === "status" ? { ...${JSON.stringify(status)}, ...override } : null }) + "\\n", () => { if (request.method === "close") process.exit(0); });
     }
   });
   socket.on("error", () => {});
@@ -60,7 +62,8 @@ afterEach(async () => {
 });
 
 /** A daemon's view: data in a fresh folder, sockets in a short owner-only one (macOS caps socket paths at 104 bytes). */
-async function fixture(): Promise<{ root: string; hostsDir: string; daemon: (warnings?: string[]) => { durable: DurableChatService; locator: SessionRuntimeLocator } }> {
+interface DaemonOptions { entry?: string; now?: () => number; events?: SessionEventHub }
+async function fixture(): Promise<{ root: string; hostsDir: string; daemon: (warnings?: string[], options?: DaemonOptions) => { durable: DurableChatService; locator: SessionRuntimeLocator } }> {
   const short = tmpdir().length <= 60 ? tmpdir() : join(homedir(), ".pi-workbench", "tmp");
   await mkdir(short, { recursive: true });
   const root = await mkdtemp(join(short, "c1-"));
@@ -68,16 +71,17 @@ async function fixture(): Promise<{ root: string; hostsDir: string; daemon: (war
   const entry = join(root, "host.mjs");
   await writeFile(entry, HOST);
   const hostsDir = join(root, "h");
-  const daemon = (warnings: string[] = []) => {
+  const daemon = (warnings: string[] = [], options: DaemonOptions = {}) => {
     // A new locator per daemon: it reads only what the previous daemon persisted.
     const locator = new SessionRuntimeLocator(join(root, "data"));
     const durable = new DurableChatService({
       locator,
-      events: new SessionEventHub(),
-      launch: launchdDurableHost({ entry, model: "faux", agentDir: root, thinkingLevel: () => "medium", labelPrefix: PREFIX, hostsDir, locator, startTimeoutMs: 15_000 }),
+      events: options.events ?? new SessionEventHub(),
+      launch: launchdDurableHost({ entry: options.entry ?? entry, model: "faux", agentDir: root, thinkingLevel: () => "medium", labelPrefix: PREFIX, hostsDir, locator, startTimeoutMs: 15_000 }),
       storesDir: join(root, "data", "durable"),
       logger: { warn: (_object, message) => { warnings.push(message); } },
       closeGraceMs: 2000,
+      ...(options.now === undefined ? {} : { now: options.now }),
     });
     return { durable, locator };
   };
@@ -118,7 +122,7 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     const ref = { id: chat.id, cwd: chat.cwd };
     const label = `${PREFIX}.${chat.id}`;
     const host = first.locator.durable(chat.id)?.host;
-    expect(host).toMatchObject({ label, socket: durableHostSocketPath(hostsDir, chat.id), revision: "/revisions/fake", ownerEpoch: 1 });
+    expect(host).toMatchObject({ label, socket: durableHostSocketPath(hostsDir, chat.id), revision: await realpath(root), ownerEpoch: 1 });
     expect(jobPid(label)).toBe(host?.pid);
 
     await first.durable.dispose();
@@ -228,4 +232,136 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     await writeFile(join(folder, "host.mjs"), HOST);
     expect(() => launchdDurableHost({ entry: join(folder, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator })).toThrow(/revision folder/);
   }, 60_000);
+});
+
+// Phase C3 lifetime rules (AC5) against the real launchd, trial labels only.
+describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)", () => {
+  const ended = (root: string, hostsDir: string, label: string, pid: number) => {
+    expect(alive(pid)).toBe(false);
+    expect(loaded(label)).toBe(false);
+    expect(existsSync(join(hostsDir, `${label}.plist`))).toBe(false);
+  };
+
+  it("AC5 end: stopping a Chat, or all of them, reaches hosts this daemon never attached to; losing the transport does not", async () => {
+    const { root, hostsDir, daemon } = await fixture();
+    const first = daemon();
+    const a = await first.durable.start("/work/a");
+    const b = await first.durable.start("/work/b");
+    const hostA = first.locator.durable(a.id)?.host;
+    const hostB = first.locator.durable(b.id)?.host;
+    if (hostA === undefined || hostB === undefined) throw new Error("no host recorded");
+
+    // Transport loss: the daemon goes away; both hosts keep running and stay recorded.
+    await first.durable.dispose();
+    expect(alive(hostA.pid) && alive(hostB.pid)).toBe(true);
+
+    // A new daemon that never reattached ends one Chat: its host closes in order and its job, plist and entry go.
+    const second = daemon();
+    await second.durable.stop({ id: a.id, cwd: a.cwd });
+    ended(root, hostsDir, hostA.label, hostA.pid);
+    expect(second.locator.durable(a.id)?.host).toBeUndefined();
+    expect(requests(root, a.id)).toEqual(["close"]);
+    expect(alive(hostB.pid)).toBe(true);
+
+    // Stop-all reaches every remaining family host the same way.
+    await second.durable.stopAll();
+    ended(root, hostsDir, hostB.label, hostB.pid);
+    expect(second.locator.durable(b.id)?.host).toBeUndefined();
+    expect(requests(root, b.id)).toEqual(["close"]);
+  }, 60_000);
+
+  it("AC5 idle: a host idle for the legacy 2 h window (injected clock) closes in order; running or waiting work and a watching browser keep it", async () => {
+    const { root, hostsDir, daemon } = await fixture();
+    let now = Date.parse("2026-11-17T08:00:00Z");
+    let watching = false;
+    const events = Object.assign(new SessionEventHub(), { hasSessionSubscribers: () => watching });
+    const { durable, locator } = daemon([], { now: () => now, events });
+    const chat = await durable.start("/work/a");
+    const host = locator.durable(chat.id)?.host;
+    if (host === undefined) throw new Error("no host recorded");
+    const statusFile = join(root, "data", "durable", chat.id, "status.json");
+
+    now += IDLE_HOST_CLOSE_MS - 1;
+    await durable.closeIdleHosts();
+    expect(alive(host.pid)).toBe(true);
+    now += 1;
+
+    const running = (key: string, value: object) => ({ extensionStatuses: { [key]: JSON.stringify({ schemaVersion: 1, ...value }) } });
+    for (const busy of [
+      { isStreaming: true },
+      { pendingMessageCount: 1, queuedMessages: [{ kind: "followUp", text: "next" }] },
+      { pendingAsks: [{ askId: "q1" }] },
+      running("pi-workbench:activity", { items: [{ id: "delegate:1", startedAt: "2026-11-17T08:00:00Z" }] }),
+      running("pi-workbench:background-bash", { jobs: [{ id: "job-1" }] }),
+      running("pi-workbench:atelier", { serving: true }),
+    ]) {
+      await writeFile(statusFile, JSON.stringify(busy));
+      await durable.closeIdleHosts();
+      expect(alive(host.pid), JSON.stringify(busy)).toBe(true);
+    }
+    await rm(statusFile);
+    watching = true;
+    await durable.closeIdleHosts();
+    expect(alive(host.pid)).toBe(true);
+
+    watching = false;
+    await durable.closeIdleHosts();
+    ended(root, hostsDir, host.label, host.pid);
+    expect(locator.durable(chat.id)?.host).toBeUndefined();
+    expect(requests(root, chat.id).at(-1)).toBe("close");
+  }, 60_000);
+
+  it("AC5 upgrade: a family keeps its revision across daemon and host restarts, shows it, and moves only when asked while quiet", async () => {
+    const { root, hostsDir, daemon } = await fixture();
+    const revision = async (name: string) => {
+      await mkdir(join(root, name));
+      await writeFile(join(root, name, "host.mjs"), HOST);
+      return join(await realpath(join(root, name)), "host.mjs");
+    };
+    const [entryA, entryB] = [await revision("rev-a"), await revision("rev-b")];
+    const first = daemon([], { entry: entryA });
+    const chat = await first.durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const label = `${PREFIX}.${chat.id}`;
+    expect((await first.durable.status(ref)).durableHostPin).toBeUndefined();
+    await first.durable.dispose();
+
+    // A daemon with newer host code: the running family stays on rev-a and says so.
+    const second = daemon([], { entry: entryB });
+    await second.durable.reattach();
+    expect((await second.durable.status(ref)).durableHostPin).toEqual({ revision: "rev-a", current: "rev-b" });
+
+    // Its host closing (an end, an idle close) does not move it either: the next host starts from rev-a again.
+    const pinnedPid = second.locator.durable(chat.id)?.host?.pid ?? 0;
+    await second.durable.stop(ref);
+    expect((await second.durable.status(ref)).durableHostPin).toEqual({ revision: "rev-a", current: "rev-b" });
+    expect(readFileSync(join(hostsDir, `${label}.plist`), "utf8")).toContain(`<string>${entryA}</string>`);
+    const reopened = second.locator.durable(chat.id)?.host;
+    expect(reopened?.pid).not.toBe(pinnedPid);
+    expect(reopened?.revision).toBe(join(await realpath(root), "rev-a"));
+
+    // Asked while busy: refused, the host untouched.
+    const statusFile = join(root, "data", "durable", chat.id, "status.json");
+    await writeFile(statusFile, JSON.stringify({ isStreaming: true }));
+    await expect(second.durable.upgradeHost(ref)).rejects.toThrow(/cannot move to new host code while a turn is running/);
+    expect(second.locator.durable(chat.id)?.host?.pid).toBe(reopened?.pid);
+    expect(alive(reopened?.pid ?? 0)).toBe(true);
+
+    // Asked while quiet: the host closes in order and the family's next host runs rev-b.
+    await rm(statusFile);
+    const upgraded = await second.durable.upgradeHost(ref);
+    expect(upgraded.durableHostPin).toBeUndefined();
+    expect(alive(reopened?.pid ?? 0)).toBe(false);
+    const current = second.locator.durable(chat.id)?.host;
+    expect(current?.revision).toBe(join(await realpath(root), "rev-b"));
+    expect(jobPid(label)).toBe(current?.pid);
+    expect(readFileSync(join(hostsDir, `${label}.plist`), "utf8")).toContain(`<string>${entryB}</string>`);
+    expect(requests(root, chat.id).filter((method) => method === "close")).toHaveLength(2);
+
+    // A later daemon on rev-b finds nothing pinned.
+    await second.durable.dispose();
+    const third = daemon([], { entry: entryB });
+    expect((await third.durable.status(ref)).durableHostPin).toBeUndefined();
+    await third.durable.stop(ref);
+  }, 90_000);
 });

@@ -23,6 +23,11 @@ export interface DurableChatRecord {
   nameSource?: "manual" | "auto" | "checkpoint";
   /** The family's launchd host the daemon last attached to (Phase C1); a restarted daemon reattaches through it. */
   host?: DurableHostAttachment;
+  /**
+   * The host entry (a real path in its revision folder) the family's launchd host last started from (Phase C3): its later
+   * hosts start from it too, until the owner upgrades the family. Kept when the host stops, unlike `host`.
+   */
+  hostEntry?: string;
 }
 
 /** What a launchd host's handshake proved, so a later daemon accepts only that host on that socket. */
@@ -88,6 +93,17 @@ export class SessionRuntimeLocator {
     this.#persist();
   }
 
+  /** Pin the family to the host entry its host started from, or unpin it so its next host runs the current code. */
+  setHostEntry(sessionId: string, entry: string | undefined): void {
+    const record = this.#chats.get(sessionId);
+    if (record === undefined || record.hostEntry === entry) return;
+    const next: DurableChatRecord = { ...record };
+    if (entry === undefined) delete next.hostEntry;
+    else next.hostEntry = entry;
+    this.#chats.set(sessionId, next);
+    this.#persist();
+  }
+
   remove(sessionId: string): void {
     if (this.#chats.delete(sessionId)) this.#persist();
   }
@@ -130,7 +146,8 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
     && typeof value["messageCount"] === "number"
     && (value["name"] === undefined || typeof value["name"] === "string")
     && (value["nameSource"] === undefined || value["nameSource"] === "manual" || value["nameSource"] === "auto" || value["nameSource"] === "checkpoint")
-    && (value["host"] === undefined || isHostAttachment(value["host"]));
+    && (value["host"] === undefined || isHostAttachment(value["host"]))
+    && (value["hostEntry"] === undefined || typeof value["hostEntry"] === "string");
 }
 
 function isHostAttachment(value: unknown): value is DurableHostAttachment {

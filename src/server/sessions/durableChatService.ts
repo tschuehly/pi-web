@@ -1,7 +1,8 @@
-import { fork } from "node:child_process";
+import { execFile, fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { CHAT_CAPABILITY_LABELS, type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
 import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionNotificationDismissAllRequest, SessionNotificationDismissRequest, SessionNotificationInboxSnapshot, SessionNotificationSummaryEvent, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
 import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
@@ -31,6 +32,10 @@ import type { SessionRouteRef } from "./sessionService.js";
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
 export const DURABLE_HOST_PROTOCOL = 2;
 
+/** A family host with nothing running or waiting and no browser watching closes after this (legacy `IDLE_SESSION_UNLOAD_MS`). */
+export const IDLE_HOST_CLOSE_MS = 2 * 60 * 60 * 1000;
+const IDLE_HOST_SWEEP_MS = 10 * 60 * 1000;
+
 /** How the owner resolves an interrupted unsafe tool call that may have run. */
 export type DurableEffectResolution = "done" | "not-done" | "retry";
 
@@ -44,6 +49,8 @@ export interface DurableHostProcess {
   kill(signal?: NodeJS.Signals): boolean;
   /** A host the daemon does not own (a launchd job): drop the connection and leave the host running. */
   detach?(): void;
+  /** A launchd host: the entry it runs from and the one new families get; they differ while the family is pinned (Phase C3). */
+  readonly code?: { entry: string; current: string };
 }
 
 /**
@@ -99,6 +106,8 @@ interface HostEvents {
   publishNotificationSummary?(event: SessionNotificationSummaryEvent): void;
   publishGlobal(event: { type: "session.created"; session: ClientSession } | { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string } | SessionAttentionEvent): void;
   currentSeq(sessionId: string): number;
+  /** Whether a browser watches the Chat: its host is never idle (legacy idle unload). */
+  hasSessionSubscribers?(sessionId: string): boolean;
 }
 
 interface HostTranscript {
@@ -127,6 +136,10 @@ class DurableHostConnection {
   capabilities: ChatCapability[] = [];
   /** Skills and prompts the host's Pi packages contributed (`resources_discover`), named in its ready message. */
   contributed: DurableContributedResources = { skillPaths: [], promptPaths: [] };
+  /** The revision folder the host's ready message names, if any. */
+  revision: string | undefined;
+  /** Set while the family runs older host code than new Chats get (Phase C3): both revisions, short. */
+  pin: { revision: string; current: string } | undefined;
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
@@ -152,6 +165,8 @@ class DurableHostConnection {
         const capabilities = message["ready"]["capabilities"];
         if (Array.isArray(capabilities)) this.capabilities = capabilities.filter(isChatCapability);
         this.contributed = parseContributedResources(message["ready"]["resources"]);
+        const revision = message["ready"]["revision"];
+        if (typeof revision === "string") this.revision = revision;
         if (protocol === DURABLE_HOST_PROTOCOL) markReady();
         else {
           failReady(new Error(`Durable host speaks protocol ${String(protocol)}, this daemon ${String(DURABLE_HOST_PROTOCOL)}`));
@@ -270,7 +285,20 @@ export class DurableChatService {
     spawnTargets?: SpawnTargetResolver;
     /** Stop's wait before SIGTERM, and again before SIGKILL; default 5 s. */
     closeGraceMs?: number;
-  }) {}
+    /** The clock of the idle close; tests inject one. */
+    now?: () => number;
+  }) {
+    this.#idleSweep = setInterval(() => { void this.closeIdleHosts(); }, IDLE_HOST_SWEEP_MS);
+    this.#idleSweep.unref();
+  }
+
+  readonly #idleSweep: NodeJS.Timeout;
+  /** When each connected family last opened or sent an event: its idle window starts there. */
+  readonly #lastActive = new Map<string, number>();
+
+  #now(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
 
   /** Each Chat's paid turns and context resets, from its last transcript read and later events, for live notices. */
   readonly #cacheScan = new Map<string, unknown[]>();
@@ -827,11 +855,60 @@ export class DurableChatService {
     return this.status(ref);
   }
 
-  /** Close the Chat's host; its store keeps every admitted input and reopens paused on next use. */
+  /**
+   * End the Chat's host (Phase C3): it closes its store in order, children included, and a launchd host's job is unloaded.
+   * Reaches the host an earlier daemon started too. The store keeps every admitted input and reopens paused on next use.
+   */
   async stop(ref: SessionRouteRef): Promise<void> {
-    const connection = this.#connections.get(ref.id);
-    this.#connections.delete(ref.id);
-    await (await connection?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000);
+    await this.#end(ref.id);
+  }
+
+  /** Stop-all: every family host, connected or only recorded by an earlier daemon, ends as `stop` ends one. */
+  async stopAll(): Promise<void> {
+    const recorded = this.deps.locator.all().filter((record) => record.host !== undefined).map((record) => record.id);
+    await Promise.all([...new Set([...this.#connections.keys(), ...recorded])].map((id) => this.#end(id)));
+  }
+
+  /** Close a family's host in order: the connected one, else the launchd host the locator names; never starts one. */
+  async #end(sessionId: string): Promise<void> {
+    const record = this.deps.locator.durable(sessionId);
+    const pending = this.#connections.get(sessionId) ?? (record?.host === undefined ? undefined : this.#connection(record, true));
+    this.#connections.delete(sessionId);
+    await (await pending?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000);
+  }
+
+  /**
+   * Close every family host idle for {@link IDLE_HOST_CLOSE_MS}: no event since, nothing running or waiting (see
+   * `familyBusy`) and no browser watching, as legacy `unloadIdleSessions` unloads sessions. The next use reopens it.
+   */
+  async closeIdleHosts(): Promise<void> {
+    const idle = (id: string) => this.#now() - (this.#lastActive.get(id) ?? 0) >= IDLE_HOST_CLOSE_MS && this.deps.events.hasSessionSubscribers?.(id) !== true;
+    for (const [id, pending] of [...this.#connections]) {
+      if (!idle(id)) continue;
+      const connection = await pending.catch(() => undefined);
+      const busy = connection === undefined ? "it is not open" : await connection.request("status").then(({ result }) => familyBusy(hostStatus(result)), () => "its status is unknown");
+      // Re-checked after the await: work or a browser may have arrived meanwhile.
+      if (busy !== undefined || !idle(id) || this.#connections.get(id) !== pending) continue;
+      this.deps.logger?.info?.({ sessionId: id }, "Closing idle Durable Chat host");
+      await this.#end(id).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: id, err: error }, "Durable Chat host did not close cleanly"); });
+    }
+  }
+
+  /**
+   * Move a pinned family to the host code new Chats get (Phase C3): only on the owner's request and only while the
+   * family is quiet. Its host closes in order; the next one starts from the current revision folder.
+   * shortcut: input arriving between the quiet check and the close waits, paused, for the next message; hold new
+   * requests during the handover if that happens in practice.
+   */
+  async upgradeHost(ref: SessionRouteRef): Promise<ClientSessionStatus> {
+    const record = this.#record(ref);
+    const connection = await this.#for(ref);
+    if (connection.pin === undefined) return this.status(ref);
+    const busy = familyBusy(hostStatus((await connection.request("status")).result));
+    if (busy !== undefined) throw new Error(`This Chat cannot move to new host code while ${busy}; try again when it is quiet`);
+    await this.#end(record.id);
+    this.deps.locator.setHostEntry(record.id, undefined);
+    return this.status(ref);
   }
 
   /**
@@ -839,6 +916,7 @@ export class DurableChatService {
    * detached and keeps running for the next daemon.
    */
   async dispose(): Promise<void> {
+    clearInterval(this.#idleSweep);
     const connections = [...this.#connections.values()];
     this.#connections.clear();
     await Promise.all(connections.map(async (pending) => {
@@ -867,8 +945,10 @@ export class DurableChatService {
       this.#notificationGenerations.set(record.id, notifications.generation);
       this.#publishNotifications(notifications.mutations);
     }
+    const host = attachOnly ? this.deps.launch(record, storeDir, { attachOnly }) : this.deps.launch(record, storeDir);
+    this.#lastActive.set(record.id, this.#now());
     const connection = new DurableHostConnection(
-      attachOnly ? this.deps.launch(record, storeDir, { attachOnly }) : this.deps.launch(record, storeDir),
+      host,
       (event) => { this.#onEvent(record.id, event, connection); },
       () => this.deps.events.currentSeq(record.id),
       (error) => {
@@ -881,6 +961,7 @@ export class DurableChatService {
     );
     const opened = connection.ready.then(async () => {
       this.#capabilities.set(record.id, connection.capabilities);
+      connection.pin = await hostPin(host.code, connection.revision);
       const loaded = await this.deps.resources?.(record.cwd, connection.contributed).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
@@ -948,6 +1029,7 @@ export class DurableChatService {
   #onEvent(sessionId: string, event: SessionUiEvent | HostEvent, connection: DurableHostConnection): void {
     const record = this.deps.locator.durable(sessionId);
     if (record === undefined) return;
+    this.#lastActive.set(sessionId, this.#now());
     const scope = { id: sessionId, cwd: record.cwd };
     if (event.type === "durable.attention") {
       // Committed and deduplicated by the host: one notification per ask or attention request.
@@ -1023,8 +1105,51 @@ function browserStatus(status: HostTranscript["status"], connection: DurableHost
     ...status,
     queuedMessages: status.queuedMessages.map(displayQueuedMessage),
     capabilities: connection.capabilities,
+    ...(connection.pin === undefined ? {} : { durableHostPin: connection.pin }),
     ...(connection.capabilities.includes("queue.edit") ? {} : { queueMessageActionsUnavailable: "Editing queued messages is not available in this Durable Chat host yet." }),
   };
+}
+
+const run = promisify(execFile);
+
+/** Both revisions, short, while a launchd family runs other host code than new families get; undefined otherwise. */
+async function hostPin(code: DurableHostProcess["code"], revision: string | undefined): Promise<{ revision: string; current: string } | undefined> {
+  if (code === undefined || code.entry === code.current) return undefined;
+  return { revision: await shortRevision(revision ?? dirname(code.entry)), current: await shortRevision(dirname(code.current)) };
+}
+
+/** A revision folder's short commit (installed folders are git worktrees), else its name. */
+async function shortRevision(folder: string): Promise<string> {
+  return run("git", ["-C", folder, "rev-parse", "--short", "HEAD"]).then(({ stdout }) => stdout.trim(), () => basename(folder));
+}
+
+/**
+ * Why a family is not quiet, from its host's status; undefined when nothing runs or waits. The legacy idle-unload rule
+ * (`isIdleForUnload`, `hasExtensionBackgroundWork`): a running turn, queued input, an open question, a running tool,
+ * children, background bash or a watcher; plus Atelier Pages the host serves. An unparseable status line counts as busy.
+ */
+function familyBusy(status: HostTranscript["status"]): string | undefined {
+  if (status.isStreaming || status.isCompacting || status.isBashRunning) return "a turn is running";
+  if (status.pendingMessageCount > 0) return "input is queued";
+  if ((status.pendingAsks?.length ?? 0) > 0) return "a question is open";
+  if ((status.activeToolExecutions?.length ?? 0) > 0) return "a tool is running";
+  const list = (key: string, field: string): unknown[] | undefined => {
+    const text = status.extensionStatuses?.[key];
+    if (text === undefined) return [];
+    try {
+      const value: unknown = JSON.parse(text);
+      const items = isRecord(value) ? value[field] : undefined;
+      return Array.isArray(items) ? items : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const delegates = list("pi-workbench:activity", "items");
+  if (delegates === undefined || delegates.some((item) => !isRecord(item) || item["endedAt"] === undefined)) return "children are running";
+  if (list("pi-workbench:background-bash", "jobs")?.length !== 0) return "background bash is running";
+  if (list("pi-process-monitor:watchers", "watchers")?.length !== 0) return "a watcher is running";
+  if (status.extensionStatuses?.["pi-workbench:atelier"] !== undefined) return "it serves Atelier Pages";
+  return undefined;
 }
 
 /** A host-side notification request: the daemon turns it into PI WEB's global `session.attention`. */

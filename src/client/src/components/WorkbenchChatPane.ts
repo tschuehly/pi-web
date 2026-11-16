@@ -195,6 +195,7 @@ export class WorkbenchChatPane extends LitElement {
             .queuedMessageActionPending=${this.queuedActionTarget !== undefined || this.revertPending}
             .onDismissWarning=${(dismissId: string) => { void sessions.dismissWarning(dismissId); }}
             .onResolveEffect=${session.archived === true ? undefined : (id: string, resolution: SessionEffectResolution) => { void sessions.resolveEffect(id, resolution); }}
+            .onUpgradeDurableHost=${session.archived === true ? undefined : () => { void sessions.upgradeDurableHost(); }}
             .onDismissNotification=${(notificationId: string) => { void notifications.dismissNotification(notificationId); }}
             .onDismissAllNotifications=${() => { void notifications.dismissAll(); }}
             .onLoadMore=${() => { void sessions.loadEarlierMessages(); }}

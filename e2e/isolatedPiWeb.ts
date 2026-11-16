@@ -452,12 +452,13 @@ async function bootoutFixtureHosts(hosts: string): Promise<void> {
  * same data, socket and environment; resolves once it accepts connections. Durable launchd hosts are outside the
  * daemon's group and keep running. Needs PI_WEB_E2E_DURABLE_LAUNCHD=1.
  */
-export async function restartSessiond(): Promise<void> {
+export async function restartSessiond(overrides: NodeJS.ProcessEnv = {}): Promise<void> {
   const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
   const saved = process.env["PI_WEB_E2E_SESSIOND_ENV"];
   if (project === undefined || saved === undefined) throw new Error("Isolated PI WEB was not started with PI_WEB_E2E_DURABLE_LAUNCHD=1");
   const root = dirname(project);
-  const env = JSON.parse(saved) as NodeJS.ProcessEnv;
+  // `overrides`: the new daemon's changes, such as newer host code in PI_WEB_DURABLE_HOST (Phase C3).
+  const env = { ...JSON.parse(saved) as NodeJS.ProcessEnv, ...overrides };
   const pidFile = join(root, "sessiond.pid");
   const pid = Number(await readFile(pidFile, "utf8"));
   process.kill(-pid, "SIGKILL");

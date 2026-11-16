@@ -594,6 +594,27 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
+  // Phase C3: a pinned Durable Chat moves to the current host code on the owner's request, refused while it is busy.
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/durable-host/upgrade`, async (request, reply) => {
+    try {
+      if (sessions.upgradeDurableHost === undefined) throw new Error("Upgrading a Chat's host is not available");
+      return await sessions.upgradeDurableHost(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
+  // Stop-all for Durable Chats: each family host closes in order and its launchd job is unloaded (Phase C3).
+  app.post(`${prefix}/sessions/durable-hosts/stop`, async (_request, reply) => {
+    try {
+      if (sessions.stopDurableHosts === undefined) throw new Error("Durable Chats are not enabled");
+      await sessions.stopDurableHosts();
+      return { stopped: true };
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
   app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/stop`, async (request, reply) => {
     try {
       await sessions.stop(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));

@@ -1505,6 +1505,22 @@ export class SessionController {
     }
   }
 
+  /** Move the selected Durable Chat's pinned host to the current host code; the host refuses while the Chat is busy. */
+  async upgradeDurableHost(): Promise<void> {
+    const state = this.getState();
+    const session = state.selectedSession;
+    if (session === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) return;
+    const machineId = selectedMachineId(state);
+    const errorOwner = this.captureSessionErrorOwner(session);
+    const selectionSeq = this.selectionSeq;
+    try {
+      const status = await this.api.upgradeDurableHost(session, machineId);
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(status);
+    } catch (error) {
+      this.reportSessionError(session, machineId, error, errorOwner);
+    }
+  }
+
   /** Close the session's open ask without answering it. */
   cancelAsk(askId: string): Promise<void> {
     return this.closeOpenAsk(askId, (session, machineId) => this.api.cancelAsk(session, askId, machineId));
