@@ -85,7 +85,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       if (startupToken !== undefined && !/^[A-Za-z0-9:._-]{1,128}$/.test(startupToken)) throw new Error("startupToken field must be at most 128 letters, digits, or : . _ -");
       const runtime = body["runtime"];
       if (runtime !== undefined && runtime !== "legacy" && runtime !== "durable") throw new Error("runtime field must be legacy or durable");
-      return await sessions.start(normalizeRequestCwd(requireString(body, "cwd")), { ...optionalField("startupToken", startupToken), ...(runtime === "durable" ? { runtime } : {}) });
+      return await sessions.start(normalizeRequestCwd(requireString(body, "cwd")), { ...optionalField("startupToken", startupToken), ...(runtime === undefined ? {} : { runtime }) });
     } catch (error) {
       return reply.code(400).send({ error: errorMessage(error) });
     }

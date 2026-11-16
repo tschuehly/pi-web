@@ -58,7 +58,7 @@ class ReadyHost extends EventEmitter implements DurableHostProcess {
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
-async function router() {
+async function router(defaultRuntime?: "durable") {
   const root = await mkdtemp(join(tmpdir(), "pi-web-routed-"));
   roots.push(root);
   const legacy = legacyService();
@@ -69,7 +69,7 @@ async function router() {
     launch: () => { const host = new ReadyHost(); hosts.push(host); return host; },
     storesDir: join(root, "durable"),
   });
-  return { routed: createRuntimeRoutedSessionService(legacy.service, durable), durable, calls: legacy.calls, hosts };
+  return { routed: createRuntimeRoutedSessionService(legacy.service, durable, defaultRuntime), durable, calls: legacy.calls, hosts };
 }
 
 describe("runtime-routed session service", () => {
@@ -83,6 +83,15 @@ describe("runtime-routed session service", () => {
     expect(durableChat).toMatchObject({ cwd: "/work/a", startupToken: "t-2" });
     expect(hosts).toHaveLength(1);
     expect(calls).toHaveLength(2);
+  });
+
+  it("creates Durable Chats by default when the daemon's switch is on, and a legacy Chat only when asked", async () => {
+    const { routed, calls, hosts } = await router("durable");
+    const durableChat = await routed.start("/work/a", { startupToken: "t-1" });
+    expect(durableChat).toMatchObject({ cwd: "/work/a", startupToken: "t-1" });
+    expect(hosts).toHaveLength(1);
+    await expect(routed.start("/work/a", { runtime: "legacy", startupToken: "t-2" })).resolves.toBe(legacyChat);
+    expect(calls).toEqual(['start{"startupToken":"t-2"}']);
   });
 
   it("routes each Chat's operations by its locator: legacy ids to legacy, Durable ids to their host", async () => {

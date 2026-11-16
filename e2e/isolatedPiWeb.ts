@@ -151,6 +151,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // Workbench bash jobs stay in the fixture; the Atelier Page check (its own browser) has its own suite.
         PI_BACKGROUND_BASH_ROOT: join(root, "background-bash"), ATELIER_PAGE_CHECK: "off",
       });
+      // New Chat creates Durable Chats (e2e/durableDefault.spec.ts).
+      if (process.env["PI_WEB_E2E_DURABLE_DEFAULT"] === "1") env["PI_WEB_DURABLE_DEFAULT"] = "1";
       process.env["PI_WEB_E2E_QUOTA_CACHE"] = join(root, "quota-cache.json");
     }
     // Optional: installed Pi packages the Durable host binds (pi-process-monitor only: no network, no messages out),
