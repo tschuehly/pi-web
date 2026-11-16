@@ -1,5 +1,5 @@
 import { stylesheetIntegrationCapability } from "../plugins/styles";
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { writeClipboardText } from "../clipboard";
 import type { ToolExecutionPart } from "../chatTypes";
@@ -60,11 +60,6 @@ export class ToolExecutionView extends LitElement {
   private countedDiff: string | undefined;
   private diffStats: { added: number; removed: number; lines: number } | undefined;
 
-  protected override willUpdate(changed: PropertyValues<ToolExecutionView>): void {
-    const previous = changed.get("execution");
-    if (changed.has("execution") && this.execution?.status === "error" && previous?.status !== "error") this.textOpen = true;
-  }
-
   override render() {
     const execution = this.execution;
     if (execution === undefined) return null;
@@ -100,13 +95,14 @@ export class ToolExecutionView extends LitElement {
             <span class="status-label">${statusLabel(execution.status)}</span>
           </div>`;
     // Without a diff, the row itself opens the details; no separate "Details" line (ISSUE-104).
-    const textBody = visibleDiff === undefined ? this.renderTextBody(bodyText, execution.status === "error", target, header) : null;
+    // Failed calls stay collapsed like any other; the error lives in the Result.
+    const textBody = visibleDiff === undefined ? this.renderTextBody(bodyText, false, target, header) : null;
 
     return html`
       <section class=${`tool-card ui-transcript-surface ui-transcript-activity ui-transcript-tool ${execution.status}`}>
         ${textBody === null ? html`<div class="tool-header ui-transcript-heading">${header}</div>` : null}
         ${previewMismatch ? html`<p class="notice">Applied diff differs from the preview.</p>` : null}
-        ${errorText === undefined || errorText === "" ? null : html`<pre class="error-text">${errorText}</pre>`}
+        ${errorText === undefined || errorText === "" || errorText === bodyText ? null : html`<pre class="error-text">${errorText}</pre>`}
         ${visibleDiff === undefined ? textBody : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff", target)}
         ${visibleDiff !== undefined && this.orphan ? this.renderTextBody(bodyText, true, undefined) : null}
       </section>
