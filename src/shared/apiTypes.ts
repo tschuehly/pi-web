@@ -1357,6 +1357,11 @@ export interface SessionStatus {
   /** Durable Chats: the gated operations this Chat supports (see {@link chatSupports}); absent for legacy Chats. */
   capabilities?: ChatCapability[];
   /**
+   * Durable Chats whose host runs older code than new Chats get: the family's revision and the current one (short
+   * commits). It stays pinned until the owner upgrades it while it is quiet.
+   */
+  durableHostPin?: { revision: string; current: string };
+  /**
    * Up to the 32 oldest currently running executions observed by the session
    * daemon. Newer starts are omitted while the bound is full; a later start can
    * be admitted after an older row ends. Labels are generic and never contain

@@ -555,6 +555,12 @@ function optionalAttentionRequest(value: unknown): Pick<SessionStatus, "attentio
   return { attentionRequest: { id: requireBoundedNonEmptyString(record, "id", ASK_USER_ID_MAX_LENGTH), reason: requireBoundedNonEmptyString(record, "reason", ASK_USER_TEXT_MAX_LENGTH) } };
 }
 
+function optionalDurableHostPin(value: unknown): Pick<SessionStatus, "durableHostPin"> | object {
+  if (value === undefined) return {};
+  const record = requireRecord(value);
+  return { durableHostPin: { revision: requireBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH), current: requireBoundedNonEmptyString(record, "current", ASK_USER_ID_MAX_LENGTH) } };
+}
+
 function optionalUnresolvedEffects(value: unknown): Pick<SessionStatus, "unresolvedEffects"> | object {
   if (value === undefined) return {};
   const effects = arrayOf((entry: unknown) => {
@@ -680,6 +686,7 @@ export function parseSessionStatus(value: unknown): SessionStatus {
     ...optionalPendingDialogs(record["pendingDialogs"]),
     ...optionalAttentionRequest(record["attentionRequest"]),
     ...optionalUnresolvedEffects(record["unresolvedEffects"]),
+    ...optionalDurableHostPin(record["durableHostPin"]),
     ...optionalActiveToolExecutions(record["activeToolExecutions"]),
     ...optionalExtensionStatuses(record["extensionStatuses"]),
     ...optionalField("suggestedInput", optionalString(record, "suggestedInput")),

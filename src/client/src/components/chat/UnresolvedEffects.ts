@@ -1,5 +1,5 @@
 import { html } from "lit";
-import type { SessionEffectResolution, SessionUnresolvedEffect } from "../../../../shared/apiTypes";
+import type { SessionEffectResolution, SessionStatus, SessionUnresolvedEffect } from "../../../../shared/apiTypes";
 import { renderSessionWarningIcon } from "../shared";
 
 const RESOLUTIONS: readonly { resolution: SessionEffectResolution; label: string; title: string }[] = [
@@ -7,6 +7,17 @@ const RESOLUTIONS: readonly { resolution: SessionEffectResolution; label: string
   { resolution: "not-done", label: "Not done", title: "It did not run: the agent decides whether it is still needed" },
   { resolution: "retry", label: "Retry", title: "Run it again now" },
 ];
+
+/** A Durable Chat pinned to older host code: its revision, and the upgrade the owner may ask for while it is quiet. */
+export function renderDurableHostPin(pin: SessionStatus["durableHostPin"], onUpgrade: (() => void) | undefined) {
+  if (pin === undefined) return null;
+  return html`
+    <p class="durable-host-pin" role="status">
+      Host <code>${pin.revision}</code> (new Chats run <code>${pin.current}</code>)
+      ${onUpgrade === undefined ? null : html`<button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code; refused while it is busy" @click=${() => { onUpgrade(); }}>Upgrade host</button>`}
+    </p>
+  `;
+}
 
 /**
  * A Durable Chat's interrupted unsafe tool calls: each blocks its tool until the user says whether it ran. The

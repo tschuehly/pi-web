@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { chmodSync, lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
@@ -60,6 +60,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
   #pid: number | undefined;
   #closing = false;
   #detached = false;
+  /** The entry this object launched its host from; a reattached host's is the locator's. */
+  #entry: string | undefined;
 
   constructor(private readonly context: LaunchContext, private readonly record: DurableChatRecord, private readonly storeDir: string, attachOnly: boolean) {
     super();
@@ -97,9 +99,14 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     await this.context.launchctl(["bootout", `${this.#domain}/${this.#label}`]).catch(() => undefined);
     rmSync(socket, { force: true });
     const plist = join(hostsDir, `${this.#label}.plist`);
+    // Phase C3: a family stays on the code its host started from until the owner upgrades it; only a revision folder
+    // that is gone (pruned) moves it to the current one.
+    const pinned = this.context.locator.durable(this.record.id)?.hostEntry;
+    const entry = pinned !== undefined && existsSync(pinned) ? pinned : this.context.entry;
+    this.#entry = entry;
     writeFileSync(plist, launchdPlist({
       Label: this.#label,
-      ProgramArguments: [process.execPath, this.context.entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket],
+      ProgramArguments: [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket],
       // The daemon's environment, as a forked host inherited it (the plist is owner-only like the folder it is in).
       EnvironmentVariables: Object.fromEntries(Object.entries({ ...process.env, PI_CODING_AGENT_DIR: this.context.agentDir })),
       WorkingDirectory: this.storeDir,
@@ -118,7 +125,10 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     for (;;) {
       try {
         // A new owner of the store: a later epoch than any host this family had.
-        if (await this.#attach(socket, (ready) => previousEpoch === undefined || ready.ownerEpoch > previousEpoch, true)) return;
+        if (await this.#attach(socket, (ready) => previousEpoch === undefined || ready.ownerEpoch > previousEpoch, true)) {
+          this.context.locator.setHostEntry(this.record.id, entry);
+          return;
+        }
         throw new Error("the started host did not prove a new owner epoch");
       } catch (error) {
         if (!(error instanceof NotListening) || Date.now() > deadline) throw new Error(`Durable host ${this.#label} did not start (see ${join(this.storeDir, "host.log")}): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
@@ -220,6 +230,11 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     } catch {
       return false;
     }
+  }
+
+  /** The entry this family's host runs from and the one new families get (Phase C3 pinning). */
+  get code(): { entry: string; current: string } {
+    return { entry: this.#entry ?? this.context.locator.durable(this.record.id)?.hostEntry ?? this.context.entry, current: this.context.entry };
   }
 
   detach(): void {

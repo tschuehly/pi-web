@@ -129,5 +129,7 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     reload: (ref) => isDurable(ref) ? unavailable("reload") : legacy.reload(ref),
     detachParent: (ref) => isDurable(ref) ? unavailable("detach-parent") : legacy.detachParent(ref),
     resolveEffect: (ref, taskId, resolution) => isDurable(ref) ? durable.resolveEffect(ref, taskId, resolution) : Promise.reject(new DurableChatUnavailable("Resolving interrupted tool calls outside Durable Chats")),
+    upgradeDurableHost: (ref) => isDurable(ref) ? durable.upgradeHost(ref) : Promise.reject(new DurableChatUnavailable("Upgrading a Chat's host outside Durable Chats")),
+    stopDurableHosts: () => durable.stopAll(),
   };
 }

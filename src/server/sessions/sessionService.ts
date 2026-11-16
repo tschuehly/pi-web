@@ -130,4 +130,8 @@ export interface SessionRouteService {
   detachParent(ref: SessionRouteRef): Promise<void>;
   /** Resolve an interrupted unsafe tool call that may have run (Durable Chats only; absent elsewhere). */
   resolveEffect?(ref: SessionRouteRef, taskId: string, resolution: "done" | "not-done" | "retry"): Promise<ClientSessionStatus>;
+  /** Move a quiet Durable Chat's pinned host to the current host code (Durable Chats only; absent elsewhere). */
+  upgradeDurableHost?(ref: SessionRouteRef): Promise<ClientSessionStatus>;
+  /** Stop-all for Durable Chats: every family host closes in order and its launchd job is unloaded. */
+  stopDurableHosts?(): Promise<void>;
 }

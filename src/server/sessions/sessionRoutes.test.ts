@@ -686,6 +686,23 @@ describe("session routes", () => {
     }
   });
 
+  it("forwards a Durable Chat host upgrade and a stop of every Durable host (Phase C3)", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    try {
+      const upgraded = await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo" } });
+      expect(upgraded.statusCode).toBe(200);
+      const stopped = await routeApp.inject({ method: "POST", url: "/sessions/durable-hosts/stop" });
+      expect(stopped.json()).toEqual({ stopped: true });
+      expect(routeService.calls).toEqual([{ upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") } }, { stopDurableHosts: true }]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
   it("rejects malformed ask payloads before calling the service", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1983,6 +2000,16 @@ class CapturingRouteSessionService implements SessionRouteService {
 
   prompt(lookup: SessionRouteRef, text: unknown, _streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string }): Promise<void> {
     this.calls.push({ lookup, text, ...(attachments === undefined ? {} : { attachments }), ...(options?.operationId === undefined ? {} : { operationId: options.operationId }) });
+    return Promise.resolve();
+  }
+
+  upgradeDurableHost(lookup: SessionRouteRef): Promise<SessionStatus> {
+    this.calls.push({ upgradeDurableHost: lookup });
+    return Promise.resolve(idleStatus(lookup));
+  }
+
+  stopDurableHosts(): Promise<void> {
+    this.calls.push({ stopDurableHosts: true });
     return Promise.resolve();
   }
 
