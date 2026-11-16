@@ -1650,7 +1650,7 @@ describe("session routes", () => {
       const oversizedToken = await routeApp.inject({ method: "POST", url: "/sessions", payload: { cwd: requestCwd, startupToken: "x".repeat(129) } });
       const unsafeToken = await routeApp.inject({ method: "POST", url: "/sessions", payload: { cwd: requestCwd, startupToken: "creating:<script>" } });
       expect([oversizedToken.statusCode, unsafeToken.statusCode]).toEqual([400, 400]);
-      // The runtime is chosen at creation only: a Durable opt-in reaches the service, legacy stays the default.
+      // The runtime is chosen at creation only: an explicit runtime reaches the service; omitted, the daemon's default applies.
       const durable = await routeApp.inject({ method: "POST", url: "/sessions", payload: { cwd: requestCwd, runtime: "durable" } });
       const legacy = await routeApp.inject({ method: "POST", url: "/sessions", payload: { cwd: requestCwd, runtime: "legacy" } });
       const unknownRuntime = await routeApp.inject({ method: "POST", url: "/sessions", payload: { cwd: requestCwd, runtime: "other" } });
@@ -1665,7 +1665,7 @@ describe("session routes", () => {
         { cwd: requestCwd, startupToken: "pending-session-3-k2x9" },
         { cwd: requestCwd, startupToken: undefined },
         { cwd: requestCwd, startupToken: undefined, runtime: "durable" },
-        { cwd: requestCwd, startupToken: undefined },
+        { cwd: requestCwd, startupToken: undefined, runtime: "legacy" },
       ]);
     } finally {
       await routeService.dispose();
@@ -1733,7 +1733,7 @@ class CapturingRouteSessionService implements SessionRouteService {
   readonly cancelAskCalls: { lookup: SessionRouteRef; askId: string }[] = [];
   readonly answerDialogCalls: { lookup: SessionRouteRef; dialogId: string; value: ExtensionDialogAnswer }[] = [];
   readonly cancelDialogCalls: { lookup: SessionRouteRef; dialogId: string }[] = [];
-  readonly startCalls: { cwd: string; startupToken: string | undefined; runtime?: "durable" }[] = [];
+  readonly startCalls: { cwd: string; startupToken: string | undefined; runtime?: "legacy" | "durable" }[] = [];
 
   lookupWorkstreamLaunch(token: string, cwd: string): Promise<{ status: "found"; sessionId: string; cwd: string } | { status: "unknown" }> {
     return Promise.resolve(token === "pi-web:launch-one" && cwd === resolve("/repo")
@@ -1849,7 +1849,7 @@ class CapturingRouteSessionService implements SessionRouteService {
     return Promise.resolve(this.recentSessionsResponse);
   }
 
-  start(cwd: string, options?: { startupToken?: string; runtime?: "durable" }): Promise<ClientSession> {
+  start(cwd: string, options?: { startupToken?: string; runtime?: "legacy" | "durable" }): Promise<ClientSession> {
     this.startCalls.push({ cwd, startupToken: options?.startupToken, ...(options?.runtime === undefined ? {} : { runtime: options.runtime }) });
     return Promise.resolve({ id: "session-1", path: "/tmp/session-1.jsonl", cwd, created: "2026-06-25T00:00:00.000Z", modified: "2026-06-25T00:00:00.000Z", messageCount: 0, firstMessage: "" });
   }

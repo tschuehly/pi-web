@@ -31,7 +31,8 @@ export function routeMcpAuth(legacy: McpAuthService, durable: Pick<DurableChatSe
   };
 }
 
-export function createRuntimeRoutedSessionService(legacy: SessionRouteService, durable: DurableChatService): SessionRouteService {
+/** `defaultRuntime: "durable"` (`PI_WEB_DURABLE_DEFAULT=1`) makes a create without a runtime a Durable Chat. */
+export function createRuntimeRoutedSessionService(legacy: SessionRouteService, durable: DurableChatService, defaultRuntime?: "durable"): SessionRouteService {
   const isDurable = (ref: SessionRouteRef) => durable.owns(ref.id);
   // Gated operations name the capability a Durable Chat reports once it supports them; the browser hides their controls.
   const unavailable = (capability: ChatCapability): never => { throw new DurableChatUnavailable(CHAT_CAPABILITY_LABELS[capability]); };
@@ -56,8 +57,8 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     listRecent: async (limit) => [...await legacy.listRecent(limit), ...durable.listAll()]
       .sort((left, right) => right.modified.localeCompare(left.modified))
       .slice(0, limit),
-    start: (cwd, options) => options?.runtime === "durable"
-      ? durable.start(cwd, options.startupToken)
+    start: (cwd, options) => (options?.runtime ?? defaultRuntime) === "durable"
+      ? durable.start(cwd, options?.startupToken)
       : legacy.start(cwd, options?.startupToken === undefined ? undefined : { startupToken: options.startupToken }),
     locate: async (sessionId) => {
       const chat = durable.listAll().find((session) => session.id === sessionId);

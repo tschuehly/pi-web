@@ -407,7 +407,7 @@ async function createSessionDaemonRuntime() {
       cacheMissNotices: { enabled: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getShowCacheMissNotices(), models: auth.runtime },
     });
     durableChatsForFailedConstruction = durableChats;
-    const routeSessions = durableChats === undefined ? sessions : createRuntimeRoutedSessionService(sessions, durableChats);
+    const routeSessions = durableChats === undefined ? sessions : createRuntimeRoutedSessionService(sessions, durableChats, daemonEnvironment["PI_WEB_DURABLE_DEFAULT"] === "1" ? "durable" : undefined);
     // Test-only opt-in for a separate daemon whose state and socket are inside
     // a controlled fixture root. No route can create an ask in a live daemon.
     if (daemonEnvironment["PI_WEB_FIXTURE_PENDING_ASK_MANIFEST"] !== undefined) {
