@@ -60,19 +60,23 @@ test("a Durable Chat streams, runs tools, queues, stops and reloads to the same 
   await expect(page.getByText("the follow-up").first()).toBeVisible();
   await page.getByRole("button", { name: "Stop current work" }).click();
   await expect(editor(page)).toHaveText("the follow-up");
-  await expect(chat(page).getByText(/Tool bash was aborted/).first()).toBeVisible();
+  // Failed calls intentionally collapse their Result; open it before checking the persisted error.
+  const failedBash = chat(page).locator("tool-execution-view .tool-card.error");
+  await failedBash.locator("summary").click();
+  await expect(failedBash.getByText(/Tool bash was aborted/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Stop current work" })).toBeDisabled();
   const before = await transcriptText(page);
   expect(before).not.toMatch(/user the follow-up/);
 
   await page.reload();
-  await expect(chat(page).getByText(/Tool bash was aborted/).first()).toBeVisible();
+  await failedBash.locator("summary").click();
+  await expect(failedBash.getByText(/Tool bash was aborted/)).toBeVisible();
   await expect.poll(() => transcriptText(page)).toBe(before);
 });
 
 const ASK = {
   context: "Two deploy targets match the request.",
-  questions: [{ id: "target", question: "Which target?", options: [{ value: "prod", label: "Production", recommended: true }, { value: "staging", label: "Staging" }] }],
+  questions: [{ id: "target", question: "Which target?", detail: "Production serves users; staging is the rehearsal environment. Neither has been deployed yet.", options: [{ value: "prod", label: "Production", recommended: true }, { value: "staging", label: "Staging" }] }],
 };
 
 test("a Durable Chat keeps Working Mode, answers a question, switches models and reattaches a bash call a host restart interrupted", async ({ page }) => {
@@ -99,17 +103,17 @@ test("a Durable Chat keeps Working Mode, answers a question, switches models and
   await expect(chat(page).getByText("ok: with mode").first()).toBeVisible();
   await expect(chat(page).locator("details.working-mode-card").first()).toContainText("Focused");
 
-  // A question round-trip: chips above the composer, an answer, the model hears it once.
+  // A question round-trip: the question bar, an answer, the model hears it once.
   await send(page, `call:ask_user ${JSON.stringify(ASK)}`);
-  const chip = page.locator("workbench-question-chips .chip");
-  await expect(chip).toHaveCount(1);
+  const questions = page.getByRole("button", { name: "1 open question", exact: true });
+  await expect(questions).toBeVisible();
   await page.reload();
-  await expect(chip).toHaveCount(1);
-  await chip.first().click();
+  await expect(questions).toBeVisible();
+  await questions.click();
   const drawer = page.locator("workbench-question-chips .drawer");
   await drawer.locator('input[value="staging"]').check();
   await drawer.getByRole("button", { name: "Send answers" }).click();
-  await expect(chip).toHaveCount(0);
+  await expect(questions).toHaveCount(0);
   await expect(chat(page).getByText(/ok: The user submitted answers to question set/).first()).toBeVisible();
 
   // Model switching: a Claude subscription model is stored for the Chat (no request is sent), then back to the scripted one.
