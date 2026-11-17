@@ -392,9 +392,13 @@ export class WorkbenchApp extends LitElement {
     chat.patch({ sessionStatuses: this.app.sessionStatuses, sessionActivities: this.app.sessionActivities }, false);
     const catalog = refreshCatalog && selectedMachineId(this.app) === selectedMachineId(chat.state) && this.app.selectedWorkspace?.id === chat.state.selectedWorkspace?.id ? this.app.sessions : chat.state.sessions;
     this.windowError = "";
+    const window = this.windows.window;
+    const previous = this.focused.current?.state.selectedSession?.id;
+    // A tile on the Grid page already on screen stays live; refocusing it reloads nothing.
+    const onScreen = window?.layout === "grid" && !window.maximized && previous !== undefined && gridTiles({ ...window, focused: previous }).some((tile) => tile.chat.sessionId === chat.state.selectedSession?.id);
     this.focused.focus(chat);
     // A retained Chat may have missed or queued frames while off screen: catch it up from one snapshot.
-    if (refreshCatalog) void chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true });
+    if (refreshCatalog && !onScreen) void chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true });
     this.setApp({ sessions: catalog }, false);
     if (this.realtimeMachineId !== selectedMachineId(this.app)) this.connectRealtime();
     this.desktopNotifications.activate(this.app);
