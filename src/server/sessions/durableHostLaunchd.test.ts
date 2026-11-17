@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
@@ -19,15 +19,27 @@ const status = { persisted: true, isStreaming: false, isCompacting: false, isBas
 /**
  * A host speaking the socket protocol: each start owns the store with the next epoch, answers status and close, and
  * logs every request it gets to `<store>/requests.log` (an explicit end's close as `close:end`). Its revision is the folder of its entry; `<store>/status.json`,
- * when present, overrides fields of its status (a busy family).
+ * when present, overrides fields of its status (a busy family). An explicit end cancels the family's jobs in the
+ * background bash registry (PI_BACKGROUND_BASH_ROOT), as the Workbench host's cancelAll does: the runner's group is
+ * killed and a cancelled exit recorded.
  */
 const HOST = `
-import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, dirname, join } from "node:path";
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const store = arg("--store"), socketPath = arg("--socket");
 const epochFile = join(store, "epoch");
+const cancelJobs = () => {
+  const jobs = process.env.PI_BACKGROUND_BASH_ROOT;
+  for (const id of jobs !== undefined && existsSync(jobs) ? readdirSync(jobs) : []) {
+    try {
+      if (JSON.parse(readFileSync(join(jobs, id, "job.json"), "utf8")).sessionId !== arg("--session-id")) continue;
+      try { process.kill(-JSON.parse(readFileSync(join(jobs, id, "claim"), "utf8")).pid, "SIGKILL"); } catch {}
+      writeFileSync(join(jobs, id, "exit"), JSON.stringify({ cancelled: true }));
+    } catch {}
+  }
+};
 const ownerEpoch = (existsSync(epochFile) ? Number(readFileSync(epochFile, "utf8")) : 0) + 1;
 writeFileSync(epochFile, String(ownerEpoch));
 const server = createServer((socket) => {
@@ -39,6 +51,7 @@ const server = createServer((socket) => {
       const request = JSON.parse(buffer.slice(0, end));
       buffer = buffer.slice(end + 1);
       appendFileSync(join(store, "requests.log"), request.method + (request.params?.end === true ? ":end" : "") + "\\n");
+      if (request.method === "close" && request.params?.end === true) cancelJobs();
       const override = existsSync(join(store, "status.json")) ? JSON.parse(readFileSync(join(store, "status.json"), "utf8")) : {};
       socket.write(JSON.stringify({ id: request.id, result: request.method === "status" ? { ...${JSON.stringify(status)}, ...override } : null }) + "\\n", () => { if (request.method === "close") process.exit(0); });
     }
@@ -327,6 +340,60 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     expect(second.locator.durable(b.id)?.host).toBeUndefined();
     expect(requests(root, b.id)).toEqual(["close:end"]);
   }, 60_000);
+
+  it("AC5 end: an explicit end reaches background jobs whose family host is gone; stop and stop-all start the host to cancel them", async () => {
+    const { root, hostsDir, daemon } = await fixture();
+    const jobs = join(root, "jobs");
+    const saved = process.env["PI_BACKGROUND_BASH_ROOT"];
+    process.env["PI_BACKGROUND_BASH_ROOT"] = jobs;
+    const runners: ChildProcess[] = [];
+    /** A detached runner for one of the family's jobs, registered as the Workbench registry records it (claimed, no exit). */
+    const runner = async (family: string) => {
+      const child = spawn("/bin/sh", ["-c", "while true; do sleep 0.1; done"], { detached: true, stdio: "ignore" });
+      runners.push(child);
+      const dir = join(jobs, `job-${family}`);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "job.json"), JSON.stringify({ id: `job-${family}`, sessionId: family, command: "loop" }));
+      await writeFile(join(dir, "claim"), JSON.stringify({ pid: child.pid }));
+      return { gone: () => child.exitCode !== null || child.signalCode !== null, cancelled: () => existsSync(join(dir, "exit")) };
+    };
+    try {
+      const first = daemon();
+      const a = await first.durable.start("/work/a");
+      const b = await first.durable.start("/work/b");
+      const [jobA, jobB] = [await runner(a.id), await runner(b.id)];
+      const hosts = [first.locator.durable(a.id)?.host, first.locator.durable(b.id)?.host];
+      await first.durable.dispose();
+      // Both hosts die with their sockets (a crash, a reboot); B's attachment was already forgotten (a failed reattach).
+      for (const host of hosts) {
+        if (host === undefined) throw new Error("no host recorded");
+        process.kill(host.pid, "SIGKILL");
+        await expect.poll(() => alive(host.pid)).toBe(false);
+        await rm(host.socket, { force: true });
+      }
+      first.locator.setHost(b.id, undefined);
+
+      const second = daemon();
+      await second.durable.stop({ id: a.id, cwd: a.cwd });
+      await expect.poll(jobA.gone).toBe(true);
+      expect(jobA.cancelled()).toBe(true);
+      expect(requests(root, a.id)).toEqual(["close:end"]);
+      expect(loaded(`${PREFIX}.${a.id}`) || existsSync(join(hostsDir, `${PREFIX}.${a.id}.plist`))).toBe(false);
+      expect(jobB.gone()).toBe(false);
+
+      await second.durable.stopAll();
+      await expect.poll(jobB.gone).toBe(true);
+      expect(jobB.cancelled()).toBe(true);
+      expect(requests(root, b.id)).toEqual(["close:end"]);
+      expect(loaded(`${PREFIX}.${b.id}`) || existsSync(join(hostsDir, `${PREFIX}.${b.id}.plist`))).toBe(false);
+      // A family with nothing left to cancel and no host is not started again.
+      expect(requests(root, a.id)).toEqual(["close:end"]);
+    } finally {
+      for (const child of runners) { try { process.kill(-(child.pid ?? 0), "SIGKILL"); } catch { /* gone */ } }
+      if (saved === undefined) Reflect.deleteProperty(process.env, "PI_BACKGROUND_BASH_ROOT");
+      else process.env["PI_BACKGROUND_BASH_ROOT"] = saved;
+    }
+  }, 90_000);
 
   it("AC5 idle: a host idle for the legacy 2 h window (injected clock) closes in order; running or waiting work and a watching browser keep it", async () => {
     const { root, hostsDir, daemon } = await fixture();
