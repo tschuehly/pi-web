@@ -205,6 +205,11 @@ class DurableHostConnection {
     return this.#exited === undefined;
   }
 
+  /** The entry the host runs from and the one new families get (a launchd host only). */
+  get code(): DurableHostProcess["code"] {
+    return this.process.code;
+  }
+
   /** Leave a host the daemon does not own running (see `DurableHostProcess.detach`); false for a forked host. */
   detach(): boolean {
     if (this.process.detach === undefined) return false;
@@ -917,7 +922,8 @@ export class DurableChatService {
 
   /**
    * Move a pinned family to the host code new Chats get (Phase C3): only on the owner's request and only while the
-   * family is quiet. Its host closes in order; the next one starts from the current revision folder.
+   * family is quiet. Its host closes in order; the next one starts from the current revision folder. Never to older Pi
+   * Durable code (after a roll back): it cannot read a store newer code opened, so the family stays on its host and pin.
    * shortcut: input arriving between the quiet check and the close waits, paused, for the next message; hold new
    * requests during the handover if that happens in practice.
    */
@@ -925,6 +931,10 @@ export class DurableChatService {
     const record = this.#record(ref);
     const connection = await this.#for(ref);
     if (connection.pin === undefined) return this.status(ref);
+    const code = connection.code;
+    const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : durableVersion(entry)));
+    if (pinned === undefined || current === undefined) throw new Error("This Chat cannot move to new host code: the Pi Durable version of its host code cannot be read");
+    if (compareVersions(current, pinned) < 0) throw new Error(`This Chat was opened by a newer Pi Durable (${pinned}); the current host is ${current}`);
     const busy = familyBusy(hostStatus((await connection.request("status")).result));
     if (busy !== undefined) throw new Error(`This Chat cannot move to new host code while ${busy}; try again when it is quiet`);
     await this.#end(record.id);
@@ -1167,6 +1177,36 @@ function familiesWithBackgroundJobs(): Set<string> {
 async function hostPin(code: DurableHostProcess["code"], revision: string | undefined): Promise<{ revision: string; current: string } | undefined> {
   if (code === undefined || code.entry === code.current) return undefined;
   return { revision: await shortRevision(revision ?? dirname(code.entry)), current: await shortRevision(dirname(code.current)) };
+}
+
+/**
+ * The `@earendil-works/pi-durable` version a host entry runs, from the package.json Node resolves from the entry's folder
+ * (the package exports no `./package.json`); undefined when none is found or it names no numeric version.
+ */
+function durableVersion(entry: string): string | undefined {
+  for (let folder = dirname(entry); ; folder = dirname(folder)) {
+    const manifest = join(folder, "node_modules", "@earendil-works", "pi-durable", "package.json");
+    if (existsSync(manifest)) {
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(manifest, "utf8"));
+        const version = isRecord(parsed) ? parsed["version"] : undefined;
+        return typeof version === "string" && /^\d+\.\d+\.\d+/.test(version) ? version : undefined;
+      } catch {
+        return undefined;
+      }
+    }
+    if (dirname(folder) === folder) return undefined;
+  }
+}
+
+/** Orders two versions by major.minor.patch. shortcut: pre-release tags are ignored; Pi Durable ships none today. */
+function compareVersions(a: string, b: string): number {
+  const [left, right] = [a, b].map((version) => version.split(/[.+-]/).slice(0, 3).map(Number));
+  for (let index = 0; index < 3; index++) {
+    const difference = (left?.[index] ?? 0) - (right?.[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
 }
 
 /** A revision folder's short commit (installed folders are git worktrees), else its name. */
