@@ -1,6 +1,6 @@
 // Shared shapes of the mock model server's control API (server.ts) and its spec client (client.ts).
 
-export type MockProvider = "anthropic" | "openai-codex";
+export type MockProvider = "anthropic" | "openai-codex" | "openai";
 
 /** Anthropic stop reasons; the Codex dialect maps them (max_tokens → incomplete, the rest → completed). */
 export type StopReason = "end_turn" | "tool_use" | "max_tokens" | "refusal" | "pause_turn";

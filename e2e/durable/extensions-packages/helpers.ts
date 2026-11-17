@@ -27,7 +27,7 @@ export async function command(page: Page, value: string) {
 export async function choose(page: Page, provider: "anthropic" | "openai-codex", modelId?: string) {
   const model = { ...(provider === "anthropic" ? MOCK_CLAUDE_MODEL : MOCK_CODEX_MODEL), ...(modelId ? { id: modelId } : {}) };
   await page.getByRole("button", { name: /^Model: / }).click();
-  await page.getByRole("combobox", { name: "Search models" }).fill(model.id);
+  await page.getByRole("combobox", { name: "Search models" }).fill(`${model.provider}/${model.id}`); // the id alone also matches openai/gpt-6-luna
   await page.getByRole("listbox", { name: "Models" }).getByRole("option", { name: model.id, exact: true }).first().click();
   await expect(page.getByRole("button", { name: new RegExp(`^Model: ${provider}/${model.id}`) })).toBeVisible();
 }

@@ -6,6 +6,7 @@ The e2e harness (`e2e/isolatedPiWeb.ts`) starts a scripted mock of the two subsc
 | --- | --- | --- |
 | `anthropic` (Claude subscription) | `POST /v1/messages` | Anthropic Messages, SSE: text, thinking with signature, `tool_use`, stop reasons, usage, errors |
 | `openai-codex` (ChatGPT) | `POST /codex/responses` | OpenAI Responses, SSE: reasoning summary, `output_text`, `function_call` and `custom_tool_call`, `response.completed`/`incomplete`, errors |
+| `openai` (signed in with ChatGPT; Workbench-routed children) | `POST /openai/v1/responses` | The same Responses stream, plain bearer auth |
 
 Chat Completions is not served: no provider in the fixture agent dir uses it.
 
@@ -13,7 +14,7 @@ Chat Completions is not served: no provider in the fixture agent dir uses it.
 
 The mock is on by default. Set `PI_WEB_E2E_MOCK_MODELS=0` to turn it off, and `mock-smoke.spec.ts` then skips itself. When the mock is on, the harness writes these files to the isolated agent dir (`agentConfig.ts`):
 
-- `models.json` points `providers.anthropic.baseUrl` and `providers["openai-codex"].baseUrl` at the mock. The built-in models stay listed.
+- `models.json` points `providers.anthropic.baseUrl`, `providers["openai-codex"].baseUrl` and `providers.openai.baseUrl` (`<mock>/openai/v1`) at the mock. The built-in models stay listed.
 - `auth.json` holds dummy OAuth logins that never expire: an `sk-ant-oat` token for Claude and an unsigned JWT for Codex (account `e2e-mock-account`).
 - `settings.json` sets:
   - default model `anthropic/claude-sonnet-5-5` (`MOCK_CLAUDE_MODEL`); `MOCK_CODEX_MODEL` is `openai-codex/gpt-6-luna`
@@ -24,7 +25,7 @@ The mock is on by default. Set `PI_WEB_E2E_MOCK_MODELS=0` to turn it off, and `m
 - The extension is a copy of `PI_WEB_E2E_CLAUDE_CODE_USE`. When that is unset, the harness copies the installed `~/.pi/agent/npm/node_modules/@benvargas/pi-claude-code-use/extensions/index.ts`, if it exists.
 - `ANTHROPIC_*` and `OPENAI_*` variables from your shell never reach the children.
 
-Durable hosts use their own agent dir (`<root>/durable-agent`, `PI_WEB_DURABLE_AGENT_DIR`). With the mock on, the harness writes the same `models.json` and the two mock logins there too (`writeMockProviders`), next to the fixture's fake Copilot login; its `settings.json` stays its own. The host honors that `models.json` for `anthropic` and `openai-codex` only from pi-workbench `feat/durable-host-slice1-20261022` after the mock merge (`modelsJsonBaseUrl` in `packages/durable-pilot/src/providers.ts`). An older host would send requests to the real APIs with the dummy tokens, so point `PI_WEB_E2E_DURABLE_HOST` at a host that has this change. Copilot is not mocked. Durable Chats still open on the scripted `faux` model, so switch to `MOCK_CLAUDE_MODEL` or `MOCK_CODEX_MODEL` in the model picker (see `e2e/durable/mock-smoke.spec.ts`).
+Durable hosts use their own agent dir (`<root>/durable-agent`, `PI_WEB_DURABLE_AGENT_DIR`). With the mock on, the harness writes the same `models.json` and the three mock logins there too (`writeMockProviders`), next to the fixture's fake Copilot login; its `settings.json` stays its own. The host honors that `models.json` for `anthropic`, `openai-codex` and `openai` only from pi-workbench `feat/durable-host-slice1-20261022` after the mock merge (`modelsJsonBaseUrl` in `packages/durable-pilot/src/providers.ts`). An older host would send requests to the real APIs with the dummy tokens, so point `PI_WEB_E2E_DURABLE_HOST` at a host that has this change. Copilot is not mocked. Durable Chats still open on the scripted `faux` model, so switch to `MOCK_CLAUDE_MODEL` or `MOCK_CODEX_MODEL` in the model picker (see `e2e/durable/mock-smoke.spec.ts`).
 
 ## Scripting turns
 

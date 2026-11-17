@@ -74,7 +74,7 @@ test("AC-P044 stale expectedLeafId refuses navigation without changing the activ
 test("AC-P044 questions and Working Mode restore as-of branch and survive SIGKILL", async ({ page }) => {
   await newChat(page);
   await send(page, "/mode attention focused");
-  await tool(page, "ask_user", { context: "Branch-specific target", questions: [{ id: "target", question: "Which target?", options: [{ value: "a", label: "Target A" }, { value: "b", label: "Target B" }] }] });
+  await tool(page, "ask_user", { context: "Branch-specific target", questions: [{ id: "target", question: "Which target?", detail: "The branch this question belongs to.", options: [{ value: "a", label: "Target A" }, { value: "b", label: "Target B" }] }] });
   const before = await status(page);
   expect(before.pendingAsks).toHaveLength(1);
   const atQuestion = await tree(page);
@@ -90,7 +90,7 @@ test("AC-P044 questions and Working Mode restore as-of branch and survive SIGKIL
   await reopen(page);
   expect((await status(page)).pendingAsks?.map((ask) => ask.askId)).toEqual(before.pendingAsks!.map((ask) => ask.askId));
   expect(JSON.parse((await status(page)).extensionStatuses!["working-mode"]!).selected.attention).toBe("Focused");
-  await expect(page.locator("workbench-question-chips").getByTitle("Which target?", { exact: true })).toBeVisible();
+  await expect(page.locator("workbench-question-chips .bar")).toContainText("1 open question");
   await expect(page.getByRole("button", { name: /Working Mode.*Attention: Focused/ })).toBeVisible();
   await killHost(page);
   await reopen(page);
@@ -163,7 +163,7 @@ test("AC-P044 navigation refuses an active child and its pending delivery", asyn
   await idle(page);
   const old = await tree(page);
   const marker = `child-tree-${Date.now()}`;
-  await mock.script({ provider: "openai-codex", match: marker, turns: [[{ text: "Child working" }, { barrier: marker }, { text: "Child finished" }]] });
+  await mock.script({ provider: "openai", match: marker, turns: [[{ text: "Child working" }, { barrier: marker }, { text: "Child finished" }]] });
   const launched = await tool(page, "subagent", { name: "Tree guard", task: marker, profile: "scout", cognitiveRole: "routine", background: true });
   expect(launched.isError, text(launched.content)).not.toBe(true);
   await mock.waitForBarrier(marker);

@@ -9,7 +9,7 @@ export const MOCK_CODEX_ACCOUNT = "e2e-mock-account";
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 
 /**
- * Points a Pi agent dir at the mock: `models.json` overrides the anthropic and openai-codex base URLs (built-in models
+ * Points a Pi agent dir at the mock: `models.json` overrides the anthropic, openai-codex and openai base URLs (built-in models
  * stay), `auth.json` holds dummy OAuth logins that never expire (no refresh request), and `settings.json` selects the
  * Claude model, SSE for Codex, fast agent retries, the dismissed billing notice and, when given, pi-claude-code-use.
  * Every value is fake; nothing here reads a real credential.
@@ -36,19 +36,21 @@ export async function writeMockAgentConfig(agentDir: string, mockUrl: string, op
 }
 
 /**
- * The provider half of `writeMockAgentConfig`: `models.json` and the two mock logins, merged into an existing
+ * The provider half of `writeMockAgentConfig`: `models.json` and the three mock logins, merged into an existing
  * `auth.json` (other logins, such as the Durable fixture's Copilot one, stay). The Durable agent dir takes only this.
  */
 export async function writeMockProviders(agentDir: string, mockUrl: string): Promise<void> {
   await mkdir(agentDir, { recursive: true });
   const never = Date.UTC(2100, 0, 1);
-  await writeFile(join(agentDir, "models.json"), json({ providers: { anthropic: { baseUrl: mockUrl }, "openai-codex": { baseUrl: mockUrl } } }));
+  await writeFile(join(agentDir, "models.json"), json({ providers: { anthropic: { baseUrl: mockUrl }, "openai-codex": { baseUrl: mockUrl }, openai: { baseUrl: `${mockUrl}/openai/v1` } } }));
   const existing = JSON.parse(await readFile(join(agentDir, "auth.json"), "utf8").catch(() => "{}")) as Record<string, unknown>;
   await writeFile(join(agentDir, "auth.json"), json({
     ...existing,
     // pi-ai takes the OAuth path for any token containing sk-ant-oat; joined from parts so secret scanners skip it.
     anthropic: { type: "oauth", access: ["sk", "ant", "oat01", "e2e", "mock", "not", "a", "real", "token"].join("-"), refresh: "e2e-mock-refresh", expires: never },
     "openai-codex": { type: "oauth", access: fakeChatGptJwt(MOCK_CODEX_ACCOUNT, never), refresh: "e2e-mock-refresh", expires: never, accountId: MOCK_CODEX_ACCOUNT },
+    // Workbench routing (routing-policy.json) sends Luna, Sol and Astra children to `openai` signed in with ChatGPT.
+    openai: { type: "oauth", access: "e2e-mock-openai-access", refresh: "e2e-mock-refresh", expires: never },
   }), { mode: 0o600 });
 }
 

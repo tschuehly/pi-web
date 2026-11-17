@@ -5,7 +5,8 @@ import type { BarrierState, ErrorPreset, JournalEntry, MockProvider, RequestKind
 
 /**
  * A scripted stand-in for the Claude subscription (Anthropic Messages, as pi-ai's OAuth path plus pi-claude-code-use
- * 2.2.1 send it) and ChatGPT Codex (OpenAI Responses over SSE, as pi-ai's openai-codex sends it). One process-wide
+ * 2.2.1 send it), ChatGPT Codex (OpenAI Responses over SSE, as pi-ai's openai-codex sends it) and `openai` signed in with
+ * ChatGPT (the same Responses stream at `/openai/v1/responses`; Workbench routing sends Luna, Sol and Astra there). One process-wide
  * instance serves the whole e2e run; specs drive it over the `/__mock/` control API (see client.ts and README.md).
  * It never forwards anything: unknown paths get 404.
  */
@@ -109,7 +110,7 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
   const model = async (req: IncomingMessage, res: ServerResponse, provider: MockProvider, path: string): Promise<void> => {
     const body = decodeBody(req.headers["content-encoding"], await readBody(req));
     const headers = redactHeaders(req.headers);
-    const violations = provider === "anthropic" ? claudeViolations(req.headers, body) : codexViolations(req.headers, body);
+    const violations = provider === "anthropic" ? claudeViolations(req.headers, body) : provider === "openai" ? openaiViolations(req.headers, body) : codexViolations(req.headers, body);
     const userTexts = provider === "anthropic" ? anthropicUserTexts(body) : codexUserTexts(body);
     const systemText = JSON.stringify(provider === "anthropic" ? body["system"] ?? "" : body["instructions"] ?? "");
     const kind: RequestKind = systemText.includes(TITLE_PROMPT) ? "title" : "chat";
@@ -157,6 +158,7 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
     const handle = path.startsWith("/__mock/") ? control(req, res, path, url.searchParams)
       : req.method === "POST" && path === "/v1/messages" ? model(req, res, "anthropic", path)
         : req.method === "POST" && path === "/codex/responses" ? model(req, res, "openai-codex", path)
+          : req.method === "POST" && path === "/openai/v1/responses" ? model(req, res, "openai", path)
           : Promise.resolve(void res.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: `The mock model server does not serve ${req.method ?? ""} ${path}` })));
     handle.catch((error: unknown) => {
       if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" });
@@ -238,7 +240,7 @@ function errorSpec(error: Extract<Step, { error: unknown }>["error"], provider: 
     auth: [401, "authentication_error", "invalid_api_key", "Invalid credentials from the mock"],
   };
   const [status, anthropicType, codexCode, message] = presets[error];
-  return { status: provider === "openai-codex" && error === "overloaded" ? 503 : status, type: provider === "anthropic" ? anthropicType : codexCode, message };
+  return { status: provider !== "anthropic" && error === "overloaded" ? 503 : status, type: provider === "anthropic" ? anthropicType : codexCode, message };
 }
 
 const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
@@ -473,6 +475,16 @@ function codexViolations(headers: IncomingMessage["headers"], body: Json): strin
   if (body["store"] !== false) out.push("store must be false");
   if (typeof body["model"] !== "string") out.push("model is required");
   if (typeof body["instructions"] !== "string") out.push("instructions are required");
+  if (!Array.isArray(body["input"])) out.push("input must be an array");
+  return out;
+}
+
+/** `openai` signed in with ChatGPT: pi-ai's OpenAI SDK client sends the access token as a plain bearer (no Codex headers). */
+function openaiViolations(headers: IncomingMessage["headers"], body: Json): string[] {
+  const out: string[] = [];
+  if (!/^Bearer \S+$/.test(headers.authorization ?? "")) out.push("authorization must be a bearer token");
+  if (body["stream"] !== true) out.push("stream must be true");
+  if (typeof body["model"] !== "string") out.push("model is required");
   if (!Array.isArray(body["input"])) out.push("input must be an array");
   return out;
 }

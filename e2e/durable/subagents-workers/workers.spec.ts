@@ -16,7 +16,7 @@ test("AC-P095 AC-P096 AC-P097 AC-P098 Worker lifecycle: busy lock, leaf settleme
   const workerId = await worker(page);
   const marker = `coordinator-${Date.now()}`;
   const leaf = `leaf-${Date.now()}`;
-  const leafScript = await mock.script({ provider: "openai-codex", match: leaf, turns: [
+  const leafScript = await mock.script({ provider: "openai", match: leaf, turns: [
     [{ barrier: leaf }, tc("subagent", scout("forbidden-third-level"))],
     "Leaf complete.",
   ] });
@@ -36,10 +36,9 @@ test("AC-P095 AC-P096 AC-P097 AC-P098 Worker lifecycle: busy lock, leaf settleme
   expect(textOf(await call(page, "worker_retire", { workerId, reason: "must not seize busy work" }))).toContain("is busy with dispatch");
   await mock.release(leaf);
   await expect.poll(async () => (await requests(workerScript)).length).toBe(4);
-  await expect.poll(async () => JSON.stringify(await status(page))).toContain('success');
-  const result = await call(page, "subagent_collect");
-  expect(textOf(result)).toContain("Worker result after leaf collection.");
-  expect(textOf(result)).toContain("outcome success");
+  // The completion notice carries the Worker's result and receipt (already collected).
+  await expect.poll(async () => (await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion").map(textOf).join("\n")).toContain("Worker result after leaf collection.");
+  expect((await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion").map(textOf).join("\n")).toContain("outcome success");
   const first = await requests(workerScript);
   expect(first.map((r) => r.model)).toEqual(Array(4).fill("claude-opus-5-5"));
   expect(JSON.stringify(first[1]!.body)).toMatch(/worker_create.*(?:not found|not available|unknown|not registered)/is);
@@ -49,10 +48,10 @@ test("AC-P095 AC-P096 AC-P097 AC-P098 Worker lifecycle: busy lock, leaf settleme
   expect(JSON.stringify(first[3]!.body)).toContain("Leaf complete.");
 
   const next = `worker-second-${Date.now()}`;
-  const secondScript = await mock.script({ provider: "openai-codex", match: next, turns: ["Second dispatch complete."] });
+  const secondScript = await mock.script({ provider: "openai", match: next, turns: ["Second dispatch complete."] });
   const second = await call(page, "worker_dispatch", { workerId, task: next, cognitiveRole: "routine", background: false });
   expect(idOf(second)).not.toBe(idOf(dispatch));
-  expect(textOf(second)).toContain("openai-codex/gpt-6-luna:medium");
+  expect(textOf(second)).toContain("openai/gpt-6-luna:medium");
   expect(JSON.stringify((await requests(secondScript))[0]!.body)).toContain("Worker result after leaf collection.");
   expect((await call(page, "worker_dispatch", { workerId, task: "review must be fresh", cognitiveRole: "review" })).isError).toBe(true);
   const diagnostic = await call(page, "worker_status", { workerId });
@@ -76,7 +75,7 @@ for (const cancel of ["leaf", "worker"] as const) {
     const workerId = await worker(page);
     const marker = `cancel-worker-${Date.now()}`;
     const leaf = `cancel-leaf-${Date.now()}`;
-    const leafScript = await mock.script({ provider: "openai-codex", match: leaf, turns: [[{ barrier: leaf }, { text: "A cancelled leaf must never return this." }]] });
+    const leafScript = await mock.script({ provider: "openai", match: leaf, turns: [[{ barrier: leaf }, { text: "A cancelled leaf must never return this." }]] });
     const workerScript = await mock.script({ provider: "anthropic", match: marker, turns: [
       [tc("subagent", scout(leaf))],
       [{ barrier: marker }, { text: "Worker survived cancelling its leaf." }],
@@ -92,8 +91,7 @@ for (const cancel of ["leaf", "worker"] as const) {
       await call(page, "subagent_steer", { executionId: idOf(dispatch), message: "Cancel your leaf, then finish." });
       await mock.release(marker);
       await expect.poll(async () => (await requests(leafScript))[0]!.outcome).toBe("client-closed");
-      await expect.poll(async () => JSON.stringify(await status(page))).toContain("success");
-      expect(textOf(await call(page, "subagent_collect"))).toContain("Worker survived cancelling its leaf.");
+      await expect.poll(async () => (await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion").map(textOf).join("\n")).toContain("Worker survived cancelling its leaf.");
     } else {
       const result = await call(page, "subagent_cancel", { executionId: idOf(dispatch), reason: "Cancel the whole Worker tree" });
       expect(textOf(result)).toBe(`${idOf(dispatch)}: cancelled.`);
@@ -112,17 +110,19 @@ for (const cancel of ["leaf", "worker"] as const) {
 
 for (const foreign of [false, true]) {
   test(`AC-P090 AC-P097 AC-P098 AC-P099 ${foreign ? "foreign diagnostic Worker grants no control" : "receipt failure is unknown, collect is an error and redispatch requires inspection"}`, async ({ page }) => {
+    // Completion notices carry results; held before delivery, the result stays uncollected for the receipt fault.
+    if (!foreign) await control({ hold: "child:before-delivery" });
     const session = await create(page);
     const workerId = await worker(page);
     if (!foreign) {
       const marker = `unknown-receipt-${Date.now()}`;
-      await mock.script({ provider: "openai-codex", match: marker, turns: ["Completed work, but its receipt will be lost."] });
+      await mock.script({ provider: "openai", match: marker, turns: ["Completed work, but its receipt will be lost."] });
       await call(page, "worker_dispatch", { workerId, task: marker, cognitiveRole: "routine", background: true });
       await expect(row(page).locator(".status")).toHaveText("To collect");
     }
     // Inject only the Given state, with the host closed, not the behavior being tested. The real UI/tools must enforce it.
     expect((await page.request.post(`${base()}api/sessions/${encodeURIComponent(session)}/stop`, { data: { cwd: project() } })).ok()).toBe(true);
-    await control({ receiptFault: { workerId, foreign } });
+    await control({ receiptFault: { workerId, foreign }, ...(foreign ? {} : { hold: "child:before-delivery" }) });
     await status(page);
     await page.reload();
     if (foreign) {
@@ -144,8 +144,13 @@ for (const foreign of [false, true]) {
       expect(collected.isError).toBe(true);
       expect(textOf(collected)).toContain("outcome_unknown");
       expect(textOf(collected)).not.toContain("outcome success");
+      // Reopen without the fault fixture and the delivery hold: the held hold would also stall this foreground result.
+      expect((await page.request.post(`${base()}api/sessions/${encodeURIComponent(session)}/stop`, { data: { cwd: project() } })).ok()).toBe(true);
+      await control();
+      await status(page);
+      await page.reload();
       const marker = `inspected-worker-${Date.now()}`;
-      const script = await mock.script({ provider: "openai-codex", match: marker, turns: ["Inspected dispatch complete."] });
+      const script = await mock.script({ provider: "openai", match: marker, turns: ["Inspected dispatch complete."] });
       expect(textOf(await call(page, "worker_dispatch", { workerId, task: marker, cognitiveRole: "routine", acknowledgeInspection: true }))).toContain("Inspected dispatch complete.");
       expect(await requests(script)).toHaveLength(1);
       const after = (await call(page, "worker_status", { workerId })).details!["worker"] as { requiresInspection: unknown; receipts: { outcome: string }[] };
