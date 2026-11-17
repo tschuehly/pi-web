@@ -25,6 +25,9 @@ function only<T>(items: readonly T[]): T {
   return first;
 }
 
+/** An `answer` that never replies: the daemon dies while it waits. */
+const NO_REPLY = Symbol("no reply");
+
 /** A host process double: answers requests through `answer`, pushes events, and exits on demand. */
 class FakeHost extends EventEmitter implements DurableHostProcess {
   readonly requests: Request[] = [];
@@ -41,7 +44,9 @@ class FakeHost extends EventEmitter implements DurableHostProcess {
     this.requests.push(request);
     queueMicrotask(() => {
       try {
-        this.emit("message", { id: request.id, result: this.answer(request) });
+        const result = this.answer(request);
+        if (result === NO_REPLY) return;
+        this.emit("message", { id: request.id, result });
       } catch (error) {
         this.emit("message", { id: request.id, error: { message: error instanceof Error ? error.message : String(error) } });
       }
@@ -864,6 +869,40 @@ describe("Durable Chats: spawn_session (P064)", () => {
     expect(host.requests.filter((request) => request.method === "spawned")[1]?.params).toEqual({ requestId: "r-model", error: "Unknown model nope/none" });
     await flush();
     expect(locator.all()).toHaveLength(1);
+  });
+
+  it.each([
+    ["the child is prompted but the answer never reaches the lead", "spawned"],
+    ["the child is started but its prompt is not yet answered", "prompt"],
+  ])("P064 a daemon killed after %s answers the lead's re-sent request after its restart with the same Chat, starting no second one", async (_window, stuck) => {
+    const resolveSpawnTarget = () => Promise.resolve({ allowed: true as const, cwd: "/work/b" });
+    const launchRoot = await mkdtemp(join(tmpdir(), "pi-web-launches-"));
+    roots.push(launchRoot);
+    const launches = new WorkstreamLaunchStore(join(launchRoot, "launches"));
+    // The lead (first host) or the child (second) stops answering: the daemon dies in that window.
+    const { durable, launched, locator, root } = await service((n) => {
+      const host = new FakeHost();
+      host.answer = (request) => (request.method === stuck && n === (stuck === "spawned" ? 0 : 1) ? NO_REPLY : request.method === "status" ? status : null);
+      return host;
+    }, set, { spawnTargets: { resolveSpawnTarget }, launches });
+    const lead = await durable.start("/work/a");
+    const request = { type: "durable.spawn", requestId: "req-1", spawningCwd: "/work/a", prompt: "Fix the build" };
+    only(launched).push(request);
+    await vi.waitFor(() => { expect(launched[stuck === "spawned" ? 0 : 1]?.requests.some((r) => r.method === stuck)).toBe(true); });
+    const child = only(locator.all().filter((record) => record.id !== lead.id));
+
+    // The daemon restarts from disk; the lead's host asks again on the new connection.
+    const restartedLocator = new SessionRuntimeLocator(root);
+    const restarted = await service(undefined, set, { spawnTargets: { resolveSpawnTarget }, launches, locator: restartedLocator, storesDir: join(root, "durable") });
+    await restarted.durable.status({ id: lead.id, cwd: lead.cwd });
+    const leadHost = only(restarted.launched);
+    leadHost.push(request);
+    await vi.waitFor(() => { expect(leadHost.requests.some((r) => r.method === "spawned")).toBe(true); });
+    expect(leadHost.requests.find((r) => r.method === "spawned")?.params).toEqual({ requestId: "req-1", result: { sessionId: child.id, cwd: "/work/b" } });
+    expect(restartedLocator.all().map((record) => record.id).sort()).toEqual([lead.id, child.id].sort());
+    // A child prompt the dead daemon may have sent is the same operation, admitted once by the child's host.
+    const childHost = restarted.launched[1];
+    for (const prompt of childHost?.requests.filter((r) => r.method === "prompt") ?? []) expect(prompt.params).toMatchObject({ operationId: "spawn-req-1" });
   });
 
   it("P064 without spawn support the host is told so at configure and a stray request is refused", async () => {
