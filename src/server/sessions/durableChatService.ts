@@ -905,7 +905,8 @@ export class DurableChatService {
 
   /**
    * Close every family host idle for {@link IDLE_HOST_CLOSE_MS}: no event since, nothing running or waiting (see
-   * `familyBusy`) and no browser watching, as legacy `unloadIdleSessions` unloads sessions. The next use reopens it.
+   * `familyBusy`) and no browser watching, as legacy `unloadIdleSessions` unloads sessions. The next use reopens it, on
+   * the current host code when the family was pinned and may move (see `hostMoveRefusal`).
    */
   async closeIdleHosts(): Promise<void> {
     const idle = (id: string) => this.#now() - (this.#lastActive.get(id) ?? 0) >= IDLE_HOST_CLOSE_MS && this.deps.events.hasSessionSubscribers?.(id) !== true;
@@ -916,7 +917,10 @@ export class DurableChatService {
       // Re-checked after the await: work or a browser may have arrived meanwhile.
       if (busy !== undefined || !idle(id) || this.#connections.get(id) !== pending) continue;
       this.deps.logger?.info?.({ sessionId: id }, "Closing idle Durable Chat host");
-      await this.#end(id).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: id, err: error }, "Durable Chat host did not close cleanly"); });
+      // A pinned family moves to the current code as it closes (seamless upgrade A): nothing runs, so nothing repeats.
+      const upgrade = connection?.pin !== undefined && hostMoveRefusal(connection.code) === undefined;
+      const closed = await this.#end(id).then(() => true, (error: unknown) => { this.deps.logger?.warn({ sessionId: id, err: error }, "Durable Chat host did not close cleanly"); return false; });
+      if (closed && upgrade) this.deps.locator.setHostEntry(id, undefined);
     }
   }
 
@@ -931,10 +935,8 @@ export class DurableChatService {
     const record = this.#record(ref);
     const connection = await this.#for(ref);
     if (connection.pin === undefined) return this.status(ref);
-    const code = connection.code;
-    const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : durableVersion(entry)));
-    if (pinned === undefined || current === undefined) throw new Error("This Chat cannot move to new host code: the Pi Durable version of its host code cannot be read");
-    if (compareVersions(current, pinned) < 0) throw new Error(`This Chat was opened by a newer Pi Durable (${pinned}); the current host is ${current}`);
+    const refusal = hostMoveRefusal(connection.code);
+    if (refusal !== undefined) throw new Error(refusal);
     const busy = familyBusy(hostStatus((await connection.request("status")).result));
     if (busy !== undefined) throw new Error(`This Chat cannot move to new host code while ${busy}; try again when it is quiet`);
     await this.#end(record.id);
@@ -1177,6 +1179,17 @@ function familiesWithBackgroundJobs(): Set<string> {
 async function hostPin(code: DurableHostProcess["code"], revision: string | undefined): Promise<{ revision: string; current: string } | undefined> {
   if (code === undefined || code.entry === code.current) return undefined;
   return { revision: await shortRevision(revision ?? dirname(code.entry)), current: await shortRevision(dirname(code.current)) };
+}
+
+/**
+ * Why a pinned family cannot move to the current host code, undefined when it can: never to older Pi Durable code (after
+ * a roll back it cannot read a store newer code opened), nor when either version cannot be read.
+ */
+function hostMoveRefusal(code: DurableHostProcess["code"]): string | undefined {
+  const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : durableVersion(entry)));
+  if (pinned === undefined || current === undefined) return "This Chat cannot move to new host code: the Pi Durable version of its host code cannot be read";
+  if (compareVersions(current, pinned) < 0) return `This Chat was opened by a newer Pi Durable (${pinned}); the current host is ${current}`;
+  return undefined;
 }
 
 /**

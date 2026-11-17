@@ -530,4 +530,45 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     }
     await daemon([], { entry: newer }).durable.stop(ref);
   }, 90_000);
+
+  it("A idle close upgrades: an idle-closed pinned Chat reopens on the current revision; one a newer Pi Durable opened stays pinned", async () => {
+    const { root, daemon } = await fixture();
+    const [entryA, entryB] = [await revision(root, "rev-a", "1.4.0"), await revision(root, "rev-b", "1.5.2")];
+    const older = daemon([], { entry: entryA });
+    const pinned = await older.durable.start("/work/a");
+    await older.durable.dispose();
+    const newer = daemon([], { entry: entryB });
+    const opened = await newer.durable.start("/work/b");
+    await newer.durable.dispose();
+
+    // A daemon on rev-b: the first Chat is pinned to rev-a; idle, it closes and its pin goes, so it reopens on rev-b.
+    let now = Date.parse("2026-11-18T08:00:00Z");
+    const current = daemon([], { entry: entryB, now: () => now });
+    await current.durable.reattach();
+    const ref = { id: pinned.id, cwd: pinned.cwd };
+    expect((await current.durable.status(ref)).durableHostPin).toEqual({ revision: "rev-a", current: "rev-b" });
+    now += IDLE_HOST_CLOSE_MS;
+    await current.durable.closeIdleHosts();
+    expect(current.locator.durable(pinned.id)?.host).toBeUndefined();
+    expect(current.locator.durable(pinned.id)?.hostEntry).toBeUndefined();
+    expect((await current.durable.status(ref)).durableHostPin).toBeUndefined();
+    expect(current.locator.durable(pinned.id)?.host?.revision).toBe(join(await realpath(root), "rev-b"));
+    // The idle close keeps the family's work (no end).
+    expect(requests(root, pinned.id).filter((method) => method.startsWith("close"))).toEqual(["close"]);
+    await current.durable.dispose();
+
+    // A rolled-back daemon on 1.4.0: the Chat 1.5.2 opened stays on rev-b through an idle close.
+    const [entryOld] = [await revision(root, "rev-old", "1.4.0")];
+    const rolledBack = daemon([], { entry: entryOld, now: () => now });
+    await rolledBack.durable.reattach();
+    const kept = { id: opened.id, cwd: opened.cwd };
+    expect((await rolledBack.durable.status(kept)).durableHostPin?.revision).toBe("rev-b");
+    now += IDLE_HOST_CLOSE_MS;
+    await rolledBack.durable.closeIdleHosts();
+    expect(rolledBack.locator.durable(opened.id)?.host).toBeUndefined();
+    expect(rolledBack.locator.durable(opened.id)?.hostEntry).toBe(entryB);
+    expect((await rolledBack.durable.status(kept)).durableHostPin?.revision).toBe("rev-b");
+    await rolledBack.durable.stop(kept);
+    await rolledBack.durable.stop(ref);
+  }, 90_000);
 });
