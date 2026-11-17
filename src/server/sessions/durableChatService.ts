@@ -56,9 +56,11 @@ export interface DurableHostProcess {
 
 /**
  * Starts (or, for a launchd host, reattaches to) the host process that owns one Chat family's store. `attachOnly`: never
- * start one; the returned process exits when there is no live host to attach to.
+ * start one; the returned process exits when there is no live host to attach to. `endJobs`: instead of a host, a one-off
+ * process from the same host entry (`--end-jobs`) that cancels the family's unfinished background jobs without opening
+ * its store and exits, 0 once they are cancelled.
  */
-export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean }) => DurableHostProcess;
+export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean; endJobs?: boolean }) => DurableHostProcess;
 
 /** What starts a family's host: the Workbench host entry, the model and Pi agent dir it runs with. */
 export interface DurableHostOptions { entry: string; model: string; agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
@@ -83,12 +85,12 @@ export function durableHostArgs(record: Pick<DurableChatRecord, "id" | "cwd">, s
  * output goes to `host.log` in the store directory.
  */
 export function forkDurableHost(options: DurableHostOptions): DurableHostLauncher {
-  return (record, storeDir) => {
+  return (record, storeDir, launch) => {
     mkdirSync(storeDir, { recursive: true, mode: 0o700 });
     const log = openSync(join(storeDir, "host.log"), "a", 0o600);
     try {
       // No inherited loader flags (tsx): the host is plain Node with type stripping and its own pinned dependencies.
-      return fork(options.entry, durableHostLaunchArgs(options, record, storeDir), {
+      return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : [])], {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
         env: { ...process.env, PI_CODING_AGENT_DIR: options.agentDir },
@@ -876,18 +878,22 @@ export class DurableChatService {
   }
 
   /**
-   * Close a family's host in order: the connected one, else the launchd host the locator names. Only an `explicit` end
-   * (Chat stop, stop-all), which also cancels the family's background jobs, starts a host: when none is left to reach
-   * and the family still has unfinished jobs, so that host cancels them. An idle close or an upgrade keeps the jobs.
+   * Close a family's host in order: the connected one, else the launchd host the locator names. An `explicit` end (Chat
+   * stop, stop-all) also cancels the family's background jobs: when no host is left to reach and the family still has
+   * unfinished jobs, a one-off `endJobs` process cancels them; no host starts, so no undelivered completion wakes the
+   * model. An idle close or an upgrade keeps the jobs.
    */
   async #end(sessionId: string, explicit = false): Promise<void> {
     const record = this.deps.locator.durable(sessionId);
     const pending = this.#connections.get(sessionId) ?? (record?.host === undefined ? undefined : this.#connection(record, true));
     this.#connections.delete(sessionId);
-    let connection = await pending?.catch(() => undefined);
+    const connection = await pending?.catch(() => undefined);
     if (connection === undefined && explicit && record !== undefined && familiesWithBackgroundJobs().has(sessionId)) {
-      connection = await this.#connection(record);
-      this.#connections.delete(sessionId);
+      const child = this.deps.launch(record, join(this.deps.storesDir, record.storeId), { endJobs: true });
+      await new Promise<void>((resolve, reject) => {
+        child.on("error", reject);
+        child.on("exit", (code) => { if (code === 0) resolve(); else reject(new Error(`Cancelling the background jobs of Durable Chat ${sessionId} failed (exit ${String(code)})`)); });
+      });
     }
     await connection?.close(this.deps.closeGraceMs ?? 5000, explicit);
   }

@@ -21,7 +21,7 @@ const status = { persisted: true, isStreaming: false, isCompacting: false, isBas
  * logs every request it gets to `<store>/requests.log` (an explicit end's close as `close:end`). Its revision is the folder of its entry; `<store>/status.json`,
  * when present, overrides fields of its status (a busy family). An explicit end cancels the family's jobs in the
  * background bash registry (PI_BACKGROUND_BASH_ROOT), as the Workbench host's cancelAll does: the runner's group is
- * killed and a cancelled exit recorded.
+ * killed and a cancelled exit recorded. With `--end-jobs` it only cancels them, logs `end-jobs` and exits, never serving.
  */
 const HOST = `
 import { appendFileSync, chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -40,6 +40,11 @@ const cancelJobs = () => {
     } catch {}
   }
 };
+if (process.argv.includes("--end-jobs")) {
+  appendFileSync(join(store, "requests.log"), "end-jobs\\n");
+  cancelJobs();
+  process.exit(0);
+}
 const ownerEpoch = (existsSync(epochFile) ? Number(readFileSync(epochFile, "utf8")) : 0) + 1;
 writeFileSync(epochFile, String(ownerEpoch));
 const server = createServer((socket) => {
@@ -341,7 +346,7 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     expect(requests(root, b.id)).toEqual(["close:end"]);
   }, 60_000);
 
-  it("AC5 end: an explicit end reaches background jobs whose family host is gone; stop and stop-all start the host to cancel them", async () => {
+  it("AC5 end: an explicit end reaches background jobs whose family host is gone; stop and stop-all cancel them without starting a host", async () => {
     const { root, hostsDir, daemon } = await fixture();
     const jobs = join(root, "jobs");
     const saved = process.env["PI_BACKGROUND_BASH_ROOT"];
@@ -377,17 +382,18 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
       await second.durable.stop({ id: a.id, cwd: a.cwd });
       await expect.poll(jobA.gone).toBe(true);
       expect(jobA.cancelled()).toBe(true);
-      expect(requests(root, a.id)).toEqual(["close:end"]);
+      // Only the one-off cancel ran: no host served, so nothing undelivered could wake a model.
+      expect(requests(root, a.id)).toEqual(["end-jobs"]);
       expect(loaded(`${PREFIX}.${a.id}`) || existsSync(join(hostsDir, `${PREFIX}.${a.id}.plist`))).toBe(false);
       expect(jobB.gone()).toBe(false);
 
       await second.durable.stopAll();
       await expect.poll(jobB.gone).toBe(true);
       expect(jobB.cancelled()).toBe(true);
-      expect(requests(root, b.id)).toEqual(["close:end"]);
+      expect(requests(root, b.id)).toEqual(["end-jobs"]);
       expect(loaded(`${PREFIX}.${b.id}`) || existsSync(join(hostsDir, `${PREFIX}.${b.id}.plist`))).toBe(false);
-      // A family with nothing left to cancel and no host is not started again.
-      expect(requests(root, a.id)).toEqual(["close:end"]);
+      // A family with nothing left to cancel is not reached again.
+      expect(requests(root, a.id)).toEqual(["end-jobs"]);
     } finally {
       for (const child of runners) { try { process.kill(-(child.pid ?? 0), "SIGKILL"); } catch { /* gone */ } }
       if (saved === undefined) Reflect.deleteProperty(process.env, "PI_BACKGROUND_BASH_ROOT");

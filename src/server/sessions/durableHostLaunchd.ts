@@ -1,7 +1,7 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { chmodSync, existsSync, lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
@@ -52,7 +52,48 @@ export function launchdDurableHost(options: DurableHostOptions & {
   const entry = realpathSync(options.entry);
   if (entry.split(sep).some((part) => part.endsWith(".installed"))) throw new Error(`Durable hosts start from a revision folder, not ${entry}`);
   const context: LaunchContext = { ...options, entry, launchctl: options.launchctl ?? launchctl, startTimeoutMs: options.startTimeoutMs ?? 60_000 };
-  return (record, storeDir, launch) => new LaunchdHost(context, record, storeDir, launch?.attachOnly === true);
+  return (record, storeDir, launch) => launch?.endJobs === true ? endJobs(context, record, storeDir) : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true);
+}
+
+/** Phase C3: a family stays on the code its host started from; only a revision folder that is gone (pruned) moves it to the current one. */
+function familyEntry(context: LaunchContext, record: DurableChatRecord): string {
+  const pinned = context.locator.durable(record.id)?.hostEntry;
+  return pinned !== undefined && existsSync(pinned) ? pinned : context.entry;
+}
+
+/** The daemon's environment, as a forked host inherited it, less secret-named variables (a plist is a file on disk). */
+function hostEnvironment(context: LaunchContext) {
+  return Object.fromEntries(Object.entries({ ...process.env, PI_CODING_AGENT_DIR: context.agentDir }).filter(([name]) => !SECRET_NAME.test(name)));
+}
+
+/** Unload the family's job (bootout returns once its process is gone), remove its plist and forget the host. */
+async function unload(context: LaunchContext, record: DurableChatRecord): Promise<void> {
+  const label = `${context.labelPrefix}.${record.storeId}`;
+  await context.launchctl(["bootout", `gui/${String(process.getuid?.())}/${label}`]).catch(() => undefined);
+  rmSync(join(context.hostsDir, `${label}.plist`), { force: true });
+  context.locator.setHost(record.id, undefined);
+}
+
+/**
+ * End a family no host of which is reachable: unload whatever job its label still holds, then cancel its unfinished
+ * background jobs with the family's host entry run once as a plain child with `--end-jobs`. No host starts.
+ * shortcut: a family pinned to host code older than `--end-jobs` fails here (stop reports it); fall back to the current
+ * entry if such pins outlive the cutover.
+ */
+function endJobs(context: LaunchContext, record: DurableChatRecord, storeDir: string): DurableHostProcess {
+  const ended = Object.assign(new EventEmitter(), { send: () => false, kill: () => false });
+  void unload(context, record).then(() => {
+    mkdirSync(storeDir, { recursive: true, mode: 0o700 });
+    const log = openSync(join(storeDir, "host.log"), "a", 0o600);
+    try {
+      spawn(process.execPath, [familyEntry(context, record), ...durableHostLaunchArgs(context, record, storeDir), "--end-jobs"], { cwd: storeDir, env: hostEnvironment(context), stdio: ["ignore", log, log] })
+        .on("error", (error) => ended.emit("error", error))
+        .on("exit", (code, signal) => ended.emit("exit", code, signal));
+    } finally {
+      closeSync(log);
+    }
+  }).catch((error: unknown) => ended.emit("error", error));
+  return ended;
 }
 
 type LaunchContext = DurableHostOptions & { labelPrefix: string; hostsDir: string; locator: SessionRuntimeLocator; launchctl: Launchctl; startTimeoutMs: number };
@@ -90,7 +131,7 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
         this.emit("error", new Error(`Refused Durable host socket ${recorded.socket}: ${error instanceof Error ? error.message : String(error)}`));
       }
       // Gone or not ours: unload the family's job (a refused process under our label goes with it), forget the host.
-      await this.#unload();
+      await unload(this.context, this.record);
     }
     if (attachOnly) throw new Error("No running Durable host to reattach to");
     await this.#launch(recorded?.ownerEpoch);
@@ -106,16 +147,13 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     await this.context.launchctl(["bootout", `${this.#domain}/${this.#label}`]).catch(() => undefined);
     rmSync(socket, { force: true });
     const plist = join(hostsDir, `${this.#label}.plist`);
-    // Phase C3: a family stays on the code its host started from until the owner upgrades it; only a revision folder
-    // that is gone (pruned) moves it to the current one.
-    const pinned = this.context.locator.durable(this.record.id)?.hostEntry;
-    const entry = pinned !== undefined && existsSync(pinned) ? pinned : this.context.entry;
+    // Phase C3: a family stays on the code its host started from until the owner upgrades it.
+    const entry = familyEntry(this.context, this.record);
     this.#entry = entry;
     writeFileSync(plist, launchdPlist({
       Label: this.#label,
       ProgramArguments: [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket],
-      // The daemon's environment, as a forked host inherited it, less secret-named variables (the plist is a file on disk).
-      EnvironmentVariables: Object.fromEntries(Object.entries({ ...process.env, PI_CODING_AGENT_DIR: this.context.agentDir }).filter(([name]) => !SECRET_NAME.test(name))),
+      EnvironmentVariables: hostEnvironment(this.context),
       WorkingDirectory: this.storeDir,
       StandardOutPath: join(this.storeDir, "host.log"),
       StandardErrorPath: join(this.storeDir, "host.log"),
@@ -208,15 +246,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
   async #closed(): Promise<void> {
     if (this.#detached) return;
     // After `close` (or the kill that enforces it) the job is done: unload it, so launchd holds nothing for the family.
-    if (this.#closing) await this.#unload();
+    if (this.#closing) await unload(this.context, this.record);
     this.emit("exit", this.#closing ? 0 : null, null);
-  }
-
-  /** Unload the family's job (bootout returns once its process is gone), remove its plist and forget the host. */
-  async #unload(): Promise<void> {
-    await this.context.launchctl(["bootout", `${this.#domain}/${this.#label}`]).catch(() => undefined);
-    rmSync(join(this.context.hostsDir, `${this.#label}.plist`), { force: true });
-    this.context.locator.setHost(this.record.id, undefined);
   }
 
   send(message: unknown, callback?: (error: Error | null) => void): boolean {
