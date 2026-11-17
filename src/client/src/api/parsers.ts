@@ -562,6 +562,7 @@ function optionalDurableHostPin(value: unknown): Pick<SessionStatus, "durableHos
   return {
     durableHostPin: {
       revision: requireBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH), current: requireBoundedNonEmptyString(record, "current", ASK_USER_ID_MAX_LENGTH),
+      ...(record["pending"] === true ? { pending: true } : {}),
       ...(Array.isArray(repeats) ? { repeats: repeats.filter((item): item is string => typeof item === "string").slice(0, 8).map((item) => item.slice(0, ASK_USER_TEXT_MAX_LENGTH)) } : {}),
     },
   };

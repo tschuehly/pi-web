@@ -414,6 +414,8 @@ async function createSessionDaemonRuntime() {
       notifications: notificationStore,
       launches: workstreamLaunchStore,
       logger: app.log,
+      // Seamless upgrade B, off by default: pinned Chats restart on current host code by themselves at a safe moment.
+      autoUpgrade: daemonEnvironment["PI_WEB_DURABLE_AUTO_UPGRADE"] === "1",
       ...(spawnTargets === undefined ? {} : { spawnTargets }),
       // As a legacy Chat's session reads it: Pi's setting for the workspace under the active profile.
       cacheMissNotices: { enabled: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getShowCacheMissNotices(), models: auth.runtime },

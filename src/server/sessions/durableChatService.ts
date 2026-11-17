@@ -143,6 +143,8 @@ class DurableHostConnection {
   revision: string | undefined;
   /** Set while the family runs older host code than new Chats get (Phase C3): both revisions, short. */
   pin: { revision: string; current: string } | undefined;
+  /** Seamless upgrade B: the daemon restarts this pinned family on current code at its next safe moment. */
+  upgradePending = false;
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
@@ -297,12 +299,21 @@ export class DurableChatService {
     closeGraceMs?: number;
     /** The clock of the idle close; tests inject one. */
     now?: () => number;
+    /**
+     * Seamless upgrade B (`PI_WEB_DURABLE_AUTO_UPGRADE=1`, default off): a pinned family that may move is "upgrade
+     * pending" and restarts on current code by itself (Upgrade now) once only restart-surviving work remains.
+     */
+    autoUpgrade?: boolean;
   }) {
-    this.#idleSweep = setInterval(() => { void this.closeIdleHosts(); }, IDLE_HOST_SWEEP_MS);
+    this.#idleSweep = setInterval(() => { void this.closeIdleHosts().then(() => this.upgradePendingHosts()); }, IDLE_HOST_SWEEP_MS);
     this.#idleSweep.unref();
   }
 
   readonly #idleSweep: NodeJS.Timeout;
+  /** Chats whose pending automatic upgrade the owner cancelled. ponytail: for the daemon's life; persist if a restart should keep it. */
+  readonly #upgradeDeclined = new Set<string>();
+  /** Chats an automatic upgrade is checking or restarting. */
+  readonly #autoUpgrading = new Set<string>();
   /** When each connected family last opened or sent an event: its idle window starts there. */
   readonly #lastActive = new Map<string, number>();
 
@@ -889,7 +900,7 @@ export class DurableChatService {
    * unfinished jobs, a one-off `endJobs` process cancels them; no host starts, so no undelivered completion wakes the
    * model. An idle close or an upgrade keeps the jobs.
    */
-  async #end(sessionId: string, explicit = false, upgrade = false): Promise<void> {
+  async #end(sessionId: string, explicit = false): Promise<void> {
     const record = this.deps.locator.durable(sessionId);
     const pending = this.#connections.get(sessionId) ?? (record?.host === undefined ? undefined : this.#connection(record, true));
     this.#connections.delete(sessionId);
@@ -901,7 +912,7 @@ export class DurableChatService {
         child.on("exit", (code) => { if (code === 0) resolve(); else reject(new Error(`Cancelling the background jobs of Durable Chat ${sessionId} failed (exit ${String(code)})`)); });
       });
     }
-    await connection?.close(this.deps.closeGraceMs ?? 5000, explicit, upgrade);
+    await connection?.close(this.deps.closeGraceMs ?? 5000, explicit);
   }
 
   /**
@@ -933,13 +944,19 @@ export class DurableChatService {
    * - `now` (Upgrade now, seamless upgrade C): whatever runs, the host closes in order (`upgrade-restart`) and the new
    *   host starts at once and resumes, recovering as after any restart (see `upgradeRepeats`). If the new host does not
    *   start, the family goes back to its old pin and host, and the error says so.
-   * shortcut: input arriving between the quiet check and the close waits, paused, for the next message; hold new
-   * requests during the handover if that happens in practice.
+   * - `cancel`: drop the pending automatic upgrade (B; see `upgradePendingHosts`).
+   * shortcut (quiet): input arriving between the quiet check and the close waits, paused, for the next message.
    */
-  async upgradeHost(ref: SessionRouteRef, mode: "quiet" | "now" = "quiet"): Promise<ClientSessionStatus> {
+  async upgradeHost(ref: SessionRouteRef, mode: "quiet" | "now" | "cancel" = "quiet"): Promise<ClientSessionStatus> {
     const record = this.#record(ref);
     const connection = await this.#for(ref);
     const pin = connection.pin;
+    if (mode === "cancel") {
+      // Cancel a pending automatic upgrade (B): the family stays pinned until the owner asks.
+      this.#upgradeDeclined.add(record.id);
+      connection.upgradePending = false;
+      return this.status(ref);
+    }
     if (pin === undefined) return this.status(ref);
     const refusal = hostMoveRefusal(connection.code);
     if (refusal !== undefined) throw new Error(refusal);
@@ -954,30 +971,76 @@ export class DurableChatService {
     return this.status(ref);
   }
 
-  /** Upgrade now's ordered restart: close (`upgrade`), drop the pin, start and resume the new host; else roll back. */
+  /**
+   * Upgrade now's ordered restart: close (`upgrade`), drop the pin, start the new host and resume it; else roll back.
+   * Requests arriving meanwhile wait for the new host instead of starting a second one on the store.
+   */
   async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }): Promise<void> {
     const pinned = this.deps.locator.durable(record.id)?.hostEntry;
     this.deps.logger?.info?.({ sessionId: record.id, from: pin.revision, to: pin.current }, "upgrade-restart: restarting Durable Chat host on current code");
-    await this.#end(record.id, false, true);
-    this.deps.locator.setHostEntry(record.id, undefined);
+    const old = this.#connections.get(record.id);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const held = gate.then(() => {
+      this.#connections.delete(record.id);
+      return this.#connection(record);
+    });
+    held.catch(() => { if (this.#connections.get(record.id) === held) this.#connections.delete(record.id); });
+    this.#connections.set(record.id, held);
+    let connection: DurableHostConnection;
     try {
-      await this.#resumed(record);
+      await (await old?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, false, true);
+      this.deps.locator.setHostEntry(record.id, undefined);
+      release();
+      connection = await held;
     } catch (error) {
+      release();
       const reason = error instanceof Error ? error.message : String(error);
       this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the new host did not start; rolling back to the old pin");
       this.deps.locator.setHostEntry(record.id, pinned);
-      const back = await this.#resumed(record).then(() => "", (again: unknown) => ` It did not start there either (${again instanceof Error ? again.message : String(again)}); the next message tries again.`);
+      if (this.#connections.get(record.id) === held) this.#connections.delete(record.id);
+      const back = await this.#connection(record).then((restored) => this.#resume(restored)).then(() => "", (again: unknown) => ` It did not start there either (${again instanceof Error ? again.message : String(again)}); the next message tries again.`);
       throw new Error(`The new host code (${pin.current}) did not start: ${reason}. This Chat is back on its old host code (${pin.revision}).${back}`, { cause: error });
     }
+    await this.#resume(connection);
   }
 
-  /** Start the family's host and resume it at once; a host without `resume` (older code) stays paused until the next message. */
-  async #resumed(record: DurableChatRecord): Promise<void> {
-    const connection = await this.#connection(record);
+  /** Resume a host Upgrade now started; a host without `resume` (older code) stays paused until the next message. */
+  async #resume(connection: DurableHostConnection): Promise<void> {
     await connection.request("resume", { reason: "upgrade-restart" }).catch((error: unknown) => {
       if (!(error instanceof Error && error.message === "Unknown method resume")) throw error;
-      this.deps.logger?.warn({ sessionId: record.id }, "upgrade-restart: this host code cannot resume by itself; it waits for the next message");
+      this.deps.logger?.warn({}, "upgrade-restart: this host code cannot resume by itself; it waits for the next message");
     });
+  }
+
+  /**
+   * Seamless upgrade B: restart every upgrade-pending family whose only work left survives a restart (open questions,
+   * background bash, watchers, Atelier Pages; see `restartSafe`). A running turn, queued input, a running tool or
+   * children wait. Runs on each status the host publishes and on the idle sweep. A failed start rolls back (as Upgrade
+   * now) and leaves the family pinned, with a notice in its inbox.
+   */
+  async upgradePendingHosts(only?: string): Promise<void> {
+    for (const [id, pending] of [...this.#connections]) {
+      if ((only !== undefined && id !== only) || this.#autoUpgrading.has(id)) continue;
+      this.#autoUpgrading.add(id);
+      try {
+        const connection = await pending.catch(() => undefined);
+        const record = this.deps.locator.durable(id);
+        const pin = connection?.pin;
+        if (connection?.upgradePending !== true || pin === undefined || record === undefined || this.#connections.get(id) !== pending) continue;
+        const status = await connection.request("status").then(({ result }) => hostStatus(result), () => undefined);
+        if (status === undefined || !restartSafe(status) || this.#upgradeDeclined.has(id) || this.#connections.get(id) !== pending) continue;
+        this.deps.logger?.info?.({ sessionId: id }, "upgrade-restart: automatic upgrade at a safe moment");
+        await this.#upgradeRestart(record, pin).catch((error: unknown) => {
+          this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
+          this.#upgradeDeclined.add(id);
+          const generation = this.#notificationGenerations.get(id);
+          if (generation !== undefined) this.#publishNotifications(this.deps.notifications?.addNotification(generation, error instanceof Error ? error.message : String(error), "warning").mutations ?? []);
+        });
+      } finally {
+        this.#autoUpgrading.delete(id);
+      }
+    }
   }
 
   /**
@@ -1021,7 +1084,8 @@ export class DurableChatService {
       (event) => { this.#onEvent(record.id, event, connection); },
       () => this.deps.events.currentSeq(record.id),
       (error) => {
-        this.#connections.delete(record.id);
+        // Only this host's entry: during Upgrade now the map already holds the handover to the next host.
+        if (this.#connections.get(record.id) === opened) this.#connections.delete(record.id);
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host exited");
         void this.#unread(record, "closed");
         this.deps.events.publish(record.id, { type: "agent.end" });
@@ -1031,6 +1095,7 @@ export class DurableChatService {
     const opened = connection.ready.then(async () => {
       this.#capabilities.set(record.id, connection.capabilities);
       connection.pin = await hostPin(host.code, connection.revision);
+      connection.upgradePending = this.deps.autoUpgrade === true && connection.pin !== undefined && !this.#upgradeDeclined.has(record.id) && hostMoveRefusal(host.code) === undefined;
       const loaded = await this.deps.resources?.(record.cwd, connection.contributed).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
@@ -1130,6 +1195,7 @@ export class DurableChatService {
       return;
     }
     if (event.type === "status.update") {
+      if (connection.upgradePending && restartSafe(event.status)) void this.upgradePendingHosts(sessionId);
       const status = { ...browserStatus(event.status, connection), sessionId };
       this.deps.events.publish(sessionId, { type: "status.update", status }, scope);
       this.deps.events.publishGlobal({ type: "status.update", status });
@@ -1183,7 +1249,7 @@ function browserStatus(status: HostTranscript["status"], connection: DurableHost
     ...status,
     queuedMessages: status.queuedMessages.map(displayQueuedMessage),
     capabilities: connection.capabilities,
-    ...(connection.pin === undefined ? {} : { durableHostPin: { ...connection.pin, repeats: upgradeRepeats(status) } }),
+    ...(connection.pin === undefined ? {} : { durableHostPin: { ...connection.pin, repeats: upgradeRepeats(status), ...(connection.upgradePending ? { pending: true } : {}) } }),
     ...(connection.capabilities.includes("queue.edit") ? {} : { queueMessageActionsUnavailable: "Editing queued messages is not available in this Durable Chat host yet." }),
   };
 }
@@ -1279,6 +1345,15 @@ function familyBusy(status: HostTranscript["status"]): string | undefined {
   if (list("pi-process-monitor:watchers", "watchers")?.length !== 0) return "a watcher is running";
   if (status.extensionStatuses?.["pi-workbench:atelier"] !== undefined) return "it serves Atelier Pages";
   return undefined;
+}
+
+/**
+ * Whether an automatic upgrade (B) may restart the family now: nothing runs or waits except work that survives a host
+ * restart unchanged (open questions, background bash, watchers, Atelier Pages).
+ */
+function restartSafe(status: HostTranscript["status"]): boolean {
+  return !status.isStreaming && !status.isCompacting && !status.isBashRunning && status.pendingMessageCount === 0
+    && (status.activeToolExecutions?.length ?? 0) === 0 && !childrenRunning(status);
 }
 
 /** A JSON list in one of the host's extension status lines: none when the line is absent, undefined when unparseable. */

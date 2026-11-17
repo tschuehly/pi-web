@@ -3640,7 +3640,7 @@ export class PiWebApp extends LitElement {
 
   private readonly handleSubmitAsk = (askId: string, submission: AskUserSubmission): Promise<void> => this.sessions.submitAsk(askId, submission);
   private readonly handleResolveEffect = (id: string, resolution: SessionEffectResolution): void => { void this.sessions.resolveEffect(id, resolution); };
-  private readonly handleUpgradeDurableHost = (mode: "quiet" | "now"): void => { void this.sessions.upgradeDurableHost(mode); };
+  private readonly handleUpgradeDurableHost = (mode: "quiet" | "now" | "cancel"): void => { void this.sessions.upgradeDurableHost(mode); };
 
   private readonly handleAnswerDialog = (dialogId: string, value: ExtensionDialogAnswer): Promise<void> => this.sessions.answerDialog(dialogId, value);
 

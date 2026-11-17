@@ -81,7 +81,7 @@ afterEach(async () => {
 });
 
 /** A daemon's view: data in a fresh folder, sockets in a short owner-only one (macOS caps socket paths at 104 bytes). */
-interface DaemonOptions { entry?: string; now?: () => number; events?: SessionEventHub }
+interface DaemonOptions { entry?: string; now?: () => number; events?: SessionEventHub; autoUpgrade?: boolean }
 async function fixture(): Promise<{ root: string; hostsDir: string; daemon: (warnings?: string[], options?: DaemonOptions) => { durable: DurableChatService; locator: SessionRuntimeLocator } }> {
   const short = tmpdir().length <= 60 ? tmpdir() : join(homedir(), ".pi-workbench", "tmp");
   await mkdir(short, { recursive: true });
@@ -101,6 +101,7 @@ async function fixture(): Promise<{ root: string; hostsDir: string; daemon: (war
       logger: { warn: (_object, message) => { warnings.push(message); } },
       closeGraceMs: 2000,
       ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.autoUpgrade === undefined ? {} : { autoUpgrade: options.autoUpgrade }),
     });
     return { durable, locator };
   };
@@ -623,5 +624,61 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     expect((await durable.status(ref)).durableHostPin).toMatchObject({ revision: "rev-a", current: "rev-broken" });
     expect(requests(root, chat.id).filter((method) => method.startsWith("resume"))).toEqual(["resume:upgrade-restart"]);
     await durable.stop(ref);
+  }, 120_000);
+
+  it("B automatic upgrade (off by default): a pending family restarts by itself once only restart-surviving work remains; Cancel keeps it pinned", async () => {
+    const { root, daemon } = await fixture();
+    const [entryA, entryB] = [await revision(root, "rev-a", "1.4.0"), await revision(root, "rev-b", "1.5.2")];
+    const first = daemon([], { entry: entryA });
+    const [chat, other] = [await first.durable.start("/work/a"), await first.durable.start("/work/b")];
+    const [ref, otherRef] = [{ id: chat.id, cwd: chat.cwd }, { id: other.id, cwd: other.cwd }];
+    await first.durable.dispose();
+    const statusFile = (id: string) => join(root, "data", "durable", id, "status.json");
+    const running = (key: string, value: object) => ({ [key]: JSON.stringify({ schemaVersion: 1, ...value }) });
+
+    // Off: nothing is pending and nothing restarts.
+    const off = daemon([], { entry: entryB });
+    await off.durable.reattach();
+    const offPid = off.locator.durable(chat.id)?.host?.pid;
+    expect((await off.durable.status(ref)).durableHostPin?.pending).toBeUndefined();
+    await off.durable.upgradePendingHosts();
+    expect(off.locator.durable(chat.id)?.host?.pid).toBe(offPid);
+    await off.durable.dispose();
+
+    const { durable, locator } = daemon([], { entry: entryB, autoUpgrade: true });
+    await durable.reattach();
+    const pid = locator.durable(chat.id)?.host?.pid;
+    expect((await durable.status(ref)).durableHostPin).toMatchObject({ revision: "rev-a", pending: true });
+    // The other Chat is busy meanwhile (a quiet pending family would move at the first check).
+    await writeFile(statusFile(other.id), JSON.stringify({ isStreaming: true }));
+    // A turn, queued input, a running tool or a child: it waits.
+    for (const busy of [
+      { isStreaming: true },
+      { pendingMessageCount: 1, queuedMessages: [{ kind: "followUp", text: "next" }] },
+      { activeToolExecutions: [{ id: "tool:1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-11-18T08:00:00Z" }] },
+      { extensionStatuses: running("pi-workbench:activity", { items: [{ id: "delegate:1", startedAt: "2026-11-18T08:00:00Z" }] }) },
+    ]) {
+      await writeFile(statusFile(chat.id), JSON.stringify(busy));
+      await durable.upgradePendingHosts();
+      expect(locator.durable(chat.id)?.host?.pid, JSON.stringify(busy)).toBe(pid);
+    }
+    expect((await durable.status(otherRef)).durableHostPin).toMatchObject({ revision: "rev-a", pending: true });
+    // The other Chat's owner cancels; then both have only open questions, background bash, a watcher and a Page.
+    await durable.upgradeHost(otherRef, "cancel");
+    expect((await durable.status(otherRef)).durableHostPin?.pending).toBeUndefined();
+    const survivors = JSON.stringify({ pendingAsks: [{ askId: "q1" }], extensionStatuses: { ...running("pi-workbench:background-bash", { jobs: [{ id: "job-1" }] }), ...running("pi-process-monitor:watchers", { watchers: [{ id: "w" }] }), ...running("pi-workbench:atelier", { serving: true }) } });
+    await writeFile(statusFile(chat.id), survivors);
+    await writeFile(statusFile(other.id), survivors);
+    const otherPid = locator.durable(other.id)?.host?.pid;
+    await durable.upgradePendingHosts();
+    expect(alive(pid ?? 0)).toBe(false);
+    expect(locator.durable(chat.id)?.host?.revision).toBe(join(await realpath(root), "rev-b"));
+    expect((await durable.status(ref)).durableHostPin).toBeUndefined();
+    const log = requests(root, chat.id);
+    expect(log.slice(log.indexOf("close:upgrade"), log.indexOf("close:upgrade") + 2)).toEqual(["close:upgrade", "resume:upgrade-restart"]);
+    expect(locator.durable(other.id)?.host?.pid).toBe(otherPid);
+    expect((await durable.status(otherRef)).durableHostPin?.revision).toBe("rev-a");
+    await durable.stop(ref);
+    await durable.stop(otherRef);
   }, 120_000);
 });

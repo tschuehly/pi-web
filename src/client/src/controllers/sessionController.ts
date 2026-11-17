@@ -1506,7 +1506,7 @@ export class SessionController {
   }
 
   /** Move the selected Durable Chat's pinned host to the current host code: refused while busy, or `now` with recovery. */
-  async upgradeDurableHost(mode: "quiet" | "now" = "quiet"): Promise<void> {
+  async upgradeDurableHost(mode: "quiet" | "now" | "cancel" = "quiet"): Promise<void> {
     const state = this.getState();
     const session = state.selectedSession;
     if (session === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) return;

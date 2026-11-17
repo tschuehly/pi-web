@@ -10,9 +10,9 @@ const RESOLUTIONS: readonly { resolution: SessionEffectResolution; label: string
 
 /**
  * A Durable Chat pinned to older host code: its revision, Upgrade host (while it is quiet) and Upgrade now (restart
- * with recovery), which names what it would repeat.
+ * with recovery), which names what it would repeat; and, with automatic upgrades on, "Upgrade pending" with Cancel.
  */
-export function renderDurableHostPin(pin: SessionStatus["durableHostPin"], onUpgrade: ((mode: "quiet" | "now") => void) | undefined) {
+export function renderDurableHostPin(pin: SessionStatus["durableHostPin"], onUpgrade: ((mode: "quiet" | "now" | "cancel") => void) | undefined) {
   if (pin === undefined) return null;
   const repeats = pin.repeats ?? [];
   const now = repeats.length === 0 ? "Upgrade now (nothing repeats)" : `Upgrade now (repeats: ${repeats.join("; ")})`;
@@ -21,7 +21,9 @@ export function renderDurableHostPin(pin: SessionStatus["durableHostPin"], onUpg
       Host <code>${pin.revision}</code> (new Chats run <code>${pin.current}</code>)
       ${onUpgrade === undefined ? null : html`
         <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code; refused while it is busy" @click=${() => { onUpgrade("quiet"); }}>Upgrade host</button>
-        <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code now; the Chat resumes by itself. Open questions, queued input, background bash and Atelier Pages carry over." @click=${() => { onUpgrade("now"); }}>${now}</button>`}
+        <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code now; the Chat resumes by itself. Open questions, queued input, background bash and Atelier Pages carry over." @click=${() => { onUpgrade("now"); }}>${now}</button>
+        ${pin.pending === true ? html`<span>Upgrade pending: it restarts on the current code once no turn, tool or child runs</span>
+          <button type="button" class="ui-button ui-button--compact" title="Keep this Chat on its host code until you upgrade it" @click=${() => { onUpgrade("cancel"); }}>Cancel</button>` : null}`}
     </p>
   `;
 }

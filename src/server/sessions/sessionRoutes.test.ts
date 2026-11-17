@@ -2005,7 +2005,7 @@ class CapturingRouteSessionService implements SessionRouteService {
     return Promise.resolve();
   }
 
-  upgradeDurableHost(lookup: SessionRouteRef, mode?: "quiet" | "now"): Promise<SessionStatus> {
+  upgradeDurableHost(lookup: SessionRouteRef, mode?: "quiet" | "now" | "cancel"): Promise<SessionStatus> {
     this.calls.push({ upgradeDurableHost: lookup, ...(mode === undefined ? {} : { mode }) });
     return Promise.resolve(idleStatus(lookup));
   }
