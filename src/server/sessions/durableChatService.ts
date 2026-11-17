@@ -1,6 +1,7 @@
 import { execFile, fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, mkdirSync, openSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { CHAT_CAPABILITY_LABELS, type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
@@ -865,21 +866,30 @@ export class DurableChatService {
     await this.#end(ref.id, true);
   }
 
-  /** Stop-all: every family host, connected or only recorded by an earlier daemon, ends as `stop` ends one. */
+  /**
+   * Stop-all: every family host, connected or only recorded by an earlier daemon, ends as `stop` ends one, and so does
+   * every family with unfinished background jobs whose host is gone.
+   */
   async stopAll(): Promise<void> {
     const recorded = this.deps.locator.all().filter((record) => record.host !== undefined).map((record) => record.id);
-    await Promise.all([...new Set([...this.#connections.keys(), ...recorded])].map((id) => this.#end(id, true)));
+    await Promise.all([...new Set([...this.#connections.keys(), ...recorded, ...familiesWithBackgroundJobs()])].map((id) => this.#end(id, true)));
   }
 
   /**
-   * Close a family's host in order: the connected one, else the launchd host the locator names; never starts one.
-   * `explicit` (Chat stop, stop-all) also cancels its background jobs; an idle close or an upgrade keeps them.
+   * Close a family's host in order: the connected one, else the launchd host the locator names. Only an `explicit` end
+   * (Chat stop, stop-all), which also cancels the family's background jobs, starts a host: when none is left to reach
+   * and the family still has unfinished jobs, so that host cancels them. An idle close or an upgrade keeps the jobs.
    */
   async #end(sessionId: string, explicit = false): Promise<void> {
     const record = this.deps.locator.durable(sessionId);
     const pending = this.#connections.get(sessionId) ?? (record?.host === undefined ? undefined : this.#connection(record, true));
     this.#connections.delete(sessionId);
-    await (await pending?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, explicit);
+    let connection = await pending?.catch(() => undefined);
+    if (connection === undefined && explicit && record !== undefined && familiesWithBackgroundJobs().has(sessionId)) {
+      connection = await this.#connection(record);
+      this.#connections.delete(sessionId);
+    }
+    await connection?.close(this.deps.closeGraceMs ?? 5000, explicit);
   }
 
   /**
@@ -1125,6 +1135,27 @@ function browserStatus(status: HostTranscript["status"], connection: DurableHost
 }
 
 const run = promisify(execFile);
+
+/**
+ * Chat families with background bash jobs not yet settled, read from the Workbench job registry as its host reads it
+ * (pi-workbench extensions/background-bash/jobs.mjs): `<root>/<job>/job.json` names the family as `sessionId`, and an
+ * `exit` record settles the job. The root comes from the same environment the daemon gives its hosts.
+ * shortcut: a job whose runner vanished without an exit (a machine restart) counts until a host settles it once.
+ */
+function familiesWithBackgroundJobs(): Set<string> {
+  const root = process.env["PI_BACKGROUND_BASH_ROOT"] ?? join(homedir(), ".pi-workbench", "background-bash", "jobs");
+  const families = new Set<string>();
+  for (const id of existsSync(root) ? readdirSync(root) : []) {
+    if (existsSync(join(root, id, "exit"))) continue;
+    try {
+      const job: unknown = JSON.parse(readFileSync(join(root, id, "job.json"), "utf8"));
+      if (isRecord(job) && typeof job["sessionId"] === "string") families.add(job["sessionId"]);
+    } catch {
+      // Not a job record (being written, or foreign).
+    }
+  }
+  return families;
+}
 
 /** Both revisions, short, while a launchd family runs other host code than new families get; undefined otherwise. */
 async function hostPin(code: DurableHostProcess["code"], revision: string | undefined): Promise<{ revision: string; current: string } | undefined> {
