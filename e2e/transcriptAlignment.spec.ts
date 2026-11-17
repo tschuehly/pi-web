@@ -204,6 +204,11 @@ for (const layout of ["tabs", "grid"] as const) {
       const thinking = transcript(page).locator("details.thinking-group").first();
       if (await thinking.evaluate((element) => !(element as HTMLDetailsElement).open)) await thinking.locator("> summary").click();
       await expect(transcript(page).locator("details.tool-fold")).toHaveCount(1);
+      // Failed tool calls stay collapsed (c45bdddb); expand one so its Result is measured.
+      for (const selector of ["details.tool-fold", "details.tool-fold details.text-body"]) {
+        const fold = transcript(page).locator(selector).first();
+        if (await fold.evaluate((element) => !(element as HTMLDetailsElement).open)) await fold.locator("> summary").click();
+      }
       await page.waitForTimeout(500);
       const result = await measure(page);
       const name = `${layout}-${scheme}`;

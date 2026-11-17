@@ -89,6 +89,8 @@ describe("chat message normalization", () => {
     const projected = { role: "system", entryId: "wake-1", parts: [{ type: "subagentCompletion", text: content }] };
     expect(normalizeMessage(notice)).toEqual([projected]);
     expect(normalizeMessages([notice])).toEqual([projected]);
+    // Notices that carry their results also name what they delivered and what is left to collect.
+    expect(normalizeMessages([{ ...notice, details: { attention: "terminal-results", delivered: ["child-1"], collect: [] } }])).toEqual([projected]);
     for (const other of [
       { ...notice, role: "system" },
       { ...notice, customType: "other" },

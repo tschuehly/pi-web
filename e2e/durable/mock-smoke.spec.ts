@@ -27,7 +27,7 @@ async function send(page: Page, text: string): Promise<void> {
 
 async function chooseModel(page: Page, model: { provider: string; id: string }): Promise<void> {
   await page.getByRole("button", { name: /^Model: / }).click();
-  await page.getByRole("combobox", { name: "Search models" }).fill(model.id);
+  await page.getByRole("combobox", { name: "Search models" }).fill(`${model.provider}/${model.id}`); // the id alone also matches openai/gpt-6-luna
   await page.getByRole("listbox", { name: "Models" }).getByRole("option", { name: model.id, exact: true }).first().click();
   await expect(page.getByRole("button", { name: new RegExp(`^Model: ${model.provider}/${model.id}`) })).toBeVisible();
 }

@@ -205,10 +205,9 @@ test("AC-P073 delegate self-report remains distinct from inferred tool activity"
     const roster = JSON.parse((await status(page)).extensionStatuses!["pi-workbench:activity"]!) as { items: { activity: string; reportedStatus: string }[] };
     expect(roster.items[0]?.activity).not.toBe(roster.items[0]?.reportedStatus);
   } finally { await mock.release(marker); }
-  await expect.poll(async () => JSON.stringify((await status(page)).extensionStatuses)).toContain("endedAt");
+  // The completion notice carries the result and collects it, so the row leaves Activity without a subagent_collect.
+  await expect.poll(async () => (await status(page)).extensionStatuses?.["pi-workbench:activity"]).toBeUndefined();
   await expect.poll(async () => (await status(page)).isStreaming).toBe(false);
-  await tool(page, "subagent_collect", {});
-  expect((await status(page)).extensionStatuses?.["pi-workbench:activity"]).toBeUndefined();
 });
 
 test("AC-P101 telemetry survives reopen without duplicate usage and includes child lineage", async ({ page }) => {

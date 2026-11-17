@@ -46,7 +46,7 @@ test("P072 AC-P102 child grep/find/ls work and tools_enable cannot widen its all
   await writeFile(process.env["PI_WEB_E2E_QUOTA_CACHE"]!, JSON.stringify({ version: 1, checkedAt: Date.now(), status: 0, stdout: JSON.stringify({ providers: [] }), stderr: "" }));
   await fixture(join(project(), "child-search.txt"), "child-search-needle\n");
   await mock.script({ provider: "anthropic", turns: [[{ toolCall: { name: "subagent", args: { name: "Search child", task: "CHILD_SEARCH_MARKER inspect files and try enabling workers", profile: "scout", cognitiveRole: "routine", background: true } } }], "Child started.", [{ toolCall: { name: "subagent_collect", args: {} } }], "Child collected."] });
-  await mock.script({ provider: "openai-codex", match: "CHILD_SEARCH_MARKER", turns: [
+  await mock.script({ provider: "openai", match: "CHILD_SEARCH_MARKER", turns: [
     [{ toolCall: { name: "grep", args: { pattern: "child-search-needle", path: "child-search.txt" } } }],
     [{ toolCall: { name: "find", args: { pattern: "child-search.txt" } } }],
     [{ toolCall: { name: "ls", args: { path: "." } } }],
@@ -55,7 +55,7 @@ test("P072 AC-P102 child grep/find/ls work and tools_enable cannot widen its all
   const id = await createChat(page);
   await send(page, "launch search child");
   await expect(chat(page).getByText("Child collected.", { exact: true })).toBeVisible({ timeout: 40_000 });
-  const requests = (await mock.journal({ provider: "openai-codex", kind: "chat" })).filter((e) => e.transport === "http");
+  const requests = (await mock.journal({ provider: "openai", kind: "chat" })).filter((e) => e.transport === "http");
   expect(requests).toHaveLength(5);
   expect(requests[1]?.lastUserText).toContain("child-search-needle");
   expect(requests[2]?.lastUserText).toContain("child-search.txt");
@@ -64,7 +64,7 @@ test("P072 AC-P102 child grep/find/ls work and tools_enable cannot widen its all
   expect(names(requests[4]?.body).some((n) => n.endsWith("worker_create"))).toBe(false);
   for (const request of requests) expect(request.violations).toEqual([]);
   await killHost(page, id);
-  expect((await mock.journal({ provider: "openai-codex", kind: "chat" })).filter((e) => e.transport === "http")).toHaveLength(5);
+  expect((await mock.journal({ provider: "openai", kind: "chat" })).filter((e) => e.transport === "http")).toHaveLength(5);
 });
 
 test("AC-P087 completed assistant text blocks do not retain synthetic secret fragments", async ({ page }) => {

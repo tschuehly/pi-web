@@ -1,14 +1,14 @@
 import { writeFile } from "node:fs/promises";
 // AC-P089–AC-P094, AC-P099: foreground/background children, routing, status, bounded collection and completion roster.
 import type { Page } from "@playwright/test";
-import { expect, test, call, create, idOf, messages, requests, scout, tc, textOf, tools, row as rows } from "./support";
+import { expect, test, call, control, create, idOf, messages, requests, scout, tc, textOf, tools, row as rows } from "./support";
 import { E2E_PROJECT_ID } from "../../isolatedPiWeb";
-import { MOCK_CLAUDE_MODEL, MOCK_CODEX_ACCOUNT, MOCK_CODEX_MODEL } from "../../mockModels/agentConfig";
+import { MOCK_CLAUDE_MODEL, MOCK_CODEX_MODEL } from "../../mockModels/agentConfig";
 import { mockModels } from "../../mockModels/client";
 
 // Subagents in a Durable Chat (parity rows P089, P092, P099): a background child's row in Activity with its own status
 // line, routed model, elapsed and quiet time; the coalesced completion wake; collection clears the row. The lead answers
-// through mocked Claude and the routed child through mocked Codex (e2e/mockModels/README.md). Needs
+// through mocked Claude and the routed child through mocked `openai` (e2e/mockModels/README.md). Needs
 // PI_WEB_E2E_DURABLE_HOST (see durableChat.spec.ts).
 test.skip(process.env["PI_WEB_E2E_DURABLE_HOST"] === undefined, "PI_WEB_E2E_DURABLE_HOST is not set");
 test.skip(process.env["PI_WEB_E2E_MOCK_URL"] === undefined, "the mock model server is off (PI_WEB_E2E_MOCK_MODELS=0)");
@@ -46,7 +46,7 @@ test("AC-P092 AC-P099 a Durable Chat's Subagent shows in Activity with its statu
     "Collected the probe.",
   ] });
   // The child reports, then holds its answer until the spec has checked the running row.
-  const childScript = await mock.script({ provider: "openai-codex", match: child, turns: [
+  const childScript = await mock.script({ provider: "openai", match: child, turns: [
     [{ toolCall: { name: "report_status", args: { status: "Reading the roster code" } } }],
     [{ barrier: `${childDone}-report` }, { toolCall: { name: "report_status", args: { status: "Checking the roster result" } } }],
     [{ barrier: childDone }, { text: "Roster probe finished." }],
@@ -65,7 +65,7 @@ test("AC-P092 AC-P099 a Durable Chat's Subagent shows in Activity with its statu
   await page.getByRole("listbox", { name: "Models" }).getByRole("option", { name: MOCK_CLAUDE_MODEL.id, exact: true }).first().click();
   await expect(page.getByRole("button", { name: new RegExp(`^Model: ${MOCK_CLAUDE_MODEL.provider}/${MOCK_CLAUDE_MODEL.id}`) })).toBeVisible();
   await send(page, `${lead}: launch the roster probe.`);
-  await expect.poll(transcript).toMatch(/Launched subagent \S+ in the background on openai-codex\/gpt-6-luna:medium/);
+  await expect.poll(transcript).toMatch(/Launched subagent \S+ in the background on openai\/gpt-6-luna:medium/);
 
   const activity = page.getByRole("region", { name: "Activity" });
   await expect(activity.getByRole("button", { name: "Activity 1 running" })).toBeVisible();
@@ -90,20 +90,19 @@ test("AC-P092 AC-P099 a Durable Chat's Subagent shows in Activity with its statu
   // The child ends: one completion wake, the lead collects, and the row goes.
   await mock.release(childDone);
   await expect(chat(page).locator("details.subagent-completion > summary", { hasText: "Subagents finished" })).toHaveCount(1, { timeout: 30_000 });
-  await expect.poll(transcript).toMatch(/Completion receipt: openai-codex\/gpt-6-luna:medium · subagent · scout · routine · outcome success/);
+  await expect.poll(transcript).toMatch(/Completion receipt: openai\/gpt-6-luna:medium · subagent · scout · routine · outcome success/);
   await expect(activity).toHaveCount(0);
   await page.reload();
   await expect(chat(page).locator("details.subagent-completion > summary", { hasText: "Subagents finished" })).toHaveCount(1);
   expect((await transcript()).match(/Background children finished/g)).toHaveLength(1);
 
-  // Journal: all child requests went to the ChatGPT subscription on the routed model; the lead's four to Claude.
-  const childRequests = await mock.journal({ provider: "openai-codex", kind: "chat", contains: child });
+  // Journal: all child requests went to `openai` (signed in with ChatGPT) on the routed model; the lead's four to Claude.
+  const childRequests = await mock.journal({ provider: "openai", kind: "chat", contains: child });
   expect(childRequests.map((entry) => entry.answeredBy)).toEqual([0, 1, 2].map((turn) => ({ script: childScript, turn })));
   for (const entry of childRequests) {
     expect(entry.violations).toEqual([]);
     expect(entry.model).toBe(MOCK_CODEX_MODEL.id);
-    expect(entry.auth).toBe("jwt");
-    expect(entry.headers["chatgpt-account-id"]).toBe(MOCK_CODEX_ACCOUNT);
+    expect(entry.auth).toBe("api-key");
   }
   const leadRequests = await mock.journal({ provider: "anthropic", kind: "chat", contains: lead });
   expect(leadRequests.map((entry) => entry.answeredBy)).toEqual([0, 1, 2, 3].map((turn) => ({ script: leadScript, turn })));
@@ -120,13 +119,13 @@ for (const legacy of [false, true]) {
     const identities: { id: string; tmp: string }[] = [];
     for (const index of [0, 1]) {
       const marker = `identity-child-${session}-${index}`;
-      const script = await mock.script({ provider: "openai-codex", match: marker, turns: [
+      const script = await mock.script({ provider: "openai", match: marker, turns: [
         [tc("bash", { command: `node -e 'require("fs").writeFileSync("${marker}.json",JSON.stringify({id:process.env.PI_SESSION_ID,tmp:process.env.PI_TMP}))'` }), tc("grep", { pattern: "Seeded", path: "docs/notes.md" }), tc("find", { pattern: "*.md", path: "docs" }), tc("ls", { path: "docs" })],
         [tc("subagent", scout("forbidden-grandchild"))],
         "Identity child finished.",
       ] });
       const result = await call(page, "subagent", scout(marker, { background: false }));
-      expect(textOf(result)).toContain("Completion receipt: openai-codex/gpt-6-luna:medium");
+      expect(textOf(result)).toContain("Completion receipt: openai/gpt-6-luna:medium");
       expect(result.isError).not.toBe(true);
       const child = await requests(script);
       expect(child).toHaveLength(3);
@@ -155,7 +154,7 @@ test("AC-P089 review routes away from author family and refuses a same-family ov
   await create(page);
   for (const author of ["openai-codex/gpt-6.1-sol", "anthropic/claude-sonnet-5-5"]) {
     const marker = `review-child-${Date.now()}`;
-    const provider = author.startsWith("openai") ? "anthropic" : "openai-codex";
+    const provider = author.startsWith("openai") ? "anthropic" : "openai";
     const model = provider === "anthropic" ? "claude-opus-5-5" : "gpt-6.1-sol";
     const script = await mock.script({ provider, match: marker, turns: ["Independent review complete."] });
     const receipt = await call(page, "subagent", scout(marker, { profile: "reviewer", cognitiveRole: "review", independentOfModel: author, background: false }));
@@ -171,20 +170,20 @@ test("AC-P089 review routes away from author family and refuses a same-family ov
 test("AC-P089 launch receipt includes execution identity, cwd and binding", async ({ page }) => {
   await create(page);
   const marker = `receipt-child-${Date.now()}`;
-  await mock.script({ provider: "openai-codex", match: marker, turns: [[{ barrier: marker }, { text: "done" }]] });
+  await mock.script({ provider: "openai", match: marker, turns: [[{ barrier: marker }, { text: "done" }]] });
   const receipt = await call(page, "subagent", scout(marker));
   expect(idOf(receipt)).toMatch(/^[0-9a-f-]{36}$/);
-  expect(textOf(receipt)).toContain("openai-codex/gpt-6-luna:medium (scout · routine)");
+  expect(textOf(receipt)).toContain("openai/gpt-6-luna:medium (scout · routine)");
   // The AC explicitly requires cwd in the receipt, not merely in a later diagnostic status.
   expect.soft(JSON.stringify(receipt)).toContain(process.env["PI_WEB_E2E_PROJECT_DIR"]!);
   await call(page, "subagent_cancel", { executionId: idOf(receipt) });
 });
 
-test("AC-P090 AC-P091 AC-P099 coalesced results stay uncollected on status, truncate honestly and collect once", async ({ page }) => {
+test("AC-P090 AC-P091 AC-P099 results ride completion notices that truncate honestly and collect each once", async ({ page }) => {
   await create(page);
   const child = `bounded-${Date.now()}`;
-  const long = await mock.script({ provider: "openai-codex", match: `${child}-long`, turns: [[{ barrier: "long" }, { text: "x".repeat(9000) }]] });
-  const failure = await mock.script({ provider: "openai-codex", match: `${child}-failed`, turns: [[{ barrier: "failed" }, { error: "invalid_request" }]] });
+  const long = await mock.script({ provider: "openai", match: `${child}-long`, turns: [[{ barrier: "long" }, { text: "x".repeat(9000) }]] });
+  const failure = await mock.script({ provider: "openai", match: `${child}-failed`, turns: [[{ barrier: "failed" }, { error: "invalid_request" }]] });
   const first = await call(page, "subagent", scout(`${child}-long`));
   const second = await call(page, "subagent", scout(`${child}-failed`));
   const running = await call(page, "subagent_collect", { executionId: idOf(first) });
@@ -192,29 +191,25 @@ test("AC-P090 AC-P091 AC-P099 coalesced results stay uncollected on status, trun
   expect(textOf(await call(page, "subagent_status", { executionId: idOf(first) }))).toMatch(/running.*scout.*routine.*gpt-6-luna/s);
   // Hold the parent's request so both completions queue at the same actionable boundary.
   const hold = `lead-busy-${Date.now()}`;
-  await mock.script({ provider: "anthropic", match: hold, turns: [[{ barrier: "parent-busy" }, { text: "Parent is ready." }], "Wake observed, results not collected."] });
+  await mock.script({ provider: "anthropic", match: hold, turns: [[{ barrier: "parent-busy" }, { text: "Parent is ready." }], "Wake observed."] });
   await send(page, hold);
   await mock.waitForBarrier("parent-busy");
   await mock.release("long");
   await mock.release("failed");
   await expect.poll(async () => (await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion").length).toBe(0);
-  await expect.poll(async () => rows(page).locator(".status").allTextContents()).toEqual(expect.arrayContaining([expect.stringMatching(/To collect/i), expect.stringMatching(/failed/i)]));
   await mock.release("parent-busy");
-  await expect(page.locator("chat-view").getByText("Wake observed, results not collected.", { exact: true })).toBeVisible();
-  await expect(rows(page)).toHaveCount(2);
-  const diagnostic = await call(page, "subagent_status");
-  expect(textOf(diagnostic)).toContain("0 running, 2 terminal and uncollected, 2 launched");
-  const collected = await call(page, "subagent_collect");
-  expect(textOf(collected)).toContain("Reconciled 2 of 2 terminal children");
-  expect(textOf(collected)).toContain("showing the first 8000 of 9000 characters");
-  expect(textOf(collected)).toContain("TRUNCATED, cannot satisfy verification");
-  expect(textOf(collected)).toContain("execution_failed");
-  expect(collected.isError).toBe(true);
+  await expect(page.locator("chat-view").getByText("Wake observed.", { exact: true })).toBeVisible();
+  // Each result rides exactly one completion notice (a result that ends after a notice was composed rides the next), which collects it.
+  const notices = async () => (await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion").map(textOf).join("\n");
+  await expect.poll(async () => (await notices()).split(`${idOf(second)} [execution_failed]`).length).toBe(2);
+  const carried = await notices();
+  expect(carried.split(`${idOf(first)} [success]`)).toHaveLength(2);
+  expect(carried).toContain("showing the first 8000 of 9000 characters");
+  expect(carried).toContain("TRUNCATED, cannot satisfy verification");
   await expect(rows(page)).toHaveCount(0);
   expect(textOf(await call(page, "subagent_status"))).toContain("Nothing needs reconciliation");
   expect(textOf(await call(page, "subagent_status", { all: true }))).toContain(`${idOf(second)} [execution_failed, collected]`);
   expect(textOf(await call(page, "subagent_collect"))).toContain("Nothing terminal to reconcile");
-  expect((await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion")).toHaveLength(1);
   expect(await requests(long)).toHaveLength(1);
   expect(await requests(failure)).toHaveLength(1);
 });
@@ -223,7 +218,7 @@ for (const legacy of [false, true]) test(`AC-P094 ${legacy ? "legacy" : "Durable
   const { killHost, status } = await import("./support");
   await create(page, legacy);
   const marker = `steered-child-${Date.now()}`;
-  const script = await mock.script({ provider: "openai-codex", match: marker, turns: [
+  const script = await mock.script({ provider: "openai", match: marker, turns: [
     [tc("report_status", { status: "Before steer" })],
     [{ barrier: "child-before-steer" }, tc("report_status", { status: "After steer" })],
     [{ barrier: "child-follow-up" }, { text: "Steered answer" }],
@@ -263,7 +258,7 @@ test("AC-P093 cancelling a running Subagent survives SIGKILL without late result
   const { killHost, status } = await import("./support");
   await create(page);
   const marker = `cancel-single-${Date.now()}`;
-  const script = await mock.script({ provider: "openai-codex", match: marker, turns: [[{ barrier: marker }, { text: "Forbidden late result" }]] });
+  const script = await mock.script({ provider: "openai", match: marker, turns: [[{ barrier: marker }, { text: "Forbidden late result" }]] });
   const id = idOf(await call(page, "subagent", scout(marker)));
   await mock.waitForBarrier(marker);
   expect(textOf(await call(page, "subagent_cancel", { executionId: id }))).toBe(`${id}: cancelled.`);
@@ -278,21 +273,23 @@ test("AC-P093 cancelling a running Subagent survives SIGKILL without late result
 });
 
 test("AC-P090 bounded bulk collection leaves the unreturned remainder unread for collect by ID", async ({ page }) => {
+  // Completion notices would carry these results; held before delivery, only subagent_collect reads them.
+  await control({ hold: "child:before-delivery" });
   await create(page);
   const scripts: string[] = [];
   for (let index = 0; index < 4; index++) {
     const marker = `bulk-${index}-${Date.now()}`;
-    scripts.push(await mock.script({ provider: "openai-codex", match: marker, turns: [[{ barrier: "bulk-ready" }, { text: "b".repeat(9000) }]] }));
+    scripts.push(await mock.script({ provider: "openai", match: marker, turns: [[{ barrier: "bulk-ready" }, { text: "b".repeat(9000) }]] }));
     await call(page, "subagent", scout(marker));
   }
   const lead = `bulk-lead-${Date.now()}`;
-  await mock.script({ provider: "anthropic", match: lead, turns: [[{ barrier: "bulk-parent" }, { text: "Parent ready." }], "Bulk wake noted."] });
+  await mock.script({ provider: "anthropic", match: lead, turns: [[{ barrier: "bulk-parent" }, { text: "Parent ready." }]] });
   await send(page, lead);
   await mock.waitForBarrier("bulk-parent");
   await mock.release("bulk-ready");
   await expect.poll(async () => rows(page).locator(".status").allTextContents()).toEqual(Array(4).fill("To collect"));
   await mock.release("bulk-parent");
-  await expect(page.locator("chat-view").getByText("Bulk wake noted.", { exact: true })).toBeVisible();
+  await expect(page.locator("chat-view").getByText("Parent ready.", { exact: true })).toBeVisible();
   const bulk = await call(page, "subagent_collect");
   expect(textOf(bulk)).toContain("Reconciled 3 of 4 terminal children");
   expect(textOf(bulk)).toContain("Bounded before reading 1 more; they stay uncollected");

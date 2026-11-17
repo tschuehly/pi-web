@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { test, expect, mock, setup, create, send, answer, idle, status, messages, asks, scriptAsk, ASK, get, post, id, chat, killHost, project, root, url, base, query, fixtureFile } from "./support";
 setup();
-const chips = (page: import("@playwright/test").Page) => page.locator("workbench-question-chips .chip");
+// One question bar above the composer counts every open question ("2 open questions"); it opens the drawer.
+const questionBar = (page: import("@playwright/test").Page) => page.locator("workbench-question-chips .bar");
 
 test("AC-P001: create Durable and legacy neighbors; capability removal hides creation", async ({ page }) => {
   const durable = await create(page);
@@ -113,26 +114,26 @@ for (const runtime of ["durable", "legacy"] as const) {
     await scriptAsk(session);
     await send(page, session);
     await answer(page, "Question posted.");
-    await expect(chips(page)).toHaveCount(2);
+    await expect(questionBar(page)).toContainText("2 open questions");
     const [before] = (await asks(page)).pendingAsks;
     if (runtime === "durable") await killHost(page);
     await page.reload();
-    await expect(chips(page)).toHaveCount(2);
+    await expect(questionBar(page)).toContainText("2 open questions");
     expect((await asks(page)).pendingAsks[0]?.askId).toBe(before!.askId);
     await mock.script({ match: session, turns: ["Answer received."] });
-    await chips(page).first().click();
+    await questionBar(page).click();
     await page.locator('workbench-question-chips input[value="stage"]').check();
-    await page.locator("workbench-question-chips").getByRole("button", { name: "Send answers" }).click();
+    await page.locator("workbench-question-chips").getByRole("button", { name: "Send all" }).click();
     await page.locator("workbench-question-chips").getByRole("button", { name: "Send anyway" }).click();
     await answer(page, "Answer received.");
-    await expect(chips(page)).toHaveCount(0);
+    await expect(questionBar(page)).toHaveCount(0);
     const requests = await mock.journal({ kind: "chat", contains: session });
     expect(requests).toHaveLength(3);
     expect(requests[2]!.lastUserText).toContain("selected stage");
     expect(requests[2]!.lastUserText).toMatch(/unanswered/i);
     if (runtime === "durable") await killHost(page);
     await page.reload();
-    await expect(chips(page)).toHaveCount(0);
+    await expect(questionBar(page)).toHaveCount(0);
     expect(await mock.journal({ kind: "chat", contains: session })).toHaveLength(3);
   });
 }
@@ -157,13 +158,13 @@ test("AC-P037: revision rejects stale answers; cancel delivers once; withdraw de
   expect((await asks(page)).pendingAsks).toEqual([]);
   await scriptAsk(session);
   await send(page, "ask again");
-  await expect(chips(page)).toHaveCount(2);
+  await expect(questionBar(page)).toContainText("2 open questions");
   await idle(page);
   const next = (await asks(page)).pendingAsks[0]!;
   await mock.script({ match: session, turns: [[{ toolCall: { name: "ask_user", args: { withdraw: next.askId } } }], "Withdrawn."] });
   await send(page, "withdraw");
   await answer(page, "Withdrawn.");
-  await expect(chips(page)).toHaveCount(0);
+  await expect(questionBar(page)).toHaveCount(0);
   expect(await mock.journal({ kind: "chat", contains: session })).toHaveLength(9);
 });
 
@@ -203,7 +204,7 @@ test("AC-P029 P038: background attention has exact IDs; stale ack and host kills
   await idle(page, session);
   await killHost(page, session);
   await page.goto(url(session));
-  await expect(chips(page)).toHaveCount(2);
+  await expect(questionBar(page)).toContainText("2 open questions");
   await expect.poll(() => events.filter((e) => e.type === "session.attention" && e.sessionId === session).length).toBe(3);
   expect(events.filter((e) => e.type === "session.attention" && e.sessionId === session && e.kind === "ask")).toHaveLength(1);
   expect(await mock.journal({ kind: "chat", contains: session })).toHaveLength(7);
@@ -239,15 +240,18 @@ test("AC-P040: chips count individual questions, stale begins at six turns, conf
   await mock.script({ match: session, turns: [[{ toolCall: { name: "ask_user", args: ASK } }, { toolCall: { name: "ask_user", args: { ...ASK, context: "Second ordered set" } } }], "Question posted."] });
   await send(page, session);
   await answer(page, "Question posted.");
-  await expect(chips(page)).toHaveCount(4);
+  await expect(questionBar(page)).toContainText("4 open questions");
   const open = (await asks(page)).pendingAsks;
   const ask = open[0]!;
-  expect(await chips(page).evaluateAll((elements) => elements.map((element) => element.getAttribute("data-ask")))).toEqual([open[0]!.askId, open[0]!.askId, open[1]!.askId, open[1]!.askId]);
+  await questionBar(page).click();
+  const sets = page.locator("workbench-question-chips .drawer ask-user-card");
+  expect(await sets.evaluateAll((elements) => elements.map((element) => element.getAttribute("data-ask")))).toEqual([open[0]!.askId, open[1]!.askId]);
+  await page.getByRole("button", { name: "Close questions", exact: true }).click();
   await mock.script({ match: session, turns: Array.from({ length: 6 }, (_, n) => `Turn ${n + 1}.`) });
   for (let n = 1; n <= 6; n++) {
     await send(page, `turn ${n}`);
     await answer(page, `Turn ${n}.`);
-    await chips(page).first().click();
+    await questionBar(page).click();
     const drawer = page.locator("workbench-question-chips .drawer");
     if (n === 5) await expect(drawer).not.toContainText("may be stale");
     if (n === 6) await expect(drawer).toContainText("may be stale");

@@ -14,7 +14,7 @@ for (const kind of ["subagent", "worker"] as const) for (const barrier of ["chil
     }
     const marker = `survival-lead-${Date.now()}`;
     const child = `survival-child-${Date.now()}`;
-    const childScript = await mock.script({ provider: "openai-codex", match: child, turns: [[tc("report_status", { status: "Survival status retained" })], "Survival result."] });
+    const childScript = await mock.script({ provider: "openai", match: child, turns: [[tc("report_status", { status: "Survival status retained" })], "Survival result."] });
     const leadScript = await mock.script({ provider: "anthropic", match: marker, turns: [
       [kind === "subagent" ? tc("subagent", scout(child)) : tc("worker_dispatch", { workerId, task: child, cognitiveRole: "routine", background: true })], "Background launched.",
       [tc("subagent_collect")], "Collection checked.",
@@ -35,7 +35,9 @@ for (const kind of ["subagent", "worker"] as const) for (const barrier of ["chil
     expect((await mock.journal()).length).toBe(before);
     await writeFile(test.info().outputPath("killed-host.json"), JSON.stringify({ ...killed, barrier }));
     await send(page, "Resume and reconcile the committed child.");
-    await expect.poll(async () => (await messages(page)).filter((m) => m.toolName === "subagent_collect" && textOf(m).includes("Survival result.")).length, { timeout: 45_000 }).toBe(1);
+    // The result reaches the lead once: in the completion notice that carries it, or in the collect that reruns a committed collection.
+    const deliveries = (list: Awaited<ReturnType<typeof messages>>) => list.filter((m) => (m.toolName === "subagent_collect" || m.customType === "pi-workbench:child-completion") && textOf(m).includes("Survival result.")).length;
+    await expect.poll(async () => deliveries(await messages(page)), { timeout: 45_000 }).toBe(1);
     await expect.poll(async () => (await status(page)).isStreaming).toBe(false);
     const transcript = await messages(page);
     expect(transcript.filter((m) => m.toolName === (kind === "subagent" ? "subagent" : "worker_dispatch"))).toHaveLength(1);
@@ -59,7 +61,7 @@ for (const kind of ["subagent", "worker"] as const) for (const barrier of ["chil
       kind, barrier, childRequests: (await requests(childScript)).length,
       assignments: transcript.filter((m) => m.toolName === (kind === "subagent" ? "subagent" : "worker_dispatch")).length,
       wakes: transcript.filter((m) => m.customType === "pi-workbench:child-completion").length,
-      collections: transcript.filter((m) => m.toolName === "subagent_collect" && textOf(m).includes("Survival result.")).length,
+      deliveries: deliveries(transcript),
     }, null, 2));
   });
 }

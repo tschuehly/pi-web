@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import setup from "../../isolatedPiWeb";
 
@@ -22,6 +23,6 @@ export default async function fleetSetup() {
   settings.extensions.push(...["telemetry", "activity", "subagent", "pi-tmp", "tool-groups"].map((name) => join(workbench, "extensions", name, "index.ts")));
   await writeFile(settingsPath, JSON.stringify(settings));
   // The legacy router reads Pi's cached model catalog, not the model picker. Seed it from the installed provider definitions.
-  await writeFile(join(root, "agent/models-store.json"), JSON.stringify(Object.fromEntries([anthropicProvider(), openaiCodexProvider()].map((provider) => [provider.id, { models: provider.getModels() }]))));
+  await writeFile(join(root, "agent/models-store.json"), JSON.stringify(Object.fromEntries([anthropicProvider(), openaiCodexProvider(), openaiProvider()].map((provider) => [provider.id, { models: provider.getModels() }]))));
   return cleanup;
 }

@@ -28,7 +28,7 @@ export const messages = async (page: Page, session = id(page)): Promise<{ messag
 
 export async function chooseModel(page: Page, model: { provider: string; id: string } = MOCK_CLAUDE_MODEL): Promise<void> {
   await tile(page).getByRole("button", { name: /^Model: / }).click();
-  await page.getByRole("combobox", { name: "Search models" }).fill(model.id);
+  await page.getByRole("combobox", { name: "Search models" }).fill(`${model.provider}/${model.id}`); // the id alone also matches openai/gpt-6-luna
   await page.getByRole("listbox", { name: "Models" }).getByRole("option", { name: model.id, exact: true }).first().click();
   await expect(tile(page).getByRole("button", { name: new RegExp(`^Model: ${model.provider}/${model.id}`) })).toBeVisible();
 }
@@ -69,8 +69,8 @@ export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAA
 export const PNG_BLUE = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC", "base64");
 export const image = (name = "first.png", reference = "[PIC_1]") => ({ kind: "image", mimeType: "image/png", data: PNG.toString("base64"), name, reference });
 export const ASK = { context: "Choose the deployment target.", questions: [
-  { id: "target", question: "Which target?", options: [{ value: "prod", label: "Production" }, { value: "stage", label: "Staging" }] },
-  { id: "checks", question: "Which checks?", options: [{ value: "unit", label: "Unit tests" }] },
+  { id: "target", question: "Which target?", detail: "Where the build deploys.", options: [{ value: "prod", label: "Production" }, { value: "stage", label: "Staging" }] },
+  { id: "checks", question: "Which checks?", detail: "What runs before the deploy.", options: [{ value: "unit", label: "Unit tests" }] },
 ] };
 export async function scriptAsk(marker: string, extra = {}): Promise<void> {
   await mock.script({ match: marker, turns: [[{ toolCall: { name: "ask_user", args: { ...ASK, ...extra } } }], "Question posted."] });

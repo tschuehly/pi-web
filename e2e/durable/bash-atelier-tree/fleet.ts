@@ -54,7 +54,7 @@ export async function newChat(page: Page, legacy = false, codex = false) {
   await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
   const model = codex ? MOCK_CODEX_MODEL : MOCK_CLAUDE_MODEL;
   await page.getByRole("button", { name: /^Model: / }).click();
-  await page.getByRole("combobox", { name: "Search models" }).fill(model.id);
+  await page.getByRole("combobox", { name: "Search models" }).fill(`${model.provider}/${model.id}`); // the id alone also matches openai/gpt-6-luna
   await page.getByRole("listbox", { name: "Models" }).getByRole("option", { name: model.id, exact: true }).first().click();
   await expect(page.getByRole("button", { name: new RegExp(`^Model: ${model.provider}/${model.id}`) })).toBeVisible();
 }
@@ -133,7 +133,7 @@ export function setup() {
     if (info.status === "passed") expect(journal.filter((entry) => entry.kind === "chat").length).toBeGreaterThan(0);
     for (const entry of journal) {
       expect(entry.violations).toEqual([]);
-      expect(["/v1/messages", "/codex/responses"]).toContain(entry.path);
+      expect(["/v1/messages", "/codex/responses", "/openai/v1/responses"]).toContain(entry.path);
     }
   });
 }
