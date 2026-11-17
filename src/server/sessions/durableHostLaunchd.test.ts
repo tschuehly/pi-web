@@ -18,7 +18,7 @@ const status = { persisted: true, isStreaming: false, isCompacting: false, isBas
 
 /**
  * A host speaking the socket protocol: each start owns the store with the next epoch, answers status and close, and
- * logs every request it gets to `<store>/requests.log`. Its revision is the folder of its entry; `<store>/status.json`,
+ * logs every request it gets to `<store>/requests.log` (an explicit end's close as `close:end`). Its revision is the folder of its entry; `<store>/status.json`,
  * when present, overrides fields of its status (a busy family).
  */
 const HOST = `
@@ -38,7 +38,7 @@ const server = createServer((socket) => {
     for (let end = buffer.indexOf("\\n"); end !== -1; end = buffer.indexOf("\\n")) {
       const request = JSON.parse(buffer.slice(0, end));
       buffer = buffer.slice(end + 1);
-      appendFileSync(join(store, "requests.log"), request.method + "\\n");
+      appendFileSync(join(store, "requests.log"), request.method + (request.params?.end === true ? ":end" : "") + "\\n");
       const override = existsSync(join(store, "status.json")) ? JSON.parse(readFileSync(join(store, "status.json"), "utf8")) : {};
       socket.write(JSON.stringify({ id: request.id, result: request.method === "status" ? { ...${JSON.stringify(status)}, ...override } : null }) + "\\n", () => { if (request.method === "close") process.exit(0); });
     }
@@ -139,7 +139,64 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     expect(loaded(label)).toBe(false);
     expect(existsSync(join(hostsDir, `${label}.plist`))).toBe(false);
     expect(second.locator.durable(chat.id)?.host).toBeUndefined();
-    expect(requests(root, chat.id)).toEqual(["status", "close"]);
+    expect(requests(root, chat.id)).toEqual(["status", "close:end"]);
+  }, 60_000);
+
+  it("writes no secret-named variable into the job's plist; everything else the daemon has, the host gets", async () => {
+    const { hostsDir, daemon } = await fixture();
+    const saved = { ...process.env };
+    Object.assign(process.env, { FOO_API_KEY: "synthetic-foo-value", BAR_TOKEN: "synthetic-bar-value", Baz_Secret: "synthetic-baz-value", DB_PASSWORD: "synthetic-db-value", CLOUD_CREDENTIALS: "synthetic-cloud-value", SSH_AUTH_SOCK: "/synthetic/agent.sock", PI_WEB_KEEP: "kept" });
+    try {
+      const { durable } = daemon();
+      const chat = await durable.start("/work/a");
+      const plist = readFileSync(join(hostsDir, `${PREFIX}.${chat.id}.plist`), "utf8");
+      for (const name of ["FOO_API_KEY", "BAR_TOKEN", "Baz_Secret", "DB_PASSWORD", "CLOUD_CREDENTIALS"]) expect(plist).not.toContain(name);
+      expect(plist).not.toMatch(/synthetic-[a-z]+-value/);
+      expect(plist).toContain(`<key>PATH</key><string>${String(process.env["PATH"])}</string>`);
+      expect(plist).toContain("<key>SSH_AUTH_SOCK</key><string>/synthetic/agent.sock</string>");
+      expect(plist).toContain("<key>PI_WEB_KEEP</key><string>kept</string>");
+      await durable.stop({ id: chat.id, cwd: chat.cwd });
+    } finally {
+      for (const name of Object.keys(process.env)) if (!(name in saved)) Reflect.deleteProperty(process.env, name);
+      Object.assign(process.env, saved);
+    }
+  }, 60_000);
+
+  it("decodes a handshake and messages whose multi-byte characters are split across chunks at any byte", async () => {
+    const { root, hostsDir } = await fixture();
+    await mkdir(hostsDir, { mode: 0o700 });
+    const locator = new SessionRuntimeLocator(join(root, "data"));
+    const record = locator.create("/work/a");
+    const socket = durableHostSocketPath(hostsDir, record.storeId);
+    const ready = { protocol: DURABLE_HOST_PROTOCOL, storeId: record.storeId, ownerEpoch: 1, revision: "/revisions/ä-😀", pid: process.pid };
+    const event = { event: { type: "assistant.delta", text: "grüße 😀 ä" } };
+    const bytes = Buffer.from(`${JSON.stringify({ ready })}\n${JSON.stringify(event)}\n`);
+    let split = 0;
+    const server = createServer((connection) => {
+      connection.on("error", () => undefined);
+      connection.write(bytes.subarray(0, split));
+      setTimeout(() => { connection.write(bytes.subarray(split)); }, 3);
+    });
+    const umask = process.umask(0o077);
+    await new Promise<void>((resolve) => server.listen(socket, resolve));
+    process.umask(umask);
+    const launch = launchdDurableHost({ entry: join(root, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, launchctl: () => Promise.resolve() });
+    try {
+      for (split = 1; split < bytes.length; split++) {
+        locator.setHost(record.id, { label: `${PREFIX}.${record.id}`, socket, revision: ready.revision, ownerEpoch: 1, pid: process.pid });
+        const host = launch(record, join(root, "store"), { attachOnly: true });
+        const messages: unknown[] = [];
+        host.on("error", () => undefined);
+        await new Promise<void>((resolve) => {
+          host.on("message", (message) => { messages.push(message); if (messages.length === 2) resolve(); });
+          host.on("exit", () => { resolve(); });
+        });
+        host.detach?.();
+        expect(messages, `split at byte ${String(split)}`).toEqual([{ ready }, event]);
+      }
+    } finally {
+      server.close();
+    }
   }, 60_000);
 
   it("refuses a stale socket: nobody listening, or a live host of an older owner epoch; the family's own job takes over", async () => {
@@ -260,14 +317,15 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     await second.durable.stop({ id: a.id, cwd: a.cwd });
     ended(root, hostsDir, hostA.label, hostA.pid);
     expect(second.locator.durable(a.id)?.host).toBeUndefined();
-    expect(requests(root, a.id)).toEqual(["close"]);
+    // An explicit end: the host cancels the family's background jobs before it closes (a restart-oriented close keeps them).
+    expect(requests(root, a.id)).toEqual(["close:end"]);
     expect(alive(hostB.pid)).toBe(true);
 
     // Stop-all reaches every remaining family host the same way.
     await second.durable.stopAll();
     ended(root, hostsDir, hostB.label, hostB.pid);
     expect(second.locator.durable(b.id)?.host).toBeUndefined();
-    expect(requests(root, b.id)).toEqual(["close"]);
+    expect(requests(root, b.id)).toEqual(["close:end"]);
   }, 60_000);
 
   it("AC5 idle: a host idle for the legacy 2 h window (injected clock) closes in order; running or waiting work and a watching browser keep it", async () => {
@@ -356,7 +414,8 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     expect(current?.revision).toBe(join(await realpath(root), "rev-b"));
     expect(jobPid(label)).toBe(current?.pid);
     expect(readFileSync(join(hostsDir, `${label}.plist`), "utf8")).toContain(`<string>${entryB}</string>`);
-    expect(requests(root, chat.id).filter((method) => method === "close")).toHaveLength(2);
+    // The stop above ended the host (its jobs with it); the upgrade's close keeps the family's work.
+    expect(requests(root, chat.id).filter((method) => method.startsWith("close"))).toEqual(["close:end", "close"]);
 
     // A later daemon on rev-b finds nothing pinned.
     await second.durable.dispose();

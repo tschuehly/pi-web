@@ -16,6 +16,13 @@ const launchctl: Launchctl = async (args) => {
   await run("launchctl", args);
 };
 
+/**
+ * Variables whose name says they hold a secret (case-insensitive; covers pi-ai's provider key variables, which it does
+ * not export as a list) never go into a plist. A host needing one reads it from Pi's auth.json or a file it names instead;
+ * Durable hosts drop provider key variables anyway (pi-workbench durable-pilot `openChatHost`).
+ */
+const SECRET_NAME = /_(KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?)$/i;
+
 /** macOS's `sun_path` holds 104 bytes with the terminating NUL. */
 const MAX_SOCKET_PATH = 103;
 
@@ -107,8 +114,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     writeFileSync(plist, launchdPlist({
       Label: this.#label,
       ProgramArguments: [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket],
-      // The daemon's environment, as a forked host inherited it (the plist is owner-only like the folder it is in).
-      EnvironmentVariables: Object.fromEntries(Object.entries({ ...process.env, PI_CODING_AGENT_DIR: this.context.agentDir })),
+      // The daemon's environment, as a forked host inherited it, less secret-named variables (the plist is a file on disk).
+      EnvironmentVariables: Object.fromEntries(Object.entries({ ...process.env, PI_CODING_AGENT_DIR: this.context.agentDir }).filter(([name]) => !SECRET_NAME.test(name))),
       WorkingDirectory: this.storeDir,
       StandardOutPath: join(this.storeDir, "host.log"),
       StandardErrorPath: join(this.storeDir, "host.log"),
@@ -144,6 +151,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
   async #attach(path: string, accept: (ready: Ready) => boolean, record = false): Promise<boolean> {
     ownerOnly(path);
     const socket = connect({ path });
+    // One decoder for the connection's life: a character split across chunks (or handshake and messages) stays whole.
+    socket.setEncoding("utf8");
     let buffer = "";
     const first = await new Promise<string>((resolve, reject) => {
       const fail = (error: Error) => { socket.destroy(); reject(error); };
@@ -152,8 +161,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
         clearTimeout(timer);
         fail(error.code === "ENOENT" || error.code === "ECONNREFUSED" ? new NotListening(error.message) : error);
       });
-      socket.on("data", (chunk: Buffer) => {
-        buffer += chunk.toString("utf8");
+      socket.on("data", (chunk: string) => {
+        buffer += chunk;
         const end = buffer.indexOf("\n");
         if (end === -1) return;
         clearTimeout(timer);
@@ -180,8 +189,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     this.#pid = proven.pid;
     socket.on("error", () => undefined);
     socket.on("close", () => { void this.#closed(); });
-    socket.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString("utf8");
+    socket.on("data", (chunk: string) => {
+      buffer += chunk;
       for (let end = buffer.indexOf("\n"); end !== -1; end = buffer.indexOf("\n")) {
         const line = parse(buffer.slice(0, end));
         buffer = buffer.slice(end + 1);
@@ -191,7 +200,7 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     if (record) this.context.locator.setHost(this.record.id, { label: this.#label, socket: path, revision: proven.revision, ownerEpoch: proven.ownerEpoch, pid: proven.pid } satisfies DurableHostAttachment);
     this.emit("message", message);
     // Lines that arrived with the handshake, then the rest.
-    socket.emit("data", Buffer.alloc(0));
+    socket.emit("data", "");
     socket.resume();
     return true;
   }
