@@ -146,6 +146,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const durableAgent = join(root, "durable-agent");
     if (durableHost !== undefined && durableHost !== "") {
       await seedLogins(join(durableAgent, "auth.json"));
+      // Specs select AFK; on a Mac running on battery, Working Mode's alarm would play real sounds. Report AC power.
+      await mkdir(join(durableAgent, "bin"), { recursive: true });
+      await writeFile(join(durableAgent, "bin", "pmset"), "#!/bin/sh\necho \"Now drawing from 'AC Power'\"\n", { mode: 0o755 });
       if (mock !== undefined) await writeMockProviders(durableAgent, mock.url);
       Object.assign(env, {
         PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_WEB_DURABLE_AGENT_DIR: durableAgent, PI_TELEMETRY_DIR: join(root, "telemetry"),
