@@ -18,8 +18,8 @@ const status = { persisted: true, isStreaming: false, isCompacting: false, isBas
 
 /**
  * A host speaking the socket protocol: each start owns the store with the next epoch, answers status and close, and
- * logs every request it gets to `<store>/requests.log` (an explicit end's close as `close:end`). Its revision is the folder of its entry; `<store>/status.json`,
- * when present, overrides fields of its status (a busy family). An explicit end cancels the family's jobs in the
+ * logs every request it gets to `<store>/requests.log` (an explicit end's close as `close:end`), and answers transcript with an empty one. Its revision
+ * is the folder of its entry; `<store>/status.json`, when present, overrides fields of its status (a busy family). An explicit end cancels the family's jobs in the
  * background bash registry (PI_BACKGROUND_BASH_ROOT), as the Workbench host's cancelAll does: the runner's group is
  * killed and a cancelled exit recorded. With `--end-jobs` it only cancels them, logs `end-jobs` and exits, never serving.
  */
@@ -58,7 +58,8 @@ const server = createServer((socket) => {
       appendFileSync(join(store, "requests.log"), request.method + (request.params?.end === true ? ":end" : "") + "\\n");
       if (request.method === "close" && request.params?.end === true) cancelJobs();
       const override = existsSync(join(store, "status.json")) ? JSON.parse(readFileSync(join(store, "status.json"), "utf8")) : {};
-      socket.write(JSON.stringify({ id: request.id, result: request.method === "status" ? { ...${JSON.stringify(status)}, ...override } : null }) + "\\n", () => { if (request.method === "close") process.exit(0); });
+      const current = { ...${JSON.stringify(status)}, ...override };
+      socket.write(JSON.stringify({ id: request.id, result: request.method === "status" ? current : request.method === "transcript" ? { messages: [], partial: null, status: current } : null }) + "\\n", () => { if (request.method === "close") process.exit(0); });
     }
   });
   socket.on("error", () => {});
@@ -442,14 +443,18 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     expect(requests(root, chat.id).at(-1)).toBe("close");
   }, 60_000);
 
+  /** A revision folder running the fake host, with the Pi Durable version it installs (none: unreadable). */
+  const revision = async (root: string, name: string, durable?: string) => {
+    const modules = join(root, name, "node_modules", "@earendil-works", "pi-durable");
+    await mkdir(modules, { recursive: true });
+    if (durable !== undefined) await writeFile(join(modules, "package.json"), JSON.stringify({ name: "@earendil-works/pi-durable", version: durable }));
+    await writeFile(join(root, name, "host.mjs"), HOST);
+    return join(await realpath(join(root, name)), "host.mjs");
+  };
+
   it("AC5 upgrade: a family keeps its revision across daemon and host restarts, shows it, and moves only when asked while quiet", async () => {
     const { root, hostsDir, daemon } = await fixture();
-    const revision = async (name: string) => {
-      await mkdir(join(root, name));
-      await writeFile(join(root, name, "host.mjs"), HOST);
-      return join(await realpath(join(root, name)), "host.mjs");
-    };
-    const [entryA, entryB] = [await revision("rev-a"), await revision("rev-b")];
+    const [entryA, entryB] = [await revision(root, "rev-a", "1.4.0"), await revision(root, "rev-b", "1.5.2")];
     const first = daemon([], { entry: entryA });
     const chat = await first.durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
@@ -495,5 +500,34 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     const third = daemon([], { entry: entryB });
     expect((await third.durable.status(ref)).durableHostPin).toBeUndefined();
     await third.durable.stop(ref);
+  }, 90_000);
+
+  it("B9 rollback: Upgrade host refuses older Pi Durable code, or code whose version it cannot read; the family keeps its host, pin and transcript", async () => {
+    const { root, daemon } = await fixture();
+    const newer = await revision(root, "rev-new", "1.5.2");
+    const first = daemon([], { entry: newer });
+    const chat = await first.durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await first.durable.dispose();
+
+    // The instance rolls back: new families get the older build; this one, opened by 1.5.2, must stay there (1.4 cannot read its store).
+    for (const [current, refusal] of [
+      [await revision(root, "rev-old", "1.4.0"), "This Chat was opened by a newer Pi Durable (1.5.2); the current host is 1.4.0"],
+      [await revision(root, "rev-unknown"), "the Pi Durable version of its host code cannot be read"],
+    ] as const) {
+      const { durable, locator } = daemon([], { entry: current });
+      await durable.reattach();
+      expect((await durable.status(ref)).durableHostPin?.revision).toBe("rev-new");
+      const host = locator.durable(chat.id)?.host;
+      if (host === undefined) throw new Error("no host recorded");
+      await expect(durable.upgradeHost(ref)).rejects.toThrow(refusal);
+      expect(alive(host.pid)).toBe(true);
+      expect(locator.durable(chat.id)?.host?.pid).toBe(host.pid);
+      expect(locator.durable(chat.id)?.hostEntry).toBe(newer);
+      expect((await durable.transcriptSnapshot(ref)).page.messages).toEqual([]);
+      expect(requests(root, chat.id).filter((method) => method.startsWith("close"))).toEqual([]);
+      await durable.dispose();
+    }
+    await daemon([], { entry: newer }).durable.stop(ref);
   }, 90_000);
 });

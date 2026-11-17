@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_DURABLE_LABEL_PREFIX, E2E_PROJECT_ID, restartSessiond } from "./isolatedPiWeb";
@@ -65,6 +65,8 @@ test("AC5: a Chat on older host code shows its pinned revision; Upgrade host mov
   const next = join(root(), "rev-next", "chat-host-main.mjs");
   await mkdir(dirname(next), { recursive: true });
   await writeFile(next, `import ${JSON.stringify(entry)};\n`);
+  // A revision folder ships its node_modules: Upgrade host reads its Pi Durable version there (and refuses an older one).
+  await symlink(join(dirname(entry), "..", "node_modules"), join(dirname(next), "node_modules"));
   await restartSessiond({ PI_WEB_DURABLE_HOST: next });
   await page.reload();
 
