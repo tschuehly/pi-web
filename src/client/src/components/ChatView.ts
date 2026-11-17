@@ -241,7 +241,7 @@ export class ChatView extends LitElement {
   /** Resolve an interrupted tool call of a Durable Chat (done, not done, retry). */
   @property({ attribute: false }) onResolveEffect?: (id: string, resolution: SessionEffectResolution) => void;
   /** Move a pinned Durable Chat to the current host code. */
-  @property({ attribute: false }) onUpgradeDurableHost?: () => void;
+  @property({ attribute: false }) onUpgradeDurableHost?: (mode: "quiet" | "now") => void;
   @property({ attribute: false }) onDismissNotification?: (notificationId: string) => void;
   @property({ attribute: false }) onDismissAllNotifications?: () => void;
   @property({ type: Boolean }) warningsVisible = true;

@@ -694,9 +694,11 @@ describe("session routes", () => {
     try {
       const upgraded = await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo" } });
       expect(upgraded.statusCode).toBe(200);
+      expect((await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo", mode: "now" } })).statusCode).toBe(200);
+      expect((await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo", mode: "later" } })).statusCode).toBe(400);
       const stopped = await routeApp.inject({ method: "POST", url: "/sessions/durable-hosts/stop" });
       expect(stopped.json()).toEqual({ stopped: true });
-      expect(routeService.calls).toEqual([{ upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") } }, { stopDurableHosts: true }]);
+      expect(routeService.calls).toEqual([{ upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") } }, { upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") }, mode: "now" }, { stopDurableHosts: true }]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -2003,8 +2005,8 @@ class CapturingRouteSessionService implements SessionRouteService {
     return Promise.resolve();
   }
 
-  upgradeDurableHost(lookup: SessionRouteRef): Promise<SessionStatus> {
-    this.calls.push({ upgradeDurableHost: lookup });
+  upgradeDurableHost(lookup: SessionRouteRef, mode?: "quiet" | "now"): Promise<SessionStatus> {
+    this.calls.push({ upgradeDurableHost: lookup, ...(mode === undefined ? {} : { mode }) });
     return Promise.resolve(idleStatus(lookup));
   }
 

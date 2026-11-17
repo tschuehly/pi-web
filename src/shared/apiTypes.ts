@@ -1358,9 +1358,10 @@ export interface SessionStatus {
   capabilities?: ChatCapability[];
   /**
    * Durable Chats whose host runs older code than new Chats get: the family's revision and the current one (short
-   * commits). It stays pinned until the owner upgrades it while it is quiet.
+   * commits). It stays pinned until the owner upgrades it (Upgrade host while it is quiet, or Upgrade now) or its idle
+   * host closes. `repeats`: what Upgrade now would repeat or hold right now (empty: nothing).
    */
-  durableHostPin?: { revision: string; current: string };
+  durableHostPin?: { revision: string; current: string; repeats?: string[] };
   /**
    * Up to the 32 oldest currently running executions observed by the session
    * daemon. Newer starts are omitted while the bound is full; a later start can

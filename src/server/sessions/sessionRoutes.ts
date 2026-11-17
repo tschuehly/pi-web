@@ -594,11 +594,15 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  // Phase C3: a pinned Durable Chat moves to the current host code on the owner's request, refused while it is busy.
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/durable-host/upgrade`, async (request, reply) => {
+  // Phase C3: a pinned Durable Chat moves to the current host code on the owner's request, refused while it is busy;
+  // `mode: "now"` (Upgrade now) restarts it on the current code whatever runs, recovering as after a restart.
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; mode?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/durable-host/upgrade`, async (request, reply) => {
     try {
       if (sessions.upgradeDurableHost === undefined) throw new Error("Upgrading a Chat's host is not available");
-      return await sessions.upgradeDurableHost(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));
+      const body = optionalRecord(request.body);
+      const mode = body["mode"];
+      if (mode !== undefined && mode !== "quiet" && mode !== "now") throw new Error("mode must be quiet or now");
+      return await sessions.upgradeDurableHost(sessionRefFromBody(request.params.sessionId, body), mode);
     } catch (error) {
       return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
     }

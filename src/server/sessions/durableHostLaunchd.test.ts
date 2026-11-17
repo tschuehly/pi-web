@@ -18,7 +18,7 @@ const status = { persisted: true, isStreaming: false, isCompacting: false, isBas
 
 /**
  * A host speaking the socket protocol: each start owns the store with the next epoch, answers status and close, and
- * logs every request it gets to `<store>/requests.log` (an explicit end's close as `close:end`), and answers transcript with an empty one. Its revision
+ * logs every request it gets to `<store>/requests.log` (an explicit end's close as `close:end`, a reason as `:<reason>`), and answers transcript with an empty one. Its revision
  * is the folder of its entry; `<store>/status.json`, when present, overrides fields of its status (a busy family). An explicit end cancels the family's jobs in the
  * background bash registry (PI_BACKGROUND_BASH_ROOT), as the Workbench host's cancelAll does: the runner's group is
  * killed and a cancelled exit recorded. With `--end-jobs` it only cancels them, logs `end-jobs` and exits, never serving.
@@ -55,7 +55,7 @@ const server = createServer((socket) => {
     for (let end = buffer.indexOf("\\n"); end !== -1; end = buffer.indexOf("\\n")) {
       const request = JSON.parse(buffer.slice(0, end));
       buffer = buffer.slice(end + 1);
-      appendFileSync(join(store, "requests.log"), request.method + (request.params?.end === true ? ":end" : "") + "\\n");
+      appendFileSync(join(store, "requests.log"), request.method + (request.params?.end === true ? ":end" : "") + (request.params?.reason === undefined ? "" : ":" + request.params.reason) + "\\n");
       if (request.method === "close" && request.params?.end === true) cancelJobs();
       const override = existsSync(join(store, "status.json")) ? JSON.parse(readFileSync(join(store, "status.json"), "utf8")) : {};
       const current = { ...${JSON.stringify(status)}, ...override };
@@ -465,12 +465,12 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     // A daemon with newer host code: the running family stays on rev-a and says so.
     const second = daemon([], { entry: entryB });
     await second.durable.reattach();
-    expect((await second.durable.status(ref)).durableHostPin).toEqual({ revision: "rev-a", current: "rev-b" });
+    expect((await second.durable.status(ref)).durableHostPin).toEqual({ revision: "rev-a", current: "rev-b", repeats: [] });
 
     // Its host closing (an end, an idle close) does not move it either: the next host starts from rev-a again.
     const pinnedPid = second.locator.durable(chat.id)?.host?.pid ?? 0;
     await second.durable.stop(ref);
-    expect((await second.durable.status(ref)).durableHostPin).toEqual({ revision: "rev-a", current: "rev-b" });
+    expect((await second.durable.status(ref)).durableHostPin).toEqual({ revision: "rev-a", current: "rev-b", repeats: [] });
     expect(readFileSync(join(hostsDir, `${label}.plist`), "utf8")).toContain(`<string>${entryA}</string>`);
     const reopened = second.locator.durable(chat.id)?.host;
     expect(reopened?.pid).not.toBe(pinnedPid);
@@ -546,7 +546,7 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     const current = daemon([], { entry: entryB, now: () => now });
     await current.durable.reattach();
     const ref = { id: pinned.id, cwd: pinned.cwd };
-    expect((await current.durable.status(ref)).durableHostPin).toEqual({ revision: "rev-a", current: "rev-b" });
+    expect((await current.durable.status(ref)).durableHostPin).toEqual({ revision: "rev-a", current: "rev-b", repeats: [] });
     now += IDLE_HOST_CLOSE_MS;
     await current.durable.closeIdleHosts();
     expect(current.locator.durable(pinned.id)?.host).toBeUndefined();
@@ -571,4 +571,57 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     await rolledBack.durable.stop(kept);
     await rolledBack.durable.stop(ref);
   }, 90_000);
+
+  it("C Upgrade now: a busy pinned family closes in order (upgrade), restarts on the current revision at once and is resumed; quiet Upgrade host still refuses", async () => {
+    const { root, hostsDir, daemon } = await fixture();
+    const [entryA, entryB] = [await revision(root, "rev-a", "1.4.0"), await revision(root, "rev-b", "1.5.2")];
+    const first = daemon([], { entry: entryA });
+    const chat = await first.durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await first.durable.dispose();
+    const { durable, locator } = daemon([], { entry: entryB });
+    await durable.reattach();
+    const old = locator.durable(chat.id)?.host;
+    // A turn runs, a child works and a question is open: Upgrade now names what repeats.
+    await writeFile(join(root, "data", "durable", chat.id, "status.json"), JSON.stringify({ isStreaming: true, pendingAsks: [{ askId: "q1" }], extensionStatuses: { "pi-workbench:activity": JSON.stringify({ schemaVersion: 1, items: [{ id: "delegate:1", startedAt: "2026-11-18T08:00:00Z" }] }) } }));
+    const pinned = await durable.status(ref);
+    expect(pinned.durableHostPin?.repeats).toEqual(["the running turn: its answer is requested again; safe tools rerun, others wait for you", "running Subagents and Workers resume their current step"]);
+    await expect(durable.upgradeHost(ref)).rejects.toThrow(/while a turn is running/);
+
+    const upgraded = await durable.upgradeHost(ref, "now");
+    expect(upgraded.durableHostPin).toBeUndefined();
+    expect(alive(old?.pid ?? 0)).toBe(false);
+    const current = locator.durable(chat.id)?.host;
+    expect(current?.revision).toBe(join(await realpath(root), "rev-b"));
+    expect(current?.ownerEpoch).toBe((old?.ownerEpoch ?? 0) + 1);
+    expect(locator.durable(chat.id)?.hostEntry).toBe(entryB);
+    expect(readFileSync(join(hostsDir, `${PREFIX}.${chat.id}.plist`), "utf8")).toContain(`<string>${entryB}</string>`);
+    // The old host got the upgrade's close (its work is kept), the new one a resume before any other request.
+    const log = requests(root, chat.id);
+    expect(log.filter((method) => method.startsWith("close"))).toEqual(["close:upgrade"]);
+    expect(log.slice(log.indexOf("close:upgrade") + 1)[0]).toBe("resume:upgrade-restart");
+    await durable.stop(ref);
+  }, 90_000);
+
+  it("C Upgrade now rollback: a new host that does not start sends the family back to its old pin and host, and says so", async () => {
+    const { root, daemon } = await fixture();
+    const entryA = await revision(root, "rev-a", "1.4.0");
+    const broken = await revision(root, "rev-broken", "1.5.2");
+    await writeFile(broken, "process.exit(3);\n");
+    const first = daemon([], { entry: entryA });
+    const chat = await first.durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await first.durable.dispose();
+    const { durable, locator } = daemon([], { entry: broken });
+    await durable.reattach();
+    expect((await durable.status(ref)).durableHostPin?.current).toBe("rev-broken");
+    await expect(durable.upgradeHost(ref, "now")).rejects.toThrow(/^The new host code \(rev-broken\) did not start: .*\. This Chat is back on its old host code \(rev-a\)\.$/);
+    expect(locator.durable(chat.id)?.hostEntry).toBe(entryA);
+    const back = locator.durable(chat.id)?.host;
+    expect(back?.revision).toBe(join(await realpath(root), "rev-a"));
+    expect(alive(back?.pid ?? 0)).toBe(true);
+    expect((await durable.status(ref)).durableHostPin).toMatchObject({ revision: "rev-a", current: "rev-broken" });
+    expect(requests(root, chat.id).filter((method) => method.startsWith("resume"))).toEqual(["resume:upgrade-restart"]);
+    await durable.stop(ref);
+  }, 120_000);
 });

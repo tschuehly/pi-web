@@ -8,13 +8,20 @@ const RESOLUTIONS: readonly { resolution: SessionEffectResolution; label: string
   { resolution: "retry", label: "Retry", title: "Run it again now" },
 ];
 
-/** A Durable Chat pinned to older host code: its revision, and the upgrade the owner may ask for while it is quiet. */
-export function renderDurableHostPin(pin: SessionStatus["durableHostPin"], onUpgrade: (() => void) | undefined) {
+/**
+ * A Durable Chat pinned to older host code: its revision, Upgrade host (while it is quiet) and Upgrade now (restart
+ * with recovery), which names what it would repeat.
+ */
+export function renderDurableHostPin(pin: SessionStatus["durableHostPin"], onUpgrade: ((mode: "quiet" | "now") => void) | undefined) {
   if (pin === undefined) return null;
+  const repeats = pin.repeats ?? [];
+  const now = repeats.length === 0 ? "Upgrade now (nothing repeats)" : `Upgrade now (repeats: ${repeats.join("; ")})`;
   return html`
     <p class="durable-host-pin" role="status">
       Host <code>${pin.revision}</code> (new Chats run <code>${pin.current}</code>)
-      ${onUpgrade === undefined ? null : html`<button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code; refused while it is busy" @click=${() => { onUpgrade(); }}>Upgrade host</button>`}
+      ${onUpgrade === undefined ? null : html`
+        <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code; refused while it is busy" @click=${() => { onUpgrade("quiet"); }}>Upgrade host</button>
+        <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code now; the Chat resumes by itself. Open questions, queued input, background bash and Atelier Pages carry over." @click=${() => { onUpgrade("now"); }}>${now}</button>`}
     </p>
   `;
 }

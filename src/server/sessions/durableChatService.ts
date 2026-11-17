@@ -237,14 +237,15 @@ class DurableHostConnection {
    * bounds its own close and exits non-zero); one still alive `graceMs` later, as when its close joins work that
    * ignores cancellation, gets SIGKILL and reopens with that work interrupted. Resolves only once the process is gone,
    * so a host opened next for the same store never meets its lock. `end`: the owner ends the Chat, and the host cancels
-   * the family's background jobs first; any other close (restart, idle, upgrade) leaves them running.
+   * the family's background jobs first; any other close (restart, idle, upgrade) leaves them running. `upgrade`: Upgrade
+   * now's close, which the host records as an `upgrade-restart`.
    */
-  async close(graceMs: number, end = false): Promise<void> {
+  async close(graceMs: number, end = false, upgrade = false): Promise<void> {
     if (!this.alive) return;
     const terminate = setTimeout(() => { this.process.kill("SIGTERM"); }, graceMs);
     const kill = setTimeout(() => { this.process.kill("SIGKILL"); }, 2 * graceMs);
     try {
-      await this.request("close", end ? { end } : undefined);
+      await this.request("close", end ? { end } : upgrade ? { reason: "upgrade" } : undefined);
     } catch {
       // Already gone, or terminated by the timers.
     }
@@ -888,7 +889,7 @@ export class DurableChatService {
    * unfinished jobs, a one-off `endJobs` process cancels them; no host starts, so no undelivered completion wakes the
    * model. An idle close or an upgrade keeps the jobs.
    */
-  async #end(sessionId: string, explicit = false): Promise<void> {
+  async #end(sessionId: string, explicit = false, upgrade = false): Promise<void> {
     const record = this.deps.locator.durable(sessionId);
     const pending = this.#connections.get(sessionId) ?? (record?.host === undefined ? undefined : this.#connection(record, true));
     this.#connections.delete(sessionId);
@@ -900,7 +901,7 @@ export class DurableChatService {
         child.on("exit", (code) => { if (code === 0) resolve(); else reject(new Error(`Cancelling the background jobs of Durable Chat ${sessionId} failed (exit ${String(code)})`)); });
       });
     }
-    await connection?.close(this.deps.closeGraceMs ?? 5000, explicit);
+    await connection?.close(this.deps.closeGraceMs ?? 5000, explicit, upgrade);
   }
 
   /**
@@ -925,23 +926,58 @@ export class DurableChatService {
   }
 
   /**
-   * Move a pinned family to the host code new Chats get (Phase C3): only on the owner's request and only while the
-   * family is quiet. Its host closes in order; the next one starts from the current revision folder. Never to older Pi
-   * Durable code (after a roll back): it cannot read a store newer code opened, so the family stays on its host and pin.
+   * Move a pinned family to the host code new Chats get (Phase C3), on the owner's request. Never to older Pi Durable
+   * code (after a roll back): it cannot read a store newer code opened, so the family stays on its host and pin.
+   * - `quiet` (Upgrade host): refused unless the family is quiet; its host closes in order and the next one starts from
+   *   the current revision folder at the next message.
+   * - `now` (Upgrade now, seamless upgrade C): whatever runs, the host closes in order (`upgrade-restart`) and the new
+   *   host starts at once and resumes, recovering as after any restart (see `upgradeRepeats`). If the new host does not
+   *   start, the family goes back to its old pin and host, and the error says so.
    * shortcut: input arriving between the quiet check and the close waits, paused, for the next message; hold new
    * requests during the handover if that happens in practice.
    */
-  async upgradeHost(ref: SessionRouteRef): Promise<ClientSessionStatus> {
+  async upgradeHost(ref: SessionRouteRef, mode: "quiet" | "now" = "quiet"): Promise<ClientSessionStatus> {
     const record = this.#record(ref);
     const connection = await this.#for(ref);
-    if (connection.pin === undefined) return this.status(ref);
+    const pin = connection.pin;
+    if (pin === undefined) return this.status(ref);
     const refusal = hostMoveRefusal(connection.code);
     if (refusal !== undefined) throw new Error(refusal);
-    const busy = familyBusy(hostStatus((await connection.request("status")).result));
-    if (busy !== undefined) throw new Error(`This Chat cannot move to new host code while ${busy}; try again when it is quiet`);
-    await this.#end(record.id);
-    this.deps.locator.setHostEntry(record.id, undefined);
+    if (mode === "quiet") {
+      const busy = familyBusy(hostStatus((await connection.request("status")).result));
+      if (busy !== undefined) throw new Error(`This Chat cannot move to new host code while ${busy}; try again when it is quiet`);
+      await this.#end(record.id);
+      this.deps.locator.setHostEntry(record.id, undefined);
+      return this.status(ref);
+    }
+    await this.#upgradeRestart(record, pin);
     return this.status(ref);
+  }
+
+  /** Upgrade now's ordered restart: close (`upgrade`), drop the pin, start and resume the new host; else roll back. */
+  async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }): Promise<void> {
+    const pinned = this.deps.locator.durable(record.id)?.hostEntry;
+    this.deps.logger?.info?.({ sessionId: record.id, from: pin.revision, to: pin.current }, "upgrade-restart: restarting Durable Chat host on current code");
+    await this.#end(record.id, false, true);
+    this.deps.locator.setHostEntry(record.id, undefined);
+    try {
+      await this.#resumed(record);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the new host did not start; rolling back to the old pin");
+      this.deps.locator.setHostEntry(record.id, pinned);
+      const back = await this.#resumed(record).then(() => "", (again: unknown) => ` It did not start there either (${again instanceof Error ? again.message : String(again)}); the next message tries again.`);
+      throw new Error(`The new host code (${pin.current}) did not start: ${reason}. This Chat is back on its old host code (${pin.revision}).${back}`, { cause: error });
+    }
+  }
+
+  /** Start the family's host and resume it at once; a host without `resume` (older code) stays paused until the next message. */
+  async #resumed(record: DurableChatRecord): Promise<void> {
+    const connection = await this.#connection(record);
+    await connection.request("resume", { reason: "upgrade-restart" }).catch((error: unknown) => {
+      if (!(error instanceof Error && error.message === "Unknown method resume")) throw error;
+      this.deps.logger?.warn({ sessionId: record.id }, "upgrade-restart: this host code cannot resume by itself; it waits for the next message");
+    });
   }
 
   /**
@@ -1147,7 +1183,7 @@ function browserStatus(status: HostTranscript["status"], connection: DurableHost
     ...status,
     queuedMessages: status.queuedMessages.map(displayQueuedMessage),
     capabilities: connection.capabilities,
-    ...(connection.pin === undefined ? {} : { durableHostPin: connection.pin }),
+    ...(connection.pin === undefined ? {} : { durableHostPin: { ...connection.pin, repeats: upgradeRepeats(status) } }),
     ...(connection.capabilities.includes("queue.edit") ? {} : { queueMessageActionsUnavailable: "Editing queued messages is not available in this Durable Chat host yet." }),
   };
 }
@@ -1237,23 +1273,44 @@ function familyBusy(status: HostTranscript["status"]): string | undefined {
   if (status.pendingMessageCount > 0) return "input is queued";
   if ((status.pendingAsks?.length ?? 0) > 0) return "a question is open";
   if ((status.activeToolExecutions?.length ?? 0) > 0) return "a tool is running";
-  const list = (key: string, field: string): unknown[] | undefined => {
-    const text = status.extensionStatuses?.[key];
-    if (text === undefined) return [];
-    try {
-      const value: unknown = JSON.parse(text);
-      const items = isRecord(value) ? value[field] : undefined;
-      return Array.isArray(items) ? items : undefined;
-    } catch {
-      return undefined;
-    }
-  };
-  const delegates = list("pi-workbench:activity", "items");
-  if (delegates === undefined || delegates.some((item) => !isRecord(item) || item["endedAt"] === undefined)) return "children are running";
+  const list = (key: string, field: string) => statusList(status, key, field);
+  if (childrenRunning(status)) return "children are running";
   if (list("pi-workbench:background-bash", "jobs")?.length !== 0) return "background bash is running";
   if (list("pi-process-monitor:watchers", "watchers")?.length !== 0) return "a watcher is running";
   if (status.extensionStatuses?.["pi-workbench:atelier"] !== undefined) return "it serves Atelier Pages";
   return undefined;
+}
+
+/** A JSON list in one of the host's extension status lines: none when the line is absent, undefined when unparseable. */
+function statusList(status: HostTranscript["status"], key: string, field: string): unknown[] | undefined {
+  const text = status.extensionStatuses?.[key];
+  if (text === undefined) return [];
+  try {
+    const value: unknown = JSON.parse(text);
+    const items = isRecord(value) ? value[field] : undefined;
+    return Array.isArray(items) ? items : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A delegate roster row not yet ended (Subagents, Workers); an unparseable roster counts as running. */
+function childrenRunning(status: HostTranscript["status"]): boolean {
+  const delegates = statusList(status, "pi-workbench:activity", "items");
+  return delegates === undefined || delegates.some((item) => !isRecord(item) || item["endedAt"] === undefined);
+}
+
+/**
+ * What Upgrade now repeats or holds, from the host's status (the survival table of the rebuild plan): an answer in flight
+ * is requested again, a running tool reruns when it is safe and waits for the owner otherwise, running children resume.
+ * Open questions, queued input, background bash, watchers and Atelier Pages carry over unchanged.
+ */
+function upgradeRepeats(status: HostTranscript["status"]): string[] {
+  const repeats: string[] = [];
+  if (status.isStreaming || status.isCompacting) repeats.push("the running turn: its answer is requested again; safe tools rerun, others wait for you");
+  if (status.isBashRunning) repeats.push("the running ! command is interrupted");
+  if (childrenRunning(status)) repeats.push("running Subagents and Workers resume their current step");
+  return repeats;
 }
 
 /** A host-side notification request: the daemon turns it into PI WEB's global `session.attention`. */

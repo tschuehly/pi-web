@@ -558,7 +558,13 @@ function optionalAttentionRequest(value: unknown): Pick<SessionStatus, "attentio
 function optionalDurableHostPin(value: unknown): Pick<SessionStatus, "durableHostPin"> | object {
   if (value === undefined) return {};
   const record = requireRecord(value);
-  return { durableHostPin: { revision: requireBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH), current: requireBoundedNonEmptyString(record, "current", ASK_USER_ID_MAX_LENGTH) } };
+  const repeats = record["repeats"];
+  return {
+    durableHostPin: {
+      revision: requireBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH), current: requireBoundedNonEmptyString(record, "current", ASK_USER_ID_MAX_LENGTH),
+      ...(Array.isArray(repeats) ? { repeats: repeats.filter((item): item is string => typeof item === "string").slice(0, 8).map((item) => item.slice(0, ASK_USER_TEXT_MAX_LENGTH)) } : {}),
+    },
+  };
 }
 
 function optionalUnresolvedEffects(value: unknown): Pick<SessionStatus, "unresolvedEffects"> | object {

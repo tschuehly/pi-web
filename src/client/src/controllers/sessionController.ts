@@ -1505,8 +1505,8 @@ export class SessionController {
     }
   }
 
-  /** Move the selected Durable Chat's pinned host to the current host code; the host refuses while the Chat is busy. */
-  async upgradeDurableHost(): Promise<void> {
+  /** Move the selected Durable Chat's pinned host to the current host code: refused while busy, or `now` with recovery. */
+  async upgradeDurableHost(mode: "quiet" | "now" = "quiet"): Promise<void> {
     const state = this.getState();
     const session = state.selectedSession;
     if (session === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) return;
@@ -1514,7 +1514,7 @@ export class SessionController {
     const errorOwner = this.captureSessionErrorOwner(session);
     const selectionSeq = this.selectionSeq;
     try {
-      const status = await this.api.upgradeDurableHost(session, machineId);
+      const status = await this.api.upgradeDurableHost(session, machineId, mode);
       if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(status);
     } catch (error) {
       this.reportSessionError(session, machineId, error, errorOwner);
