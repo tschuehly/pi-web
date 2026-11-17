@@ -102,8 +102,9 @@ function isReportedFailure(message: unknown): boolean {
 function subagentCompletionText(message: unknown): string | undefined {
   const details = getProperty(message, "details");
   if (getString(message, "role") !== "custom" || getString(message, "customType") !== "pi-workbench:child-completion"
-    || !isRecord(details) || Array.isArray(details) || Object.keys(details).length !== 1
-    || details["attention"] !== "terminal-results") return undefined;
+    || !isRecord(details) || Array.isArray(details) || details["attention"] !== "terminal-results"
+    // A failed Worker receipt shares the attention value; it stays a prominent failure (isReportedFailure).
+    || "receiptStatus" in details) return undefined;
   const content = getString(message, "content");
   return content === "" ? undefined : content;
 }
