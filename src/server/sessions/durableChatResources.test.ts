@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DefaultResourceLoader, SettingsManager } from "../../piSdk.js";
-import { loadDurableChatResources } from "./durableChatResources.js";
+import { durableDefaultModel, durableThinkingLevel, loadDurableChatResources } from "./durableChatResources.js";
 
 const roots: string[] = [];
 const saved = { HOME: process.env["HOME"], PI_CODING_AGENT_DIR: process.env["PI_CODING_AGENT_DIR"] };
@@ -82,5 +82,31 @@ describe("Durable Chat resources", () => {
     expect(durable.promptList?.map((template) => template.name)).toContain("contributed-prompt");
     // Without contributions nothing extra appears.
     expect((await loadDurableChatResources(cwd, agentDir)).skillList.map((entry) => entry.name)).toEqual(["user-skill"]);
+  });
+});
+
+// A new Durable Chat starts on the model and thinking level Pi's settings name, as a legacy Chat does.
+describe("Durable Chat default model", () => {
+  it("takes the settings' default model and thinking level", async () => {
+    const { root, agentDir } = await hermeticRoot();
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ defaultProvider: "anthropic", defaultModel: "claude-opus-5-5", defaultThinkingLevel: "high" }));
+    const model = durableDefaultModel(root, agentDir, {});
+    expect(model).toBe("anthropic/claude-opus-5-5");
+    expect(durableThinkingLevel(root, agentDir, model)).toBe("high");
+  });
+
+  it("lets PI_WEB_DURABLE_MODEL win over the settings", async () => {
+    const { root, agentDir } = await hermeticRoot();
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ defaultProvider: "anthropic", defaultModel: "claude-opus-5-5" }));
+    expect(durableDefaultModel(root, agentDir, { PI_WEB_DURABLE_MODEL: "openai/gpt-6.1-sol" })).toBe("openai/gpt-6.1-sol");
+  });
+
+  it("falls back to the old default without settings", async () => {
+    const { root, agentDir } = await hermeticRoot();
+    const model = durableDefaultModel(root, agentDir, {});
+    expect(model).toBe("anthropic/claude-sonnet-5-5");
+    expect(durableThinkingLevel(root, agentDir, model)).toBe("medium");
   });
 });

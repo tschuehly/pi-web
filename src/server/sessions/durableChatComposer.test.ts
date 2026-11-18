@@ -85,7 +85,7 @@ describe("Durable Chat composer", () => {
     expect((await durable.status(ref)).queueMessageActionsUnavailable).toMatch(/not available/);
   });
 
-  it("maps recall, remove and toggle to the host against the exact queued IDs the browser saw; a stale snapshot is refused", async () => {
+  it("maps recall, remove and toggle to the host against the exact queued IDs the browser saw; a stale snapshot changes nothing and returns the current queue", async () => {
     const { durable, host, ref } = await chat();
     const queued = [{ id: 7, kind: "steer", text: "s1" }, { id: 5, kind: "followUp", text: `look [PIC_1]${LEGEND}`, hasAttachments: true, attachmentCount: 1 }, { id: 6, kind: "followUp", text: "f2" }];
     host.answer = (request) => request.method === "status" ? { ...base, queuedMessages: queued } : null;
@@ -94,12 +94,16 @@ describe("Durable Chat composer", () => {
     expect(status.queueMessageActionsUnavailable).toBeUndefined();
     await durable.mutateQueueMessage(ref, { action: "edit", index: 1, expectedQueue: status.queuedMessages });
     await durable.mutateQueueMessage(ref, { action: "toggle", index: 0, expectedQueue: status.queuedMessages });
-    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue: status.queuedMessages.slice(1) })).rejects.toThrow("Queued messages changed");
+    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue: status.queuedMessages.slice(1) })).resolves.toMatchObject({ queueChanged: true, queuedMessages: status.queuedMessages });
+    // A message the browser still shows was already delivered.
+    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 3, expectedQueue: [...status.queuedMessages, { kind: "followUp", text: "delivered" }] })).resolves.toMatchObject({ queueChanged: true });
     // Recall loses the attachments only when the browser acknowledged them.
-    await expect(durable.mutateQueueMessage(ref, { action: "edit", index: 1, expectedQueue: status.queuedMessages.map(({ kind, text }) => ({ kind, text })) })).rejects.toThrow("Queued messages changed");
+    await expect(durable.mutateQueueMessage(ref, { action: "edit", index: 1, expectedQueue: status.queuedMessages.map(({ kind, text }) => ({ kind, text })) })).resolves.toMatchObject({ queueChanged: true });
+    expect(await durable.mutateQueueMessage(ref, { action: "toggle", index: 0, expectedQueue: status.queuedMessages })).not.toHaveProperty("queueChanged");
     const sent = host.sent("mutateQueue").map((request) => request.params ?? {});
     expect(sent.map(({ action, index, expected }) => ({ action, index, expected }))).toEqual([
       { action: "recall", index: 1, expected: [7, 5, 6] },
+      { action: "toggle", index: 0, expected: [7, 5, 6] },
       { action: "toggle", index: 0, expected: [7, 5, 6] },
     ]);
     expect(sent.every(({ editId }) => typeof editId === "string")).toBe(true);

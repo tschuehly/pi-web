@@ -71,13 +71,29 @@ describe("queued message mutation", () => {
     } finally { await f.service.dispose(); }
   });
 
-  it("rejects attached recall when the browser snapshot did not acknowledge attachments", async () => {
+  it("changes nothing and returns the current queue when the browser's queue is stale", async () => {
+    const f = fixture();
+    try {
+      const kept = f.enqueue("followUp", "kept");
+      const stale = [{ kind: "followUp" as const, text: "delivered" }, { kind: "followUp" as const, text: "kept" }];
+      for (const action of ["remove", "edit", "toggle"] as const) {
+        const result = await f.service.mutateQueueMessage(f.ref, { action, index: 0, expectedQueue: stale });
+        expect(result).toMatchObject({ queueChanged: true, queuedMessages: [{ kind: "followUp", text: "kept" }] });
+      }
+      expect(snapshotAgentQueues(f.agent)).toEqual({ steer: [], followUp: [kept] });
+      const removed = await f.service.mutateQueueMessage(f.ref, { action: "remove", index: 0, expectedQueue: [{ kind: "followUp", text: "kept" }] });
+      expect(removed).not.toHaveProperty("queueChanged");
+      expect(removed.queuedMessages).toEqual([]);
+    } finally { await f.service.dispose(); }
+  });
+
+  it("does not recall an attached message when the browser snapshot did not acknowledge attachments", async () => {
     const f = fixture();
     try {
       const attached = f.enqueue("followUp", "recall", true);
       const before = await f.service.status(f.ref);
       expect(before.queuedMessages).toEqual([{ kind: "followUp", text: "recall", hasAttachments: true, attachmentCount: 1 }]);
-      await expect(f.service.mutateQueueMessage(f.ref, { action: "edit", index: 0, expectedQueue: [{ kind: "followUp", text: "recall" }] })).rejects.toThrow("Queued messages changed");
+      await expect(f.service.mutateQueueMessage(f.ref, { action: "edit", index: 0, expectedQueue: [{ kind: "followUp", text: "recall" }] })).resolves.toMatchObject({ queueChanged: true });
       expect(snapshotAgentQueues(f.agent).followUp).toEqual([attached]);
       await expect(f.service.mutateQueueMessage(f.ref, { action: "edit", index: 0, expectedQueue: before.queuedMessages })).resolves.toMatchObject({ queuedMessages: [] });
     } finally { await f.service.dispose(); }
@@ -163,7 +179,7 @@ describe("queued message mutation", () => {
     } finally { await f.service.dispose(); }
   });
 
-  it("rejects a changed unselected message and concurrent stale actions without mutation", async () => {
+  it("ignores a changed unselected message and concurrent stale actions without mutation", async () => {
     const f = fixture();
     try {
       const first = f.enqueue("steer", "first");
@@ -173,10 +189,11 @@ describe("queued message mutation", () => {
       const staleLater = stale[1];
       if (staleLater === undefined) throw new Error("Expected follow-up fixture");
       staleLater.text = "different";
-      await expect(f.service.mutateQueueMessage(f.ref, { action: "remove", index: 0, expectedQueue: stale })).rejects.toThrow("changed");
+      await expect(f.service.mutateQueueMessage(f.ref, { action: "remove", index: 0, expectedQueue: stale })).resolves.toMatchObject({ queueChanged: true });
       expect(snapshotAgentQueues(f.agent)).toEqual({ steer: [first], followUp: [later] });
-      const results = await Promise.allSettled([0, 1].map((index) => f.service.mutateQueueMessage(f.ref, { action: "remove", index, expectedQueue: before.queuedMessages })));
-      expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+      const results = await Promise.all([0, 1].map((index) => f.service.mutateQueueMessage(f.ref, { action: "remove", index, expectedQueue: before.queuedMessages })));
+      expect(results.map((result) => result.queueChanged === true).sort()).toEqual([false, true]);
+      expect(f.agent.hasQueuedMessages()).toBe(true);
     } finally { await f.service.dispose(); }
   });
 

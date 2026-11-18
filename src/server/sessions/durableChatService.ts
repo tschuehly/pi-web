@@ -21,6 +21,8 @@ import type { ModelPriceSource } from "./cacheStats.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import { appendInlineImageReferenceMapping, CHECKPOINT_SESSION_TITLE_MAX_LENGTH, CHECKPOINT_TITLE_COMMAND, parseModelSpec, spawnTargetError } from "./piSessionService.js";
 import type { SpawnTargetResolver } from "./spawnTargetResolver.js";
+import { catalogWithEnabledFirst, resolveEnabledModelIds } from "./sessionModelScope.js";
+import type { ModelRuntime } from "../../piSdk.js";
 import type { SpawnSessionResult } from "./spawnSessionTool.js";
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import { cleanSessionName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, sessionTitleInput, shortSessionNamePrompt } from "./sessionNameGenerator.js";
@@ -63,12 +65,13 @@ export interface DurableHostProcess {
 export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean; endJobs?: boolean }) => DurableHostProcess;
 
 /** What starts a family's host: the Workbench host entry, the model and Pi agent dir it runs with. */
-export interface DurableHostOptions { entry: string; model: string; agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
+export interface DurableHostOptions { entry: string; model: string | ((cwd: string) => string); agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
 
 /** The host's arguments for one family; a new Chat starts at the thinking level Pi would pick (a reopened one keeps its own). */
 export function durableHostLaunchArgs(options: DurableHostOptions, record: Pick<DurableChatRecord, "id" | "cwd">, storeDir: string): string[] {
   const thinking = options.thinkingLevel ?? ((cwd: string, model: string) => durableThinkingLevel(cwd, options.agentDir, model));
-  return durableHostArgs(record, storeDir, { ...options, thinking: thinking(record.cwd, options.model) });
+  const model = typeof options.model === "string" ? options.model : options.model(record.cwd);
+  return durableHostArgs(record, storeDir, { ...options, model, thinking: thinking(record.cwd, model) });
 }
 
 /** Host arguments: the family store, workspace, model, Chat ID and a new Chat's thinking level; every host runs the installed Pi packages it binds. */
@@ -296,6 +299,8 @@ export class DurableChatService {
     config?: { read(): { effectiveConfig: PiWebConfig } | Promise<{ effectiveConfig: PiWebConfig }> };
     /** Pi's prompt cache-miss notices, as legacy Chats show them: Pi's `showCacheMissNotices` for a workspace, and prices. */
     cacheMissNotices?: { enabled(cwd: string): boolean; models: ModelPriceSource };
+    /** Pi's `enabledModels` patterns for a workspace; they scope the models a Chat offers, as for legacy Chats. None: every model. */
+    enabledModels?: (cwd: string) => string[] | undefined;
     /**
      * The daemon's unread catalog (the legacy service's, shared): committed run starts and ends, and a host exit.
      * Turn ends of a Durable Chat mark it unread exactly as a legacy Chat's do.
@@ -597,7 +602,7 @@ export class DurableChatService {
     return this.status(ref);
   }
 
-  /** Remove, recall (`edit`) or toggle a queued message, against the queue the browser showed (as legacy Chats). */
+  /** Remove, recall (`edit`) or toggle a queued message, against the queue the browser showed (as legacy Chats); a changed queue changes nothing. */
   async mutateQueueMessage(ref: SessionRouteRef, mutation: SessionQueueMessageMutation): Promise<ClientSessionStatus> {
     const connection = await this.#for(ref);
     this.#require(connection, "queue.edit");
@@ -608,7 +613,7 @@ export class DurableChatService {
       if (expected === undefined) return true;
       return entry.kind !== expected.kind || entry.text !== expected.text
         || (mutation.action === "edit" && index === mutation.index && (entry.hasAttachments === true) !== (expected.hasAttachments === true));
-    })) throw new Error("Queued messages changed; refresh the queue and try again");
+    })) return { ...(await this.status(ref)), queueChanged: true };
     if (mutation.index >= current.length) throw new Error("Invalid queue index");
     await this.#mutateQueue(connection, mutation.action === "edit" ? "recall" : mutation.action, mutation.index, queued);
     return this.status(ref);
@@ -859,14 +864,26 @@ export class DurableChatService {
     return { result: "stale", sessionStatus };
   }
 
+  /** The models a Chat can switch to: the host's, scoped to `enabledModels` in their order, as a legacy Chat's. */
   async availableModels(ref: SessionRouteRef): Promise<ClientSessionModel[]> {
-    const { result } = await (await this.#for(ref)).request("models");
-    return Array.isArray(result) ? result.filter(isRecord).map((model) => ({ ...model })) : [];
+    return (await this.#scopedModels(ref)).filter((entry) => entry.enabled).map((entry) => entry.model);
   }
 
-  /** Every model the host offers, all enabled: a Durable Chat has no separate enabled-model scope yet. */
+  /** Every model the host offers, enabled ones first; the scope is edited in Pi's settings, not here. */
   async modelCatalog(ref: SessionRouteRef): Promise<ClientSessionModelCatalogEntry[]> {
-    return (await this.availableModels(ref)).map((model, catalogIndex) => ({ ...model, provider: model.provider ?? "", id: model.id ?? "", enabled: true, editable: false, catalogIndex }));
+    return (await this.#scopedModels(ref)).map(({ model, enabled, catalogIndex }) => ({ ...model, enabled, editable: false, catalogIndex }));
+  }
+
+  async #scopedModels(ref: SessionRouteRef) {
+    const { result } = await (await this.#for(ref)).request("models");
+    const models = (Array.isArray(result) ? result.filter(isRecord) : []).map((model) => ({ ...model, provider: typeof model["provider"] === "string" ? model["provider"] : "", id: typeof model["id"] === "string" ? model["id"] : "" }) as ClientSessionModel & { provider: string; id: string });
+    // Pi's own pattern resolution, over the host's models (those with a stored login) rather than PI WEB's catalog.
+    const enabledIds = await resolveEnabledModelIds({
+      settingsManager: { getEnabledModels: () => this.deps.enabledModels?.(ref.cwd) },
+      modelRuntime: { getAvailable: () => Promise.resolve(models) } as unknown as ModelRuntime,
+      scopedModels: [],
+    });
+    return catalogWithEnabledFirst(models, enabledIds);
   }
 
   async setModel(ref: SessionRouteRef, provider: string, modelId: string): Promise<ClientSessionStatus> {

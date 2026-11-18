@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -651,5 +651,41 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
       },
       message: "ignored provider mutation after global bootstrap",
     });
+  });
+
+  it("shuts bootstrap-loaded extensions down so their child processes exit, keeping the frozen providers", async () => {
+    const agentDir = await tempDir("pi-web-global-provider-teardown-");
+    await mkdir(join(agentDir, "extensions"), { recursive: true });
+    const pidFile = join(agentDir, "child.pid");
+    const stoppedFile = join(agentDir, "stopped");
+    await writeFile(join(agentDir, "extensions", "provider.js"), `
+      import { spawn } from "node:child_process";
+      import { writeFileSync } from "node:fs";
+      export default function (pi) {
+        const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+        writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+        pi.registerProvider("global-config", ${JSON.stringify(globalConfigWithModels(["global-model"]))});
+        pi.on("session_shutdown", () => {
+          child.kill();
+          writeFileSync(${JSON.stringify(stoppedFile)}, "stopped");
+          pi.unregisterProvider("global-config");
+        });
+      }
+    `);
+    const runtime = await createTestModelRuntime();
+    const { logger } = capturingLogger();
+    let childPid: number | undefined;
+    try {
+      await bootstrapAndFreezeGlobalExtensionProviders(runtime, agentDir, logger);
+      childPid = Number(await readFile(pidFile, "utf8"));
+
+      expect(await readFile(stoppedFile, "utf8").catch(() => "not stopped")).toBe("stopped");
+      expect(runtime.getRegisteredProviderIds()).toContain("global-config");
+      expect(runtime.getRegisteredProviderConfig("global-config")).toMatchObject(globalConfigWithModels(["global-model"]));
+    } finally {
+      if (childPid !== undefined) {
+        try { process.kill(childPid); } catch { /* already exited */ }
+      }
+    }
   });
 });

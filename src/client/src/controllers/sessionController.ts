@@ -1424,8 +1424,8 @@ export class SessionController {
     const errorOwner = this.captureSessionErrorOwner(session);
     const selectionSeq = this.selectionSeq;
     try {
-      const status = await this.api.mutateQueuedMessage(session, { action, index, expectedQueue }, machineId);
-      if (action === "edit") {
+      const { queueChanged, ...status } = await this.api.mutateQueuedMessage(session, { action, index, expectedQueue }, machineId);
+      if (action === "edit" && queueChanged !== true) {
         const text = expectedQueue[index]?.text ?? "";
         saveDraft(machineSessionKey(machineId, session.id), text, this.draftStorage);
         if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) {

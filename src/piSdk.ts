@@ -9,6 +9,8 @@ export const {
   CredentialSynchronizationError,
   DefaultPackageManager,
   DefaultResourceLoader,
+  ExtensionRunner,
+  ModelRegistry,
   ModelRuntime,
   ProjectTrustStore,
   SessionManager,
@@ -41,6 +43,8 @@ export type AgentSession = import("@earendil-works/pi-coding-agent").AgentSessio
 export type CredentialSynchronizationError = import("@earendil-works/pi-coding-agent").CredentialSynchronizationError;
 export type DefaultPackageManager = import("@earendil-works/pi-coding-agent").DefaultPackageManager;
 export type DefaultResourceLoader = import("@earendil-works/pi-coding-agent").DefaultResourceLoader;
+export type ExtensionRunner = import("@earendil-works/pi-coding-agent").ExtensionRunner;
+export type ModelRegistry = import("@earendil-works/pi-coding-agent").ModelRegistry;
 export type ModelRuntime = import("@earendil-works/pi-coding-agent").ModelRuntime;
 export type ProjectTrustStore = import("@earendil-works/pi-coding-agent").ProjectTrustStore;
 export type SessionManager = import("@earendil-works/pi-coding-agent").SessionManager;

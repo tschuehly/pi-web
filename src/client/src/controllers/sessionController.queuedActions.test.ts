@@ -54,4 +54,16 @@ describe("queued message mutation controller", () => {
     expect(test.replacePromptEditorText).not.toHaveBeenCalled();
     expect(loadDraft(machineSessionKey("local", oldSession.id))).toBe("");
   });
+
+  it("refreshes the queue without an error or a recall when the server reports the queue changed", async () => {
+    const test = setup();
+    const pending = test.controller.mutateQueuedMessage("edit", 0, queue);
+    test.request.resolve({ ...status(oldSession.id), queuedMessages: [], queueChanged: true });
+    await pending;
+    expect(test.replacePromptEditorText).not.toHaveBeenCalled();
+    expect(loadDraft(machineSessionKey("local", oldSession.id))).toBe("");
+    expect(test.state().error).toBeFalsy();
+    expect(test.state().status?.queuedMessages).toEqual([]);
+    expect(test.state().status).not.toHaveProperty("queueChanged");
+  });
 });

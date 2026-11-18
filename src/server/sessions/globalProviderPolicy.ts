@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   createAgentSessionServices,
+  ExtensionRunner,
+  ModelRegistry,
+  SessionManager,
   type AgentSessionRuntimeDiagnostic,
   type AgentSessionServices,
   type ModelRuntime,
@@ -119,6 +122,35 @@ async function loadGlobalExtensionServices(runtime: ModelRuntime, agentDir: stri
   } finally {
     await rm(scratchCwd, { recursive: true, force: true });
   }
+}
+
+/**
+ * Bootstrap loads extensions without an AgentSession, and Pi 1.3 gives such
+ * services no teardown: only AgentSessionRuntime emits `session_shutdown`.
+ * Extensions that start processes in their factory (MCP clients) stop them on
+ * that event, so emit it through a throwaway runner, as Pi does on quit.
+ * Called after the freeze, so shutdown handlers cannot alter the baseline.
+ */
+async function shutDownBootstrapExtensions(
+  services: AgentSessionServices,
+  logger: GlobalProviderBootstrapLogger,
+): Promise<void> {
+  const { extensions, runtime } = services.resourceLoader.getExtensions();
+  const runner = new ExtensionRunner(
+    extensions,
+    runtime,
+    services.cwd,
+    SessionManager.inMemory(services.cwd),
+    new ModelRegistry(services.modelRuntime),
+  );
+  runner.onError((extensionError) => {
+    logger.error(
+      { context: LOG_CONTEXT, error: extensionError.error },
+      "global extension failed during provider bootstrap shutdown",
+    );
+  });
+  await runner.emit({ type: "session_shutdown", reason: "quit" });
+  // Not invalidated: frozen provider implementations may still use their captured `pi`.
 }
 
 function logBootstrapDiagnostic(
@@ -279,6 +311,7 @@ export async function bootstrapAndFreezeGlobalExtensionProviders(
   const providerIds = Object.freeze([...runtime.getRegisteredProviderIds()].sort());
 
   freezeProviderMutations(runtime, logger, captureProviderConfigBaseline(runtime));
+  await shutDownBootstrapExtensions(services, logger);
 
   for (const diagnostic of services.diagnostics) logBootstrapDiagnostic(logger, diagnostic);
   for (const extensionError of services.resourceLoader.getExtensions().errors) {

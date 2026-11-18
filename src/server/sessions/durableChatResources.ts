@@ -85,6 +85,14 @@ function extensionResource(entry: { path: string; extensionPath: string }) {
   return { path: entry.path, metadata: { source: `extension:${basename(entry.extensionPath).replace(/\.(ts|js)$/, "")}`, scope: "temporary" as const, origin: "top-level" as const, baseDir: dirname(entry.extensionPath) } };
 }
 
+/** A new Durable Chat's model: `PI_WEB_DURABLE_MODEL`, else Pi's default model from the settings, else Claude Sonnet. */
+export function durableDefaultModel(cwd: string, agentDir: string, env: Record<string, string | undefined>): string {
+  const settings = SettingsManager.create(cwd, agentDir);
+  const provider = settings.getDefaultProvider();
+  const id = settings.getDefaultModel();
+  return env["PI_WEB_DURABLE_MODEL"] ?? (provider === undefined || id === undefined ? "anthropic/claude-sonnet-5-5" : `${provider}/${id}`);
+}
+
 /**
  * The thinking level of a new Durable Chat, as Pi picks one for a new session: the model's own setting, else the
  * default thinking level, else Pi's default (`medium`). The host clamps it to the model.
