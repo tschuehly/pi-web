@@ -252,6 +252,27 @@ describe("seamless upgrade orchestration", () => {
     await s.durable.dispose();
   });
 
+  it("D: a rejected resume keeps the owed resume on disk; the next daemon sends it and only then clears it", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const s = setup(a, b, { failResume: true });
+    await s.durable.status(s.ref);
+    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/injected resume failure/);
+    expect(new SessionRuntimeLocator(ROOT).durable(s.ref.id)?.upgrade).toEqual({ from: a });
+    await s.durable.dispose();
+    const disk = new SessionRuntimeLocator(ROOT);
+    const attached: Fake[] = [];
+    const restarted = new DurableChatService({
+      locator: disk, events, storesDir: join(ROOT, "stores"),
+      launch: (chat) => { const host = new Fake({ entry: disk.durable(chat.id)?.hostEntry ?? b, current: b }, () => undefined); attached.push(host); return host; },
+    });
+    await restarted.reattach();
+    expect(attached.map((host) => host.code.entry)).toEqual([b]);
+    expect(attached[0]?.requests.filter((request) => request.method === "resume")).toHaveLength(1);
+    expect(new SessionRuntimeLocator(ROOT).durable(s.ref.id)?.upgrade).toBeUndefined();
+    await restarted.dispose();
+  });
+
   it("finding 3: a double click runs one upgrade: one old and one new host, one resume, both clicks answered", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
     const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];

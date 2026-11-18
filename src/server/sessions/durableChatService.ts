@@ -1091,13 +1091,10 @@ export class DurableChatService {
     }
   }
 
-  /** Resume the family's new host, and the upgrade is done. */
+  /** Resume the family's new host; only its acknowledgement ends the upgrade (a failure leaves the resume owed). */
   async #finishUpgrade(sessionId: string, connection: DurableHostConnection): Promise<void> {
-    try {
-      await this.#resume(connection);
-    } finally {
-      this.#upgradeDone(sessionId);
-    }
+    await this.#resume(connection);
+    this.#upgradeDone(sessionId);
   }
 
   /**
