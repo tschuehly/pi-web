@@ -125,6 +125,8 @@ const loaded = (label: string) => { try { execFileSync("launchctl", ["print", `$
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const requests = (root: string, storeId: string) => (existsSync(join(root, "data", "durable", storeId, "requests.log")) ? readFileSync(join(root, "data", "durable", storeId, "requests.log"), "utf8").trim().split("\n") : []);
 
+const isReady = (message: unknown) => typeof message === "object" && message !== null && "ready" in message;
+
 /** A listener on `path` that announces `ready` and records whether anyone ever sent it a request. */
 async function impostor(path: string, ready: object): Promise<{ server: Server; requested: () => boolean }> {
   let requested = false;
@@ -223,6 +225,44 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
       server.close();
     }
   }, 60_000);
+
+  it("round 4 F3: a refused safe close, its connection then lost, leaves the family's job loaded; an accepted one unloads it", async () => {
+    const { root, hostsDir } = await fixture();
+    await mkdir(hostsDir, { mode: 0o700 });
+    const locator = new SessionRuntimeLocator(join(root, "data"));
+    const record = locator.create("/work/a");
+    const socket = durableHostSocketPath(hostsDir, record.storeId);
+    const ready = { protocol: DURABLE_HOST_PROTOCOL, storeId: record.storeId, ownerEpoch: 1, revision: root, pid: process.pid };
+    let reply: object = {};
+    // A host that answers B's close, then drops the connection (as a refusing host that crashes right after would).
+    const server = createServer((connection) => {
+      connection.on("error", () => undefined);
+      connection.write(`${JSON.stringify({ ready })}\n`);
+      connection.on("data", (chunk) => { const { id } = JSON.parse(String(chunk)) as { id: number }; connection.end(`${JSON.stringify({ id, result: reply })}\n`); });
+    });
+    const umask = process.umask(0o077);
+    await new Promise<void>((resolve) => server.listen(socket, resolve));
+    process.umask(umask);
+    const launchctl: string[][] = [];
+    const launch = launchdDurableHost({ entry: join(root, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, launchctl: (args) => { launchctl.push(args); return Promise.resolve(); } });
+    try {
+      for (const [result, unloaded] of [[{ closed: false, busy: "a turn is running" }, false], [{ closed: true }, true]] as const) {
+        reply = result;
+        launchctl.length = 0;
+        locator.setHost(record.id, { label: `${PREFIX}.${record.id}`, socket, revision: root, ownerEpoch: 1, pid: process.pid });
+        const host = launch(record, join(root, "store"), { attachOnly: true });
+        host.on("error", () => undefined);
+        await new Promise<void>((resolve) => { host.on("message", (message) => { if (isReady(message)) resolve(); }); });
+        const exited = new Promise<unknown>((resolve) => { host.on("exit", (code) => { resolve(code); }); });
+        host.send({ id: 1, method: "close", params: { reason: "upgrade", ifRestartSafe: true } });
+        const code = await exited;
+        expect(launchctl.some((args) => args[0] === "bootout"), JSON.stringify(result)).toBe(unloaded);
+        expect(code, JSON.stringify(result)).toBe(unloaded ? 0 : null);
+      }
+    } finally {
+      server.close();
+    }
+  }, 30_000);
 
   it("refuses a stale socket: nobody listening, or a live host of an older owner epoch; the family's own job takes over", async () => {
     const { root, daemon } = await fixture();

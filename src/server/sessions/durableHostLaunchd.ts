@@ -107,6 +107,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
   #socket: Socket | undefined;
   #pid: number | undefined;
   #closing = false;
+  /** The id of B's conditional close in flight: the job ends with it only once the host answers `{ closed: true }`. */
+  #conditionalClose: unknown;
   #detached = false;
   /** The entry this object launched its host from; a reattached host's is the locator's. */
   #entry: string | undefined;
@@ -232,6 +234,10 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
       for (let end = buffer.indexOf("\n"); end !== -1; end = buffer.indexOf("\n")) {
         const line = parse(buffer.slice(0, end));
         buffer = buffer.slice(end + 1);
+        if (isRecord(line) && this.#conditionalClose !== undefined && line["id"] === this.#conditionalClose) {
+          this.#conditionalClose = undefined;
+          if (isRecord(line["result"]) && line["result"]["closed"] === true) this.#closing = true;
+        }
         if (line !== undefined) this.emit("message", line);
       }
     });
@@ -256,7 +262,11 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
       callback?.(new Error("Durable host connection is closed"));
       return false;
     }
-    if (isRecord(message) && message["method"] === "close") this.#closing = true;
+    if (isRecord(message) && message["method"] === "close") {
+      // A refused conditional close keeps the host running: its job and socket stay until it says it closed.
+      if (isRecord(message["params"]) && message["params"]["ifRestartSafe"] === true) this.#conditionalClose = message["id"];
+      else this.#closing = true;
+    }
     return socket.write(`${JSON.stringify(message)}\n`, (error) => { callback?.(error ?? null); });
   }
 
