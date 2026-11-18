@@ -64,7 +64,7 @@ const server = createServer((socket) => {
         socket.write(JSON.stringify({ id: request.id, result: { closed: false, busy: "a turn is running" } }) + "\\n");
         continue;
       }
-      socket.write(JSON.stringify({ id: request.id, result: request.method === "status" ? current : request.method === "transcript" ? { messages: [], partial: null, status: current } : null }) + "\\n", () => { if (request.method === "close") process.exit(0); });
+      socket.write(JSON.stringify({ id: request.id, result: request.method === "status" ? current : request.method === "transcript" ? { messages: [], partial: null, status: current } : request.params?.ifRestartSafe === true ? { closed: true } : null }) + "\\n", () => { if (request.method === "close") process.exit(0); });
     }
   });
   socket.on("error", () => {});

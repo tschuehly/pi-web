@@ -244,16 +244,26 @@ class DurableHostConnection {
    * so a host opened next for the same store never meets its lock. `end`: the owner ends the Chat, and the host cancels
    * the family's background jobs first; any other close (restart, idle, upgrade) leaves them running. `reason: "upgrade"`:
    * Upgrade now's close, which the host records as an `upgrade-restart`; with `ifRestartSafe` the host closes only if
-   * nothing but restart-surviving work runs, and refuses otherwise. Returns the host's refusal (it keeps running).
+   * nothing but restart-surviving work runs, and refuses otherwise. Returns the host's refusal (it keeps running): only
+   * its affirmative answer (`closed: true`) lets the timers end it; an error, or no answer within `2 * graceMs`, is a refusal.
    */
   async close(graceMs: number, params?: { end: true } | { reason: "upgrade"; ifRestartSafe?: true }): Promise<string | undefined> {
     if (!this.alive) return undefined;
+    const conditional = params !== undefined && "ifRestartSafe" in params;
+    if (conditional) {
+      let wait: NodeJS.Timeout | undefined;
+      const answer = await Promise.race([
+        this.request("close", params).then(({ result }) => result, (error: unknown) => ({ closed: false, busy: `its safe close failed (${error instanceof Error ? error.message : String(error)})` })),
+        new Promise<unknown>((resolve) => { wait = setTimeout(() => { resolve({ closed: false, busy: "it did not answer the safe close" }); }, 2 * graceMs); }),
+      ]);
+      clearTimeout(wait);
+      if (!isRecord(answer) || answer["closed"] !== true) return isRecord(answer) && typeof answer["busy"] === "string" ? answer["busy"] : "the host is busy";
+    }
     const terminate = setTimeout(() => { this.process.kill("SIGTERM"); }, graceMs);
     const kill = setTimeout(() => { this.process.kill("SIGKILL"); }, 2 * graceMs);
     try {
-      const { result } = await this.request("close", params).catch(() => ({ result: undefined }));
-      // Already gone, or terminated by the timers, unless the host refused.
-      if (isRecord(result) && result["closed"] === false) return typeof result["busy"] === "string" ? result["busy"] : "the host is busy";
+      // Already gone, or terminated by the timers.
+      if (!conditional) await this.request("close", params).catch(() => undefined);
       await this.exited;
       return undefined;
     } finally {
@@ -1004,8 +1014,8 @@ export class DurableChatService {
    * request waits on, settled exactly once with the host the family ends on (the old one when it never closed), whatever
    * fails. `ifRestartSafe` (B): the old host closes only if it still runs nothing but restart-surviving work, decided in
    * the host, which admits no input meanwhile; returns its refusal, and the family stays on its host. The upgrade is on
-   * disk first (`DurableChatRecord.upgrade`), so a daemon that dies before the resume leaves it to the next one
-   * (`#recoverUpgrade`).
+   * disk first (`DurableChatRecord.upgrade`) and cleared only once a host acknowledged its resume, so a daemon that dies
+   * or fails before then leaves the owed resume to the next one (`#recoverUpgrade`).
    */
   async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined, ifRestartSafe: boolean): Promise<string | undefined> {
     const id = record.id;

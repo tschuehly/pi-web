@@ -231,6 +231,27 @@ describe("seamless upgrade orchestration", () => {
     await s.durable.dispose();
   });
 
+  it("C: an automatic upgrade whose safe close fails or goes unanswered never terminates the host; it stays pending", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const s = setup(a, b, { autoUpgrade: true });
+    await s.durable.status(s.ref);
+    const host = s.hosts[0];
+    if (host === undefined) throw new Error("no host");
+    for (const closeError of [true, "hang"] as const) {
+      host.closeError = closeError;
+      await s.durable.upgradePendingHosts();
+      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      expect(host.kills, String(closeError)).toBe(0);
+      expect(s.hosts).toHaveLength(1);
+      expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+      expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
+      expect((await s.durable.status(s.ref)).durableHostPin?.pending).toBe(true);
+    }
+    host.closeError = false;
+    await s.durable.dispose();
+  });
+
   it("finding 3: a double click runs one upgrade: one old and one new host, one resume, both clicks answered", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
     const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
