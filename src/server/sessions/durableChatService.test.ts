@@ -463,7 +463,7 @@ describe("Durable Chats", () => {
     const ref = { id: chat.id, cwd: chat.cwd };
     only(launched).answer = (request) => request.method === "models" ? [{ provider: "openai", id: "gpt", name: "GPT" }, { provider: "faux", id: "faux-1", name: "Faux" }, { provider: "anthropic", id: "claude-x", name: "Claude X" }] : status;
     // The switch list holds only the enabled models, in enabledModels order.
-    expect((await durable.availableModels(ref)).map((model) => `${model.provider}/${model.id}`)).toEqual(["anthropic/claude-x", "faux/faux-1"]);
+    expect((await durable.availableModels(ref)).map((model) => `${model.provider ?? ""}/${model.id ?? ""}`)).toEqual(["anthropic/claude-x", "faux/faux-1"]);
     // The catalog lists every model, enabled first, with each model's catalog position.
     await expect(durable.modelCatalog(ref)).resolves.toEqual([
       { provider: "anthropic", id: "claude-x", name: "Claude X", enabled: true, editable: false, catalogIndex: 2 },

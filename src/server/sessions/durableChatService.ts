@@ -876,10 +876,11 @@ export class DurableChatService {
 
   async #scopedModels(ref: SessionRouteRef) {
     const { result } = await (await this.#for(ref)).request("models");
-    const models = (Array.isArray(result) ? result.filter(isRecord) : []).map((model) => ({ ...model, provider: typeof model["provider"] === "string" ? model["provider"] : "", id: typeof model["id"] === "string" ? model["id"] : "" }) as ClientSessionModel & { provider: string; id: string });
+    const models = (Array.isArray(result) ? result.filter(isRecord) : []).map((model) => ({ ...model, provider: typeof model["provider"] === "string" ? model["provider"] : "", id: typeof model["id"] === "string" ? model["id"] : "" }));
     // Pi's own pattern resolution, over the host's models (those with a stored login) rather than PI WEB's catalog.
     const enabledIds = await resolveEnabledModelIds({
       settingsManager: { getEnabledModels: () => this.deps.enabledModels?.(ref.cwd) },
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- Pi's scope resolution reads only getAvailable; the host's models stand in for the runtime's.
       modelRuntime: { getAvailable: () => Promise.resolve(models) } as unknown as ModelRuntime,
       scopedModels: [],
     });
