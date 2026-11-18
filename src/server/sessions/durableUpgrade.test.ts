@@ -32,7 +32,7 @@ function revision(name: string, version: string): string {
 }
 
 /**
- * A launchd host double: ready (or exits 3 when `fail`), answers status (streaming once it took a prompt), and a close
+ * A launchd host double: ready (or exits 3 when `fail`, or never answers when it is "hang"), answers status (streaming once it took a prompt), and a close
  * that, with `ifRestartSafe`, is refused while a turn runs, as the Workbench host refuses it.
  */
 class Fake extends EventEmitter implements DurableHostProcess {
@@ -42,9 +42,10 @@ class Fake extends EventEmitter implements DurableHostProcess {
   holdResume = false;
   beforeResume: (() => void) | undefined;
 
-  constructor(readonly code: { entry: string; current: string }, readonly exitHook: () => void, fail = false) {
+  constructor(readonly code: { entry: string; current: string }, readonly exitHook: () => void, fail: boolean | "hang" = false) {
     super();
     queueMicrotask(() => {
+      if (fail === "hang") return;
       if (fail) this.emit("exit", 3, null);
       else this.emit("message", { ready: { protocol: DURABLE_HOST_PROTOCOL, revision: dirname(code.entry), capabilities: [], closeIfRestartSafe: true } });
     });
@@ -152,6 +153,7 @@ describe("seamless upgrade orchestration", () => {
     expect(readFileSync(join(s.storeDir, "session.sqlite"), "utf8")).toBe("history");
     expect(readFileSync(join(s.storeDir, "opened-by"), "utf8")).toBe(old);
     expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(old);
+    expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
     expect(existsSync(`${s.storeDir}.pre-upgrade`)).toBe(false);
     await s.durable.dispose();
   });
@@ -202,6 +204,109 @@ describe("seamless upgrade orchestration", () => {
     expect(after.isStreaming).toBe(true);
     expect(after.durableHostPin?.pending).toBe(true);
     expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+    expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
     await s.durable.dispose();
+  });
+
+  it("finding 5: a daemon that dies before the new host's resume leaves the obligation on disk; the next daemon resumes it", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const locator = new SessionRuntimeLocator(ROOT);
+    const record = locator.create("/work", "chat");
+    locator.setHostEntry(record.id, a);
+    let resumeSent!: () => void;
+    const waiting = new Promise<void>((resolve) => { resumeSent = resolve; });
+    const hosts: Fake[] = [];
+    const launch: DurableHostLauncher = (chat) => {
+      const entry = locator.durable(chat.id)?.hostEntry ?? b;
+      const host = new Fake({ entry, current: b }, () => { locator.setHost(chat.id, undefined); });
+      hosts.push(host);
+      locator.setHostEntry(chat.id, entry);
+      locator.setHost(chat.id, { label: "test.fake", socket: "fake.sock", revision: dirname(entry), ownerEpoch: hosts.length, pid: hosts.length });
+      if (entry === b) { host.holdResume = true; host.beforeResume = resumeSent; }
+      return host;
+    };
+    const durable = new DurableChatService({ locator, events, launch, storesDir: join(ROOT, "stores") });
+    const ref = { id: record.id, cwd: record.cwd };
+    await durable.status(ref);
+    void durable.upgradeHost(ref, "now").catch(() => undefined);
+    await waiting;
+    await durable.dispose();
+
+    const disk = new SessionRuntimeLocator(ROOT);
+    expect(disk.durable(record.id)?.upgrade).toEqual({ from: a });
+    const attached: Fake[] = [];
+    const restarted = new DurableChatService({
+      locator: disk, events, storesDir: join(ROOT, "stores"),
+      launch: (chat) => { const host = new Fake({ entry: disk.durable(chat.id)?.hostEntry ?? b, current: b }, () => undefined); attached.push(host); return host; },
+    });
+    await restarted.reattach();
+    expect(attached).toHaveLength(1);
+    expect(attached[0]?.requests.filter((request) => request.method === "resume").map((request) => request.params)).toEqual([{ reason: "upgrade-restart" }]);
+    expect(disk.durable(record.id)?.hostEntry).toBe(b);
+    expect(disk.durable(record.id)?.upgrade).toBeUndefined();
+    expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toBeUndefined();
+    await restarted.dispose();
+  });
+
+  it("finding 5: a daemon that dies while newer code starts leaves the store copy on disk; the next daemon rolls back with it", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [old, b] = [revision("rev-old", "1.4.0"), revision("rev-b", "1.5.2")];
+    const daemon = (newHost: "hang" | true) => {
+      const locator = new SessionRuntimeLocator(ROOT);
+      const hosts: Fake[] = [];
+      const launch: DurableHostLauncher = (chat, storeDir) => {
+        const entry = locator.durable(chat.id)?.hostEntry ?? b;
+        mkdirSync(storeDir, { recursive: true });
+        if (entry === b) writeFileSync(join(storeDir, "session.sqlite"), "migrated");
+        const host = new Fake({ entry, current: b }, () => { locator.setHost(chat.id, undefined); }, entry === b ? newHost : false);
+        hosts.push(host);
+        return host;
+      };
+      return { locator, hosts, durable: new DurableChatService({ locator, events, launch, storesDir: join(ROOT, "stores") }) };
+    };
+    const first = daemon("hang");
+    const record = first.locator.create("/work", "chat");
+    first.locator.setHostEntry(record.id, old);
+    const ref = { id: record.id, cwd: record.cwd };
+    const storeDir = join(ROOT, "stores", record.storeId);
+    await first.durable.status(ref);
+    writeFileSync(join(storeDir, "session.sqlite"), "history");
+    void first.durable.upgradeHost(ref, "now").catch(() => undefined);
+    await new Promise<void>((resolve) => { const check = () => { if (first.hosts.length === 2) resolve(); else setTimeout(check, 5); }; check(); });
+    // The daemon dies here (its handover never resolves).
+    void first.durable.dispose();
+    expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toEqual({ from: old, snapshot: `${storeDir}.pre-upgrade` });
+
+    // The next daemon: the new code fails again (after migrating the store), so the family goes back with its old store.
+    const next = daemon(true);
+    await next.durable.reattach();
+    expect(next.hosts.map((host) => host.code.entry)).toEqual([b, old]);
+    expect(readFileSync(join(storeDir, "session.sqlite"), "utf8")).toBe("history");
+    expect(next.hosts[1]?.requests.some((request) => request.method === "resume")).toBe(true);
+    expect(next.locator.durable(record.id)?.hostEntry).toBe(old);
+    expect(next.locator.durable(record.id)?.upgrade).toBeUndefined();
+    await next.durable.dispose();
+  });
+
+  it("finding 5: Cancel of a pending automatic upgrade survives a daemon restart, until newer code is offered", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b, c] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2"), revision("rev-c", "1.5.3")];
+    const s = setup(a, b, { autoUpgrade: true });
+    expect((await s.durable.status(s.ref)).durableHostPin?.pending).toBe(true);
+    await s.durable.upgradeHost(s.ref, "cancel");
+    await s.durable.dispose();
+    const daemon = (current: string) => {
+      const locator = new SessionRuntimeLocator(ROOT);
+      return new DurableChatService({ locator, events, storesDir: join(ROOT, "stores"), autoUpgrade: true, launch: (chat) => new Fake({ entry: locator.durable(chat.id)?.hostEntry ?? current, current }, () => undefined) });
+    };
+    const again = daemon(b);
+    const pin = (await again.status(s.ref)).durableHostPin;
+    expect(pin).toBeDefined();
+    expect(pin?.pending).toBeUndefined();
+    await again.dispose();
+    const newer = daemon(c);
+    expect((await newer.status(s.ref)).durableHostPin?.pending).toBe(true);
+    await newer.dispose();
   });
 });

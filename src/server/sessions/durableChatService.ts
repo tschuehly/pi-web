@@ -313,8 +313,6 @@ export class DurableChatService {
   }
 
   readonly #idleSweep: NodeJS.Timeout;
-  /** Chats whose pending automatic upgrade the owner cancelled. ponytail: for the daemon's life; persist if a restart should keep it. */
-  readonly #upgradeDeclined = new Set<string>();
   /** Ordered restarts in progress, by Chat (see `#upgradeOnce`). */
   readonly #upgrades = new Map<string, Promise<string | undefined>>();
   /** Chats an automatic upgrade is checking or restarting. */
@@ -966,7 +964,7 @@ export class DurableChatService {
     const pin = connection.pin;
     if (mode === "cancel") {
       // Cancel a pending automatic upgrade (B): the family stays pinned until the owner asks.
-      this.#upgradeDeclined.add(record.id);
+      this.deps.locator.setUpgradeState(record.id, "upgradeDeclined", connection.code?.current);
       connection.upgradePending = false;
       return this.status(ref);
     }
@@ -1000,7 +998,8 @@ export class DurableChatService {
    * Onto newer Pi Durable code, the closed store is copied first: a new host that fails after migrating it must not
    * leave the old code a store it cannot read, so the rollback reopens the copy. `ifRestartSafe` (B): the old host closes
    * only if it still runs nothing but restart-surviving work, decided in the host, which admits no input meanwhile;
-   * returns its refusal, and the family stays on its host.
+   * returns its refusal, and the family stays on its host. Each step is on disk first (`DurableChatRecord.upgrade`), so a
+   * daemon that dies before the resume leaves it to the next one (`#recoverUpgrade`).
    */
   async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined, ifRestartSafe: boolean): Promise<string | undefined> {
     const pinned = this.deps.locator.durable(record.id)?.hostEntry;
@@ -1019,35 +1018,88 @@ export class DurableChatService {
     held.catch(() => { if (this.#connections.get(record.id) === held) this.#connections.delete(record.id); });
     this.#connections.set(record.id, held);
     const storeDir = join(this.deps.storesDir, record.storeId);
+    const from = pinned === undefined ? {} : { from: pinned };
+    this.deps.locator.setUpgradeState(record.id, "upgrade", from);
     let snapshot: string | undefined;
     let connection: DurableHostConnection;
     try {
       const busy = await (await old?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, { reason: "upgrade", ...(ifRestartSafe ? { ifRestartSafe: true as const } : {}) });
       if (busy !== undefined) {
         release(false);
+        this.deps.locator.setUpgradeState(record.id, "upgrade", undefined);
         this.deps.logger?.info?.({ sessionId: record.id, busy }, "upgrade-restart: the host refused to close; the family stays on its host");
         return busy;
       }
-      if (newerDurable(current, pinned) && existsSync(storeDir)) snapshot = snapshotStore(storeDir);
+      if (newerDurable(current, pinned) && existsSync(storeDir)) {
+        snapshot = snapshotStore(storeDir);
+        this.deps.locator.setUpgradeState(record.id, "upgrade", { ...from, snapshot });
+      }
       this.deps.locator.setHostEntry(record.id, current);
       release();
       connection = await held;
     } catch (error) {
       release();
-      const reason = error instanceof Error ? error.message : String(error);
-      this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the new host did not start; rolling back to the old pin");
-      if (snapshot !== undefined) {
-        const failed = restoreStore(storeDir, snapshot);
-        this.deps.logger?.warn({ sessionId: record.id, failed }, "upgrade-restart: restored the store from before the attempt; the attempted one is kept aside");
-      }
-      this.deps.locator.setHostEntry(record.id, pinned);
       if (this.#connections.get(record.id) === held) this.#connections.delete(record.id);
-      const back = await this.#connection(record).then((restored) => this.#resume(restored)).then(() => "", (again: unknown) => ` It did not start there either (${again instanceof Error ? again.message : String(again)}); the next message tries again.`);
-      throw new Error(`The new host code (${pin.current}) did not start: ${reason}. This Chat is back on its old host code (${pin.revision})${snapshot === undefined ? "" : ", with its store as before the attempt"}.${back}`, { cause: error });
+      const back = await this.#rollBack(record, pinned, snapshot, error);
+      throw new Error(`The new host code (${pin.current}) did not start: ${error instanceof Error ? error.message : String(error)}. This Chat is back on its old host code (${pin.revision})${back}`, { cause: error });
     }
-    if (snapshot !== undefined) rmSync(snapshot, { recursive: true, force: true });
-    await this.#resume(connection);
+    await this.#finishUpgrade(record, connection, snapshot);
     return undefined;
+  }
+
+  /** The new host runs: its store copy is no longer needed; resume it, and the upgrade is done. */
+  async #finishUpgrade(record: DurableChatRecord, connection: DurableHostConnection, snapshot: string | undefined): Promise<void> {
+    if (snapshot !== undefined) rmSync(snapshot, { recursive: true, force: true });
+    try {
+      await this.#resume(connection);
+    } finally {
+      this.deps.locator.setUpgradeState(record.id, "upgrade", undefined);
+    }
+  }
+
+  /**
+   * After a failed start of the new host: the store as before the attempt (when copied), the old pin, and its host
+   * started and resumed. Returns the rest of the error's sentence.
+   */
+  async #rollBack(record: DurableChatRecord, pinned: string | undefined, snapshot: string | undefined, error: unknown): Promise<string> {
+    this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the new host did not start; rolling back to the old pin");
+    const storeDir = join(this.deps.storesDir, record.storeId);
+    const restored = snapshot !== undefined && existsSync(snapshot);
+    if (restored) {
+      const failed = restoreStore(storeDir, snapshot);
+      this.deps.logger?.warn({ sessionId: record.id, failed }, "upgrade-restart: restored the store from before the attempt; the attempted one is kept aside");
+    }
+    this.deps.locator.setHostEntry(record.id, pinned);
+    const back = await this.#connection(record).then((host) => this.#resume(host)).then(() => "", (again: unknown) => ` It did not start there either (${again instanceof Error ? again.message : String(again)}); the next message tries again.`);
+    this.deps.locator.setUpgradeState(record.id, "upgrade", undefined);
+    return `${restored ? ", with its store as before the attempt" : ""}.${back}`;
+  }
+
+  /**
+   * A daemon that died during an Upgrade now (`DurableChatRecord.upgrade`): start or reattach the family's host on its
+   * pin and send the resume it still owes. A new host that does not start rolls back as Upgrade now does.
+   */
+  async #recoverUpgrade(record: DurableChatRecord, upgrade: NonNullable<DurableChatRecord["upgrade"]>): Promise<void> {
+    this.deps.logger?.info?.({ sessionId: record.id }, "upgrade-restart: finishing an upgrade an earlier daemon left");
+    const connection = await this.#connection(record).catch((error: unknown) => error instanceof Error ? error : new Error(String(error)));
+    if (!(connection instanceof Error)) {
+      await this.#finishUpgrade(record, connection, upgrade.snapshot).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the resume failed; the next message resumes"); });
+      return;
+    }
+    const pinned = this.deps.locator.durable(record.id)?.hostEntry;
+    if (upgrade.from === undefined || pinned === upgrade.from) {
+      // The old host was not closed yet, or was already rolled back to: nothing to undo.
+      this.deps.locator.setUpgradeState(record.id, "upgrade", undefined);
+      this.deps.logger?.warn({ sessionId: record.id, err: connection }, "upgrade-restart: the family's host did not start; the next message tries again");
+      return;
+    }
+    await this.#rollBack(record, upgrade.from, upgrade.snapshot, connection);
+  }
+
+  /** Whether the owner cancelled (or a failure ended) the automatic upgrade to this current code; kept across daemon restarts. */
+  #declined(sessionId: string, code: DurableHostProcess["code"]): boolean {
+    const declined = this.deps.locator.durable(sessionId)?.upgradeDeclined;
+    return declined !== undefined && declined === code?.current;
   }
 
   /** Resume a host Upgrade now started; a host without `resume` (older code) stays paused until the next message. */
@@ -1075,11 +1127,11 @@ export class DurableChatService {
         const pin = connection?.pin;
         if (connection?.upgradePending !== true || pin === undefined || record === undefined || this.#connections.get(id) !== pending) continue;
         const status = await connection.request("status").then(({ result }) => hostStatus(result), () => undefined);
-        if (status === undefined || !restartSafe(status) || this.#upgradeDeclined.has(id) || this.#connections.get(id) !== pending) continue;
+        if (status === undefined || !restartSafe(status) || this.#declined(id, connection.code) || this.#connections.get(id) !== pending) continue;
         this.deps.logger?.info?.({ sessionId: id }, "upgrade-restart: automatic upgrade at a safe moment");
         await this.#upgradeOnce(record, pin, connection.code?.current, true).catch((error: unknown) => {
           this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
-          this.#upgradeDeclined.add(id);
+          this.deps.locator.setUpgradeState(id, "upgradeDeclined", connection.code?.current);
           const generation = this.#notificationGenerations.get(id);
           if (generation !== undefined) this.#publishNotifications(this.deps.notifications?.addNotification(generation, error instanceof Error ? error.message : String(error), "warning").mutations ?? []);
         });
@@ -1103,9 +1155,15 @@ export class DurableChatService {
     }));
   }
 
-  /** After a daemon restart: reconnect to every family host the locator names that still runs; never starts one. */
+  /**
+   * After a daemon restart: reconnect to every family host the locator names that still runs; never starts one, except
+   * for a family an earlier daemon left mid-upgrade, whose host is owed a resume.
+   */
   async reattach(): Promise<void> {
-    await Promise.all(this.deps.locator.all().filter((record) => record.host !== undefined).map((record) => this.#connection(record, true).catch(() => undefined)));
+    await Promise.all(this.deps.locator.all().map((record) => {
+      if (record.upgrade !== undefined) return this.#recoverUpgrade(record, record.upgrade);
+      return record.host === undefined ? Promise.resolve() : this.#connection(record, true).then(() => undefined, () => undefined);
+    }));
   }
 
   #for(ref: SessionRouteRef): Promise<DurableHostConnection> {
@@ -1141,7 +1199,7 @@ export class DurableChatService {
     const opened = connection.ready.then(async () => {
       this.#capabilities.set(record.id, connection.capabilities);
       connection.pin = await hostPin(host.code, connection.revision);
-      connection.upgradePending = this.deps.autoUpgrade === true && connection.closeIfRestartSafe && connection.pin !== undefined && !this.#upgradeDeclined.has(record.id) && hostMoveRefusal(host.code) === undefined;
+      connection.upgradePending = this.deps.autoUpgrade === true && connection.closeIfRestartSafe && connection.pin !== undefined && !this.#declined(record.id, host.code) && hostMoveRefusal(host.code) === undefined;
       const loaded = await this.deps.resources?.(record.cwd, connection.contributed).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;

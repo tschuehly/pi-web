@@ -28,6 +28,13 @@ export interface DurableChatRecord {
    * hosts start from it too, until the owner upgrades the family. Kept when the host stops, unlike `host`.
    */
   hostEntry?: string;
+  /**
+   * An Upgrade now under way: the entry it left (for a rollback) and, onto newer Pi Durable code, the copy of the store
+   * from before it. Its new host still owes a resume; a daemon that restarts meanwhile finishes it (`reattach`).
+   */
+  upgrade?: { from?: string; snapshot?: string };
+  /** The current host entry whose automatic upgrade the owner cancelled: no longer pending, until newer code is offered. */
+  upgradeDeclined?: string;
 }
 
 /** What a launchd host's handshake proved, so a later daemon accepts only that host on that socket. */
@@ -104,6 +111,18 @@ export class SessionRuntimeLocator {
     this.#persist();
   }
 
+  /** Record or clear (undefined) an upgrade's persisted state. */
+  setUpgradeState<K extends "upgrade" | "upgradeDeclined">(sessionId: string, key: K, value: DurableChatRecord[K] | undefined): void {
+    const record = this.#chats.get(sessionId);
+    if (record === undefined || (value === undefined && record[key] === undefined)) return;
+    const next: DurableChatRecord = { ...record };
+    if (key === "upgrade") delete next.upgrade;
+    else delete next.upgradeDeclined;
+    if (value !== undefined) next[key] = value;
+    this.#chats.set(sessionId, next);
+    this.#persist();
+  }
+
   remove(sessionId: string): void {
     if (this.#chats.delete(sessionId)) this.#persist();
   }
@@ -147,7 +166,13 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
     && (value["name"] === undefined || typeof value["name"] === "string")
     && (value["nameSource"] === undefined || value["nameSource"] === "manual" || value["nameSource"] === "auto" || value["nameSource"] === "checkpoint")
     && (value["host"] === undefined || isHostAttachment(value["host"]))
-    && (value["hostEntry"] === undefined || typeof value["hostEntry"] === "string");
+    && (value["hostEntry"] === undefined || typeof value["hostEntry"] === "string")
+    && (value["upgrade"] === undefined || isUpgrade(value["upgrade"]))
+    && (value["upgradeDeclined"] === undefined || typeof value["upgradeDeclined"] === "string");
+}
+
+function isUpgrade(value: unknown): boolean {
+  return isRecord(value) && [value["from"], value["snapshot"]].every((path) => path === undefined || typeof path === "string");
 }
 
 function isHostAttachment(value: unknown): value is DurableHostAttachment {
