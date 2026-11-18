@@ -930,9 +930,11 @@ export class DurableChatService {
       if (busy !== undefined || !idle(id) || this.#connections.get(id) !== pending) continue;
       this.deps.logger?.info?.({ sessionId: id }, "Closing idle Durable Chat host");
       // A pinned family moves to the current code as it closes (seamless upgrade A): nothing runs, so nothing repeats.
-      const upgrade = connection?.pin !== undefined && hostMoveRefusal(connection.code) === undefined;
+      // The pin moves, not away: it keeps naming code that opened the store, so a daemon rolled back to older code
+      // reopens the family on it and never on code older than the store.
+      const upgrade = connection?.pin !== undefined && hostMoveRefusal(connection.code) === undefined ? connection.code?.current : undefined;
       const closed = await this.#end(id).then(() => true, (error: unknown) => { this.deps.logger?.warn({ sessionId: id, err: error }, "Durable Chat host did not close cleanly"); return false; });
-      if (closed && upgrade) this.deps.locator.setHostEntry(id, undefined);
+      if (closed && upgrade !== undefined) this.deps.locator.setHostEntry(id, upgrade);
     }
   }
 
@@ -964,10 +966,10 @@ export class DurableChatService {
       const busy = familyBusy(hostStatus((await connection.request("status")).result));
       if (busy !== undefined) throw new Error(`This Chat cannot move to new host code while ${busy}; try again when it is quiet`);
       await this.#end(record.id);
-      this.deps.locator.setHostEntry(record.id, undefined);
+      this.deps.locator.setHostEntry(record.id, connection.code?.current);
       return this.status(ref);
     }
-    await this.#upgradeRestart(record, pin);
+    await this.#upgradeRestart(record, pin, connection.code?.current);
     return this.status(ref);
   }
 
@@ -975,7 +977,7 @@ export class DurableChatService {
    * Upgrade now's ordered restart: close (`upgrade`), drop the pin, start the new host and resume it; else roll back.
    * Requests arriving meanwhile wait for the new host instead of starting a second one on the store.
    */
-  async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }): Promise<void> {
+  async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined): Promise<void> {
     const pinned = this.deps.locator.durable(record.id)?.hostEntry;
     this.deps.logger?.info?.({ sessionId: record.id, from: pin.revision, to: pin.current }, "upgrade-restart: restarting Durable Chat host on current code");
     const old = this.#connections.get(record.id);
@@ -990,7 +992,7 @@ export class DurableChatService {
     let connection: DurableHostConnection;
     try {
       await (await old?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, false, true);
-      this.deps.locator.setHostEntry(record.id, undefined);
+      this.deps.locator.setHostEntry(record.id, current);
       release();
       connection = await held;
     } catch (error) {
@@ -1031,7 +1033,7 @@ export class DurableChatService {
         const status = await connection.request("status").then(({ result }) => hostStatus(result), () => undefined);
         if (status === undefined || !restartSafe(status) || this.#upgradeDeclined.has(id) || this.#connections.get(id) !== pending) continue;
         this.deps.logger?.info?.({ sessionId: id }, "upgrade-restart: automatic upgrade at a safe moment");
-        await this.#upgradeRestart(record, pin).catch((error: unknown) => {
+        await this.#upgradeRestart(record, pin, connection.code?.current).catch((error: unknown) => {
           this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
           this.#upgradeDeclined.add(id);
           const generation = this.#notificationGenerations.get(id);

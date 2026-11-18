@@ -93,7 +93,7 @@ export class SessionRuntimeLocator {
     this.#persist();
   }
 
-  /** Pin the family to the host entry its host started from, or unpin it so its next host runs the current code. */
+  /** Pin the family to the host entry its host started from (or, as it moves, the one its next host starts from), or unpin it so its next host runs the current code. */
   setHostEntry(sessionId: string, entry: string | undefined): void {
     const record = this.#chats.get(sessionId);
     if (record === undefined || record.hostEntry === entry) return;

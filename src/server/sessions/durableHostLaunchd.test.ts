@@ -551,7 +551,7 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     now += IDLE_HOST_CLOSE_MS;
     await current.durable.closeIdleHosts();
     expect(current.locator.durable(pinned.id)?.host).toBeUndefined();
-    expect(current.locator.durable(pinned.id)?.hostEntry).toBeUndefined();
+    expect(current.locator.durable(pinned.id)?.hostEntry).toBe(entryB);
     expect((await current.durable.status(ref)).durableHostPin).toBeUndefined();
     expect(current.locator.durable(pinned.id)?.host?.revision).toBe(join(await realpath(root), "rev-b"));
     // The idle close keeps the family's work (no end).
