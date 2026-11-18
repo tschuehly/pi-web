@@ -29,10 +29,10 @@ export interface DurableChatRecord {
    */
   hostEntry?: string;
   /**
-   * An Upgrade now under way: the entry it left (for a rollback) and, onto newer Pi Durable code, the copy of the store
-   * from before it. Its new host still owes a resume; a daemon that restarts meanwhile finishes it (`reattach`).
+   * An Upgrade now under way: the entry it left (for a rollback). Its new host still owes a resume until one is
+   * acknowledged; a daemon that restarts meanwhile finishes it (`reattach`).
    */
-  upgrade?: { from?: string; snapshot?: string };
+  upgrade?: { from?: string };
   /** The current host entry whose automatic upgrade the owner cancelled: no longer pending, until newer code is offered. */
   upgradeDeclined?: string;
 }
@@ -172,7 +172,7 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
 }
 
 function isUpgrade(value: unknown): boolean {
-  return isRecord(value) && [value["from"], value["snapshot"]].every((path) => path === undefined || typeof path === "string");
+  return isRecord(value) && (value["from"] === undefined || typeof value["from"] === "string");
 }
 
 function isHostAttachment(value: unknown): value is DurableHostAttachment {

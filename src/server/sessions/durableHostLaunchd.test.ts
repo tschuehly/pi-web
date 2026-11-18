@@ -580,7 +580,7 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
 
   it("C Upgrade now: a busy pinned family closes in order (upgrade), restarts on the current revision at once and is resumed; quiet Upgrade host still refuses", async () => {
     const { root, hostsDir, daemon } = await fixture();
-    const [entryA, entryB] = [await revision(root, "rev-a", "1.4.0"), await revision(root, "rev-b", "1.5.2")];
+    const [entryA, entryB] = [await revision(root, "rev-a", "1.5.2"), await revision(root, "rev-b", "1.5.2")];
     const first = daemon([], { entry: entryA });
     const chat = await first.durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
@@ -611,9 +611,9 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
 
   it("C Upgrade now rollback: a new host that does not start sends the family back to its old pin and host, and says so", async () => {
     const { root, daemon } = await fixture();
-    const entryA = await revision(root, "rev-a", "1.4.0");
+    const entryA = await revision(root, "rev-a", "1.5.2");
     const broken = await revision(root, "rev-broken", "1.5.2");
-    // It migrates the store, then fails before it is ready.
+    // It writes to the store, then fails before it is ready.
     await writeFile(broken, 'import { writeFileSync } from "node:fs";\nwriteFileSync(process.argv[process.argv.indexOf("--store") + 1] + "/migrated", "1.5.2");\nprocess.exit(3);\n');
     const first = daemon([], { entry: entryA });
     const chat = await first.durable.start("/work/a");
@@ -622,12 +622,11 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     const { durable, locator } = daemon([], { entry: broken });
     await durable.reattach();
     expect((await durable.status(ref)).durableHostPin?.current).toBe("rev-broken");
-    await expect(durable.upgradeHost(ref, "now")).rejects.toThrow(/^The new host code \(rev-broken\) did not start: .*\. This Chat is back on its old host code \(rev-a\), with its store as before the attempt\.$/);
+    await expect(durable.upgradeHost(ref, "now")).rejects.toThrow(/^The new host code \(rev-broken\) did not start: .*\. This Chat is back on its old host code \(rev-a\)\.$/);
     expect(locator.durable(chat.id)?.hostEntry).toBe(entryA);
-    // The 1.4.0 host reopened the store as it was before the attempt; the attempted one is kept aside.
-    expect(existsSync(join(root, "data", "durable", chat.id, "migrated"))).toBe(false);
-    expect(existsSync(join(root, "data", "durable", `${chat.id}.failed-upgrade`, "migrated"))).toBe(true);
-    expect(existsSync(join(root, "data", "durable", `${chat.id}.pre-upgrade`))).toBe(false);
+    // Only the pin goes back (both run Pi Durable 1.5.2): the store is the one store, never copied or moved.
+    expect(existsSync(join(root, "data", "durable", chat.id, "migrated"))).toBe(true);
+    expect((await readdir(join(root, "data", "durable"))).filter((name) => name.startsWith(chat.id))).toEqual([chat.id]);
     const back = locator.durable(chat.id)?.host;
     expect(back?.revision).toBe(join(await realpath(root), "rev-a"));
     expect(alive(back?.pid ?? 0)).toBe(true);
@@ -638,7 +637,7 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
 
   it("B automatic upgrade (off by default): a pending family restarts by itself once only restart-surviving work remains; Cancel keeps it pinned", async () => {
     const { root, daemon } = await fixture();
-    const [entryA, entryB] = [await revision(root, "rev-a", "1.4.0"), await revision(root, "rev-b", "1.5.2")];
+    const [entryA, entryB] = [await revision(root, "rev-a", "1.5.2"), await revision(root, "rev-b", "1.5.2")];
     const first = daemon([], { entry: entryA });
     const [chat, other] = [await first.durable.start("/work/a"), await first.durable.start("/work/b")];
     const [ref, otherRef] = [{ id: chat.id, cwd: chat.cwd }, { id: other.id, cwd: other.cwd }];

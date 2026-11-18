@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
 import type { DurableChatRecord } from "./sessionRuntimeLocator.js";
@@ -41,6 +41,10 @@ class Fake extends EventEmitter implements DurableHostProcess {
   onStatus: ((request: Request) => boolean) | undefined;
   holdResume = false;
   beforeResume: (() => void) | undefined;
+  /** Answers resume, or B's conditional close, with an error; or never answers that close ("hang"). */
+  resumeError = false;
+  closeError: boolean | "hang" = false;
+  kills = 0;
 
   constructor(readonly code: { entry: string; current: string }, readonly exitHook: () => void, fail: boolean | "hang" = false) {
     super();
@@ -62,12 +66,21 @@ class Fake extends EventEmitter implements DurableHostProcess {
       if (request.method === "resume") {
         this.beforeResume?.();
         if (this.holdResume) return;
+        if (this.resumeError) {
+          this.emit("message", { id: request.id, error: { name: "Error", message: "injected resume failure" } });
+          return;
+        }
+      }
+      if (request.method === "close" && request.params?.["ifRestartSafe"] === true && this.closeError !== false) {
+        if (this.closeError === true) this.emit("message", { id: request.id, error: { name: "Error", message: "injected quiet-check failure" } });
+        return;
       }
       if (request.method === "close" && request.params?.["ifRestartSafe"] === true && this.streaming) {
         this.reply(request, { closed: false, busy: "a turn is running" });
         return;
       }
-      this.reply(request, request.method === "status" ? { ...status, isStreaming: this.streaming } : null);
+      // As the Workbench host: B's close is accepted affirmatively.
+      this.reply(request, request.method === "status" ? { ...status, isStreaming: this.streaming } : request.params?.["ifRestartSafe"] === true ? { closed: true } : null);
       if (request.method === "close") {
         this.exitHook();
         this.emit("exit", 0, null);
@@ -77,6 +90,7 @@ class Fake extends EventEmitter implements DurableHostProcess {
   }
 
   kill(): boolean {
+    this.kills++;
     this.exitHook();
     this.emit("exit", null, "SIGTERM");
     return true;
@@ -86,7 +100,7 @@ class Fake extends EventEmitter implements DurableHostProcess {
 }
 
 /** A daemon over one Chat pinned to `pin`, with `current` the code new hosts get. */
-function setup(pin: string, current: string, options: { failCurrent?: boolean; autoUpgrade?: boolean; subscribers?: boolean } = {}) {
+function setup(pin: string, current: string, options: { failCurrent?: boolean; failResume?: boolean; autoUpgrade?: boolean; subscribers?: boolean } = {}) {
   const locator = new SessionRuntimeLocator(ROOT);
   const record = locator.create("/work", "chat");
   locator.setHostEntry(record.id, pin);
@@ -103,6 +117,7 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; a
     if (fail) writeFileSync(join(storeDir, "session.sqlite"), "migrated");
     const host = new Fake({ entry, current }, () => { locator.setHost(chat.id, undefined); }, fail);
     if (!fail) locator.setHostEntry(chat.id, entry);
+    host.resumeError = entry === current && options.failResume === true;
     hosts.push(host);
     return host;
   };
@@ -141,30 +156,38 @@ describe("seamless upgrade orchestration", () => {
     await back.dispose();
   });
 
-  it("finding 2: a failed start of newer Pi Durable code restores the store before the old code reopens it", async () => {
+  it("A: Upgrade now and the automatic upgrade refuse a move to another Pi Durable version; the pin and store stay as they were", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
     const [old, b] = [revision("rev-old", "1.4.0"), revision("rev-b", "1.5.2")];
-    const s = setup(old, b, { failCurrent: true });
-    await s.durable.status(s.ref);
+    const s = setup(old, b, { autoUpgrade: true });
+    const pinned = await s.durable.status(s.ref);
     writeFileSync(join(s.storeDir, "session.sqlite"), "history");
-    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/back on its old host code/);
-    expect(s.hosts.map((host) => host.code.entry)).toEqual([old, b, old]);
-    // The 1.4.0 host reopened the store as it was before the 1.5.2 host touched it.
-    expect(readFileSync(join(s.storeDir, "session.sqlite"), "utf8")).toBe("history");
-    expect(readFileSync(join(s.storeDir, "opened-by"), "utf8")).toBe(old);
+    // Not pending: the automatic upgrade never moves it either.
+    expect(pinned.durableHostPin?.pending).toBeUndefined();
+    await s.durable.upgradePendingHosts();
+    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow("This upgrade changes the store format (Pi Durable 1.4.0 to 1.5.2); use Upgrade host when the Chat is quiet");
+    expect(s.hosts).toHaveLength(1);
+    expect(s.hosts[0]?.requests.map((request) => request.method)).not.toContain("close");
     expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(old);
     expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
-    expect(existsSync(`${s.storeDir}.pre-upgrade`)).toBe(false);
+    expect(readFileSync(join(s.storeDir, "session.sqlite"), "utf8")).toBe("history");
+    expect(readdirSync(join(ROOT, "stores"))).toEqual([basename(s.storeDir)]);
+    expect((await s.durable.status(s.ref)).durableHostPin?.revision).toBe("rev-old");
     await s.durable.dispose();
   });
 
-  it("finding 2: a successful cross-version upgrade drops its store snapshot", async () => {
+  it("A: a failed start within one Pi Durable version restores only the pin", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
-    const [old, b] = [revision("rev-old", "1.4.0"), revision("rev-b", "1.5.2")];
-    const s = setup(old, b);
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const s = setup(a, b, { failCurrent: true });
     await s.durable.status(s.ref);
-    expect((await s.durable.upgradeHost(s.ref, "now")).durableHostPin).toBeUndefined();
-    expect(existsSync(`${s.storeDir}.pre-upgrade`)).toBe(false);
+    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/did not start: .*\. This Chat is back on its old host code \(rev-a\)\.$/);
+    expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b, a]);
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+    expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
+    // The store is the one store: no copy, nothing put back.
+    expect(readdirSync(join(ROOT, "stores"))).toEqual([basename(s.storeDir)]);
+    expect(s.hosts[2]?.requests.filter((request) => request.method === "resume")).toHaveLength(1);
     await s.durable.dispose();
   });
 
@@ -249,9 +272,9 @@ describe("seamless upgrade orchestration", () => {
     await restarted.dispose();
   });
 
-  it("finding 5: a daemon that dies while newer code starts leaves the store copy on disk; the next daemon rolls back with it", async () => {
+  it("finding 5: a daemon that dies while newer code starts leaves the old pin on disk; the next daemon rolls back to it", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
-    const [old, b] = [revision("rev-old", "1.4.0"), revision("rev-b", "1.5.2")];
+    const [old, b] = [revision("rev-old", "1.5.2"), revision("rev-b", "1.5.2")];
     const daemon = (newHost: "hang" | true) => {
       const locator = new SessionRuntimeLocator(ROOT);
       const hosts: Fake[] = [];
@@ -276,13 +299,13 @@ describe("seamless upgrade orchestration", () => {
     await new Promise<void>((resolve) => { const check = () => { if (first.hosts.length === 2) resolve(); else setTimeout(check, 5); }; check(); });
     // The daemon dies here (its handover never resolves).
     void first.durable.dispose();
-    expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toEqual({ from: old, snapshot: `${storeDir}.pre-upgrade` });
+    expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toEqual({ from: old });
 
-    // The next daemon: the new code fails again (after migrating the store), so the family goes back with its old store.
+    // The next daemon: the new code fails again, so the family goes back to its old pin; the store is left as it is.
     const next = daemon(true);
     await next.durable.reattach();
     expect(next.hosts.map((host) => host.code.entry)).toEqual([b, old]);
-    expect(readFileSync(join(storeDir, "session.sqlite"), "utf8")).toBe("history");
+    expect(readdirSync(join(ROOT, "stores"))).toEqual([record.storeId]);
     expect(next.hosts[1]?.requests.some((request) => request.method === "resume")).toBe(true);
     expect(next.locator.durable(record.id)?.hostEntry).toBe(old);
     expect(next.locator.durable(record.id)?.upgrade).toBeUndefined();
@@ -291,7 +314,7 @@ describe("seamless upgrade orchestration", () => {
 
   it("finding 5: Cancel of a pending automatic upgrade survives a daemon restart, until newer code is offered", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
-    const [a, b, c] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2"), revision("rev-c", "1.5.3")];
+    const [a, b, c] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2"), revision("rev-c", "1.5.2")];
     const s = setup(a, b, { autoUpgrade: true });
     expect((await s.durable.status(s.ref)).durableHostPin?.pending).toBe(true);
     await s.durable.upgradeHost(s.ref, "cancel");

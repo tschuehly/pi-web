@@ -1,6 +1,6 @@
 import { execFile, fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, copyFileSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -978,15 +978,20 @@ export class DurableChatService {
       this.deps.locator.setHostEntry(record.id, connection.code?.current);
       return this.status(ref);
     }
-    await this.#upgradeOnce(record, pin, connection.code?.current);
+    await this.#upgradeOnce(record, pin, connection.code);
     return this.status(ref);
   }
 
-  /** One ordered restart per family at a time, until its resume: a later request (a double click, B) joins it. */
-  #upgradeOnce(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined, ifRestartSafe = false): Promise<string | undefined> {
+  /**
+   * One ordered restart per family at a time, until its resume: a later request (a double click, B) joins it. Only within
+   * one Pi Durable version (see `restartRefusal`).
+   */
+  #upgradeOnce(record: DurableChatRecord, pin: { revision: string; current: string }, code: DurableHostProcess["code"], ifRestartSafe = false): Promise<string | undefined> {
     let running = this.#upgrades.get(record.id);
     if (running === undefined) {
-      running = this.#upgradeRestart(record, pin, current, ifRestartSafe).finally(() => { this.#upgrades.delete(record.id); });
+      const refusal = restartRefusal(code);
+      if (refusal !== undefined) return Promise.reject(new Error(refusal));
+      running = this.#upgradeRestart(record, pin, code?.current, ifRestartSafe).finally(() => { this.#upgrades.delete(record.id); });
       this.#upgrades.set(record.id, running);
     }
     return running;
@@ -995,8 +1000,7 @@ export class DurableChatService {
   /**
    * Upgrade now's ordered restart: close (`upgrade`), move the pin to the current code, start the new host and resume
    * it; else roll back. Requests arriving meanwhile wait for the new host instead of starting a second one on the store.
-   * Onto newer Pi Durable code, the closed store is copied first: a new host that fails after migrating it must not
-   * leave the old code a store it cannot read, so the rollback reopens the copy. `ifRestartSafe` (B): the old host closes
+   * The store is never copied or moved: both codes run the same Pi Durable, so a rollback only restores the pin. `ifRestartSafe` (B): the old host closes
    * only if it still runs nothing but restart-surviving work, decided in the host, which admits no input meanwhile;
    * returns its refusal, and the family stays on its host. Each step is on disk first (`DurableChatRecord.upgrade`), so a
    * daemon that dies before the resume leaves it to the next one (`#recoverUpgrade`).
@@ -1017,10 +1021,7 @@ export class DurableChatService {
     });
     held.catch(() => { if (this.#connections.get(record.id) === held) this.#connections.delete(record.id); });
     this.#connections.set(record.id, held);
-    const storeDir = join(this.deps.storesDir, record.storeId);
-    const from = pinned === undefined ? {} : { from: pinned };
-    this.deps.locator.setUpgradeState(record.id, "upgrade", from);
-    let snapshot: string | undefined;
+    this.deps.locator.setUpgradeState(record.id, "upgrade", pinned === undefined ? {} : { from: pinned });
     let connection: DurableHostConnection;
     try {
       const busy = await (await old?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, { reason: "upgrade", ...(ifRestartSafe ? { ifRestartSafe: true as const } : {}) });
@@ -1030,26 +1031,21 @@ export class DurableChatService {
         this.deps.logger?.info?.({ sessionId: record.id, busy }, "upgrade-restart: the host refused to close; the family stays on its host");
         return busy;
       }
-      if (newerDurable(current, pinned) && existsSync(storeDir)) {
-        snapshot = snapshotStore(storeDir);
-        this.deps.locator.setUpgradeState(record.id, "upgrade", { ...from, snapshot });
-      }
       this.deps.locator.setHostEntry(record.id, current);
       release();
       connection = await held;
     } catch (error) {
       release();
       if (this.#connections.get(record.id) === held) this.#connections.delete(record.id);
-      const back = await this.#rollBack(record, pinned, snapshot, error);
-      throw new Error(`The new host code (${pin.current}) did not start: ${error instanceof Error ? error.message : String(error)}. This Chat is back on its old host code (${pin.revision})${back}`, { cause: error });
+      const back = await this.#rollBack(record, pinned, error);
+      throw new Error(`The new host code (${pin.current}) did not start: ${error instanceof Error ? error.message : String(error)}. This Chat is back on its old host code (${pin.revision}).${back}`, { cause: error });
     }
-    await this.#finishUpgrade(record, connection, snapshot);
+    await this.#finishUpgrade(record, connection);
     return undefined;
   }
 
-  /** The new host runs: its store copy is no longer needed; resume it, and the upgrade is done. */
-  async #finishUpgrade(record: DurableChatRecord, connection: DurableHostConnection, snapshot: string | undefined): Promise<void> {
-    if (snapshot !== undefined) rmSync(snapshot, { recursive: true, force: true });
+  /** The new host runs: resume it, and the upgrade is done. */
+  async #finishUpgrade(record: DurableChatRecord, connection: DurableHostConnection): Promise<void> {
     try {
       await this.#resume(connection);
     } finally {
@@ -1058,21 +1054,15 @@ export class DurableChatService {
   }
 
   /**
-   * After a failed start of the new host: the store as before the attempt (when copied), the old pin, and its host
-   * started and resumed. Returns the rest of the error's sentence.
+   * After a failed start of the new host: the old pin, and its host started and resumed. Returns the rest of the
+   * error's sentence.
    */
-  async #rollBack(record: DurableChatRecord, pinned: string | undefined, snapshot: string | undefined, error: unknown): Promise<string> {
+  async #rollBack(record: DurableChatRecord, pinned: string | undefined, error: unknown): Promise<string> {
     this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the new host did not start; rolling back to the old pin");
-    const storeDir = join(this.deps.storesDir, record.storeId);
-    const restored = snapshot !== undefined && existsSync(snapshot);
-    if (restored) {
-      const failed = restoreStore(storeDir, snapshot);
-      this.deps.logger?.warn({ sessionId: record.id, failed }, "upgrade-restart: restored the store from before the attempt; the attempted one is kept aside");
-    }
     this.deps.locator.setHostEntry(record.id, pinned);
     const back = await this.#connection(record).then((host) => this.#resume(host)).then(() => "", (again: unknown) => ` It did not start there either (${again instanceof Error ? again.message : String(again)}); the next message tries again.`);
     this.deps.locator.setUpgradeState(record.id, "upgrade", undefined);
-    return `${restored ? ", with its store as before the attempt" : ""}.${back}`;
+    return back;
   }
 
   /**
@@ -1083,7 +1073,7 @@ export class DurableChatService {
     this.deps.logger?.info?.({ sessionId: record.id }, "upgrade-restart: finishing an upgrade an earlier daemon left");
     const connection = await this.#connection(record).catch((error: unknown) => error instanceof Error ? error : new Error(String(error)));
     if (!(connection instanceof Error)) {
-      await this.#finishUpgrade(record, connection, upgrade.snapshot).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the resume failed; the next message resumes"); });
+      await this.#finishUpgrade(record, connection).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the resume failed; the next message resumes"); });
       return;
     }
     const pinned = this.deps.locator.durable(record.id)?.hostEntry;
@@ -1093,7 +1083,7 @@ export class DurableChatService {
       this.deps.logger?.warn({ sessionId: record.id, err: connection }, "upgrade-restart: the family's host did not start; the next message tries again");
       return;
     }
-    await this.#rollBack(record, upgrade.from, upgrade.snapshot, connection);
+    await this.#rollBack(record, upgrade.from, connection);
   }
 
   /** Whether the owner cancelled (or a failure ended) the automatic upgrade to this current code; kept across daemon restarts. */
@@ -1129,7 +1119,7 @@ export class DurableChatService {
         const status = await connection.request("status").then(({ result }) => hostStatus(result), () => undefined);
         if (status === undefined || !restartSafe(status) || this.#declined(id, connection.code) || this.#connections.get(id) !== pending) continue;
         this.deps.logger?.info?.({ sessionId: id }, "upgrade-restart: automatic upgrade at a safe moment");
-        await this.#upgradeOnce(record, pin, connection.code?.current, true).catch((error: unknown) => {
+        await this.#upgradeOnce(record, pin, connection.code, true).catch((error: unknown) => {
           this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
           this.deps.locator.setUpgradeState(id, "upgradeDeclined", connection.code?.current);
           const generation = this.#notificationGenerations.get(id);
@@ -1199,7 +1189,7 @@ export class DurableChatService {
     const opened = connection.ready.then(async () => {
       this.#capabilities.set(record.id, connection.capabilities);
       connection.pin = await hostPin(host.code, connection.revision);
-      connection.upgradePending = this.deps.autoUpgrade === true && connection.closeIfRestartSafe && connection.pin !== undefined && !this.#declined(record.id, host.code) && hostMoveRefusal(host.code) === undefined;
+      connection.upgradePending = this.deps.autoUpgrade === true && connection.closeIfRestartSafe && connection.pin !== undefined && !this.#declined(record.id, host.code) && restartRefusal(host.code) === undefined;
       const loaded = await this.deps.resources?.(record.cwd, connection.contributed).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
@@ -1398,34 +1388,16 @@ function hostMoveRefusal(code: DurableHostProcess["code"]): string | undefined {
   return undefined;
 }
 
-/** Whether `entry` runs a newer Pi Durable than `than` (a move that may migrate the store). */
-function newerDurable(entry: string | undefined, than: string | undefined): boolean {
-  const [next, before] = [entry, than].map((path) => (path === undefined ? undefined : durableVersion(path)));
-  return next !== undefined && before !== undefined && compareVersions(next, before) > 0;
-}
-
 /**
- * A copy of a closed family store (its owner exited, so SQLite's files are consistent), beside it.
- * ponytail: a full copy per cross-version upgrade (stores are megabytes); copy only session.sqlite if they grow large.
+ * Why Upgrade now and the automatic upgrade cannot restart a pinned family, undefined when they can: only within one
+ * Pi Durable version, which needs no store migration, so a rollback only restores the pin. Upgrade host (quiet) moves
+ * across versions (see `hostMoveRefusal`).
  */
-function snapshotStore(storeDir: string): string {
-  const snapshot = `${storeDir}.pre-upgrade`;
-  rmSync(snapshot, { recursive: true, force: true });
-  cpSync(storeDir, snapshot, { recursive: true });
-  return snapshot;
-}
-
-/**
- * Put the snapshot back in place. The attempted store moves aside by rename, so a failed host still running keeps its
- * own files; its owner.json stays current, so owner epochs only grow. Returns where the attempted store went.
- */
-function restoreStore(storeDir: string, snapshot: string): string {
-  const failed = `${storeDir}.failed-upgrade`;
-  rmSync(failed, { recursive: true, force: true });
-  renameSync(storeDir, failed);
-  renameSync(snapshot, storeDir);
-  if (existsSync(join(failed, "owner.json"))) copyFileSync(join(failed, "owner.json"), join(storeDir, "owner.json"));
-  return failed;
+function restartRefusal(code: DurableHostProcess["code"]): string | undefined {
+  const refusal = hostMoveRefusal(code);
+  if (refusal !== undefined) return refusal;
+  const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : durableVersion(entry)));
+  return pinned === current ? undefined : `This upgrade changes the store format (Pi Durable ${String(pinned)} to ${String(current)}); use Upgrade host when the Chat is quiet`;
 }
 
 /**
