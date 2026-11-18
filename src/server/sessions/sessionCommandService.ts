@@ -230,9 +230,7 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
   }
 
   private tree(session: TSession): ClientCommandResult {
-    if (this.hasActiveWork(session)) {
-      return { type: "unsupported", message: "Cannot open the session tree while the session is active. Stop current activity and try /tree again." };
-    }
+    // Read-only: navigation itself refuses while the session is active (navigateSessionTree).
     if (this.lifecycle.getSessionTree === undefined) return treeUnavailableUnsupported();
 
     try {

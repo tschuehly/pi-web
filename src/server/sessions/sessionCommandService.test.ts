@@ -150,26 +150,19 @@ describe("SessionCommandService", () => {
     expect(active.runtime.fork).not.toHaveBeenCalled();
   });
 
-  it("rejects /tree for active, empty, and unavailable runtimes", async () => {
+  it("opens /tree while active and rejects empty and unavailable runtimes", async () => {
     const active = activeSession();
-    let externallyActive = true;
     const getSessionTree = vi.fn(() => ({ nodes: [], activeLeafId: null, activePathIds: [] }));
     const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher(), {
       getSessionTree,
-      hasActiveWork: () => externallyActive,
+      hasActiveWork: () => true,
     });
 
-    await expect(service.run("s1", "/tree")).resolves.toEqual({
-      type: "unsupported",
-      message: "Cannot open the session tree while the session is active. Stop current activity and try /tree again.",
-    });
-    expect(getSessionTree).not.toHaveBeenCalled();
-
-    externallyActive = false;
     await expect(service.run("s1", "/tree")).resolves.toEqual({
       type: "unsupported",
       message: "Cannot navigate an empty session tree.",
     });
+    expect(getSessionTree).toHaveBeenCalledTimes(1);
 
     const unavailable = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher());
     await expect(unavailable.run("s1", "/tree")).resolves.toEqual({
