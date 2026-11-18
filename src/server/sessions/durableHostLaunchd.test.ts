@@ -238,7 +238,7 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     const server = createServer((connection) => {
       connection.on("error", () => undefined);
       connection.write(`${JSON.stringify({ ready })}\n`);
-      connection.on("data", (chunk) => { const { id } = JSON.parse(String(chunk)) as { id: number }; connection.end(`${JSON.stringify({ id, result: reply })}\n`); });
+      connection.on("data", (chunk) => { const request: unknown = JSON.parse(String(chunk)); const id = typeof request === "object" && request !== null && "id" in request ? request.id : undefined; connection.end(`${JSON.stringify({ id, result: reply })}\n`); });
     });
     const umask = process.umask(0o077);
     await new Promise<void>((resolve) => server.listen(socket, resolve));
