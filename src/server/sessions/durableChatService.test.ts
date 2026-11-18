@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { DURABLE_HOST_PROTOCOL, DurableChatService, durableHostArgs, type DurableHostProcess, forkDurableHost } from "./durableChatService.js";
+import { DURABLE_HOST_PROTOCOL, DurableChatService, durableHostArgs, durableHostLaunchArgs, type DurableHostProcess, forkDurableHost } from "./durableChatService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 import { SessionNotificationStore } from "./sessionNotificationStore.js";
 import { WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
@@ -455,6 +455,26 @@ describe("Durable Chats", () => {
     await durable.resolveEffect(ref, "13", "retry");
     const calls = only(launched).requests.filter((request) => request.method === "setModel" || request.method === "resolveEffect").map((request) => [request.method, request.params]);
     expect(calls).toEqual([["setModel", { provider: "anthropic", modelId: "claude-x" }], ["resolveEffect", { taskId: "13", resolution: "retry" }]]);
+  });
+
+  it("scopes the models to the settings' enabledModels, as a legacy Chat does", async () => {
+    const { durable, launched } = await service(undefined, undefined, { enabledModels: () => ["anthropic/claude-x", "faux-*", "openai/gone"] });
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    only(launched).answer = (request) => request.method === "models" ? [{ provider: "openai", id: "gpt", name: "GPT" }, { provider: "faux", id: "faux-1", name: "Faux" }, { provider: "anthropic", id: "claude-x", name: "Claude X" }] : status;
+    // The switch list holds only the enabled models, in enabledModels order.
+    expect((await durable.availableModels(ref)).map((model) => `${model.provider}/${model.id}`)).toEqual(["anthropic/claude-x", "faux/faux-1"]);
+    // The catalog lists every model, enabled first, with each model's catalog position.
+    await expect(durable.modelCatalog(ref)).resolves.toEqual([
+      { provider: "anthropic", id: "claude-x", name: "Claude X", enabled: true, editable: false, catalogIndex: 2 },
+      { provider: "faux", id: "faux-1", name: "Faux", enabled: true, editable: false, catalogIndex: 1 },
+      { provider: "openai", id: "gpt", name: "GPT", enabled: false, editable: false, catalogIndex: 0 },
+    ]);
+  });
+
+  it("sends the workspace's default model to a new Chat's host", () => {
+    const args = durableHostLaunchArgs({ entry: "host.js", agentDir: "/agent", model: (cwd) => cwd === "/work/a" ? "anthropic/claude-opus-5-5" : "x/y", thinkingLevel: () => "high" }, { id: "c1", cwd: "/work/a" }, "/stores/c1");
+    expect(args).toEqual(expect.arrayContaining(["--model", "anthropic/claude-opus-5-5", "--thinking", "high"]));
   });
 
   it("stops a Chat's host only once its process has exited, so the next host can take the store", async () => {

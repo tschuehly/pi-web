@@ -21,7 +21,7 @@ import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGatewa
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
 import { DurableChatService, type DurableHostOptions, forkDurableHost } from "./sessions/durableChatService.js";
 import { launchdDurableHost } from "./sessions/durableHostLaunchd.js";
-import { durableThinkingLevel, loadDurableChatResources } from "./sessions/durableChatResources.js";
+import { durableDefaultModel, durableThinkingLevel, loadDurableChatResources } from "./sessions/durableChatResources.js";
 import { SettingsManager } from "../piSdk.js";
 import { createRuntimeRoutedSessionService, routeMcpAuth } from "./sessions/runtimeRoutedSessionService.js";
 import { SessionRuntimeLocator } from "./sessions/sessionRuntimeLocator.js";
@@ -385,7 +385,8 @@ async function createSessionDaemonRuntime() {
     sessionsForFailedConstruction = sessions;
     const durableHostOptions: DurableHostOptions | undefined = durableHostEntry === undefined || durableHostEntry === "" ? undefined : {
       entry: durableHostEntry,
-      model: daemonEnvironment["PI_WEB_DURABLE_MODEL"] ?? "anthropic/claude-sonnet-5-5",
+      // A new Chat's model: PI_WEB_DURABLE_MODEL, else the active profile's default model, as for legacy Chats.
+      model: (cwd) => durableDefaultModel(cwd, activeAgentProfile.dir, daemonEnvironment),
       // The host reads only the Claude subscription login (auth.json, under Pi's own lock) from this directory.
       agentDir: daemonEnvironment["PI_WEB_DURABLE_AGENT_DIR"] ?? activeAgentProfile.dir,
       // Trials and tests: offer the scripted model next to the Claude models.
@@ -417,6 +418,7 @@ async function createSessionDaemonRuntime() {
       ...(spawnTargets === undefined ? {} : { spawnTargets }),
       // As a legacy Chat's session reads it: Pi's setting for the workspace under the active profile.
       cacheMissNotices: { enabled: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getShowCacheMissNotices(), models: auth.runtime },
+      enabledModels: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getEnabledModels(),
     });
     durableChatsForFailedConstruction = durableChats;
     // Hosts that outlived the previous daemon (launchd) get their connection back now, not at the Chat's next read.
