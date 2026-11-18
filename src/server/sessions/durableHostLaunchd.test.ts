@@ -19,7 +19,8 @@ const status = { persisted: true, isStreaming: false, isCompacting: false, isBas
 /**
  * A host speaking the socket protocol: each start owns the store with the next epoch, answers status and close, and
  * logs every request it gets to `<store>/requests.log` (an explicit end's close as `close:end`, a reason as `:<reason>`), and answers transcript with an empty one. Its revision
- * is the folder of its entry; `<store>/status.json`, when present, overrides fields of its status (a busy family). An explicit end cancels the family's jobs in the
+ * is the folder of its entry; `<store>/status.json`, when present, overrides fields of its status (a busy family), and a
+ * close `ifRestartSafe` is refused while that status says a turn runs. An explicit end cancels the family's jobs in the
  * background bash registry (PI_BACKGROUND_BASH_ROOT), as the Workbench host's cancelAll does: the runner's group is
  * killed and a cancelled exit recorded. With `--end-jobs` it only cancels them, logs `end-jobs` and exits, never serving.
  */
@@ -48,7 +49,7 @@ if (process.argv.includes("--end-jobs")) {
 const ownerEpoch = (existsSync(epochFile) ? Number(readFileSync(epochFile, "utf8")) : 0) + 1;
 writeFileSync(epochFile, String(ownerEpoch));
 const server = createServer((socket) => {
-  socket.write(JSON.stringify({ ready: { protocol: ${String(DURABLE_HOST_PROTOCOL)}, revision: dirname(process.argv[1]), storeId: basename(store), ownerEpoch, pid: process.pid, capabilities: [] } }) + "\\n");
+  socket.write(JSON.stringify({ ready: { protocol: ${String(DURABLE_HOST_PROTOCOL)}, revision: dirname(process.argv[1]), storeId: basename(store), ownerEpoch, pid: process.pid, capabilities: [], closeIfRestartSafe: true } }) + "\\n");
   let buffer = "";
   socket.on("data", (chunk) => {
     buffer += chunk;
@@ -59,6 +60,10 @@ const server = createServer((socket) => {
       if (request.method === "close" && request.params?.end === true) cancelJobs();
       const override = existsSync(join(store, "status.json")) ? JSON.parse(readFileSync(join(store, "status.json"), "utf8")) : {};
       const current = { ...${JSON.stringify(status)}, ...override };
+      if (request.method === "close" && request.params?.ifRestartSafe === true && current.isStreaming) {
+        socket.write(JSON.stringify({ id: request.id, result: { closed: false, busy: "a turn is running" } }) + "\\n");
+        continue;
+      }
       socket.write(JSON.stringify({ id: request.id, result: request.method === "status" ? current : request.method === "transcript" ? { messages: [], partial: null, status: current } : null }) + "\\n", () => { if (request.method === "close") process.exit(0); });
     }
   });

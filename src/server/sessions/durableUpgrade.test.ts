@@ -177,4 +177,31 @@ describe("seamless upgrade orchestration", () => {
     expect(s.hosts.flatMap((host) => host.requests.map((request) => request.method)).filter((method) => method === "resume" || method === "close")).toEqual(["close", "resume"]);
     await s.durable.dispose();
   });
+
+  it("finding 4: an automatic upgrade never closes a host that admitted input after the quiet check", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const s = setup(a, b, { autoUpgrade: true });
+    await s.durable.status(s.ref);
+    const host = s.hosts[0];
+    if (host === undefined) throw new Error("no host");
+    let release!: () => void;
+    let sampled!: () => void;
+    const sampledQuiet = new Promise<void>((resolve) => { sampled = resolve; });
+    host.onStatus = (request) => { release = () => { host.reply(request, status); }; host.onStatus = undefined; sampled(); return true; };
+    const moving = s.durable.upgradePendingHosts();
+    await sampledQuiet;
+    await s.durable.prompt(s.ref, "owner input just arrived", undefined, undefined, { operationId: "input-race" });
+    release();
+    await moving;
+    // The host refused the conditional close: it keeps running its turn, and the family stays pending on its pin.
+    const close = host.requests.find((request) => request.method === "close");
+    expect(close?.params).toEqual({ reason: "upgrade", ifRestartSafe: true });
+    expect(s.hosts).toHaveLength(1);
+    const after = await s.durable.status(s.ref);
+    expect(after.isStreaming).toBe(true);
+    expect(after.durableHostPin?.pending).toBe(true);
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+    await s.durable.dispose();
+  });
 });

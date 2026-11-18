@@ -145,6 +145,8 @@ class DurableHostConnection {
   pin: { revision: string; current: string } | undefined;
   /** Seamless upgrade B: the daemon restarts this pinned family on current code at its next safe moment. */
   upgradePending = false;
+  /** The host's ready message says it closes only if still restart-safe, checked and quiesced in the host (B's close). */
+  closeIfRestartSafe = false;
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
@@ -172,6 +174,7 @@ class DurableHostConnection {
         this.contributed = parseContributedResources(message["ready"]["resources"]);
         const revision = message["ready"]["revision"];
         if (typeof revision === "string") this.revision = revision;
+        this.closeIfRestartSafe = message["ready"]["closeIfRestartSafe"] === true;
         if (protocol === DURABLE_HOST_PROTOCOL) markReady();
         else {
           failReady(new Error(`Durable host speaks protocol ${String(protocol)}, this daemon ${String(DURABLE_HOST_PROTOCOL)}`));
@@ -239,20 +242,20 @@ class DurableHostConnection {
    * bounds its own close and exits non-zero); one still alive `graceMs` later, as when its close joins work that
    * ignores cancellation, gets SIGKILL and reopens with that work interrupted. Resolves only once the process is gone,
    * so a host opened next for the same store never meets its lock. `end`: the owner ends the Chat, and the host cancels
-   * the family's background jobs first; any other close (restart, idle, upgrade) leaves them running. `upgrade`: Upgrade
-   * now's close, which the host records as an `upgrade-restart`.
+   * the family's background jobs first; any other close (restart, idle, upgrade) leaves them running. `reason: "upgrade"`:
+   * Upgrade now's close, which the host records as an `upgrade-restart`; with `ifRestartSafe` the host closes only if
+   * nothing but restart-surviving work runs, and refuses otherwise. Returns the host's refusal (it keeps running).
    */
-  async close(graceMs: number, end = false, upgrade = false): Promise<void> {
-    if (!this.alive) return;
+  async close(graceMs: number, params?: { end: true } | { reason: "upgrade"; ifRestartSafe?: true }): Promise<string | undefined> {
+    if (!this.alive) return undefined;
     const terminate = setTimeout(() => { this.process.kill("SIGTERM"); }, graceMs);
     const kill = setTimeout(() => { this.process.kill("SIGKILL"); }, 2 * graceMs);
     try {
-      await this.request("close", end ? { end } : upgrade ? { reason: "upgrade" } : undefined);
-    } catch {
-      // Already gone, or terminated by the timers.
-    }
-    try {
+      const { result } = await this.request("close", params).catch(() => ({ result: undefined }));
+      // Already gone, or terminated by the timers, unless the host refused.
+      if (isRecord(result) && result["closed"] === false) return typeof result["busy"] === "string" ? result["busy"] : "the host is busy";
       await this.exited;
+      return undefined;
     } finally {
       clearTimeout(terminate);
       clearTimeout(kill);
@@ -313,7 +316,7 @@ export class DurableChatService {
   /** Chats whose pending automatic upgrade the owner cancelled. ponytail: for the daemon's life; persist if a restart should keep it. */
   readonly #upgradeDeclined = new Set<string>();
   /** Ordered restarts in progress, by Chat (see `#upgradeOnce`). */
-  readonly #upgrades = new Map<string, Promise<void>>();
+  readonly #upgrades = new Map<string, Promise<string | undefined>>();
   /** Chats an automatic upgrade is checking or restarting. */
   readonly #autoUpgrading = new Set<string>();
   /** When each connected family last opened or sent an event: its idle window starts there. */
@@ -914,7 +917,7 @@ export class DurableChatService {
         child.on("exit", (code) => { if (code === 0) resolve(); else reject(new Error(`Cancelling the background jobs of Durable Chat ${sessionId} failed (exit ${String(code)})`)); });
       });
     }
-    await connection?.close(this.deps.closeGraceMs ?? 5000, explicit);
+    await connection?.close(this.deps.closeGraceMs ?? 5000, explicit ? { end: true } : undefined);
   }
 
   /**
@@ -982,10 +985,10 @@ export class DurableChatService {
   }
 
   /** One ordered restart per family at a time, until its resume: a later request (a double click, B) joins it. */
-  #upgradeOnce(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined): Promise<void> {
+  #upgradeOnce(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined, ifRestartSafe = false): Promise<string | undefined> {
     let running = this.#upgrades.get(record.id);
     if (running === undefined) {
-      running = this.#upgradeRestart(record, pin, current).finally(() => { this.#upgrades.delete(record.id); });
+      running = this.#upgradeRestart(record, pin, current, ifRestartSafe).finally(() => { this.#upgrades.delete(record.id); });
       this.#upgrades.set(record.id, running);
     }
     return running;
@@ -995,15 +998,21 @@ export class DurableChatService {
    * Upgrade now's ordered restart: close (`upgrade`), move the pin to the current code, start the new host and resume
    * it; else roll back. Requests arriving meanwhile wait for the new host instead of starting a second one on the store.
    * Onto newer Pi Durable code, the closed store is copied first: a new host that fails after migrating it must not
-   * leave the old code a store it cannot read, so the rollback reopens the copy.
+   * leave the old code a store it cannot read, so the rollback reopens the copy. `ifRestartSafe` (B): the old host closes
+   * only if it still runs nothing but restart-surviving work, decided in the host, which admits no input meanwhile;
+   * returns its refusal, and the family stays on its host.
    */
-  async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined): Promise<void> {
+  async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined, ifRestartSafe: boolean): Promise<string | undefined> {
     const pinned = this.deps.locator.durable(record.id)?.hostEntry;
     this.deps.logger?.info?.({ sessionId: record.id, from: pin.revision, to: pin.current }, "upgrade-restart: restarting Durable Chat host on current code");
     const old = this.#connections.get(record.id);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const held = gate.then(() => {
+    let release!: (move?: boolean) => void;
+    const gate = new Promise<boolean>((resolve) => { release = (move = true) => { resolve(move); }; });
+    const held: Promise<DurableHostConnection> = gate.then((move) => {
+      if (!move && old !== undefined) {
+        if (this.#connections.get(record.id) === held) this.#connections.set(record.id, old);
+        return old;
+      }
       this.#connections.delete(record.id);
       return this.#connection(record);
     });
@@ -1013,7 +1022,12 @@ export class DurableChatService {
     let snapshot: string | undefined;
     let connection: DurableHostConnection;
     try {
-      await (await old?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, false, true);
+      const busy = await (await old?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, { reason: "upgrade", ...(ifRestartSafe ? { ifRestartSafe: true as const } : {}) });
+      if (busy !== undefined) {
+        release(false);
+        this.deps.logger?.info?.({ sessionId: record.id, busy }, "upgrade-restart: the host refused to close; the family stays on its host");
+        return busy;
+      }
       if (newerDurable(current, pinned) && existsSync(storeDir)) snapshot = snapshotStore(storeDir);
       this.deps.locator.setHostEntry(record.id, current);
       release();
@@ -1033,6 +1047,7 @@ export class DurableChatService {
     }
     if (snapshot !== undefined) rmSync(snapshot, { recursive: true, force: true });
     await this.#resume(connection);
+    return undefined;
   }
 
   /** Resume a host Upgrade now started; a host without `resume` (older code) stays paused until the next message. */
@@ -1046,8 +1061,9 @@ export class DurableChatService {
   /**
    * Seamless upgrade B: restart every upgrade-pending family whose only work left survives a restart (open questions,
    * background bash, watchers, Atelier Pages; see `restartSafe`). A running turn, queued input, a running tool or
-   * children wait. Runs on each status the host publishes and on the idle sweep. A failed start rolls back (as Upgrade
-   * now) and leaves the family pinned, with a notice in its inbox.
+   * children wait. The daemon's status check only selects candidates: the host itself checks again as it closes and
+   * admits no input meanwhile (only hosts that say so are pending). Runs on each status the host publishes and on the
+   * idle sweep. A failed start rolls back (as Upgrade now) and leaves the family pinned, with a notice in its inbox.
    */
   async upgradePendingHosts(only?: string): Promise<void> {
     for (const [id, pending] of [...this.#connections]) {
@@ -1061,7 +1077,7 @@ export class DurableChatService {
         const status = await connection.request("status").then(({ result }) => hostStatus(result), () => undefined);
         if (status === undefined || !restartSafe(status) || this.#upgradeDeclined.has(id) || this.#connections.get(id) !== pending) continue;
         this.deps.logger?.info?.({ sessionId: id }, "upgrade-restart: automatic upgrade at a safe moment");
-        await this.#upgradeOnce(record, pin, connection.code?.current).catch((error: unknown) => {
+        await this.#upgradeOnce(record, pin, connection.code?.current, true).catch((error: unknown) => {
           this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
           this.#upgradeDeclined.add(id);
           const generation = this.#notificationGenerations.get(id);
@@ -1125,7 +1141,7 @@ export class DurableChatService {
     const opened = connection.ready.then(async () => {
       this.#capabilities.set(record.id, connection.capabilities);
       connection.pin = await hostPin(host.code, connection.revision);
-      connection.upgradePending = this.deps.autoUpgrade === true && connection.pin !== undefined && !this.#upgradeDeclined.has(record.id) && hostMoveRefusal(host.code) === undefined;
+      connection.upgradePending = this.deps.autoUpgrade === true && connection.closeIfRestartSafe && connection.pin !== undefined && !this.#upgradeDeclined.has(record.id) && hostMoveRefusal(host.code) === undefined;
       const loaded = await this.deps.resources?.(record.cwd, connection.contributed).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
