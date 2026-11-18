@@ -312,6 +312,8 @@ export class DurableChatService {
   readonly #idleSweep: NodeJS.Timeout;
   /** Chats whose pending automatic upgrade the owner cancelled. ponytail: for the daemon's life; persist if a restart should keep it. */
   readonly #upgradeDeclined = new Set<string>();
+  /** Ordered restarts in progress, by Chat (see `#upgradeOnce`). */
+  readonly #upgrades = new Map<string, Promise<void>>();
   /** Chats an automatic upgrade is checking or restarting. */
   readonly #autoUpgrading = new Set<string>();
   /** When each connected family last opened or sent an event: its idle window starts there. */
@@ -952,6 +954,12 @@ export class DurableChatService {
   async upgradeHost(ref: SessionRouteRef, mode: "quiet" | "now" | "cancel" = "quiet"): Promise<ClientSessionStatus> {
     const record = this.#record(ref);
     const connection = await this.#for(ref);
+    // A second click while the family moves gets that upgrade's outcome, not another restart.
+    const running = this.#upgrades.get(record.id);
+    if (running !== undefined && mode !== "cancel") {
+      await running;
+      return this.status(ref);
+    }
     const pin = connection.pin;
     if (mode === "cancel") {
       // Cancel a pending automatic upgrade (B): the family stays pinned until the owner asks.
@@ -969,8 +977,18 @@ export class DurableChatService {
       this.deps.locator.setHostEntry(record.id, connection.code?.current);
       return this.status(ref);
     }
-    await this.#upgradeRestart(record, pin, connection.code?.current);
+    await this.#upgradeOnce(record, pin, connection.code?.current);
     return this.status(ref);
+  }
+
+  /** One ordered restart per family at a time, until its resume: a later request (a double click, B) joins it. */
+  #upgradeOnce(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined): Promise<void> {
+    let running = this.#upgrades.get(record.id);
+    if (running === undefined) {
+      running = this.#upgradeRestart(record, pin, current).finally(() => { this.#upgrades.delete(record.id); });
+      this.#upgrades.set(record.id, running);
+    }
+    return running;
   }
 
   /**
@@ -1043,7 +1061,7 @@ export class DurableChatService {
         const status = await connection.request("status").then(({ result }) => hostStatus(result), () => undefined);
         if (status === undefined || !restartSafe(status) || this.#upgradeDeclined.has(id) || this.#connections.get(id) !== pending) continue;
         this.deps.logger?.info?.({ sessionId: id }, "upgrade-restart: automatic upgrade at a safe moment");
-        await this.#upgradeRestart(record, pin, connection.code?.current).catch((error: unknown) => {
+        await this.#upgradeOnce(record, pin, connection.code?.current).catch((error: unknown) => {
           this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
           this.#upgradeDeclined.add(id);
           const generation = this.#notificationGenerations.get(id);

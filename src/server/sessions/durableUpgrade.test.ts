@@ -165,4 +165,16 @@ describe("seamless upgrade orchestration", () => {
     expect(existsSync(`${s.storeDir}.pre-upgrade`)).toBe(false);
     await s.durable.dispose();
   });
+
+  it("finding 3: a double click runs one upgrade: one old and one new host, one resume, both clicks answered", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const s = setup(a, b);
+    await s.durable.status(s.ref);
+    const results = await Promise.allSettled([s.durable.upgradeHost(s.ref, "now"), s.durable.upgradeHost(s.ref, "now"), s.durable.upgradeHost(s.ref)]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
+    expect(s.hosts).toHaveLength(2);
+    expect(s.hosts.flatMap((host) => host.requests.map((request) => request.method)).filter((method) => method === "resume" || method === "close")).toEqual(["close", "resume"]);
+    await s.durable.dispose();
+  });
 });
