@@ -21,13 +21,16 @@ function isRequest(value: unknown): value is Request {
 let ROOT = "";
 afterEach(() => { if (ROOT !== "") rmSync(ROOT, { recursive: true, force: true }); });
 
-/** A revision folder whose host entry runs Pi Durable `version`. */
-function revision(name: string, version: string): string {
+const SCHEMA = { documents: { "workbench.delegation": 1 }, tasks: { "workbench.child-reporter": 1 } };
+
+/** A revision folder whose host entry runs Pi Durable `version` and writes the store `schema` (null: no store-schema.json). */
+function revision(name: string, version: string, schema: object | null = SCHEMA): string {
   const entry = join(ROOT, name, "main.mjs");
   const manifest = join(ROOT, name, "node_modules", "@earendil-works", "pi-durable");
   mkdirSync(manifest, { recursive: true });
   writeFileSync(entry, "");
   writeFileSync(join(manifest, "package.json"), JSON.stringify({ version }));
+  if (schema !== null) writeFileSync(join(ROOT, name, "store-schema.json"), JSON.stringify(schema));
   return entry;
 }
 
@@ -174,6 +177,26 @@ describe("seamless upgrade orchestration", () => {
     expect(readdirSync(join(ROOT, "stores"))).toEqual([basename(s.storeDir)]);
     expect((await s.durable.status(s.ref)).durableHostPin?.revision).toBe("rev-old");
     await s.durable.dispose();
+  });
+
+  it("round 4 F1: Upgrade now and the automatic upgrade refuse a move to another store schema, or one they cannot read, within one Pi Durable version", async () => {
+    for (const [schema, refusal] of [
+      [{ ...SCHEMA, documents: { "workbench.delegation": 2 } }, "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet"],
+      [null, "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet"],
+    ] as const) {
+      ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+      const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", schema)];
+      const s = setup(a, b, { autoUpgrade: true });
+      expect((await s.durable.status(s.ref)).durableHostPin?.pending).toBeUndefined();
+      await s.durable.upgradePendingHosts();
+      await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(refusal);
+      expect(s.hosts).toHaveLength(1);
+      expect(s.hosts[0]?.requests.map((request) => request.method)).not.toContain("close");
+      expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+      await s.durable.dispose();
+      rmSync(ROOT, { recursive: true, force: true });
+    }
+    ROOT = "";
   });
 
   it("A: a failed start within one Pi Durable version restores only the pin", async () => {

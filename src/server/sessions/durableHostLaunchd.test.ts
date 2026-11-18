@@ -449,11 +449,12 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     expect(requests(root, chat.id).at(-1)).toBe("close");
   }, 60_000);
 
-  /** A revision folder running the fake host, with the Pi Durable version it installs (none: unreadable). */
+  /** A revision folder running the fake host, with the Pi Durable version it installs (none: unreadable) and one store schema. */
   const revision = async (root: string, name: string, durable?: string) => {
     const modules = join(root, name, "node_modules", "@earendil-works", "pi-durable");
     await mkdir(modules, { recursive: true });
     if (durable !== undefined) await writeFile(join(modules, "package.json"), JSON.stringify({ name: "@earendil-works/pi-durable", version: durable }));
+    await writeFile(join(root, name, "store-schema.json"), JSON.stringify({ documents: { "workbench.delegation": 1 }, tasks: {} }));
     await writeFile(join(root, name, "host.mjs"), HOST);
     return join(await realpath(join(root, name)), "host.mjs");
   };

@@ -1442,7 +1442,18 @@ function restartRefusal(code: DurableHostProcess["code"]): string | undefined {
   const refusal = hostMoveRefusal(code);
   if (refusal !== undefined) return refusal;
   const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : durableVersion(entry)));
-  return pinned === current ? undefined : `This upgrade changes the store format (Pi Durable ${String(pinned)} to ${String(current)}); use Upgrade host when the Chat is quiet`;
+  if (pinned !== current) return `This upgrade changes the store format (Pi Durable ${String(pinned)} to ${String(current)}); use Upgrade host when the Chat is quiet`;
+  // Same Pi Durable, but a Workbench document or task at a new version is migrated too: the old code then refuses the store.
+  const [pinnedSchema, currentSchema] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : storeSchema(entry)));
+  return pinnedSchema !== undefined && pinnedSchema === currentSchema ? undefined : "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet";
+}
+
+/** The folder whose `node_modules` Node resolves `@earendil-works/pi-durable` from for a host entry. */
+function durableFolder(entry: string): string | undefined {
+  for (let folder = dirname(entry); ; folder = dirname(folder)) {
+    if (existsSync(join(folder, "node_modules", "@earendil-works", "pi-durable", "package.json"))) return folder;
+    if (dirname(folder) === folder) return undefined;
+  }
 }
 
 /**
@@ -1450,18 +1461,33 @@ function restartRefusal(code: DurableHostProcess["code"]): string | undefined {
  * (the package exports no `./package.json`); undefined when none is found or it names no numeric version.
  */
 function durableVersion(entry: string): string | undefined {
-  for (let folder = dirname(entry); ; folder = dirname(folder)) {
-    const manifest = join(folder, "node_modules", "@earendil-works", "pi-durable", "package.json");
-    if (existsSync(manifest)) {
-      try {
-        const parsed: unknown = JSON.parse(readFileSync(manifest, "utf8"));
-        const version = isRecord(parsed) ? parsed["version"] : undefined;
-        return typeof version === "string" && /^\d+\.\d+\.\d+/.test(version) ? version : undefined;
-      } catch {
-        return undefined;
-      }
-    }
-    if (dirname(folder) === folder) return undefined;
+  const folder = durableFolder(entry);
+  if (folder === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(folder, "node_modules", "@earendil-works", "pi-durable", "package.json"), "utf8"));
+    const version = isRecord(parsed) ? parsed["version"] : undefined;
+    return typeof version === "string" && /^\d+\.\d+\.\d+/.test(version) ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The store schema a host entry writes, from the Workbench host's `store-schema.json` beside that `node_modules` (every
+ * document and task kind with its version), as a comparable string; undefined when it is missing or unreadable.
+ */
+function storeSchema(entry: string): string | undefined {
+  const folder = durableFolder(entry);
+  if (folder === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(folder, "store-schema.json"), "utf8"));
+    if (!isRecord(parsed)) return undefined;
+    const [documents, tasks] = [parsed["documents"], parsed["tasks"]];
+    if (!isRecord(documents) || !isRecord(tasks)) return undefined;
+    const sorted = (value: Record<string, unknown>) => Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
+    return JSON.stringify([sorted(documents), sorted(tasks)]);
+  } catch {
+    return undefined;
   }
 }
 
