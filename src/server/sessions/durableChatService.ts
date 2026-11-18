@@ -1025,6 +1025,8 @@ export class DurableChatService {
     this.deps.logger?.info?.({ sessionId: id, from: pin.revision, to: pin.current }, "upgrade-restart: restarting Durable Chat host on current code");
     let settle!: (connection: Promise<DurableHostConnection>) => void;
     const held = new Promise<DurableHostConnection>((resolve) => { settle = resolve; });
+    // Settled with a failed start when both codes fail: the caller gets that error; the family's entry may have no reader.
+    void held.catch(() => undefined);
     let final: Promise<DurableHostConnection> | undefined;
     const handOver = (connection: Promise<DurableHostConnection>) => {
       if (final !== undefined) return;

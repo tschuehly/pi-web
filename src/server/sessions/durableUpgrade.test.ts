@@ -103,7 +103,7 @@ class Fake extends EventEmitter implements DurableHostProcess {
 }
 
 /** A daemon over one Chat pinned to `pin`, with `current` the code new hosts get. */
-function setup(pin: string, current: string, options: { failCurrent?: boolean; failResume?: boolean; autoUpgrade?: boolean; subscribers?: boolean } = {}) {
+function setup(pin: string, current: string, options: { failCurrent?: boolean; failPin?: boolean; failResume?: boolean; autoUpgrade?: boolean; subscribers?: boolean } = {}) {
   const locator = new SessionRuntimeLocator(ROOT);
   const record = locator.create("/work", "chat");
   locator.setHostEntry(record.id, pin);
@@ -115,7 +115,7 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; f
     mkdirSync(storeDir, { recursive: true });
     // Every host that opens the store leaves its Pi Durable version there (a newer one migrates it).
     writeFileSync(join(storeDir, "opened-by"), entry);
-    const fail = entry === current && options.failCurrent === true;
+    const fail = entry === current ? options.failCurrent === true : options.failPin === true;
     // A newer host that fails after migrating the store, before it is ready.
     if (fail) writeFileSync(join(storeDir, "session.sqlite"), "migrated");
     const host = new Fake({ entry, current }, () => { locator.setHost(chat.id, undefined); }, fail);
@@ -211,6 +211,27 @@ describe("seamless upgrade orchestration", () => {
     // The store is the one store: no copy, nothing put back.
     expect(readdirSync(join(ROOT, "stores"))).toEqual([basename(s.storeDir)]);
     expect(s.hosts[2]?.requests.filter((request) => request.method === "resume")).toHaveLength(1);
+    await s.durable.dispose();
+  });
+
+  it("round 4 F2: when the new and then the old code fail to start, the caller gets the error and nothing rejects unobserved", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const options = { failCurrent: true, failPin: false };
+    const s = setup(a, b, options);
+    await s.durable.status(s.ref);
+    options.failPin = true;
+    const unobserved: unknown[] = [];
+    const record = (reason: unknown) => { unobserved.push(reason); };
+    process.on("unhandledRejection", record);
+    try {
+      await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/did not start there either/);
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+      expect(unobserved).toEqual([]);
+      expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b, a]);
+    } finally {
+      process.off("unhandledRejection", record);
+    }
     await s.durable.dispose();
   });
 
