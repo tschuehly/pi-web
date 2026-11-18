@@ -191,6 +191,46 @@ describe("seamless upgrade orchestration", () => {
     await s.durable.dispose();
   });
 
+  it("B: a failed write of the upgrade's phase leaves the family on its host, every request answered", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const s = setup(a, b);
+    await s.durable.status(s.ref);
+    const write = s.locator.setUpgradeState.bind(s.locator);
+    s.locator.setUpgradeState = () => { throw Object.assign(new Error("injected phase-write ENOSPC"), { code: "ENOSPC" }); };
+    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/phase-write ENOSPC/);
+    s.locator.setUpgradeState = write;
+    expect(await Promise.race([s.durable.status(s.ref).then(() => "answered"), new Promise((resolve) => { setTimeout(() => { resolve("blocked"); }, 500); })])).toBe("answered");
+    expect(s.hosts).toHaveLength(1);
+    expect(s.hosts[0]?.requests.map((request) => request.method)).not.toContain("close");
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+    expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
+    await s.durable.dispose();
+  });
+
+  it("B: a failed pin write after the close rolls back on exactly one host, every request answered", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const s = setup(a, b);
+    await s.durable.status(s.ref);
+    const write = s.locator.setHostEntry.bind(s.locator);
+    let failed = false;
+    // As a full disk does: the record changes in memory, the write to disk throws.
+    s.locator.setHostEntry = (id, entry) => {
+      write(id, entry);
+      if (entry === b && !failed) { failed = true; throw Object.assign(new Error("injected pin-write ENOSPC"), { code: "ENOSPC" }); }
+    };
+    const during = s.durable.upgradeHost(s.ref, "now");
+    const meanwhile = s.durable.status(s.ref);
+    await expect(during).rejects.toThrow(/pin-write ENOSPC.*back on its old host code/);
+    await meanwhile;
+    expect(await Promise.race([s.durable.status(s.ref).then(() => "answered"), new Promise((resolve) => { setTimeout(() => { resolve("blocked"); }, 500); })])).toBe("answered");
+    expect(s.hosts.map((host) => host.code.entry)).toEqual([a, a]);
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+    expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
+    await s.durable.dispose();
+  });
+
   it("finding 3: a double click runs one upgrade: one old and one new host, one resume, both clicks answered", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
     const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
