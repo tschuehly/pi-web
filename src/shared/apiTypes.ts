@@ -1318,6 +1318,8 @@ export interface SessionStatus {
   queuedMessages: QueuedSessionMessage[];
   /** Best-effort SDK compatibility failure; public queue clearing remains available. */
   queueMessageActionsUnavailable?: string;
+  /** Set only on a queue-message mutation response: the queue no longer matched the browser's, so nothing changed. */
+  queueChanged?: true;
   messageCount?: number;
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
   cost: number;

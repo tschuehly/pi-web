@@ -4120,7 +4120,11 @@ export class PiSessionService implements SessionRouteService {
       if (expected === undefined) return true;
       return entry.kind !== expected.kind || entry.text !== expected.text
         || (mutation.action === "edit" && index === mutation.index && (entry.hasAttachments === true) !== (expected.hasAttachments === true));
-    })) throw new Error("Queued messages changed; refresh the queue and try again");
+    })) {
+      // The browser's queue is stale (e.g. the message was delivered): change nothing and return the current queue.
+      this.publishStatus(session);
+      return { ...this.statusFromSession(session), queueChanged: true };
+    }
     if (mutation.index >= current.length) throw new Error("Invalid queue index");
     try {
       this.queueCompatibility.run(session, () => { this.applyQueueMessageMutation(session, mutation); });

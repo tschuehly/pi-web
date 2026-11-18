@@ -577,7 +577,7 @@ export class DurableChatService {
     return this.status(ref);
   }
 
-  /** Remove, recall (`edit`) or toggle a queued message, against the queue the browser showed (as legacy Chats). */
+  /** Remove, recall (`edit`) or toggle a queued message, against the queue the browser showed (as legacy Chats); a changed queue changes nothing. */
   async mutateQueueMessage(ref: SessionRouteRef, mutation: SessionQueueMessageMutation): Promise<ClientSessionStatus> {
     const connection = await this.#for(ref);
     this.#require(connection, "queue.edit");
@@ -588,7 +588,7 @@ export class DurableChatService {
       if (expected === undefined) return true;
       return entry.kind !== expected.kind || entry.text !== expected.text
         || (mutation.action === "edit" && index === mutation.index && (entry.hasAttachments === true) !== (expected.hasAttachments === true));
-    })) throw new Error("Queued messages changed; refresh the queue and try again");
+    })) return { ...(await this.status(ref)), queueChanged: true };
     if (mutation.index >= current.length) throw new Error("Invalid queue index");
     await this.#mutateQueue(connection, mutation.action === "edit" ? "recall" : mutation.action, mutation.index, queued);
     return this.status(ref);

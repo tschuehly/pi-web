@@ -816,6 +816,8 @@ describe("API parsers", () => {
     for (const queueMessageActionsUnavailable of [42, null, false, {}]) {
       expect(() => parseSessionStatus({ ...statusWire(), queueMessageActionsUnavailable })).toThrow("Expected optional string field: queueMessageActionsUnavailable");
     }
+    expect(parseSessionStatus(statusWire())).not.toHaveProperty("queueChanged");
+    expect(parseSessionStatus({ ...statusWire(), queueChanged: true }).queueChanged).toBe(true);
   });
 
   it("parses optional suggested input verbatim, including empty input", () => {
