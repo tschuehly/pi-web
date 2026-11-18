@@ -1,6 +1,6 @@
 import { execFile, fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
+import { closeSync, copyFileSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -974,8 +974,10 @@ export class DurableChatService {
   }
 
   /**
-   * Upgrade now's ordered restart: close (`upgrade`), drop the pin, start the new host and resume it; else roll back.
-   * Requests arriving meanwhile wait for the new host instead of starting a second one on the store.
+   * Upgrade now's ordered restart: close (`upgrade`), move the pin to the current code, start the new host and resume
+   * it; else roll back. Requests arriving meanwhile wait for the new host instead of starting a second one on the store.
+   * Onto newer Pi Durable code, the closed store is copied first: a new host that fails after migrating it must not
+   * leave the old code a store it cannot read, so the rollback reopens the copy.
    */
   async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined): Promise<void> {
     const pinned = this.deps.locator.durable(record.id)?.hostEntry;
@@ -989,9 +991,12 @@ export class DurableChatService {
     });
     held.catch(() => { if (this.#connections.get(record.id) === held) this.#connections.delete(record.id); });
     this.#connections.set(record.id, held);
+    const storeDir = join(this.deps.storesDir, record.storeId);
+    let snapshot: string | undefined;
     let connection: DurableHostConnection;
     try {
       await (await old?.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, false, true);
+      if (newerDurable(current, pinned) && existsSync(storeDir)) snapshot = snapshotStore(storeDir);
       this.deps.locator.setHostEntry(record.id, current);
       release();
       connection = await held;
@@ -999,11 +1004,16 @@ export class DurableChatService {
       release();
       const reason = error instanceof Error ? error.message : String(error);
       this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the new host did not start; rolling back to the old pin");
+      if (snapshot !== undefined) {
+        const failed = restoreStore(storeDir, snapshot);
+        this.deps.logger?.warn({ sessionId: record.id, failed }, "upgrade-restart: restored the store from before the attempt; the attempted one is kept aside");
+      }
       this.deps.locator.setHostEntry(record.id, pinned);
       if (this.#connections.get(record.id) === held) this.#connections.delete(record.id);
       const back = await this.#connection(record).then((restored) => this.#resume(restored)).then(() => "", (again: unknown) => ` It did not start there either (${again instanceof Error ? again.message : String(again)}); the next message tries again.`);
-      throw new Error(`The new host code (${pin.current}) did not start: ${reason}. This Chat is back on its old host code (${pin.revision}).${back}`, { cause: error });
+      throw new Error(`The new host code (${pin.current}) did not start: ${reason}. This Chat is back on its old host code (${pin.revision})${snapshot === undefined ? "" : ", with its store as before the attempt"}.${back}`, { cause: error });
     }
+    if (snapshot !== undefined) rmSync(snapshot, { recursive: true, force: true });
     await this.#resume(connection);
   }
 
@@ -1294,6 +1304,36 @@ function hostMoveRefusal(code: DurableHostProcess["code"]): string | undefined {
   if (pinned === undefined || current === undefined) return "This Chat cannot move to new host code: the Pi Durable version of its host code cannot be read";
   if (compareVersions(current, pinned) < 0) return `This Chat was opened by a newer Pi Durable (${pinned}); the current host is ${current}`;
   return undefined;
+}
+
+/** Whether `entry` runs a newer Pi Durable than `than` (a move that may migrate the store). */
+function newerDurable(entry: string | undefined, than: string | undefined): boolean {
+  const [next, before] = [entry, than].map((path) => (path === undefined ? undefined : durableVersion(path)));
+  return next !== undefined && before !== undefined && compareVersions(next, before) > 0;
+}
+
+/**
+ * A copy of a closed family store (its owner exited, so SQLite's files are consistent), beside it.
+ * ponytail: a full copy per cross-version upgrade (stores are megabytes); copy only session.sqlite if they grow large.
+ */
+function snapshotStore(storeDir: string): string {
+  const snapshot = `${storeDir}.pre-upgrade`;
+  rmSync(snapshot, { recursive: true, force: true });
+  cpSync(storeDir, snapshot, { recursive: true });
+  return snapshot;
+}
+
+/**
+ * Put the snapshot back in place. The attempted store moves aside by rename, so a failed host still running keeps its
+ * own files; its owner.json stays current, so owner epochs only grow. Returns where the attempted store went.
+ */
+function restoreStore(storeDir: string, snapshot: string): string {
+  const failed = `${storeDir}.failed-upgrade`;
+  rmSync(failed, { recursive: true, force: true });
+  renameSync(storeDir, failed);
+  renameSync(snapshot, storeDir);
+  if (existsSync(join(failed, "owner.json"))) copyFileSync(join(failed, "owner.json"), join(storeDir, "owner.json"));
+  return failed;
 }
 
 /**

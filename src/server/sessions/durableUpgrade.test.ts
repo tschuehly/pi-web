@@ -14,6 +14,10 @@ const status = { persisted: true, isStreaming: false, isCompacting: false, isBas
 const events = { publish: () => undefined, publishGlobal: () => undefined, currentSeq: () => 0, hasSessionSubscribers: () => true };
 interface Request { id: number; method: string; params?: Record<string, unknown> }
 
+function isRequest(value: unknown): value is Request {
+  return typeof value === "object" && value !== null && "id" in value && typeof value.id === "number" && "method" in value && typeof value.method === "string";
+}
+
 let ROOT = "";
 afterEach(() => { if (ROOT !== "") rmSync(ROOT, { recursive: true, force: true }); });
 
@@ -48,8 +52,8 @@ class Fake extends EventEmitter implements DurableHostProcess {
 
   reply(request: Request, result: unknown): void { this.emit("message", { id: request.id, result }); }
 
-  send(message: unknown): boolean {
-    const request = message as Request;
+  send(request: unknown): boolean {
+    if (!isRequest(request)) return false;
     this.requests.push(request);
     queueMicrotask(() => {
       if (request.method === "status" && this.onStatus?.(request) === true) return;
@@ -134,5 +138,31 @@ describe("seamless upgrade orchestration", () => {
     expect(reopened.durableHostPin).toBeDefined();
     await expect(back.upgradeHost(s.ref, "now")).rejects.toThrow(/opened by a newer Pi Durable \(1\.5\.2\)/);
     await back.dispose();
+  });
+
+  it("finding 2: a failed start of newer Pi Durable code restores the store before the old code reopens it", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [old, b] = [revision("rev-old", "1.4.0"), revision("rev-b", "1.5.2")];
+    const s = setup(old, b, { failCurrent: true });
+    await s.durable.status(s.ref);
+    writeFileSync(join(s.storeDir, "session.sqlite"), "history");
+    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/back on its old host code/);
+    expect(s.hosts.map((host) => host.code.entry)).toEqual([old, b, old]);
+    // The 1.4.0 host reopened the store as it was before the 1.5.2 host touched it.
+    expect(readFileSync(join(s.storeDir, "session.sqlite"), "utf8")).toBe("history");
+    expect(readFileSync(join(s.storeDir, "opened-by"), "utf8")).toBe(old);
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(old);
+    expect(existsSync(`${s.storeDir}.pre-upgrade`)).toBe(false);
+    await s.durable.dispose();
+  });
+
+  it("finding 2: a successful cross-version upgrade drops its store snapshot", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [old, b] = [revision("rev-old", "1.4.0"), revision("rev-b", "1.5.2")];
+    const s = setup(old, b);
+    await s.durable.status(s.ref);
+    expect((await s.durable.upgradeHost(s.ref, "now")).durableHostPin).toBeUndefined();
+    expect(existsSync(`${s.storeDir}.pre-upgrade`)).toBe(false);
+    await s.durable.dispose();
   });
 });

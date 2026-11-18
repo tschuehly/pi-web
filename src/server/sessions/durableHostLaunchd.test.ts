@@ -608,7 +608,8 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     const { root, daemon } = await fixture();
     const entryA = await revision(root, "rev-a", "1.4.0");
     const broken = await revision(root, "rev-broken", "1.5.2");
-    await writeFile(broken, "process.exit(3);\n");
+    // It migrates the store, then fails before it is ready.
+    await writeFile(broken, 'import { writeFileSync } from "node:fs";\nwriteFileSync(process.argv[process.argv.indexOf("--store") + 1] + "/migrated", "1.5.2");\nprocess.exit(3);\n');
     const first = daemon([], { entry: entryA });
     const chat = await first.durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
@@ -616,8 +617,12 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     const { durable, locator } = daemon([], { entry: broken });
     await durable.reattach();
     expect((await durable.status(ref)).durableHostPin?.current).toBe("rev-broken");
-    await expect(durable.upgradeHost(ref, "now")).rejects.toThrow(/^The new host code \(rev-broken\) did not start: .*\. This Chat is back on its old host code \(rev-a\)\.$/);
+    await expect(durable.upgradeHost(ref, "now")).rejects.toThrow(/^The new host code \(rev-broken\) did not start: .*\. This Chat is back on its old host code \(rev-a\), with its store as before the attempt\.$/);
     expect(locator.durable(chat.id)?.hostEntry).toBe(entryA);
+    // The 1.4.0 host reopened the store as it was before the attempt; the attempted one is kept aside.
+    expect(existsSync(join(root, "data", "durable", chat.id, "migrated"))).toBe(false);
+    expect(existsSync(join(root, "data", "durable", `${chat.id}.failed-upgrade`, "migrated"))).toBe(true);
+    expect(existsSync(join(root, "data", "durable", `${chat.id}.pre-upgrade`))).toBe(false);
     const back = locator.durable(chat.id)?.host;
     expect(back?.revision).toBe(join(await realpath(root), "rev-a"));
     expect(alive(back?.pid ?? 0)).toBe(true);
