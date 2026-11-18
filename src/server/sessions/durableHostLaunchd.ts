@@ -6,7 +6,7 @@ import { connect, type Socket } from "node:net";
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
 import { DURABLE_HOST_PROTOCOL, durableHostLaunchArgs, type DurableHostLauncher, type DurableHostOptions, type DurableHostProcess } from "./durableChatService.js";
-import type { DurableChatRecord, DurableHostAttachment, SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
+import { type DurableChatRecord, type DurableHostAttachment, type SessionRuntimeLocator, storeCodeRefusal } from "./sessionRuntimeLocator.js";
 
 /** Runs `launchctl` with these arguments; rejects with its output on failure. Tests may pass their own. */
 export type Launchctl = (args: string[]) => Promise<void>;
@@ -55,10 +55,18 @@ export function launchdDurableHost(options: DurableHostOptions & {
   return (record, storeDir, launch) => launch?.endJobs === true ? endJobs(context, record, storeDir) : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true);
 }
 
-/** Phase C3: a family stays on the code its host started from; only a revision folder that is gone (pruned) moves it to the current one. */
+/**
+ * Phase C3: a family stays on the code its host started from; only a revision folder that is gone (pruned) moves it to
+ * the current one, and only when that writes no older store (else it throws: older code cannot read the store).
+ * shortcut: a pin recorded before its store code was (no `hostStore`) still falls back unchecked.
+ */
 function familyEntry(context: LaunchContext, record: DurableChatRecord): string {
-  const pinned = context.locator.durable(record.id)?.hostEntry;
-  return pinned !== undefined && existsSync(pinned) ? pinned : context.entry;
+  const durable = context.locator.durable(record.id);
+  const pinned = durable?.hostEntry;
+  if (pinned === undefined || existsSync(pinned)) return pinned ?? context.entry;
+  const refusal = durable?.hostStore === undefined ? undefined : storeCodeRefusal(durable.hostStore, context.entry);
+  if (refusal !== undefined) throw new Error(`${refusal}, and its host code (${dirname(pinned)}) is gone; reinstall it to open this Chat`);
+  return context.entry;
 }
 
 /** The daemon's environment, as a forked host inherited it, less secret-named variables (a plist is a file on disk). */
@@ -141,6 +149,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
 
   async #launch(previousEpoch: number | undefined): Promise<void> {
     const { hostsDir } = this.context;
+    // Phase C3: a family stays on the code its host started from until the owner upgrades it.
+    const entry = familyEntry(this.context, this.record);
     mkdirSync(hostsDir, { recursive: true, mode: 0o700 });
     chmodSync(hostsDir, 0o700);
     mkdirSync(this.storeDir, { recursive: true, mode: 0o700 });
@@ -149,8 +159,6 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     await this.context.launchctl(["bootout", `${this.#domain}/${this.#label}`]).catch(() => undefined);
     rmSync(socket, { force: true });
     const plist = join(hostsDir, `${this.#label}.plist`);
-    // Phase C3: a family stays on the code its host started from until the owner upgrades it.
-    const entry = familyEntry(this.context, this.record);
     this.#entry = entry;
     writeFileSync(plist, launchdPlist({
       Label: this.#label,

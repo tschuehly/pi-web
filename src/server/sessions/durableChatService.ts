@@ -27,7 +27,7 @@ import { cleanSessionName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, ses
 import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
 import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
-import type { DurableChatRecord, SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
+import { compareVersions, durableVersion, type DurableChatRecord, type SessionRuntimeLocator, storeSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
@@ -1447,61 +1447,9 @@ function restartRefusal(code: DurableHostProcess["code"]): string | undefined {
   if (pinned !== current) return `This upgrade changes the store format (Pi Durable ${String(pinned)} to ${String(current)}); use Upgrade host when the Chat is quiet`;
   // Same Pi Durable, but a Workbench document or task at a new version is migrated too: the old code then refuses the store.
   const [pinnedSchema, currentSchema] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : storeSchema(entry)));
-  return pinnedSchema !== undefined && pinnedSchema === currentSchema ? undefined : "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet";
+  return pinnedSchema !== undefined && JSON.stringify(pinnedSchema) === JSON.stringify(currentSchema) ? undefined : "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet";
 }
 
-/** The folder whose `node_modules` Node resolves `@earendil-works/pi-durable` from for a host entry. */
-function durableFolder(entry: string): string | undefined {
-  for (let folder = dirname(entry); ; folder = dirname(folder)) {
-    if (existsSync(join(folder, "node_modules", "@earendil-works", "pi-durable", "package.json"))) return folder;
-    if (dirname(folder) === folder) return undefined;
-  }
-}
-
-/**
- * The `@earendil-works/pi-durable` version a host entry runs, from the package.json Node resolves from the entry's folder
- * (the package exports no `./package.json`); undefined when none is found or it names no numeric version.
- */
-function durableVersion(entry: string): string | undefined {
-  const folder = durableFolder(entry);
-  if (folder === undefined) return undefined;
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(join(folder, "node_modules", "@earendil-works", "pi-durable", "package.json"), "utf8"));
-    const version = isRecord(parsed) ? parsed["version"] : undefined;
-    return typeof version === "string" && /^\d+\.\d+\.\d+/.test(version) ? version : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The store schema a host entry writes, from the Workbench host's `store-schema.json` beside that `node_modules` (every
- * document and task kind with its version), as a comparable string; undefined when it is missing or unreadable.
- */
-function storeSchema(entry: string): string | undefined {
-  const folder = durableFolder(entry);
-  if (folder === undefined) return undefined;
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(join(folder, "store-schema.json"), "utf8"));
-    if (!isRecord(parsed)) return undefined;
-    const [documents, tasks] = [parsed["documents"], parsed["tasks"]];
-    if (!isRecord(documents) || !isRecord(tasks)) return undefined;
-    const sorted = (value: Record<string, unknown>) => Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
-    return JSON.stringify([sorted(documents), sorted(tasks)]);
-  } catch {
-    return undefined;
-  }
-}
-
-/** Orders two versions by major.minor.patch. shortcut: pre-release tags are ignored; Pi Durable ships none today. */
-function compareVersions(a: string, b: string): number {
-  const [left, right] = [a, b].map((version) => version.split(/[.+-]/).slice(0, 3).map(Number));
-  for (let index = 0; index < 3; index++) {
-    const difference = (left?.[index] ?? 0) - (right?.[index] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return 0;
-}
 
 /** A revision folder's short commit (installed folders are git worktrees), else its name. */
 async function shortRevision(folder: string): Promise<string> {

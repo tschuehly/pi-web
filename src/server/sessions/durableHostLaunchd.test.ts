@@ -490,11 +490,11 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
   }, 60_000);
 
   /** A revision folder running the fake host, with the Pi Durable version it installs (none: unreadable) and one store schema. */
-  const revision = async (root: string, name: string, durable?: string) => {
+  const revision = async (root: string, name: string, durable?: string, schema: object = { documents: { "workbench.delegation": 1 }, tasks: {} }) => {
     const modules = join(root, name, "node_modules", "@earendil-works", "pi-durable");
     await mkdir(modules, { recursive: true });
     if (durable !== undefined) await writeFile(join(modules, "package.json"), JSON.stringify({ name: "@earendil-works/pi-durable", version: durable }));
-    await writeFile(join(root, name, "store-schema.json"), JSON.stringify({ documents: { "workbench.delegation": 1 }, tasks: {} }));
+    await writeFile(join(root, name, "store-schema.json"), JSON.stringify(schema));
     await writeFile(join(root, name, "host.mjs"), HOST);
     return join(await realpath(join(root, name)), "host.mjs");
   };
@@ -577,6 +577,38 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     }
     await daemon([], { entry: newer }).durable.stop(ref);
   }, 90_000);
+
+  it("round 4 F5: a family whose pinned revision folder is gone starts on the current code only if that is not older than the pin", async () => {
+    const { root, hostsDir } = await fixture();
+    const locator = new SessionRuntimeLocator(join(root, "data"));
+    const pinned = await revision(root, "rev-pruned", "1.5.2", { documents: { "workbench.delegation": 2 }, tasks: {} });
+    const cases = [
+      [await revision(root, "rev-old", "1.4.0", { documents: { "workbench.delegation": 2 }, tasks: {} }), /opened by a newer Pi Durable \(1\.5\.2\)/],
+      [await revision(root, "rev-old-schema", "1.5.2"), /newer Workbench store schema/],
+      [await revision(root, "rev-unknown"), /opened by a newer Pi Durable \(1\.5\.2\)/],
+      [await revision(root, "rev-new", "1.5.3", { documents: { "workbench.delegation": 2 }, tasks: {} }), undefined],
+    ] as const;
+    const records = cases.map(() => { const record = locator.create("/work/a"); locator.setHostEntry(record.id, pinned); return record; });
+    await rm(join(root, "rev-pruned"), { recursive: true });
+    for (const [index, [current, refusal]] of cases.entries()) {
+      const record = records[index];
+      if (record === undefined) throw new Error("no record");
+      let bootstrapped = "";
+      const launch = launchdDurableHost({ entry: current, model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, startTimeoutMs: 100, launchctl: (args) => {
+        if (args[0] === "bootstrap") { bootstrapped = readFileSync(args[2] ?? "", "utf8"); return Promise.reject(new Error("bootstrap captured")); }
+        return Promise.resolve();
+      } });
+      const host = launch(record, join(root, "store"));
+      const errors: Error[] = [];
+      host.on("error", (error: Error) => { errors.push(error); });
+      await new Promise<void>((resolve) => { host.on("exit", () => { resolve(); }); });
+      if (refusal === undefined) expect(bootstrapped).toContain(`<string>${current}</string>`);
+      else {
+        expect(bootstrapped, current).toBe("");
+        expect(errors.map((error) => error.message).join("\n")).toMatch(refusal);
+      }
+    }
+  }, 30_000);
 
   it("A idle close upgrades: an idle-closed pinned Chat reopens on the current revision; one a newer Pi Durable opened stays pinned", async () => {
     const { root, daemon } = await fixture();
