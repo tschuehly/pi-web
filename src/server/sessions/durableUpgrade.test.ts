@@ -434,6 +434,114 @@ describe("seamless upgrade orchestration", () => {
     await s.durable.dispose();
   });
 
+  it("review P1: an automatic store-format upgrade never closes a host that admitted input after the quiet check; it moves once quiet", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.4.0"), revision("rev-b", "1.5.2")];
+    const s = setup(a, b, { autoUpgrade: true });
+    await s.durable.status(s.ref);
+    const host = s.hosts[0];
+    if (host === undefined) throw new Error("no host");
+    let release!: () => void;
+    let sampled!: () => void;
+    const sampledQuiet = new Promise<void>((resolve) => { sampled = resolve; });
+    host.onStatus = (request) => { release = () => { host.reply(request, status); }; host.onStatus = undefined; sampled(); return true; };
+    const moving = s.durable.upgradePendingHosts();
+    await sampledQuiet;
+    await s.durable.prompt(s.ref, "owner input just arrived", undefined, undefined, { operationId: "input-race" });
+    release();
+    await moving;
+    expect(host.requests.find((request) => request.method === "close")?.params).toEqual({ reason: "upgrade", ifRestartSafe: true });
+    expect(s.hosts).toHaveLength(1);
+    const after = await s.durable.status(s.ref);
+    expect(after.isStreaming).toBe(true);
+    expect(after.durableHostPin?.pending).toBe(true);
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+    expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
+    // The turn ends: the next safe moment moves it, and the new host is resumed.
+    host.streaming = false;
+    await s.durable.upgradePendingHosts();
+    expect(s.hosts.map((started) => started.code.entry)).toEqual([a, b]);
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(b);
+    expect(s.hosts[1]?.requests.filter((request) => request.method === "resume")).toHaveLength(1);
+    await s.durable.dispose();
+  });
+
+  it("review P2: a request during Upgrade host's close waits for the new host; the running host and the pin end on the current code", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", { ...SCHEMA, documents: { "workbench.delegation": 2 } })];
+    const s = setup(a, b);
+    await s.durable.status(s.ref);
+    const old = s.hosts[0];
+    if (old === undefined) throw new Error("no host");
+    const send = old.send.bind(old);
+    let release!: () => void;
+    let held!: () => void;
+    const closing = new Promise<void>((resolve) => { held = resolve; });
+    old.send = (request) => {
+      if (!isRequest(request) || request.method !== "close") return send(request);
+      release = () => { send(request); };
+      held();
+      return true;
+    };
+    const moving = s.durable.upgradeHost(s.ref);
+    await closing;
+    const meanwhile = s.durable.status(s.ref);
+    release();
+    await moving;
+    await meanwhile;
+    expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b]);
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(b);
+    expect((await s.durable.status(s.ref)).durableHostPin).toBeUndefined();
+    expect(s.hosts[1]?.requests.some((request) => request.method === "status")).toBe(true);
+    await s.durable.dispose();
+  });
+
+  it("review: a failed new start across a store-format change never rolls back; the error says so and the next use retries the new code", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.4.0"), revision("rev-b", "1.5.2")];
+    const s = setup(a, b, { failCurrent: true });
+    await s.durable.status(s.ref);
+    await expect(s.durable.upgradeHost(s.ref)).rejects.toThrow(/did not start: .*This upgrade changes the store format, so this Chat stays on the new code; the next message tries again\.$/);
+    expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b]);
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(b);
+    expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
+    await expect(s.durable.status(s.ref)).rejects.toThrow();
+    expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b, b]);
+    await s.durable.dispose();
+  });
+
+  it("review: a daemon that dies during a store-format upgrade leaves no way back on disk; the next daemon never rolls back to the old code", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [old, b] = [revision("rev-old", "1.4.0"), revision("rev-b", "1.5.2")];
+    const daemon = (newHost: "hang" | true) => {
+      const locator = new SessionRuntimeLocator(ROOT);
+      const hosts: Fake[] = [];
+      const launch: DurableHostLauncher = (chat) => {
+        const entry = locator.durable(chat.id)?.hostEntry ?? b;
+        const host = new Fake({ entry, current: b }, () => { locator.setHost(chat.id, undefined); }, entry === b ? newHost : false);
+        hosts.push(host);
+        return host;
+      };
+      return { locator, hosts, durable: new DurableChatService({ locator, events, launch, storesDir: join(ROOT, "stores") }) };
+    };
+    const first = daemon("hang");
+    const record = first.locator.create("/work", "chat");
+    first.locator.setHostEntry(record.id, old);
+    const ref = { id: record.id, cwd: record.cwd };
+    await first.durable.status(ref);
+    void first.durable.upgradeHost(ref).catch(() => undefined);
+    await new Promise<void>((resolve) => { const check = () => { if (first.hosts.length === 2) resolve(); else setTimeout(check, 5); }; check(); });
+    void first.durable.dispose();
+    expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toEqual({});
+
+    const next = daemon(true);
+    await next.durable.reattach();
+    expect(next.hosts.map((host) => host.code.entry)).toEqual([b]);
+    expect(next.locator.durable(record.id)?.hostEntry).toBe(b);
+    expect(next.locator.durable(record.id)?.upgrade).toBeUndefined();
+    await next.durable.dispose();
+  });
+
   it("finding 5: a daemon that dies before the new host's resume leaves the obligation on disk; the next daemon resumes it", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
     const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];

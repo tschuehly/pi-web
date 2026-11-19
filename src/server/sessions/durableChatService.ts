@@ -148,7 +148,7 @@ class DurableHostConnection {
   pin: { revision: string; current: string } | undefined;
   /** Seamless upgrade B: the daemon restarts this pinned family on current code at its next safe moment. */
   upgradePending = false;
-  /** B for an upgrade that changes the store format: no restart with fallback, only the quiet move (see `#moveQuiet`). */
+  /** B for an upgrade that changes the store format: only once the family is quiet, and with no fallback (see `#upgradeRestart`). */
   upgradeQuiet = false;
   /** The host's ready message says it closes only if still restart-safe, checked and quiesced in the host (B's close). */
   closeIfRestartSafe = false;
@@ -974,13 +974,14 @@ export class DurableChatService {
   /**
    * Move a pinned family to the host code new Chats get (Phase C3), on the owner's request. Never to older Pi Durable
    * code (after a roll back): it cannot read a store newer code opened, so the family stays on its host and pin.
-   * - `quiet` (Upgrade host): refused unless the family is quiet; its host closes in order and the next one starts from
-   *   the current revision folder at the next message.
+   * - `quiet` (Upgrade host): refused unless the family is quiet; its host closes in order (only if still quiet, decided
+   *   in the host, when it can) and the new host starts at once from the current revision folder, with no fallback.
    * - `now` (Upgrade now, seamless upgrade C): whatever runs, the host closes in order (`upgrade-restart`) and the new
    *   host starts at once and resumes, recovering as after any restart (see `upgradeRepeats`). If the new host does not
    *   start, the family goes back to its old pin and host, and the error says so.
    * - `cancel`: drop the pending automatic upgrade (B; see `upgradePendingHosts`).
-   * shortcut (quiet): input arriving between the quiet check and the close waits, paused, for the next message.
+   * shortcut (quiet, a host without the conditional close): input arriving between the quiet check and the close waits,
+   * paused, for the next message.
    */
   async upgradeHost(ref: SessionRouteRef, mode: "quiet" | "now" | "cancel" = "quiet"): Promise<ClientSessionStatus> {
     const record = this.#record(ref);
@@ -1005,24 +1006,24 @@ export class DurableChatService {
       // Served Pages do not block the owner's click: `status` below starts the new host at once, which reopens them on the
       // same port, so open tabs miss only the restart.
       const busy = familyBusy(hostStatus((await connection.request("status")).result), false);
-      if (busy !== undefined) throw new Error(`This Chat cannot move to new host code while ${busy}; try again when it is quiet`);
-      await this.#moveQuiet(ref, connection.code);
+      const refused = busy ?? await this.#upgradeOnce(record, pin, connection.code, connection.closeIfRestartSafe ? "ifRestartSafe" : "plain", true);
+      if (refused !== undefined) throw new Error(`This Chat cannot move to new host code while ${refused}; try again when it is quiet`);
       return this.status(ref);
     }
-    await this.#upgradeOnce(record, pin, connection.code);
+    await this.#upgradeOnce(record, pin, connection.code, "upgrade");
     return this.status(ref);
   }
 
   /**
    * One ordered restart per family at a time, until its resume: a later request (a double click, B) joins it. Only within
-   * one Pi Durable version (see `restartRefusal`).
+   * one Pi Durable version (see `restartRefusal`), unless with `noFallback`, which only never moves to older code.
    */
-  #upgradeOnce(record: DurableChatRecord, pin: { revision: string; current: string }, code: DurableHostProcess["code"], ifRestartSafe = false): Promise<string | undefined> {
+  #upgradeOnce(record: DurableChatRecord, pin: { revision: string; current: string }, code: DurableHostProcess["code"], close: UpgradeClose, noFallback = false): Promise<string | undefined> {
     let running = this.#upgrades.get(record.id);
     if (running === undefined) {
-      const refusal = restartRefusal(code);
+      const refusal = noFallback ? hostMoveRefusal(code) : restartRefusal(code);
       if (refusal !== undefined) return Promise.reject(new Error(refusal));
-      running = this.#upgradeRestart(record, pin, code?.current, ifRestartSafe).finally(() => { this.#upgrades.delete(record.id); });
+      running = this.#upgradeRestart(record, pin, code?.current, close, noFallback).finally(() => { this.#upgrades.delete(record.id); });
       this.#upgrades.set(record.id, running);
     }
     return running;
@@ -1033,12 +1034,15 @@ export class DurableChatService {
    * it; else move the pin back and start the old code once more. The store is never copied or moved: both codes run the
    * same Pi Durable, so a rollback only restores the pin. While it runs, the family's connection is a handover every
    * request waits on, settled exactly once with the host the family ends on (the old one when it never closed), whatever
-   * fails. `ifRestartSafe` (B): the old host closes only if it still runs nothing but restart-surviving work, decided in
-   * the host, which admits no input meanwhile; returns its refusal, and the family stays on its host. The upgrade is on
-   * disk first (`DurableChatRecord.upgrade`) and cleared only once a host acknowledged its resume, so a daemon that dies
-   * or fails before then leaves the owed resume to the next one (`#recoverUpgrade`).
+   * fails. `ifRestartSafe` (B, Upgrade host): the old host closes only if it still runs nothing but restart-surviving
+   * work, decided in the host, which admits no input meanwhile; returns its refusal, and the family stays on its host.
+   * `plain`: Upgrade host's close of a host without that check, as an idle close (no resume follows). `noFallback` (a
+   * store-format change, Upgrade host): the new code may have migrated the store, so a failed start leaves the pin on it
+   * and the next use tries it again; the upgrade on disk names no `from`, so no daemon rolls it back either. The upgrade
+   * is on disk first (`DurableChatRecord.upgrade`) and cleared only once a host acknowledged its resume, so a daemon that
+   * dies or fails before then leaves the owed resume to the next one (`#recoverUpgrade`).
    */
-  async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined, ifRestartSafe: boolean): Promise<string | undefined> {
+  async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined, close: UpgradeClose, noFallback: boolean): Promise<string | undefined> {
     const id = record.id;
     const pinned = this.deps.locator.durable(id)?.hostEntry;
     const old = this.#connections.get(id);
@@ -1068,8 +1072,9 @@ export class DurableChatService {
     };
     this.#connections.set(id, held);
     try {
-      this.deps.locator.setUpgradeState(id, "upgrade", pinned === undefined ? {} : { from: pinned });
-      const busy = await (await old.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, { reason: "upgrade", ...(ifRestartSafe ? { ifRestartSafe: true as const } : {}) });
+      this.deps.locator.setUpgradeState(id, "upgrade", pinned === undefined || noFallback ? {} : { from: pinned });
+      const params = close === "plain" ? undefined : { reason: "upgrade" as const, ...(close === "ifRestartSafe" ? { ifRestartSafe: true as const } : {}) };
+      const busy = await (await old.catch(() => undefined))?.close(this.deps.closeGraceMs ?? 5000, params);
       if (busy !== undefined) {
         this.#upgradeDone(id);
         this.deps.logger?.info?.({ sessionId: id, busy }, "upgrade-restart: the host refused to close; the family stays on its host");
@@ -1085,13 +1090,20 @@ export class DurableChatService {
     // The old host is gone: the family ends on exactly one new host, the current code's or, failing that, the old code's.
     const next = open(current);
     const connection = await next.catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
+    if (connection instanceof Error && noFallback) {
+      this.deps.logger?.warn({ sessionId: id, err: connection }, "upgrade-restart: the new host did not start; no fallback across a store-format change");
+      handOver(next);
+      this.#upgradeDone(id);
+      throw new Error(`The new host code (${pin.current}) did not start: ${connection.message}. This upgrade changes the store format, so this Chat stays on the new code; the next message tries again.`, { cause: connection });
+    }
     if (connection instanceof Error) {
       const back = await this.#rollBack(record, open(pinned), connection, handOver);
       throw new Error(`The new host code (${pin.current}) did not start: ${connection.message}. This Chat is back on its old host code (${pin.revision}).${back}`, { cause: connection });
     }
     // Settled before the resume is sent, which still goes first: waiters run only after it is on its way.
     handOver(next);
-    await this.#finishUpgrade(id, connection);
+    if (close === "plain") this.#upgradeDone(id);
+    else await this.#finishUpgrade(id, connection);
     return undefined;
   }
 
@@ -1136,7 +1148,8 @@ export class DurableChatService {
 
   /**
    * A daemon that died during an Upgrade now (`DurableChatRecord.upgrade`): start or reattach the family's host on its
-   * pin and send the resume it still owes. A new host that does not start rolls back as Upgrade now does.
+   * pin and send the resume it still owes. A new host that does not start rolls back as Upgrade now does, unless the
+   * upgrade names no `from` (a store-format change, see `#upgradeRestart`).
    */
   async #recoverUpgrade(record: DurableChatRecord, upgrade: NonNullable<DurableChatRecord["upgrade"]>): Promise<void> {
     this.deps.logger?.info?.({ sessionId: record.id }, "upgrade-restart: finishing an upgrade an earlier daemon left");
@@ -1160,16 +1173,6 @@ export class DurableChatService {
     return declined !== undefined && declined === code?.current;
   }
 
-  /**
-   * Close the family and start it at once on the current host code, which reopens its Atelier Pages. No fallback to the
-   * old code: a store-format change may already have run, and a failed start shows at the next use, as before.
-   */
-  async #moveQuiet(ref: SessionRouteRef, code: DurableHostProcess["code"]): Promise<void> {
-    await this.#end(ref.id);
-    this.deps.locator.setHostEntry(ref.id, code?.current);
-    await this.#for(ref);
-  }
-
   /** Resume a host Upgrade now started; a host without `resume` (older code) stays paused until the next message. */
   async #resume(connection: DurableHostConnection): Promise<void> {
     await connection.request("resume", { reason: "upgrade-restart" }).catch((error: unknown) => {
@@ -1183,7 +1186,8 @@ export class DurableChatService {
    * background bash, watchers, Atelier Pages; see `restartSafe`). A running turn, queued input, a running tool or
    * children wait. The daemon's status check only selects candidates: the host itself checks again as it closes and
    * admits no input meanwhile (only hosts that say so are pending). Runs on each status the host publishes and on the
-   * idle sweep. A failed start rolls back (as Upgrade now) and leaves the family pinned, with a notice in its inbox.
+   * idle sweep. A failed start rolls back (as Upgrade now) and leaves the family pinned, with a notice in its inbox; across a
+   * store-format change (only once quiet, see `familyBusy`) it never rolls back, the notice says so, and the next use retries.
    */
   async upgradePendingHosts(only?: string): Promise<void> {
     for (const [id, pending] of [...this.#connections]) {
@@ -1199,8 +1203,7 @@ export class DurableChatService {
         // A store-format change moves only when the family is quiet, as the Upgrade host click does.
         if (connection.upgradeQuiet && familyBusy(status, false) !== undefined) continue;
         this.deps.logger?.info?.({ sessionId: id }, "upgrade-restart: automatic upgrade at a safe moment");
-        const move = connection.upgradeQuiet ? this.#moveQuiet({ id, cwd: record.cwd }, connection.code) : this.#upgradeOnce(record, pin, connection.code, true);
-        await move.catch((error: unknown) => {
+        await this.#upgradeOnce(record, pin, connection.code, "ifRestartSafe", connection.upgradeQuiet).catch((error: unknown) => {
           this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
           this.deps.locator.setUpgradeState(id, "upgradeDeclined", connection.code?.current);
           const generation = this.#notificationGenerations.get(id);
@@ -1273,7 +1276,7 @@ export class DurableChatService {
       const refusal = restartRefusal(host.code);
       connection.upgradeQuiet = refusal !== undefined && hostMoveRefusal(host.code) === undefined;
       connection.upgradePending = this.deps.autoUpgrade === true && connection.pin !== undefined && !this.#declined(record.id, host.code)
-        && (connection.upgradeQuiet || (refusal === undefined && connection.closeIfRestartSafe));
+        && (connection.upgradeQuiet || refusal === undefined) && connection.closeIfRestartSafe;
       const loaded = await this.deps.resources?.(record.cwd, connection.contributed).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
@@ -1460,6 +1463,9 @@ async function hostPin(code: DurableHostProcess["code"], revision: string | unde
   if (code === undefined || code.entry === code.current) return undefined;
   return { revision: await shortRevision(revision ?? dirname(code.entry)), current: await shortRevision(dirname(code.current)) };
 }
+
+/** How an upgrade closes the old host (see `#upgradeRestart`). */
+type UpgradeClose = "upgrade" | "ifRestartSafe" | "plain";
 
 /**
  * Why a pinned family cannot move to the current host code, undefined when it can: never to code that writes an older

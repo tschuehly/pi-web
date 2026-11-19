@@ -539,8 +539,8 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     expect(current?.revision).toBe(join(await realpath(root), "rev-b"));
     expect(jobPid(label)).toBe(current?.pid);
     expect(readFileSync(join(hostsDir, `${label}.plist`), "utf8")).toContain(`<string>${entryB}</string>`);
-    // The stop above ended the host (its jobs with it); the upgrade's close keeps the family's work.
-    expect(requests(root, chat.id).filter((method) => method.startsWith("close"))).toEqual(["close:end", "close"]);
+    // The stop above ended the host (its jobs with it); the upgrade's close (checked quiet in the host) keeps the family's work.
+    expect(requests(root, chat.id).filter((method) => method.startsWith("close"))).toEqual(["close:end", "close:upgrade"]);
 
     // A later daemon on rev-b finds nothing pinned.
     await second.durable.dispose();
