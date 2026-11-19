@@ -159,15 +159,12 @@ describe("seamless upgrade orchestration", () => {
     await back.dispose();
   });
 
-  it("A: Upgrade now and the automatic upgrade refuse a move to another Pi Durable version; the pin and store stay as they were", async () => {
+  it("A: Upgrade now refuses a move to another Pi Durable version; the pin and store stay as they were", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
     const [old, b] = [revision("rev-old", "1.4.0"), revision("rev-b", "1.5.2")];
-    const s = setup(old, b, { autoUpgrade: true });
-    const pinned = await s.durable.status(s.ref);
+    const s = setup(old, b);
+    await s.durable.status(s.ref);
     writeFileSync(join(s.storeDir, "session.sqlite"), "history");
-    // Not pending: the automatic upgrade never moves it either.
-    expect(pinned.durableHostPin?.pending).toBeUndefined();
-    await s.durable.upgradePendingHosts();
     await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow("This upgrade changes the store format (Pi Durable 1.4.0 to 1.5.2); use Upgrade host when the Chat is quiet");
     expect(s.hosts).toHaveLength(1);
     expect(s.hosts[0]?.requests.map((request) => request.method)).not.toContain("close");
@@ -179,7 +176,7 @@ describe("seamless upgrade orchestration", () => {
     await s.durable.dispose();
   });
 
-  it("round 4 F1: Upgrade now and the automatic upgrade refuse a move to another store schema, or one they cannot read, within one Pi Durable version", async () => {
+  it("round 4 F1: Upgrade now refuses a move to another store schema, or one it cannot read, within one Pi Durable version", async () => {
     for (const [schema, refusal] of [
       [{ ...SCHEMA, documents: { "workbench.delegation": 2 } }, "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet"],
       // Code without the file is older than a declared schema (round 5): refused as any move to an older store is.
@@ -187,9 +184,8 @@ describe("seamless upgrade orchestration", () => {
     ] as const) {
       ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
       const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", schema)];
-      const s = setup(a, b, { autoUpgrade: true });
-      expect((await s.durable.status(s.ref)).durableHostPin?.pending).toBeUndefined();
-      await s.durable.upgradePendingHosts();
+      const s = setup(a, b);
+      await s.durable.status(s.ref);
       await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(refusal);
       expect(s.hosts).toHaveLength(1);
       expect(s.hosts[0]?.requests.map((request) => request.method)).not.toContain("close");
@@ -232,7 +228,8 @@ describe("seamless upgrade orchestration", () => {
     const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", { ...SCHEMA, documents: { "workbench.delegation": 2 } })];
     const s = setup(a, b, { subscribers: false });
     await s.durable.status(s.ref);
-    const old = s.hosts[0]!;
+    const [old] = s.hosts;
+    if (old === undefined) throw new Error("no host");
     old.onStatus = (request) => {
       old.reply(request, { ...status, extensionStatuses: { "pi-workbench:atelier": JSON.stringify({ schemaVersion: 1, serving: true }) } });
       return true;
@@ -245,6 +242,37 @@ describe("seamless upgrade orchestration", () => {
     expect(old.requests.map((request) => request.method)).toContain("close");
     expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(b);
     expect(s.hosts).toHaveLength(2);
+    await s.durable.dispose();
+  });
+
+  it("B: a store-format change moves by itself only when the Chat is quiet, Pages or not, on a new host started at once; never to a store it cannot read", async () => {
+    for (const [pinVersion, schema] of [["1.4.0", SCHEMA], ["1.5.2", { ...SCHEMA, documents: { "workbench.delegation": 2 } }]] as const) {
+      ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+      const [a, b] = [revision("rev-a", pinVersion), revision("rev-b", "1.5.2", schema)];
+      const s = setup(a, b, { autoUpgrade: true });
+      expect((await s.durable.status(s.ref)).durableHostPin?.pending).toBe(true);
+      const [old] = s.hosts;
+    if (old === undefined) throw new Error("no host");
+      let extra: Record<string, unknown> = { pendingAsks: [{ id: "q" }] };
+      old.onStatus = (request) => {
+        old.reply(request, { ...status, extensionStatuses: { "pi-workbench:atelier": "{}" }, ...extra });
+        return true;
+      };
+      // An open question keeps it: the quiet move would close the host under it.
+      await s.durable.upgradePendingHosts();
+      expect(old.requests.map((request) => request.method)).not.toContain("close");
+      extra = {};
+      await s.durable.upgradePendingHosts();
+      expect(old.requests.map((request) => request.method)).toContain("close");
+      expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(b);
+      expect(s.hosts).toHaveLength(2);
+      await s.durable.dispose();
+      rmSync(ROOT, { recursive: true, force: true });
+    }
+    // Code that cannot read the store is never pending.
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const s = setup(revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", null), { autoUpgrade: true });
+    expect((await s.durable.status(s.ref)).durableHostPin?.pending).toBeUndefined();
     await s.durable.dispose();
   });
 

@@ -148,6 +148,8 @@ class DurableHostConnection {
   pin: { revision: string; current: string } | undefined;
   /** Seamless upgrade B: the daemon restarts this pinned family on current code at its next safe moment. */
   upgradePending = false;
+  /** B for an upgrade that changes the store format: no restart with fallback, only the quiet move (see `#moveQuiet`). */
+  upgradeQuiet = false;
   /** The host's ready message says it closes only if still restart-safe, checked and quiesced in the host (B's close). */
   closeIfRestartSafe = false;
   /** Resolves when the host process has exited, so its store lock is released. */
@@ -1004,8 +1006,7 @@ export class DurableChatService {
       // same port, so open tabs miss only the restart.
       const busy = familyBusy(hostStatus((await connection.request("status")).result), false);
       if (busy !== undefined) throw new Error(`This Chat cannot move to new host code while ${busy}; try again when it is quiet`);
-      await this.#end(record.id);
-      this.deps.locator.setHostEntry(record.id, connection.code?.current);
+      await this.#moveQuiet(ref, connection.code);
       return this.status(ref);
     }
     await this.#upgradeOnce(record, pin, connection.code);
@@ -1159,6 +1160,16 @@ export class DurableChatService {
     return declined !== undefined && declined === code?.current;
   }
 
+  /**
+   * Close the family and start it at once on the current host code, which reopens its Atelier Pages. No fallback to the
+   * old code: a store-format change may already have run, and a failed start shows at the next use, as before.
+   */
+  async #moveQuiet(ref: SessionRouteRef, code: DurableHostProcess["code"]): Promise<void> {
+    await this.#end(ref.id);
+    this.deps.locator.setHostEntry(ref.id, code?.current);
+    await this.#for(ref);
+  }
+
   /** Resume a host Upgrade now started; a host without `resume` (older code) stays paused until the next message. */
   async #resume(connection: DurableHostConnection): Promise<void> {
     await connection.request("resume", { reason: "upgrade-restart" }).catch((error: unknown) => {
@@ -1185,8 +1196,11 @@ export class DurableChatService {
         if (connection?.upgradePending !== true || pin === undefined || record === undefined || this.#connections.get(id) !== pending) continue;
         const status = await connection.request("status").then(({ result }) => hostStatus(result), () => undefined);
         if (status === undefined || !restartSafe(status) || this.#declined(id, connection.code) || this.#connections.get(id) !== pending) continue;
+        // A store-format change moves only when the family is quiet, as the Upgrade host click does.
+        if (connection.upgradeQuiet && familyBusy(status, false) !== undefined) continue;
         this.deps.logger?.info?.({ sessionId: id }, "upgrade-restart: automatic upgrade at a safe moment");
-        await this.#upgradeOnce(record, pin, connection.code, true).catch((error: unknown) => {
+        const move = connection.upgradeQuiet ? this.#moveQuiet({ id, cwd: record.cwd }, connection.code) : this.#upgradeOnce(record, pin, connection.code, true);
+        await move.catch((error: unknown) => {
           this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
           this.deps.locator.setUpgradeState(id, "upgradeDeclined", connection.code?.current);
           const generation = this.#notificationGenerations.get(id);
@@ -1256,7 +1270,10 @@ export class DurableChatService {
     const opened = connection.ready.then(async () => {
       this.#capabilities.set(record.id, connection.capabilities);
       connection.pin = await hostPin(host.code, connection.revision);
-      connection.upgradePending = this.deps.autoUpgrade === true && connection.closeIfRestartSafe && connection.pin !== undefined && !this.#declined(record.id, host.code) && restartRefusal(host.code) === undefined;
+      const refusal = restartRefusal(host.code);
+      connection.upgradeQuiet = refusal !== undefined && hostMoveRefusal(host.code) === undefined;
+      connection.upgradePending = this.deps.autoUpgrade === true && connection.pin !== undefined && !this.#declined(record.id, host.code)
+        && (connection.upgradeQuiet || (refusal === undefined && connection.closeIfRestartSafe));
       const loaded = await this.deps.resources?.(record.cwd, connection.contributed).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
