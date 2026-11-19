@@ -3015,9 +3015,12 @@ export class PiSessionService implements SessionRouteService {
   private async coldBranch(ref: PiSessionRef): Promise<unknown[] | undefined> {
     const loaded = () => this.activeForRef(ref) !== undefined || this.startupSessionForRef(ref) !== undefined;
     if (loaded() || this.sessionManager.readBranch === undefined) return undefined;
-    const match = await this.sessionManager.resolveSessionFile(ref.cwd, ref.id);
-    if (match === undefined || !cwdPathsEqual(match.cwd, ref.cwd)) return undefined;
-    const branch = await this.sessionManager.readBranch(match.path);
+    // As getActive opens it: an archived Chat from its archive file, else its transcript by ID.
+    const archivePath = (await this.getArchived(ref))?.archivePath;
+    const match = archivePath === undefined ? await this.sessionManager.resolveSessionFile(ref.cwd, ref.id) : undefined;
+    const path = archivePath ?? (match !== undefined && cwdPathsEqual(match.cwd, ref.cwd) ? match.path : undefined);
+    if (path === undefined) return undefined;
+    const branch = await this.sessionManager.readBranch(path);
     // Opened while the file was read: the runtime's view wins, as for a loaded Chat.
     return loaded() ? undefined : branch;
   }

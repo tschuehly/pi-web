@@ -109,13 +109,19 @@ function endJobs(context: LaunchContext, record: DurableChatRecord, storeDir: st
 /**
  * Read the history of a family no host runs, with a plain child (`--read-transcript`, over its IPC channel), not a job.
  * From the current code when it writes exactly the pin's store (older pins have no reader; newer code could migrate a
- * store its pinned host must still open), else from the pin.
+ * store its pinned host must still open), else from the pin while its folder is there. Otherwise (no pin, or a pruned
+ * one) the read fails and the caller starts the host, whose start records the code that then writes the store.
  */
 function readTranscript(context: LaunchContext, record: DurableChatRecord, storeDir: string): DurableHostProcess {
-  const pinned = context.locator.durable(record.id)?.hostStore;
+  const durable = context.locator.durable(record.id);
   const current = storeCode(context.entry);
-  const same = pinned !== undefined && storeCodeRefusal(pinned, current) === undefined && storeCodeRefusal(current, pinned) === undefined;
-  const entry = same ? context.entry : familyEntry(context, record);
+  const same = durable?.hostStore !== undefined && storeCodeRefusal(durable.hostStore, current) === undefined && storeCodeRefusal(current, durable.hostStore) === undefined;
+  const entry = same ? context.entry : durable?.hostEntry !== undefined && existsSync(durable.hostEntry) ? durable.hostEntry : undefined;
+  if (entry === undefined) {
+    const refused = Object.assign(new EventEmitter(), { send: () => false, kill: () => false });
+    queueMicrotask(() => refused.emit("exit", 1, null));
+    return refused;
+  }
   mkdirSync(storeDir, { recursive: true, mode: 0o700 });
   const log = openSync(join(storeDir, "host.log"), "a", 0o600);
   try {

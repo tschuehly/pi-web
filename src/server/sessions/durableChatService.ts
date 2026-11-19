@@ -493,15 +493,25 @@ export class DurableChatService {
     const running = this.#coldReads.get(record.id);
     if (running !== undefined) return running;
     // ponytail: one read at a time daemon-wide (each is a Node process opening the store); a sweep of N Chats takes N reads.
+    // Never rejects: a reader that cannot start (a launcher refusal, a spawn error) is a failed read, and the next one runs.
     const read = this.#coldQueue.then(() => new Promise<unknown[] | undefined>((resolve) => {
+      const failed = (error: unknown) => {
+        this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat history reader failed");
+        resolve(undefined);
+      };
       let messages: unknown[] | undefined;
-      const reader = this.deps.launch(record, join(this.deps.storesDir, record.storeId), { readTranscript: true });
-      reader.on("message", (message) => {
-        const transcript = isRecord(message) && isRecord(message["transcript"]) ? message["transcript"] : undefined;
-        if (Array.isArray(transcript?.["messages"])) messages = transcript["messages"];
-      });
-      reader.on("error", (error) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat history reader failed"); });
-      reader.on("exit", (code) => { resolve(code === 0 ? messages : undefined); });
+      try {
+        const reader = this.deps.launch(record, join(this.deps.storesDir, record.storeId), { readTranscript: true });
+        reader.on("message", (message) => {
+          const transcript = isRecord(message) && isRecord(message["transcript"]) ? message["transcript"] : undefined;
+          if (Array.isArray(transcript?.["messages"])) messages = transcript["messages"];
+        });
+        // A spawn failure emits "error" and may never emit "exit".
+        reader.on("error", failed);
+        reader.on("exit", (code) => { resolve(code === 0 ? messages : undefined); });
+      } catch (error) {
+        failed(error);
+      }
     })).finally(() => { this.#coldReads.delete(record.id); });
     this.#coldQueue = read.then(() => undefined);
     this.#coldReads.set(record.id, read);

@@ -207,6 +207,35 @@ describe("Durable Chats", () => {
     expect(launches).toEqual([{ readTranscript: true }, { readTranscript: false }]);
   });
 
+  it("recovers from a reader that cannot start: a launcher refusal or a spawn error fails that read only, and the next read runs", async () => {
+    let mode: "throw" | "error" | "ok" = "throw";
+    const hosts: FakeHost[] = [];
+    const launch = (_record: unknown, _storeDir: string, options?: { readTranscript?: boolean }) => {
+      if (options?.readTranscript !== true) {
+        const host = new FakeHost();
+        host.answer = (request) => (request.method === "transcript" ? { messages: [{ role: "user", content: "live" }], partial: null, status } : status);
+        hosts.push(host);
+        return host;
+      }
+      if (mode === "throw") throw new Error("pinned host code is gone");
+      const reader = Object.assign(new EventEmitter(), { send: () => false, kill: () => false });
+      // A spawn failure: "error" and no "exit".
+      if (mode === "error") queueMicrotask(() => reader.emit("error", new Error("spawn ENOENT")));
+      else queueMicrotask(() => { reader.emit("message", { transcript: { messages: [{ role: "user", content: "stored" }] } }); reader.emit("exit", 0, null); });
+      return reader;
+    };
+    const { durable } = await service(undefined, undefined, { launch });
+    const [a, b, c] = [await durable.start("/work/a"), await durable.start("/work/b"), await durable.start("/work/c")];
+    for (const host of hosts.splice(0)) host.kill();
+
+    expect((await durable.messages({ id: a.id, cwd: a.cwd })).messages).toEqual([{ role: "user", content: "live" }]);
+    mode = "error";
+    expect((await durable.messages({ id: b.id, cwd: b.cwd })).messages).toEqual([{ role: "user", content: "live" }]);
+    mode = "ok";
+    expect((await durable.messages({ id: c.id, cwd: c.cwd })).messages).toEqual([{ role: "user", content: "stored" }]);
+    expect(hosts).toHaveLength(2);
+  });
+
   it("fails a request sent while a killed host's IPC channel is closing, without an unhandled error, and reopens", async () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");

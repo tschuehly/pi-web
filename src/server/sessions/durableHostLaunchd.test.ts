@@ -521,6 +521,13 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     expect(newer.locator.durable(chat.id)?.host).toBeUndefined();
     expect(loaded(`${PREFIX}.${chat.id}`)).toBe(false);
     expect(requests(root, chat.id).filter((method) => method === "transcript" || method === "read-transcript")).toEqual(["read-transcript", "read-transcript"]);
+
+    // A pruned pin: no reader (it would not record the code that then wrote the store); the host starts, as before.
+    await rm(join(root, "rev-a"), { recursive: true, force: true });
+    await newer.durable.messages(ref);
+    expect(requests(root, chat.id).filter((method) => method === "transcript" || method === "read-transcript")).toEqual(["read-transcript", "read-transcript", "transcript"]);
+    expect(newer.locator.durable(chat.id)?.hostEntry).toBe(entryC);
+    await newer.durable.stop(ref);
   }, 60_000);
 
   it("AC5 upgrade: a family keeps its revision across daemon and host restarts, shows it, and moves only when asked while quiet", async () => {

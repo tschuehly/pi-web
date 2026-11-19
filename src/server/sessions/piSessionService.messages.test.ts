@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 const streamIdMatcher: unknown = expect.any(String);
@@ -303,17 +303,21 @@ describe("PiSessionService", () => {
     const fake = fakeRuntime("session-1", { sessionManager: fakeSessionManager("/workspace", { getBranch: () => live }) });
     const record = sessionRecord("session-1");
     const createAgentRuntime = vi.fn(runtimeCreator(fake.runtime));
+    const archived = [{ type: "message", id: "a1", message: { role: "user", content: "from archive", timestamp: 1 } }];
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
       createAgentRuntime,
-      sessionManager: { ...sessionGateway([record]), readBranch: (path) => Promise.resolve(path === record.path ? disk : undefined) },
+      sessionManager: { ...sessionGateway([record]), readBranch: (path) => Promise.resolve(path === record.path ? disk : path === "/archive/old.jsonl" ? archived : undefined) },
+      archiveStore: { ...emptyArchiveStore(), get: (id) => Promise.resolve(id === "old" ? { sessionId: "old", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", archivePath: "/archive/old.jsonl" } : undefined) },
       heartbeatIntervalMs: 60_000,
     });
 
     // Opening would load the Chat's extensions, which can restart its saved processes.
     const cold = await service.messages(sessionRef("session-1"));
     expect(cold.messages).toMatchObject([{ role: "user", content: "from disk", entryId: "u1" }]);
+    // An archived Chat is read from its archive file, as getActive would open it.
+    expect((await service.messages(sessionRef("old"))).messages).toMatchObject([{ content: "from archive" }]);
     expect(createAgentRuntime).not.toHaveBeenCalled();
     await expect(service.messages(sessionRef("session-1", "/elsewhere"))).rejects.toThrow();
 
