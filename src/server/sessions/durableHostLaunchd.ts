@@ -108,14 +108,15 @@ function endJobs(context: LaunchContext, record: DurableChatRecord, storeDir: st
 
 /**
  * Read the history of a family no host runs, with a plain child (`--read-transcript`, over its IPC channel), not a job.
- * From the current code when it writes exactly the pin's store (older pins have no reader; newer code could migrate a
- * store its pinned host must still open), else from the pin while its folder is there. Otherwise (no pin, or a pruned
- * one) the read fails and the caller starts the host, whose start records the code that then writes the store.
+ * From the current code when it can read the pin's store and runs the same Pi Durable (older pins have no reader; the
+ * reader's read-only Harness writes no Workbench document, but another Pi Durable could migrate the store its pinned
+ * host must still open), else from the pin while its folder is there. Otherwise (no pin, or a pruned one) the read
+ * fails and the caller starts the host, whose start records the code that then writes the store.
  */
 function readTranscript(context: LaunchContext, record: DurableChatRecord, storeDir: string): DurableHostProcess {
   const durable = context.locator.durable(record.id);
   const current = storeCode(context.entry);
-  const same = durable?.hostStore !== undefined && storeCodeRefusal(durable.hostStore, current) === undefined && storeCodeRefusal(current, durable.hostStore) === undefined;
+  const same = durable?.hostStore !== undefined && current.durable === durable.hostStore.durable && storeCodeRefusal(durable.hostStore, current) === undefined;
   const entry = same ? context.entry : durable?.hostEntry !== undefined && existsSync(durable.hostEntry) ? durable.hostEntry : undefined;
   if (entry === undefined) {
     const refused = Object.assign(new EventEmitter(), { send: () => false, kill: () => false });

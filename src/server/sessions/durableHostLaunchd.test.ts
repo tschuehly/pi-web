@@ -504,9 +504,10 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     return join(await realpath(join(root, name)), "host.mjs");
   };
 
-  it("reads a family no host runs with a one-off reader, never a job: from the current code when it writes the pin's store, else from the pin", async () => {
+  it("reads a family no host runs with a one-off reader, never a job: from the current code when it reads the pin's store on the same Pi Durable, else from the pin", async () => {
     const { root, daemon } = await fixture();
-    const [entryA, entryB, entryC] = [await revision(root, "rev-a", "1.5.2"), await revision(root, "rev-b", "1.5.2"), await revision(root, "rev-c", "1.6.0")];
+    // rev-a predates store-schema.json (every kind at version 1); rev-b declares one: it reads rev-a's store.
+    const [entryA, entryB, entryC] = [await revision(root, "rev-a", "1.5.2", null), await revision(root, "rev-b", "1.5.2"), await revision(root, "rev-c", "1.6.0")];
     const first = daemon([], { entry: entryA });
     const chat = await first.durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
