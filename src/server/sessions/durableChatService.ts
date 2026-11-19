@@ -36,6 +36,8 @@ import type { SessionRouteRef } from "./sessionService.js";
 export const DURABLE_HOST_PROTOCOL = 2;
 
 /** A family host with nothing running or waiting and no browser watching closes after this (legacy `IDLE_SESSION_UNLOAD_MS`). */
+/** The host's refusals of a queue edit whose snapshot is stale (`chat-session.ts` mutateQueue, `host.ts` EditTooLate). */
+const QUEUE_MOVED = /^Queued messages changed|is no longer queued; it cannot be edited$/;
 export const IDLE_HOST_CLOSE_MS = 2 * 60 * 60 * 1000;
 const IDLE_HOST_SWEEP_MS = 10 * 60 * 1000;
 
@@ -617,8 +619,8 @@ export class DurableChatService {
         || (mutation.action === "edit" && index === mutation.index && (entry.hasAttachments === true) !== (expected.hasAttachments === true));
     })) return { ...(await this.status(ref)), queueChanged: true };
     if (mutation.index >= current.length) throw new Error("Invalid queue index");
-    await this.#mutateQueue(connection, mutation.action === "edit" ? "recall" : mutation.action, mutation.index, queued);
-    return this.status(ref);
+    const changed = await this.#mutateQueue(connection, mutation.action === "edit" ? "recall" : mutation.action, mutation.index, queued);
+    return changed ? { ...(await this.status(ref)), queueChanged: true } : this.status(ref);
   }
 
   /** Send a queued follow-up at the next steering boundary; an unknown or already-steering message changes nothing. */
@@ -641,9 +643,19 @@ export class DurableChatService {
   }
 
   /** The host withdraws and re-admits durably, against the exact queued IDs this request saw. */
-  async #mutateQueue(connection: DurableHostConnection, action: string, index: number, queued: readonly QueuedSessionMessage[]): Promise<void> {
+  /**
+   * Edit the host's queue against the snapshot read just before; true when the queue moved in between (a message was
+   * delivered or a notice arrived), so the edit changed nothing and the caller returns the current queue, as legacy does.
+   */
+  async #mutateQueue(connection: DurableHostConnection, action: string, index: number, queued: readonly QueuedSessionMessage[]): Promise<boolean> {
     const expected = queued.map((message) => (isRecord(message) ? message["id"] : undefined));
-    await connection.request("mutateQueue", { editId: randomUUID(), action, index, expected });
+    try {
+      await connection.request("mutateQueue", { editId: randomUUID(), action, index, expected });
+      return false;
+    } catch (error) {
+      if (error instanceof Error && QUEUE_MOVED.test(error.message)) return true;
+      throw error;
+    }
   }
 
   #require(connection: DurableHostConnection, capability: ChatCapability): void {

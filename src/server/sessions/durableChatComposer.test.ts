@@ -109,6 +109,20 @@ describe("Durable Chat composer", () => {
     expect(sent.every(({ editId }) => typeof editId === "string")).toBe(true);
   });
 
+  it("returns the current queue, not an error, when the host's queue moved between the snapshot check and the edit", async () => {
+    const { durable, host, ref } = await chat();
+    const queued = [{ id: 7, kind: "followUp", text: "f1" }];
+    let refusal = new Error("Queued messages changed; refresh the queue and try again");
+    host.answer = (request) => request.method === "status" ? { ...base, queuedMessages: queued } : request.method === "mutateQueue" ? refusal : null;
+    const expectedQueue = (await durable.status(ref)).queuedMessages;
+    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue })).resolves.toMatchObject({ queueChanged: true, queuedMessages: expectedQueue });
+    refusal = new Error("Operation op-1 is no longer queued; it cannot be edited");
+    await expect(durable.mutateQueueMessage(ref, { action: "toggle", index: 0, expectedQueue })).resolves.toMatchObject({ queueChanged: true });
+    await expect(durable.promoteQueuedMessage(ref, { kind: "followUp", text: "f1" })).resolves.toMatchObject({ queuedMessages: expectedQueue });
+    refusal = new Error("disk full");
+    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue })).rejects.toThrow("disk full");
+  });
+
   it("promotes one follow-up by its text, leaves a steer or an unknown message alone, and sends all follow-ups now", async () => {
     const { durable, host, ref } = await chat();
     host.answer = (request) => request.method === "status" ? { ...base, queuedMessages: [{ id: 3, kind: "steer", text: "s" }, { id: 1, kind: "followUp", text: "a" }, { id: 2, kind: "followUp", text: "b" }] } : null;
