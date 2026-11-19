@@ -182,7 +182,8 @@ describe("seamless upgrade orchestration", () => {
   it("round 4 F1: Upgrade now and the automatic upgrade refuse a move to another store schema, or one they cannot read, within one Pi Durable version", async () => {
     for (const [schema, refusal] of [
       [{ ...SCHEMA, documents: { "workbench.delegation": 2 } }, "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet"],
-      [null, "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet"],
+      // Code without the file is older than a declared schema (round 5): refused as any move to an older store is.
+      [null, "This Chat was opened by host code with a newer Workbench store schema than the current host"],
     ] as const) {
       ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
       const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", schema)];
@@ -197,6 +198,33 @@ describe("seamless upgrade orchestration", () => {
       rmSync(ROOT, { recursive: true, force: true });
     }
     ROOT = "";
+  });
+
+  it("round 5 P1-3: quiet Upgrade host and the idle close never move a family to an older or unreadable Workbench store schema; a pin older than store-schema.json moves forward", async () => {
+    for (const [pinSchema, currentSchema] of [[{ ...SCHEMA, documents: { "workbench.delegation": 2 } }, SCHEMA], [SCHEMA, null]] as const) {
+      ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+      const [a, b] = [revision("rev-a", "1.5.2", pinSchema), revision("rev-b", "1.5.2", currentSchema)];
+      const s = setup(a, b, { subscribers: false });
+      await s.durable.status(s.ref);
+      await expect(s.durable.upgradeHost(s.ref)).rejects.toThrow("This Chat was opened by host code with a newer Workbench store schema than the current host");
+      expect(s.hosts[0]?.requests.map((request) => request.method)).not.toContain("close");
+      expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+      // The idle close still closes the host, but the pin stays on the code that wrote the store.
+      s.idle();
+      await s.durable.closeIdleHosts();
+      expect(s.hosts[0]?.requests.map((request) => request.method)).toContain("close");
+      expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
+      await s.durable.dispose();
+      rmSync(ROOT, { recursive: true, force: true });
+    }
+    // Host code without store-schema.json predates it and wrote every Workbench kind at version 1: it moves forward.
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2", null), revision("rev-b", "1.5.2")];
+    const s = setup(a, b);
+    await s.durable.status(s.ref);
+    await s.durable.upgradeHost(s.ref);
+    expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(b);
+    await s.durable.dispose();
   });
 
   it("A: a failed start within one Pi Durable version restores only the pin", async () => {

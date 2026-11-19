@@ -29,7 +29,7 @@ import { cleanSessionName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, ses
 import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
 import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
-import { compareVersions, durableVersion, type DurableChatRecord, type SessionRuntimeLocator, storeSchema } from "./sessionRuntimeLocator.js";
+import { type DurableChatRecord, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
@@ -1443,31 +1443,33 @@ async function hostPin(code: DurableHostProcess["code"], revision: string | unde
 }
 
 /**
- * Why a pinned family cannot move to the current host code, undefined when it can: never to older Pi Durable code (after
- * a roll back it cannot read a store newer code opened), nor when either version cannot be read.
+ * Why a pinned family cannot move to the current host code, undefined when it can: never to code that writes an older
+ * store, by Pi Durable version or by Workbench store schema (after a roll back it cannot read a store newer code
+ * opened; see `storeCodeRefusal`), nor when the version of either cannot be read.
  */
 function hostMoveRefusal(code: DurableHostProcess["code"]): string | undefined {
-  const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : durableVersion(entry)));
-  if (pinned === undefined || current === undefined) return "This Chat cannot move to new host code: the Pi Durable version of its host code cannot be read";
-  if (compareVersions(current, pinned) < 0) return `This Chat was opened by a newer Pi Durable (${pinned}); the current host is ${current}`;
-  return undefined;
+  const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? {} : storeCode(entry)));
+  if (pinned?.durable === undefined || current?.durable === undefined) return "This Chat cannot move to new host code: the Pi Durable version of its host code cannot be read";
+  return storeCodeRefusal(pinned, current);
 }
 
 /**
  * Why Upgrade now and the automatic upgrade cannot restart a pinned family, undefined when they can: only within one
- * Pi Durable version, which needs no store migration, so a rollback only restores the pin. Upgrade host (quiet) moves
- * across versions (see `hostMoveRefusal`).
+ * Pi Durable version and one declared Workbench store schema, which needs no store migration, so a rollback only
+ * restores the pin. Upgrade host (quiet) moves forward across them (see `hostMoveRefusal`).
  */
 function restartRefusal(code: DurableHostProcess["code"]): string | undefined {
   const refusal = hostMoveRefusal(code);
   if (refusal !== undefined) return refusal;
-  const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : durableVersion(entry)));
-  if (pinned !== current) return `This upgrade changes the store format (Pi Durable ${String(pinned)} to ${String(current)}); use Upgrade host when the Chat is quiet`;
+  const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? {} : storeCode(entry)));
+  if (pinned?.durable !== current?.durable) return `This upgrade changes the store format (Pi Durable ${String(pinned?.durable)} to ${String(current?.durable)}); use Upgrade host when the Chat is quiet`;
   // Same Pi Durable, but a Workbench document or task at a new version is migrated too: the old code then refuses the store.
-  const [pinnedSchema, currentSchema] = [code?.entry, code?.current].map((entry) => (entry === undefined ? undefined : storeSchema(entry)));
-  return pinnedSchema !== undefined && JSON.stringify(pinnedSchema) === JSON.stringify(currentSchema) ? undefined : "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet";
+  return isSchema(pinned?.schema) && JSON.stringify(pinned.schema) === JSON.stringify(current?.schema) ? undefined : "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet";
 }
 
+function isSchema(schema: StoreCode["schema"]): schema is StoreSchema {
+  return schema !== undefined && schema !== null;
+}
 
 /** A revision folder's short commit (installed folders are git worktrees), else its name. */
 async function shortRevision(folder: string): Promise<string> {

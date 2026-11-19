@@ -6,7 +6,7 @@ import { connect, type Socket } from "node:net";
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
 import { DURABLE_HOST_PROTOCOL, durableHostLaunchArgs, type DurableHostLauncher, type DurableHostOptions, type DurableHostProcess } from "./durableChatService.js";
-import { type DurableChatRecord, type DurableHostAttachment, type SessionRuntimeLocator, storeCodeRefusal } from "./sessionRuntimeLocator.js";
+import { type DurableChatRecord, type DurableHostAttachment, type SessionRuntimeLocator, storeCode, storeCodeRefusal } from "./sessionRuntimeLocator.js";
 
 /** Runs `launchctl` with these arguments; rejects with its output on failure. Tests may pass their own. */
 export type Launchctl = (args: string[]) => Promise<void>;
@@ -57,14 +57,14 @@ export function launchdDurableHost(options: DurableHostOptions & {
 
 /**
  * Phase C3: a family stays on the code its host started from; only a revision folder that is gone (pruned) moves it to
- * the current one, and only when that writes no older store (else it throws: older code cannot read the store).
- * shortcut: a pin recorded before its store code was (no `hostStore`) still falls back unchecked.
+ * the current one, and only when that writes no older store (`storeCodeRefusal`); else it throws, as it does for a pin
+ * whose store code was never recorded: nothing proves the current code can read the store.
  */
 function familyEntry(context: LaunchContext, record: DurableChatRecord): string {
   const durable = context.locator.durable(record.id);
   const pinned = durable?.hostEntry;
   if (pinned === undefined || existsSync(pinned)) return pinned ?? context.entry;
-  const refusal = durable?.hostStore === undefined ? undefined : storeCodeRefusal(durable.hostStore, context.entry);
+  const refusal = durable?.hostStore === undefined ? "Which store this Chat's host code wrote was never recorded" : storeCodeRefusal(durable.hostStore, storeCode(context.entry));
   if (refusal !== undefined) throw new Error(`${refusal}, and its host code (${dirname(pinned)}) is gone; reinstall it to open this Chat`);
   return context.entry;
 }

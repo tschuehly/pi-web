@@ -490,11 +490,11 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
   }, 60_000);
 
   /** A revision folder running the fake host, with the Pi Durable version it installs (none: unreadable) and one store schema. */
-  const revision = async (root: string, name: string, durable?: string, schema: object = { documents: { "workbench.delegation": 1 }, tasks: {} }) => {
+  const revision = async (root: string, name: string, durable?: string, schema: object | null = { documents: { "workbench.delegation": 1 }, tasks: {} }) => {
     const modules = join(root, name, "node_modules", "@earendil-works", "pi-durable");
     await mkdir(modules, { recursive: true });
     if (durable !== undefined) await writeFile(join(modules, "package.json"), JSON.stringify({ name: "@earendil-works/pi-durable", version: durable }));
-    await writeFile(join(root, name, "store-schema.json"), JSON.stringify(schema));
+    if (schema !== null) await writeFile(join(root, name, "store-schema.json"), JSON.stringify(schema));
     await writeFile(join(root, name, "host.mjs"), HOST);
     return join(await realpath(join(root, name)), "host.mjs");
   };
@@ -608,6 +608,74 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
         expect(errors.map((error) => error.message).join("\n")).toMatch(refusal);
       }
     }
+  }, 30_000);
+
+  it("round 5 P1-1/P1-2 (F5): a family whose pinned revision folder is gone never falls back to code with an older store schema, nor unchecked; a pin still on disk gets its store code recorded", async () => {
+    const { root, hostsDir } = await fixture();
+    const v1 = { documents: { "workbench.delegation": 1 }, tasks: {} };
+    const v2 = { documents: { "workbench.delegation": 2 }, tasks: {} };
+    const dataDir = join(root, "data");
+    /** Starts `record` with `current` as the code new families get: the plist it bootstraps (launchctl stubbed), or "" and the error. */
+    const attempt = async (locator: SessionRuntimeLocator, record: { id: string }, current: string) => {
+      let bootstrapped = "";
+      const launch = launchdDurableHost({ entry: current, model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, startTimeoutMs: 100, launchctl: (args) => {
+        if (args[0] === "bootstrap") { bootstrapped = readFileSync(args[2] ?? "", "utf8"); return Promise.reject(new Error("bootstrap captured")); }
+        return Promise.resolve();
+      } });
+      const durable = locator.durable(record.id);
+      if (durable === undefined) throw new Error("no record");
+      const host = launch(durable, join(root, "store"));
+      const errors: string[] = [];
+      host.on("error", (error: Error) => { errors.push(error.message); });
+      await new Promise<void>((resolve) => { host.on("exit", () => { resolve(); }); });
+      return { bootstrapped, errors: errors.join("\n") };
+    };
+    /** A locator record as a daemon before round 4 wrote it: the pin without its store code. */
+    const legacy = async (locator: SessionRuntimeLocator, entry: string) => {
+      const record = locator.create("/work/a");
+      const file = join(dataDir, "session-runtimes.json");
+      await writeFile(file, readFileSync(file, "utf8").replace(`"id": "${record.id}",`, `"id": "${record.id}", "hostEntry": ${JSON.stringify(entry)},`));
+      return record;
+    };
+
+    // P1-1: a newer Pi Durable does not make an older Workbench schema, or none, able to read the store.
+    const locator = new SessionRuntimeLocator(dataDir);
+    const recorded = locator.create("/work/a");
+    locator.setHostEntry(recorded.id, await revision(root, "rev-v2", "1.5.2", v2));
+    await rm(join(root, "rev-v2"), { recursive: true });
+    for (const current of [await revision(root, "rev-newer-v1", "1.5.3", v1), await revision(root, "rev-newer-none", "1.5.3", null)]) {
+      const { bootstrapped, errors } = await attempt(locator, recorded, current);
+      expect(bootstrapped === "", current).toBe(true);
+      expect(errors).toMatch(/newer Workbench store schema/);
+    }
+    expect((await attempt(locator, recorded, await revision(root, "rev-newer-v2", "1.5.3", v2))).bootstrapped.includes("rev-newer-v2/host.mjs")).toBe(true);
+
+    // P1-2: a legacy pin whose folder is gone has no evidence of its store: refused, even for newer code.
+    const gone = await legacy(new SessionRuntimeLocator(dataDir), await revision(root, "rev-legacy-gone", "1.5.2", v1));
+    await rm(join(root, "rev-legacy-gone"), { recursive: true });
+    const unrecorded = await attempt(new SessionRuntimeLocator(dataDir), gone, await revision(root, "rev-current", "1.5.3", v2));
+    expect(unrecorded.bootstrapped === "").toBe(true);
+    expect(unrecorded.errors).toMatch(/never recorded/);
+
+    // A legacy pin still on disk gets its store code at the next daemon start; then older code is refused once it is gone.
+    const kept = await legacy(new SessionRuntimeLocator(dataDir), await revision(root, "rev-legacy-kept", "1.5.2", v2));
+    const backfilled = new SessionRuntimeLocator(dataDir);
+    expect(backfilled.durable(kept.id)?.hostStore).toEqual({ durable: "1.5.2", schema: v2 });
+    await rm(join(root, "rev-legacy-kept"), { recursive: true });
+    expect((await attempt(backfilled, kept, await revision(root, "rev-14", "1.4.0", v2))).errors).toMatch(/opened by a newer Pi Durable \(1\.5\.2\)/);
+
+    // A legacy pin whose folder was away at that start is recorded once its host starts from it again (an unchanged pin).
+    const away = await legacy(new SessionRuntimeLocator(dataDir), await revision(root, "rev-legacy-away", "1.5.2", null));
+    await rm(join(root, "rev-legacy-away"), { recursive: true });
+    const later = new SessionRuntimeLocator(dataDir);
+    expect(later.durable(away.id)?.hostStore).toBeUndefined();
+    const entry = await revision(root, "rev-legacy-away", "1.5.2", null);
+    later.setHostEntry(away.id, entry);
+    // Code older than store-schema.json: recorded as such (null), every Workbench kind at version 1.
+    expect(later.durable(away.id)?.hostStore).toEqual({ durable: "1.5.2", schema: null });
+    await rm(join(root, "rev-legacy-away"), { recursive: true });
+    expect((await attempt(later, away, await revision(root, "rev-v1", "1.5.2", v1))).bootstrapped.includes("rev-v1/host.mjs")).toBe(true);
+    expect((await attempt(later, away, await revision(root, "rev-none", "1.5.2", null))).bootstrapped.includes("rev-none/host.mjs")).toBe(true);
   }, 30_000);
 
   it("A idle close upgrades: an idle-closed pinned Chat reopens on the current revision; one a newer Pi Durable opened stays pinned", async () => {

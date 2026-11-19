@@ -29,8 +29,9 @@ export interface DurableChatRecord {
    */
   hostEntry?: string;
   /**
-   * The store `hostEntry`'s code writes, recorded as it is pinned: a pin whose revision folder is gone (pruned) falls back
-   * only to code that is not older (`storeCodeRefusal`).
+   * The store `hostEntry`'s code writes, recorded as it is pinned (or, for a pin recorded before it was, the next time the
+   * locator is read or the pin set while its folder is still there): a pin whose revision folder is gone (pruned) falls
+   * back only to code that writes no older store (`storeCodeRefusal`), and never without it.
    */
   hostStore?: StoreCode;
   /**
@@ -42,10 +43,14 @@ export interface DurableChatRecord {
   upgradeDeclined?: string;
 }
 
-/** The store format a host entry's code writes: its Pi Durable version and the Workbench store schema, when readable. */
+/**
+ * The store format a host entry's code writes: its Pi Durable version and the Workbench store schema, when readable;
+ * `schema: null` is host code without a `store-schema.json`, which predates it and wrote every Workbench kind at version 1
+ * (no definition had another version before the file was added, pi-workbench 1cd564f).
+ */
 export interface StoreCode {
   durable?: string;
-  schema?: StoreSchema;
+  schema?: StoreSchema | null;
 }
 
 /** Every Workbench document and task kind with its version (the host's `store-schema.json`). */
@@ -80,6 +85,16 @@ export class SessionRuntimeLocator {
   constructor(dataDir: string) {
     this.#path = join(dataDir, "session-runtimes.json");
     this.#chats = new Map(Object.entries(readLocator(this.#path).chats));
+    // Pins recorded before their store code was: record it while their code is still there to read.
+    let backfilled = false;
+    for (const [id, record] of this.#chats) {
+      if (record.hostEntry === undefined || record.hostStore !== undefined) continue;
+      const store = storeCode(record.hostEntry);
+      if (store.durable === undefined) continue;
+      this.#chats.set(id, { ...record, hostStore: store });
+      backfilled = true;
+    }
+    if (backfilled) this.#persist();
   }
 
   durable(sessionId: string): DurableChatRecord | undefined {
@@ -120,7 +135,8 @@ export class SessionRuntimeLocator {
   /** Pin the family to the host entry its host started from (or, as it moves, the one its next host starts from), or unpin it so its next host runs the current code. */
   setHostEntry(sessionId: string, entry: string | undefined): void {
     const record = this.#chats.get(sessionId);
-    if (record === undefined || record.hostEntry === entry) return;
+    // An unchanged pin only gains the store code it lacks (recorded before it was).
+    if (record === undefined || (record.hostEntry === entry && (entry === undefined || record.hostStore !== undefined || storeCode(entry).durable === undefined))) return;
     const next: DurableChatRecord = { ...record };
     delete next.hostStore;
     if (entry === undefined) delete next.hostEntry;
@@ -189,9 +205,14 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
     && (value["nameSource"] === undefined || value["nameSource"] === "manual" || value["nameSource"] === "auto" || value["nameSource"] === "checkpoint")
     && (value["host"] === undefined || isHostAttachment(value["host"]))
     && (value["hostEntry"] === undefined || typeof value["hostEntry"] === "string")
-    && (value["hostStore"] === undefined || isRecord(value["hostStore"]))
+    && (value["hostStore"] === undefined || isStoreCode(value["hostStore"]))
     && (value["upgrade"] === undefined || isUpgrade(value["upgrade"]))
     && (value["upgradeDeclined"] === undefined || typeof value["upgradeDeclined"] === "string");
+}
+
+function isStoreCode(value: unknown): boolean {
+  return isRecord(value) && (value["durable"] === undefined || typeof value["durable"] === "string")
+    && (value["schema"] === undefined || value["schema"] === null || (isRecord(value["schema"]) && isVersions(value["schema"]["documents"]) && isVersions(value["schema"]["tasks"])));
 }
 
 function isUpgrade(value: unknown): boolean {
@@ -229,9 +250,10 @@ export function durableVersion(entry: string): string | undefined {
 
 /**
  * The store schema a host entry writes, from the Workbench host's `store-schema.json` beside that `node_modules`, with
- * its kinds sorted (comparable as JSON); undefined when it is missing or unreadable.
+ * its kinds sorted (comparable as JSON); null when there is none (code older than it, see `StoreCode`), undefined when
+ * the folder or the file cannot be read.
  */
-export function storeSchema(entry: string): StoreSchema | undefined {
+export function storeSchema(entry: string): StoreSchema | null | undefined {
   const folder = durableFolder(entry);
   if (folder === undefined) return undefined;
   try {
@@ -240,8 +262,8 @@ export function storeSchema(entry: string): StoreSchema | undefined {
     if (!isVersions(documents) || !isVersions(tasks)) return undefined;
     const sorted = (value: Record<string, number>) => Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
     return { documents: sorted(documents), tasks: sorted(tasks) };
-  } catch {
-    return undefined;
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "ENOENT" ? null : undefined;
   }
 }
 
@@ -249,25 +271,28 @@ function isVersions(value: unknown): value is Record<string, number> {
   return isRecord(value) && Object.values(value).every((version) => typeof version === "number");
 }
 
-function storeCode(entry: string): StoreCode {
+/** The store code a host entry runs (see `StoreCode`), read from its folder. */
+export function storeCode(entry: string): StoreCode {
   const [durable, schema] = [durableVersion(entry), storeSchema(entry)];
   return { ...(durable === undefined ? {} : { durable }), ...(schema === undefined ? {} : { schema }) };
 }
 
 /**
- * Why `entry`'s code must not open a store the `pinned` code wrote, undefined when it may: never older Pi Durable code,
- * nor, at the same version, a Workbench document or task kind the pin writes at a version the entry's code lacks or
- * writes older (it would refuse or misread the store).
+ * Why `current` code must not open a store the `pinned` code wrote, undefined when it may. Two independent axes, each
+ * never older: Pi Durable's version, and every Workbench document or task kind the pin writes at a version the current
+ * code lacks or writes older (it would refuse or misread the store). Code without a `store-schema.json` (null) writes
+ * every kind at version 1, older than any declared schema. Whatever cannot be read on either side refuses.
+ * shortcut: a kind the declared schema dropped is not caught for a pin older than the file (its kinds are not listed).
  */
-export function storeCodeRefusal(pinned: StoreCode, entry: string): string | undefined {
-  if (pinned.durable === undefined) return undefined;
-  const current = storeCode(entry);
+export function storeCodeRefusal(pinned: StoreCode, current: StoreCode): string | undefined {
+  if (pinned.durable === undefined) return "This Chat's host code cannot be read, so which store it wrote is unknown";
   if (current.durable === undefined || compareVersions(current.durable, pinned.durable) < 0) {
     return `This Chat was opened by a newer Pi Durable (${pinned.durable}); the current host is ${current.durable ?? "of unknown version"}`;
   }
-  if (compareVersions(current.durable, pinned.durable) > 0 || pinned.schema === undefined) return undefined;
-  const older = (section: "documents" | "tasks") => Object.entries(pinned.schema?.[section] ?? {}).some(([kind, version]) => (current.schema?.[section][kind] ?? -1) < version);
-  return current.schema === undefined || older("documents") || older("tasks") ? "This Chat was opened by host code with a newer Workbench store schema than the current host" : undefined;
+  const [from, to] = [pinned.schema, current.schema];
+  if (from === null && to !== undefined) return undefined;
+  const older = (section: "documents" | "tasks") => Object.entries(from?.[section] ?? {}).some(([kind, version]) => (to?.[section][kind] ?? -1) < version);
+  return from === undefined || !to || older("documents") || older("tasks") ? "This Chat was opened by host code with a newer Workbench store schema than the current host" : undefined;
 }
 
 /** Orders two versions by major.minor.patch. shortcut: pre-release tags are ignored; Pi Durable ships none today. */
