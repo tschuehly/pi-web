@@ -41,6 +41,11 @@ const cancelJobs = () => {
     } catch {}
   }
 };
+if (process.argv.includes("--read-transcript")) {
+  appendFileSync(join(store, "requests.log"), "read-transcript\\n");
+  await new Promise((resolve) => process.send({ transcript: { messages: [{ role: "user", content: "stored by " + basename(dirname(process.argv[1])) }] } }, resolve));
+  process.exit(0);
+}
 if (process.argv.includes("--end-jobs")) {
   appendFileSync(join(store, "requests.log"), "end-jobs\\n");
   cancelJobs();
@@ -498,6 +503,25 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     await writeFile(join(root, name, "host.mjs"), HOST);
     return join(await realpath(join(root, name)), "host.mjs");
   };
+
+  it("reads a family no host runs with a one-off reader, never a job: from the current code when it writes the pin's store, else from the pin", async () => {
+    const { root, daemon } = await fixture();
+    const [entryA, entryB, entryC] = [await revision(root, "rev-a", "1.5.2"), await revision(root, "rev-b", "1.5.2"), await revision(root, "rev-c", "1.6.0")];
+    const first = daemon([], { entry: entryA });
+    const chat = await first.durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await first.durable.stop(ref);
+    expect(first.locator.durable(chat.id)?.host).toBeUndefined();
+
+    const same = daemon([], { entry: entryB });
+    expect((await same.durable.messages(ref)).messages).toEqual([{ role: "user", content: "stored by rev-b" }]);
+    // Newer code could migrate the store rev-a's host must still open: the pin reads it.
+    const newer = daemon([], { entry: entryC });
+    expect((await newer.durable.messages(ref)).messages).toEqual([{ role: "user", content: "stored by rev-a" }]);
+    expect(newer.locator.durable(chat.id)?.host).toBeUndefined();
+    expect(loaded(`${PREFIX}.${chat.id}`)).toBe(false);
+    expect(requests(root, chat.id).filter((method) => method === "transcript" || method === "read-transcript")).toEqual(["read-transcript", "read-transcript"]);
+  }, 60_000);
 
   it("AC5 upgrade: a family keeps its revision across daemon and host restarts, shows it, and moves only when asked while quiet", async () => {
     const { root, hostsDir, daemon } = await fixture();

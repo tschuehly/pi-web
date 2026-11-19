@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
 import { CapturingSessionEventHub, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
 
@@ -295,5 +295,32 @@ describe("PiSessionService", () => {
       });
       await service.dispose();
     });
+  });
+
+  it("reads a Chat that is not loaded from its transcript file without opening it, and a loaded one from its runtime", async () => {
+    const disk = [{ type: "message", id: "u1", message: { role: "user", content: "from disk", timestamp: 1 } }];
+    const live = [{ type: "message", id: "u2", message: { role: "user", content: "from runtime", timestamp: 2 } }];
+    const fake = fakeRuntime("session-1", { sessionManager: fakeSessionManager("/workspace", { getBranch: () => live }) });
+    const record = sessionRecord("session-1");
+    const createAgentRuntime = vi.fn(runtimeCreator(fake.runtime));
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime,
+      sessionManager: { ...sessionGateway([record]), readBranch: (path) => Promise.resolve(path === record.path ? disk : undefined) },
+      heartbeatIntervalMs: 60_000,
+    });
+
+    // Opening would load the Chat's extensions, which can restart its saved processes.
+    const cold = await service.messages(sessionRef("session-1"));
+    expect(cold.messages).toMatchObject([{ role: "user", content: "from disk", entryId: "u1" }]);
+    expect(createAgentRuntime).not.toHaveBeenCalled();
+    await expect(service.messages(sessionRef("session-1", "/elsewhere"))).rejects.toThrow();
+
+    await service.status(sessionRef("session-1"));
+    expect(createAgentRuntime).toHaveBeenCalledTimes(1);
+    // Loaded: read through its runtime, as before.
+    expect((await service.messages(sessionRef("session-1"))).messages).toMatchObject([{ content: "from runtime" }]);
+    await service.dispose();
   });
 });

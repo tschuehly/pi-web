@@ -169,6 +169,44 @@ describe("Durable Chats", () => {
     expect(launched).toHaveLength(2);
   });
 
+  it("reads a Chat with no host through a one-off reader, never a started host; a failed reader starts the host as before", async () => {
+    const launches: { readTranscript: boolean }[] = [];
+    let readerCode = 0;
+    const hosts: FakeHost[] = [];
+    const launch = (_record: unknown, _storeDir: string, options?: { readTranscript?: boolean }) => {
+      launches.push({ readTranscript: options?.readTranscript === true });
+      if (options?.readTranscript !== true) {
+        const host = new FakeHost();
+        host.answer = (request) => (request.method === "transcript" ? { messages: [{ role: "user", content: "live", entryId: "2" }], partial: null, status } : status);
+        hosts.push(host);
+        return host;
+      }
+      const reader = Object.assign(new EventEmitter(), { send: () => false, kill: () => false });
+      queueMicrotask(() => {
+        if (readerCode === 0) reader.emit("message", { transcript: { messages: [{ role: "user", content: "stored", entryId: "1" }] } });
+        reader.emit("exit", readerCode, null);
+      });
+      return reader;
+    };
+    const { durable } = await service(undefined, undefined, { launch });
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    // A running host answers itself.
+    expect((await durable.messages(ref)).messages).toEqual([{ role: "user", content: "live", entryId: "2" }]);
+    only(hosts).kill();
+    launches.length = 0;
+
+    expect((await durable.messages(ref)).messages).toEqual([{ role: "user", content: "stored", entryId: "1" }]);
+    expect(launches).toEqual([{ readTranscript: true }]);
+
+    // Host code without the reader (an older pin) exits nonzero: the read starts the host, as before.
+    readerCode = 1;
+    launches.length = 0;
+    expect((await durable.messages(ref)).messages).toEqual([{ role: "user", content: "live", entryId: "2" }]);
+    expect(hosts).toHaveLength(2);
+    expect(launches).toEqual([{ readTranscript: true }, { readTranscript: false }]);
+  });
+
   it("fails a request sent while a killed host's IPC channel is closing, without an unhandled error, and reopens", async () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");

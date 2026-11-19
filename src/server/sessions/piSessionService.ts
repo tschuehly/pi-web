@@ -2963,6 +2963,11 @@ export class PiSessionService implements SessionRouteService {
   }
 
   async messages(ref: PiSessionRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
+    // A Chat that is not loaded is read from its transcript file: opening it would load its extensions, which can
+    // restart saved processes (a Workstream's orientation sweep reads every Chat in it).
+    // ponytail: a cold page has no extension Markdown transforms or cache-miss notices; selecting the Chat loads them.
+    const cold = await this.coldBranch(ref);
+    if (cold !== undefined) return pageMessagesAtSafeBoundary(historyMessagesFromEntries(cold).map(displayPromptMessage), page);
     const session = await this.getOrOpen(ref);
     const result = pageMessagesAtSafeBoundary(this.historyWithCacheMissNotices(session, await this.readableSessionBranch(ref, session)).map(displayPromptMessage), page);
     return { ...result, messages: result.messages.map((message) => this.browserTranscriptMessage(session, message)) };
@@ -3006,6 +3011,17 @@ export class PiSessionService implements SessionRouteService {
    * A session's open asks without opening it: from the runtime while one runs, else read from its transcript on
    * disk. Opening would redeliver recorded answers and start a turn, so a cold session must stay cold here.
    */
+  /** The branch of a Chat no runtime holds, read from its transcript file; undefined when one is loaded or none is found. */
+  private async coldBranch(ref: PiSessionRef): Promise<unknown[] | undefined> {
+    const loaded = () => this.activeForRef(ref) !== undefined || this.startupSessionForRef(ref) !== undefined;
+    if (loaded() || this.sessionManager.readBranch === undefined) return undefined;
+    const match = await this.sessionManager.resolveSessionFile(ref.cwd, ref.id);
+    if (match === undefined || !cwdPathsEqual(match.cwd, ref.cwd)) return undefined;
+    const branch = await this.sessionManager.readBranch(match.path);
+    // Opened while the file was read: the runtime's view wins, as for a loaded Chat.
+    return loaded() ? undefined : branch;
+  }
+
   async openAsks(ref: PiSessionRef): Promise<PendingAskUser[]> {
     const live = this.activeForRef(ref)?.runtime.session ?? this.startupSessionForRef(ref);
     if (live !== undefined) return this.pendingAskStore.pendingAsks(live.sessionId);

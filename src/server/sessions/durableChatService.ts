@@ -62,9 +62,10 @@ export interface DurableHostProcess {
  * Starts (or, for a launchd host, reattaches to) the host process that owns one Chat family's store. `attachOnly`: never
  * start one; the returned process exits when there is no live host to attach to. `endJobs`: instead of a host, a one-off
  * process from the same host entry (`--end-jobs`) that cancels the family's unfinished background jobs without opening
- * its store and exits, 0 once they are cancelled.
+ * its store and exits, 0 once they are cancelled. `readTranscript`: a one-off process (`--read-transcript`) that opens the
+ * store paused with no packages, sends `{ transcript: { messages } }` and exits 0; no host starts.
  */
-export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean; endJobs?: boolean }) => DurableHostProcess;
+export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean; endJobs?: boolean; readTranscript?: boolean }) => DurableHostProcess;
 
 /** What starts a family's host: the Workbench host entry, the model and Pi agent dir it runs with. */
 export interface DurableHostOptions { entry: string; model: string | ((cwd: string) => string); agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
@@ -95,7 +96,7 @@ export function forkDurableHost(options: DurableHostOptions): DurableHostLaunche
     const log = openSync(join(storeDir, "host.log"), "a", 0o600);
     try {
       // No inherited loader flags (tsx): the host is plain Node with type stripping and its own pinned dependencies.
-      return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : [])], {
+      return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : []), ...(launch?.readTranscript === true ? ["--read-transcript"] : [])], {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
         env: { ...process.env, PI_CODING_AGENT_DIR: options.agentDir },
@@ -287,6 +288,9 @@ class DurableHostConnection {
  */
 export class DurableChatService {
   readonly #connections = new Map<string, Promise<DurableHostConnection>>();
+  /** History reads of Chats with no host (`#readCold`), by Chat ID, chained one after another. */
+  readonly #coldReads = new Map<string, Promise<unknown[] | undefined>>();
+  #coldQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: {
     locator: SessionRuntimeLocator;
@@ -472,9 +476,36 @@ export class DurableChatService {
     return this.deps.locator.all().map((record) => this.info(record));
   }
 
+  /**
+   * A Chat with no host is read by a one-off reader process, not a started host: a host runs the Chat's packages, which
+   * can restart saved processes (a Workstream's orientation sweep reads every Chat in it). Host code without the reader
+   * (an older pin) fails it, and the read starts the host as before.
+   */
   async messages(ref: SessionRouteRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
-    const { result } = await (await this.#for(ref)).request("transcript");
-    return pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, hostTranscript(result).messages).map(displayPromptMessage), page);
+    const record = this.#record(ref);
+    const cold = this.#connections.has(record.id) || record.host !== undefined || record.upgrade !== undefined ? undefined : await this.#readCold(record);
+    const messages = cold ?? hostTranscript((await (await this.#connection(record)).request("transcript")).result).messages;
+    return pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, messages).map(displayPromptMessage), page);
+  }
+
+  /** The reader's messages, or undefined when it failed; a host start waits for a read of its store (`#connection`). */
+  #readCold(record: DurableChatRecord): Promise<unknown[] | undefined> {
+    const running = this.#coldReads.get(record.id);
+    if (running !== undefined) return running;
+    // ponytail: one read at a time daemon-wide (each is a Node process opening the store); a sweep of N Chats takes N reads.
+    const read = this.#coldQueue.then(() => new Promise<unknown[] | undefined>((resolve) => {
+      let messages: unknown[] | undefined;
+      const reader = this.deps.launch(record, join(this.deps.storesDir, record.storeId), { readTranscript: true });
+      reader.on("message", (message) => {
+        const transcript = isRecord(message) && isRecord(message["transcript"]) ? message["transcript"] : undefined;
+        if (Array.isArray(transcript?.["messages"])) messages = transcript["messages"];
+      });
+      reader.on("error", (error) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat history reader failed"); });
+      reader.on("exit", (code) => { resolve(code === 0 ? messages : undefined); });
+    })).finally(() => { this.#coldReads.delete(record.id); });
+    this.#coldQueue = read.then(() => undefined);
+    this.#coldReads.set(record.id, read);
+    return read;
   }
 
   async status(ref: SessionRouteRef): Promise<ClientSessionStatus> {
@@ -1259,6 +1290,9 @@ export class DurableChatService {
   #connection(record: DurableChatRecord, attachOnly = false): Promise<DurableHostConnection> {
     const existing = this.#connections.get(record.id);
     if (existing !== undefined) return existing;
+    // The reader holds the store: the host opens it after.
+    const reading = this.#coldReads.get(record.id);
+    if (reading !== undefined) return reading.then(() => this.#connection(record, attachOnly));
     const storeDir = join(this.deps.storesDir, record.storeId);
     mkdirSync(this.deps.storesDir, { recursive: true, mode: 0o700 });
     // A new host starts its packages again, and with them their notices: its inbox starts over.

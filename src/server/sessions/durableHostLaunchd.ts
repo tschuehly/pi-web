@@ -52,7 +52,9 @@ export function launchdDurableHost(options: DurableHostOptions & {
   const entry = realpathSync(options.entry);
   if (entry.split(sep).some((part) => part.endsWith(".installed"))) throw new Error(`Durable hosts start from a revision folder, not ${entry}`);
   const context: LaunchContext = { ...options, entry, launchctl: options.launchctl ?? launchctl, startTimeoutMs: options.startTimeoutMs ?? 60_000 };
-  return (record, storeDir, launch) => launch?.endJobs === true ? endJobs(context, record, storeDir) : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true);
+  return (record, storeDir, launch) => launch?.endJobs === true ? endJobs(context, record, storeDir)
+    : launch?.readTranscript === true ? readTranscript(context, record, storeDir)
+    : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true);
 }
 
 /**
@@ -102,6 +104,25 @@ function endJobs(context: LaunchContext, record: DurableChatRecord, storeDir: st
     }
   }).catch((error: unknown) => ended.emit("error", error));
   return ended;
+}
+
+/**
+ * Read the history of a family no host runs, with a plain child (`--read-transcript`, over its IPC channel), not a job.
+ * From the current code when it writes exactly the pin's store (older pins have no reader; newer code could migrate a
+ * store its pinned host must still open), else from the pin.
+ */
+function readTranscript(context: LaunchContext, record: DurableChatRecord, storeDir: string): DurableHostProcess {
+  const pinned = context.locator.durable(record.id)?.hostStore;
+  const current = storeCode(context.entry);
+  const same = pinned !== undefined && storeCodeRefusal(pinned, current) === undefined && storeCodeRefusal(current, pinned) === undefined;
+  const entry = same ? context.entry : familyEntry(context, record);
+  mkdirSync(storeDir, { recursive: true, mode: 0o700 });
+  const log = openSync(join(storeDir, "host.log"), "a", 0o600);
+  try {
+    return spawn(process.execPath, [entry, ...durableHostLaunchArgs(context, record, storeDir), "--read-transcript"], { cwd: storeDir, env: hostEnvironment(context), stdio: ["ignore", log, log, "ipc"] });
+  } finally {
+    closeSync(log);
+  }
 }
 
 type LaunchContext = DurableHostOptions & { labelPrefix: string; hostsDir: string; locator: SessionRuntimeLocator; launchctl: Launchctl; startTimeoutMs: number };
