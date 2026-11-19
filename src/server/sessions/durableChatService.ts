@@ -1000,7 +1000,9 @@ export class DurableChatService {
     const refusal = hostMoveRefusal(connection.code);
     if (refusal !== undefined) throw new Error(refusal);
     if (mode === "quiet") {
-      const busy = familyBusy(hostStatus((await connection.request("status")).result));
+      // Served Pages do not block the owner's click: `status` below starts the new host at once, which reopens them on the
+      // same port, so open tabs miss only the restart.
+      const busy = familyBusy(hostStatus((await connection.request("status")).result), false);
       if (busy !== undefined) throw new Error(`This Chat cannot move to new host code while ${busy}; try again when it is quiet`);
       await this.#end(record.id);
       this.deps.locator.setHostEntry(record.id, connection.code?.current);
@@ -1481,7 +1483,7 @@ async function shortRevision(folder: string): Promise<string> {
  * (`isIdleForUnload`, `hasExtensionBackgroundWork`): a running turn, queued input, an open question, a running tool,
  * children, background bash or a watcher; plus Atelier Pages the host serves. An unparseable status line counts as busy.
  */
-function familyBusy(status: HostTranscript["status"]): string | undefined {
+function familyBusy(status: HostTranscript["status"], pagesBusy = true): string | undefined {
   if (status.isStreaming || status.isCompacting || status.isBashRunning) return "a turn is running";
   if (status.pendingMessageCount > 0) return "input is queued";
   if ((status.pendingAsks?.length ?? 0) > 0) return "a question is open";
@@ -1490,7 +1492,7 @@ function familyBusy(status: HostTranscript["status"]): string | undefined {
   if (childrenRunning(status)) return "children are running";
   if (list("pi-workbench:background-bash", "jobs")?.length !== 0) return "background bash is running";
   if (list("pi-process-monitor:watchers", "watchers")?.length !== 0) return "a watcher is running";
-  if (status.extensionStatuses?.["pi-workbench:atelier"] !== undefined) return "it serves Atelier Pages";
+  if (pagesBusy && status.extensionStatuses?.["pi-workbench:atelier"] !== undefined) return "it serves Atelier Pages";
   return undefined;
 }
 
