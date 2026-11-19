@@ -19,9 +19,10 @@ export interface SessionProxyDaemon {
 }
 
 export function registerSessionProxyRoutes(app: FastifyInstance, daemon: SessionProxyDaemon = new SessionDaemonClient(), prefix = "/api"): void {
-  const proxy = async (request: { method: string; url: string; body?: unknown }, reply: FastifyReply) => {
+  // Browser operations wait out a daemon restart; the health and runtime probes report it down at once.
+  const proxy = async (request: { method: string; url: string; body?: unknown }, reply: FastifyReply, startup: SessionDaemonRequestOptions = { waitForStartup: true }) => {
     try {
-      const upstream = await daemon.request(request.method, stripPrefix(request.url, prefix), request.body);
+      const upstream = await daemon.request(request.method, stripPrefix(request.url, prefix), request.body, startup);
       reply.code(upstream.statusCode);
       const contentType = upstream.headers["content-type"];
       if (contentType !== undefined && contentType !== "") reply.header("content-type", contentType);
@@ -51,8 +52,8 @@ export function registerSessionProxyRoutes(app: FastifyInstance, daemon: Session
     }
   });
 
-  app.get(`${prefix}/sessiond/health`, (_request, reply) => proxy({ method: "GET", url: `${prefix}/health` }, reply));
-  app.get(`${prefix}/sessiond/runtime`, (_request, reply) => proxy({ method: "GET", url: `${prefix}/runtime` }, reply));
+  app.get(`${prefix}/sessiond/health`, (_request, reply) => proxy({ method: "GET", url: `${prefix}/health` }, reply, {}));
+  app.get(`${prefix}/sessiond/runtime`, (_request, reply) => proxy({ method: "GET", url: `${prefix}/runtime` }, reply, {}));
 
   app.get<{ Params: { sessionId: string } }>(`${prefix}/sessions/:sessionId/events`, { websocket: true }, (socket, request) => {
     bridgeSockets(socket, daemon.connectWebSocket(stripPrefix(request.url, prefix)));

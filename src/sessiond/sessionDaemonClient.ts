@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import type { Readable } from "node:stream";
+import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket } from "ws";
 import { isHostAbsoluteAgentDir } from "../config.js";
 import type { ActiveAgentProfileDescriptor } from "../shared/apiTypes.js";
@@ -20,6 +21,11 @@ export interface SessionDaemonClientOptions {
 
 export interface SessionDaemonRequestOptions {
   signal?: AbortSignal;
+  /**
+   * Wait up to 5 s for a restarting daemon's socket (a promotion, a crash under launchd) before failing. For forwarded
+   * browser operations; health and runtime probes leave it off so they report a down daemon within their deadlines.
+   */
+  waitForStartup?: boolean;
 }
 
 export interface SessionDaemonStreamResponse {
@@ -59,8 +65,9 @@ export class SessionDaemonClient {
     if (this.baseUrl !== undefined && this.baseUrl !== "") {
       return this.requestUrl(method, path, payload, options.signal);
     }
-    // A restarting daemon (a promotion, a crash under launchd) has no socket or no listener for a moment. Nothing
-    // reached it, so every method is safe to send again.
+    if (options.waitForStartup !== true) return this.requestSocket(method, path, payload, options.signal);
+    // A restarting daemon has no socket or no listener for a moment. Nothing reached it, so every method is safe to
+    // send again.
     const deadline = Date.now() + SOCKET_STARTUP_WAIT_MS;
     for (;;) {
       try {
@@ -68,7 +75,7 @@ export class SessionDaemonClient {
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if ((code !== "ENOENT" && code !== "ECONNREFUSED") || options.signal?.aborted === true || Date.now() >= deadline) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await sleep(200, undefined, options.signal === undefined ? undefined : { signal: options.signal });
       }
     }
   }

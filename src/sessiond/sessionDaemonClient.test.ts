@@ -83,7 +83,7 @@ describe("SessionDaemonClient daemon restart", () => {
     const server = createServer((_request, reply) => { reply.writeHead(200); reply.end("{}"); });
     const client = new SessionDaemonClient({ socketPath });
     try {
-      const pending = client.request("POST", "/sessions/x/prompt", { text: "hi" });
+      const pending = client.request("POST", "/sessions/x/prompt", { text: "hi" }, { waitForStartup: true });
       setTimeout(() => server.listen(socketPath), 500);
       await expect(pending).resolves.toMatchObject({ statusCode: 200 });
     } finally {
@@ -91,12 +91,17 @@ describe("SessionDaemonClient daemon restart", () => {
     }
   });
 
-  it.skipIf(process.platform === "win32")("still reports a daemon that stays away", async () => {
+  it.skipIf(process.platform === "win32")("fails at once without waitForStartup, and a waiting request stops on abort", async () => {
     const client = new SessionDaemonClient({ socketPath: join(tmpdir(), `${randomUUID()}.sock`) });
+    const started = Date.now();
+    await expect(client.request("GET", "/runtime")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(Date.now() - started).toBeLessThan(150);
     const controller = new AbortController();
-    const pending = client.request("GET", "/runtime", undefined, { signal: controller.signal });
+    const pending = client.request("GET", "/runtime", undefined, { signal: controller.signal, waitForStartup: true });
     setTimeout(() => controller.abort(), 300);
+    const aborted = Date.now();
     await expect(pending).rejects.toThrow();
+    expect(Date.now() - aborted).toBeLessThan(450);
   });
 });
 
