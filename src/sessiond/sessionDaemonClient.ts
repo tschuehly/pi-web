@@ -37,6 +37,9 @@ export interface SessionDaemonRequestClient {
   ): Promise<{ statusCode: number; headers: Record<string, string>; body: string }>;
 }
 
+/** How long a request waits for a daemon that is starting before it reports the daemon unavailable. */
+const SOCKET_STARTUP_WAIT_MS = 5_000;
+
 export class SessionDaemonClient {
   private readonly baseUrl: string | undefined;
   private readonly socketPath: string;
@@ -56,7 +59,18 @@ export class SessionDaemonClient {
     if (this.baseUrl !== undefined && this.baseUrl !== "") {
       return this.requestUrl(method, path, payload, options.signal);
     }
-    return this.requestSocket(method, path, payload, options.signal);
+    // A restarting daemon (a promotion, a crash under launchd) has no socket or no listener for a moment. Nothing
+    // reached it, so every method is safe to send again.
+    const deadline = Date.now() + SOCKET_STARTUP_WAIT_MS;
+    for (;;) {
+      try {
+        return await this.requestSocket(method, path, payload, options.signal);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if ((code !== "ENOENT" && code !== "ECONNREFUSED") || options.signal?.aborted === true || Date.now() >= deadline) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
   }
 
   /** Stream binary resources without UTF-8 decoding or buffering the response. */

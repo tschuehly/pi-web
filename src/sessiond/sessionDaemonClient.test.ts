@@ -77,6 +77,29 @@ describe("SessionDaemonClient transport configuration", () => {
   });
 });
 
+describe("SessionDaemonClient daemon restart", () => {
+  it.skipIf(process.platform === "win32")("waits for a daemon whose socket appears shortly after the request, as during a restart", async () => {
+    const socketPath = join(tmpdir(), `${randomUUID()}.sock`);
+    const server = createServer((_request, reply) => { reply.writeHead(200); reply.end("{}"); });
+    const client = new SessionDaemonClient({ socketPath });
+    try {
+      const pending = client.request("POST", "/sessions/x/prompt", { text: "hi" });
+      setTimeout(() => server.listen(socketPath), 500);
+      await expect(pending).resolves.toMatchObject({ statusCode: 200 });
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("still reports a daemon that stays away", async () => {
+    const client = new SessionDaemonClient({ socketPath: join(tmpdir(), `${randomUUID()}.sock`) });
+    const controller = new AbortController();
+    const pending = client.request("GET", "/runtime", undefined, { signal: controller.signal });
+    setTimeout(() => controller.abort(), 300);
+    await expect(pending).rejects.toThrow();
+  });
+});
+
 describe("SessionDaemonClient active agent profile protocol", () => {
   it("returns the validated immutable profile from the daemon runtime endpoint", async () => {
     const client = new SessionDaemonClient();
