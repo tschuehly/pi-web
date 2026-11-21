@@ -13,6 +13,44 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
 });
 
+for (const pending of [true, false]) {
+  test(`host upgrade Details stays compact and keyboard accessible (pending: ${String(pending)})`, async ({ page }) => {
+    await page.goto(`/overlays.html?host-upgrade=${pending ? "pending" : "available"}`);
+    const banner = page.locator("chat-view .durable-host-pin");
+    const disclosure = banner.locator("details");
+    const summary = banner.locator("summary");
+    await expect(summary).toHaveText(`Host upgrade ${pending ? "pending" : "available"} Details`);
+    await expect(disclosure).not.toHaveAttribute("open");
+    await expect(banner.getByRole("button", { name: "Upgrade now", exact: true })).toBeHidden();
+    const collapsed = await banner.boundingBox();
+    expect(collapsed?.height).toBeLessThanOrEqual(36);
+    await page.screenshot({ path: test.info().outputPath("host-upgrade-collapsed.png") });
+
+    await summary.focus();
+    await expect(summary).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(disclosure).toHaveAttribute("open", "");
+    await expect(banner.getByText("Repeats: running turn; running children", { exact: false })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("host-upgrade-expanded.png") });
+    const modes = pending ? ["quiet", "now", "cancel"] as const : ["quiet", "now"] as const;
+    for (const mode of modes) {
+      await page.keyboard.press("Tab");
+      const label = { quiet: "Upgrade host", now: "Upgrade now", cancel: "Cancel" }[mode];
+      const button = banner.getByRole("button", { name: label, exact: true });
+      await expect(button).toBeFocused();
+      await button.click({ trial: true });
+      await page.keyboard.press("Enter");
+      await expect(page.locator("body")).toHaveAttribute("data-upgrade-mode", mode);
+    }
+    expect(await banner.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await summary.focus();
+    await page.keyboard.press("Space");
+    await expect(disclosure).not.toHaveAttribute("open");
+    await page.keyboard.press("Tab");
+    await expect(banner.locator("button:focus")).toHaveCount(0);
+  });
+}
+
 test("completions escape layout clipping, preserve editor focus, and disappear on session changes", async ({ page }) => {
   const input = page.locator("prompt-editor .cm-content");
   // The Workbench composer offers slash commands and skills; it has no @ file or # model completions.

@@ -69,17 +69,6 @@ export function renderStopIcon(): TemplateResult {
   `;
 }
 
-/** Context-window fill as a ring: a full track plus an arc for the used share (undefined = empty). */
-export function renderContextRing(percent: number | undefined): TemplateResult {
-  const used = percent === undefined || !Number.isFinite(percent) ? 0 : Math.min(100, Math.max(0, percent));
-  return svg`
-    <svg class="context-ring" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <circle class="context-ring-track" cx="8" cy="8" r="6"></circle>
-      <circle class="context-ring-used" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray=${`${String(used)} 100`} transform="rotate(-90 8 8)"></circle>
-    </svg>
-  `;
-}
-
 export function renderRemoveIcon(): TemplateResult {
   return svg`
     <svg class="prompt-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

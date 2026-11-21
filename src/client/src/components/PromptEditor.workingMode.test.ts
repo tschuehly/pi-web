@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionModel, SessionStatus } from "../api";
 import { WORKING_MODE_STATUS_KEY, type WorkingModeAxis } from "../extensionStatusSnapshots";
-import { ModelEffortPicker, modelPickerGroups } from "./ModelEffortPicker";
+import { compactModelEffortLabel, ModelEffortPicker, modelPickerGroups } from "./ModelEffortPicker";
 import { PromptEditor } from "./PromptEditor";
 import { WorkingModeControls } from "./WorkingModeControls";
 
@@ -193,7 +193,7 @@ describe("PromptEditor Working Mode controls", () => {
     expectHiddenMetric(editor, "output", "Output tokens: 34000");
     expectMetric(editor, "context", "213k / 272k", "Context: 212704 of 272000 tokens used (78.234567%)", "Context: 212704 of 272000 tokens used (78.234567%)\nInput tokens: 434000\nOutput tokens: 34000");
     expect(metric(editor, "context").querySelector(".context-meter")?.classList.contains("context-warning")).toBe(true);
-    expect(metric(editor, "context").querySelector(".context-ring-used")?.getAttribute("stroke-dasharray")).toBe("78.234567 100");
+    expect(metric(editor, "context").querySelector(".context-ring")).toBeNull();
     expectMetric(editor, "cost", "$12.42", "Session cost: $12.42");
     expectMetric(editor, "warnings", "Warnings 2", "Session warnings: 2");
     expectMetric(editor, "queued", "Queued 3", "Queued messages: 3");
@@ -215,10 +215,18 @@ describe("PromptEditor Working Mode controls", () => {
     expect(visibleMetricText(editor, "cost")).toBe("$12.50");
     expect(visibleMetricText(editor, "queued")).toBe("Queued 1");
 
+    editor.dense = true;
+    editor.status = { ...currentStatus, contextUsage: { tokens: 47_000, contextWindow: 272_000, percent: 17.279 } };
+    await editor.updateComplete;
+    expect(visibleMetricText(editor, "context")).toBe("47k/272k");
     editor.status = { ...currentStatus, contextUsage: { tokens: null, contextWindow: 200_000, percent: null } };
     await editor.updateComplete;
-    expect(visibleMetricText(editor, "context")).toBe("? / 200k");
+    expect(visibleMetricText(editor, "context")).toBe("?/200k");
     expect(accessibleMetricText(editor, "context")).toBe("Context used tokens unavailable; window: 200000 tokens");
+    expect(compactModelEffortLabel("openai/gpt-6.2-sol", "high")).toBe("sol-h");
+    expect(compactModelEffortLabel("anthropic/claude-opus-5-5", "high")).toBe("opus-h");
+    expect(compactModelEffortLabel("meta/muse-ember-1.0", "xhigh")).toBe("ember-xh");
+    expect(compactModelEffortLabel(undefined, "medium")).toBe("no model-m");
   });
 
   it("shows model and effort as one button whose popover puts effort first and stays open for effort", async () => {

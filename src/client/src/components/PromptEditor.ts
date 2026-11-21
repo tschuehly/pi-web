@@ -25,7 +25,7 @@ import { composerKeyboardSubmissionEnabled, composerSendShortcut, matchesCompose
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { AnchoredPopupController } from "./anchoredPopup";
-import { renderActivityIcon, renderAttachIcon, renderCameraIcon, renderContextRing, renderPhotosIcon, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
+import { renderActivityIcon, renderAttachIcon, renderCameraIcon, renderPhotosIcon, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
 import "./WorkingModeControls";
 import "./ModelEffortPicker";
 import { formatCost, formatTokenCount } from "../utils/format";
@@ -391,7 +391,7 @@ export class PromptEditor extends LitElement {
     const percent = context === undefined ? undefined : context.percent ?? (context.tokens === null || context.contextWindow <= 0 ? undefined : (context.tokens / context.contextWindow) * 100);
     const contextText = context === undefined
       ? "Context unknown"
-      : `${context.tokens === null ? "?" : formatTokenCount(context.tokens)} / ${formatTokenCount(context.contextWindow)}`;
+      : `${context.tokens === null ? "?" : formatTokenCount(context.tokens)}${this.dense ? "/" : " / "}${formatTokenCount(context.contextWindow)}`;
     const contextLabel = context === undefined
       ? "Context usage unavailable"
       : context.tokens === null
@@ -408,7 +408,7 @@ export class PromptEditor extends LitElement {
       <ul class="usage" aria-label="Session usage">
         <li data-usage="input" class="visually-hidden">${inputLabel}</li>
         <li data-usage="output" class="visually-hidden">${outputLabel}</li>
-        ${metric("context", html`<span class=${`context-meter${level}`}>${renderContextRing(percent)}${this.dense ? null : contextText}</span>`, contextLabel, `${this.dense ? `${contextText}\n` : ""}${contextLabel}\n${inputLabel}\n${outputLabel}${this.dense ? `\n${costLabel}` : ""}`)}
+        ${metric("context", html`<span class=${`context-meter${level}`}>${contextText}</span>`, contextLabel, `${contextLabel}\n${inputLabel}\n${outputLabel}${this.dense ? `\n${costLabel}` : ""}`)}
         ${this.dense ? html`<li data-usage="cost" class="visually-hidden">${costLabel}</li>` : metric("cost", formatCost(status.cost), costLabel)}
         ${this.warningCount > 0 ? metric("warnings", `Warnings ${String(this.warningCount)}`, `Session warnings: ${String(this.warningCount)}`) : null}
         ${status.pendingMessageCount > 0 ? metric("queued", `Queued ${String(status.pendingMessageCount)}`, `Queued messages: ${String(status.pendingMessageCount)}`) : null}

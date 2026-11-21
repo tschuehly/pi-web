@@ -8,23 +8,28 @@ const RESOLUTIONS: readonly { resolution: SessionEffectResolution; label: string
   { resolution: "retry", label: "Retry", title: "Run it again now" },
 ];
 
-/**
- * A Durable Chat pinned to older host code: its revision, Upgrade host (while it is quiet) and Upgrade now (restart
- * with recovery), which names what it would repeat; and, with automatic upgrades on, "Upgrade pending" with Cancel.
- */
+/** A compact host-upgrade status; versions, recovery details and actions stay inside a native disclosure. */
 export function renderDurableHostPin(pin: SessionStatus["durableHostPin"], onUpgrade: ((mode: "quiet" | "now" | "cancel") => void) | undefined) {
   if (pin === undefined) return null;
   const repeats = pin.repeats ?? [];
-  const now = repeats.length === 0 ? "Upgrade now (nothing repeats)" : `Upgrade now (repeats: ${repeats.join("; ")})`;
   return html`
-    <p class="durable-host-pin" role="status">
-      Host <code>${pin.revision}</code> (new Chats run <code>${pin.current}</code>)
-      ${onUpgrade === undefined ? null : html`
-        <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code; refused while it is busy" @click=${() => { onUpgrade("quiet"); }}>Upgrade host</button>
-        <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code now; the Chat resumes by itself. Open questions, queued input, background bash and Atelier Pages carry over." @click=${() => { onUpgrade("now"); }}>${now}</button>
-        ${pin.pending === true ? html`<span>Upgrade pending: it restarts on the current code once no turn, tool or child runs</span>
-          <button type="button" class="ui-button ui-button--compact" title="Keep this Chat on its host code until you upgrade it" @click=${() => { onUpgrade("cancel"); }}>Cancel</button>` : null}`}
-    </p>
+    <aside class="session-warnings durable-host-pin">
+      <details>
+        <summary><span role="status">${pin.pending === true ? "Host upgrade pending" : "Host upgrade available"}</span> <span class="durable-host-pin-disclosure">Details</span></summary>
+        <div class="durable-host-pin-details">
+          <p>Host <code>${pin.revision}</code> (new Chats run <code>${pin.current}</code>)</p>
+          ${pin.pending === true ? html`<p>Upgrade pending: it restarts on the current code once no turn, tool or child runs.</p>` : null}
+          <p id="durable-host-upgrade-recovery">Upgrade now restarts this Chat's host; the Chat resumes by itself. Open questions, queued input, background bash and Atelier Pages carry over.
+            ${repeats.length === 0 ? "Nothing repeats." : `Repeats: ${repeats.join("; ")}.`}</p>
+          ${onUpgrade === undefined ? null : html`
+            <div class="durable-host-pin-actions">
+              <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code; refused while it is busy" @click=${() => { onUpgrade("quiet"); }}>Upgrade host</button>
+              <button type="button" class="ui-button ui-button--compact" aria-describedby="durable-host-upgrade-recovery" @click=${() => { onUpgrade("now"); }}>Upgrade now</button>
+              ${pin.pending === true ? html`<button type="button" class="ui-button ui-button--compact" title="Keep this Chat on its host code until you upgrade it" @click=${() => { onUpgrade("cancel"); }}>Cancel</button>` : null}
+            </div>`}
+        </div>
+      </details>
+    </aside>
   `;
 }
 

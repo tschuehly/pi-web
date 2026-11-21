@@ -57,6 +57,16 @@ layout.className = "conversation";
 layout.sending = true;
 const chat = new ChatView();
 chat.messages = [{ role: "user", parts: [{ type: "text", text: "Chat messages behind suggestions" }] }];
+const hostUpgrade = new URLSearchParams(location.search).get("host-upgrade");
+if (hostUpgrade !== null) {
+  chat.status = {
+    sessionId: "browser-fixture", isStreaming: false, isCompacting: false, isBashRunning: false,
+    pendingMessageCount: 0, queuedMessages: [], cost: 0,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    durableHostPin: { revision: "old1234", current: "new5678", pending: hostUpgrade === "pending", repeats: ["running turn", "running children"] },
+  };
+  chat.onUpgradeDurableHost = (mode) => { document.body.dataset["upgradeMode"] = mode; };
+}
 layout.append(chat);
 const editor = new PromptEditor();
 editor.slot = "composer";

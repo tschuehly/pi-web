@@ -264,10 +264,7 @@ export const promptEditorLayoutStyles = css`
   .composer-actions > button:hover:not(:disabled) { background: var(--pi-surface-hover); color: var(--pi-text); }
   .usage { display: flex; flex: 0 1 auto; min-width: 0; align-items: center; gap: 10px; margin: 0; padding: 0 4px; list-style: none; font-variant-numeric: tabular-nums; }
   .usage > li { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .context-meter { display: inline-flex; align-items: center; gap: 5px; }
-  .context-ring { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke-width: 2.5; }
-  .context-ring-track { stroke: currentColor; opacity: .3; }
-  .context-ring-used { stroke: currentColor; }
+  .context-meter { display: inline-flex; align-items: center; }
   .context-warning { color: var(--pi-warning); }
   .context-danger { color: var(--pi-danger); }
   .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; white-space: nowrap !important; border: 0 !important; }
