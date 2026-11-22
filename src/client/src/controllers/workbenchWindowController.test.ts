@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeChats, emptyWindow, moveChats, openChat, parseWindowStore, toggleLayout, toggleMaximized, type WindowStore } from "../workbenchWindows";
 import { loadDraft, moveDraft, saveDraft } from "../promptDraftStorage";
 import { FakeLocks } from "./webLocks.testSupport";
-import { WINDOW_HEARTBEAT_KEY, WINDOW_STORE_KEY, WINDOW_STORE_LOCK, WorkbenchWindowController, newWindowId, type WindowLocks, type WindowRequest, type WorkbenchWindowEnvironment } from "./workbenchWindowController";
+import { WINDOW_HEARTBEAT_KEY, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY, WINDOW_STORE_LOCK, WorkbenchWindowController, newWindowId, type WindowLocks, type WindowRequest, type WorkbenchWindowEnvironment } from "./workbenchWindowController";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -113,6 +113,22 @@ describe("window identity", () => {
     expect(Object.keys(later.store).sort()).toEqual(["fresh", "later"]);
     next.dispose();
     later.dispose();
+  });
+
+  it("never prunes a window whose page reclaimed its id while this one waited for the store lock", async () => {
+    const locks = new FakeLocks();
+    storage.setItem(WINDOW_STORE_KEY, storeWith({ back: emptyWindow("Window 1") }));
+    const releaseStore = locks.hold(WINDOW_STORE_LOCK);
+    const controller = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/", "fresh", locks).environment);
+    const started = controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    // The other page holds its id before its first heartbeat reaches storage.
+    locks.hold(`${WINDOW_ID_LOCK_PREFIX}back`);
+    releaseStore();
+    await started;
+
+    expect(Object.keys(parseWindowStore(storage.getItem(WINDOW_STORE_KEY))).sort()).toEqual(["back", "fresh"]);
+    controller.dispose();
   });
 
   it("starts a new named window when every stored one is still open", async () => {

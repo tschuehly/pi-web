@@ -176,9 +176,6 @@ export class WorkbenchWindowController {
 
   private async claimId(): Promise<void> {
     const url = this.environment.url();
-    const alive = this.readTimes(WINDOW_HEARTBEAT_KEY);
-    const now = this.environment.now();
-    const isAlive = (id: string) => (alive[id] ?? 0) > now - STALE_MS;
     const requested = url.searchParams.get(WINDOW_URL_PARAM) ?? this.environment.tabStorage?.getItem(TAB_WINDOW_KEY) ?? null;
     let id = requested !== null && requested !== "" && await this.holdId(requested) ? requested : undefined;
     if (id === undefined) {
@@ -193,7 +190,12 @@ export class WorkbenchWindowController {
     this.windowId = id;
     const claimed = id;
     // Closed windows without Chats are dropped; closed ones with Chats stay for their restored window for 7 days.
-    await this.exclusive(() => {
+    await this.exclusive(async () => {
+      // Liveness is read under the store lock: a page holding its id lock may have reclaimed it before its first beat.
+      const held = await this.heldIds();
+      const alive = this.readTimes(WINDOW_HEARTBEAT_KEY);
+      const now = this.environment.now();
+      const isAlive = (id: string) => held.has(id) || (alive[id] ?? 0) > now - STALE_MS;
       const latest = this.read();
       const closedAt = this.readTimes(WINDOW_CLOSED_KEY);
       const closed: Record<string, number> = {};
@@ -309,8 +311,14 @@ export class WorkbenchWindowController {
 
   /** Only a held id lock proves a window alive; without Web Locks no other window counts. */
   private async isHeld(windowId: string): Promise<boolean> {
+    return (await this.heldIds()).has(windowId);
+  }
+
+  /** The window ids whose id lock a live page holds now. */
+  private async heldIds(): Promise<Set<string>> {
     const locks = this.environment.locks;
-    return locks !== undefined && (await locks.query()).held?.some((lock) => lock.name === `${WINDOW_ID_LOCK_PREFIX}${windowId}`) === true;
+    if (locks === undefined) return new Set();
+    return new Set(((await locks.query()).held ?? []).flatMap(({ name }) => name?.startsWith(WINDOW_ID_LOCK_PREFIX) === true ? [name.slice(WINDOW_ID_LOCK_PREFIX.length)] : []));
   }
 
   /**
