@@ -6,6 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { CHAT_CAPABILITY_LABELS, type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
 import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionNotificationDismissAllRequest, SessionNotificationDismissRequest, SessionNotificationInboxSnapshot, SessionNotificationSummaryEvent, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
+import { childrenRunning, familyBusy, runningWork } from "../../shared/closeBusy.js";
 import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 import type { PiWebConfig } from "../../config.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
@@ -323,6 +324,8 @@ export class DurableChatService {
     spawnTargets?: SpawnTargetResolver;
     /** Stop's wait before SIGTERM, and again before SIGKILL; default 5 s. */
     closeGraceMs?: number;
+    /** How long `stopIfUnwatched` waits for the closing tab's own socket to go; default 2 s. */
+    watchGraceMs?: number;
     /** The clock of the idle close; tests inject one. */
     now?: () => number;
     /**
@@ -972,6 +975,31 @@ export class DurableChatService {
   }
 
   /**
+   * Closing a Chat's tab (Workbench): end it as `stop` does, unless a browser still watches it (after waiting for the
+   * closing tab's own socket to go) or, unless `confirmed`, work runs; the refusal names that work for the warning.
+   * shortcut: a window that starts watching between the last check and the end loses the host; it reopens on next use.
+   * shortcut: work the host starts between its status sample and `{ end: true }` (milliseconds) ends unwarned; move the check into the host if that bites.
+   * shortcut: another browser that is reconnecting has no socket, so the Chat counts as unwatched and ends; it reopens when that browser reconnects.
+   */
+  async stopIfUnwatched(ref: SessionRouteRef, confirmed: boolean): Promise<{ stopped: true } | { stopped: false; watched: true } | { stopped: false; busy: string }> {
+    const record = this.#record(ref);
+    const watched = () => this.deps.events.hasSessionSubscribers?.(record.id) !== false;
+    for (let waited = 0; watched() && waited < (this.deps.watchGraceMs ?? 2000); waited += 50) await new Promise((resolve) => setTimeout(resolve, 50));
+    if (watched()) return { stopped: false, watched: true };
+    if (!confirmed) {
+      const pending = this.#connections.get(record.id) ?? (record.host === undefined ? undefined : this.#connection(record, true));
+      const connection = await pending?.catch(() => undefined);
+      const busy = connection === undefined
+        ? familiesWithBackgroundJobs().has(record.id) ? "Background bash jobs are running; closing ends them." : undefined
+        : runningWork(hostStatus((await connection.request("status")).result));
+      if (busy !== undefined) return { stopped: false, busy };
+      if (watched()) return { stopped: false, watched: true };
+    }
+    await this.#end(record.id, true);
+    return { stopped: true };
+  }
+
+  /**
    * Stop-all: every family host, connected or only recorded by an earlier daemon, ends as `stop` ends one, and so does
    * every family with unfinished background jobs whose host is gone.
    */
@@ -1005,6 +1033,7 @@ export class DurableChatService {
    * Close every family host idle for {@link IDLE_HOST_CLOSE_MS}: no event since, nothing running or waiting (see
    * `familyBusy`) and no browser watching, as legacy `unloadIdleSessions` unloads sessions. The next use reopens it, on
    * the current host code when the family was pinned and may move (see `hostMoveRefusal`).
+   * shortcut: an open Atelier Page goes offline with the idle host (the owner chose Pages live and die with the Chat); reopening the Chat serves it again.
    */
   async closeIdleHosts(): Promise<void> {
     const idle = (id: string) => this.#now() - (this.#lastActive.get(id) ?? 0) >= IDLE_HOST_CLOSE_MS && this.deps.events.hasSessionSubscribers?.(id) !== true;
@@ -1058,7 +1087,7 @@ export class DurableChatService {
     if (mode === "quiet") {
       // Served Pages do not block the owner's click: `status` below starts the new host at once, which reopens them on the
       // same port, so open tabs miss only the restart.
-      const busy = familyBusy(hostStatus((await connection.request("status")).result), false);
+      const busy = familyBusy(hostStatus((await connection.request("status")).result));
       const refused = busy ?? await this.#upgradeOnce(record, pin, connection.code, connection.closeIfRestartSafe ? "ifRestartSafe" : "plain", true);
       if (refused !== undefined) throw new Error(`This Chat cannot move to new host code while ${refused}; try again when it is quiet`);
       return this.status(ref);
@@ -1254,7 +1283,7 @@ export class DurableChatService {
         const status = await connection.request("status").then(({ result }) => hostStatus(result), () => undefined);
         if (status === undefined || !restartSafe(status) || this.#declined(id, connection.code) || this.#connections.get(id) !== pending) continue;
         // A store-format change moves only when the family is quiet, as the Upgrade host click does.
-        if (connection.upgradeQuiet && familyBusy(status, false) !== undefined) continue;
+        if (connection.upgradeQuiet && familyBusy(status) !== undefined) continue;
         this.deps.logger?.info?.({ sessionId: id }, "upgrade-restart: automatic upgrade at a safe moment");
         await this.#upgradeOnce(record, pin, connection.code, "ifRestartSafe", connection.upgradeQuiet).catch((error: unknown) => {
           this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
@@ -1558,49 +1587,12 @@ async function shortRevision(folder: string): Promise<string> {
 }
 
 /**
- * Why a family is not quiet, from its host's status; undefined when nothing runs or waits. The legacy idle-unload rule
- * (`isIdleForUnload`, `hasExtensionBackgroundWork`): a running turn, queued input, an open question, a running tool,
- * children, background bash or a watcher; plus Atelier Pages the host serves. An unparseable status line counts as busy.
- */
-function familyBusy(status: HostTranscript["status"], pagesBusy = true): string | undefined {
-  if (status.isStreaming || status.isCompacting || status.isBashRunning) return "a turn is running";
-  if (status.pendingMessageCount > 0) return "input is queued";
-  if ((status.pendingAsks?.length ?? 0) > 0) return "a question is open";
-  if ((status.activeToolExecutions?.length ?? 0) > 0) return "a tool is running";
-  const list = (key: string, field: string) => statusList(status, key, field);
-  if (childrenRunning(status)) return "children are running";
-  if (list("pi-workbench:background-bash", "jobs")?.length !== 0) return "background bash is running";
-  if (list("pi-process-monitor:watchers", "watchers")?.length !== 0) return "a watcher is running";
-  if (pagesBusy && status.extensionStatuses?.["pi-workbench:atelier"] !== undefined) return "it serves Atelier Pages";
-  return undefined;
-}
-
-/**
  * Whether an automatic upgrade (B) may restart the family now: nothing runs or waits except work that survives a host
  * restart unchanged (open questions, background bash, watchers, Atelier Pages).
  */
 function restartSafe(status: HostTranscript["status"]): boolean {
   return !status.isStreaming && !status.isCompacting && !status.isBashRunning && status.pendingMessageCount === 0
     && (status.activeToolExecutions?.length ?? 0) === 0 && !childrenRunning(status);
-}
-
-/** A JSON list in one of the host's extension status lines: none when the line is absent, undefined when unparseable. */
-function statusList(status: HostTranscript["status"], key: string, field: string): unknown[] | undefined {
-  const text = status.extensionStatuses?.[key];
-  if (text === undefined) return [];
-  try {
-    const value: unknown = JSON.parse(text);
-    const items = isRecord(value) ? value[field] : undefined;
-    return Array.isArray(items) ? items : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** A delegate roster row not yet ended (Subagents, Workers); an unparseable roster counts as running. */
-function childrenRunning(status: HostTranscript["status"]): boolean {
-  const delegates = statusList(status, "pi-workbench:activity", "items");
-  return delegates === undefined || delegates.some((item) => !isRecord(item) || item["endedAt"] === undefined);
 }
 
 /**

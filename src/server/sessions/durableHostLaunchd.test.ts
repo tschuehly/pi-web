@@ -476,7 +476,6 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
       { pendingAsks: [{ askId: "q1" }] },
       running("pi-workbench:activity", { items: [{ id: "delegate:1", startedAt: "2026-11-17T08:00:00Z" }] }),
       running("pi-workbench:background-bash", { jobs: [{ id: "job-1" }] }),
-      running("pi-workbench:atelier", { serving: true }),
     ]) {
       await writeFile(statusFile, JSON.stringify(busy));
       await durable.closeIdleHosts();

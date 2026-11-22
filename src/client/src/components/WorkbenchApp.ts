@@ -4,6 +4,7 @@ import { styleMap } from "lit/directives/style-map.js";
 import { customElement, state } from "lit/decorators.js";
 import { api, configApi, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
+import { retriesOperations } from "../api/operationRetry";
 import type { SessionOpenAsks } from "../../../shared/apiTypes";
 import { PI_WEB_CAPABILITIES, supportsPiWebCapability } from "../../../shared/capabilities";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
@@ -15,7 +16,7 @@ import type { PromptEditorTextReplacement, SessionController, SessionSelectionOp
 import { WorkbenchChatSession, WorkbenchSessionFocus } from "../controllers/workbenchSessionFocus";
 import { selectedMachineId } from "../controllers/types";
 import { TabSwipeController } from "../controllers/tabSwipeController";
-import { WINDOW_URL_PARAM, WorkbenchWindowController, type WindowRequest } from "../controllers/workbenchWindowController";
+import { WINDOW_HEARTBEAT_KEY, WINDOW_URL_PARAM, WorkbenchWindowController, type WindowRequest } from "../controllers/workbenchWindowController";
 import { resolveAppUrl } from "../appUrl";
 import { applyInterfaceScale, DEFAULT_INTERFACE_SCALE, readStoredInterfaceScale, stepInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
 import type { LineRange, OutsideFileOpenRequest, WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
@@ -38,6 +39,7 @@ import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { pluginStyles, PluginStyleRuntime } from "../plugins/styles";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
 import { closeChats, focusChat, GRID_MIN_TILE, gridRatio, gridRatioBounds, gridRatioFromDrag, gridRatioFromKeyboard, gridTiles, moveChats, orderedChats, resizeGrid, toggleLayout, toggleMaximized, updateChat, windowChatSummary, type GridAxis, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
+import { runningWork } from "../../../shared/closeBusy";
 import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import type { ChatRevealTarget } from "./ChatView";
 import { hasUnacknowledgedSend, type PromptEditor } from "./PromptEditor";
@@ -100,6 +102,21 @@ const unsavedChatsIn = (rows: readonly SessionInfo[], cwd: string, openedId: str
 /** A window asked to hand over dropped Chats may first ask its owner about unsaved file edits. */
 const MOVE_REPLY_MS = 60_000;
 
+/** A closed Durable Chat to end. */
+interface DurableChatEnd { session: SessionInfo; machineId: string }
+
+/** Closing waits this long for the server to answer (5 s), and longer for a host to end in order. */
+const CLOSE_DEADLINE_MS = 5000;
+const STOP_DEADLINE_MS = 20_000;
+/** The server waits 2 s for the closing tab's socket to go; a close it saw still watched is asked once more after this. */
+const WATCHED_RETRY_MS = 3000;
+
+/** Rejects when `work` has not settled within `ms`, so a stalled request fails visibly instead of pending forever. */
+function withDeadline<T>(work: Promise<T>, ms = CLOSE_DEADLINE_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([work, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`The server did not answer within ${String(ms / 1000)} s.`)); }, ms); })]).finally(() => { clearTimeout(timer); });
+}
+
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
   private readonly workstreamColors = new WorkstreamColorController(this);
@@ -141,6 +158,8 @@ export class WorkbenchApp extends LitElement {
     onRefreshError: (error) => { console.warn("Chat refresh after resume failed", error); },
   });
   private readonly retiringChats = new Set<string>();
+  /** Chats whose close is still asking the server or ending them. */
+  private readonly closingChats = new Set<string>();
   private launcher: WorkbenchChatSession | undefined;
   private navigationSequence = 0;
   private selectingChat: { sessionId: string; generation: number } | undefined;
@@ -288,7 +307,7 @@ export class WorkbenchApp extends LitElement {
     if (request.kind === "move") {
       const { sessionIds } = request;
       const holds = () => this.windows.window?.chats.some((chat) => sessionIds.includes(chat.sessionId)) === true;
-      return holds() ? this.moveWindowChats(sessionIds, from, expires)?.then(() => !holds()) ?? false : false;
+      return holds() ? this.moveWindowChats(sessionIds, from, expires, true)?.then(() => !holds()) ?? false : false;
     }
     const chat = chats.find((candidate) => candidate.sessionId === request.sessionId);
     if (chat === undefined) return false;
@@ -593,6 +612,7 @@ export class WorkbenchApp extends LitElement {
     window.addEventListener("resize", this.onWindowResize);
     window.addEventListener("wheel", this.swipe.onWheel, { passive: false, capture: true });
     window.addEventListener("pointerdown", this.closeWindowMenu, { capture: true });
+    window.addEventListener("storage", this.refreshWindowMenu);
     applyPresentationProfile(readStoredPresentationProfile() ?? builtInPresentationProfile("comfortable"));
     this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
     void this.initializeThemes();
@@ -649,6 +669,7 @@ export class WorkbenchApp extends LitElement {
     window.removeEventListener("resize", this.onWindowResize);
     window.removeEventListener("wheel", this.swipe.onWheel, { capture: true });
     window.removeEventListener("pointerdown", this.closeWindowMenu, { capture: true });
+    window.removeEventListener("storage", this.refreshWindowMenu);
     this.swipe.cancel();
     this.finishFilesResize();
     this.systemLightThemeMedia?.removeEventListener("change", this.onSystemLightThemeChange);
@@ -696,10 +717,12 @@ export class WorkbenchApp extends LitElement {
     if (previous.selectedSession !== session && previous.selectedSession?.id === session.id && this.windows.window?.chats.find((chat) => chat.sessionId === session.id)?.title !== title) void this.updateWindow((store, id) => updateChat(store, id, session.id, { title }));
   }
 
-  private updateWindow(change: (store: WindowStore, windowId: string) => WindowStore): Promise<void> {
-    return this.windows.update(change).then((changed) => { if (changed) this.requestUpdate(); }, (error: unknown) => {
+  /** Resolves to whether the store took a change; false when nothing changed or it could not be stored. */
+  private updateWindow(change: (store: WindowStore, windowId: string) => WindowStore): Promise<boolean> {
+    return this.windows.update(change).then((changed) => { if (changed) this.requestUpdate(); return changed; }, (error: unknown) => {
       // An unstored move keeps the Chats here: the window shows what the store still holds.
       this.setApp({ error: error instanceof Error ? error.message : String(error) });
+      return false;
     });
   }
 
@@ -787,18 +810,110 @@ export class WorkbenchApp extends LitElement {
     return { project: undefined, projects, workspace: folder, workspaces: [folder] };
   };
 
-  /** Closes Chats in this window; closing the one on screen shows the next, or the home after the last. */
+  /**
+   * Closes Chats in this window; closing the one on screen shows the next, or the home after the last. A closed Durable
+   * Chat also ends its host (and its background jobs), as the server decides once this window's socket is gone: never
+   * while another browser watches it, and only after the owner confirms when work runs. The owner is asked before the
+   * tab goes, from the Chat's current status; a Chat whose listing or status cannot be read in time stays open, so
+   * closing again retries. Legacy Chats only leave the window.
+   */
   private closeWindowChats(sessionIds: readonly string[]): void {
-    void this.removeWindowChats(sessionIds, (store, id) => closeChats(store, id, sessionIds));
+    this.windowMenu = undefined;
+    // A close still asking or ending finishes first: a late answer must not override a later decision.
+    if (sessionIds.some((id) => this.closingChats.has(id))) return;
+    for (const id of sessionIds) this.closingChats.add(id);
+    void this.closeAndEnd(sessionIds).catch((error: unknown) => {
+      this.setApp({ error: error instanceof Error ? error.message : String(error) });
+    }).finally(() => { for (const id of sessionIds) this.closingChats.delete(id); });
+  }
+
+  private async closeAndEnd(sessionIds: readonly string[]): Promise<void> {
+    const chats = (this.windows.window?.chats ?? []).filter((chat) => sessionIds.includes(chat.sessionId));
+    const title = (id: string) => chats.find((chat) => chat.sessionId === id)?.title ?? id;
+    let durable: DurableChatEnd[];
+    let busy: { id: string; work: string }[];
+    try {
+      durable = (await withDeadline(Promise.all(chats.map((chat) => this.durableChat(chat))))).filter((end): end is DurableChatEnd => end !== null);
+      const checked = durable.filter((end) => !this.shownInOtherLiveWindow(this.windows.store, end.session.id));
+      const statuses = await withDeadline(Promise.all(checked.map((end) => api.status(end.session, end.machineId))));
+      busy = checked.flatMap((end, index) => {
+        const status = statuses[index];
+        const work = status === undefined ? undefined : runningWork(status);
+        return work === undefined ? [] : [{ id: end.session.id, work }];
+      });
+    } catch (error) {
+      throw new Error(`Could not check what runs in the Chat, so it stays open; close it again to retry. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    // The warning names each busy Chat and its work; only those it named are confirmed, so others still refuse when busy.
+    if (busy.length > 0 && !window.confirm(busy.map(({ id, work }) => `"${title(id)}": ${work}`).join("\n"))) return;
+    const confirmed = new Set(busy.map(({ id }) => id));
+    // A Chat another live window lists keeps its host, even as a tab there not on screen (the server sees only those).
+    let ending: DurableChatEnd[] = [];
+    const stored = await this.removeWindowChats(sessionIds, (store, id) => {
+      const held = store[id]?.chats ?? [];
+      ending = durable.filter((end) => held.some((chat) => chat.sessionId === end.session.id) && !this.shownInOtherLiveWindow(store, end.session.id));
+      return closeChats(store, id, sessionIds);
+    });
+    if (stored !== true) return;
+    try {
+      await Promise.all(ending.map(async ({ session, machineId }) => {
+        const stop = (yes: boolean) => withDeadline(api.stopIfUnwatched(session, yes, machineId), STOP_DEADLINE_MS);
+        let reply = await stop(confirmed.has(session.id));
+        // This tab's socket may reach the server after its 2 s wait; still watched with no other window listing it, ask once more.
+        // Still watched after that: another browser shows the Chat, so its host keeps running.
+        if (!reply.stopped && reply.watched === true && !this.shownInOtherLiveWindow(this.windows.store, session.id)) {
+          await new Promise((resolve) => { setTimeout(resolve, WATCHED_RETRY_MS); });
+          reply = await stop(confirmed.has(session.id));
+        }
+        // Work started since the check: asked again, Cancel leaves the Chat running (reopening it shows it).
+        if (!reply.stopped && reply.busy !== undefined && window.confirm(`"${title(session.id)}": ${reply.busy}`)) await stop(true);
+      }));
+    } catch (error) {
+      throw new Error(`Could not end the closed Chat: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+  }
+
+  private shownInOtherLiveWindow(store: WindowStore, sessionId: string): boolean {
+    return Object.entries(store).some(([id, other]) => id !== this.windows.id && this.windows.isAlive(id) && other.chats.some((chat) => chat.sessionId === sessionId));
+  }
+
+  /**
+   * The Durable Chat a window Chat names, from its loaded runtime or the server's listing; null for a legacy Chat, a
+   * creation reservation, or one no longer listed. Rejects when the listing cannot be read.
+   */
+  private async durableChat(chat: WindowChat): Promise<DurableChatEnd | null> {
+    // A reservation stays until creation finishes, which removing it reports.
+    if (isCreatingSessionId(chat.sessionId)) return null;
+    let session = this.runtimeFor(chat.sessionId, chat.machineId)?.state.selectedSession
+      ?? (chat.machineId === selectedMachineId(this.app) ? this.app.sessions.find((row) => row.id === chat.sessionId) : undefined);
+    if (session === undefined) {
+      try {
+        // Listed only: the unlisted fallback reads a status that treats any failure as gone.
+        session = await this.knownSession(chat.sessionId, (await api.locate(chat.sessionId, chat.machineId)).cwd, chat.machineId, () => false);
+      } catch (error) {
+        if (error instanceof HttpRequestError && error.status === 404) return null;
+        throw error;
+      }
+    }
+    return session === undefined || !retriesOperations(session) ? null : { session, machineId: chat.machineId };
   }
 
   /**
    * Moves Chats to another window, which shows the first of them; settles once stored, undefined when they stay here.
-   * A move another window asked for and gave up on by `expires` (ms) does not happen.
+   * A move another window asked for and gave up on by `expires` (ms) does not happen, nor one to a stored window (the
+   * menu's entry or the window that asked, which beats as it asks) that has closed or been dropped by the time the move
+   * is stored (`listed`); a new window is not stored yet.
    */
-  private moveWindowChats(sessionIds: readonly string[], targetWindowId: string, expires = Number.POSITIVE_INFINITY): Promise<void> | undefined {
+  private moveWindowChats(sessionIds: readonly string[], targetWindowId: string, expires = Number.POSITIVE_INFINITY, listed = false): Promise<boolean> | undefined {
     if (!this.windows.shared || !this.canMoveWindowChats(sessionIds)) return undefined;
-    return this.removeWindowChats(sessionIds, (store, id) => Date.now() > expires ? store : moveChats(store, id, targetWindowId, sessionIds));
+    let closedTarget = false;
+    return this.removeWindowChats(sessionIds, (store, id) => {
+      closedTarget = listed && (store[targetWindowId] === undefined || !this.windows.isAlive(targetWindowId));
+      return Date.now() > expires || closedTarget ? store : moveChats(store, id, targetWindowId, sessionIds);
+    })?.then((stored) => {
+      if (closedTarget) this.setApp({ error: "That window has closed, so the Chats stay here." });
+      return stored;
+    });
   }
 
   /** Staged attachments live in this window only, so a Chat holding any stays here until they are sent or removed. */
@@ -824,9 +939,10 @@ export class WorkbenchApp extends LitElement {
   /**
    * Settles once stored; undefined when the owner kept unsaved file edits of the Chat on screen, which then stays. The
    * Chat on screen retires (its composer gone) before the store lets another window claim it; one the store still keeps
-   * here returns with its composer text, which full storage may not have saved.
+   * here returns with its composer text, which full storage may not have saved. Resolves to whether the store took
+   * the change.
    */
-  private removeWindowChats(sessionIds: readonly string[], change: (store: WindowStore, windowId: string) => WindowStore): Promise<void> | undefined {
+  private removeWindowChats(sessionIds: readonly string[], change: (store: WindowStore, windowId: string) => WindowStore): Promise<boolean> | undefined {
     this.windowMenu = undefined;
     // A creation reservation cannot leave its window until completion has retired the temporary composer.
     if (sessionIds.some((id) => this.pendingSession(id, undefined, true) !== undefined)) {
@@ -850,7 +966,7 @@ export class WorkbenchApp extends LitElement {
     for (const id of sessionIds) this.retiringChats.add(id);
     if (leaving !== undefined) this.retireSelected(change(this.windows.store, this.windows.id)[this.windows.id]?.focused);
     this.requestUpdate();
-    return this.updateComplete.then(() => this.updateWindow(change)).then(async () => {
+    return this.updateComplete.then(() => this.updateWindow(change)).then(async (stored) => {
       for (const id of sessionIds) this.retiringChats.delete(id);
       this.requestUpdate();
       const retained = this.windows.window?.chats ?? [];
@@ -858,13 +974,14 @@ export class WorkbenchApp extends LitElement {
         chat.dispose(); this.chats.delete(chat);
       }
       if (leaving !== undefined) {
-        if (!retained.some((chat) => chat.sessionId === leaving)) { this.showNext(); return; }
+        if (!retained.some((chat) => chat.sessionId === leaving)) { this.showNext(); return stored; }
         const { error } = this.app;
         await this.showWindowChat(leaving);
         this.setApp({ error });
       }
       await this.updateComplete;
       for (const draft of drafts) await this.replacePromptEditorText(draft);
+      return stored;
     });
   }
 
@@ -891,6 +1008,11 @@ export class WorkbenchApp extends LitElement {
     if (focused !== undefined) void this.showWindowChat(focused);
   }
 
+  /** An open menu offers only live windows, so it re-renders when another window opens or closes. */
+  private readonly refreshWindowMenu = (event: StorageEvent): void => {
+    if (this.windowMenu !== undefined && event.key === WINDOW_HEARTBEAT_KEY) this.requestUpdate();
+  };
+
   private readonly closeWindowMenu = (event: Event): void => {
     if (this.windowMenu !== undefined && !event.composedPath().some((target) => target instanceof HTMLElement && target.classList.contains("window-menu"))) this.windowMenu = undefined;
   };
@@ -905,14 +1027,14 @@ export class WorkbenchApp extends LitElement {
     const menu = this.windowMenu;
     if (menu === undefined) return nothing;
     const shared = this.windows.shared;
-    const others = shared ? Object.entries(this.windows.store).filter(([id]) => id !== this.windows.id) : [];
+    const others = shared ? Object.entries(this.windows.store).filter(([id]) => id !== this.windows.id && this.windows.isAlive(id)) : [];
     const window = this.windows.window;
     const single = menu.sessionIds.length === 1 ? menu.sessionIds[0] : undefined;
     const sizing = single !== undefined && single === this.app.selectedSession?.id && window?.layout === "grid" && window.chats.length > 1;
     return html`
       <div class="window-menu" role="menu" aria-label=${menu.label} style=${styleMap({ left: `${String(menu.left)}px`, top: `${String(menu.top)}px` })}>
         ${shared ? html`<button role="menuitem" @click=${() => { this.moveToNewWindow(menu.sessionIds); }}>Move to new window</button>` : nothing}
-        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id); }}>Move to ${windowChatSummary(other)}${this.windows.isAlive(id) ? "" : " (closed)"}</button>`)}
+        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id, undefined, true); }}>Move to ${windowChatSummary(other)}</button>`)}
         ${shared ? html`<hr>` : nothing}
         ${sizing ? html`<button role="menuitem" @click=${() => { this.windowMenu = undefined; void this.updateWindow(toggleMaximized); }}>${window.maximized ? "Restore grid" : "Full size"}</button>` : nothing}
         <button role="menuitem" @click=${() => { this.closeWindowChats(menu.sessionIds); }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>

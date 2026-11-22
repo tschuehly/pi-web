@@ -6,6 +6,9 @@ import { randomHex } from "../randomHex";
 export const WINDOW_STORE_KEY = "pi-workbench.windows.v1";
 /** Window id → last heartbeat (ms), on its own key so heartbeats never re-render other windows. */
 export const WINDOW_HEARTBEAT_KEY = "pi-workbench.windows.alive.v1";
+/** Closed window id → when it closed (ms), so a closed window unused this long is dropped with its Chats. */
+export const WINDOW_CLOSED_KEY = "pi-workbench.windows.closed.v1";
+export const CLOSED_WINDOW_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const WINDOW_URL_PARAM = "win";
 /** Web Lock serializing every window's read-modify-write of the shared store. */
 export const WINDOW_STORE_LOCK = "pi-workbench.windows.store";
@@ -153,9 +156,11 @@ export class WorkbenchWindowController {
     if (this.run !== undefined) return;
     const run = {};
     this.run = run;
+    // Ids are taken under the store lock, so a pruning window never misses a page reclaiming its id.
     if (this.windowId === "") await this.claimId();
-    else await this.holdId(this.windowId);
+    else await this.exclusive(() => this.holdId(this.windowId));
     if (this.run !== run) return;
+    this.writeTimes(WINDOW_CLOSED_KEY, Object.fromEntries(Object.entries(this.readTimes(WINDOW_CLOSED_KEY)).filter(([id]) => id !== this.windowId)));
     this.beat();
     this.heartbeat = setInterval(() => { this.beat(); }, HEARTBEAT_MS);
     this.unsubscribe = [
@@ -172,15 +177,13 @@ export class WorkbenchWindowController {
 
   private async claimId(): Promise<void> {
     const url = this.environment.url();
-    const alive = this.readHeartbeats();
-    const now = this.environment.now();
-    const isAlive = (id: string) => (alive[id] ?? 0) > now - STALE_MS;
     const requested = url.searchParams.get(WINDOW_URL_PARAM) ?? this.environment.tabStorage?.getItem(TAB_WINDOW_KEY) ?? null;
-    let id = requested !== null && requested !== "" && await this.holdId(requested) ? requested : undefined;
-    if (id === undefined) {
-      id = this.environment.newId();
-      await this.holdId(id);
-    }
+    const id = await this.exclusive(async () => {
+      if (requested !== null && requested !== "" && await this.holdId(requested)) return requested;
+      const fresh = this.environment.newId();
+      await this.holdId(fresh);
+      return fresh;
+    });
     if (url.searchParams.get(WINDOW_URL_PARAM) !== id) {
       url.searchParams.set(WINDOW_URL_PARAM, id);
       this.environment.replaceUrl(url);
@@ -188,10 +191,25 @@ export class WorkbenchWindowController {
     try { this.environment.tabStorage?.setItem(TAB_WINDOW_KEY, id); } catch { /* The URL still carries the id. */ }
     this.windowId = id;
     const claimed = id;
-    // Closed windows without Chats are dropped; closed ones with Chats stay as move targets and for their restored window.
-    await this.exclusive(() => {
+    // Closed windows without Chats are dropped; closed ones with Chats stay for their restored window for 7 days.
+    await this.exclusive(async () => {
+      // Liveness is read under the store lock, which every id claim takes: a held id lock counts before its first beat.
+      const held = await this.heldIds();
+      const alive = this.readTimes(WINDOW_HEARTBEAT_KEY);
+      const now = this.environment.now();
+      const isAlive = (id: string) => held.has(id) || (alive[id] ?? 0) > now - STALE_MS;
       const latest = this.read();
-      const kept = ensureWindow(Object.fromEntries(Object.entries(latest).filter(([candidate, window]) => candidate === claimed || isAlive(candidate) || window.chats.length > 0)), claimed);
+      const closedAt = this.readTimes(WINDOW_CLOSED_KEY);
+      const closed: Record<string, number> = {};
+      const kept = ensureWindow(Object.fromEntries(Object.entries(latest).filter(([candidate, window]) => {
+        if (candidate === claimed || isAlive(candidate)) return true;
+        // A window closed before close times were recorded starts its 7 days now.
+        const since = closedAt[candidate] ?? now;
+        if (window.chats.length === 0 || now - since > CLOSED_WINDOW_RETENTION_MS) return false;
+        closed[candidate] = since;
+        return true;
+      })), claimed);
+      this.writeTimes(WINDOW_CLOSED_KEY, closed);
       try {
         this.write(kept);
       } catch (error) {
@@ -295,8 +313,14 @@ export class WorkbenchWindowController {
 
   /** Only a held id lock proves a window alive; without Web Locks no other window counts. */
   private async isHeld(windowId: string): Promise<boolean> {
+    return (await this.heldIds()).has(windowId);
+  }
+
+  /** The window ids whose id lock a live page holds now. */
+  private async heldIds(): Promise<Set<string>> {
     const locks = this.environment.locks;
-    return locks !== undefined && (await locks.query()).held?.some((lock) => lock.name === `${WINDOW_ID_LOCK_PREFIX}${windowId}`) === true;
+    if (locks === undefined) return new Set();
+    return new Set(((await locks.query()).held ?? []).flatMap(({ name }) => name?.startsWith(WINDOW_ID_LOCK_PREFIX) === true ? [name.slice(WINDOW_ID_LOCK_PREFIX.length)] : []));
   }
 
   /**
@@ -318,6 +342,8 @@ export class WorkbenchWindowController {
   ask(windowId: string, request: WindowRequest, timeoutMs: number): Promise<boolean> {
     this.asked += 1;
     const id = `${this.windowId}:${String(this.asked)}`;
+    // Asking proves this window live, so the asked window can check that before it hands Chats over.
+    this.beat();
     return new Promise((resolve) => {
       const answer = (ok: boolean) => { clearTimeout(timer); this.answers.delete(id); resolve(ok); };
       const timer = setTimeout(() => { answer(false); }, timeoutMs);
@@ -341,7 +367,7 @@ export class WorkbenchWindowController {
   newWindowId(): string { return this.environment.newId(); }
 
   isAlive(windowId: string): boolean {
-    return windowId === this.windowId || (this.readHeartbeats()[windowId] ?? 0) > this.environment.now() - STALE_MS;
+    return windowId === this.windowId || (this.readTimes(WINDOW_HEARTBEAT_KEY)[windowId] ?? 0) > this.environment.now() - STALE_MS;
   }
 
   /** Marks this window closed, so other windows label it and the next ⌘N window may reopen its Chats. */
@@ -358,11 +384,12 @@ export class WorkbenchWindowController {
 
   private markClosed(): void {
     if (this.windowId === "") return;
-    this.writeHeartbeats(Object.fromEntries(Object.entries(this.readHeartbeats()).filter(([id]) => id !== this.windowId)));
+    this.writeTimes(WINDOW_HEARTBEAT_KEY, Object.fromEntries(Object.entries(this.readTimes(WINDOW_HEARTBEAT_KEY)).filter(([id]) => id !== this.windowId)));
+    this.writeTimes(WINDOW_CLOSED_KEY, { ...this.readTimes(WINDOW_CLOSED_KEY), [this.windowId]: this.environment.now() });
   }
 
   private beat(): void {
-    this.writeHeartbeats({ ...this.readHeartbeats(), [this.windowId]: this.environment.now() });
+    this.writeTimes(WINDOW_HEARTBEAT_KEY, { ...this.readTimes(WINDOW_HEARTBEAT_KEY), [this.windowId]: this.environment.now() });
   }
 
   private read(): WindowStore {
@@ -379,17 +406,18 @@ export class WorkbenchWindowController {
     this.current = store;
   }
 
-  private readHeartbeats(): Record<string, number> {
+  /** Window id → ms, from the heartbeat or close-time key. */
+  private readTimes(key: string): Record<string, number> {
     let parsed: unknown;
-    try { parsed = JSON.parse(this.environment.storage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}"); } catch { return {}; }
+    try { parsed = JSON.parse(this.environment.storage.getItem(key) ?? "{}"); } catch { return {}; }
     if (typeof parsed !== "object" || parsed === null) return {};
     return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, number] => typeof entry[1] === "number"));
   }
 
-  private writeHeartbeats(alive: Record<string, number>): void {
+  private writeTimes(key: string, times: Record<string, number>): void {
     try {
-      this.environment.storage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify(alive));
-    } catch { /* A missing heartbeat only makes this window look closed to the others. */ }
+      this.environment.storage.setItem(key, JSON.stringify(times));
+    } catch { /* A missing heartbeat only makes this window look closed; a missing close time restarts its 7 days. */ }
   }
 }
 

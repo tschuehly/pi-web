@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { api, type Machine, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { initialAppState, type AppState } from "../appState";
-import { ACTIVITY_STATUS_KEY, GOAL_STATUS_KEY } from "../extensionStatusSnapshots";
+import { ACTIVITY_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY, GOAL_STATUS_KEY } from "../extensionStatusSnapshots";
 import { DesktopNotificationController, NATIVE_NOTIFICATION_HOLDS_EVENT, NATIVE_NOTIFICATION_OPEN_EVENT } from "../controllers/desktopNotificationController";
 import { DEFAULT_INTERFACE_SCALE, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STORAGE_KEY, readStoredInterfaceScale } from "../interfaceScale";
 import { machineSessionKey } from "../machineKeys";
@@ -26,10 +26,10 @@ import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import { WorkbenchChatPane } from "./WorkbenchChatPane";
 import type { WorkbenchQuestionChips } from "./WorkbenchQuestionChips";
 import { SessionController } from "../controllers/sessionController";
-import { WorkbenchWindowController, WINDOW_CHANNEL, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY } from "../controllers/workbenchWindowController";
+import { WorkbenchWindowController, WINDOW_CHANNEL, WINDOW_HEARTBEAT_KEY, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY, WINDOW_STORE_LOCK } from "../controllers/workbenchWindowController";
 import { WorkbenchChatSession, WorkbenchSessionFocus } from "../controllers/workbenchSessionFocus";
 import { FakeLocks } from "../controllers/webLocks.testSupport";
-import { moveChats, openChat, parseWindowStore } from "../workbenchWindows";
+import { emptyWindow, focusChat, moveChats, openChat, parseWindowStore } from "../workbenchWindows";
 import { installNativeDialogFake } from "./nativeDialog.testSupport";
 
 installNativeDialogFake();
@@ -2197,8 +2197,10 @@ function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: W
 describe("window tabs", () => {
   const workstreams: Record<string, { id: string; title: string }> = { a1: { id: "release", title: "Release" }, a2: { id: "release", title: "Release" }, b1: { id: "docs", title: "Docs" } };
 
-  async function mountWithWorkstreamChats(): Promise<WorkbenchApp> {
-    const rows = [session("a1", "Plan", "Plan the release"), session("a2", "Notes", "Release notes"), session("b1", "Guide", "Install guide")];
+  /** `durable` Chats list with a Durable Chat's `durable:<id>` path. */
+  async function mountWithWorkstreamChats(durable: readonly string[] = []): Promise<WorkbenchApp> {
+    const rows = [session("a1", "Plan", "Plan the release"), session("a2", "Notes", "Release notes"), session("b1", "Guide", "Install guide")]
+      .map((row) => durable.includes(row.id) ? { ...row, path: `durable:${row.id}` } : row);
     stubWorkstreamService([], ({ operation, input }) => {
       if (operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: 1 } };
       const sessionId = typeof input["sessionId"] === "string" ? input["sessionId"] : "";
@@ -2564,6 +2566,201 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
   });
 
+  it("asks the server to end a closed Durable Chat's host, but only leaves a legacy Chat or one another live window lists", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    const app = await mountWithWorkstreamChats(["b1", "a1"]);
+
+    closeButton(app, "Install guide").click();
+    await vi.waitFor(() => { expect(stop).toHaveBeenCalledTimes(1); });
+    expect(stop.mock.calls[0]?.[0]).toMatchObject({ id: "b1", cwd: workspace.path });
+    expect(stop.mock.calls[0]?.slice(1)).toEqual([false, "local"]);
+    expect(confirm).not.toHaveBeenCalled();
+
+    // Another live window still showing a1 keeps its host running.
+    const windows: unknown = Reflect.get(app, "windows");
+    if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
+    const a1 = windows.window?.chats.find((chat) => chat.sessionId === "a1");
+    if (a1 === undefined) throw new Error("a1 missing");
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object, w2: Date.now() })); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+    await windows.update((store) => ({ ...store, w2: { ...emptyWindow("Window 2"), chats: [a1] } }));
+    closeButton(app, "Plan the release").click();
+    await vi.waitFor(() => { expect(chatTabs(app)).toEqual(["Release notes"]); });
+    await settled(app);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns before closing a Durable Chat whose current status runs background bash or children, and keeps it on Cancel", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
+    const busy = { ...idleStatus("b1"), capabilities: [], extensionStatuses: {
+      [BACKGROUND_BASH_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, jobs: [{ id: "j1", elapsedSeconds: 1, bytes: 0 }, { id: "j2", elapsedSeconds: 1, bytes: 0 }] }),
+      [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "s1", kind: "subagent" }] }),
+    } };
+    const app = await mountWithWorkstreamChats(["b1"]);
+    // The window's cached status is idle; the server's current one names the work started since.
+    vi.spyOn(api, "status").mockResolvedValue(busy);
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+
+    closeButton(app, "Install guide").click();
+    await vi.waitFor(() => { expect(confirm).toHaveBeenCalledWith("\"Install guide\": 2 background bash jobs and 1 subagent are running; closing ends them."); });
+    await settled(app);
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
+    expect(stop).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    closeButton(app, "Install guide").click();
+    await vi.waitFor(() => { expect(stop).toHaveBeenCalledTimes(1); });
+    expect(stop.mock.calls[0]?.[1]).toBe(true);
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).not.toContain("b1");
+
+    // A legacy Chat closes without a warning, whatever it runs.
+    confirm.mockClear();
+    closeButton(app, "Plan the release").click();
+    await vi.waitFor(() => { expect(chatTabs(app)).toEqual(["Release notes"]); });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks again when the server finds work started after the check, and leaves the Chat running on Cancel", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: false, busy: "1 subagent is running; closing ends it." });
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const app = await mountWithWorkstreamChats(["b1", "a1"]);
+
+    closeButton(app, "Install guide").click();
+    await vi.waitFor(() => { expect(confirm).toHaveBeenCalledWith("\"Install guide\": 1 subagent is running; closing ends it."); });
+    await settled(app);
+    expect(stop.mock.calls.map((call) => call[1])).toEqual([false]);
+
+    confirm.mockReturnValue(true);
+    closeButton(app, "Plan the release").click();
+    await vi.waitFor(() => { expect(stop.mock.calls.map((call) => [call[0].id, call[1]])).toEqual([["b1", false], ["a1", false], ["a1", true]]); });
+  });
+
+  it("names each busy Chat of a batch close, a running turn included, before any tab goes, and confirms only those", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
+    const app = await mountWithWorkstreamChats(["b1", "a1"]);
+    vi.spyOn(api, "status").mockImplementation((session) => Promise.resolve(session.id === "b1" ? { ...idleStatus("b1"), isStreaming: true } : idleStatus(session.id)));
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const closeBoth = async () => {
+      app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "b1"], label: "Both", clientX: 0, clientY: 0 } }));
+      await app.updateComplete;
+      [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((item) => item.textContent.trim() === "Close 2 Chats")?.click();
+    };
+
+    await closeBoth();
+    await vi.waitFor(() => { expect(confirm).toHaveBeenCalledWith("\"Install guide\": A turn is running; closing ends it."); });
+    await settled(app);
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toEqual(expect.arrayContaining(["a1", "b1"]));
+    expect(stop).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    await closeBoth();
+    await vi.waitFor(() => { expect(stop).toHaveBeenCalledTimes(2); });
+    expect(Object.fromEntries(stop.mock.calls.map((call) => [call[0].id, call[1]]))).toEqual({ a1: false, b1: true });
+  });
+
+  it("asks the server once more when the closing tab still counted as watching, then leaves a still-watched Chat running", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: false, watched: true });
+    const app = await mountWithWorkstreamChats(["b1"]);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      closeButton(app, "Install guide").click();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(stop).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(10_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(stop.mock.calls.map((call) => [call[0].id, call[1]])).toEqual([["b1", false], ["b1", false]]);
+  });
+
+  it("keeps a Durable Chat open with an error when the server does not answer in time", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
+    const app = await mountWithWorkstreamChats(["b1"]);
+    vi.spyOn(api, "status").mockReturnValue(new Promise(() => undefined));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      closeButton(app, "Install guide").click();
+      await vi.advanceTimersByTimeAsync(5000);
+    } finally {
+      vi.useRealTimers();
+    }
+    await vi.waitFor(() => { expect(getState(app).error).toContain("The server did not answer within 5 s."); });
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Durable Chat open and its host running when its current status cannot be read", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
+    const app = await mountWithWorkstreamChats(["b1"]);
+    vi.spyOn(api, "status").mockRejectedValue(new Error("daemon unavailable"));
+
+    closeButton(app, "Install guide").click();
+    await vi.waitFor(() => { expect(getState(app).error).toContain("close it again to retry"); });
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Chat open when its listing cannot be read, rather than closing it as legacy", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
+    const app = await mountWithWorkstreamChats(["b1"]);
+    const windows: unknown = Reflect.get(app, "windows");
+    if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
+    // A tab this window neither loaded nor lists, as after a restart.
+    await windows.update((store, id) => focusChat(openChat(store, id, { sessionId: "x1", title: "Unlisted", machineId: "local" }), id, "b1"));
+    await settled(app);
+    vi.spyOn(api, "locate").mockRejectedValue(new Error("daemon unavailable"));
+
+    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["x1"], label: "Unlisted", clientX: 0, clientY: 0 } }));
+    await app.updateComplete;
+    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((item) => item.textContent.trim() === "Close")?.click();
+    await vi.waitFor(() => { expect(getState(app).error).toContain("close it again to retry"); });
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("x1");
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Durable Chat's host running when its close cannot be stored", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
+    const app = await mountWithWorkstreamChats(["b1"]);
+    const setItem = localStorage.setItem.bind(localStorage);
+    vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+      if (key === WINDOW_STORE_KEY) throw new DOMException("full", "QuotaExceededError");
+      setItem(key, value);
+    });
+
+    closeButton(app, "Install guide").click();
+    await vi.waitFor(() => { expect(getState(app).error).toContain("storage is full"); });
+    await settled(app);
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Durable Chat's host running when another live window took it while the close waited for the store", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
+    const app = await mountWithWorkstreamChats(["b1"]);
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object, w2: Date.now() })); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+    const release = locks.hold(WINDOW_STORE_LOCK);
+    // Window w2's transfer of b1 is queued ahead of this window's close.
+    const transfer = locks.request(WINDOW_STORE_LOCK, {}, () => {
+      const store = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+      localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(moveChats({ ...store, w2: emptyWindow("Window 2") }, "w1", "w2", ["b1"])));
+    });
+
+    closeButton(app, "Install guide").click();
+    // The close reads the current status, then waits for the store lock behind the transfer.
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    release();
+    await transfer;
+    await vi.waitFor(() => { expect(chatTabs(app)).not.toContain("Install guide"); });
+    await settled(app);
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["b1"]);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   it("closing the Chat on screen shows the next tab, and closing the last one shows the home", async () => {
     const app = await mountWithWorkstreamChats();
 
@@ -2719,10 +2916,38 @@ describe("window tabs", () => {
     expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
 
     // One Workstream left, so no Workstream row: its menu comes from the tab component's own event.
-    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2"], label: "Release", clientX: 0, clientY: 0 } }));
+    const openMenu = async () => {
+      app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2"], label: "Release", clientX: 0, clientY: 0 } }));
+      await app.updateComplete;
+      return [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])];
+    };
+    // The new window never opened (window.open is stubbed), so it is closed and not offered as a target.
+    expect((await openMenu()).map((item) => item.textContent.trim())).toEqual(["Move to new window", "Close 2 Chats"]);
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ [target]: Date.now() }));
+    const stale = await openMenu();
+    expect(stale.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Install guide", "Close 2 Chats"]);
+    // The target closes while the menu is open: the menu drops it, and its entry clicked anyway moves nothing.
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, "{}");
+    window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_HEARTBEAT_KEY }));
     await app.updateComplete;
-    const items = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])];
-    expect(items.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Install guide (closed)", "Close 2 Chats"]);
+    expect([...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].map((item) => item.textContent.trim())).toEqual(["Move to new window", "Close 2 Chats"]);
+    stale[1]?.click();
+    await vi.waitFor(() => { expect(getState(app).error).toBe("That window has closed, so the Chats stay here."); });
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]?.chats.map((chat) => chat.sessionId)).toEqual(["b1"]);
+    await vi.waitFor(() => { expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]); });
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ [target]: Date.now() }));
+    // Another window dropped the target meanwhile: its entry clicked anyway does not recreate it.
+    const kept = localStorage.getItem(WINDOW_STORE_KEY) ?? "";
+    const offered = await openMenu();
+    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(Object.fromEntries(Object.entries(parseWindowStore(kept)).filter(([id]) => id !== target))));
+    Reflect.set(app, "app", { ...getState(app), error: undefined });
+    offered[1]?.click();
+    await vi.waitFor(() => { expect(getState(app).error).toBe("That window has closed, so the Chats stay here."); });
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]).toBeUndefined();
+    localStorage.setItem(WINDOW_STORE_KEY, kept);
+    window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
+    await settled(app);
+    const items = await openMenu();
     items[1]?.click();
     await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]?.chats.map((chat) => chat.sessionId)).toEqual(["b1", "a1", "a2"]);
@@ -2814,6 +3039,10 @@ describe("window tabs", () => {
     if (pane === null || pane === undefined) throw new Error("Files pane was not mounted");
     const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
     const target = otherWindow("w9", () => false);
+    // The asking window is stored and beats as it asks, so it is live when the move is stored.
+    const windows: unknown = Reflect.get(app, "windows");
+    if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
+    await windows.update((store) => ({ ...store, w9: emptyWindow("Window 9") }));
     try {
       target.ask("w1", { kind: "move", sessionIds: ["b1"] });
       await vi.waitFor(() => { expect(target.answers).toEqual([false]); });
@@ -2827,6 +3056,28 @@ describe("window tabs", () => {
       expect(stored["w9"]?.chats.map((chat) => chat.sessionId)).toEqual(["b1"]);
       expect(stored["w1"]?.chats.map((chat) => chat.sessionId)).not.toContain("b1");
       await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    } finally {
+      target.close();
+    }
+  });
+
+  it("keeps Chats dropped in another window here when that window closes before the move is stored", async () => {
+    const app = await mountWithWorkstreamChats();
+    const target = otherWindow("w9", () => false);
+    const windows: unknown = Reflect.get(app, "windows");
+    if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
+    await windows.update((store) => ({ ...store, w9: emptyWindow("Window 9") }));
+    const release = locks.hold(WINDOW_STORE_LOCK);
+    try {
+      target.ask("w1", { kind: "move", sessionIds: ["b1"] });
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+      // The asking window closes while the move waits for the store.
+      localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object).filter(([id]) => id !== "w9")))); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+      release();
+      await vi.waitFor(() => { expect(target.answers).toEqual([false]); });
+      const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
+      expect(stored["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
+      expect(stored["w9"]?.chats).toEqual([]);
     } finally {
       target.close();
     }
@@ -2974,6 +3225,9 @@ describe("window tabs", () => {
   it("drops a delayed tab activation of a Chat moved to another window meanwhile", async () => {
     const app = await mountWithWorkstreamChats();
     const lookup = holdLookup("a2");
+    const windows: unknown = Reflect.get(app, "windows");
+    if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
+    await windows.update((store) => ({ ...store, w2: emptyWindow("Window 2") }));
     const target = otherWindow("w2", () => false);
     try {
       app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
@@ -3060,6 +3314,9 @@ describe("window tabs", () => {
     window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
     app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
     await vi.waitFor(() => { expect(asked).toBe(true); });
+    const windows: unknown = Reflect.get(app, "windows");
+    if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
+    await windows.update((store) => ({ ...store, w2: emptyWindow("Window 2") }));
     const target = otherWindow("w2", () => true);
     const release = locks.hold(`${WINDOW_ID_LOCK_PREFIX}w2`);
     try {
@@ -3481,7 +3738,12 @@ function otherWindow(windowId: string, answer: (request: OtherWindowRequest, fro
   };
   return {
     answers,
-    ask: (to: string, request: OtherWindowRequest, timeoutMs = 60_000) => { asked += 1; channel.postMessage({ id: `${windowId}:${String(asked)}`, to, from: windowId, request, expires: Date.now() + timeoutMs }); },
+    ask: (to: string, request: OtherWindowRequest, timeoutMs = 60_000) => {
+      asked += 1;
+      // As the controller does: asking beats first.
+      localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object, [windowId]: Date.now() })); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+      channel.postMessage({ id: `${windowId}:${String(asked)}`, to, from: windowId, request, expires: Date.now() + timeoutMs });
+    },
     close: () => { channel.close(); },
   };
 }

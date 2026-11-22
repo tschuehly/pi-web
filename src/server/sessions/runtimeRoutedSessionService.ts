@@ -123,6 +123,7 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     forkFromTree: (ref, request) => isDurable(ref) ? unavailable("fork") : legacy.forkFromTree(ref, request),
     abort: (ref) => isDurable(ref) ? durable.abort(ref) : legacy.abort(ref),
     stop: (ref) => isDurable(ref) ? durable.stop(ref) : legacy.stop(ref),
+    stopIfUnwatched: (ref, confirmed) => isDurable(ref) ? durable.stopIfUnwatched(ref, confirmed) : Promise.reject(new DurableChatUnavailable("Ending an unwatched Chat outside Durable Chats")),
     archive: (ref) => isDurable(ref) ? unavailable("archive") : legacy.archive(ref),
     archiveTree: (ref) => isDurable(ref) ? unavailable("archive") : legacy.archiveTree(ref),
     restore: (ref) => isDurable(ref) ? unavailable("archive") : legacy.restore(ref),

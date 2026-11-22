@@ -56,6 +56,7 @@ import {
   parseSessionTreeNavigateResult,
   parseSlashCommand,
   parseStopped,
+  parseConditionalStop,
   parseThinkingLevelsResponse,
   parseWriteWorkspaceFileResponse,
   parseWorkspaceProviderResolution,
@@ -325,6 +326,8 @@ export const sessionsApi = {
   forkTree: (session: SessionRef, fork: SessionTreeForkRequest, machineId = "local") => requestSessionTreeFork(session, fork, machineId),
   abort: (session: SessionRef, machineId = "local") => request(sessionPath(session, "abort", machineId), parseAborted, { method: "POST", body: sessionBody(session) }),
   stop: (session: SessionRef, machineId = "local") => request(sessionPath(session, "stop", machineId), parseStopped, { method: "POST", body: sessionBody(session) }),
+  /** Ends a closed tab's Durable Chat unless a browser still watches it or, unless `confirmed`, work runs. */
+  stopIfUnwatched: (session: SessionRef, confirmed: boolean, machineId = "local") => request(sessionPath(session, "stop", machineId), parseConditionalStop, { method: "POST", body: sessionBody(session, { ifUnwatched: true, confirmed }) }),
   archive: (session: SessionRef, machineId = "local") => request(sessionPath(session, "archive", machineId), parseArchived, { method: "POST", body: sessionBody(session) }),
   archiveWithDescendants: (session: SessionRef, machineId = "local") => request(sessionPath(session, "archive-tree", machineId), parseArchived, { method: "POST", body: sessionBody(session) }),
   restore: (session: SessionRef, machineId = "local") => request(sessionPath(session, "restore", machineId), parseRestored, { method: "POST", body: sessionBody(session) }),

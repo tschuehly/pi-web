@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { DURABLE_HOST_PROTOCOL, DurableChatService, durableHostArgs, durableHostLaunchArgs, type DurableHostProcess, forkDurableHost } from "./durableChatService.js";
+import { DURABLE_HOST_PROTOCOL, DurableChatService, IDLE_HOST_CLOSE_MS, durableHostArgs, durableHostLaunchArgs, type DurableHostProcess, forkDurableHost } from "./durableChatService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 import { SessionNotificationStore } from "./sessionNotificationStore.js";
 import { WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
@@ -693,6 +693,55 @@ describe("Durable Chats", () => {
     expect(global).toMatchObject([{ type: "status.update", status: { ...status, sessionId: chat.id, capabilities: ["attachments"] } }]);
     await durable.stop(ref);
     expect((await durable.status(ref)).capabilities).toEqual([]);
+  });
+
+  it("closing a tab ends the Chat only once no browser watches it and, when work runs, once confirmed", async () => {
+    let watching = true;
+    const events = Object.assign(new SessionEventHub(), { hasSessionSubscribers: () => watching });
+    const { durable, launched } = await service(undefined, undefined, { events, watchGraceMs: 0 });
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await durable.status(ref);
+    const host = only(launched);
+    const busy = { ...status, extensionStatuses: {
+      "pi-workbench:background-bash": JSON.stringify({ schemaVersion: 1, jobs: [{ id: "job-1" }, { id: "job-2" }] }),
+      "pi-workbench:activity": JSON.stringify({ schemaVersion: 1, items: [{ id: "a", kind: "subagent", startedAt: "2026-11-17T08:00:00Z" }, { id: "b", kind: "subagent", endedAt: "2026-11-17T08:01:00Z" }] }),
+    } };
+    host.answer = (request) => request.method === "status" ? busy : null;
+    const closes = () => host.requests.filter((request) => request.method === "close");
+
+    await expect(durable.stopIfUnwatched(ref, true)).resolves.toEqual({ stopped: false, watched: true });
+    watching = false;
+    await expect(durable.stopIfUnwatched(ref, false)).resolves.toEqual({ stopped: false, busy: "2 background bash jobs and 1 subagent are running; closing ends them." });
+    host.answer = (request) => request.method === "status" ? { ...status, isStreaming: true } : null;
+    await expect(durable.stopIfUnwatched(ref, false)).resolves.toEqual({ stopped: false, busy: "A turn is running; closing ends it." });
+    expect(closes()).toEqual([]);
+    // Confirmed, it ends as Stop does: the host cancels the family's background jobs.
+    await expect(durable.stopIfUnwatched(ref, true)).resolves.toEqual({ stopped: true });
+    expect(closes().map((request) => request.params)).toEqual([{ end: true }]);
+  });
+
+  it("closing a quiet tab's Chat waits for its own socket to go, then ends it without asking", async () => {
+    let watching = true;
+    const events = Object.assign(new SessionEventHub(), { hasSessionSubscribers: () => watching });
+    const { durable, launched } = await service(undefined, undefined, { events, watchGraceMs: 1000 });
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await durable.status(ref);
+    setTimeout(() => { watching = false; }, 100);
+    await expect(durable.stopIfUnwatched(ref, false)).resolves.toEqual({ stopped: true });
+    expect(only(launched).requests.filter((request) => request.method === "close").map((request) => request.params)).toEqual([{ end: true }]);
+  });
+
+  it("the idle close ends a host that only serves Atelier Pages", async () => {
+    let now = Date.parse("2026-11-17T08:00:00Z");
+    const { durable, launched } = await service(undefined, undefined, { now: () => now });
+    const chat = await durable.start("/work/a");
+    await durable.status({ id: chat.id, cwd: chat.cwd });
+    only(launched).answer = (request) => request.method === "status" ? { ...status, extensionStatuses: { "pi-workbench:atelier": JSON.stringify({ schemaVersion: 1, serving: true }) } } : null;
+    now += IDLE_HOST_CLOSE_MS;
+    await durable.closeIdleHosts();
+    expect(only(launched).requests.map((request) => request.method)).toContain("close");
   });
 });
 

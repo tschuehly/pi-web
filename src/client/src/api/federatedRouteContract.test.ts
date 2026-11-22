@@ -232,6 +232,7 @@ describe("federated route contract", () => {
       ignoreParseFailure(sessionsApi.forkTree(session, { entryId: "entry-1", expectedLeafId: "leaf-1" }, machineId)),
       ignoreParseFailure(sessionsApi.abort(session, machineId)),
       ignoreParseFailure(sessionsApi.stop(session, machineId)),
+      ignoreParseFailure(sessionsApi.stopIfUnwatched(session, true, machineId)),
       ignoreParseFailure(sessionsApi.archive(session, machineId)),
       ignoreParseFailure(sessionsApi.archiveWithDescendants(session, machineId)),
       ignoreParseFailure(sessionsApi.restore(session, machineId)),

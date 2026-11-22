@@ -698,7 +698,9 @@ describe("session routes", () => {
       expect((await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo", mode: "later" } })).statusCode).toBe(400);
       const stopped = await routeApp.inject({ method: "POST", url: "/sessions/durable-hosts/stop" });
       expect(stopped.json()).toEqual({ stopped: true });
-      expect(routeService.calls).toEqual([{ upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") } }, { upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") }, mode: "now" }, { stopDurableHosts: true }]);
+      const refused = await routeApp.inject({ method: "POST", url: "/sessions/session-1/stop", payload: { cwd: "/repo", ifUnwatched: true } });
+      expect(refused.json()).toEqual({ stopped: false, busy: "1 subagent is running; closing ends it." });
+      expect(routeService.calls).toEqual([{ upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") } }, { upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") }, mode: "now" }, { stopDurableHosts: true }, { stopIfUnwatched: { id: "session-1", cwd: resolve("/repo") }, confirmed: false }]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -2013,6 +2015,11 @@ class CapturingRouteSessionService implements SessionRouteService {
   stopDurableHosts(): Promise<void> {
     this.calls.push({ stopDurableHosts: true });
     return Promise.resolve();
+  }
+
+  stopIfUnwatched(lookup: SessionRouteRef, confirmed: boolean): Promise<{ stopped: false; busy: string }> {
+    this.calls.push({ stopIfUnwatched: lookup, confirmed });
+    return Promise.resolve({ stopped: false, busy: "1 subagent is running; closing ends it." });
   }
 
   resolveEffect(lookup: SessionRouteRef, taskId: string, resolution: string): Promise<SessionStatus> {

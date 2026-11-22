@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeChats, emptyWindow, moveChats, openChat, parseWindowStore, toggleLayout, toggleMaximized, type WindowStore } from "../workbenchWindows";
 import { loadDraft, moveDraft, saveDraft } from "../promptDraftStorage";
 import { FakeLocks } from "./webLocks.testSupport";
-import { WINDOW_HEARTBEAT_KEY, WINDOW_STORE_KEY, WINDOW_STORE_LOCK, WorkbenchWindowController, newWindowId, type WindowLocks, type WindowRequest, type WorkbenchWindowEnvironment } from "./workbenchWindowController";
+import { WINDOW_HEARTBEAT_KEY, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY, WINDOW_STORE_LOCK, WorkbenchWindowController, newWindowId, type WindowLocks, type WindowRequest, type WorkbenchWindowEnvironment } from "./workbenchWindowController";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -84,6 +84,77 @@ describe("window identity", () => {
     expect(controller.window?.chats).toEqual([]);
     expect(fake.url.searchParams.get("win")).toBe("fresh");
     expect(Object.keys(controller.store).sort()).toEqual(["closed", "fresh", "open"]);
+  });
+
+  it("drops a closed window with Chats once it has gone 7 days without use, and keeps a reopened one", async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const first = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=old").environment);
+    await first.start();
+    await first.update((store, id) => openChat(store, id, chat("a")));
+    first.dispose();
+    const reopened = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=back").environment);
+    await reopened.start();
+    await reopened.update((store, id) => openChat(store, id, chat("b")));
+    reopened.dispose();
+    // An older record without a close time starts its 7 days at the next claim.
+    storage.setItem(WINDOW_STORE_KEY, storeWith({ ...parseWindowStore(storage.getItem(WINDOW_STORE_KEY)), legacy: openChat({ legacy: emptyWindow("Window 9") }, "legacy", chat("c"))["legacy"] ?? emptyWindow("x") }));
+    vi.advanceTimersByTime(3 * day);
+    const restored = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=back").environment);
+    await restored.start();
+    restored.dispose();
+    vi.advanceTimersByTime(4 * day + 1);
+
+    const next = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/").environment);
+    await next.start();
+    expect(Object.keys(next.store).sort()).toEqual(["back", "fresh", "legacy"]);
+    vi.advanceTimersByTime(3 * day);
+    const later = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/", "later").environment);
+    await later.start();
+    expect(Object.keys(later.store).sort()).toEqual(["fresh", "later"]);
+    next.dispose();
+    later.dispose();
+  });
+
+  it("never prunes a window whose page reclaimed its id while this one waited for the store lock", async () => {
+    const locks = new FakeLocks();
+    storage.setItem(WINDOW_STORE_KEY, storeWith({ back: emptyWindow("Window 1") }));
+    const releaseStore = locks.hold(WINDOW_STORE_LOCK);
+    const controller = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/", "fresh", locks).environment);
+    const started = controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    // The other page holds its id before its first heartbeat reaches storage.
+    locks.hold(`${WINDOW_ID_LOCK_PREFIX}back`);
+    releaseStore();
+    await started;
+
+    expect(Object.keys(parseWindowStore(storage.getItem(WINDOW_STORE_KEY))).sort()).toEqual(["back", "fresh"]);
+    controller.dispose();
+  });
+
+  it("lets a page reclaim its id only between other windows' prunes, never while one decides what to drop", async () => {
+    const locks = new FakeLocks();
+    storage.setItem(WINDOW_STORE_KEY, storeWith({ back: emptyWindow("Window 1") }));
+    const pruner = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/", "fresh", locks).environment);
+    const reclaimer = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=back", "other", locks).environment);
+    const query = locks.query.bind(locks);
+    const heldDuringPrune: boolean[] = [];
+    let reclaiming: Promise<void> | undefined;
+    vi.spyOn(locks, "query").mockImplementation(async () => {
+      if (reclaiming === undefined) {
+        reclaiming = reclaimer.start();
+        await vi.advanceTimersByTimeAsync(0);
+        heldDuringPrune.push((await query()).held?.some((lock) => lock.name === `${WINDOW_ID_LOCK_PREFIX}back`) === true);
+      }
+      return query();
+    });
+    await pruner.start();
+    await reclaiming;
+
+    expect(heldDuringPrune).toEqual([false]);
+    expect(reclaimer.id).toBe("back");
+    expect(Object.keys(parseWindowStore(storage.getItem(WINDOW_STORE_KEY))).sort()).toEqual(["back", "fresh"]);
+    pruner.dispose();
+    reclaimer.dispose();
   });
 
   it("starts a new named window when every stored one is still open", async () => {

@@ -223,7 +223,7 @@ describe("seamless upgrade orchestration", () => {
     await s.durable.dispose();
   });
 
-  it("Upgrade host moves a Chat that serves Atelier Pages across a store schema change and starts the new host at once; the idle close still keeps it", async () => {
+  it("Upgrade host moves a Chat that serves Atelier Pages across a store schema change and starts the new host at once", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
     const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", { ...SCHEMA, documents: { "workbench.delegation": 2 } })];
     const s = setup(a, b, { subscribers: false });
@@ -234,9 +234,6 @@ describe("seamless upgrade orchestration", () => {
       old.reply(request, { ...status, extensionStatuses: { "pi-workbench:atelier": JSON.stringify({ schemaVersion: 1, serving: true }) } });
       return true;
     };
-    s.idle();
-    await s.durable.closeIdleHosts();
-    expect(old.requests.map((request) => request.method)).not.toContain("close");
     await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow("This upgrade changes the store format (its Workbench store schema)");
     await s.durable.upgradeHost(s.ref);
     expect(old.requests.map((request) => request.method)).toContain("close");
