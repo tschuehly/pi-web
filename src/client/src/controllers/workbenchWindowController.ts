@@ -342,6 +342,8 @@ export class WorkbenchWindowController {
   ask(windowId: string, request: WindowRequest, timeoutMs: number): Promise<boolean> {
     this.asked += 1;
     const id = `${this.windowId}:${String(this.asked)}`;
+    // Asking proves this window live, so the asked window can check that before it hands Chats over.
+    this.beat();
     return new Promise((resolve) => {
       const answer = (ok: boolean) => { clearTimeout(timer); this.answers.delete(id); resolve(ok); };
       const timer = setTimeout(() => { answer(false); }, timeoutMs);

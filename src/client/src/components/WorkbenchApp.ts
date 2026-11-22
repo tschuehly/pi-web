@@ -39,7 +39,7 @@ import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { pluginStyles, PluginStyleRuntime } from "../plugins/styles";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
 import { closeChats, focusChat, GRID_MIN_TILE, gridRatio, gridRatioBounds, gridRatioFromDrag, gridRatioFromKeyboard, gridTiles, moveChats, orderedChats, resizeGrid, toggleLayout, toggleMaximized, updateChat, windowChatSummary, type GridAxis, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
-import { runningWorkWarning } from "../extensionStatusSnapshots";
+import { runningWork } from "../../../shared/closeBusy";
 import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import type { ChatRevealTarget } from "./ChatView";
 import { hasUnacknowledgedSend, type PromptEditor } from "./PromptEditor";
@@ -108,6 +108,8 @@ interface DurableChatEnd { session: SessionInfo; machineId: string }
 /** Closing waits this long for the server to answer (5 s), and longer for a host to end in order. */
 const CLOSE_DEADLINE_MS = 5000;
 const STOP_DEADLINE_MS = 20_000;
+/** The server waits 2 s for the closing tab's socket to go; a close it saw still watched is asked once more after this. */
+const WATCHED_RETRY_MS = 3000;
 
 /** Rejects when `work` has not settled within `ms`, so a stalled request fails visibly instead of pending forever. */
 function withDeadline<T>(work: Promise<T>, ms = CLOSE_DEADLINE_MS): Promise<T> {
@@ -305,7 +307,7 @@ export class WorkbenchApp extends LitElement {
     if (request.kind === "move") {
       const { sessionIds } = request;
       const holds = () => this.windows.window?.chats.some((chat) => sessionIds.includes(chat.sessionId)) === true;
-      return holds() ? this.moveWindowChats(sessionIds, from, expires)?.then(() => !holds()) ?? false : false;
+      return holds() ? this.moveWindowChats(sessionIds, from, expires, true)?.then(() => !holds()) ?? false : false;
     }
     const chat = chats.find((candidate) => candidate.sessionId === request.sessionId);
     if (chat === undefined) return false;
@@ -827,16 +829,24 @@ export class WorkbenchApp extends LitElement {
 
   private async closeAndEnd(sessionIds: readonly string[]): Promise<void> {
     const chats = (this.windows.window?.chats ?? []).filter((chat) => sessionIds.includes(chat.sessionId));
+    const title = (id: string) => chats.find((chat) => chat.sessionId === id)?.title ?? id;
     let durable: DurableChatEnd[];
-    let statuses: SessionStatus[];
+    let busy: { id: string; work: string }[];
     try {
       durable = (await withDeadline(Promise.all(chats.map((chat) => this.durableChat(chat))))).filter((end): end is DurableChatEnd => end !== null);
-      statuses = await withDeadline(Promise.all(durable.filter((end) => !this.shownInOtherLiveWindow(this.windows.store, end.session.id)).map((end) => api.status(end.session, end.machineId))));
+      const checked = durable.filter((end) => !this.shownInOtherLiveWindow(this.windows.store, end.session.id));
+      const statuses = await withDeadline(Promise.all(checked.map((end) => api.status(end.session, end.machineId))));
+      busy = checked.flatMap((end, index) => {
+        const status = statuses[index];
+        const work = status === undefined ? undefined : runningWork(status);
+        return work === undefined ? [] : [{ id: end.session.id, work }];
+      });
     } catch (error) {
       throw new Error(`Could not check what runs in the Chat, so it stays open; close it again to retry. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
-    const warning = runningWorkWarning(statuses);
-    if (warning !== undefined && !window.confirm(warning)) return;
+    // The warning names each busy Chat and its work; only those it named are confirmed, so others still refuse when busy.
+    if (busy.length > 0 && !window.confirm(busy.map(({ id, work }) => `"${title(id)}": ${work}`).join("\n"))) return;
+    const confirmed = new Set(busy.map(({ id }) => id));
     // A Chat another live window lists keeps its host, even as a tab there not on screen (the server sees only those).
     let ending: DurableChatEnd[] = [];
     const stored = await this.removeWindowChats(sessionIds, (store, id) => {
@@ -847,9 +857,16 @@ export class WorkbenchApp extends LitElement {
     if (stored !== true) return;
     try {
       await Promise.all(ending.map(async ({ session, machineId }) => {
-        const reply = await withDeadline(api.stopIfUnwatched(session, warning !== undefined, machineId), STOP_DEADLINE_MS);
+        const stop = (yes: boolean) => withDeadline(api.stopIfUnwatched(session, yes, machineId), STOP_DEADLINE_MS);
+        let reply = await stop(confirmed.has(session.id));
+        // This tab's socket may reach the server after its 2 s wait; still watched with no other window listing it, ask once more.
+        // Still watched after that: another browser shows the Chat, so its host keeps running.
+        if (!reply.stopped && reply.watched === true && !this.shownInOtherLiveWindow(this.windows.store, session.id)) {
+          await new Promise((resolve) => { setTimeout(resolve, WATCHED_RETRY_MS); });
+          reply = await stop(confirmed.has(session.id));
+        }
         // Work started since the check: asked again, Cancel leaves the Chat running (reopening it shows it).
-        if (!reply.stopped && reply.busy !== undefined && window.confirm(reply.busy)) await withDeadline(api.stopIfUnwatched(session, true, machineId), STOP_DEADLINE_MS);
+        if (!reply.stopped && reply.busy !== undefined && window.confirm(`"${title(session.id)}": ${reply.busy}`)) await stop(true);
       }));
     } catch (error) {
       throw new Error(`Could not end the closed Chat: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
@@ -883,8 +900,9 @@ export class WorkbenchApp extends LitElement {
 
   /**
    * Moves Chats to another window, which shows the first of them; settles once stored, undefined when they stay here.
-   * A move another window asked for and gave up on by `expires` (ms) does not happen, nor one the menu offered to a
-   * window that has closed or been dropped since (`listed`); a new or asking window is live before its first heartbeat.
+   * A move another window asked for and gave up on by `expires` (ms) does not happen, nor one to a stored window (the
+   * menu's entry or the window that asked, which beats as it asks) that has closed or been dropped by the time the move
+   * is stored (`listed`); a new window is not stored yet.
    */
   private moveWindowChats(sessionIds: readonly string[], targetWindowId: string, expires = Number.POSITIVE_INFINITY, listed = false): Promise<boolean> | undefined {
     if (!this.windows.shared || !this.canMoveWindowChats(sessionIds)) return undefined;

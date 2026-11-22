@@ -6,6 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { CHAT_CAPABILITY_LABELS, type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
 import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionNotificationDismissAllRequest, SessionNotificationDismissRequest, SessionNotificationInboxSnapshot, SessionNotificationSummaryEvent, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
+import { childrenRunning, familyBusy, runningWork } from "../../shared/closeBusy.js";
 import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 import type { PiWebConfig } from "../../config.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
@@ -977,6 +978,8 @@ export class DurableChatService {
    * Closing a Chat's tab (Workbench): end it as `stop` does, unless a browser still watches it (after waiting for the
    * closing tab's own socket to go) or, unless `confirmed`, work runs; the refusal names that work for the warning.
    * shortcut: a window that starts watching between the last check and the end loses the host; it reopens on next use.
+   * shortcut: work the host starts between its status sample and `{ end: true }` (milliseconds) ends unwarned; move the check into the host if that bites.
+   * shortcut: another browser that is reconnecting has no socket, so the Chat counts as unwatched and ends; it reopens when that browser reconnects.
    */
   async stopIfUnwatched(ref: SessionRouteRef, confirmed: boolean): Promise<{ stopped: true } | { stopped: false; watched: true } | { stopped: false; busy: string }> {
     const record = this.#record(ref);
@@ -1030,6 +1033,7 @@ export class DurableChatService {
    * Close every family host idle for {@link IDLE_HOST_CLOSE_MS}: no event since, nothing running or waiting (see
    * `familyBusy`) and no browser watching, as legacy `unloadIdleSessions` unloads sessions. The next use reopens it, on
    * the current host code when the family was pinned and may move (see `hostMoveRefusal`).
+   * shortcut: an open Atelier Page goes offline with the idle host (the owner chose Pages live and die with the Chat); reopening the Chat serves it again.
    */
   async closeIdleHosts(): Promise<void> {
     const idle = (id: string) => this.#now() - (this.#lastActive.get(id) ?? 0) >= IDLE_HOST_CLOSE_MS && this.deps.events.hasSessionSubscribers?.(id) !== true;
@@ -1583,66 +1587,12 @@ async function shortRevision(folder: string): Promise<string> {
 }
 
 /**
- * Why a family is not quiet, from its host's status; undefined when nothing runs or waits. The legacy idle-unload rule
- * (`isIdleForUnload`, `hasExtensionBackgroundWork`): a running turn, queued input, an open question, a running tool,
- * children, background bash or a watcher. Atelier Pages do not count: they end with the host, and reopening the Chat
- * serves them again. An unparseable status line counts as busy.
- */
-function familyBusy(status: HostTranscript["status"]): string | undefined {
-  if (status.isStreaming || status.isCompacting || status.isBashRunning) return "a turn is running";
-  if (status.pendingMessageCount > 0) return "input is queued";
-  if ((status.pendingAsks?.length ?? 0) > 0) return "a question is open";
-  if ((status.activeToolExecutions?.length ?? 0) > 0) return "a tool is running";
-  const list = (key: string, field: string) => statusList(status, key, field);
-  if (childrenRunning(status)) return "children are running";
-  if (list("pi-workbench:background-bash", "jobs")?.length !== 0) return "background bash is running";
-  if (list("pi-process-monitor:watchers", "watchers")?.length !== 0) return "a watcher is running";
-  return undefined;
-}
-
-/**
- * The warning before closing a busy family: its background bash jobs and running Subagents and Workers counted
- * ("2 background bash jobs and 1 subagent are running; closing ends them."), else why it is not quiet.
- */
-function runningWork(status: HostTranscript["status"]): string | undefined {
-  const reason = familyBusy(status);
-  if (reason === undefined) return undefined;
-  const jobs = statusList(status, "pi-workbench:background-bash", "jobs")?.length ?? 0;
-  const children = (statusList(status, "pi-workbench:activity", "items") ?? []).filter((item) => isRecord(item) && item["endedAt"] === undefined);
-  const subagents = children.filter((item) => isRecord(item) && item["kind"] === "subagent").length;
-  const counted = (count: number, noun: string) => count === 0 ? [] : [`${String(count)} ${noun}${count === 1 ? "" : "s"}`];
-  const parts = [...counted(jobs, "background bash job"), ...counted(subagents, "subagent"), ...counted(children.length - subagents, "worker")];
-  if (parts.length === 0) return `${reason[0]?.toUpperCase() ?? ""}${reason.slice(1)}; closing ends it.`;
-  const one = jobs + children.length === 1;
-  return `${parts.length === 1 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1) ?? ""}`} ${one ? "is" : "are"} running; closing ends ${one ? "it" : "them"}.`;
-}
-
-/**
  * Whether an automatic upgrade (B) may restart the family now: nothing runs or waits except work that survives a host
  * restart unchanged (open questions, background bash, watchers, Atelier Pages).
  */
 function restartSafe(status: HostTranscript["status"]): boolean {
   return !status.isStreaming && !status.isCompacting && !status.isBashRunning && status.pendingMessageCount === 0
     && (status.activeToolExecutions?.length ?? 0) === 0 && !childrenRunning(status);
-}
-
-/** A JSON list in one of the host's extension status lines: none when the line is absent, undefined when unparseable. */
-function statusList(status: HostTranscript["status"], key: string, field: string): unknown[] | undefined {
-  const text = status.extensionStatuses?.[key];
-  if (text === undefined) return [];
-  try {
-    const value: unknown = JSON.parse(text);
-    const items = isRecord(value) ? value[field] : undefined;
-    return Array.isArray(items) ? items : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** A delegate roster row not yet ended (Subagents, Workers); an unparseable roster counts as running. */
-function childrenRunning(status: HostTranscript["status"]): boolean {
-  const delegates = statusList(status, "pi-workbench:activity", "items");
-  return delegates === undefined || delegates.some((item) => !isRecord(item) || item["endedAt"] === undefined);
 }
 
 /**

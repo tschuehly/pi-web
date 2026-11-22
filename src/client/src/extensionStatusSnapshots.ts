@@ -266,20 +266,6 @@ function counted(count: number, singular: string, plural = singular): string | u
   return count === 0 ? undefined : `${String(count)} ${count === 1 ? singular : plural}`;
 }
 
-/**
- * The warning before ending Chats, naming their running background bash jobs and children; undefined when nothing runs.
- * A child counts as running until it has ended, as the server counts it before closing an idle host.
- */
-export function runningWorkWarning(statuses: readonly (Pick<SessionStatus, "extensionStatuses"> | undefined)[]): string | undefined {
-  const jobs = statuses.reduce((sum, status) => sum + parseBackgroundBashStatusSnapshot(status?.extensionStatuses?.[BACKGROUND_BASH_STATUS_KEY]).length, 0);
-  const children = statuses.flatMap((status) => parseDelegateActivitySnapshot(status?.extensionStatuses?.[ACTIVITY_STATUS_KEY]).filter((item) => item.endedAt === undefined));
-  const subagents = children.filter((item) => item.kind === "subagent").length;
-  const parts = [counted(jobs, "background bash job", "background bash jobs"), counted(subagents, "subagent", "subagents"), counted(children.length - subagents, "worker", "workers")].filter((part) => part !== undefined);
-  if (parts.length === 0) return undefined;
-  const one = jobs + children.length === 1;
-  return `${parts.length === 1 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1) ?? ""}`} ${one ? "is" : "are"} running; closing ends ${one ? "it" : "them"}.`;
-}
-
 /** The Activity roster's entries by source, their total, and the one-line aggregate its header and badge show. */
 export function activitySummary(status: Pick<SessionStatus, "extensionStatuses" | "activeToolExecutions"> | undefined) {
   const delegates = parseDelegateActivitySnapshot(status?.extensionStatuses?.[ACTIVITY_STATUS_KEY]);
