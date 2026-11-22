@@ -86,6 +86,35 @@ describe("window identity", () => {
     expect(Object.keys(controller.store).sort()).toEqual(["closed", "fresh", "open"]);
   });
 
+  it("drops a closed window with Chats once it has gone 7 days without use, and keeps a reopened one", async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const first = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=old").environment);
+    await first.start();
+    await first.update((store, id) => openChat(store, id, chat("a")));
+    first.dispose();
+    const reopened = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=back").environment);
+    await reopened.start();
+    await reopened.update((store, id) => openChat(store, id, chat("b")));
+    reopened.dispose();
+    // An older record without a close time starts its 7 days at the next claim.
+    storage.setItem(WINDOW_STORE_KEY, storeWith({ ...parseWindowStore(storage.getItem(WINDOW_STORE_KEY)), legacy: openChat({ legacy: emptyWindow("Window 9") }, "legacy", chat("c"))["legacy"] ?? emptyWindow("x") }));
+    vi.advanceTimersByTime(3 * day);
+    const restored = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=back").environment);
+    await restored.start();
+    restored.dispose();
+    vi.advanceTimersByTime(4 * day + 1);
+
+    const next = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/").environment);
+    await next.start();
+    expect(Object.keys(next.store).sort()).toEqual(["back", "fresh", "legacy"]);
+    vi.advanceTimersByTime(3 * day);
+    const later = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/", "later").environment);
+    await later.start();
+    expect(Object.keys(later.store).sort()).toEqual(["fresh", "later"]);
+    next.dispose();
+    later.dispose();
+  });
+
   it("starts a new named window when every stored one is still open", async () => {
     storage.setItem(WINDOW_STORE_KEY, storeWith(openChat({ open: emptyWindow("Window 1") }, "open", chat("a"))));
     storage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ open: Date.now() }));

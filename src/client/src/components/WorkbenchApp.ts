@@ -905,14 +905,14 @@ export class WorkbenchApp extends LitElement {
     const menu = this.windowMenu;
     if (menu === undefined) return nothing;
     const shared = this.windows.shared;
-    const others = shared ? Object.entries(this.windows.store).filter(([id]) => id !== this.windows.id) : [];
+    const others = shared ? Object.entries(this.windows.store).filter(([id]) => id !== this.windows.id && this.windows.isAlive(id)) : [];
     const window = this.windows.window;
     const single = menu.sessionIds.length === 1 ? menu.sessionIds[0] : undefined;
     const sizing = single !== undefined && single === this.app.selectedSession?.id && window?.layout === "grid" && window.chats.length > 1;
     return html`
       <div class="window-menu" role="menu" aria-label=${menu.label} style=${styleMap({ left: `${String(menu.left)}px`, top: `${String(menu.top)}px` })}>
         ${shared ? html`<button role="menuitem" @click=${() => { this.moveToNewWindow(menu.sessionIds); }}>Move to new window</button>` : nothing}
-        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id); }}>Move to ${windowChatSummary(other)}${this.windows.isAlive(id) ? "" : " (closed)"}</button>`)}
+        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id); }}>Move to ${windowChatSummary(other)}</button>`)}
         ${shared ? html`<hr>` : nothing}
         ${sizing ? html`<button role="menuitem" @click=${() => { this.windowMenu = undefined; void this.updateWindow(toggleMaximized); }}>${window.maximized ? "Restore grid" : "Full size"}</button>` : nothing}
         <button role="menuitem" @click=${() => { this.closeWindowChats(menu.sessionIds); }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>

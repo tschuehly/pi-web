@@ -26,7 +26,7 @@ import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import { WorkbenchChatPane } from "./WorkbenchChatPane";
 import type { WorkbenchQuestionChips } from "./WorkbenchQuestionChips";
 import { SessionController } from "../controllers/sessionController";
-import { WorkbenchWindowController, WINDOW_CHANNEL, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY } from "../controllers/workbenchWindowController";
+import { WorkbenchWindowController, WINDOW_CHANNEL, WINDOW_HEARTBEAT_KEY, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY } from "../controllers/workbenchWindowController";
 import { WorkbenchChatSession, WorkbenchSessionFocus } from "../controllers/workbenchSessionFocus";
 import { FakeLocks } from "../controllers/webLocks.testSupport";
 import { moveChats, openChat, parseWindowStore } from "../workbenchWindows";
@@ -2719,10 +2719,16 @@ describe("window tabs", () => {
     expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
 
     // One Workstream left, so no Workstream row: its menu comes from the tab component's own event.
-    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2"], label: "Release", clientX: 0, clientY: 0 } }));
-    await app.updateComplete;
-    const items = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])];
-    expect(items.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Install guide (closed)", "Close 2 Chats"]);
+    const openMenu = async () => {
+      app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2"], label: "Release", clientX: 0, clientY: 0 } }));
+      await app.updateComplete;
+      return [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])];
+    };
+    // The new window never opened (window.open is stubbed), so it is closed and not offered as a target.
+    expect((await openMenu()).map((item) => item.textContent.trim())).toEqual(["Move to new window", "Close 2 Chats"]);
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ [target]: Date.now() }));
+    const items = await openMenu();
+    expect(items.map((item) => item.textContent.trim())).toEqual(["Move to new window", "Move to Install guide", "Close 2 Chats"]);
     items[1]?.click();
     await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]?.chats.map((chat) => chat.sessionId)).toEqual(["b1", "a1", "a2"]);
