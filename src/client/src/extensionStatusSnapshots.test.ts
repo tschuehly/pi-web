@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { ACTIVITY_STATUS_KEY, GOAL_STATUS_STATE_VALUES, WATCHER_STATUS_KEY, activitySummary, delegateOutcome, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWatcherStatusSnapshot, parseWorkingModeSnapshot, visibleShellExecutions, workingModePending, type WorkingModeState } from "./extensionStatusSnapshots";
+import { ACTIVITY_STATUS_KEY, GOAL_STATUS_STATE_VALUES, WATCHER_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY, activitySummary, delegateOutcome, runningWorkWarning, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, parseGoalStatusSnapshot, parseLegacyGoalStatus, parseWatcherStatusSnapshot, parseWorkingModeSnapshot, visibleShellExecutions, workingModePending, type WorkingModeState } from "./extensionStatusSnapshots";
 
 describe("extension status snapshots", () => {
+  it("names the background bash jobs and children still running before Chats close", () => {
+    const status = (jobs: number, items: object[]) => ({ extensionStatuses: {
+      [BACKGROUND_BASH_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, jobs: Array.from({ length: jobs }, (_, index) => ({ id: `job-${String(index)}`, elapsedSeconds: 1, bytes: 0 })) }),
+      [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items }),
+    } });
+    const ended = { id: "done", kind: "subagent", endedAt: "2026-10-21T10:00:00.000Z" };
+    expect(runningWorkWarning([status(1, [{ id: "s1", kind: "subagent" }, ended]), status(1, []), undefined])).toBe("2 background bash jobs and 1 subagent are running; closing ends them.");
+    expect(runningWorkWarning([status(0, [{ id: "w1", kind: "worker" }])])).toBe("1 worker is running; closing ends it.");
+    expect(runningWorkWarning([status(1, [{ id: "s1", kind: "subagent" }, { id: "w1", kind: "worker" }])])).toBe("1 background bash job, 1 subagent and 1 worker are running; closing ends them.");
+    expect(runningWorkWarning([status(0, [ended]), { extensionStatuses: {} }, undefined])).toBeUndefined();
+  });
+
   it("accepts only bounded active background bash status", () => {
     const parse = (jobs: unknown[]) => parseBackgroundBashStatusSnapshot(JSON.stringify({ schemaVersion: 1, jobs }));
     expect(parse([{ id: "job-1", elapsedSeconds: 42, bytes: 1024, command: "npm test", output: "ok\n", logPath: "/jobs/1/output.log" }])).toEqual([

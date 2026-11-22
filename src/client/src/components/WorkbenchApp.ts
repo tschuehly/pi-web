@@ -4,6 +4,7 @@ import { styleMap } from "lit/directives/style-map.js";
 import { customElement, state } from "lit/decorators.js";
 import { api, configApi, type Project, type SessionInfo, type SessionStatus, type Workspace } from "../api";
 import { HttpRequestError } from "../api/http";
+import { retriesOperations } from "../api/operationRetry";
 import type { SessionOpenAsks } from "../../../shared/apiTypes";
 import { PI_WEB_CAPABILITIES, supportsPiWebCapability } from "../../../shared/capabilities";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
@@ -38,6 +39,7 @@ import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { pluginStyles, PluginStyleRuntime } from "../plugins/styles";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
 import { closeChats, focusChat, GRID_MIN_TILE, gridRatio, gridRatioBounds, gridRatioFromDrag, gridRatioFromKeyboard, gridTiles, moveChats, orderedChats, resizeGrid, toggleLayout, toggleMaximized, updateChat, windowChatSummary, type GridAxis, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
+import { runningWorkWarning } from "../extensionStatusSnapshots";
 import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import type { ChatRevealTarget } from "./ChatView";
 import { hasUnacknowledgedSend, type PromptEditor } from "./PromptEditor";
@@ -99,6 +101,9 @@ const subprojectsOf = (root: Project, projects: readonly Project[]): Project[] =
 const unsavedChatsIn = (rows: readonly SessionInfo[], cwd: string, openedId: string): SessionInfo[] => rows.filter((row) => row.persisted === false && row.cwd === cwd && row.id !== openedId);
 /** A window asked to hand over dropped Chats may first ask its owner about unsaved file edits. */
 const MOVE_REPLY_MS = 60_000;
+
+/** A closed Durable Chat to end, with the status that names what still runs in it. */
+interface DurableChatEnd { session: SessionInfo; machineId: string; status: SessionStatus | undefined }
 
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
@@ -787,9 +792,61 @@ export class WorkbenchApp extends LitElement {
     return { project: undefined, projects, workspace: folder, workspaces: [folder] };
   };
 
-  /** Closes Chats in this window; closing the one on screen shows the next, or the home after the last. */
+  /**
+   * Closes Chats in this window; closing the one on screen shows the next, or the home after the last. A closed Durable
+   * Chat also ends its host (and its background jobs) unless another live window shows it, after the owner confirms
+   * when it still runs background bash or children. Legacy Chats only leave the window.
+   */
   private closeWindowChats(sessionIds: readonly string[]): void {
-    void this.removeWindowChats(sessionIds, (store, id) => closeChats(store, id, sessionIds));
+    const chats = (this.windows.window?.chats ?? []).filter((chat) => sessionIds.includes(chat.sessionId));
+    const known = chats.map((chat) => this.durableChatEnd(chat));
+    // Chats this window already knows close at once; others wait for their listing.
+    if (known.every((end) => end !== undefined)) { this.endWindowChats(sessionIds, known); return; }
+    void Promise.all(chats.map((chat, index) => known[index] === undefined ? this.lookUpDurableChatEnd(chat) : Promise.resolve(known[index]))).then((ends) => { this.endWindowChats(sessionIds, ends); });
+  }
+
+  private endWindowChats(sessionIds: readonly string[], ends: readonly (DurableChatEnd | null)[]): void {
+    const ending = ends.filter((end): end is DurableChatEnd => end !== null && !this.shownInOtherLiveWindow(end.session.id));
+    const warning = runningWorkWarning(ending.map((end) => end.status));
+    if (warning !== undefined && !window.confirm(warning)) return;
+    const closed = this.removeWindowChats(sessionIds, (store, id) => closeChats(store, id, sessionIds));
+    if (closed === undefined || ending.length === 0) return;
+    void closed.then(() => Promise.all(ending.map((end) => api.stop(end.session, end.machineId)))).catch((error: unknown) => {
+      this.setApp({ error: `Could not end the closed Chat: ${error instanceof Error ? error.message : String(error)}` });
+    });
+  }
+
+  private shownInOtherLiveWindow(sessionId: string): boolean {
+    return Object.entries(this.windows.store).some(([id, other]) => id !== this.windows.id && this.windows.isAlive(id) && other.chats.some((chat) => chat.sessionId === sessionId));
+  }
+
+  /** What ending a window Chat needs, from what this window holds: null for a legacy Chat, undefined when unknown here. */
+  private durableChatEnd(chat: WindowChat): DurableChatEnd | null | undefined {
+    const session = this.heldSession(chat);
+    if (session === undefined) return undefined;
+    if (!retriesOperations(session)) return null;
+    const status = this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? (chat.machineId === selectedMachineId(this.app) ? this.app.sessionStatuses[chat.sessionId] : undefined);
+    return status === undefined ? undefined : { session, machineId: chat.machineId, status };
+  }
+
+  /** The listing row of a window Chat, from its loaded runtime or this machine's catalog. */
+  private heldSession(chat: WindowChat): SessionInfo | undefined {
+    return this.runtimeFor(chat.sessionId, chat.machineId)?.state.selectedSession
+      ?? (chat.machineId === selectedMachineId(this.app) ? this.app.sessions.find((row) => row.id === chat.sessionId) : undefined);
+  }
+
+  private async lookUpDurableChatEnd(chat: WindowChat): Promise<DurableChatEnd | null> {
+    let session: SessionInfo | undefined;
+    try {
+      session = this.heldSession(chat) ?? await this.knownSession(chat.sessionId, (await api.locate(chat.sessionId, chat.machineId)).cwd, chat.machineId);
+    } catch {
+      // shortcut: a Chat whose listing cannot be read closes without ending its host; its idle timeout still applies.
+      return null;
+    }
+    if (session === undefined || !retriesOperations(session)) return null;
+    // Without a status the Chat still ends, only without naming what runs.
+    const status = await api.status(session, chat.machineId).catch(() => undefined);
+    return { session, machineId: chat.machineId, status };
   }
 
   /**
