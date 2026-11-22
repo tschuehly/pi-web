@@ -2269,6 +2269,14 @@ export function parseAborted(value: unknown): { aborted: true } {
   return { aborted: true };
 }
 
+/** A closed tab's conditional stop: ended, or refused because a browser still watches or (unconfirmed) work runs. */
+export function parseConditionalStop(value: unknown): { stopped: true } | { stopped: false; watched?: true; busy?: string } {
+  const record = requireRecord(value);
+  if (record["stopped"] === true) return { stopped: true };
+  if (record["stopped"] !== false) throw new Error("Expected stopped response");
+  return { stopped: false, ...(record["watched"] === true ? { watched: true } : {}), ...(typeof record["busy"] === "string" ? { busy: record["busy"] } : {}) };
+}
+
 export function parseStopped(value: unknown): { stopped: true } {
   const record = requireRecord(value);
   if (record["stopped"] !== true) throw new Error("Expected stopped response");

@@ -123,6 +123,8 @@ export interface SessionRouteService {
   forkFromTree(ref: SessionRouteRef, request: ClientSessionTreeForkRequest): Promise<ClientSessionTreeForkResult>;
   abort(ref: SessionRouteRef): Promise<void>;
   stop(ref: SessionRouteRef): void | Promise<void>;
+  /** End a closed tab's Durable Chat unless a browser still watches it or, unless confirmed, work runs (Durable Chats only). */
+  stopIfUnwatched?(ref: SessionRouteRef, confirmed: boolean): Promise<{ stopped: true } | { stopped: false; watched: true } | { stopped: false; busy: string }>;
   archive(ref: SessionRouteRef): Promise<void>;
   archiveTree(ref: SessionRouteRef): Promise<ClientArchiveSessionsResponse>;
   restore(ref: SessionRouteRef): Promise<void>;

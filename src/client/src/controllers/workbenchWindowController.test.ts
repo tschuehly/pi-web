@@ -131,6 +131,32 @@ describe("window identity", () => {
     controller.dispose();
   });
 
+  it("lets a page reclaim its id only between other windows' prunes, never while one decides what to drop", async () => {
+    const locks = new FakeLocks();
+    storage.setItem(WINDOW_STORE_KEY, storeWith({ back: emptyWindow("Window 1") }));
+    const pruner = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/", "fresh", locks).environment);
+    const reclaimer = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=back", "other", locks).environment);
+    const query = locks.query.bind(locks);
+    const heldDuringPrune: boolean[] = [];
+    let reclaiming: Promise<void> | undefined;
+    vi.spyOn(locks, "query").mockImplementation(async () => {
+      if (reclaiming === undefined) {
+        reclaiming = reclaimer.start();
+        await vi.advanceTimersByTimeAsync(0);
+        heldDuringPrune.push((await query()).held?.some((lock) => lock.name === `${WINDOW_ID_LOCK_PREFIX}back`) === true);
+      }
+      return query();
+    });
+    await pruner.start();
+    await reclaiming;
+
+    expect(heldDuringPrune).toEqual([false]);
+    expect(reclaimer.id).toBe("back");
+    expect(Object.keys(parseWindowStore(storage.getItem(WINDOW_STORE_KEY))).sort()).toEqual(["back", "fresh"]);
+    pruner.dispose();
+    reclaimer.dispose();
+  });
+
   it("starts a new named window when every stored one is still open", async () => {
     storage.setItem(WINDOW_STORE_KEY, storeWith(openChat({ open: emptyWindow("Window 1") }, "open", chat("a"))));
     storage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ open: Date.now() }));

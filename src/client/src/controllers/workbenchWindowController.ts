@@ -156,8 +156,9 @@ export class WorkbenchWindowController {
     if (this.run !== undefined) return;
     const run = {};
     this.run = run;
+    // Ids are taken under the store lock, so a pruning window never misses a page reclaiming its id.
     if (this.windowId === "") await this.claimId();
-    else await this.holdId(this.windowId);
+    else await this.exclusive(() => this.holdId(this.windowId));
     if (this.run !== run) return;
     this.writeTimes(WINDOW_CLOSED_KEY, Object.fromEntries(Object.entries(this.readTimes(WINDOW_CLOSED_KEY)).filter(([id]) => id !== this.windowId)));
     this.beat();
@@ -177,11 +178,12 @@ export class WorkbenchWindowController {
   private async claimId(): Promise<void> {
     const url = this.environment.url();
     const requested = url.searchParams.get(WINDOW_URL_PARAM) ?? this.environment.tabStorage?.getItem(TAB_WINDOW_KEY) ?? null;
-    let id = requested !== null && requested !== "" && await this.holdId(requested) ? requested : undefined;
-    if (id === undefined) {
-      id = this.environment.newId();
-      await this.holdId(id);
-    }
+    const id = await this.exclusive(async () => {
+      if (requested !== null && requested !== "" && await this.holdId(requested)) return requested;
+      const fresh = this.environment.newId();
+      await this.holdId(fresh);
+      return fresh;
+    });
     if (url.searchParams.get(WINDOW_URL_PARAM) !== id) {
       url.searchParams.set(WINDOW_URL_PARAM, id);
       this.environment.replaceUrl(url);
@@ -191,7 +193,7 @@ export class WorkbenchWindowController {
     const claimed = id;
     // Closed windows without Chats are dropped; closed ones with Chats stay for their restored window for 7 days.
     await this.exclusive(async () => {
-      // Liveness is read under the store lock: a page holding its id lock may have reclaimed it before its first beat.
+      // Liveness is read under the store lock, which every id claim takes: a held id lock counts before its first beat.
       const held = await this.heldIds();
       const alive = this.readTimes(WINDOW_HEARTBEAT_KEY);
       const now = this.environment.now();

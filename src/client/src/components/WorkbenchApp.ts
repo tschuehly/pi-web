@@ -102,8 +102,18 @@ const unsavedChatsIn = (rows: readonly SessionInfo[], cwd: string, openedId: str
 /** A window asked to hand over dropped Chats may first ask its owner about unsaved file edits. */
 const MOVE_REPLY_MS = 60_000;
 
-/** A closed Durable Chat to end, with the status that names what still runs in it. */
-interface DurableChatEnd { session: SessionInfo; machineId: string; status: SessionStatus }
+/** A closed Durable Chat to end. */
+interface DurableChatEnd { session: SessionInfo; machineId: string }
+
+/** Closing waits this long for the server to answer (5 s), and longer for a host to end in order. */
+const CLOSE_DEADLINE_MS = 5000;
+const STOP_DEADLINE_MS = 20_000;
+
+/** Rejects when `work` has not settled within `ms`, so a stalled request fails visibly instead of pending forever. */
+function withDeadline<T>(work: Promise<T>, ms = CLOSE_DEADLINE_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([work, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`The server did not answer within ${String(ms / 1000)} s.`)); }, ms); })]).finally(() => { clearTimeout(timer); });
+}
 
 @customElement("pi-workbench-app")
 export class WorkbenchApp extends LitElement {
@@ -146,6 +156,8 @@ export class WorkbenchApp extends LitElement {
     onRefreshError: (error) => { console.warn("Chat refresh after resume failed", error); },
   });
   private readonly retiringChats = new Set<string>();
+  /** Chats whose close is still asking the server or ending them. */
+  private readonly closingChats = new Set<string>();
   private launcher: WorkbenchChatSession | undefined;
   private navigationSequence = 0;
   private selectingChat: { sessionId: string; generation: number } | undefined;
@@ -798,74 +810,87 @@ export class WorkbenchApp extends LitElement {
 
   /**
    * Closes Chats in this window; closing the one on screen shows the next, or the home after the last. A closed Durable
-   * Chat also ends its host (and its background jobs) unless another live window shows it, after the owner confirms
-   * when its current status names running background bash or children. A Chat whose kind or status cannot be read
-   * stays open, so closing again retries. Legacy Chats only leave the window.
+   * Chat also ends its host (and its background jobs), as the server decides once this window's socket is gone: never
+   * while another browser watches it, and only after the owner confirms when work runs. The owner is asked before the
+   * tab goes, from the Chat's current status; a Chat whose listing or status cannot be read in time stays open, so
+   * closing again retries. Legacy Chats only leave the window.
    */
   private closeWindowChats(sessionIds: readonly string[]): void {
     this.windowMenu = undefined;
-    const chats = (this.windows.window?.chats ?? []).filter((chat) => sessionIds.includes(chat.sessionId));
-    void Promise.all(chats.map((chat) => this.durableChatEnd(chat))).then((ends) => { this.endWindowChats(sessionIds, ends); }, (error: unknown) => {
-      this.setApp({ error: `Could not check what runs in the Chat, so it stays open; close it again to retry. ${error instanceof Error ? error.message : String(error)}` });
-    });
+    // A close still asking or ending finishes first: a late answer must not override a later decision.
+    if (sessionIds.some((id) => this.closingChats.has(id))) return;
+    for (const id of sessionIds) this.closingChats.add(id);
+    void this.closeAndEnd(sessionIds).catch((error: unknown) => {
+      this.setApp({ error: error instanceof Error ? error.message : String(error) });
+    }).finally(() => { for (const id of sessionIds) this.closingChats.delete(id); });
   }
 
-  private endWindowChats(sessionIds: readonly string[], ends: readonly (DurableChatEnd | null)[]): void {
-    const durable = ends.filter((end): end is DurableChatEnd => end !== null);
-    const warning = runningWorkWarning(durable.filter((end) => !this.shownInOtherLiveWindow(this.windows.store, end.session.id)).map((end) => end.status));
+  private async closeAndEnd(sessionIds: readonly string[]): Promise<void> {
+    const chats = (this.windows.window?.chats ?? []).filter((chat) => sessionIds.includes(chat.sessionId));
+    let durable: DurableChatEnd[];
+    let statuses: SessionStatus[];
+    try {
+      durable = (await withDeadline(Promise.all(chats.map((chat) => this.durableChat(chat))))).filter((end): end is DurableChatEnd => end !== null);
+      statuses = await withDeadline(Promise.all(durable.filter((end) => !this.shownInOtherLiveWindow(this.windows.store, end.session.id)).map((end) => api.status(end.session, end.machineId))));
+    } catch (error) {
+      throw new Error(`Could not check what runs in the Chat, so it stays open; close it again to retry. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    const warning = runningWorkWarning(statuses);
     if (warning !== undefined && !window.confirm(warning)) return;
-    // Decided from the store the removal commits to: a Chat moved meanwhile to another live window keeps its host.
+    // A Chat another live window lists keeps its host, even as a tab there not on screen (the server sees only those).
     let ending: DurableChatEnd[] = [];
-    const closed = this.removeWindowChats(sessionIds, (store, id) => {
+    const stored = await this.removeWindowChats(sessionIds, (store, id) => {
       const held = store[id]?.chats ?? [];
       ending = durable.filter((end) => held.some((chat) => chat.sessionId === end.session.id) && !this.shownInOtherLiveWindow(store, end.session.id));
       return closeChats(store, id, sessionIds);
     });
-    void closed?.then((stored) => stored ? Promise.all(ending.map((end) => api.stop(end.session, end.machineId))) : undefined).catch((error: unknown) => {
-      this.setApp({ error: `Could not end the closed Chat: ${error instanceof Error ? error.message : String(error)}` });
-    });
+    if (stored !== true) return;
+    try {
+      await Promise.all(ending.map(async ({ session, machineId }) => {
+        const reply = await withDeadline(api.stopIfUnwatched(session, warning !== undefined, machineId), STOP_DEADLINE_MS);
+        // Work started since the check: asked again, Cancel leaves the Chat running (reopening it shows it).
+        if (!reply.stopped && reply.busy !== undefined && window.confirm(reply.busy)) await withDeadline(api.stopIfUnwatched(session, true, machineId), STOP_DEADLINE_MS);
+      }));
+    } catch (error) {
+      throw new Error(`Could not end the closed Chat: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
   }
 
   private shownInOtherLiveWindow(store: WindowStore, sessionId: string): boolean {
     return Object.entries(store).some(([id, other]) => id !== this.windows.id && this.windows.isAlive(id) && other.chats.some((chat) => chat.sessionId === sessionId));
   }
 
-  /** The listing row of a window Chat, from its loaded runtime or this machine's catalog. */
-  private heldSession(chat: WindowChat): SessionInfo | undefined {
-    return this.runtimeFor(chat.sessionId, chat.machineId)?.state.selectedSession
-      ?? (chat.machineId === selectedMachineId(this.app) ? this.app.sessions.find((row) => row.id === chat.sessionId) : undefined);
-  }
-
   /**
-   * What ending a window Chat needs, with its current status from the server: null for a legacy Chat or one no longer
-   * listed. Rejects when the listing or status cannot be read, since a cached status may miss work started since.
+   * The Durable Chat a window Chat names, from its loaded runtime or the server's listing; null for a legacy Chat, a
+   * creation reservation, or one no longer listed. Rejects when the listing cannot be read.
    */
-  private async durableChatEnd(chat: WindowChat): Promise<DurableChatEnd | null> {
+  private async durableChat(chat: WindowChat): Promise<DurableChatEnd | null> {
     // A reservation stays until creation finishes, which removing it reports.
     if (isCreatingSessionId(chat.sessionId)) return null;
-    let session = this.heldSession(chat);
+    let session = this.runtimeFor(chat.sessionId, chat.machineId)?.state.selectedSession
+      ?? (chat.machineId === selectedMachineId(this.app) ? this.app.sessions.find((row) => row.id === chat.sessionId) : undefined);
     if (session === undefined) {
       try {
-        session = await this.knownSession(chat.sessionId, (await api.locate(chat.sessionId, chat.machineId)).cwd, chat.machineId);
+        // Listed only: the unlisted fallback reads a status that treats any failure as gone.
+        session = await this.knownSession(chat.sessionId, (await api.locate(chat.sessionId, chat.machineId)).cwd, chat.machineId, () => false);
       } catch (error) {
         if (error instanceof HttpRequestError && error.status === 404) return null;
         throw error;
       }
     }
-    if (session === undefined || !retriesOperations(session)) return null;
-    return { session, machineId: chat.machineId, status: await api.status(session, chat.machineId) };
+    return session === undefined || !retriesOperations(session) ? null : { session, machineId: chat.machineId };
   }
 
   /**
    * Moves Chats to another window, which shows the first of them; settles once stored, undefined when they stay here.
-   * A move another window asked for and gave up on by `expires` (ms) does not happen, nor one to a stored window that
-   * has closed since the move was offered (a new window is not stored yet).
+   * A move another window asked for and gave up on by `expires` (ms) does not happen, nor one the menu offered to a
+   * window that has closed or been dropped since (`listed`); a new or asking window is live before its first heartbeat.
    */
-  private moveWindowChats(sessionIds: readonly string[], targetWindowId: string, expires = Number.POSITIVE_INFINITY): Promise<boolean> | undefined {
+  private moveWindowChats(sessionIds: readonly string[], targetWindowId: string, expires = Number.POSITIVE_INFINITY, listed = false): Promise<boolean> | undefined {
     if (!this.windows.shared || !this.canMoveWindowChats(sessionIds)) return undefined;
     let closedTarget = false;
     return this.removeWindowChats(sessionIds, (store, id) => {
-      closedTarget = store[targetWindowId] !== undefined && !this.windows.isAlive(targetWindowId);
+      closedTarget = listed && (store[targetWindowId] === undefined || !this.windows.isAlive(targetWindowId));
       return Date.now() > expires || closedTarget ? store : moveChats(store, id, targetWindowId, sessionIds);
     })?.then((stored) => {
       if (closedTarget) this.setApp({ error: "That window has closed, so the Chats stay here." });
@@ -991,7 +1016,7 @@ export class WorkbenchApp extends LitElement {
     return html`
       <div class="window-menu" role="menu" aria-label=${menu.label} style=${styleMap({ left: `${String(menu.left)}px`, top: `${String(menu.top)}px` })}>
         ${shared ? html`<button role="menuitem" @click=${() => { this.moveToNewWindow(menu.sessionIds); }}>Move to new window</button>` : nothing}
-        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id); }}>Move to ${windowChatSummary(other)}</button>`)}
+        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id, undefined, true); }}>Move to ${windowChatSummary(other)}</button>`)}
         ${shared ? html`<hr>` : nothing}
         ${sizing ? html`<button role="menuitem" @click=${() => { this.windowMenu = undefined; void this.updateWindow(toggleMaximized); }}>${window.maximized ? "Restore grid" : "Full size"}</button>` : nothing}
         <button role="menuitem" @click=${() => { this.closeWindowChats(menu.sessionIds); }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>
