@@ -294,6 +294,80 @@ describe("ask-user-card live form", () => {
   });
 });
 
+describe("ask-user-card dependent questions", () => {
+  const dependentAsk = () => openAsk([
+    question("location", "Where should the browser run?", [option("home", "Home"), option("vps", "VPS")]),
+    { ...question("machine", "Which machine?", [option("mini", "Mac mini"), option("pc", "PC")]), showIf: { question: "location", values: ["home"] } },
+    { ...question("gpu", "Use the GPU?", [option("yes", "Yes")]), showIf: { question: "machine", values: ["pc"] } },
+  ]);
+  const legends = (root: ShadowRoot) => [...root.querySelectorAll("legend")].map((legend) => legend.textContent.replace(/\s+/gu, " ").trim());
+
+  it("shows a dependent question only while its condition holds, hides its chain when it changes, and never counts it hidden", async () => {
+    const card = await mountOpenAsk(dependentAsk());
+    const root = renderRoot(card);
+    const status = () => root.querySelector("[aria-live='polite']")?.textContent.trim();
+
+    expect(legends(root)).toEqual([expect.stringContaining("1. Where should the browser run?")]);
+    expect(status()).toBe("0 of 1 answered");
+
+    inputWithValue(root, "home").click();
+    await card.updateComplete;
+    expect(legends(root)).toEqual([expect.stringContaining("Where"), expect.stringContaining("2. Which machine?")]);
+    inputWithValue(root, "pc").click();
+    await card.updateComplete;
+    expect(legends(root)).toHaveLength(3);
+    expect(status()).toBe("2 of 3 answered");
+
+    inputWithValue(root, "vps").click();
+    await card.updateComplete;
+    expect(legends(root)).toEqual([expect.stringContaining("Where")]);
+    expect(status()).toBe("1 of 1 answered");
+  });
+
+  it("sends without asking about hidden questions and leaves their stale answers out", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    saveAskDraft("local:session-1", "ask-1", { machine: { values: ["pc"], asked: JSON.stringify(dependentAsk().questions[1]) } });
+    const card = await mountOpenAsk(dependentAsk(), onSubmit);
+    const root = renderRoot(card);
+
+    inputWithValue(root, "vps").click();
+    await card.updateComplete;
+    buttonWithText(root, "Send answers").click();
+    await card.updateComplete;
+
+    expect(root.querySelector("[aria-label='Confirm partial answers']")).toBeNull();
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", answers: [{ id: "location", values: ["vps"] }] });
+  });
+
+  it("offers Send anyway only for visible unanswered questions", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(dependentAsk(), onSubmit);
+    const root = renderRoot(card);
+
+    inputWithValue(root, "home").click();
+    await card.updateComplete;
+    buttonWithText(root, "Send answers").click();
+    await card.updateComplete;
+    const confirmation = requiredElement(root.querySelector("[aria-label='Confirm partial answers']"), "partial confirmation");
+    expect(confirmation.textContent).toContain("Which machine?");
+    expect(confirmation.textContent).not.toContain("Use the GPU?");
+  });
+
+  it("labels a skipped question in the record apart from an unanswered one", async () => {
+    const [location, machine] = dependentAsk().questions;
+    if (location === undefined || machine === undefined) throw new Error("expected two questions");
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [{ question: location, answered: true, values: ["vps"] }, { question: machine, answered: false, values: [], skipped: true }],
+      answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1; none left unanswered; skipped (condition not met): machine",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+    expect(renderRoot(card).querySelector(".unanswered-record")?.textContent).toBe("Skipped · condition not met");
+  });
+});
+
 describe("ask-user-card single-answer send", () => {
   it("sends one answered question on its own as a partial submit and offers no per-question Send for a lone question", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();

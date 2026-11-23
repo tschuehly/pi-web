@@ -6,15 +6,16 @@ import type { SessionStatus } from "../api";
 import type { AskUserCard, AskUserSubmitCallback } from "./AskUserCard";
 import "./AskUserCard";
 import "./DelegateRoster";
-import { answeredCount, loadAskDraft } from "../askDrafts";
+import { answeredCount, loadAskDraft, visibleQuestions } from "../askDrafts";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 
 // Lucide "message-circle-question" and "chevron-down" (https://lucide.dev, ISC).
 const QUESTION_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>`;
 const CHEVRON_DOWN_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>`;
 
-/** Open questions across a Chat's sets; a Chat tab shows this count. */
-export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined): number => (asks ?? []).reduce((sum, ask) => sum + ask.questions.length, 0);
+/** Open questions across a Chat's sets, without those a dependent `showIf` hides under the stored drafts; a Chat tab shows this count. */
+export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined, draftSessionId: string): number =>
+  (asks ?? []).reduce((sum, ask) => sum + visibleQuestions(ask.questions, loadAskDraft(draftSessionId, ask.askId, undefined, ask.questions)).length, 0);
 
 /**
  * The row above a Chat's composer: its Activity roster and, beside the roster's header, one bar for the open questions
@@ -61,7 +62,7 @@ export class WorkbenchQuestionChips extends LitElement {
   }
 
   private renderQuestions(): { drawer: TemplateResult | typeof nothing; bar: TemplateResult } {
-    const count = openQuestionCount(this.asks);
+    const count = openQuestionCount(this.asks, this.draftSessionId);
     const title = `${String(count)} open ${count === 1 ? "question" : "questions"}`;
     // Drafts live in the browser, so the count is read back from them; cards announce edits with ask-draft-change.
     const answeredBySet = this.answeredBySet();

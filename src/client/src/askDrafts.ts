@@ -1,4 +1,4 @@
-import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserAnswer, type AskUserQuestion, type AskUserSubmission } from "../../shared/apiTypes";
+import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserAnswer, type AskUserQuestion, type AskUserSubmission, hiddenAskQuestionIds } from "../../shared/apiTypes";
 
 /**
  * What the user has entered for one question but has not submitted yet. Kept in
@@ -112,27 +112,40 @@ function draftAnswerFromValue(value: unknown): AskDraftAnswer | undefined {
 }
 
 /**
- * How many questions the draft currently answers. A question counts as answered
+ * The questions the user sees: those whose `showIf` the draft meets. A hidden question is not rendered, counted,
+ * required, or sent, though its draft answer stays stored in case the condition is met again.
+ */
+export function visibleQuestions(questions: readonly AskUserQuestion[], answers: AskDraftAnswers): AskUserQuestion[] {
+  const byId = new Map(questions.map((question) => [question.id, question]));
+  const hidden = hiddenAskQuestionIds(questions, (id) => {
+    const question = byId.get(id);
+    return question === undefined ? [] : submittableAnswer(question, answers[id])?.values ?? [];
+  });
+  return questions.filter((question) => !hidden.has(question.id));
+}
+
+/**
+ * How many visible questions the draft currently answers. A question counts as answered
  * exactly when {@link toSubmission} would send an answer for it, so the progress
  * the user reads matches what the model is told.
  */
 export function answeredCount(questions: readonly AskUserQuestion[], answers: AskDraftAnswers): number {
-  return questions.filter((question) => submittableAnswer(question, answers[question.id]) !== undefined).length;
+  return visibleQuestions(questions, answers).filter((question) => submittableAnswer(question, answers[question.id]) !== undefined).length;
 }
 
-/** The questions left untouched, in the order they were asked. */
+/** The visible questions left untouched, in the order they were asked. */
 export function unansweredQuestions(questions: readonly AskUserQuestion[], answers: AskDraftAnswers): AskUserQuestion[] {
-  return questions.filter((question) => submittableAnswer(question, answers[question.id]) === undefined);
+  return visibleQuestions(questions, answers).filter((question) => submittableAnswer(question, answers[question.id]) === undefined);
 }
 
 /**
- * The submission for the current draft: one answer per answered question, and
- * nothing for the untouched ones, since an empty answer and an untouched
+ * The submission for the current draft: one answer per answered visible question, and
+ * nothing for the untouched or hidden ones, since an empty answer and an untouched
  * question mean the same thing to the daemon.
  */
 export function toSubmission(questions: readonly AskUserQuestion[], answers: AskDraftAnswers): AskUserSubmission {
   const submitted: AskUserAnswer[] = [];
-  for (const question of questions) {
+  for (const question of visibleQuestions(questions, answers)) {
     const answer = submittableAnswer(question, answers[question.id]);
     if (answer !== undefined) submitted.push(answer);
   }

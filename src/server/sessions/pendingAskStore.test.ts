@@ -559,3 +559,72 @@ describe("ask outcome rendering", () => {
     expect(lines[2]).toContain("update or withdraw");
   });
 });
+
+describe("PendingAskStore dependent questions (showIf)", () => {
+  const location = question("location", { options: [{ value: "home", label: "Home" }, { value: "vps", label: "VPS" }] });
+  const machine = question("machine", { question: "Which machine?", showIf: { question: "location", values: ["home"] } });
+  const disk = question("disk", { showIf: { question: "machine", values: ["yes"] } });
+  const openDependent = (store: PendingAskStore) => store.open({ sessionId, context, questions: [location, machine, disk, question("other")] });
+
+  it("rejects a condition on an unknown or later question, on an option the question lacks, or without values", () => {
+    const store = testStore();
+    const reject = (questions: AskUserQuestion[]) => () => store.open({ sessionId, context, questions });
+    expect(reject([location, question("m", { showIf: { question: "nope", values: ["home"] } })])).toThrow(/showIf of question m must name an earlier question of this set, not nope/);
+    expect(reject([question("m", { showIf: { question: "location", values: ["home"] } }), location])).toThrow(/must name an earlier question/);
+    expect(reject([question("m", { showIf: { question: "m", values: ["yes"] } })])).toThrow(/must name an earlier question/);
+    expect(reject([location, question("m", { showIf: { question: "location", values: ["moon"] } })])).toThrow(/question location has no option moon/);
+    expect(reject([location, question("m", { showIf: { question: "location", values: [] } })])).toThrow(/at least one option value/);
+    expect(store.pendingAsks(sessionId)).toEqual([]);
+    expect(openDependent(store).questions[1]?.showIf).toEqual({ question: "location", values: ["home"] });
+  });
+
+  it("reports unmet dependents, and their own dependents, as skipped rather than unanswered, dropping their stale answers", () => {
+    const store = testStore();
+    const ask = openDependent(store);
+    const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [{ id: "location", values: ["vps"] }, { id: "machine", values: ["yes"] }, { id: "disk", values: ["no"] }],
+    });
+    if (result.status !== "closed") throw new Error("expected closed");
+    expect(result.outcome.questions.map((record) => [record.question.id, record.answered, record.skipped])).toEqual([
+      ["location", true, undefined], ["machine", false, true], ["disk", false, true], ["other", false, undefined],
+    ]);
+    expect(result.outcome.unansweredIds).toEqual(["other"]);
+    expect(result.outcome.summary).toBe("Answered 1 of 2; unanswered: other; skipped (condition not met): machine, disk");
+    const text = renderAskUserAnswersText(result.outcome);
+    expect(text).toContain("- ask.machine: Which machine?\n  Skipped, not shown: it applies only when ask.location is home, which was not picked.");
+    expect(text).toContain("- ask.other: Question other?\n  Unanswered.");
+  });
+
+  it("counts a met dependent like any question, and a Custom answer never meets a condition", () => {
+    const store = testStore();
+    const ask = openDependent(store);
+    const met = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["yes"] }] });
+    expect(met.status === "closed" ? met.outcome.summary : undefined).toBe("Answered 2 of 4; unanswered: disk, other");
+    const second = openDependent(store);
+    const custom = store.submit(sessionId, second.askId, { revision: second.revision, answers: [{ id: "location", values: [], otherText: "home" }] });
+    expect(custom.status === "closed" ? custom.outcome.summary : undefined).toBe("Answered 1 of 2; unanswered: other; skipped (condition not met): machine, disk");
+  });
+
+  it("a partial send skips the dependents it settles, keeps those it shows, and leaves those of an unsent parent open", () => {
+    const store = testStore();
+    const ask = openDependent(store);
+    const vps = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "location", values: ["vps"] }], partial: true });
+    if (vps.status !== "closed") throw new Error("expected closed");
+    expect(vps.outcome.questions.map((record) => record.question.id)).toEqual(["location", "machine", "disk"]);
+    expect(vps.outcome.summary).toBe("Answered 1; skipped (condition not met): machine, disk; still open: ask.other");
+    expect(vps.ask?.questions.map((q) => q.id)).toEqual(["other"]);
+
+    const second = openDependent(store);
+    const home = store.submit(sessionId, second.askId, { revision: second.revision, answers: [{ id: "location", values: ["home"] }], partial: true });
+    expect(home.status === "closed" ? home.ask?.questions.map((q) => q.id) : undefined).toEqual(["machine", "disk", "other"]);
+    // machine's parent left the set, so machine now shows unconditionally; disk still waits on machine.
+    const rest = store.submit(sessionId, second.askId, { revision: home.status === "closed" ? home.ask?.revision ?? "" : "", answers: [{ id: "machine", values: ["no"] }] });
+    expect(rest.status === "closed" ? rest.outcome.summary : undefined).toBe("Answered 1 of 2; unanswered: other; skipped (condition not met): disk");
+
+    const third = openDependent(store);
+    const other = store.submit(sessionId, third.askId, { revision: third.revision, answers: [{ id: "other", values: ["yes"] }], partial: true });
+    expect(other.status === "closed" ? other.ask?.questions.map((q) => q.id) : undefined).toEqual(["location", "machine", "disk"]);
+    expect(() => store.submit(sessionId, third.askId, { revision: other.status === "closed" ? other.ask?.revision ?? "" : "", answers: [{ id: "machine", values: ["yes"] }], partial: true })).toThrow(/needs at least one answer/);
+  });
+});

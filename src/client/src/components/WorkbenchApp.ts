@@ -1079,7 +1079,7 @@ export class WorkbenchApp extends LitElement {
       const status = this.app.sessionStatuses[chat.sessionId];
       return status === undefined ? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)]?.pendingAsks : status.pendingAsks;
     };
-    return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, openQuestionCount(asks(chat))]));
+    return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, openQuestionCount(asks(chat), machineSessionKey(chat.machineId, chat.sessionId))]));
   }
 
   /** The Chat's Workstream names its tab group once known; an unreachable Workstream service keeps the last name. */
