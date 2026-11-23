@@ -2926,8 +2926,21 @@ describe("window tabs", () => {
     expect(snapshot.mock.calls.find(([selected]) => selected.id === "a2")?.[2]).toBe("local");
   });
 
+  it("closes the window once its last Chats move to another window", async () => {
+    vi.spyOn(window, "open").mockReturnValue(null);
+    const closed = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    const app = await mountWithWorkstreamChats();
+
+    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2", "b1"], label: "All", clientX: 0, clientY: 0 } }));
+    await app.updateComplete;
+    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((item) => item.textContent.trim() === "Move to new window")?.click();
+
+    await vi.waitFor(() => { expect(closed).toHaveBeenCalledOnce(); });
+  });
+
   it("moves a Chat to a new window from its tab's menu, and this window shows its next tab", async () => {
     const opened = vi.spyOn(window, "open").mockReturnValue(null);
+    const closed = vi.spyOn(window, "close").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
 
     tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true, clientX: 30, clientY: 40 }));
@@ -2947,6 +2960,7 @@ describe("window tabs", () => {
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector(".window-menu")).toBeNull();
     expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
+    expect(closed).not.toHaveBeenCalled();
 
     // One Workstream left, so no Workstream row: its menu comes from the tab component's own event.
     const openMenu = async () => {
