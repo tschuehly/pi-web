@@ -27,8 +27,10 @@ export class SessiondSocketOwnershipError extends Error {
 }
 
 export interface SessiondSocketIdentity {
-  readonly dev: number;
-  readonly ino: number;
+  readonly dev: bigint;
+  readonly ino: bigint;
+  // Linux reuses a freed inode at once, so a socket bound in our place can carry our dev and ino; its ctime differs.
+  readonly ctimeNs: bigint;
 }
 
 type SocketProbe = "absent" | "stale" | "live" | { readonly unproven: string };
@@ -81,8 +83,8 @@ export async function claimSessiondSocketPath(socketPath: string, options: { tim
 
 /** Identity of the socket file this process bound; capture right after listen. */
 export function sessiondSocketIdentity(socketPath: string): SessiondSocketIdentity {
-  const { dev, ino } = lstatSync(socketPath);
-  return { dev, ino };
+  const { dev, ino, ctimeNs } = lstatSync(socketPath, { bigint: true });
+  return { dev, ino, ctimeNs };
 }
 
 /**
@@ -92,8 +94,8 @@ export function sessiondSocketIdentity(socketPath: string): SessiondSocketIdenti
  */
 export function releaseSessiondSocketPath(socketPath: string, identity: SessiondSocketIdentity): void {
   try {
-    const current = lstatSync(socketPath);
-    if (current.dev === identity.dev && current.ino === identity.ino) unlinkSync(socketPath);
+    const current = lstatSync(socketPath, { bigint: true });
+    if (current.dev === identity.dev && current.ino === identity.ino && current.ctimeNs === identity.ctimeNs) unlinkSync(socketPath);
   } catch {
     // Already gone or unreadable: nothing of ours left to remove.
   }
