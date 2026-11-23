@@ -18,7 +18,7 @@ import type { FormattedText } from "./FormattedText";
 import { GoalStatusChip } from "./GoalStatusChip";
 import { composedContains, deepActiveElement, hasRenderedModal } from "./modalLayerRegistry";
 import { PromptEditor } from "./PromptEditor";
-import { WorkbenchApp, adHocWorkspace, rootProjectOf, rootProjects, sessionInfoText } from "./WorkbenchApp";
+import { NATIVE_WINDOW_CLOSE_EVENT, WorkbenchApp, adHocWorkspace, rootProjectOf, rootProjects, sessionInfoText } from "./WorkbenchApp";
 import { HttpRequestError } from "../api/http";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import { EditorView } from "@codemirror/view";
@@ -2661,6 +2661,39 @@ describe("window tabs", () => {
     await closeBoth();
     await vi.waitFor(() => { expect(stop).toHaveBeenCalledTimes(2); });
     expect(Object.fromEntries(stop.mock.calls.map((call) => [call[0].id, call[1]]))).toEqual({ a1: false, b1: true });
+  });
+
+  it("closes every Chat of a window the macOS app closes as their tabs do, and keeps the window on Cancel", async () => {
+    const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
+    const app = await mountWithWorkstreamChats(["b1", "a1"]);
+    vi.spyOn(api, "status").mockImplementation((session) => Promise.resolve(session.id === "b1" ? { ...idleStatus("b1"), isStreaming: true } : idleStatus(session.id)));
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const closeWindow = async (): Promise<unknown> => {
+      const event = new CustomEvent<{ closing?: Promise<boolean> }>(NATIVE_WINDOW_CLOSE_EVENT, { cancelable: true, detail: {} });
+      expect(window.dispatchEvent(event)).toBe(false);
+      return await event.detail.closing;
+    };
+    // Another live window lists a1, so it leaves this window with its host running.
+    const windows: unknown = Reflect.get(app, "windows");
+    if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
+    const a1 = windows.window?.chats.find((chat) => chat.sessionId === "a1");
+    if (a1 === undefined) throw new Error("a1 missing");
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object, w2: Date.now() })); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+    await windows.update((store) => ({ ...store, w2: { ...emptyWindow("Window 2"), chats: [a1] } }));
+
+    await expect(closeWindow()).resolves.toBe(false);
+    expect(confirm).toHaveBeenCalledWith("\"Install guide\": A turn is running; closing ends it.");
+    await settled(app);
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toEqual(expect.arrayContaining(["a1", "b1"]));
+    expect(stop).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    await expect(closeWindow()).resolves.toBe(true);
+    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toEqual([]);
+    expect(stop.mock.calls.map((call) => [call[0].id, call[1]])).toEqual([["b1", true]]);
+    // A window without Chats closes at once.
+    await expect(closeWindow()).resolves.toBe(true);
   });
 
   it("asks the server once more when the closing tab still counted as watching, then leaves a still-watched Chat running", async () => {

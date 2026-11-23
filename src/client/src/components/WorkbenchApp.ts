@@ -110,6 +110,8 @@ const CLOSE_DEADLINE_MS = 5000;
 const STOP_DEADLINE_MS = 20_000;
 /** The server waits 2 s for the closing tab's socket to go; a close it saw still watched is asked once more after this. */
 const WATCHED_RETRY_MS = 3000;
+/** The macOS app dispatches this before closing a window; a handler cancels it and sets `detail.closing` to whether the window may close. */
+export const NATIVE_WINDOW_CLOSE_EVENT = "pi-web:window-close";
 
 /** Rejects when `work` has not settled within `ms`, so a stalled request fails visibly instead of pending forever. */
 function withDeadline<T>(work: Promise<T>, ms = CLOSE_DEADLINE_MS): Promise<T> {
@@ -361,6 +363,15 @@ export class WorkbenchApp extends LitElement {
     if (typeof machineId === "string" && typeof sessionId === "string" && this.windows.holds(machineId, sessionId)) event.preventDefault();
   };
 
+  /** The macOS app closing this window: its Chats close as their tabs do, and a Cancel or a refused close keeps the window. */
+  private readonly onNativeWindowClose = (event: Event): void => {
+    const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+    if (typeof detail !== "object" || detail === null) return;
+    event.preventDefault();
+    const ids = (this.windows.window?.chats ?? []).map((chat) => chat.sessionId);
+    Reflect.set(detail, "closing", ids.length === 0 ? Promise.resolve(true) : this.closeWindowChats(ids));
+  };
+
   private beginNavigation(): number { this.selectingChat = undefined; return ++this.navigationSequence; }
 
   private createChatSession(context: AppState): WorkbenchChatSession {
@@ -605,6 +616,7 @@ export class WorkbenchApp extends LitElement {
     window.addEventListener("popstate", this.onPopState);
     window.addEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
     window.addEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
+    window.addEventListener(NATIVE_WINDOW_CLOSE_EVENT, this.onNativeWindowClose);
     window.addEventListener("focus", this.onPageAttention);
     document.addEventListener("visibilitychange", this.onPageAttention);
     this.browserResume.connect();
@@ -662,6 +674,7 @@ export class WorkbenchApp extends LitElement {
     window.removeEventListener("popstate", this.onPopState);
     window.removeEventListener(NATIVE_NOTIFICATION_OPEN_EVENT, this.onNativeNotificationOpen);
     window.removeEventListener(NATIVE_NOTIFICATION_HOLDS_EVENT, this.onNativeNotificationHolds);
+    window.removeEventListener(NATIVE_WINDOW_CLOSE_EVENT, this.onNativeWindowClose);
     window.removeEventListener("focus", this.onPageAttention);
     document.removeEventListener("visibilitychange", this.onPageAttention);
     this.browserResume.disconnect();
@@ -815,19 +828,21 @@ export class WorkbenchApp extends LitElement {
    * Chat also ends its host (and its background jobs), as the server decides once this window's socket is gone: never
    * while another browser watches it, and only after the owner confirms when work runs. The owner is asked before the
    * tab goes, from the Chat's current status; a Chat whose listing or status cannot be read in time stays open, so
-   * closing again retries. Legacy Chats only leave the window.
+   * closing again retries. Legacy Chats only leave the window. Resolves false when the Chats stay on purpose (Cancel, a
+   * refused or overlapping close), true otherwise, a failed check or end included.
    */
-  private closeWindowChats(sessionIds: readonly string[]): void {
+  private closeWindowChats(sessionIds: readonly string[]): Promise<boolean> {
     this.windowMenu = undefined;
     // A close still asking or ending finishes first: a late answer must not override a later decision.
-    if (sessionIds.some((id) => this.closingChats.has(id))) return;
+    if (sessionIds.some((id) => this.closingChats.has(id))) return Promise.resolve(false);
     for (const id of sessionIds) this.closingChats.add(id);
-    void this.closeAndEnd(sessionIds).catch((error: unknown) => {
+    return this.closeAndEnd(sessionIds).catch((error: unknown) => {
       this.setApp({ error: error instanceof Error ? error.message : String(error) });
+      return true;
     }).finally(() => { for (const id of sessionIds) this.closingChats.delete(id); });
   }
 
-  private async closeAndEnd(sessionIds: readonly string[]): Promise<void> {
+  private async closeAndEnd(sessionIds: readonly string[]): Promise<boolean> {
     const chats = (this.windows.window?.chats ?? []).filter((chat) => sessionIds.includes(chat.sessionId));
     const title = (id: string) => chats.find((chat) => chat.sessionId === id)?.title ?? id;
     let durable: DurableChatEnd[];
@@ -845,7 +860,7 @@ export class WorkbenchApp extends LitElement {
       throw new Error(`Could not check what runs in the Chat, so it stays open; close it again to retry. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
     // The warning names each busy Chat and its work; only those it named are confirmed, so others still refuse when busy.
-    if (busy.length > 0 && !window.confirm(busy.map(({ id, work }) => `"${title(id)}": ${work}`).join("\n"))) return;
+    if (busy.length > 0 && !window.confirm(busy.map(({ id, work }) => `"${title(id)}": ${work}`).join("\n"))) return false;
     const confirmed = new Set(busy.map(({ id }) => id));
     // A Chat another live window lists keeps its host, even as a tab there not on screen (the server sees only those).
     let ending: DurableChatEnd[] = [];
@@ -854,7 +869,7 @@ export class WorkbenchApp extends LitElement {
       ending = durable.filter((end) => held.some((chat) => chat.sessionId === end.session.id) && !this.shownInOtherLiveWindow(store, end.session.id));
       return closeChats(store, id, sessionIds);
     });
-    if (stored !== true) return;
+    if (stored !== true) return false;
     try {
       await Promise.all(ending.map(async ({ session, machineId }) => {
         const stop = (yes: boolean) => withDeadline(api.stopIfUnwatched(session, yes, machineId), STOP_DEADLINE_MS);
@@ -871,6 +886,7 @@ export class WorkbenchApp extends LitElement {
     } catch (error) {
       throw new Error(`Could not end the closed Chat: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
+    return true;
   }
 
   private shownInOtherLiveWindow(store: WindowStore, sessionId: string): boolean {
@@ -1037,7 +1053,7 @@ export class WorkbenchApp extends LitElement {
         ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id, undefined, true); }}>Move to ${windowChatSummary(other)}</button>`)}
         ${shared ? html`<hr>` : nothing}
         ${sizing ? html`<button role="menuitem" @click=${() => { this.windowMenu = undefined; void this.updateWindow(toggleMaximized); }}>${window.maximized ? "Restore grid" : "Full size"}</button>` : nothing}
-        <button role="menuitem" @click=${() => { this.closeWindowChats(menu.sessionIds); }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>
+        <button role="menuitem" @click=${() => { void this.closeWindowChats(menu.sessionIds); }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>
       </div>
     `;
   }
@@ -1771,7 +1787,7 @@ export class WorkbenchApp extends LitElement {
     return html`
       <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()}
         @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { this.swipe.cancel(); void this.showWindowChat(event.detail.sessionId); }}
-        @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { this.closeWindowChats(event.detail.sessionIds); }}
+        @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { void this.closeWindowChats(event.detail.sessionIds); }}
         @window-home=${() => { this.goHome(); }}
         @window-layout=${() => { this.toggleWindowLayout(); }}
         @chat-tab-menu=${(event: CustomEvent<ChatTabMenuDetail>) => { this.openWindowMenu(event.detail); }}
@@ -1967,7 +1983,7 @@ export class WorkbenchApp extends LitElement {
         ${status === "needs" ? html`<span class="needs">Needs you</span>` : nothing}
         <span class="tile-actions">
           <button type="button" class="icon-button" title=${maximized ? "Restore grid (⌃↩)" : "Full size (⌃↩)"} aria-label=${maximized ? "Restore grid" : `Full size ${chat.title}`} @click=${maximize}>${renderBuiltinTabIcon(maximized ? "minimize" : "maximize")}</button>
-          <button type="button" class="icon-button" title="Close" aria-label=${`Close ${chat.title}`} @click=${() => { this.closeWindowChats([chat.sessionId]); }}>${renderBuiltinTabIcon("x")}</button>
+          <button type="button" class="icon-button" title="Close" aria-label=${`Close ${chat.title}`} @click=${() => { void this.closeWindowChats([chat.sessionId]); }}>${renderBuiltinTabIcon("x")}</button>
         </span>
         <span class="tile-tools">${session === undefined ? nothing : this.renderChatToolButtons(session, state)}</span>
       </div>
