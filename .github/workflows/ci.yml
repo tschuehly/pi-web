@@ -17,20 +17,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Install browser engines
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - name: Check browser surface contracts
-        run: npm run test:browser
+        run: pnpm run test:browser
 
       - name: Save browser failure traces
         if: failure()
@@ -53,20 +56,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Verify
-        run: npm run verify
+        run: pnpm run verify
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: Check delivery artifacts
         run: npm run check:artifacts

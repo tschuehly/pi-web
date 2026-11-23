@@ -1,0 +1,10 @@
+# npm 11 ran no dependency install scripts; keep that (promote-installed chmods node-pty's spawn-helper itself).
+allowBuilds:
+  '@google/genai': false
+  esbuild: false
+  node-pty: false
+  protobufjs: false
+# One undici for everything: pi-coding-agent pins 8.10.2 while pi-web needs ^8.11.2, and openai takes undici as a
+# peer, so two versions would load pi-ai and pi-agent-core twice and break `instanceof AgentSession` (npm hoisted one).
+overrides:
+  undici: 8.11.2
