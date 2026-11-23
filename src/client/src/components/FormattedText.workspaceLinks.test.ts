@@ -110,29 +110,29 @@ it.each([["page.html", "/work/page.html"], ["../atelier/index.HTM", "/atelier/in
   }
 });
 
-it("asks the macOS app to open a local folder in Finder, falling back to the Files pane when it is not one", async () => {
-  const openLocalFile = vi.fn((path: string) => path.endsWith("Makefile") ? Promise.reject(new Error("not a folder")) : Promise.resolve(true));
+it("asks the macOS app first for every local link, so any folder opens in Finder and other files fall back to the Files pane", async () => {
+  // The app opens folders (any name, dots included) and refuses plain files.
+  const folders = new Set(["/Users/me/shots", "/Users/me/pi-web.feature", "~/.pi-workbench/scratch"]);
+  const openLocalFile = vi.fn((path: string) => folders.has(path) ? Promise.resolve(true) : Promise.reject(new Error("not a folder")));
   Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile } });
   try {
     const listener = vi.fn((event: Event) => { event.preventDefault(); });
-    const folder = await setup("/Users/me/shots", "local");
-    folder.view.addEventListener("outside-file-open", listener);
-    expect(dispatchClick(folder.view, folder.anchor)).toBe(true);
-    expect(openLocalFile).toHaveBeenCalledWith("/Users/me/shots");
+    for (const folderPath of folders) {
+      const folder = await setup(folderPath, "local");
+      folder.view.addEventListener("outside-file-open", listener);
+      expect(dispatchClick(folder.view, folder.anchor)).toBe(true);
+      expect(openLocalFile).toHaveBeenLastCalledWith(folderPath);
+    }
     await Promise.resolve();
     expect(listener).not.toHaveBeenCalled();
 
-    const file = await setup("src/Makefile", "local");
-    file.view.addEventListener("workspace-file-open", listener);
-    expect(dispatchClick(file.view, file.anchor)).toBe(true);
-    expect(openLocalFile).toHaveBeenLastCalledWith("/work/src/Makefile");
-    await vi.waitFor(() => { expect(listener).toHaveBeenCalledOnce(); });
-    expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { path: "src/Makefile" } });
-
-    const text = await setup("notes.md", "local");
-    text.view.addEventListener("workspace-file-open", listener);
-    dispatchClick(text.view, text.anchor);
-    expect(openLocalFile).toHaveBeenCalledTimes(2);
+    for (const [destination, absolute] of [["src/Makefile", "/work/src/Makefile"], ["notes.md", "/work/notes.md"]] as const) {
+      const file = await setup(destination, "local");
+      file.view.addEventListener("workspace-file-open", listener);
+      expect(dispatchClick(file.view, file.anchor)).toBe(true);
+      expect(openLocalFile).toHaveBeenLastCalledWith(absolute);
+      await vi.waitFor(() => { expect(listener.mock.calls.at(-1)?.[0]).toMatchObject({ detail: { path: destination } }); });
+    }
   } finally {
     Reflect.deleteProperty(window, "piWebNative");
   }
@@ -147,7 +147,7 @@ it("keeps local HTML in the Files pane outside the macOS app", async () => {
 });
 
 it("reveals a local .docx link in Finder without opening anything, while a .md link still opens the Files pane", async () => {
-  const openLocalFile = vi.fn(() => Promise.resolve(true));
+  const openLocalFile = vi.fn(() => Promise.reject(new Error("not a folder")));
   const revealLocalFile = vi.fn(() => Promise.resolve(true));
   Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile, revealLocalFile } });
   try {
@@ -164,8 +164,8 @@ it("reveals a local .docx link in Finder without opening anything, while a .md l
     markdown.view.addEventListener("workspace-file-open", listener);
     expect(dispatchClick(markdown.view, markdown.anchor)).toBe(true);
     expect(revealLocalFile).toHaveBeenCalledOnce();
-    expect(openLocalFile).not.toHaveBeenCalled();
-    expect(listener).toHaveBeenCalledOnce();
+    expect(openLocalFile).toHaveBeenCalledWith("/work/docs/notes.md");
+    await vi.waitFor(() => { expect(listener).toHaveBeenCalledOnce(); });
     expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { path: "docs/notes.md" } });
   } finally {
     Reflect.deleteProperty(window, "piWebNative");
@@ -174,13 +174,14 @@ it("reveals a local .docx link in Finder without opening anything, while a .md l
 
 it.each(["mp4", "MOV", "m4v", "webm"])("opens a local .%s video link in the Files pane, not Finder", async (extension) => {
   const revealLocalFile = vi.fn(() => Promise.resolve(true));
-  Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile: vi.fn(), revealLocalFile } });
+  Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile: vi.fn(() => Promise.reject(new Error("not a folder"))), revealLocalFile } });
   try {
     const listener = vi.fn((event: Event) => { event.preventDefault(); });
     const link = await setup(`clips/IMG_2430.${extension}`, "local");
     link.view.addEventListener("workspace-file-open", listener);
     expect(dispatchClick(link.view, link.anchor)).toBe(true);
     expect(revealLocalFile).not.toHaveBeenCalled();
+    await vi.waitFor(() => { expect(listener).toHaveBeenCalledOnce(); });
     expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { path: `clips/IMG_2430.${extension}` } });
   } finally {
     Reflect.deleteProperty(window, "piWebNative");
@@ -233,6 +234,12 @@ it("adds a Show in Finder button to each local file link that reveals the file w
     if (!(copy instanceof HTMLButtonElement) || !copy.classList.contains("file-copy-button")) throw new Error("Missing Copy full path button");
     copy.click();
     expect(writeClipboardText).toHaveBeenLastCalledWith("/elsewhere/Plan.docx");
+
+    const home = await setup("~/.pi-workbench/scratch/draft.md", "local");
+    const homeButton = home.anchor.nextElementSibling;
+    if (!(homeButton instanceof HTMLButtonElement) || !homeButton.classList.contains("file-reveal-button")) throw new Error("Missing Show in Finder button for a ~/ link");
+    homeButton.click();
+    expect(revealLocalFile).toHaveBeenLastCalledWith("~/.pi-workbench/scratch/draft.md");
 
     const remote = await setup("docs/Plan.docx");
     expect(remote.view.renderRoot.querySelector(".file-reveal-button")).toBeNull();
