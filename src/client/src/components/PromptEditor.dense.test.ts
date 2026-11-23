@@ -46,15 +46,14 @@ describe("dense composer", () => {
     expect(busy.querySelector(".composer-actions .stop-button")).not.toBeNull();
   });
 
-  it("shows the model as an icon naming model and thinking in its tooltip and label, opening the same picker", async () => {
+  it("shows the model as a short name (opus-h) naming model and thinking in its tooltip and label, opening the same picker", async () => {
     const root = await mount(true, true, (editor) => { editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" }, thinkingLevel: "high" }; });
     const picker = root.querySelector<ModelEffortPicker>("model-effort-picker");
     await picker?.updateComplete;
 
     const trigger = picker?.shadowRoot?.querySelector<HTMLButtonElement>(".trigger");
     expect(picker?.hasAttribute("compact")).toBe(true);
-    expect(trigger?.textContent.trim()).toBe("");
-    expect(trigger?.querySelector("svg")).not.toBeNull();
+    expect(trigger?.textContent.trim()).toBe("opus-h");
     expect(trigger?.title).toBe("Model: anthropic/claude-opus-5-5 \u00b7 Thinking: high");
     expect(trigger?.getAttribute("aria-label")).toBe("Model: anthropic/claude-opus-5-5, thinking high. Change model or thinking");
     trigger?.click();
@@ -67,12 +66,12 @@ describe("dense composer", () => {
     expect(regularPicker?.shadowRoot?.querySelector(".model-name")?.textContent).toBe("claude-opus-5-5");
   });
 
-  it("shows the context as a ring whose tooltip carries the numbers and the cost, keeping the cost for screen readers", async () => {
+  it("shows the context as short numbers whose tooltip carries the numbers and the cost, keeping the cost for screen readers", async () => {
     const root = await mount(true, true, (editor) => { editor.status = status(); });
 
     const context = root.querySelector<HTMLElement>('[data-usage="context"]');
-    expect(context?.querySelector('[aria-hidden="true"]')?.textContent.trim()).toBe("");
-    expect(context?.title).toContain("162k / 1.0M");
+    expect(context?.querySelector('[aria-hidden="true"]')?.textContent.trim()).toBe("162k/1.0M");
+    expect(context?.title).toContain("162000 of 1000000 tokens");
     expect(context?.title).toContain("Session cost: $3.68");
     expect(root.querySelector('[data-usage="cost"]')?.classList.contains("visually-hidden")).toBe(true);
   });
