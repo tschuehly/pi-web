@@ -12,6 +12,9 @@ style.textContent = `
   .tile { width: ${params.get("width") ?? "640"}px; border: 1px solid var(--pi-border); }
 `;
 document.head.append(style);
+// The Workbench interface scale: CSS zoom on the root (interfaceScale.ts).
+const zoom = params.get("zoom");
+if (zoom !== null) { document.documentElement.style.setProperty("zoom", zoom); document.documentElement.style.setProperty("--pi-interface-scale", zoom); }
 
 const status: SessionStatus = {
   sessionId: "dense-fixture", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], cost: 0,
