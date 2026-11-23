@@ -170,7 +170,7 @@ export class FormattedText extends LitElement {
       anchor.setAttribute("title", absolute);
       const copy = this.createIconButton("file-copy-button", "Copy full path", "Copy full path", COPY_ICON);
       anchor.after(copy);
-      if (reveal && absolute.startsWith("/")) anchor.after(this.createIconButton("file-reveal-button", "Show in Finder", `Show ${anchor.textContent.trim()} in Finder`, REVEAL_ICON));
+      if (reveal) anchor.after(this.createIconButton("file-reveal-button", "Show in Finder", `Show ${anchor.textContent.trim()} in Finder`, REVEAL_ICON));
     });
   }
 
@@ -234,8 +234,8 @@ export class FormattedText extends LitElement {
       const path = anchor.getAttribute("data-workspace-file");
       const outside = anchor.getAttribute("data-outside-file");
       const absolute = this.absoluteLinkPath(anchor, this.workspaceContext);
-      // shortcut: the macOS app gets only absolute paths, so `~/` links open in the Files pane; expand `~` natively to reveal them too.
-      const native = this.workspaceContext.machineId === "local" && absolute?.startsWith("/") === true ? window.piWebNative : undefined;
+      // The macOS app expands `~/` itself.
+      const native = this.workspaceContext.machineId === "local" ? window.piWebNative : undefined;
       const context = this.workspaceContext;
       // The macOS app reveals documents the Files pane cannot show (e.g. .docx) in Finder; nothing opens.
       if (absolute !== null && native?.revealLocalFile !== undefined && REVEAL_IN_FINDER.test(absolute)) {
@@ -247,11 +247,10 @@ export class FormattedText extends LitElement {
         return;
       }
       // The macOS app opens local HTML pages in the browser (their scripts and assets work there) and folders in Finder.
+      // It alone knows what is a folder, so every link asks it first; the files it refuses open in the pane.
       const openLocalFile = native?.openLocalFile;
       const html = absolute !== null && /\.html?$/i.test(absolute);
-      // ponytail: a last segment without a dot is taken for a folder; the app refuses files like Makefile, which then open in the pane.
-      const folder = absolute !== null && !/\.[^/]+\/*$/.test(absolute.slice(absolute.replace(/\/+$/, "").lastIndexOf("/")));
-      if (absolute !== null && openLocalFile !== undefined && (html || folder)) {
+      if (absolute !== null && openLocalFile !== undefined) {
         event.preventDefault();
         void openLocalFile(absolute).catch((error: unknown) => {
           if (html) { console.warn("Could not open HTML file in the browser", error); return; }
