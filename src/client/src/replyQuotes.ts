@@ -43,7 +43,7 @@ function quoteBlocks(doc: Text): QuoteBlock[] {
       end = next;
     }
     const words = lines.join(" ").replace(/\\([>[])/g, "$1").replace(/\s+/g, " ").trim();
-    blocks.push({ from: start.from, to: end.to, label: `> ${words.length > LABEL_LENGTH ? `${words.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : words}` });
+    blocks.push({ from: start.from, to: end.to, label: words.length > LABEL_LENGTH ? `${words.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : words });
     number = end.number;
   }
   return blocks;

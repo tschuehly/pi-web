@@ -12,11 +12,12 @@ export const promptEditorIntegrationStyles = css`
   .markdown-editor .cm-scroller { max-height: min(220px, var(--prompt-editor-maximum-height, 220px)); overflow-y: auto; font-family: var(--pi-control-font-family, system-ui, sans-serif); line-height: 1.4; }
   .markdown-editor-manual-height .cm-editor { height: var(--prompt-editor-manual-height); max-height: var(--prompt-editor-maximum-height); }
   .markdown-editor-manual-height .cm-scroller { height: 100%; max-height: none; }
-  .markdown-editor .cm-content { min-height: 32px; padding: 6px 0; caret-color: var(--pi-text); text-align: start; unicode-bidi: plaintext; }
+  /* min-width: 0 so an unbreakable widget (a folded reply quote) truncates instead of widening every wrapped line past the visible edge. */
+  .markdown-editor .cm-content { min-width: 0; min-height: 32px; padding: 6px 0; caret-color: var(--pi-text); text-align: start; unicode-bidi: plaintext; }
   .markdown-editor .cm-line { padding: 0; unicode-bidi: plaintext; }
   .markdown-editor .cm-placeholder { color: var(--pi-dim); }
   .markdown-editor .cm-argument-hint { color: var(--pi-dim); pointer-events: none; }
-  .markdown-editor .cm-reply-quote { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; border-left: 2px solid var(--pi-accent); padding-left: 4px; color: var(--pi-muted); cursor: pointer; }
+  .markdown-editor .cm-reply-quote { display: inline-flex; align-items: center; gap: 2px; box-sizing: border-box; max-width: 100%; border-left: 2px solid var(--pi-accent); padding-left: 4px; color: var(--pi-muted); cursor: pointer; }
   .markdown-editor .cm-reply-quote-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .markdown-editor .cm-reply-quote-open { vertical-align: middle; margin-right: 2px; }
   .markdown-editor .cm-reply-quote:hover { color: var(--pi-text); }

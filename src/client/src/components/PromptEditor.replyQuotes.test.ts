@@ -63,8 +63,8 @@ describe("inline reply quotes", () => {
 
     const [first, second] = toggles(editor);
     expect(first?.getAttribute("aria-expanded")).toBe("false");
-    expect(first?.textContent).toContain("> Use the cache");
-    expect(second?.textContent).toContain("> Run the tests then ship");
+    expect(first?.textContent.trim()).toBe("Use the cache");
+    expect(second?.textContent.trim()).toBe("Run the tests then ship");
     expect(view(editor).contentDOM.textContent).not.toContain("[msg m2]");
     const atoms = view(editor).state.facet(EditorView.atomicRanges).map((source) => source(view(editor)));
     const spans: [number, number][] = [];
