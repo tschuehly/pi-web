@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { LiveReviewCollector, parsePairCommand } from "./liveReview.js";
 
 const assistant = (...content: object[]) => ({ type: "message.end" as const, message: { role: "assistant", content } });
+const same = (text: string) => Promise.resolve(text);
 const toolEnd = (toolName: string, isError = false, text = "") => ({ type: "tool.end" as const, toolName, toolCallId: toolName, text, isError });
 
 describe("parsePairCommand", () => {
@@ -18,58 +19,58 @@ describe("parsePairCommand", () => {
 });
 
 describe("LiveReviewCollector", () => {
-  it("turn: a digest is due at the main turn end only", () => {
+  it("turn: a digest is due at the main turn end only", async () => {
     const review = new LiveReviewCollector("turn");
-    for (let i = 0; i < 6; i++) review.add(toolEnd("edit"));
+    for (let i = 0; i < 6; i++) await review.add(toolEnd("edit"), same);
     expect(review.due).toBe(false);
-    review.add({ type: "agent.end" });
+    await review.add({ type: "agent.end" }, same);
     expect(review.due).toBe(true);
   });
 
-  it("turn5: due at the 5th finished tool call, again 5 calls later, and at turn end", () => {
+  it("turn5: due at the 5th finished tool call, again 5 calls later, and at turn end", async () => {
     const review = new LiveReviewCollector("turn5");
-    for (let i = 0; i < 4; i++) review.add(toolEnd("read"));
+    for (let i = 0; i < 4; i++) await review.add(toolEnd("read"), same);
     expect(review.due).toBe(false);
-    review.add(toolEnd("read"));
+    await review.add(toolEnd("read"), same);
     expect(review.due).toBe(true);
     review.take();
-    for (let i = 0; i < 4; i++) review.add(toolEnd("bash"));
+    for (let i = 0; i < 4; i++) await review.add(toolEnd("bash"), same);
     expect(review.due).toBe(false);
-    review.add({ type: "agent.end" });
+    await review.add({ type: "agent.end" }, same);
     expect(review.due).toBe(true);
     review.take();
     // The turn end restarted the count.
-    review.add(toolEnd("read"));
+    await review.add(toolEnd("read"), same);
     expect(review.due).toBe(false);
   });
 
-  it("edits: due after every edit, write or bash call and at turn end, not after a read", () => {
+  it("edits: due after every edit, write or bash call and at turn end, not after a read", async () => {
     const review = new LiveReviewCollector("edits");
-    review.add(toolEnd("read"));
+    await review.add(toolEnd("read"), same);
     expect(review.due).toBe(false);
     for (const tool of ["edit", "write", "bash"]) {
-      review.add(toolEnd(tool));
+      await review.add(toolEnd(tool), same);
       expect(review.due).toBe(true);
       review.take();
     }
-    review.add({ type: "agent.end" });
+    await review.add({ type: "agent.end" }, same);
     expect(review.due).toBe(true);
   });
 
-  it("the digest holds owner and assistant text, reasoning, tool calls with their arguments, error text and the files touched; no tool output", () => {
+  it("the digest holds owner and assistant text, reasoning, tool calls with their arguments, error text and the files touched; no tool output", async () => {
     const review = new LiveReviewCollector("turn");
-    review.add({ type: "message.end", message: { role: "user", content: [{ type: "text", text: "Sum the list" }] } });
-    review.add(assistant(
+    await review.add({ type: "message.end", message: { role: "user", content: [{ type: "text", text: "Sum the list" }] } }, same);
+    await review.add(assistant(
       { type: "thinking", thinking: "The loop should run to n." },
       { type: "text", text: "Fixing the loop." },
       { type: "toolCall", id: "c1", name: "edit", arguments: { path: "src/sum.ts", edits: [{ oldText: "i <= n", newText: "i < n - 1" }] } },
       { type: "toolCall", id: "c2", name: "write", arguments: { path: "notes.md", content: "x" } },
-    ));
-    review.add(toolEnd("edit", false, "Successfully replaced text in src/sum.ts. SECRET-OUTPUT"));
-    review.add({ type: "message.end", message: { role: "toolResult", toolName: "edit", content: [{ type: "text", text: "SECRET-OUTPUT" }] } });
-    review.add(toolEnd("bash", true, "npm test: 1 failing"));
-    review.add({ type: "message.end", message: { role: "custom", customType: "workbench:chat-message", content: "Chat message · from the reviewer" } });
-    expect(review.take()).toBe([
+    ), same);
+    await review.add(toolEnd("edit", false, "Successfully replaced text in src/sum.ts. SECRET-OUTPUT"), same);
+    await review.add({ type: "message.end", message: { role: "toolResult", toolName: "edit", content: [{ type: "text", text: "SECRET-OUTPUT" }] } }, same);
+    await review.add(toolEnd("bash", true, "npm test: 1 failing"), same);
+    await review.add({ type: "message.end", message: { role: "custom", customType: "workbench:chat-message", content: "Chat message · from the reviewer" } }, same);
+    expect(review.take()?.text).toBe([
       "Owner: Sum the list",
       "Reasoning: The loop should run to n.",
       "Assistant: Fixing the loop.",
@@ -81,30 +82,141 @@ describe("LiveReviewCollector", () => {
     expect(review.take()).toBeUndefined();
   });
 
-  it("while the reviewer is busy, the next digest merges everything since the last one", () => {
+  it("while the reviewer is busy, the next digest merges everything since the last one", async () => {
     const review = new LiveReviewCollector("edits");
-    review.add(assistant({ type: "text", text: "one" }));
-    review.add(toolEnd("edit"));
-    review.add(assistant({ type: "text", text: "two" }));
-    review.add(toolEnd("edit"));
-    expect(review.take()).toBe("Assistant: one\nAssistant: two");
+    await review.add(assistant({ type: "text", text: "one" }), same);
+    await review.add(toolEnd("edit"), same);
+    await review.add(assistant({ type: "text", text: "two" }), same);
+    await review.add(toolEnd("edit"), same);
+    expect(review.take()?.text).toBe("Assistant: one\nAssistant: two");
     expect(review.due).toBe(false);
   });
 
-  it("a digest the reviewer did not take goes back before the newer work", () => {
+  it("a digest the reviewer did not take goes back before the newer work", async () => {
     const review = new LiveReviewCollector("turn");
-    review.add(assistant({ type: "text", text: "old" }));
-    const taken = review.take() ?? "";
-    review.add(assistant({ type: "text", text: "new" }));
-    review.putBack(taken);
-    expect(review.take()).toBe("Assistant: old\nAssistant: new");
+    await review.add(assistant({ type: "text", text: "old" }), same);
+    const taken = review.take();
+    await review.add(assistant({ type: "text", text: "new" }), same);
+    if (taken !== undefined) review.putBack(taken);
+    expect(review.take()?.text).toBe("Assistant: old\nAssistant: new");
   });
 
-  it("a very long argument is cut", () => {
+  it("a very long argument is cut", async () => {
     const review = new LiveReviewCollector("turn");
-    review.add(assistant({ type: "toolCall", id: "c", name: "write", arguments: { path: "big.txt", content: "x".repeat(50_000) } }));
-    const digest = review.take() ?? "";
+    await review.add(assistant({ type: "toolCall", id: "c", name: "write", arguments: { path: "big.txt", content: "x".repeat(50_000) } }), same);
+    const digest = review.take()?.text ?? "";
     expect(digest.length).toBeLessThan(21_000);
     expect(digest).toMatch(/… \(cut\)\nFiles touched: big\.txt$/);
+  });
+
+  const reviewerMessage = (delivery: string) => ({ type: "message.end", message: { role: "custom", customType: "workbench:chat-message", content: "Chat message · live reviewer", details: { delivery, liveReview: { kind: "reviewer" } } } });
+  const owner = (text: string) => ({ type: "message.end", message: { role: "user", content: [{ type: "text", text }] } });
+
+  it("a turn the reviewer's message started produces no digest at any trigger; it is kept for the next owner digest", async () => {
+    const review = new LiveReviewCollector("edits");
+    await review.add({ type: "agent.start" }, same);
+    await review.add(reviewerMessage("started"), same);
+    await review.add(assistant({ type: "text", text: "Fixing what the reviewer found" }), same);
+    for (let i = 0; i < 6; i++) await review.add(toolEnd("edit"), same);
+    await review.add({ type: "agent.end" }, same);
+    expect(review.due).toBe(false);
+    await review.add(owner("Next task"), same);
+    await review.add({ type: "agent.start" }, same);
+    await review.add(toolEnd("edit"), same);
+    expect(review.due).toBe(true);
+    expect(review.take()?.text).toBe("Assistant: Fixing what the reviewer found\nOwner: Next task");
+  });
+
+  it("a queued reviewer message that starts a new turn after the owner's work: the owner's part is due, the reviewer's part never triggers", async () => {
+    const review = new LiveReviewCollector("turn5");
+    await review.add({ type: "agent.start" }, same);
+    await review.add(owner("Sum the list"), same);
+    await review.add(assistant({ type: "text", text: "Done." }), same);
+    await review.add(toolEnd("read"), same);
+    expect(review.due).toBe(false);
+    await review.add(reviewerMessage("queued"), same);
+    expect(review.due).toBe(true);
+    expect(review.take()?.text).toBe("Owner: Sum the list\nAssistant: Done.");
+    for (let i = 0; i < 10; i++) await review.add(toolEnd("read"), same);
+    await review.add({ type: "agent.end" }, same);
+    expect(review.due).toBe(false);
+    // The next reviewer message queued into that reviewer turn: still nothing due.
+    await review.add({ type: "agent.start" }, same);
+    await review.add(reviewerMessage("started"), same);
+    await review.add(reviewerMessage("queued"), same);
+    await review.add({ type: "agent.end" }, same);
+    expect(review.due).toBe(false);
+  });
+
+  it("a reviewer steer into an owner turn, or an owner message joining a reviewer turn, keeps the triggers", async () => {
+    const steered = new LiveReviewCollector("turn5");
+    await steered.add(owner("Sum the list"), same);
+    await steered.add({ type: "agent.start" }, same);
+    for (let i = 0; i < 2; i++) await steered.add(toolEnd("read"), same);
+    await steered.add(reviewerMessage("steered"), same);
+    for (let i = 0; i < 3; i++) await steered.add(toolEnd("read"), same);
+    expect(steered.due).toBe(true);
+    const joined = new LiveReviewCollector("turn");
+    await joined.add(reviewerMessage("started"), same);
+    await joined.add({ type: "agent.start" }, same);
+    await joined.add(owner("Also check the tests"), same);
+    await joined.add({ type: "agent.end" }, same);
+    expect(joined.due).toBe(true);
+  });
+
+  it("the buffer and each digest stay under 60,000 characters: the newest work and every touched file stay, omissions are marked", async () => {
+    const review = new LiveReviewCollector("turn");
+    for (let i = 0; i < 200; i++) await review.add(assistant({ type: "toolCall", id: `c${String(i)}`, name: "write", arguments: { path: `src/f${String(i)}.ts`, content: `// file ${String(i)}\n${"x".repeat(15_000)}` } }), same);
+    const taken = review.take();
+    const text = taken?.text ?? "";
+    expect(text.length).toBeLessThanOrEqual(60_000);
+    const omitted = /^\[… (\d+) earlier tool calls omitted; read the files listed\]\n/u.exec(text);
+    expect(omitted).not.toBeNull();
+    expect(text).toContain("// file 199");
+    expect(text).not.toContain("// file 0\\n");
+    const calls = text.split("\n").filter((line) => line.startsWith("Tool call write")).length;
+    expect(Number(omitted?.[1]) + calls).toBe(200);
+    expect(text.endsWith(`Files touched: ${Array.from({ length: 200 }, (_, i) => `src/f${String(i)}.ts`).join(", ")}`)).toBe(true);
+    // Put back behind newer work, the merged digest is capped again and counts every omission.
+    for (let i = 0; i < 5; i++) await review.add(assistant({ type: "toolCall", id: `n${String(i)}`, name: "edit", arguments: { path: "src/new.ts", edits: [{ oldText: "a", newText: "y".repeat(15_000) }] } }), same);
+    if (taken !== undefined) review.putBack(taken);
+    const merged = review.take()?.text ?? "";
+    expect(merged.length).toBeLessThanOrEqual(60_000);
+    const mergedOmitted = Number(/^\[… (\d+) earlier/u.exec(merged)?.[1]);
+    expect(mergedOmitted + merged.split("\n").filter((line) => line.startsWith("Tool call")).length).toBe(205);
+    expect(merged).toMatch(/src\/f199\.ts, src\/new\.ts$/u);
+  });
+
+  it("each field is redacted whole before it is cut or JSON-escaped; a field the host cannot redact is omitted", async () => {
+    /** Built from parts, so the commit secret scanner sees no key block. */
+    const pemEdge = (edge: string) => `-----${edge} ${["PRIVATE", "KEY"].join(" ")}-----`;
+    const pem = `${pemEdge("BEGIN")}\n${"QUJD".repeat(10_000)}\n${pemEdge("END")}`;
+    const secret = "tok\\en-s3cr3t";
+    const redact = (text: string) => Promise.resolve(text.replace(new RegExp(`${pemEdge("BEGIN")}[\\s\\S]*?${pemEdge("END")}`, "gu"), "[REDACTED:private-key]").replaceAll(secret, "[REDACTED:token]"));
+    const review = new LiveReviewCollector("turn");
+    await review.add(assistant(
+      { type: "thinking", thinking: `The key is ${secret}` },
+      { type: "text", text: `Writing ${pem}` },
+      { type: "toolCall", id: "c", name: "write", arguments: { path: "id_rsa", content: pem, env: { TOKEN: secret } } },
+    ), redact);
+    const text = review.take()?.text ?? "";
+    expect(text).not.toContain("QUJD");
+    expect(text).not.toContain("BEGIN PRIVATE KEY");
+    expect(text).not.toContain("s3cr3t");
+    expect(text).toBe([
+      "Reasoning: The key is [REDACTED:token]",
+      "Assistant: Writing [REDACTED:private-key]",
+      'Tool call write {"path":"id_rsa","content":"[REDACTED:private-key]","env":{"TOKEN":"[REDACTED:token]"}}',
+      "Files touched: id_rsa",
+    ].join("\n"));
+    const blind = new LiveReviewCollector("turn");
+    await blind.add(assistant({ type: "text", text: "secret" }, { type: "toolCall", id: "c", name: "edit", arguments: { path: "a.ts", edits: [{ oldText: "x", newText: "y" }] } }), () => Promise.reject(new Error("no redact method")));
+    await blind.add(toolEnd("bash", true, "failed with tok"), () => Promise.reject(new Error("no redact method")));
+    expect(blind.take()?.text).toBe([
+      "Assistant: [redaction unavailable: omitted]",
+      'Tool call edit {"path":"[redaction unavailable: omitted]","edits":[{"oldText":"[redaction unavailable: omitted]","newText":"[redaction unavailable: omitted]"}]}',
+      "Tool error bash: [redaction unavailable: omitted]",
+      "Files touched: [redaction unavailable: omitted]",
+    ].join("\n"));
   });
 });

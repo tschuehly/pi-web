@@ -379,6 +379,10 @@ export class DurableChatService {
   readonly #liveReviews = new Map<string, LiveReviewCollector>();
   /** Reviewer Chats working on a digest (delivered, its turn not ended yet), so the next digest waits and merges. */
   readonly #reviewing = new Set<string>();
+  /** Live review: each main Chat's events in order, as each waits for its fields' redaction. */
+  readonly #reviewEvents = new Map<string, Promise<void>>();
+  /** Live review: `/pair`, `/pair stop` and an explicit end, one at a time per main Chat. */
+  readonly #pairings = new Map<string, Promise<unknown>>();
 
   owns(sessionId: string): boolean {
     return this.deps.locator.durable(sessionId) !== undefined;
@@ -757,8 +761,8 @@ export class DurableChatService {
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
     const rest = trimmed.slice(name.length + 1).trim();
     if (name === "name") return this.#name(ref, rest);
-    // Owner only: the browser's command route is the only caller; an agent's prompt or message reading /pair is text.
-    if (name === "pair") return this.#pair(ref, rest);
+    // An agent's prompt or message reading /pair is text; only the command route calls this (see its shortcut).
+    if (name === "pair") return this.#serializePairing(ref.id, () => this.#pair(ref, rest));
     const checkpointTitle = CHECKPOINT_TITLE_COMMAND.exec(trimmed)?.[1];
     if (checkpointTitle !== undefined) {
       // A Workstream checkpoint's title for its Chat (the Workbench client sends it): no turn, as in a legacy Chat.
@@ -993,6 +997,7 @@ export class DurableChatService {
    * Reaches the host an earlier daemon started too. The store keeps every admitted input and reopens paused on next use.
    */
   async stop(ref: SessionRouteRef): Promise<void> {
+    await this.#unpair(ref.id);
     await this.#end(ref.id, true);
   }
 
@@ -1017,6 +1022,7 @@ export class DurableChatService {
       if (busy !== undefined) return { stopped: false, busy };
       if (watched()) return { stopped: false, watched: true };
     }
+    await this.#unpair(record.id);
     await this.#end(record.id, true);
     return { stopped: true };
   }
@@ -1603,19 +1609,25 @@ export class DurableChatService {
     const reviewerName = (id: string) => this.deps.locator.durable(id)?.name ?? "the reviewer chat";
     if ("stop" in command) {
       if (pairing === undefined) return { type: "unsupported", message: "This chat has no live reviewer." };
-      this.deps.locator.update(main.id, { liveReview: undefined });
-      this.deps.locator.update(pairing.reviewerId, { reviewing: undefined });
-      this.#liveReviews.delete(main.id);
+      this.#unlink(main.id, pairing.reviewerId);
       return { type: "done", message: `Live review stopped; "${reviewerName(pairing.reviewerId)}" stays readable.` };
     }
     if (main.reviewing !== undefined) return { type: "unsupported", message: "This chat is a live reviewer; it cannot have one." };
     if (pairing !== undefined) return { type: "unsupported", message: `This chat already has a live reviewer, "${reviewerName(pairing.reviewerId)}"; /pair stop ends it first.` };
     const model = parseModelSpec(command.model);
     if (model === undefined) return { type: "unsupported", message: PAIR_USAGE };
-    const { name } = await this.#chatIdentity(main, await this.#connection(main));
+    const connection = await this.#connection(main);
+    // An older host would show the reviewer's messages as ordinary mail and drop the reviewer's brief.
+    if (!connection.capabilities.includes("liveReview")) return { type: "unsupported", message: "Live review needs this chat's host to support it: upgrade host, then /pair again." };
+    const { name } = await this.#chatIdentity(main, connection);
     const reviewer = await this.start(main.cwd);
     const reviewerRef = { id: reviewer.id, cwd: reviewer.cwd };
     try {
+      if (!(await this.#for(reviewerRef)).capabilities.includes("liveReview")) {
+        await this.stop(reviewerRef);
+        this.deps.locator.remove(reviewer.id);
+        return { type: "unsupported", message: "Live review needs the reviewer chat's host to support it: upgrade host, then /pair again." };
+      }
       await this.setModel(reviewerRef, model.provider, model.modelId);
       await (await this.#for(reviewerRef)).request("setThinkingLevel", { level: "low" });
     } catch (error) {
@@ -1625,17 +1637,44 @@ export class DurableChatService {
     }
     const title = `Live review · ${name}`.slice(0, CHECKPOINT_SESSION_TITLE_MAX_LENGTH);
     this.#setName(reviewer.id, title, "manual");
-    this.deps.locator.update(reviewer.id, { reviewing: main.id });
     const next: LiveReviewPairing = { reviewerId: reviewer.id, model: command.model, thinking: "low", trigger: command.trigger, brief: command.brief, turn: 0, digests: 0, startedAt: new Date(this.#now()).toISOString() };
-    this.deps.locator.update(main.id, { liveReview: next });
+    this.deps.locator.updateAll([[main.id, { liveReview: next }], [reviewer.id, { reviewing: main.id }]]);
     const record = this.deps.locator.durable(reviewer.id);
     if (record !== undefined) this.deps.events.publishGlobal({ type: "session.created", session: this.info(record) });
     this.deps.logger?.info?.({ sessionId: main.id, reviewerId: reviewer.id, model: command.model, trigger: command.trigger, brief: command.brief }, "live review started");
     return { type: "done", message: `Live review on: "${title}" reviews this chat with ${command.model} at thinking low, trigger ${command.trigger}, brief ${command.brief}. /pair stop ends it.` };
   }
 
+  /** Run a pairing change after the ones before it for the same main Chat, so two `/pair` never start two reviewers. */
+  #serializePairing<T>(mainId: string, change: () => Promise<T>): Promise<T> {
+    const run = (this.#pairings.get(mainId) ?? Promise.resolve()).then(change, change);
+    this.#pairings.set(mainId, run.catch(() => undefined));
+    return run;
+  }
+
+  /** An explicit end of either Chat ends its pairing (an idle close or a daemon restart keeps it). */
+  async #unpair(sessionId: string): Promise<void> {
+    const record = this.deps.locator.durable(sessionId);
+    const mainId = record?.liveReview !== undefined ? sessionId : record?.reviewing;
+    if (mainId === undefined) return;
+    await this.#serializePairing(mainId, () => {
+      const reviewerId = this.deps.locator.durable(mainId)?.liveReview?.reviewerId;
+      if (reviewerId !== undefined) this.#unlink(mainId, reviewerId);
+      else this.deps.locator.update(sessionId, { reviewing: undefined });
+      return Promise.resolve();
+    });
+  }
+
+  /** Forget a pairing in both records at once and drop its pending digest. */
+  #unlink(mainId: string, reviewerId: string): void {
+    this.deps.locator.updateAll([[mainId, { liveReview: undefined }], [reviewerId, { reviewing: undefined }]]);
+    this.#liveReviews.delete(mainId);
+    this.#reviewing.delete(reviewerId);
+    this.deps.logger?.info?.({ sessionId: mainId, reviewerId }, "live review stopped");
+  }
+
   /** A paired main Chat's event goes into its next digest; a reviewer's turn end lets the waiting digest go. */
-  #liveReviewEvent(record: DurableChatRecord, event: { type: string }): void {
+  #liveReviewEvent(record: DurableChatRecord, event: { type: string }, connection: DurableHostConnection): void {
     if (record.reviewing !== undefined && event.type === "agent.end") {
       this.#reviewing.delete(record.id);
       void this.#sendDigest(record.reviewing);
@@ -1645,8 +1684,17 @@ export class DurableChatService {
     if (event.type === "agent.start") this.deps.locator.update(record.id, { liveReview: { ...pairing, turn: pairing.turn + 1 } });
     let review = this.#liveReviews.get(record.id);
     if (review === undefined) this.#liveReviews.set(record.id, review = new LiveReviewCollector(pairing.trigger));
-    review.add(event);
-    if (review.due) void this.#sendDigest(record.id);
+    const collector = review;
+    // Each field through this main Chat host's redactor whole, before the digest cuts or escapes it.
+    const redact = (text: string) => connection.request("redact", { text }).then(({ result }) => {
+      if (typeof result !== "string") throw new Error("The host's redactor returned no text");
+      return result;
+    });
+    const next = (this.#reviewEvents.get(record.id) ?? Promise.resolve()).then(async () => {
+      await collector.add(event, redact);
+      if (collector.due && this.#liveReviews.get(record.id) === collector) void this.#sendDigest(record.id);
+    }).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "live review event not collected"); });
+    this.#reviewEvents.set(record.id, next);
   }
 
   /**
@@ -1660,8 +1708,9 @@ export class DurableChatService {
     if (main === undefined || pairing === undefined || review?.due !== true) return;
     const reviewer = this.deps.locator.durable(pairing.reviewerId);
     if (reviewer === undefined || this.#reviewing.has(reviewer.id) || this.#streaming.has(reviewer.id)) return;
-    const text = review.take();
-    if (text === undefined) return;
+    const digest = review.take();
+    if (digest === undefined) return;
+    const { text } = digest;
     this.#reviewing.add(reviewer.id);
     const number = pairing.digests + 1;
     this.deps.locator.update(mainId, { liveReview: { ...pairing, digests: number } });
@@ -1676,7 +1725,7 @@ export class DurableChatService {
     } catch (error) {
       // The reviewer did not take it: the next digest carries it.
       this.#reviewing.delete(reviewer.id);
-      review.putBack(text);
+      review.putBack(digest);
       this.deps.logger?.warn({ sessionId: mainId, reviewerId: reviewer.id, err: error }, "live review digest not delivered");
     }
   }
@@ -1745,7 +1794,7 @@ export class DurableChatService {
     if (event.type === "message.end" && record.firstMessage === "") {
       if (isRecord(event.message) && event.message["role"] === "user") this.deps.locator.update(sessionId, { firstMessage: textOf(event.message["content"]) });
     }
-    this.#liveReviewEvent(record, event);
+    this.#liveReviewEvent(record, event, connection);
   }
 }
 

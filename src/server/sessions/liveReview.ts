@@ -32,8 +32,12 @@ const BRIEFS: readonly LiveReviewBrief[] = ["silent", "coach"];
 /** Tool calls after which `edits` sends a digest. */
 const EDIT_TOOLS = new Set(["edit", "write", "bash"]);
 const FILE_TOOLS = new Set(["edit", "write"]);
-// shortcut: one cut per line, so a turn of many large writes can still make a long digest; cap the total if that shows up.
 const MAX_LINE = 20_000;
+/** The pending buffer and so each digest, marker and file list included (the list is kept whole). */
+const MAX_DIGEST = 60_000;
+const UNREDACTED = "[redaction unavailable: omitted]";
+/** The main Chat host's redactor over one whole field; it rejects when the host cannot redact. */
+export type Redact = (text: string) => Promise<string>;
 
 export function parsePairCommand(args: string): { stop: true } | { model: string; trigger: LiveReviewTrigger; brief: LiveReviewBrief } {
   const words = args.split(/\s+/u).filter((word) => word !== "");
@@ -59,65 +63,130 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const textOf = (content: unknown) => (typeof content === "string" ? content : Array.isArray(content)
   ? content.flatMap((part: unknown) => (isRecord(part) && part["type"] === "text" && typeof part["text"] === "string" ? [part["text"]] : [])).join("\n")
   : "");
+const omitted = (calls: number) => `[… ${String(calls)} earlier tool calls omitted; read the files listed]`;
+
+/** One field, redacted whole before anything cuts or escapes it (a cut key or an escaped backslash hides a secret). */
+const clean = (text: string, redact: Redact) => redact(text).then((result) => (typeof result === "string" ? result : UNREDACTED), () => UNREDACTED);
+/** Every string in an argument value, each redacted whole, so JSON escaping comes after. */
+async function cleanDeep(value: unknown, redact: Redact): Promise<unknown> {
+  if (typeof value === "string") return clean(value, redact);
+  if (Array.isArray(value)) return Promise.all(value.map((item) => cleanDeep(item, redact)));
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([key, item]) => [key, await cleanDeep(item, redact)] as const)));
+}
 
 interface ReviewedEvent { type: string; message?: unknown; toolName?: string; isError?: boolean; text?: string }
+interface Line { text: string; call: boolean }
+/** A digest taken for delivery; `putBack` returns it when the reviewer did not take it. */
+export interface LiveReviewDigest { text: string; lines: Line[]; files: string[]; omitted: number }
 
 /**
  * The main Chat's work since the last digest: owner and assistant text, reasoning, tool calls with their arguments as they
- * are (an edit's arguments are its diff), error text from tool output and the files edit and write touched. Tool output is
- * left out: the reviewer reads files itself. `due` says a trigger fired; `take` empties it, so a digest taken after the
- * reviewer was busy covers everything since the last one.
+ * are (an edit's arguments are its diff), error text from tool output and the files edit and write touched, each field
+ * through the main Chat host's redactor first. Tool output is left out: the reviewer reads files itself. `due` says a
+ * trigger fired; `take` empties it, so a digest taken after the reviewer was busy covers everything since the last one.
+ * The buffer keeps the newest {@link MAX_DIGEST} characters and every touched file. A turn the reviewer's own message
+ * started (it started the run, or a queued one opened the next turn) fires no trigger, so the pair never runs without
+ * the owner; its work waits for the owner's next digest. An owner message joining that turn makes it the owner's again.
  */
 export class LiveReviewCollector {
-  #lines: string[] = [];
+  #lines: Line[] = [];
+  #size = 0;
   #files = new Set<string>();
+  #omitted = 0;
   #calls = 0;
+  #reviewerTurn = false;
+  /** Owner-turn lines no trigger has covered yet, so the owner's part is due when a reviewer turn follows it. */
+  #fresh = false;
   due = false;
 
   constructor(readonly trigger: LiveReviewTrigger) {}
 
-  add(event: ReviewedEvent): void {
+  /** Serialize calls: each awaits its redaction before the next event may change `due`. */
+  async add(event: ReviewedEvent, redact: Redact): Promise<void> {
     if (event.type === "agent.end") {
-      this.due = true;
+      if (!this.#reviewerTurn) this.#fire();
+      this.#reviewerTurn = false;
       this.#calls = 0;
     }
     if (event.type === "tool.end") {
-      if (event.isError === true) this.#lines.push(cut(`Tool error ${event.toolName ?? "tool"}: ${event.text ?? ""}`));
-      this.#calls += 1;
-      if (this.trigger === "edits" && EDIT_TOOLS.has(event.toolName ?? "")) this.due = true;
-      if (this.trigger === "turn5" && this.#calls >= 5) [this.due, this.#calls] = [true, 0];
+      if (event.isError === true) this.#push(`Tool error ${event.toolName ?? "tool"}: ${await clean(event.text ?? "", redact)}`);
+      if (!this.#reviewerTurn) {
+        this.#calls += 1;
+        if (this.trigger === "edits" && EDIT_TOOLS.has(event.toolName ?? "")) this.#fire();
+        if (this.trigger === "turn5" && this.#calls >= 5) this.#fire();
+      }
     }
     if (event.type !== "message.end" || !isRecord(event.message)) return;
-    const { role, content } = event.message;
+    const { role, content, customType, details } = event.message;
+    if (role === "custom" && customType === "workbench:chat-message" && isRecord(details) && isRecord(details["liveReview"]) && details["liveReview"]["kind"] === "reviewer"
+      && (details["delivery"] === "started" || details["delivery"] === "queued") && !this.#reviewerTurn) {
+      // The owner's turn ended at the boundary this message opened: its part is due, as at a turn end.
+      if (this.#fresh) this.#fire();
+      [this.#reviewerTurn, this.#calls] = [true, 0];
+    }
     if (role === "user") {
+      this.#reviewerTurn = false;
       const text = textOf(content).trim();
-      if (text !== "") this.#lines.push(cut(`Owner: ${text}`));
+      if (text !== "") this.#push(`Owner: ${await clean(text, redact)}`);
     }
     if (role !== "assistant" || !Array.isArray(content)) return;
     for (const part of content) {
       if (!isRecord(part)) continue;
-      if (part["type"] === "thinking" && typeof part["thinking"] === "string" && part["thinking"].trim() !== "") this.#lines.push(cut(`Reasoning: ${part["thinking"].trim()}`));
-      if (part["type"] === "text" && typeof part["text"] === "string" && part["text"].trim() !== "") this.#lines.push(cut(`Assistant: ${part["text"].trim()}`));
+      if (part["type"] === "thinking" && typeof part["thinking"] === "string" && part["thinking"].trim() !== "") this.#push(`Reasoning: ${await clean(part["thinking"].trim(), redact)}`);
+      if (part["type"] === "text" && typeof part["text"] === "string" && part["text"].trim() !== "") this.#push(`Assistant: ${await clean(part["text"].trim(), redact)}`);
       if (part["type"] === "toolCall" && typeof part["name"] === "string") {
-        this.#lines.push(cut(`Tool call ${part["name"]} ${JSON.stringify(part["arguments"] ?? {})}`));
-        const path = isRecord(part["arguments"]) ? part["arguments"]["path"] : undefined;
+        const args = await cleanDeep(part["arguments"] ?? {}, redact);
+        this.#push(`Tool call ${part["name"]} ${JSON.stringify(args)}`, true);
+        const path = isRecord(args) ? args["path"] : undefined;
         if (FILE_TOOLS.has(part["name"]) && typeof path === "string") this.#files.add(path);
+        this.#trim();
       }
     }
   }
 
   /** The digest of everything collected, or nothing when there is nothing new; clears `due` either way. */
-  take(): string | undefined {
+  take(): LiveReviewDigest | undefined {
     this.due = false;
     if (this.#lines.length === 0) return undefined;
-    const digest = [...this.#lines, ...(this.#files.size === 0 ? [] : [`Files touched: ${[...this.#files].join(", ")}`])].join("\n");
-    this.#lines = [];
-    this.#files = new Set();
-    return digest;
+    const taken = { lines: this.#lines, files: [...this.#files], omitted: this.#omitted };
+    [this.#lines, this.#size, this.#files, this.#omitted] = [[], 0, new Set(), 0];
+    return { ...taken, text: digestText(taken) };
   }
 
-  /** A digest the reviewer did not take: it goes first in the next one. */
-  putBack(digest: string): void {
-    this.#lines.unshift(digest);
+  /** A digest the reviewer did not take: it goes first in the next one, capped again with it. */
+  putBack(digest: LiveReviewDigest): void {
+    this.#lines = [...digest.lines, ...this.#lines];
+    this.#size = this.#lines.reduce((size, line) => size + line.text.length + 1, 0);
+    this.#files = new Set([...digest.files, ...this.#files]);
+    this.#omitted += digest.omitted;
+    this.#trim();
   }
+
+  #fire(): void {
+    [this.due, this.#calls, this.#fresh] = [true, 0, false];
+  }
+
+  #push(text: string, call = false): void {
+    const line = { text: cut(text), call };
+    this.#lines.push(line);
+    this.#size += line.text.length + 1;
+    if (!this.#reviewerTurn) this.#fresh = true;
+    this.#trim();
+  }
+
+  /** Drop the oldest lines past the cap, counting the tool calls among them for the marker. */
+  #trim(): void {
+    // shortcut: the touched-file list is kept whole outside the cap; a turn touching thousands of files makes a longer digest.
+    const reserve = omitted(Number.MAX_SAFE_INTEGER).length + 1 + `Files touched: ${[...this.#files].join(", ")}`.length + 1;
+    while (this.#lines.length > 1 && this.#size + reserve > MAX_DIGEST) {
+      const dropped = this.#lines.shift();
+      this.#size -= (dropped?.text.length ?? 0) + 1;
+      if (dropped?.call === true) this.#omitted += 1;
+    }
+  }
+}
+
+function digestText({ lines, files, omitted: calls }: Omit<LiveReviewDigest, "text">): string {
+  return [...(calls === 0 ? [] : [omitted(calls)]), ...lines.map((line) => line.text), ...(files.length === 0 ? [] : [`Files touched: ${files.join(", ")}`])].join("\n");
 }

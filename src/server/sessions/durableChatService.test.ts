@@ -1421,9 +1421,9 @@ describe("Durable Chats: send_chat_message", () => {
 
 describe("Durable Chats: live review (/pair)", () => {
   const set: DurableChatResourceSet = { resources: { sources: [] }, compaction: { enabled: true, reserveTokens: 1, keepRecentTokens: 1 }, skillList: [] };
-  /** Every host takes chat messages (started), prompts (fresh), and redacts nothing. */
-  const host = () => {
-    const fake = new FakeHost();
+  /** Every host supports live review, takes chat messages (started), prompts (fresh), and redacts nothing. */
+  const host = (_launch?: number, capabilities: string[] = ["liveReview"]) => {
+    const fake = new FakeHost(DURABLE_HOST_PROTOCOL, capabilities);
     fake.answer = (request) => {
       if (request.method === "chatMessage") return { delivery: request.params?.["wake"] === false ? "noted" : "started" };
       if (request.method === "prompt") return { submissionId: 1, fresh: true };
@@ -1590,5 +1590,166 @@ describe("Durable Chats: live review (/pair)", () => {
     mainHost.push({ type: "durable.chat-message", requestId: "m", chat: other.id, text: "hi", wake: true });
     await vi.waitFor(() => { expect(answers(mainHost)).toHaveLength(1); });
     expect(answers(mainHost)[0]).toMatchObject({ result: { hop: 1 } });
+  });
+
+  /** The main Chat runs one turn: its first input, an edit and 5 finished tool calls, then the turn end. */
+  const turn = (fake: FakeHost, input: object) => {
+    fake.push({ type: "agent.start" });
+    fake.push(input);
+    fake.push(edit("src/sum.ts", "i < n"));
+    for (let i = 0; i < 5; i++) fake.push(toolEnd());
+    fake.push({ type: "agent.end" });
+  };
+  const ownerPrompt = (text: string) => ({ type: "message.end", message: { role: "user", content: [{ type: "text", text }] } });
+  const fromReviewer = (delivery: string) => ({ type: "message.end", message: { role: "custom", customType: "workbench:chat-message", content: "Chat message · live reviewer", details: { delivery, liveReview: { kind: "reviewer" } } } });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+  it("no runaway loop: a reviewer that answers every digest and a main that answers every finding stop after one round", async () => {
+    const { mainHost, reviewerHost } = await paired();
+    if (reviewerHost === undefined) throw new Error("no reviewer host");
+    const [mainAnswer, reviewerAnswer] = [mainHost.answer, reviewerHost.answer];
+    let findings = 0;
+    // The reviewer sends one normal finding per digest (at most 6, so a loop ends the test instead of running forever).
+    reviewerHost.answer = (request) => {
+      if (request.method === "chatMessage" && findings++ < 6) setTimeout(() => {
+        reviewerHost.push({ type: "agent.start" });
+        reviewerHost.push({ type: "durable.chat-message", requestId: `f${String(findings)}`, chat: "cloud-builds-agents", text: "src/sum.ts:1 off by one", wake: true });
+        reviewerHost.push({ type: "agent.end" });
+      }, 1);
+      return reviewerAnswer(request);
+    };
+    // The main Chat is idle, so each finding starts a turn, which answers it with more edits.
+    mainHost.answer = (request) => {
+      if (request.method === "chatMessage") setTimeout(() => { turn(mainHost, fromReviewer("started")); }, 1);
+      return mainAnswer(request);
+    };
+    turn(mainHost, ownerPrompt("Sum the list"));
+    await vi.waitFor(() => { expect(digests(mainHost)).toHaveLength(1); });
+    await settle();
+    expect(digests(reviewerHost)).toHaveLength(1);
+    expect(digests(mainHost)).toHaveLength(1);
+    // The owner's next turn digests again, and holds the main Chat's answer to the finding.
+    turn(mainHost, ownerPrompt("Now the average"));
+    await vi.waitFor(() => { expect(digests(reviewerHost)).toHaveLength(2); });
+    expect(String(digests(reviewerHost)[1]?.["text"])).toMatch(/^Assistant: Editing src\/sum\.ts[\s\S]*Owner: Now the average/u);
+  });
+
+  it("a reviewer steer into the owner's turn keeps that turn's digests", async () => {
+    const { mainHost, reviewerHost } = await paired();
+    mainHost.push({ type: "agent.start" });
+    mainHost.push(ownerPrompt("Sum the list"));
+    for (let i = 0; i < 5; i++) mainHost.push(toolEnd());
+    await vi.waitFor(() => { expect(digests(reviewerHost)).toHaveLength(1); });
+    reviewerHost?.push({ type: "agent.end" });
+    mainHost.push(fromReviewer("steered"));
+    mainHost.push(edit("src/sum.ts", "i < n"));
+    for (let i = 0; i < 5; i++) mainHost.push(toolEnd());
+    await vi.waitFor(() => { expect(digests(reviewerHost)).toHaveLength(2); });
+  });
+
+  it("each field goes through the main chat host's redactor whole, before the digest cuts or escapes it; without a redactor it is omitted", async () => {
+    /** Built from parts, so the commit secret scanner sees no key block. */
+    const pemEdge = (edge: string) => `-----${edge} ${["PRIVATE", "KEY"].join(" ")}-----`;
+    const pem = `${pemEdge("BEGIN")}\n${"QUJD".repeat(10_000)}\n${pemEdge("END")}`;
+    const secret = "tok\\en-s3cr3t";
+    const redacting = (launch: number) => {
+      const fake = host(launch);
+      const base = fake.answer;
+      fake.answer = (request) => request.method === "redact"
+        ? String(request.params?.["text"]).replace(new RegExp(`${pemEdge("BEGIN")}[\\s\\S]*?${pemEdge("END")}`, "gu"), "[REDACTED:private-key]").replaceAll(secret, "[REDACTED:token]")
+        : base(request);
+      return fake;
+    };
+    const made = await service(redacting, set);
+    const main = await made.durable.start("/work/a");
+    await made.durable.runCommand({ id: main.id, cwd: main.cwd }, "/pair --trigger turn");
+    const mainHost = only(made.launched);
+    mainHost.push({ type: "agent.start" });
+    mainHost.push(ownerPrompt(`Use ${secret}`));
+    mainHost.push({ type: "message.end", message: { role: "assistant", content: [{ type: "toolCall", id: "w", name: "write", arguments: { path: "id_rsa", content: pem } }] } });
+    mainHost.push({ type: "agent.end" });
+    await vi.waitFor(() => { expect(digests(made.launched[1])).toHaveLength(1); });
+    const text = String(digests(made.launched[1])[0]?.["text"]);
+    expect(text).toBe('Owner: Use [REDACTED:token]\nTool call write {"path":"id_rsa","content":"[REDACTED:private-key]"}\nFiles touched: id_rsa');
+    // A main host that cannot redact: each field is left out.
+    const blind = await paired("--trigger turn");
+    const base = blind.mainHost.answer;
+    blind.mainHost.answer = (request) => { if (request.method === "redact") throw new Error("Unknown method redact"); return base(request); };
+    blind.mainHost.push({ type: "agent.start" });
+    blind.mainHost.push(ownerPrompt(`Use ${secret}`));
+    blind.mainHost.push({ type: "agent.end" });
+    await vi.waitFor(() => { expect(digests(blind.reviewerHost)).toHaveLength(1); });
+    expect(digests(blind.reviewerHost)[0]?.["text"]).toBe("Owner: [redaction unavailable: omitted]");
+  });
+
+  it("two /pair at once start one reviewer; a /pair stop right behind a /pair ends the pairing it started", async () => {
+    const made = await service(host, set);
+    const main = await made.durable.start("/work/a");
+    made.locator.update(main.id, { name: "Cloud builds for agents" });
+    const ref = { id: main.id, cwd: main.cwd };
+    const results = await Promise.all([made.durable.runCommand(ref, "/pair"), made.durable.runCommand(ref, "/pair")]);
+    expect(results.map((result) => result.type).sort()).toEqual(["done", "unsupported"]);
+    const reviewers = made.locator.all().filter((record) => record.id !== main.id);
+    expect(reviewers).toHaveLength(1);
+    expect(made.locator.durable(main.id)?.liveReview?.reviewerId).toBe(reviewers[0]?.id);
+    await made.durable.runCommand(ref, "/pair stop");
+    const [started, stopped] = await Promise.all([made.durable.runCommand(ref, "/pair"), made.durable.runCommand(ref, "/pair stop")]);
+    expect([started.type, stopped.type]).toEqual(["done", "done"]);
+    expect(made.locator.durable(main.id)?.liveReview).toBeUndefined();
+    expect(made.locator.all().every((record) => record.reviewing === undefined)).toBe(true);
+  });
+
+  it("ending either chat explicitly unlinks the pair and drops its pending digest; the next main turn relaunches no reviewer", async () => {
+    const endReviewer = await paired("--trigger turn");
+    const reviewerId = endReviewer.locator.durable(endReviewer.main.id)?.liveReview?.reviewerId ?? "";
+    // A digest waits for the busy reviewer.
+    turn(endReviewer.mainHost, ownerPrompt("Sum the list"));
+    await vi.waitFor(() => { expect(digests(endReviewer.reviewerHost)).toHaveLength(1); });
+    turn(endReviewer.mainHost, ownerPrompt("Again"));
+    await endReviewer.durable.stop({ id: reviewerId, cwd: "/work/a" });
+    expect(endReviewer.locator.durable(endReviewer.main.id)?.liveReview).toBeUndefined();
+    expect(endReviewer.locator.durable(reviewerId)?.reviewing).toBeUndefined();
+    turn(endReviewer.mainHost, ownerPrompt("Once more"));
+    await settle();
+    expect(endReviewer.launched).toHaveLength(2);
+    expect(digests(endReviewer.reviewerHost)).toHaveLength(1);
+    await expect(endReviewer.durable.runCommand(endReviewer.ref, "/pair stop")).resolves.toEqual({ type: "unsupported", message: "This chat has no live reviewer." });
+
+    const endMain = await paired("--trigger turn");
+    const otherReviewer = endMain.locator.durable(endMain.main.id)?.liveReview?.reviewerId ?? "";
+    await endMain.durable.stopIfUnwatched(endMain.ref, true);
+    expect(endMain.locator.durable(endMain.main.id)?.liveReview).toBeUndefined();
+    expect(endMain.locator.durable(otherReviewer)?.reviewing).toBeUndefined();
+    expect(endMain.locator.durable(otherReviewer)).toBeDefined();
+  });
+
+  it("a routine idle close of both hosts keeps the pair", async () => {
+    let now = Date.parse("2026-11-17T08:00:00Z");
+    const { durable, locator, main, launched } = await paired("--trigger turn", { now: () => now });
+    const reviewerId = locator.durable(main.id)?.liveReview?.reviewerId ?? "";
+    now += IDLE_HOST_CLOSE_MS;
+    await durable.closeIdleHosts();
+    expect(launched.every((fake) => fake.requests.some((request) => request.method === "close"))).toBe(true);
+    expect(locator.durable(main.id)?.liveReview?.reviewerId).toBe(reviewerId);
+    expect(locator.durable(reviewerId)?.reviewing).toBe(main.id);
+  });
+
+  it("/pair refuses unless both hosts support live review; /pair stop works on any host", async () => {
+    const oldMain = await service((launch) => host(launch, []), set);
+    const main = await oldMain.durable.start("/work/a");
+    await expect(oldMain.durable.runCommand({ id: main.id, cwd: main.cwd }, "/pair")).resolves.toEqual({ type: "unsupported", message: "Live review needs this chat's host to support it: upgrade host, then /pair again." });
+    expect(oldMain.locator.all()).toHaveLength(1);
+    const oldReviewer = await service((launch) => host(launch, launch === 0 ? ["liveReview"] : []), set);
+    const main2 = await oldReviewer.durable.start("/work/a");
+    await expect(oldReviewer.durable.runCommand({ id: main2.id, cwd: main2.cwd }, "/pair")).resolves.toEqual({ type: "unsupported", message: "Live review needs the reviewer chat's host to support it: upgrade host, then /pair again." });
+    expect(oldReviewer.locator.all().map((record) => record.id)).toEqual([main2.id]);
+    expect(oldReviewer.locator.durable(main2.id)?.liveReview).toBeUndefined();
+    // A pairing whose hosts went back to an old version still stops.
+    const first = await paired();
+    await first.durable.dispose();
+    const second = await reopen(first.root);
+    second.durable = new DurableChatService({ locator: second.locator, events: second.hub, launch: () => { const fake = host(0, []); second.launched.push(fake); return fake; }, storesDir: join(first.root, "durable"), resources: () => Promise.resolve(set) });
+    await expect(second.durable.runCommand(first.ref, "/pair stop")).resolves.toMatchObject({ type: "done" });
+    expect(second.locator.durable(first.main.id)?.liveReview).toBeUndefined();
   });
 });

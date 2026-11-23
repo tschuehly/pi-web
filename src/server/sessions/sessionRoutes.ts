@@ -549,6 +549,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
+  // shortcut: no owner check, so any local process (an agent's bash too) can POST a command such as /pair here, as on every PI WEB route; owner authentication for PI WEB closes it.
   app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; text?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/commands/run`, async (request, reply) => {
     try {
       const body = optionalRecord(request.body);

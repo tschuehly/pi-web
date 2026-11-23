@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { isLiveReviewPairing, type LiveReviewPairing } from "./liveReview.js";
 
+type RecordChange = Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "key">> & { liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined };
+
 /**
  * Which runtime owns a Chat. Legacy Chats have no record: the legacy runtime stays the default. A Durable Chat's
  * runtime is fixed when it is created and never toggled; its record names the store its own host opens.
@@ -122,7 +124,17 @@ export class SessionRuntimeLocator {
   }
 
   /** Change fields; a live review field given as undefined is removed (the pairing ended). */
-  update(sessionId: string, change: Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "key">> & { liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined }): void {
+  update(sessionId: string, change: RecordChange): void {
+    this.updateAll([[sessionId, change]]);
+  }
+
+  /** Change several records in one write, so a crash never leaves half a live review pairing. */
+  updateAll(changes: readonly (readonly [sessionId: string, change: RecordChange])[]): void {
+    for (const [sessionId, change] of changes) this.#change(sessionId, change);
+    this.#persist();
+  }
+
+  #change(sessionId: string, change: RecordChange): void {
     const record = this.#chats.get(sessionId);
     if (record === undefined) return;
     const { liveReview, reviewing, ...rest } = change;
@@ -136,7 +148,6 @@ export class SessionRuntimeLocator {
       else next.reviewing = reviewing;
     }
     this.#chats.set(sessionId, next);
-    this.#persist();
   }
 
   /** Record the family host the daemon attached to, or forget it once that host is gone. */

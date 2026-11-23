@@ -672,6 +672,7 @@ export const CHAT_CAPABILITY_LABELS = {
   compact: "Compacting",
   "compact-and-continue": "Compacting and continuing",
   "tool-groups": "Tool groups",
+  liveReview: "Live review",
 } as const;
 export type ChatCapability = keyof typeof CHAT_CAPABILITY_LABELS;
 
