@@ -21,6 +21,8 @@ export interface DurableChatRecord {
   name?: string;
   /** Who set `name`; absent means the owner (`/name`), which generated titles never replace. */
   nameSource?: "manual" | "auto" | "checkpoint";
+  /** send_chat_message's 3-word key, assigned once and never changed (a renamed Chat keeps it). */
+  key?: string;
   /** The family's launchd host the daemon last attached to (Phase C1); a restarted daemon reattaches through it. */
   host?: DurableHostAttachment;
   /**
@@ -114,7 +116,7 @@ export class SessionRuntimeLocator {
     return record;
   }
 
-  update(sessionId: string, change: Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource">>): void {
+  update(sessionId: string, change: Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "key">>): void {
     const record = this.#chats.get(sessionId);
     if (record === undefined) return;
     this.#chats.set(sessionId, { ...record, ...change });
@@ -203,6 +205,7 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
     && typeof value["messageCount"] === "number"
     && (value["name"] === undefined || typeof value["name"] === "string")
     && (value["nameSource"] === undefined || value["nameSource"] === "manual" || value["nameSource"] === "auto" || value["nameSource"] === "checkpoint")
+    && (value["key"] === undefined || typeof value["key"] === "string")
     && (value["host"] === undefined || isHostAttachment(value["host"]))
     && (value["hostEntry"] === undefined || typeof value["hostEntry"] === "string")
     && (value["hostStore"] === undefined || isStoreCode(value["hostStore"]))

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { DURABLE_HOST_PROTOCOL, DurableChatService, IDLE_HOST_CLOSE_MS, durableHostArgs, durableHostLaunchArgs, type DurableHostProcess, forkDurableHost } from "./durableChatService.js";
+import { chatKey, DURABLE_HOST_PROTOCOL, DurableChatService, IDLE_HOST_CLOSE_MS, durableHostArgs, durableHostLaunchArgs, type DurableHostProcess, forkDurableHost } from "./durableChatService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 import { SessionNotificationStore } from "./sessionNotificationStore.js";
 import { WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
@@ -1048,5 +1048,371 @@ describe("Durable Chats: spawn_session (P064)", () => {
     expect(host.requests.find((request) => request.method === "configure")?.params).toMatchObject({ spawnSessions: false });
     host.push({ type: "durable.spawn", requestId: "r", spawningCwd: "/work/a", prompt: "x" });
     await vi.waitFor(() => { expect(host.requests.find((request) => request.method === "spawned")?.params).toEqual({ requestId: "r", error: "Spawning sessions is disabled" }); });
+  });
+});
+
+describe("Durable Chats: send_chat_message", () => {
+  const set: DurableChatResourceSet = { resources: { sources: [] }, compaction: { enabled: true, reserveTokens: 1, keepRecentTokens: 1 }, skillList: [] };
+  const answered = (host: FakeHost) => host.requests.filter((request) => request.method === "chatMessaged").map((request) => request.params);
+  /**
+   * The target's host answers `chatMessage` with this delivery, `prompt` with whether its operation was new, and `redact`
+   * unchanged (`redacts: false`: a host that cannot redact).
+   */
+  const target = (delivery = "started", redacts = true) => {
+    const host = new FakeHost();
+    const ops = new Set<unknown>();
+    host.answer = (request) => {
+      if (request.method === "chatMessage") return { delivery: request.params?.["wake"] === false ? "noted" : delivery };
+      if (request.method === "prompt") { const fresh = !ops.has(request.params?.["operationId"]); ops.add(request.params?.["operationId"]); return { submissionId: ops.size, fresh }; }
+      if (request.method === "redact" && redacts) return String(request.params?.["text"]);
+      if (request.method === "redact") throw new Error("Unknown method redact");
+      return request.method === "status" ? status : null;
+    };
+    return host;
+  };
+
+  async function pair(extra: Partial<ConstructorParameters<typeof DurableChatService>[0]> = {}) {
+    const made = await service(() => target(), set, extra);
+    const a = await made.durable.start("/work/a");
+    made.locator.update(a.id, { name: "Cloud builds for agents" });
+    // B exists but its host is not running (closed).
+    const b = made.locator.create("/work/b");
+    made.locator.update(b.id, { name: "Code only agent" });
+    return { ...made, a, b, host: only(made.launched) };
+  }
+
+  it("chat keys: first 3 significant words of the title, the first message filling in, a hex fallback and collision suffixes", () => {
+    const id = "61f33e34-f3af-493c-a9ba-893a28b45d59";
+    expect(chatKey({ id, name: "Cloud builds for the agents", firstMessage: "" }, new Set())).toBe("cloud-builds-agents");
+    expect(chatKey({ id, name: "Fix bug", firstMessage: "please rebase the branch" }, new Set())).toBe("fix-bug-please");
+    expect(chatKey({ id, name: "Über café", firstMessage: "" }, new Set())).toBe("uber-cafe");
+    expect(chatKey({ id, firstMessage: "" }, new Set())).toBe("chat-61f33e34");
+    expect(chatKey({ id, name: "Fix bug now", firstMessage: "" }, new Set(["fix-bug-now", "fix-bug-now-2"]))).toBe("fix-bug-now-3");
+  });
+
+  it("is enabled at configure; delivers to a closed chat by key, starting its host, with the sender named from the daemon's record", async () => {
+    const { host, launched, locator, root, a, b } = await pair();
+    expect(host.requests.find((request) => request.method === "configure")?.params).toMatchObject({ chatMessages: true });
+    host.push({ type: "durable.chat-list", requestId: "l1" });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(1); });
+    expect(answered(host)[0]).toEqual({ requestId: "l1", result: { chats: [{ id: b.id, key: "code-only-agent", title: "Code only agent", cwd: "/work/b", state: "closed" }] } });
+    // The host names a different sender: the daemon ignores it.
+    host.push({ type: "durable.chat-message", requestId: "m1", chat: "code-only-agent", text: "Rebase on main and rerun the gate.", wake: true, from: { chatId: "owner", name: "The owner" } });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(2); });
+    expect(answered(host)[1]).toEqual({ requestId: "m1", result: { chatId: b.id, key: "code-only-agent", name: "Code only agent", delivery: "started", hop: 1 } });
+    const delivered = only(launched.slice(1)).requests.find((request) => request.method === "chatMessage")?.params;
+    expect(delivered).toEqual({ requestId: "m1", from: { chatId: a.id, key: "cloud-builds-agents", name: "Cloud builds for agents" }, text: "Rebase on main and rerun the gate.", wake: true, urgent: false, hop: 1 });
+    // Keys persist and never change after a rename; the UUID works too.
+    locator.update(b.id, { name: "Renamed chat" });
+    host.push({ type: "durable.chat-message", requestId: "m2", chat: b.id, text: "Second", wake: false });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(3); });
+    expect(answered(host)[2]).toMatchObject({ result: { key: "code-only-agent", name: "Renamed chat" } });
+    expect(new SessionRuntimeLocator(root).durable(b.id)?.key).toBe("code-only-agent");
+  });
+
+  it("refuses self, an unknown chat ID, an unknown key with close matches, and bad text", async () => {
+    const { host, a } = await pair();
+    host.push({ type: "durable.chat-list", requestId: "l" });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(1); });
+    const cases: [object, RegExp][] = [
+      [{ chat: a.id, text: "hi" }, /cannot message itself/],
+      [{ chat: "00000000-0000-4000-8000-000000000000", text: "hi" }, /No Durable Chat 00000000-0000-4000-8000-000000000000 in this PI WEB/],
+      [{ chat: "code-agent", text: "hi" }, /no chat with key code-agent; close matches: code-only-agent/],
+      [{ chat: "code-only-agent", text: "" }, /text must be 1 to 8000 characters/],
+      [{ chat: "code-only-agent", text: "x".repeat(8001) }, /text must be 1 to 8000 characters/],
+    ];
+    for (const [index, [event, error]] of cases.entries()) {
+      host.push({ type: "durable.chat-message", requestId: `bad-${String(index)}`, wake: true, ...event });
+      await vi.waitFor(() => { expect(answered(host)).toHaveLength(index + 2); });
+      expect(String(answered(host)[index + 1]?.["error"])).toMatch(error);
+    }
+  });
+
+  it("allows 2 sends per direction in any 5 minutes; the reply direction counts apart and retries do not count", async () => {
+    let now = Date.parse("2026-11-24T10:00:00Z");
+    const { host, launched, a, b } = await pair({ now: () => now });
+    const send = async (from: FakeHost, requestId: string, chat: string, count: number) => {
+      from.push({ type: "durable.chat-message", requestId, chat, text: `msg ${requestId}`, wake: true });
+      await vi.waitFor(() => { expect(answered(from)).toHaveLength(count); });
+      return answered(from)[count - 1]?.["error"];
+    };
+    expect(await send(host, "1", b.id, 1)).toBeUndefined();
+    expect(await send(host, "1", b.id, 2)).toBeUndefined(); // a retry of the same request
+    now += 60_000;
+    expect(await send(host, "2", b.id, 3)).toBeUndefined();
+    // B replies to A: its own direction.
+    const bHost = only(launched.slice(1));
+    expect(await send(bHost, "r1", a.id, 1)).toBeUndefined();
+    now += 60_000;
+    expect(await send(host, "3", b.id, 4)).toBe("send_chat_message: you sent 2 messages to code-only-agent in the last 5 minutes; stop and report to the owner instead of retrying.");
+    now += 3 * 60_000;
+    expect(await send(host, "4", b.id, 5)).toBeUndefined();
+    expect(bHost.requests.filter((request) => request.method === "chatMessage").map((request) => request.params?.["requestId"])).toEqual(["1", "2", "4"]);
+  });
+
+  it("allows 10 sends per sending chat in any hour across targets; retries do not count", async () => {
+    let now = Date.parse("2026-11-24T10:00:00Z");
+    const made = await service(() => target(), set, { now: () => now });
+    await made.durable.start("/work/a");
+    const host = only(made.launched);
+    const targets = Array.from({ length: 6 }, (_, i) => made.locator.create(`/work/t${String(i)}`).id);
+    let count = 0;
+    const send = async (requestId: string, chat: string) => {
+      host.push({ type: "durable.chat-message", requestId, chat, text: `msg ${requestId}`, wake: true });
+      count += 1;
+      await vi.waitFor(() => { expect(answered(host)).toHaveLength(count); });
+      return answered(host)[count - 1]?.["error"];
+    };
+    for (let i = 0; i < 10; i++) {
+      expect(await send(`s${String(i)}`, targets[Math.floor(i / 2)] ?? "")).toBeUndefined();
+      now += 4 * 60_000;
+    }
+    expect(await send("s9", targets[4] ?? "")).toBeUndefined(); // a retry of the 10th
+    expect(await send("s10", targets[5] ?? "")).toBe("send_chat_message: you sent 10 chat messages in the last hour; stop and report to the owner instead of retrying.");
+    now = Date.parse("2026-11-24T10:00:00Z") + 60 * 60_000 + 1;
+    expect(await send("s11", targets[5] ?? "")).toBeUndefined();
+  });
+
+  it("hop counter: a reply chain wakes through hop 5; hop 6 is a note without waking; an owner prompt resets it", async () => {
+    let now = Date.parse("2026-11-24T10:00:00Z");
+    const { durable, host, launched, a, b } = await pair({ now: () => now });
+    const sent = new Map<FakeHost, number>();
+    const send = async (from: FakeHost, requestId: string, chat: string, urgent?: boolean) => {
+      from.push({ type: "durable.chat-message", requestId, chat, text: `msg ${requestId}`, wake: true, ...(urgent === undefined ? {} : { urgent }) });
+      const count = (sent.get(from) ?? 0) + 1;
+      sent.set(from, count);
+      await vi.waitFor(() => { expect(answered(from)).toHaveLength(count); });
+      now += 5 * 60_000;
+      return answered(from).at(-1)?.["result"];
+    };
+    const delivered = (to: FakeHost) => to.requests.filter((request) => request.method === "chatMessage").at(-1)?.params;
+    expect(await send(host, "h1", b.id)).toMatchObject({ hop: 1, delivery: "started" });
+    const bHost = only(launched.slice(1));
+    expect(await send(bHost, "h2", a.id, true)).toMatchObject({ hop: 2 });
+    expect(delivered(host)).toMatchObject({ hop: 2, wake: true, urgent: true });
+    expect(await send(host, "h3", b.id)).toMatchObject({ hop: 3 });
+    expect(await send(bHost, "h4", a.id)).toMatchObject({ hop: 4 });
+    expect(await send(host, "h5", b.id)).toMatchObject({ hop: 5, delivery: "started" });
+    expect(delivered(bHost)).toMatchObject({ hop: 5, wake: true });
+    const held = await send(bHost, "h6", a.id, true);
+    expect(held).toEqual({ chatId: a.id, key: "cloud-builds-agents", name: "Cloud builds for agents", delivery: "noted", hop: 6, held: true });
+    expect(delivered(host)).toMatchObject({ requestId: "h6", hop: 6, held: true, wake: false, urgent: false });
+    // The owner prompts A: its chain restarts at hop 1.
+    await durable.prompt({ id: a.id, cwd: a.cwd }, "owner here");
+    expect(await send(host, "h7", b.id)).toMatchObject({ hop: 1 });
+    expect(delivered(bHost)).toMatchObject({ hop: 1, wake: true });
+  });
+
+  it("keys and names come from the first message only as the host's redactor masks it, whole; no redactor gives the hex key", async () => {
+    const token = "ghp_AbCdEf1234567890_secretTokenValue42";
+    const redacting = () => { const host = target(); const answer = host.answer; host.answer = (request) => (request.method === "redact" ? String(request.params?.["text"]).replace(/ghp_[A-Za-z0-9_]+/gu, "[REDACTED:github-token]") : answer(request)); return host; };
+    const made = await service(redacting, set);
+    const a = await made.durable.start("/work/a");
+    made.locator.update(a.id, { firstMessage: `${token} please rebase the branch` });
+    const b = made.locator.create("/work/b");
+    made.locator.update(b.id, { firstMessage: `${"x".repeat(50)} ${token} more words` });
+    const host = only(made.launched);
+    host.push({ type: "durable.chat-list", requestId: "l" });
+    host.push({ type: "durable.chat-message", requestId: "m", chat: b.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(2); });
+    const everything = JSON.stringify([answered(host), made.launched.flatMap((fake) => fake.requests.filter((request) => request.method !== "redact")), made.locator.all().map((record) => record.key)]);
+    for (const piece of ["ghp", "abcdef", "secrettoken", "AbCdEf", "1234567890"]) expect(everything.toLowerCase()).not.toContain(piece.toLowerCase());
+    expect(made.locator.durable(a.id)?.key).toBe("please-rebase-branch");
+    expect(made.locator.durable(b.id)?.key).toBe("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-more-words");
+    // A host that cannot redact: no first-message or title source at all.
+    const old = await service(() => target("started", false), set);
+    const c = await old.durable.start("/work/c");
+    old.locator.update(c.id, { firstMessage: `${token} please rebase` });
+    const d = old.locator.create("/work/d");
+    old.locator.update(d.id, { name: "Code only agent" });
+    only(old.launched).push({ type: "durable.chat-message", requestId: "m", chat: d.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answered(only(old.launched))).toHaveLength(1); });
+    expect(old.locator.durable(c.id)?.key).toBe(`chat-${c.id.replace(/-/gu, "").slice(0, 8)}`);
+    expect(old.locator.durable(d.id)?.key).toBe(`chat-${d.id.replace(/-/gu, "").slice(0, 8)}`);
+    expect(old.launched[1]?.requests.find((request) => request.method === "chatMessage")?.params?.["from"]).toMatchObject({ name: "Durable Chat" });
+    expect(answered(only(old.launched))[0]).toMatchObject({ result: { name: "Durable Chat" } });
+  });
+
+  it("two concurrent first sends from a keyless chat publish one key", async () => {
+    const made = await service(() => target(), set);
+    const a = await made.durable.start("/work/a");
+    made.locator.update(a.id, { name: "Cloud builds agents" });
+    const b = made.locator.create("/work/b");
+    const c = made.locator.create("/work/c");
+    const host = only(made.launched);
+    host.push({ type: "durable.chat-message", requestId: "m1", chat: b.id, text: "hi", wake: true });
+    host.push({ type: "durable.chat-message", requestId: "m2", chat: c.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(2); });
+    for (const fake of made.launched.slice(1)) expect(fake.requests.find((request) => request.method === "chatMessage")?.params).toMatchObject({ from: { key: "cloud-builds-agents" } });
+    expect(made.launched).toHaveLength(3);
+    expect(made.locator.durable(a.id)?.key).toBe("cloud-builds-agents");
+  });
+
+  it("a failed send among concurrent ones gives back its quota", async () => {
+    const made = await service(() => { const host = target(); const answer = host.answer; host.answer = (request) => { if (request.method === "chatMessage" && request.params?.["text"] === "fail") throw new Error("boom"); return answer(request); }; return host; }, set);
+    await made.durable.start("/work/a");
+    const b = made.locator.create("/work/b");
+    const host = only(made.launched);
+    host.push({ type: "durable.chat-message", requestId: "f", chat: b.id, text: "fail", wake: true });
+    host.push({ type: "durable.chat-message", requestId: "o1", chat: b.id, text: "ok", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(2); });
+    expect(answered(host).map((answer) => answer?.["error"])).toEqual(["boom", undefined]);
+    host.push({ type: "durable.chat-message", requestId: "o2", chat: b.id, text: "ok", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(3); });
+    expect(answered(host)[2]?.["error"]).toBeUndefined();
+  });
+
+  it("hop: a later low-hop note never lowers a chain; a refused or invalid owner prompt does not reset it, an admitted one does", async () => {
+    let now = Date.parse("2026-11-24T10:00:00Z");
+    const made = await service(() => target(), set, { now: () => now });
+    const a = await made.durable.start("/work/a");
+    const b = made.locator.create("/work/b");
+    const c = made.locator.create("/work/c");
+    const hosts = new Map<string, FakeHost>([[a.id, only(made.launched)]]);
+    const sent = new Map<FakeHost, number>();
+    const hostOf = (id: string) => { const host = hosts.get(id); if (host === undefined) throw new Error(`no host for ${id}`); return host; };
+    const send = async (from: string, requestId: string, chat: string, wake = true) => {
+      const host = hostOf(from);
+      host.push({ type: "durable.chat-message", requestId, chat, text: `msg ${requestId}`, wake });
+      const count = (sent.get(host) ?? 0) + 1;
+      sent.set(host, count);
+      await vi.waitFor(() => { expect(answered(host)).toHaveLength(count); });
+      now += 5 * 60_000;
+      return answered(host).at(-1);
+    };
+    const open = async (id: string, cwd: string) => { await made.durable.prompt({ id, cwd }, "owner here"); hosts.set(id, only(made.launched.slice(-1))); };
+    await open(b.id, b.cwd);
+    await open(c.id, c.cwd);
+    for (let i = 1; i <= 4; i++) await send(i % 2 === 1 ? a.id : b.id, `h${String(i)}`, i % 2 === 1 ? b.id : a.id);
+    expect(await send(a.id, "h5", b.id)).toMatchObject({ result: { hop: 5 } });
+    // C, outside the chain, leaves B a note: B stays at hop 5.
+    expect(await send(c.id, "n1", b.id, false)).toMatchObject({ result: { hop: 1, delivery: "noted" } });
+    // An invalid owner prompt, then one B's host refuses: neither reached B, so neither resets its chain.
+    await expect(made.durable.prompt({ id: b.id, cwd: b.cwd }, "")).rejects.toThrow(/non-empty/u);
+    const bHost = hostOf(b.id);
+    const answer = bHost.answer;
+    bHost.answer = (request) => { if (request.method === "prompt") throw new Error("refused"); return answer(request); };
+    await expect(made.durable.prompt({ id: b.id, cwd: b.cwd }, "owner here")).rejects.toThrow("refused");
+    bHost.answer = answer;
+    expect(await send(b.id, "h6", a.id)).toMatchObject({ result: { hop: 6, held: true } });
+    await made.durable.prompt({ id: b.id, cwd: b.cwd }, "owner here");
+    expect(await send(b.id, "h7", c.id)).toMatchObject({ result: { hop: 1 } });
+  });
+
+  it("a request older than an hour is forgotten: its retry reaches the target again, which answers it as the first", async () => {
+    let now = Date.parse("2026-11-24T10:00:00Z");
+    const { host, launched, b } = await pair({ now: () => now });
+    host.push({ type: "durable.chat-message", requestId: "m", chat: b.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(1); });
+    host.push({ type: "durable.chat-message", requestId: "m", chat: b.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(2); });
+    const delivered = () => only(launched.slice(1)).requests.filter((request) => request.method === "chatMessage").length;
+    expect(delivered()).toBe(1);
+    now += 61 * 60_000;
+    host.push({ type: "durable.chat-message", requestId: "m", chat: b.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(3); });
+    expect(delivered()).toBe(2);
+  });
+
+  it("a paused target refuses at once: the sender is told by key, and nothing counts", async () => {
+    const made = await service((n) => { const host = target(); if (n === 1) { const answer = host.answer; host.answer = (request) => { if (request.method === "chatMessage") throw new Error("The chat is paused until the owner resumes it; the message was not delivered"); return answer(request); }; } return host; }, set);
+    await made.durable.start("/work/a");
+    const b = made.locator.create("/work/b");
+    made.locator.update(b.id, { name: "Code only agent" });
+    const host = only(made.launched);
+    for (const [index, wake] of [true, false].entries()) {
+      host.push({ type: "durable.chat-message", requestId: `p${String(index)}`, chat: b.id, text: "hi", wake });
+      await vi.waitFor(() => { expect(answered(host)).toHaveLength(index + 1); });
+      expect(answered(host)[index]).toEqual({ requestId: `p${String(index)}`, error: "code-only-agent is paused until the owner resumes it; the message was not delivered" });
+    }
+    host.push({ type: "durable.chat-message", requestId: "p2", chat: b.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(3); });
+    expect(answered(host)[2]?.["error"]).not.toMatch(/you sent 2 messages/u);
+  });
+
+  it("tells the sender when the target's host predates chat messages", async () => {
+    const { host, b } = await (async () => {
+      const made = await service((n) => {
+        const fake = new FakeHost();
+        if (n === 1) fake.answer = (request) => { if (request.method === "chatMessage") throw new Error("Unknown method chatMessage"); return request.method === "status" ? status : null; };
+        return fake;
+      }, set);
+      await made.durable.start("/work/a");
+      const b = made.locator.create("/work/b");
+      return { host: only(made.launched), b };
+    })();
+    host.push({ type: "durable.chat-message", requestId: "m", chat: b.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(1); });
+    expect(answered(host)[0]).toEqual({ requestId: "m", error: "The target chat's host is too old; upgrade its host" });
+  });
+
+  it("a title is used only as the host's redactor masks it, whole: in list, the header name and the key", async () => {
+    const token = "ghp_AbCdEf1234567890_secretTokenValue42";
+    const redacting = () => { const host = target(); const answer = host.answer; host.answer = (request) => (request.method === "redact" ? String(request.params?.["text"]).replace(/ghp_[A-Za-z0-9_]+/gu, "[REDACTED:github-token]") : answer(request)); return host; };
+    const made = await service(redacting, set);
+    const a = await made.durable.start("/work/a");
+    made.locator.update(a.id, { name: `Fix ${token} deploy now` });
+    const b = made.locator.create("/work/b");
+    made.locator.update(b.id, { name: `Rotate ${token}-staging keys today` });
+    const host = only(made.launched);
+    host.push({ type: "durable.chat-list", requestId: "l" });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(1); });
+    host.push({ type: "durable.chat-message", requestId: "m", chat: b.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answered(host)).toHaveLength(2); });
+    const everything = JSON.stringify([answered(host), made.launched.flatMap((fake) => fake.requests.filter((request) => request.method !== "redact")), made.locator.all().map((record) => record.key)]);
+    for (const piece of ["ghp", "abcdef", "secrettoken", "1234567890"]) expect(everything.toLowerCase()).not.toContain(piece);
+    expect(made.locator.durable(a.id)?.key).toBe("fix-deploy-now");
+    expect(made.locator.durable(b.id)?.key).toBe("rotate-staging-keys");
+    expect(answered(host)[0]).toMatchObject({ result: { chats: [{ title: "Rotate -staging keys today" }] } });
+    expect(made.launched[1]?.requests.find((request) => request.method === "chatMessage")?.params?.["from"]).toMatchObject({ name: "Fix deploy now" });
+  });
+
+  it("hop: a replayed owner prompt (the host admitted nothing new) or a host that does not say keeps the chain; a new one resets it", async () => {
+    let now = Date.parse("2026-11-24T10:00:00Z");
+    const { durable, host, launched, a, b } = await pair({ now: () => now });
+    await durable.prompt({ id: b.id, cwd: b.cwd }, "owner here", undefined, undefined, { operationId: "op-1" });
+    const bHost = only(launched.slice(1));
+    const sent = new Map<FakeHost, number>();
+    const send = async (from: FakeHost, requestId: string, chat: string) => {
+      from.push({ type: "durable.chat-message", requestId, chat, text: `msg ${requestId}`, wake: true });
+      const count = (sent.get(from) ?? 0) + 1;
+      sent.set(from, count);
+      await vi.waitFor(() => { expect(answered(from)).toHaveLength(count); });
+      now += 5 * 60_000;
+      return answered(from).at(-1)?.["result"];
+    };
+    for (let i = 1; i <= 4; i++) await send(i % 2 === 1 ? host : bHost, `h${String(i)}`, i % 2 === 1 ? b.id : a.id);
+    expect(await send(host, "h5", b.id)).toMatchObject({ hop: 5 });
+    await durable.prompt({ id: b.id, cwd: b.cwd }, "owner here", undefined, undefined, { operationId: "op-1" });
+    expect(await send(bHost, "h6", a.id)).toMatchObject({ hop: 6, held: true });
+    const answer = bHost.answer;
+    bHost.answer = (request) => (request.method === "prompt" ? { submissionId: 9 } : answer(request));
+    await durable.prompt({ id: b.id, cwd: b.cwd }, "owner here", undefined, undefined, { operationId: "op-old" });
+    expect(await send(bHost, "h7", a.id)).toMatchObject({ hop: 6, held: true });
+    bHost.answer = answer;
+    await durable.prompt({ id: b.id, cwd: b.cwd }, "owner here", undefined, undefined, { operationId: "op-2" });
+    expect(await send(bHost, "h8", a.id)).toMatchObject({ hop: 1 });
+  });
+
+  it("a replay the target answers as a duplicate keeps its first hop and held flag, and spends no quota", async () => {
+    // As after a daemon restart: the target delivered these before, with what the daemon sent then.
+    const first: Record<string, object> = { held: { delivery: "noted", hop: 6, held: true } };
+    for (let i = 0; i < 10; i++) first[`old${String(i)}`] = { delivery: "started", hop: 2 };
+    const made = await service(() => { const host = target(); const answer = host.answer; host.answer = (request) => { const earlier = request.method === "chatMessage" ? first[String(request.params?.["requestId"])] : undefined; return earlier === undefined ? answer(request) : { ...earlier, duplicate: true }; }; return host; }, set);
+    await made.durable.start("/work/a");
+    const b = made.locator.create("/work/b");
+    const host = only(made.launched);
+    let count = 0;
+    const send = async (requestId: string, from = host) => {
+      from.push({ type: "durable.chat-message", requestId, chat: from === host ? b.id : made.locator.all().find((record) => record.id !== b.id)?.id, text: `msg ${requestId}`, wake: true });
+      count += 1;
+      await vi.waitFor(() => { expect(answered(from)).toHaveLength(from === host ? count : 1); });
+      return answered(from).at(-1);
+    };
+    expect(await send("held")).toMatchObject({ result: { delivery: "noted", hop: 6, held: true } });
+    for (let i = 0; i < 10; i++) expect(await send(`old${String(i)}`)).toMatchObject({ result: { hop: 2 } });
+    expect(await send("new")).toMatchObject({ result: { delivery: "started", hop: 1 } });
+    // B is in the held chain: its own next send is held too.
+    expect(await send("from-b", only(made.launched.slice(1)))).toMatchObject({ result: { hop: 7, held: true } });
   });
 });

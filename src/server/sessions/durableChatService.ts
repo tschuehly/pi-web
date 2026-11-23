@@ -363,6 +363,17 @@ export class DurableChatService {
   readonly #capabilities = new Map<string, ChatCapability[]>();
   /** spawn_session requests by ID, so a repeated request answers with the Chat it started instead of another. */
   readonly #spawns = new Map<string, Promise<SpawnSessionResult>>();
+  /**
+   * send_chat_message deliveries by sender and request ID, for an hour: a retried request gets the same answer and counts
+   * once. Later the target answers a retry with its first delivery.
+   */
+  readonly #chatMessages = new Map<string, { at: number; sending: Promise<ChatMessageResult> }>();
+  /** Which request each chat sent to each target (`<from>\0<to>`), and to any target (`<from>`), when; in memory only: the loop guard. */
+  readonly #chatMessagesSent = new Map<string, { at: number; requestId: string }[]>();
+  /** Each chat's place in a reply chain: the highest hop of the chat messages delivered to it; an admitted owner prompt resets it. */
+  readonly #hops = new Map<string, number>();
+  /** Chats whose host last reported a running turn, for send_chat_message's list. */
+  readonly #streaming = new Set<string>();
 
   owns(sessionId: string): boolean {
     return this.deps.locator.durable(sessionId) !== undefined;
@@ -581,7 +592,7 @@ export class DurableChatService {
    * Resolves once the host committed the input; a queued input shows in status until it is placed. The client's
    * operation ID makes a retried request the same input; `/skill:name` expands as in a legacy Chat.
    */
-  async prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string }): Promise<void> {
+  async prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string; spawned?: true }): Promise<void> {
     const operationId = options?.operationId;
     if (typeof text !== "string") throw new Error("text field must be a non-empty string");
     if (streamingBehavior !== undefined && streamingBehavior !== "steer" && streamingBehavior !== "followUp") throw new Error("streamingBehavior must be steer or followUp");
@@ -602,7 +613,7 @@ export class DurableChatService {
     const expanded = expandPromptTemplate(skilled, templates);
     const providerText = !explicit || template ? expanded : appendInlineImageReferenceMapping(expanded, references);
     this.#maybeTitle(ref, template ? body : text, connection);
-    await connection.request("prompt", {
+    const { result } = await connection.request("prompt", {
       operationId: operationId ?? randomUUID(), text: providerText,
       ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }),
       ...(images.length === 0 ? {} : {
@@ -610,6 +621,9 @@ export class DurableChatService {
         attachments: parsed.map((attachment) => ({ reference: attachment.reference, mimeType: attachment.mimeType, ...(attachment.name === undefined ? {} : { name: attachment.name }) })),
       }),
     });
+    // The host admitted a new owner input (not a replayed operation; an older host does not say): this chat's reply chain
+    // starts again. spawn_session's assignment is not the owner.
+    if (options?.spawned !== true && isRecord(result) && result["fresh"] === true) this.#hops.delete(ref.id);
   }
 
   /** Files saved into the Chat's workspace, exactly as a legacy Chat saves them (the prompt then names their paths). */
@@ -1351,6 +1365,7 @@ export class DurableChatService {
         if (this.#connections.get(record.id) === opened) this.#connections.delete(record.id);
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host exited");
         void this.#unread(record, "closed");
+        this.#streaming.delete(record.id);
         this.deps.events.publish(record.id, { type: "agent.end" });
       },
       (error) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host process error"); },
@@ -1369,7 +1384,7 @@ export class DurableChatService {
       if (loaded !== undefined) {
         this.#skills.set(record.id, loaded.skillList);
         this.#templates.set(record.id, loaded.promptList ?? []);
-        await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction, spawnSessions: this.deps.spawnTargets !== undefined });
+        await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction, spawnSessions: this.deps.spawnTargets !== undefined, chatMessages: true });
       }
       return connection;
     });
@@ -1413,7 +1428,7 @@ export class DurableChatService {
       if (model !== undefined) await this.setModel(ref, model.provider, model.modelId);
       // The host clamps the level to the Chat's model, as Pi does.
       if (event.thinkingLevel !== undefined) await (await this.#for(ref)).request("setThinkingLevel", { level: event.thinkingLevel });
-      await this.prompt(ref, event.prompt, undefined, undefined, { operationId: `spawn-${event.requestId}` });
+      await this.prompt(ref, event.prompt, undefined, undefined, { operationId: `spawn-${event.requestId}`, spawned: true });
     } catch (error) {
       // A Chat a dead daemon started may already run: only a new one is undone.
       if (earlier !== undefined) throw error;
@@ -1427,6 +1442,136 @@ export class DurableChatService {
     this.deps.logger?.info?.({ spawningCwd: event.spawningCwd, sessionId: ref.id, cwd: ref.cwd, promptLength: event.prompt.length }, "spawn_session started a new Durable Chat");
     const used = event.model ?? (await this.status(ref).then((status) => status.model, () => undefined).then((m) => (m?.provider === undefined || m.id === undefined ? undefined : `${m.provider}/${m.id}`)));
     return { sessionId: ref.id, cwd: ref.cwd, ...(used === undefined ? {} : { model: used }) };
+  }
+
+  /**
+   * The key and name other chats see. The key is assigned and saved the first time it is needed and never changes after.
+   * Both come from the title, else from the first message, each as the host's redactor masks it whole, before anything
+   * cuts or lowercases it (a token cut short or hyphenated is one no redactor knows); neither when the host cannot redact.
+   */
+  async #chatIdentity(record: DurableChatRecord, connection: DurableHostConnection): Promise<{ key: string; name: string }> {
+    const before = this.deps.locator.durable(record.id) ?? record;
+    const masked = (text: string) => connection.request("redact", { text }).then(
+      ({ result }) => {
+        const clean = typeof result === "string" ? result.replace(/\[REDACTED[^\]]*\]/gu, " ").replace(/\s+/gu, " ").trim() : "";
+        return clean === "" ? undefined : clean;
+      },
+      () => undefined,
+    );
+    const title = before.name === undefined ? undefined : await masked(before.name);
+    const needed = before.firstMessage !== "" && (title === undefined || before.key === undefined);
+    const first = !needed ? "" : (await masked(before.firstMessage)) ?? "";
+    // Read again after the await, with no await before the save: a concurrent send may have assigned the key meanwhile.
+    const live = this.deps.locator.durable(record.id) ?? before;
+    let key = live.key;
+    if (key === undefined) {
+      key = chatKey({ id: live.id, ...(title === undefined ? {} : { name: title }), firstMessage: first }, new Set(this.deps.locator.all().flatMap((other) => (other.key === undefined ? [] : [other.key]))));
+      this.deps.locator.update(live.id, { key });
+    }
+    return { key, name: title ?? (first.slice(0, 60).trim() || "Durable Chat") };
+  }
+
+  /** A target named by key first, then by chat ID; never a legacy Chat (it has no Durable record). */
+  #chatMessageTarget(chat: unknown): DurableChatRecord {
+    const name = typeof chat === "string" ? chat.trim() : "";
+    if (name === "") throw new Error("send_chat_message: chat must name a chat key or chat ID");
+    const records = this.deps.locator.all();
+    const found = records.find((record) => record.key === name) ?? this.deps.locator.durable(name);
+    if (found !== undefined) return found;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(name)) throw new Error(`No Durable Chat ${name} in this PI WEB`);
+    const close = closeChatKeys(name, records.flatMap((record) => (record.key === undefined ? [] : [record.key])));
+    throw new Error(`send_chat_message: no chat with key ${name}${close.length === 0 ? "" : `; close matches: ${close.join(", ")}`}. Run send_chat_message with action "list" to see chats.`);
+  }
+
+  /** A host's send_chat_message request: answered with `chatMessaged`, the delivery or the refusal. */
+  async #answerChatMessage(connection: DurableHostConnection, sender: DurableChatRecord, event: HostChatMessageEvent | HostChatListEvent): Promise<void> {
+    let pending: Promise<ChatMessageResult | { chats: ChatListEntry[] }>;
+    if (event.type === "durable.chat-list") pending = this.#chatList(sender, connection).then((chats) => ({ chats }));
+    else {
+      const now = this.#now();
+      for (const [id, { at }] of this.#chatMessages) if (now - at >= CHAT_MESSAGE_HOUR_MS) this.#chatMessages.delete(id);
+      const id = `${sender.id}\0${event.requestId}`;
+      let sending = this.#chatMessages.get(id)?.sending;
+      if (sending === undefined) {
+        sending = this.#sendChatMessage(sender, event, connection);
+        this.#chatMessages.set(id, { at: now, sending });
+        sending.catch(() => { this.#chatMessages.delete(id); });
+      }
+      pending = sending;
+    }
+    const answer = await pending.then((result) => ({ result }), (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+    await connection.request("chatMessaged", { requestId: event.requestId, ...answer }).catch((error: unknown) => {
+      this.deps.logger?.warn({ requestId: event.requestId, err: error }, "Durable Chat host did not take the send_chat_message answer");
+    });
+  }
+
+  /** Other chats, most recently active first, at most 15. */
+  #chatList(sender: DurableChatRecord, connection: DurableHostConnection): Promise<ChatListEntry[]> {
+    const active = (record: DurableChatRecord) => Math.max(Date.parse(record.modified) || 0, this.#lastActive.get(record.id) ?? 0);
+    const records = this.deps.locator.all().filter((record) => record.id !== sender.id).sort((a, b) => active(b) - active(a)).slice(0, CHAT_LIST_LIMIT);
+    return Promise.all(records.map(async (record): Promise<ChatListEntry> => {
+      const { key, name } = await this.#chatIdentity(record, connection);
+      return { id: record.id, key, title: name.slice(0, 60), cwd: record.cwd, state: !this.#connections.has(record.id) ? "closed" : this.#streaming.has(record.id) ? "running" : "idle" };
+    }));
+  }
+
+  /** Validate, apply the loop guard, start or reach the target's host, and deliver; the sender is the daemon's record. */
+  async #sendChatMessage(sender: DurableChatRecord, event: HostChatMessageEvent, senderConnection: DurableHostConnection): Promise<ChatMessageResult> {
+    const { text } = event;
+    if (typeof text !== "string" || text.trim() === "" || text.length > CHAT_MESSAGE_MAX_LENGTH) throw new Error(`send_chat_message: text must be 1 to ${String(CHAT_MESSAGE_MAX_LENGTH)} characters`);
+    const target = this.#chatMessageTarget(event.chat);
+    if (target.id === sender.id) throw new Error("send_chat_message: a chat cannot message itself");
+    const to = await this.#chatIdentity(target, senderConnection);
+    const from = await this.#chatIdentity(sender, senderConnection);
+    const { key } = to;
+    const now = this.#now();
+    // Expired sends go on every check, so pairs that stopped sending leave nothing behind.
+    for (const [window, sends] of this.#chatMessagesSent) {
+      const kept = sends.filter(({ at }) => now - at < (window.includes("\0") ? CHAT_MESSAGE_WINDOW_MS : CHAT_MESSAGE_HOUR_MS));
+      if (kept.length === 0) this.#chatMessagesSent.delete(window);
+      else this.#chatMessagesSent.set(window, kept);
+    }
+    const windows = [`${sender.id}\0${target.id}`, sender.id];
+    const [direction = [], hourly = []] = windows.map((window) => this.#chatMessagesSent.get(window));
+    if (direction.length >= CHAT_MESSAGE_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_LIMIT)} messages to ${key} in the last 5 minutes; stop and report to the owner instead of retrying.`);
+    if (hourly.length >= CHAT_MESSAGE_HOURLY_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_HOURLY_LIMIT)} chat messages in the last hour; stop and report to the owner instead of retrying.`);
+    for (const window of windows) this.#chatMessagesSent.set(window, [...(this.#chatMessagesSent.get(window) ?? []), { at: now, requestId: event.requestId }]);
+    // shortcut: a replay after a daemon restart counts until the target answers it as a duplicate, so a full window refuses it first; persist the windows if that shows up.
+    const uncount = () => {
+      for (const window of windows) {
+        const kept = (this.#chatMessagesSent.get(window) ?? []).filter((sent) => sent.requestId !== event.requestId);
+        if (kept.length === 0) this.#chatMessagesSent.delete(window);
+        else this.#chatMessagesSent.set(window, kept);
+      }
+    };
+    const hop = (this.#hops.get(sender.id) ?? 0) + 1;
+    // From hop 6 a reply chain no longer wakes anyone: delivered as a note, and the sender tells the owner to step in.
+    const held = event.wake !== false && hop >= CHAT_MESSAGE_HOP_LIMIT;
+    const wake = event.wake !== false && !held;
+    try {
+      const connection = await this.#connection(target);
+      const { result } = await connection.request("chatMessage", {
+        requestId: event.requestId, from: { chatId: sender.id, key: from.key, name: from.name }, text, wake, urgent: wake && event.urgent === true, hop, ...(held ? { held: true } : {}),
+      });
+      const delivery = isRecord(result) ? result["delivery"] : undefined;
+      if (delivery !== "started" && delivery !== "queued" && delivery !== "steered" && delivery !== "noted") throw new Error("The target chat's host sent a malformed delivery");
+      // A replay the target took before (a restarted daemon forgot it): the hop and held flag it was admitted with, and no quota.
+      const duplicate = isRecord(result) && result["duplicate"] === true;
+      if (duplicate) uncount();
+      const firstHop = duplicate && typeof result["hop"] === "number" ? result["hop"] : hop;
+      const firstHeld = duplicate ? result["held"] === true : held;
+      // An unrelated low-hop note never lowers the chain the target is in.
+      this.#hops.set(target.id, Math.max(this.#hops.get(target.id) ?? 0, firstHop));
+      this.deps.logger?.info?.({ from: sender.id, to: target.id, delivery, hop: firstHop, duplicate, length: text.length }, "send_chat_message delivered");
+      return { chatId: target.id, key, name: to.name, delivery, hop: firstHop, ...(firstHeld ? { held: true } : {}) };
+    } catch (error) {
+      // A failed delivery does not count toward the limits: its own entry goes from the current windows.
+      uncount();
+      if (error instanceof Error && error.message === "Unknown method chatMessage") throw new Error("The target chat's host is too old; upgrade its host", { cause: error });
+      // The target's restore waits for its owner: refused now, never delivered later.
+      if (error instanceof Error && error.message === CHAT_PAUSED) throw new Error(`${key} is paused until the owner resumes it; the message was not delivered`, { cause: error });
+      throw error;
+    }
   }
 
   #activity(sessionId: string, scope: { id: string; cwd: string }, phase: "active" | "idle" | "error", label: string): void {
@@ -1455,12 +1600,20 @@ export class DurableChatService {
       void this.#answerSpawn(connection, { ...event, spawningCwd: record.cwd });
       return;
     }
+    if (event.type === "durable.chat-message" || event.type === "durable.chat-list") {
+      if (typeof event.requestId !== "string") return;
+      // The sender is the Chat this connection belongs to, as the daemon records it; never who the host names.
+      void this.#answerChatMessage(connection, record, event);
+      return;
+    }
     if (event.type === "durable.notification") {
       const generation = this.#notificationGenerations.get(sessionId);
       if (generation !== undefined) this.#publishNotifications(this.deps.notifications?.addNotification(generation, event.message, event.severity).mutations ?? []);
       return;
     }
     if (event.type === "status.update") {
+      if (event.status.isStreaming) this.#streaming.add(sessionId);
+      else this.#streaming.delete(sessionId);
       if (connection.upgradePending && restartSafe(event.status)) void this.upgradePendingHosts(sessionId);
       const status = { ...browserStatus(event.status, connection), sessionId };
       this.deps.events.publish(sessionId, { type: "status.update", status }, scope);
@@ -1614,7 +1767,50 @@ interface HostAttentionEvent { type: "durable.attention"; kind: "ask" | "attenti
 interface HostNotificationEvent { type: "durable.notification"; severity: "warning" | "error"; message: string }
 /** spawn_session: start an independent Chat in a workspace of the spawning Chat's project, answered with `spawned`. */
 interface HostSpawnEvent { type: "durable.spawn"; requestId: string; spawningCwd: string; prompt: string; cwd?: string; model?: string; thinkingLevel?: string }
-type HostEvent = HostAttentionEvent | HostNotificationEvent | HostSpawnEvent;
+/** send_chat_message from a Durable Chat's lead: deliver to another Chat, answered with `chatMessaged`. */
+interface HostChatMessageEvent { type: "durable.chat-message"; requestId: string; chat: unknown; text: unknown; wake?: unknown; urgent?: unknown }
+/** send_chat_message's list of other Chats, answered with `chatMessaged`. */
+interface HostChatListEvent { type: "durable.chat-list"; requestId: string }
+type HostEvent = HostAttentionEvent | HostNotificationEvent | HostSpawnEvent | HostChatMessageEvent | HostChatListEvent;
+interface ChatMessageResult { chatId: string; key: string; name: string; delivery: "started" | "queued" | "steered" | "noted"; hop: number; held?: true }
+interface ChatListEntry { id: string; key: string; title: string; cwd: string; state: "running" | "idle" | "closed" }
+
+const CHAT_MESSAGE_MAX_LENGTH = 8000;
+const CHAT_LIST_LIMIT = 15;
+/** The loop guard: a chat sends to one target at most this many times in any rolling window. */
+const CHAT_MESSAGE_LIMIT = 2;
+const CHAT_MESSAGE_WINDOW_MS = 5 * 60_000;
+const CHAT_MESSAGE_HOURLY_LIMIT = 10;
+const CHAT_MESSAGE_HOUR_MS = 60 * 60_000;
+const CHAT_MESSAGE_HOP_LIMIT = 6;
+const CHAT_KEY_STOP_WORDS = new Set(["a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into", "is", "it", "its", "of", "on", "or", "the", "this", "that", "to", "via", "vs", "with"]);
+
+/** The Durable host's refusal of a chat message while its restore waits for the owner (pi-workbench `chat-message.ts`). */
+const CHAT_PAUSED = "The chat is paused until the owner resumes it; the message was not delivered";
+
+/**
+ * A chat's 3-word key: the first 3 significant ASCII words of its title, then of its first message, joined by hyphens;
+ * `chat-<first 8 hex of the ID>` when neither has any; `-2`, `-3`… when taken.
+ */
+export function chatKey(record: Pick<DurableChatRecord, "id" | "firstMessage"> & { name?: string }, taken: ReadonlySet<string>): string {
+  const words = (text: string) => text.normalize("NFKD").replace(/[^\x20-\x7e]/gu, "").toLowerCase().split(/[^a-z0-9]+/u).filter((word) => word !== "" && !CHAT_KEY_STOP_WORDS.has(word));
+  const picked = [...words(record.name ?? ""), ...words(record.firstMessage)].slice(0, 3);
+  const base = picked.length === 0 ? `chat-${record.id.replace(/-/gu, "").slice(0, 8)}` : picked.join("-");
+  let key = base;
+  for (let suffix = 2; taken.has(key); suffix++) key = `${base}-${String(suffix)}`;
+  return key;
+}
+
+/** Up to 3 keys sharing the most words with `name` (a word matches on its first 4 letters, so plurals match). */
+function closeChatKeys(name: string, keys: readonly string[]): string[] {
+  const stems = (key: string) => key.split("-").map((word) => word.slice(0, 4));
+  const wanted = new Set(stems(name));
+  return keys.map((key) => ({ key, score: stems(key).filter((stem) => wanted.has(stem)).length }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
+    .slice(0, 3)
+    .map(({ key }) => key);
+}
 
 /** The host returns the outcome PI WEB's store computed (or, on a retry, recorded); a shape check suffices. */
 function isAskOutcome(value: unknown): value is AskUserOutcome {
