@@ -36,6 +36,9 @@ export const promptEditorIntegrationStyles = css`
   :host([dense]) .input-row:has(.cm-editor.cm-focused) { background: color-mix(in srgb, var(--pi-text) 9%, transparent); }
   :host([dense]) .markdown-editor .cm-editor { min-height: 0; font-size: 14px; }
   :host([dense]) .markdown-editor .cm-content { min-height: 0; padding: 4px 0; }
+  .markdown-editor .cm-dense-trailing-space { display: none; }
+  :host([dense]) .markdown-editor .cm-dense-trailing-space { display: inline-block; width: var(--dense-trailing-width, 0px); height: 1px; }
+  :host([dense]) .markdown-editor .cm-content:has(.prompt-placeholder) { padding-right: var(--dense-trailing-width, 0px); }
   /* CodeMirror measures this element for the empty-document caret. Keep the
      layout box here, not on its pseudo-element, so the caret has a height. */
   .markdown-editor .prompt-placeholder { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

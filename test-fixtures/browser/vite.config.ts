@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         overlays: fileURLToPath(new URL("overlays.html", import.meta.url)),
         terminal: fileURLToPath(new URL("terminal.html", import.meta.url)),
+        composer: fileURLToPath(new URL("composer.html", import.meta.url)),
       },
     },
   },

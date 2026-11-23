@@ -318,10 +318,11 @@ export const promptEditorLayoutStyles = css`
   :host([dense]) footer.shell-mode { background: transparent; }
   /* One input-row in both layouts keeps the CodeMirror host across a dense toggle; only dense lays it out. */
   :host(:not([dense])) .input-row { display: contents; }
-  :host([dense]) .input-row { display: flex; align-items: flex-end; gap: 4px; min-width: 0; padding: 0 2px 0 8px; border-radius: 8px; background: color-mix(in srgb, var(--pi-text) 6%, transparent); }
+  :host([dense]) .input-row { position: relative; display: flex; align-items: flex-end; gap: 4px; min-width: 0; padding: 0 2px 0 8px; border-radius: 8px; background: color-mix(in srgb, var(--pi-text) 6%, transparent); }
   :host([dense]) footer.shell-mode .input-row { background: var(--pi-success-bg); }
-  /* Zero basis: the input takes what the icons leave, so its text wraps before them. */
-  :host([dense]) .editor-wrap { flex: 1 1 0; min-width: min(90px, 30%); }
+  /* The negative margin (the measured icon width) runs the input under the icons, so every line but the last uses the full row; a trailing space in the editor keeps the last line clear of them. */
+  :host([dense]) .editor-wrap { flex: 1 1 0; min-width: min(90px, 30%); margin-right: calc(-1 * var(--dense-trailing-width, 0px)); }
+  :host([dense]) .editor-wrap ~ * { position: relative; z-index: 1; }
   :host([dense]) .dense-meta { flex: 0 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; height: 26px; margin-bottom: 1px; color: var(--pi-muted); font-size: 11px; white-space: nowrap; }
   :host([dense]) .dense-meta working-mode-controls { flex: 0 0 auto; }
   :host([dense]) .dense-meta .usage { flex: 0 0 auto; gap: 6px; padding: 0; }
@@ -340,7 +341,7 @@ export const promptEditorLayoutStyles = css`
   :host([dense]) .attachment-menu { position: absolute; z-index: 30; bottom: calc(100% + 8px); left: 0; padding: 6px; border-radius: 8px; background: var(--pi-surface); box-shadow: 0 6px 20px var(--pi-shadow); }
   :host([dense]) .attachment-menu select { border: 0; background: var(--pi-surface-hover); font-size: 13px; }
   :host([dense]) .attachment-error { flex-basis: auto; font-weight: 700; }
-  :host([dense]) .mode-hint { bottom: 3px; border: 0; padding: 0 6px; }
+  :host([dense]) .mode-hint { right: var(--dense-trailing-width, 0px); bottom: 3px; border: 0; padding: 0 6px; }
   .editor-chat-navigation { position: absolute; right: 0; top: 2px; z-index: 2; box-sizing: border-box; width: 58px; border: 1px solid var(--pi-border-muted); }
   .editor-chat-navigation .chat-jumps button + button { border-inline-start: 1px solid var(--pi-border-muted); }
   :host([dense]) .editor-chat-navigation { display: none; }
