@@ -4,7 +4,7 @@ import { replaceLocalMarkdownImages } from "./markdownImages";
 import { workspaceFilePreviewUrl } from "../api/urls";
 import { resolveAppUrl } from "../appUrl";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
-import { fileLinkLines, outsideChatFilePath, workspaceMarkdownFilePath, type MarkdownWorkspaceContext } from "./workspaceLinks";
+import { fileLinkLines, inlineCodeFileHref, outsideChatFilePath, workspaceMarkdownFilePath, type MarkdownWorkspaceContext } from "./workspaceLinks";
 
 const nativeCodeRenderer = new marked.Renderer();
 
@@ -90,6 +90,7 @@ function sanitizeHtml(html: string, workspace: MarkdownWorkspaceContext | undefi
   template.innerHTML = html;
   if (workspace !== undefined) replaceLocalMarkdownImages(template.content, workspace, imageIntentKey);
   template.content.querySelectorAll("script, style, iframe, object, embed").forEach((node) => { node.remove(); });
+  if (workspace !== undefined) linkInlineCodeFilePaths(template.content, workspace);
   template.content.querySelectorAll("*").forEach((element) => {
     const href = element.tagName === "A" ? element.getAttribute("href") : null;
     if (href !== null && workspace !== undefined) {
@@ -130,6 +131,19 @@ function sanitizeHtml(html: string, workspace: MarkdownWorkspaceContext | undefi
   });
   wrapTablesInScrollRegions(template.content);
   return template.innerHTML;
+}
+
+/** Inline code naming one file becomes the link `[`path`](path)` would be; the loop in sanitizeHtml then rewrites it. */
+function linkInlineCodeFilePaths(root: DocumentFragment, workspace: MarkdownWorkspaceContext): void {
+  root.querySelectorAll("code").forEach((code) => {
+    if (code.closest("a, pre") !== null) return;
+    const href = inlineCodeFileHref(code.textContent);
+    if (href === undefined || (workspaceMarkdownFilePath(href, workspace) === undefined && outsideChatFilePath(href, workspace) === undefined)) return;
+    const anchor = document.createElement("a");
+    anchor.setAttribute("href", href);
+    code.replaceWith(anchor);
+    anchor.append(code);
+  });
 }
 
 // Markdown tables fit the chat column and wrap their cells; the wrapper scrolls only

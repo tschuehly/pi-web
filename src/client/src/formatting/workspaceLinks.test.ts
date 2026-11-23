@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileLinkLines, outsideChatFilePath, workspaceMarkdownFilePath } from "./workspaceLinks";
+import { fileLinkLines, inlineCodeFileHref, outsideChatFilePath, workspaceMarkdownFilePath } from "./workspaceLinks";
 
 const workspace = { machineId: "local", projectId: "p", workspaceId: "w", root: "/work" };
 
@@ -72,5 +72,32 @@ describe("file link line ranges", () => {
       expect(workspaceMarkdownFilePath(url, context)).toBeUndefined();
       expect(outsideChatFilePath(url, context)).toBeUndefined();
     }
+  });
+});
+
+describe("home and inline-code file paths", () => {
+  it("treats ~/ links as outside the Chat folder, normalized, and rejects escapes above home", () => {
+    expect(workspaceMarkdownFilePath("~/.pi-workbench/scratch/x.md", workspace)).toBeUndefined();
+    expect(outsideChatFilePath("~/.pi-workbench/./scratch/x.md:40", workspace)).toBe("~/.pi-workbench/scratch/x.md");
+    for (const href of ["~/", "~/../etc/passwd", "~user/x.md", "~/a\\b.md", "~/a%00.md"]) expect(outsideChatFilePath(href, workspace), href).toBeUndefined();
+    expect(outsideChatFilePath("~/x.md", { ...workspace, sourcePath: "docs/a.md" })).toBeUndefined();
+  });
+
+  it.each([
+    ["/Users/me/notes.md", "/Users/me/notes.md"],
+    ["~/.pi-workbench/scratch/draft.md", "~/.pi-workbench/scratch/draft.md"],
+    ["src/client/a.ts", "src/client/a.ts"],
+    ["./gradlew", "./gradlew"],
+    ["../x/y", "../x/y"],
+    ["src/a.ts:40", "src/a.ts:40"],
+    ["src/a.ts#L40-L58", "src/a.ts#L40-L58"],
+    ["docs/a #1?.md", undefined],
+    ["docs/a%1.md", "docs/a%251.md"],
+  ])("reads inline code %s as a file link", (text, href) => {
+    expect(inlineCodeFileHref(text)).toBe(href);
+  });
+
+  it.each(["origin/main", "a/b", "npm run dev", "https://example.com/a.md", "//host/a.md", "README.md", "1/2.5", "a/b.md#intro", "/", "~/"])("does not read inline code %s as a file path", (text) => {
+    expect(inlineCodeFileHref(text)).toBeUndefined();
   });
 });
