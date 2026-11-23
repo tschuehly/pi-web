@@ -1,7 +1,7 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab, insertNewlineAndIndent } from "@codemirror/commands";
 import { deleteMarkupBackward, insertNewlineContinueMarkup } from "@codemirror/lang-markdown";
 import { EditorSelection, EditorState, Compartment, Prec } from "@codemirror/state";
-import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
+import { Decoration, drawSelection, EditorView, keymap, placeholder, WidgetType } from "@codemirror/view";
 import { indentOnInput, indentUnit } from "@codemirror/language";
 import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from "lit";
@@ -74,6 +74,19 @@ function createPromptPlaceholder(text: string): HTMLElement {
   hint.dataset["placeholder"] = text;
   return hint;
 }
+
+// Dense: the icons overlay the input's bottom-right corner; this empty box at the document's end keeps the last line
+// clear of them, wrapping to a line of its own only when the last line has no room. CSS sizes it; non-dense hides it.
+class TrailingIconSpace extends WidgetType {
+  override eq(): boolean { return true; }
+  override toDOM(): HTMLElement {
+    const space = document.createElement("span");
+    space.className = "cm-dense-trailing-space";
+    space.setAttribute("aria-hidden", "true");
+    return space;
+  }
+}
+const trailingIconSpace = EditorView.decorations.compute(["doc"], (state) => (state.doc.length === 0 ? Decoration.none : Decoration.set(Decoration.widget({ widget: new TrailingIconSpace(), side: 1 }).range(state.doc.length))));
 
 type PromptSendArgs = [text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string, chips?: readonly StagedPromptChip[]];
 // Existing composer consumers may still send fire-and-forget; only a boolean
@@ -182,6 +195,8 @@ export class PromptEditor extends LitElement {
   // session changes preserve it; disconnect/remount and page reload reset it.
   private manualEditorHeight: number | undefined;
   private editorHeightObserver: ResizeObserver | undefined;
+  private trailingIconsObserver: ResizeObserver | undefined;
+  private trailingIconsHeight = 0;
   private resizePointer: { id: number; startY: number; startHeight: number; scale: number; restoreEditorFocus: boolean } | undefined;
   private lastTouchTapAt: number | undefined;
   private readonly onResizeViewport = (): void => { this.reconcileEditorHeight(); };
@@ -235,6 +250,7 @@ export class PromptEditor extends LitElement {
   }
 
   protected override updated(changed: PropertyValues) {
+    this.observeTrailingIcons();
     if (changed.has("disabled")) this.updateEditorDisabledState();
     if (changed.has("dense")) this.editor?.dispatch({ effects: this.placeholderCompartment.reconfigure(this.placeholder()) });
     if (changed.has("sessionId") || changed.has("machineId")) this.syncEditorDoc();
@@ -246,6 +262,8 @@ export class PromptEditor extends LitElement {
     window.visualViewport?.removeEventListener("resize", this.onResizeViewport);
     this.editorHeightObserver?.disconnect();
     this.editorHeightObserver = undefined;
+    this.trailingIconsObserver?.disconnect();
+    this.trailingIconsObserver = undefined;
     this.editor?.destroy();
     this.editor = undefined;
     this.manualEditorHeight = undefined;
@@ -685,6 +703,9 @@ export class PromptEditor extends LitElement {
           this.placeholderCompartment.of(this.placeholder()),
           promptArgumentHintExtension,
           replyQuoteFolding,
+          trailingIconSpace,
+          // Dense: scrolling the caret into view also clears the icons over the bottom edge, and brings up the trailing space's own line.
+          EditorView.scrollMargins.of(() => (this.dense ? { bottom: this.trailingIconsHeight } : null)),
           this.editableCompartment.of(EditorView.editable.of(!this.disabled)),
           this.readOnlyCompartment.of(EditorState.readOnly.of(this.disabled)),
           EditorView.updateListener.of((update) => {
@@ -714,6 +735,26 @@ export class PromptEditor extends LitElement {
       this.editorHeightObserver = observer;
     }
     this.reconcileEditorHeight();
+  }
+
+  /** Dense: publish the icon cluster's width (first icon to row end) so the input can run under it and reserve it on its last line. */
+  private observeTrailingIcons(): void {
+    this.trailingIconsObserver?.disconnect();
+    const row = this.renderRoot.querySelector<HTMLElement>(".input-row");
+    if (row === null) return;
+    const icons = [...row.querySelectorAll<HTMLElement>(":scope > .editor-wrap ~ *")];
+    if (!this.dense || icons.length === 0) { row.style.removeProperty("--dense-trailing-width"); this.trailingIconsHeight = 0; return; }
+    const measure = (): void => {
+      const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+      const first = icons[0]?.getBoundingClientRect().left ?? 0;
+      const last = icons.at(-1)?.getBoundingClientRect().right ?? first;
+      this.trailingIconsHeight = Math.max(...icons.map((icon) => icon.getBoundingClientRect().height));
+      row.style.setProperty("--dense-trailing-width", `${String(Math.ceil(last - first + gap))}px`);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    this.trailingIconsObserver = new ResizeObserver(measure);
+    for (const icon of icons) this.trailingIconsObserver.observe(icon);
   }
 
   private placeholder() {
