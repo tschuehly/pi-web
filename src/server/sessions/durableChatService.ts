@@ -1672,6 +1672,7 @@ export class DurableChatService {
         requestId: `live-review-digest-${String(number)}`, from: { chatId: main.id, ...from }, text, wake: true, urgent: false,
         liveReview: { kind: "digest", turn: Math.max(1, pairing.turn), trigger: pairing.trigger, brief: pairing.brief },
       });
+      this.deps.logger?.info?.({ sessionId: mainId, reviewerId: reviewer.id, digest: number, turn: pairing.turn, length: text.length }, "live review digest sent");
     } catch (error) {
       // The reviewer did not take it: the next digest carries it.
       this.#reviewing.delete(reviewer.id);
