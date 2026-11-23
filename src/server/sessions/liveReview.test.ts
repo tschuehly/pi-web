@@ -77,7 +77,7 @@ describe("LiveReviewCollector", () => {
       'Tool call edit {"path":"src/sum.ts","edits":[{"oldText":"i <= n","newText":"i < n - 1"}]}',
       'Tool call write {"path":"notes.md","content":"x"}',
       "Tool error bash: npm test: 1 failing",
-      "Files touched: src/sum.ts, notes.md",
+      "Files touched: notes.md, src/sum.ts",
     ].join("\n"));
     expect(review.take()).toBeUndefined();
   });
@@ -170,13 +170,13 @@ describe("LiveReviewCollector", () => {
     const taken = review.take();
     const text = taken?.text ?? "";
     expect(text.length).toBeLessThanOrEqual(60_000);
-    const omitted = /^\[… (\d+) earlier tool calls omitted; read the files listed\]\n/u.exec(text);
+    const omitted = /^\[… (\d+) earlier tool calls and 0 earlier lines omitted; read the files listed\]\n/u.exec(text);
     expect(omitted).not.toBeNull();
     expect(text).toContain("// file 199");
     expect(text).not.toContain("// file 0\\n");
     const calls = text.split("\n").filter((line) => line.startsWith("Tool call write")).length;
     expect(Number(omitted?.[1]) + calls).toBe(200);
-    expect(text.endsWith(`Files touched: ${Array.from({ length: 200 }, (_, i) => `src/f${String(i)}.ts`).join(", ")}`)).toBe(true);
+    expect(text.endsWith(`Files touched: ${Array.from({ length: 200 }, (_, i) => `src/f${String(199 - i)}.ts`).join(", ")}`)).toBe(true);
     // Put back behind newer work, the merged digest is capped again and counts every omission.
     for (let i = 0; i < 5; i++) await review.add(assistant({ type: "toolCall", id: `n${String(i)}`, name: "edit", arguments: { path: "src/new.ts", edits: [{ oldText: "a", newText: "y".repeat(15_000) }] } }), same);
     if (taken !== undefined) review.putBack(taken);
@@ -184,7 +184,7 @@ describe("LiveReviewCollector", () => {
     expect(merged.length).toBeLessThanOrEqual(60_000);
     const mergedOmitted = Number(/^\[… (\d+) earlier/u.exec(merged)?.[1]);
     expect(mergedOmitted + merged.split("\n").filter((line) => line.startsWith("Tool call")).length).toBe(205);
-    expect(merged).toMatch(/src\/f199\.ts, src\/new\.ts$/u);
+    expect(merged).toContain("Files touched: src/new.ts, src/f199.ts, ");
   });
 
   it("each field is redacted whole before it is cut or JSON-escaped; a field the host cannot redact is omitted", async () => {
@@ -192,12 +192,13 @@ describe("LiveReviewCollector", () => {
     const pemEdge = (edge: string) => `-----${edge} ${["PRIVATE", "KEY"].join(" ")}-----`;
     const pem = `${pemEdge("BEGIN")}\n${"QUJD".repeat(10_000)}\n${pemEdge("END")}`;
     const secret = "tok\\en-s3cr3t";
-    const redact = (text: string) => Promise.resolve(text.replace(new RegExp(`${pemEdge("BEGIN")}[\\s\\S]*?${pemEdge("END")}`, "gu"), "[REDACTED:private-key]").replaceAll(secret, "[REDACTED:token]"));
+    const keySecret = "k\\ey-s3cr3t";
+    const redact = (text: string) => Promise.resolve(text.replace(new RegExp(`${pemEdge("BEGIN")}[\\s\\S]*?${pemEdge("END")}`, "gu"), "[REDACTED:private-key]").replaceAll(secret, "[REDACTED:token]").replaceAll(keySecret, "[REDACTED:key]"));
     const review = new LiveReviewCollector("turn");
     await review.add(assistant(
       { type: "thinking", thinking: `The key is ${secret}` },
       { type: "text", text: `Writing ${pem}` },
-      { type: "toolCall", id: "c", name: "write", arguments: { path: "id_rsa", content: pem, env: { TOKEN: secret } } },
+      { type: "toolCall", id: "c", name: "write", arguments: { path: "id_rsa", content: pem, env: { TOKEN: secret, [keySecret]: "1" } } },
     ), redact);
     const text = review.take()?.text ?? "";
     expect(text).not.toContain("QUJD");
@@ -206,7 +207,7 @@ describe("LiveReviewCollector", () => {
     expect(text).toBe([
       "Reasoning: The key is [REDACTED:token]",
       "Assistant: Writing [REDACTED:private-key]",
-      'Tool call write {"path":"id_rsa","content":"[REDACTED:private-key]","env":{"TOKEN":"[REDACTED:token]"}}',
+      'Tool call write {"path":"id_rsa","content":"[REDACTED:private-key]","env":{"TOKEN":"[REDACTED:token]","[REDACTED:key]":"1"}}',
       "Files touched: id_rsa",
     ].join("\n"));
     const blind = new LiveReviewCollector("turn");
@@ -214,9 +215,25 @@ describe("LiveReviewCollector", () => {
     await blind.add(toolEnd("bash", true, "failed with tok"), () => Promise.reject(new Error("no redact method")));
     expect(blind.take()?.text).toBe([
       "Assistant: [redaction unavailable: omitted]",
-      'Tool call edit {"path":"[redaction unavailable: omitted]","edits":[{"oldText":"[redaction unavailable: omitted]","newText":"[redaction unavailable: omitted]"}]}',
+      'Tool call edit {"[redaction unavailable: omitted]":[{"[redaction unavailable: omitted]":"[redaction unavailable: omitted]"}]}',
       "Tool error bash: [redaction unavailable: omitted]",
-      "Files touched: [redaction unavailable: omitted]",
     ].join("\n"));
+  });
+
+  it("the file list stays inside the cap: newest paths first, the rest counted; dropped text lines count in the marker", async () => {
+    const review = new LiveReviewCollector("turn");
+    for (let i = 0; i < 1000; i++) await review.add(assistant({ type: "toolCall", id: `c${String(i)}`, name: "edit", arguments: { path: `src/some/deep/module/path/file-number-${String(i)}.ts`, edits: [] } }), same);
+    for (let i = 0; i < 100; i++) await review.add(assistant({ type: "text", text: `note ${String(i)} ${"z".repeat(1_000)}` }), same);
+    const text = review.take()?.text ?? "";
+    expect(text.length).toBeLessThanOrEqual(60_000);
+    const files = text.split("\n").at(-1) ?? "";
+    expect(files.startsWith("Files touched: src/some/deep/module/path/file-number-999.ts, src/some/deep/module/path/file-number-998.ts, ")).toBe(true);
+    const listed = /, … and (\d+) more files$/u.exec(files);
+    expect(Number(listed?.[1]) + files.split(", ").length - 1).toBe(1000);
+    const marker = /^\[… (\d+) earlier tool calls and (\d+) earlier lines omitted; read the files listed\]\n/u.exec(text);
+    const lines = text.split("\n");
+    expect(Number(marker?.[1]) + lines.filter((line) => line.startsWith("Tool call")).length).toBe(1000);
+    expect(Number(marker?.[2]) + lines.filter((line) => line.startsWith("Assistant: note")).length).toBe(100);
+    expect(Number(marker?.[2])).toBeGreaterThan(0);
   });
 });

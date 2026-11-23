@@ -1028,8 +1028,9 @@ export class DurableChatService {
   }
 
   /**
-   * Stop-all: every family host, connected or only recorded by an earlier daemon, ends as `stop` ends one, and so does
-   * every family with unfinished background jobs whose host is gone.
+   * Stop-all: every family host, connected or only recorded by an earlier daemon, ends with its background jobs, and so
+   * does every family with unfinished background jobs whose host is gone. Live review pairs stay, as across a daemon
+   * restart: no owner ended a Chat.
    */
   async stopAll(): Promise<void> {
     const recorded = this.deps.locator.all().filter((record) => record.host !== undefined).map((record) => record.id);
@@ -1652,15 +1653,16 @@ export class DurableChatService {
     return run;
   }
 
-  /** An explicit end of either Chat ends its pairing (an idle close or a daemon restart keeps it). */
+  /**
+   * An explicit end of either Chat ends its pairing (an idle close or a daemon restart keeps it). It waits behind the
+   * main Chat's pairing changes, so a `/pair` still starting is undone, and a reviewer's end undoes only its own pair.
+   */
   async #unpair(sessionId: string): Promise<void> {
-    const record = this.deps.locator.durable(sessionId);
-    const mainId = record?.liveReview !== undefined ? sessionId : record?.reviewing;
-    if (mainId === undefined) return;
+    const mainId = this.deps.locator.durable(sessionId)?.reviewing ?? sessionId;
     await this.#serializePairing(mainId, () => {
       const reviewerId = this.deps.locator.durable(mainId)?.liveReview?.reviewerId;
-      if (reviewerId !== undefined) this.#unlink(mainId, reviewerId);
-      else this.deps.locator.update(sessionId, { reviewing: undefined });
+      if (reviewerId !== undefined && (mainId === sessionId || reviewerId === sessionId)) this.#unlink(mainId, reviewerId);
+      else if (mainId !== sessionId && this.deps.locator.durable(sessionId)?.reviewing === mainId) this.deps.locator.update(sessionId, { reviewing: undefined });
       return Promise.resolve();
     });
   }

@@ -1493,7 +1493,7 @@ describe("Durable Chats: live review (/pair)", () => {
     reviewerHost?.push({ type: "agent.end" });
     await vi.waitFor(() => { expect(digests(reviewerHost)).toHaveLength(2); });
     expect(digests(reviewerHost)[1]).toMatchObject({ requestId: "live-review-digest-2", liveReview: { kind: "digest", turn: 1 } });
-    expect(String(digests(reviewerHost)[1]?.["text"])).toMatch(/src\/a\.ts[\s\S]*src\/b\.ts[\s\S]*Files touched: src\/a\.ts, src\/b\.ts$/);
+    expect(String(digests(reviewerHost)[1]?.["text"])).toMatch(/src\/a\.ts[\s\S]*src\/b\.ts[\s\S]*Files touched: src\/b\.ts, src\/a\.ts$/);
   });
 
   it("the trigger knob: turn sends only at the turn end; edits after every edit call", async () => {
@@ -1721,6 +1721,40 @@ describe("Durable Chats: live review (/pair)", () => {
     expect(endMain.locator.durable(endMain.main.id)?.liveReview).toBeUndefined();
     expect(endMain.locator.durable(otherReviewer)?.reviewing).toBeUndefined();
     expect(endMain.locator.durable(otherReviewer)).toBeDefined();
+  });
+
+  it("an explicit end of the main chat while its reviewer is starting leaves no pair behind", async () => {
+    let held: Request | undefined;
+    const made = await service((launch) => {
+      const fake = host(launch);
+      const answer = fake.answer;
+      if (launch === 1) fake.answer = (request) => (request.method === "setThinkingLevel" ? ((held = request), NO_REPLY) : answer(request));
+      return fake;
+    }, set);
+    const main = await made.durable.start("/work/a");
+    const ref = { id: main.id, cwd: main.cwd };
+    const pairing = made.durable.runCommand(ref, "/pair");
+    await vi.waitFor(() => { expect(held).toBeDefined(); });
+    const ended = made.durable.stop(ref);
+    await settle();
+    made.launched[1]?.emit("message", { id: held?.id, result: null });
+    await Promise.all([pairing, ended]);
+    expect(made.locator.durable(main.id)?.liveReview).toBeUndefined();
+    expect(made.locator.all().every((record) => record.reviewing === undefined)).toBe(true);
+  });
+
+  it("ending a reviewer that /pair stop already replaced leaves the replacement pair", async () => {
+    const { durable, locator, main, ref } = await paired("--trigger turn");
+    const oldReviewer = locator.durable(main.id)?.liveReview?.reviewerId ?? "";
+    const stopped = durable.runCommand(ref, "/pair stop");
+    const started = durable.runCommand(ref, "/pair");
+    const ended = durable.stop({ id: oldReviewer, cwd: "/work/a" });
+    await Promise.all([stopped, started, ended]);
+    const replacement = locator.durable(main.id)?.liveReview?.reviewerId;
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(oldReviewer);
+    expect(locator.durable(replacement ?? "")?.reviewing).toBe(main.id);
+    expect(locator.durable(oldReviewer)?.reviewing).toBeUndefined();
   });
 
   it("a routine idle close of both hosts keeps the pair", async () => {
