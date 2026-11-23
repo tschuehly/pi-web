@@ -14,7 +14,7 @@ Normal chat follows progress at the tail, remembers reading positions, loads ear
 
 Scrolling does not update reactive position/index state; only a change of live-follow mode updates its indicator. Earlier-history loading uses a near-top threshold and an in-flight guard. Position memory and prepend preservation share durable session-entry anchors and viewport-relative pixel offsets. They prefer a visible anchor; otherwise they select the nearest usable offscreen anchor to the viewport top, resolving equal distances in DOM order. Transient messages and synthetic cards are not scroll anchors. With no usable durable anchor, no anchor position is saved or restored.
 
-Returning to a saved anchor loads earlier history as needed. If complete history no longer contains that rendered anchor, restoration ends without moving the viewport. Prepending captures an anchor before rendering and restores its offset once after child rendering; it does not use total-height differences or compensate for later image loads. User interaction cancels pending restoration and prepend correction. Remembered bottom positions, initial tail-following, and manual top/end arrows remain separate from anchor restoration.
+Returning to a saved anchor loads earlier history as needed. If complete history no longer contains that rendered anchor, restoration ends without moving the viewport. While reading history, prepending captures an anchor before rendering and restores its offset once after child rendering; it does not use total-height differences or compensate for later image loads. User interaction cancels pending restoration and prepend correction. Remembered bottom positions, initial tail-following, and manual top/end arrows remain separate from anchor restoration.
 
 ## Following live
 
@@ -22,12 +22,12 @@ The highlighted ↓ arrow means new transcript content follows automatically, wh
 
 - Press ↓ to jump to the latest content and enable following. Pressing it again keeps following enabled.
 - Scroll down to the actual bottom to resume following, allowing less than two pixels for rounding rather than a near-bottom zone.
-- Upward wheel/touch input, native upward scrolling away from the bottom, or ↑ pauses following. A stationary scroll event does not undo that choice.
+- Upward wheel/touch input on the transcript (not inside scrollable tool output), native upward scrolling away from the bottom, or ↑ pauses following. A stationary scroll event does not undo that choice.
 - Content growth and viewport changes retain the selected mode. Native overscroll is clamped for direction detection, so a bottom rebound does not count as reading history.
 - Expanding or collapsing a transcript disclosure catches up to the new bottom in one coalesced scroll frame while following. Paused reading views are left alone.
 - Restoring a historical reading position, or aligning an open form away from the bottom, pauses following; the arrow shows that pause too.
 
-When the `followTail` capability is disabled, ↓ remains a jump-only control and is not highlighted. This behavior adds no image-load corrections, continuous polling, or layout-settling loop; other late descendant layout changes remain browser-owned.
+When the `followTail` capability is disabled, ↓ remains a jump-only control and is not highlighted. While following, changes to the transcript content’s height also schedule a move to the bottom, including late image sizing and tool details opening inside a child component. Paused readers get no such correction. No polling or image-load handler is needed.
 
 ## Incremental changes
 

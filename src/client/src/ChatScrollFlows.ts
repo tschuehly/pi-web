@@ -420,7 +420,7 @@ export class ChatScrollFlows {
       this.history.reset();
       this.prepend.cancel();
       this.reading.release();
-    } else if (change.prepend && !this.position.restoring) {
+    } else if (change.prepend && !this.tail.followingLive && !this.position.restoring) {
       this.history.cancel();
       this.tail.cancel();
       this.prepend.capture();
