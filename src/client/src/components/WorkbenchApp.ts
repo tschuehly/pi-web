@@ -1610,6 +1610,20 @@ export class WorkbenchApp extends LitElement {
 
   private async resolveWorkstreamServiceContext(): Promise<WorkstreamServiceContext | undefined> {
     if (this.workstreamServiceContext !== undefined || this.app.selectedWorkspace === undefined || this.app.selectedProject !== undefined) return this.workstreamServiceContext;
+    return this.machineWorkstreamContext();
+  }
+
+  /**
+   * The Workstream service is machine-wide, so the chooser can reach it through any registered workspace. Without a selected
+   * project and workspace (e.g. after a Chat outside every project) it borrows the machine's first one instead of loading forever.
+   */
+  private get chooserServiceContext(): WorkstreamServiceContext | undefined {
+    const context = this.workstreamServiceContext ?? this.workstreamContexts.get(selectedMachineId(this.app));
+    if (context === undefined) void this.machineWorkstreamContext().then((found) => { if (found !== undefined) this.requestUpdate(); });
+    return context;
+  }
+
+  private async machineWorkstreamContext(): Promise<WorkstreamServiceContext | undefined> {
     const machineId = selectedMachineId(this.app);
     if (this.workstreamContexts.has(machineId)) return this.workstreamContexts.get(machineId);
     let pending = this.pendingWorkstreamContexts.get(machineId);
@@ -2031,8 +2045,9 @@ export class WorkbenchApp extends LitElement {
     const recentSessions = this.showAllSessions ? visibleSessions : visibleSessions.slice(0, 5);
     const project = this.app.selectedProject;
     const serviceMachineId = selectedMachineId(this.app);
-    const serviceProjectId = project?.id ?? "";
-    const serviceWorkspaceId = this.app.selectedWorkspace?.id ?? "";
+    const serviceContext = this.chooserServiceContext;
+    const serviceProjectId = serviceContext?.projectId ?? "";
+    const serviceWorkspaceId = serviceContext?.workspaceId ?? "";
     return html`
       <main class="chooser" data-view="chooser">
         <section>

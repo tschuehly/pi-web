@@ -2021,6 +2021,18 @@ describe("Workstream open versus in-flight navigation", () => {
     expect({ projects: getState(app).projects.map((candidate) => candidate.id), loading: isLoading(app) }).toEqual({ projects: ["remote-project"], loading: false });
   });
 
+  it("the Other tab reaches Workstreams through a registered workspace when no project is selected", async () => {
+    const app = await mountChooser([]);
+    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
+    setState(app, { ...getState(app), projects: [project], selectedProject: undefined, selectedWorkspace: { ...workspace, id: "adhoc", projectId: "", path: "/adhoc" } });
+    Reflect.set(app, "chooserView", "other");
+    await app.updateComplete;
+    await vi.waitFor(() => {
+      const chooser = app.shadowRoot?.querySelector<HTMLElement & { serviceProjectId: string; serviceWorkspaceId: string }>("workstream-chooser");
+      expect([chooser?.serviceProjectId, chooser?.serviceWorkspaceId]).toEqual([project.id, workspace.id]);
+    });
+  });
+
   it("an open that succeeds during a machine switch still receives that machine's projects", async () => {
     const app = await mountChooser([]);
     setState(app, { ...getState(app), machines: [machine, remote] });
