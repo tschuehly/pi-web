@@ -358,12 +358,19 @@ function parseAskUserQuestion(value: unknown): AskUserQuestion {
   const options = boundedArrayOf(record["options"], parseAskUserQuestionOption, ASK_USER_OPTION_LIMIT, "options");
   assertUniqueStrings(options.map((option) => option.value), "ask option value");
   const multiple = parseOptionalBoolean(record["multiple"], "multiple");
+  const showIf = record["showIf"] === undefined ? undefined : requireRecord(record["showIf"]);
   return {
     id: requireBoundedNonEmptyString(record, "id", ASK_USER_ID_MAX_LENGTH),
     question: requireBoundedNonEmptyString(record, "question", ASK_USER_TEXT_MAX_LENGTH),
     ...optionalField("detail", optionalBoundedNonEmptyString(record, "detail", ASK_USER_DETAIL_MAX_LENGTH)),
     options,
     ...(multiple === undefined ? {} : { multiple }),
+    ...(showIf === undefined ? {} : {
+      showIf: {
+        question: requireBoundedNonEmptyString(showIf, "question", ASK_USER_ID_MAX_LENGTH),
+        values: boundedArrayOf(showIf["values"], parseNonEmptyString, ASK_USER_OPTION_LIMIT, "showIf values"),
+      },
+    }),
   };
 }
 
@@ -436,7 +443,9 @@ function parseAskUserQuestionRecord(value: unknown): AskUserQuestionRecord {
   // The record is the one thing both the model and the user read, so a flag that
   // disagrees with the answer it describes is rejected rather than displayed.
   if (answered !== (values.length > 0 || otherText !== undefined)) throw new Error("Ask answer contradicts its answered flag");
-  return { question, answered, values, ...(otherText === undefined ? {} : { otherText }) };
+  const skipped = record["skipped"] === true;
+  if (skipped && answered) throw new Error("Ask answer is both skipped and answered");
+  return { question, answered, values, ...(otherText === undefined ? {} : { otherText }), ...(skipped ? { skipped: true as const } : {}) };
 }
 
 export function parseAskUserOutcome(value: unknown): AskUserOutcome {
@@ -444,8 +453,8 @@ export function parseAskUserOutcome(value: unknown): AskUserOutcome {
   const questions = boundedArrayOf(record["questions"], parseAskUserQuestionRecord, ASK_USER_QUESTION_LIMIT, "questions");
   const answeredCount = requireNonNegativeSafeInteger(record, "answeredCount");
   const unansweredIds = arrayOfString(record["unansweredIds"], "unansweredIds");
-  const unanswered = questions.filter((entry) => !entry.answered).map((entry) => entry.question.id);
-  if (answeredCount !== questions.length - unanswered.length) throw new Error("Ask outcome answered count mismatch");
+  const unanswered = questions.filter((entry) => !entry.answered && entry.skipped !== true).map((entry) => entry.question.id);
+  if (answeredCount !== questions.filter((entry) => entry.answered).length) throw new Error("Ask outcome answered count mismatch");
   if (unansweredIds.length !== unanswered.length || unansweredIds.some((id, index) => id !== unanswered[index])) {
     throw new Error("Ask outcome unanswered ids mismatch");
   }

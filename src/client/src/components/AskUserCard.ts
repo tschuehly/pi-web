@@ -20,6 +20,7 @@ import {
   saveAskNote,
   toSubmission,
   unansweredQuestions,
+  visibleQuestions,
   type AskDraftAnswer,
   type AskDraftAnswers,
 } from "../askDrafts";
@@ -111,6 +112,8 @@ export class AskUserCard extends LitElement {
   private renderOpenAsk(ask: PendingAskUser): TemplateResult {
     const count = answeredCount(ask.questions, this.answers);
     const unanswered = unansweredQuestions(ask.questions, this.answers);
+    // A question whose showIf is unmet is left out; ids keep the question's place in the set, numbers count the shown ones.
+    const visible = visibleQuestions(ask.questions, this.answers);
     return html`
       <article class="ui-transcript-surface card open-card" aria-labelledby="ask-user-heading">
         <header class="card-header">
@@ -120,14 +123,14 @@ export class AskUserCard extends LitElement {
             ${ask.turnsSinceUpdate > ASK_USER_STALE_TURNS ? html`<span class="stale" title=${`${String(ask.turnsSinceUpdate)} agent turns without an update`}>may be stale</span>` : null}
           </span>
           <span class="header-status" role="status" aria-live="polite" aria-atomic="true">
-            ${count} of ${ask.questions.length} answered
+            ${count} of ${visible.length} answered
           </span>
           <slot name="actions"></slot>
         </header>
         ${this.renderContext(ask.context)}
         <form class="ask-form" @submit=${(event: SubmitEvent) => { this.handleSubmit(event, ask); }}>
           <div class="questions">
-            ${ask.questions.map((question, index) => html`${index === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, index)}`)}
+            ${visible.map((question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
           </div>
           ${this.noteOpen ? html`
             <label class="ask-note">
@@ -155,7 +158,7 @@ export class AskUserCard extends LitElement {
     return context === undefined ? null : html`<formatted-text class="ask-context" .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>`;
   }
 
-  private renderQuestion(ask: PendingAskUser, question: AskUserQuestion, index: number): TemplateResult {
+  private renderQuestion(ask: PendingAskUser, question: AskUserQuestion, index: number, number: number, sendOne: boolean): TemplateResult {
     const answer = this.answers[question.id];
     const answered = answeredCount([question], this.answers) === 1;
     const detailId = question.detail === undefined ? undefined : this.questionDetailId(index);
@@ -172,7 +175,7 @@ export class AskUserCard extends LitElement {
         tabindex="-1"
       >
         <legend>
-          <span class="question-number">${String(index + 1)}.</span>
+          <span class="question-number">${String(number)}.</span>
           <span>${question.question} <code class="question-ref" title="Reference for this question">${askQuestionRef(ask.askId, question.id)}</code></span>
         </legend>
         ${this.renderDetail(question.detail, detailId)}
@@ -226,7 +229,7 @@ export class AskUserCard extends LitElement {
             </label>
           ` : null}
         </div>
-        ${ask.questions.length > 1 ? html`
+        ${sendOne ? html`
           <div class="question-actions">
             <button class="send-one" type="button" ?disabled=${!answered || this.submitting} title="Send just this answer now; the other questions stay open" @click=${() => { this.submitOne(ask, question, index); }}>Send</button>
           </div>
@@ -313,7 +316,9 @@ export class AskUserCard extends LitElement {
           <span>${record.question.question}</span>
         </h3>
         ${this.renderDetail(record.question.detail)}
-        ${answer === undefined
+        ${record.skipped === true
+          ? html`<p class="unanswered-record">Skipped · condition not met</p>`
+          : answer === undefined
           ? html`<p class="unanswered-record">Unanswered</p>`
           : html`
               <ul class="record-answers">

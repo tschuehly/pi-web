@@ -161,6 +161,19 @@ describe("createAskUserToolDefinition", () => {
     expect(open).toHaveBeenCalledWith({ sessionId: "session-1", context, questions: [rich] });
   });
 
+  it("passes a follow-up question's showIf to the store, which rejects one naming no earlier question", async () => {
+    const { tool, store } = toolOverStore();
+    const [db, why] = twoQuestions.questions;
+    const dependent = { ...why, showIf: { question: "db", values: ["pg"] } };
+
+    await tool.execute("call-dep", { context, questions: [db, dependent] }, undefined, undefined, ctxFor("session-1"));
+
+    expect(store.pendingAsks("session-1")[0]?.questions[1]?.showIf).toEqual({ question: "db", values: ["pg"] });
+    expect(tool.description).toContain("Give a follow-up question `showIf` instead of writing 'If X:' in its text");
+    await expect(tool.execute("call-bad", { context, questions: [{ ...dependent, showIf: { question: "later", values: ["pg"] } }] }, undefined, undefined, ctxFor("session-1")))
+      .rejects.toThrow(/must name an earlier question/);
+  });
+
   it("propagates a rejected question set so the agent loop reports it to the model", async () => {
     const { tool } = toolOverStore();
 

@@ -73,6 +73,20 @@ describe("openAsksFromTranscript", () => {
     expect(openAsksFromTranscript(branch, SESSION).undelivered).toEqual([]);
   });
 
+  it("drops the dependent questions a partial send skipped when it rebuilds the rest", () => {
+    const live = new PendingAskStore({ createAskId: () => "a1", createRevision: (() => { let n = 0; return () => `r${String(++n)}`; })() });
+    const set = live.open({ sessionId: SESSION, context: "Why", questions: [
+      { id: "location", question: "Where?", options: [{ value: "home", label: "Home" }, { value: "vps", label: "VPS" }] },
+      { id: "machine", question: "Which machine?", options: [{ value: "mini", label: "Mac mini" }], showIf: { question: "location", values: ["home"] } },
+      { id: "other", question: "Anything else?", options: [] },
+    ] });
+    const branch: unknown[] = [posted({ ask: set })];
+    live.submit(SESSION, "a1", { revision: "r1", answers: [{ id: "location", values: ["vps"] }], partial: true }, (outcome) => branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }));
+
+    expect(openAsksFromTranscript(branch, SESSION).open.map((rebuilt) => rebuilt.questions.map((q) => q.id))).toEqual([["other"]]);
+    expect(live.pendingAsks(SESSION).map((open) => open.questions.map((q) => q.id))).toEqual([["other"]]);
+  });
+
   it("restores only asks the session itself posted, so a fork does not inherit its parent's", () => {
     const branch = [posted({ ask: ask("parent") }), closedRecord("parent")];
 

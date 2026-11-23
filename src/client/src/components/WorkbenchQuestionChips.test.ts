@@ -80,7 +80,7 @@ describe("WorkbenchQuestionChips", () => {
     expect(bar(chips)?.type).toBe("button");
     expect(bar(chips)?.getAttribute("aria-expanded")).toBe("false");
     expect(drawer(chips)).toBeNull();
-    expect(openQuestionCount([ask("abc-1"), twoQuestions])).toBe(3);
+    expect(openQuestionCount([ask("abc-1"), twoQuestions], "")).toBe(3);
   });
 
   it("counts answered questions from the drafts and as the user answers in the drawer", async () => {
@@ -257,6 +257,33 @@ describe("WorkbenchQuestionChips", () => {
     // The daemon, not this stub, retires sent answers; the drawer is idle again with no error.
     await vi.waitFor(() => { expect(sendAll()?.disabled).toBe(false); });
     expect(chips.shadowRoot?.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("counts and sends only shown questions: a hidden dependent is not open, and Send all sends a set whose rest is hidden whole", async () => {
+    const dependent = ask("def-2", { questions: [
+      { id: "location", question: "Where should the browser run?", options: [{ value: "home", label: "Home" }, { value: "vps", label: "VPS" }] },
+      { id: "machine", question: "Which machine?", options: [{ value: "mini", label: "Mac mini" }], showIf: { question: "location", values: ["home"] } },
+    ] });
+    const { chips, onSubmit } = await mount([ask("abc-1"), dependent]);
+    expect(bar(chips)?.textContent.trim()).toBe("2 open questions");
+    expect(openQuestionCount([ask("abc-1"), dependent], "local:session-1")).toBe(2);
+    await openWith(chips);
+    const [first, second] = cards(chips);
+    first?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
+    second?.shadowRoot?.querySelector<HTMLInputElement>('input[value="home"]')?.click();
+    await second?.updateComplete;
+    await chips.updateComplete;
+    expect(bar(chips)?.textContent.replace(/\s+/g, " ").trim()).toBe("3 open questions · 2 answered");
+    second?.shadowRoot?.querySelector<HTMLInputElement>('input[value="mini"]')?.click();
+    second?.shadowRoot?.querySelector<HTMLInputElement>('input[value="vps"]')?.click();
+    await second?.updateComplete;
+    await chips.updateComplete;
+    expect(bar(chips)?.textContent.replace(/\s+/g, " ").trim()).toBe("2 open questions · 2 answered");
+
+    chips.shadowRoot?.querySelector<HTMLButtonElement>(".send-all")?.click();
+    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledTimes(2); });
+    // The hidden machine answer stays out, and with nothing visible left the set goes whole rather than partial.
+    expect(onSubmit).toHaveBeenNthCalledWith(2, "def-2", { answers: [{ id: "location", values: ["vps"] }], revision: "r1" });
   });
 
   it("keeps a set whose send fails with its draft and says so, while the other sets still go", async () => {

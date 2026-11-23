@@ -848,6 +848,30 @@ export interface AskUserQuestion {
   options: AskUserQuestionOption[];
   /** When true, several options may be selected at once. */
   multiple?: boolean;
+  /** Show the question only while an earlier question of the set has one of these option values selected. */
+  showIf?: AskUserShowIf;
+}
+
+/** Condition of a dependent question: an earlier question's id and the option values that show it. */
+export interface AskUserShowIf {
+  question: string;
+  values: string[];
+}
+
+/**
+ * Ids of the questions hidden by their {@link AskUserQuestion.showIf}, given each question's selected option values
+ * (a Custom answer never matches). A hidden question hides its dependents; a condition on a question no longer in the
+ * set (sent by a partial submit, which already dropped the unmet ones) counts as met.
+ */
+export function hiddenAskQuestionIds(questions: readonly AskUserQuestion[], selectedValues: (questionId: string) => readonly string[]): Set<string> {
+  const ids = new Set(questions.map((question) => question.id));
+  const hidden = new Set<string>();
+  for (const question of questions) {
+    const condition = question.showIf;
+    if (condition === undefined || !ids.has(condition.question)) continue;
+    if (hidden.has(condition.question) || !selectedValues(condition.question).some((value) => condition.values.includes(value))) hidden.add(question.id);
+  }
+  return hidden;
 }
 
 /**
@@ -911,6 +935,8 @@ export interface AskUserQuestionRecord {
   answered: boolean;
   values: string[];
   otherText?: string;
+  /** The question stayed hidden because its {@link AskUserQuestion.showIf} condition was not met; never answered. */
+  skipped?: true;
 }
 
 /**
@@ -929,7 +955,7 @@ export interface AskUserOutcome {
   /** The user's note on the whole set, trimmed; absent when none was given. */
   note?: string;
   answeredCount: number;
-  /** Ids of the questions left unanswered, in the order they were asked. */
+  /** Ids of the questions left unanswered (not those skipped by their condition), in the order they were asked. */
   unansweredIds: string[];
   /** One line, for example `Answered 3 of 5; unanswered: q2, q5`. */
   summary: string;

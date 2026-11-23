@@ -13,9 +13,11 @@ import {
   type AskUserQuestion,
   type AskUserQuestionOption,
   type AskUserQuestionRecord,
+  type AskUserShowIf,
   type AskUserSubmission,
   type PendingAskUser,
   askQuestionRef,
+  hiddenAskQuestionIds,
 } from "../../shared/apiTypes.js";
 
 export interface PendingAskStoreOptions {
@@ -151,21 +153,30 @@ export class PendingAskStore {
     const ask = this.asksOf(requireSessionId(sessionId)).get(askId);
     if (ask === undefined || submission.revision !== ask.revision) return { status: "stale" };
     const answers = validateSubmission(ask, submission);
+    // A question hidden by its condition is never answered: a stale draft answer to it is dropped.
+    const hidden = hiddenAskQuestionIds(ask.questions, (id) => answers.get(id)?.values ?? []);
+    for (const id of hidden) answers.delete(id);
     const note = normalizeNote(submission.note);
     if (submission.partial === true) {
       if (note !== undefined) throw new PendingAskValidationError("A partial submit takes no note; send the note with the whole set");
       if (answers.size === 0) throw new PendingAskValidationError("A partial submit needs at least one answer");
-      const remaining = ask.questions.filter((question) => !answers.has(question.id));
+      // Hidden questions whose condition this send settles leave with it as skipped; the others wait for their parent.
+      const skipped = new Set<string>();
+      for (const question of ask.questions) {
+        const parent = question.showIf?.question;
+        if (hidden.has(question.id) && parent !== undefined && (answers.has(parent) || skipped.has(parent))) skipped.add(question.id);
+      }
+      const remaining = ask.questions.filter((question) => !answers.has(question.id) && !skipped.has(question.id));
       if (remaining.length > 0) {
         const revision = this.createRevision();
-        const outcome = partialOutcome(ask, answers, remaining, revision, this.timestamp());
+        const outcome = partialOutcome(ask, answers, skipped, remaining, revision, this.timestamp());
         record?.(outcome);
         const updated: PendingAskUser = { ...ask, revision, questions: remaining };
         this.setAsk(sessionId, updated);
         return { status: "closed", outcome, ask: cloneAsk(updated) };
       }
     }
-    return closed(this.close(sessionId, askId, "submitted", answers, record, note));
+    return closed(this.close(sessionId, askId, "submitted", answers, record, note, hidden));
   }
 
   /**
@@ -220,11 +231,11 @@ export class PendingAskStore {
     this.openBySessionId.set(sessionId, asks);
   }
 
-  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string): AskUserOutcome | undefined {
+  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string, skipped: ReadonlySet<string> = new Set()): AskUserOutcome | undefined {
     const asks = this.openBySessionId.get(sessionId);
     const ask = asks?.get(askId);
     if (asks === undefined || ask === undefined) return undefined;
-    const outcome = askUserOutcome(ask, answers, reason, this.timestamp(), note);
+    const outcome = askUserOutcome(ask, answers, reason, this.timestamp(), note, skipped);
     record?.(outcome);
     asks.delete(askId);
     if (asks.size === 0) this.openBySessionId.delete(sessionId);
@@ -269,6 +280,10 @@ export function renderOpenAsksReminder(asks: readonly PendingAskUser[]): string 
 
 function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
   const header = `- ${askQuestionRef(askId, record.question.id)}: ${record.question.question}`;
+  const condition = record.question.showIf;
+  if (record.skipped === true && condition !== undefined) {
+    return [header, `  Skipped, not shown: it applies only when ${askQuestionRef(askId, condition.question)} is ${condition.values.join(" or ")}, which was not picked.`];
+  }
   if (!record.answered) return [header, "  Unanswered."];
   const parts = [...record.values.map((value) => `selected ${value}`)];
   if (record.otherText !== undefined) parts.push(`custom: ${JSON.stringify(record.otherText)}`);
@@ -281,10 +296,11 @@ function askUserOutcome(
   reason: AskUserCloseReason,
   closedAt: string,
   note?: string,
+  skipped: ReadonlySet<string> = new Set(),
 ): AskUserOutcome {
-  const questions = ask.questions.map((question) => questionRecord(question, answers.get(question.id)));
-  const unansweredIds = questions.filter((record) => !record.answered).map((record) => record.question.id);
-  const answeredCount = questions.length - unansweredIds.length;
+  const questions = ask.questions.map((question) => questionRecord(question, answers.get(question.id), skipped.has(question.id)));
+  const unansweredIds = questions.filter((record) => !record.answered && record.skipped !== true).map((record) => record.question.id);
+  const answeredCount = questions.filter((record) => record.answered).length;
   return {
     askId: ask.askId,
     reason,
@@ -295,13 +311,13 @@ function askUserOutcome(
     ...(note === undefined ? {} : { note }),
     answeredCount,
     unansweredIds,
-    summary: summaryLine(questions.length, answeredCount, unansweredIds),
+    summary: summaryLine(questions.length - skipped.size, answeredCount, unansweredIds) + skippedSummary(questions),
   };
 }
 
 /** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
-function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, remaining: readonly AskUserQuestion[], revision: string, closedAt: string): AskUserOutcome {
-  const questions = ask.questions.filter((question) => answers.has(question.id)).map((question) => questionRecord(question, answers.get(question.id)));
+function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, skipped: ReadonlySet<string>, remaining: readonly AskUserQuestion[], revision: string, closedAt: string): AskUserOutcome {
+  const questions = ask.questions.filter((question) => answers.has(question.id) || skipped.has(question.id)).map((question) => questionRecord(question, answers.get(question.id), skipped.has(question.id)));
   return {
     askId: ask.askId,
     reason: "submitted",
@@ -309,15 +325,16 @@ function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, remaining
     closedAt,
     ...(ask.context === undefined ? {} : { context: ask.context }),
     questions,
-    answeredCount: questions.length,
+    answeredCount: answers.size,
     unansweredIds: [],
-    summary: `Answered ${questions.length.toString()}; still open: ${remaining.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}`,
+    summary: `Answered ${answers.size.toString()}${skippedSummary(questions)}; still open: ${remaining.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}`,
     partial: true,
     revision,
   };
 }
 
-function questionRecord(question: AskUserQuestion, answer: AskUserAnswer | undefined): AskUserQuestionRecord {
+function questionRecord(question: AskUserQuestion, answer: AskUserAnswer | undefined, skipped = false): AskUserQuestionRecord {
+  if (skipped) return { question: cloneQuestion(question), answered: false, values: [], skipped: true };
   const values = answer?.values ?? [];
   const otherText = answer?.otherText;
   return {
@@ -333,6 +350,11 @@ function summaryLine(total: number, answeredCount: number, unansweredIds: string
   return unansweredIds.length === 0 ? `${answered}; none left unanswered` : `${answered}; unanswered: ${unansweredIds.join(", ")}`;
 }
 
+function skippedSummary(questions: readonly AskUserQuestionRecord[]): string {
+  const ids = questions.filter((record) => record.skipped === true).map((record) => record.question.id);
+  return ids.length === 0 ? "" : `; skipped (condition not met): ${ids.join(", ")}`;
+}
+
 /** Blank context reads as absent; a new ask then rejects it as missing. */
 function validateContext(context: string | undefined): string | undefined {
   if (context === undefined || context.trim() === "") return undefined;
@@ -345,13 +367,26 @@ function validateQuestions(questions: AskUserQuestion[]): AskUserQuestion[] {
   if (questions.length > ASK_USER_QUESTION_LIMIT) {
     throw new PendingAskValidationError(`An ask must not contain more than ${ASK_USER_QUESTION_LIMIT.toString()} questions`);
   }
-  const seenIds = new Set<string>();
+  const earlier = new Map<string, AskUserQuestion>();
   return questions.map((question) => {
     const id = requireId(question.id, "question id");
-    if (seenIds.has(id)) throw new PendingAskValidationError(`Duplicate question id ${id}`);
-    seenIds.add(id);
-    return validateQuestion(question, id);
+    if (earlier.has(id)) throw new PendingAskValidationError(`Duplicate question id ${id}`);
+    const validated = validateQuestion(question, id);
+    const showIf = question.showIf === undefined ? undefined : validateShowIf(question.showIf, id, earlier);
+    earlier.set(id, validated);
+    return showIf === undefined ? validated : { ...validated, showIf };
   });
+}
+
+/** A condition names an earlier question of the set and only option values it offers, so it can be met. */
+function validateShowIf(showIf: AskUserShowIf, id: string, earlier: ReadonlyMap<string, AskUserQuestion>): AskUserShowIf {
+  const parent = earlier.get(showIf.question);
+  if (parent === undefined) throw new PendingAskValidationError(`showIf of question ${id} must name an earlier question of this set, not ${showIf.question}`);
+  if (showIf.values.length === 0) throw new PendingAskValidationError(`showIf of question ${id} must list at least one option value of question ${parent.id}`);
+  const offered = new Set(parent.options.map((option) => option.value));
+  const unknown = showIf.values.find((value) => !offered.has(value));
+  if (unknown !== undefined) throw new PendingAskValidationError(`showIf of question ${id}: question ${parent.id} has no option ${unknown}`);
+  return { question: parent.id, values: [...new Set(showIf.values)] };
 }
 
 function validateQuestion(question: AskUserQuestion, id: string): AskUserQuestion {
@@ -445,7 +480,7 @@ function cloneAsk(ask: PendingAskUser): PendingAskUser {
 }
 
 function cloneQuestion(question: AskUserQuestion): AskUserQuestion {
-  return { ...question, options: question.options.map((option) => ({ ...option })) };
+  return { ...question, options: question.options.map((option) => ({ ...option })), ...(question.showIf === undefined ? {} : { showIf: { ...question.showIf, values: [...question.showIf.values] } }) };
 }
 
 function requireSessionId(sessionId: string): string {

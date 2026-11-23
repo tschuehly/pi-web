@@ -778,6 +778,20 @@ describe("API parsers", () => {
     expect(parseOpenAsks({ pendingAsks: [], attentionRequest })).toEqual({ pendingAsks: [], attentionRequest });
   });
 
+  it("keeps a dependent question's showIf and a skipped record, whose question is neither answered nor unanswered", () => {
+    const location = { id: "location", question: "Where?", options: [{ value: "home", label: "Home" }, { value: "vps", label: "VPS" }] };
+    const machine = { id: "machine", question: "Which machine?", options: [{ value: "mini", label: "Mac mini" }], showIf: { question: "location", values: ["home"] } };
+    const ask = { askId: "ask-1", askedAt: "now", updatedAt: "now", revision: "r1", turnsSinceUpdate: 0, questions: [location, machine] };
+    expect(parseOpenAsks({ pendingAsks: [ask] }).pendingAsks[0]?.questions[1]?.showIf).toEqual({ question: "location", values: ["home"] });
+    const outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "now", closedAt: "now",
+      questions: [{ question: location, answered: true, values: ["vps"] }, { question: machine, answered: false, values: [], skipped: true }],
+      answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1; none left unanswered; skipped (condition not met): machine",
+    };
+    expect(parseAskUserCloseResponse({ result: "closed", outcome, sessionStatus: statusWire() }).outcome?.questions[1]?.skipped).toBe(true);
+    expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, unansweredIds: ["machine"] }, sessionStatus: statusWire() })).toThrow("unanswered ids mismatch");
+  });
+
   it("rejects malformed or unbounded active tool executions", () => {
     const execution = { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" };
     expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: Array.from({ length: ACTIVE_TOOL_EXECUTION_LIMIT + 1 }, (_, index) => ({ ...execution, id: `tool:${String(index)}` })) })).toThrow("Array field exceeds limit: activeToolExecutions");
