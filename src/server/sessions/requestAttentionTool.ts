@@ -1,5 +1,5 @@
 import { Type } from "pi-web-typebox";
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "../../piSdk.js";
 import { ASK_USER_TEXT_MAX_LENGTH, type SessionAttentionRequest } from "../../shared/apiTypes.js";
 
 export interface RequestAttentionToolDeps {
