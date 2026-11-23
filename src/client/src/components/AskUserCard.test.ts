@@ -3,7 +3,7 @@
 import type { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
-import { loadAskNote, saveAskDraft } from "../askDrafts";
+import { loadAskNote, saveAskDraft, saveAskNote } from "../askDrafts";
 import { AskUserCard, type AskUserSubmitCallback } from "./AskUserCard";
 import { settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
 
@@ -213,7 +213,13 @@ describe("ask-user-card live form", () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), onSubmit);
     const root = renderRoot(card);
+    expect(root.querySelector(".ask-note")).toBeNull();
+    requiredElement(root.querySelector<HTMLButtonElement>('button[aria-label="Add note"]'), "note icon").click();
+    await card.updateComplete;
+    await Promise.resolve();
     const note = requiredElement(root.querySelector<HTMLTextAreaElement>(".ask-note textarea"), "note");
+    expect(root.activeElement).toBe(note);
+    expect(root.querySelector('button[aria-label="Add note"]')).toBeNull();
     expect(note.closest("form")?.querySelector(".ask-note + .form-footer")).not.toBeNull();
 
     inputWithValue(root, "pg").click();
@@ -225,6 +231,14 @@ describe("ask-user-card live form", () => {
     await Promise.resolve();
 
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", note: "Ship it this week.", answers: [{ id: "db", values: ["pg"] }] });
+  });
+
+  it("opens the note at once when the set already has a saved note draft", async () => {
+    saveAskNote("local:session-1", "ask-1", "Half typed");
+    const card = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]));
+    const root = renderRoot(card);
+    expect(root.querySelector<HTMLTextAreaElement>(".ask-note textarea")?.value).toBe("Half typed");
+    expect(root.querySelector('button[aria-label="Add note"]')).toBeNull();
   });
 
   it("shows and submits the custom field directly when no options were supplied", async () => {

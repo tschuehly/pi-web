@@ -215,7 +215,7 @@ export class ChatView extends LitElement {
   /** Open `ask_user` sets, oldest first; the agent keeps working while they wait. */
   @property({ attribute: false }) pendingAsks: PendingAskUser[] = [];
   @property({ attribute: false }) askDraftSessionId = "";
-  @property({ attribute: false }) onSubmitAsk: ((askId: string, submission: AskUserSubmission) => void | Promise<void>) | undefined;
+  @property({ attribute: false }) onSubmitAsk: ((askId: string, submission: AskUserSubmission) => unknown) | undefined;
   @property({ attribute: false }) pendingDialogs: PendingExtensionDialog[] = [];
   @property({ attribute: false }) closedDialogs: ClosedExtensionDialog[] = [];
   @property({ attribute: false }) onAnswerDialog?: ExtensionDialogAnswerCallback;

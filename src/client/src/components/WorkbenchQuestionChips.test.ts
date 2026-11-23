@@ -4,9 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PendingAskUser } from "../../../shared/apiTypes";
 import type { SessionStatus } from "../api";
 import { ACTIVITY_STATUS_KEY } from "../extensionStatusSnapshots";
-import { AskUserCard, updatedAgo } from "./AskUserCard";
+import { AskUserCard, updatedAgo, type AskUserSubmitCallback } from "./AskUserCard";
 import { DelegateRoster } from "./DelegateRoster";
 import { WorkbenchQuestionChips, openQuestionCount } from "./WorkbenchQuestionChips";
+import { loadAskDraft, saveAskNote } from "../askDrafts";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -43,7 +44,7 @@ async function mount(asks: PendingAskUser[], setup?: (chips: WorkbenchQuestionCh
   chips.asks = asks;
   setup?.(chips);
   chips.draftSessionId = "local:session-1";
-  const onSubmit = vi.fn(() => Promise.resolve());
+  const onSubmit = vi.fn<AskUserSubmitCallback>(() => Promise.resolve());
   chips.onSubmit = onSubmit;
   document.body.append(chips);
   await chips.updateComplete;
@@ -230,6 +231,48 @@ describe("WorkbenchQuestionChips", () => {
     await card?.updateComplete;
     card?.shadowRoot?.querySelector<HTMLButtonElement>(".send-one")?.click();
     await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledWith("def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1", partial: true }); });
+  });
+
+  it("offers Send all once two sets hold answers and sends each: a full set whole with its note, a partial one keeping the rest open", async () => {
+    saveAskNote("local:session-1", "abc-1", "Note for one");
+    saveAskNote("local:session-1", "def-2", "Waits for the rest");
+    const { chips, onSubmit } = await mount([ask("abc-1"), twoQuestions, ask("ghi-3")]);
+    await openWith(chips);
+    const sendAll = () => chips.shadowRoot?.querySelector<HTMLButtonElement>(".send-all") ?? null;
+    const [first, second] = cards(chips);
+    first?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
+    await first?.updateComplete;
+    await chips.updateComplete;
+    expect(sendAll()).toBeNull();
+
+    second?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
+    await second?.updateComplete;
+    await chips.updateComplete;
+    expect(sendAll()?.textContent.trim()).toBe("Send 2 answers");
+
+    sendAll()?.click();
+    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledTimes(2); });
+    expect(onSubmit).toHaveBeenNthCalledWith(1, "abc-1", { answers: [{ id: "db", values: ["pg"] }], note: "Note for one", revision: "r1" });
+    expect(onSubmit).toHaveBeenNthCalledWith(2, "def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1", partial: true });
+    // The daemon, not this stub, retires sent answers; the drawer is idle again with no error.
+    await vi.waitFor(() => { expect(sendAll()?.disabled).toBe(false); });
+    expect(chips.shadowRoot?.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("keeps a set whose send fails with its draft and says so, while the other sets still go", async () => {
+    const { chips, onSubmit } = await mount([ask("abc-1"), ask("def-2"), ask("ghi-3")]);
+    onSubmit.mockImplementation((askId: string) => askId === "def-2" ? Promise.reject(new Error("offline")) : Promise.resolve());
+    await openWith(chips);
+    for (const card of cards(chips)) {
+      card.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
+      await card.updateComplete;
+    }
+    await chips.updateComplete;
+    chips.shadowRoot?.querySelector<HTMLButtonElement>(".send-all")?.click();
+
+    await vi.waitFor(() => { expect(chips.shadowRoot?.querySelector('[role="alert"]')?.textContent).toBe("1 of 3 sets were not sent; their answers are kept."); });
+    expect(onSubmit.mock.calls.map(([askId]) => askId)).toEqual(["abc-1", "def-2", "ghi-3"]);
+    expect(loadAskDraft("local:session-1", "def-2")).toMatchObject({ db: { values: ["pg"] } });
   });
 
   it("closes the drawer on Esc or its close button, returning focus to the bar", async () => {
