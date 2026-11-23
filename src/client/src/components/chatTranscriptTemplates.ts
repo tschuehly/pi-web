@@ -46,6 +46,8 @@ export interface TranscriptRenderContext {
   disclosure: {
     isOpen: (key: string, defaultOpen: boolean) => boolean;
     toggle: (key: string, event: Event, defaultOpen: boolean) => void;
+    /** Whether reasoning starts expanded: only under Focused Attention. */
+    thinkingOpen: boolean;
   };
   metadata: {
     label: (message: ChatLine) => string;
@@ -281,10 +283,11 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
       if (text === "") return null;
       if (part.type === "thinking") {
         const disclosureKey = `thinking:${intentKey}`;
-        const open = context.disclosure.isOpen(disclosureKey, true);
+        const { thinkingOpen } = context.disclosure;
+        const open = context.disclosure.isOpen(disclosureKey, thinkingOpen);
         return html`
           <details class="part thinking ui-transcript-surface ui-transcript-activity" ?open=${live(open)}
-            @toggle=${(event: Event) => { context.disclosure.toggle(disclosureKey, event, true); }}>
+            @toggle=${(event: Event) => { context.disclosure.toggle(disclosureKey, event, thinkingOpen); }}>
             <summary class="ui-transcript-disclosure ui-transcript-heading">${renderDisclosureChevron()}Thinking</summary>
             ${open ? html`<formatted-text .imagesEnabled=${context.behaviors.loadImages} .codeBlocks=${context.behaviors.codeBlocks} .intentKey=${intentKey} .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .text=${text}></formatted-text>` : nothing}
           </details>

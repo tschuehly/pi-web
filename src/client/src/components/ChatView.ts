@@ -18,6 +18,7 @@ export { chatQueuedMessageSections, chatQueuedSectionShowsClearAction, type Queu
 import type { DisplayedMessageActionAvailabilityContext, MessageActionAvailabilityContext, MessageActionResult } from "../../../plugin-api";
 import type { RegisteredMessageAction } from "../plugins/messageActions";
 import { machineSessionKey } from "../machineKeys";
+import { parseWorkingModeSnapshot, WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
 import { canonicalEntryActionHeaders, currentExchangeGroups, groupChatMessages, groupConsecutiveImageOutputs, type ChatDisplayGroup, type ChatGroup } from "../chatGroups";
 import type { ReplyQuote } from "../replyQuotes";
 import { ChatScrollFlows } from "../ChatScrollFlows";
@@ -761,6 +762,7 @@ export class ChatView extends LitElement {
       disclosure: {
         isOpen: (key, defaultOpen) => this.isDisclosureOpen(key, defaultOpen),
         toggle: (key, event, defaultOpen) => { this.onDisclosureToggle(key, event, defaultOpen); },
+        thinkingOpen: this.thinkingOpen(),
       },
       metadata: {
         label: (message) => this.messageMetaLabel(message),
@@ -780,13 +782,15 @@ export class ChatView extends LitElement {
   }
 
   private renderMessageGroup(group: Extract<ChatGroup, { kind: "group" }>, live: boolean, entryActionHeaders: ReadonlySet<ChatLine> = new Set()) {
-    // Reasoning stays open; routine activity and compacted history fold away even on the live tail.
-    const defaultOpen = group.presentation === "thinking" || (group.presentation === undefined && live);
-    const disclosureKey = this.groupDisclosureKey(group, defaultOpen);
+    // Reasoning stays open under Focused Attention; routine activity and compacted history fold away even on the live tail.
+    // Reasoning groups keep their start-anchored key either way, so a manual toggle survives the group growing.
+    const growsAtEnd = group.presentation === "thinking" || (group.presentation === undefined && live);
+    const defaultOpen = group.presentation === "thinking" ? this.thinkingOpen() : growsAtEnd;
+    const disclosureKey = this.groupDisclosureKey(group, growsAtEnd);
     const open = this.isDisclosureOpen(disclosureKey, defaultOpen);
     return transcript.renderMessageGroup(this.transcriptRenderContext(), group, defaultOpen, entryActionHeaders, {
       open,
-      anchor: this.groupAnchorKey(group, defaultOpen),
+      anchor: this.groupAnchorKey(group, growsAtEnd),
       toggle: (event) => { this.onDisclosureToggle(disclosureKey, event, defaultOpen); },
     });
   }
@@ -804,6 +808,10 @@ export class ChatView extends LitElement {
       this.imageSession = { id: this.sessionId, cwd: this.sessionCwd };
     }
     return this.imageSession;
+  }
+
+  private thinkingOpen(): boolean {
+    return parseWorkingModeSnapshot(this.status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY])?.selected.attention === "Focused";
   }
 
   private isDisclosureOpen(key: string, defaultOpen: boolean): boolean {

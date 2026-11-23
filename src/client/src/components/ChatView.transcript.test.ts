@@ -32,6 +32,12 @@ describe("ChatView transcript density", () => {
     document.body.append(view);
     await view.updateComplete;
     const root = requireShadowRoot(view);
+    // Reasoning starts collapsed outside Focused Attention; open it to see the folds.
+    const group = root.querySelector<HTMLDetailsElement>("details.thinking-group");
+    if (group === null) throw new Error("Expected thinking group");
+    group.open = true;
+    group.dispatchEvent(new Event("toggle"));
+    await view.updateComplete;
     const folds = [...root.querySelectorAll(".thinking-group details.tool-fold")];
     expect(folds.map((fold) => fold.querySelector("summary")?.textContent.replace(/\s+/g, " ").trim())).toEqual(["2 tool calls · running"]);
     const failed = [...root.querySelectorAll("tool-execution-view")].find((row) => row.closest("details.tool-fold") === null);
