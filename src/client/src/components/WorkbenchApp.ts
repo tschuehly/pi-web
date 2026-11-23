@@ -1630,7 +1630,8 @@ export class WorkbenchApp extends LitElement {
     if (pending === undefined) {
       pending = (async () => {
         for (const project of rootProjects(this.app.projects)) {
-          const workspaces = await api.workspaces(project.id, machineId);
+          // Any registered workspace will do, so a project that fails to resolve is skipped; the render-time caller never awaits a rejection.
+          const workspaces = await api.workspaces(project.id, machineId).catch(() => []);
           const workspace = workspaces.find((candidate) => candidate.projectId === project.id && candidate.isMain) ?? workspaces[0];
           if (workspace !== undefined) return { machineId, projectId: workspace.projectId, workspaceId: workspace.id };
         }

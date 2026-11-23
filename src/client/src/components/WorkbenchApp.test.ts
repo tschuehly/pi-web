@@ -2033,6 +2033,19 @@ describe("Workstream open versus in-flight navigation", () => {
     });
   });
 
+  it("the Other tab skips a project whose workspaces fail to resolve and borrows the next one", async () => {
+    const app = await mountChooser([]);
+    const broken: Project = { ...project, id: "broken", path: "/broken" };
+    vi.spyOn(api, "workspaces").mockImplementation((projectId) => projectId === broken.id ? Promise.reject(new Error("unreachable")) : Promise.resolve([workspace]));
+    setState(app, { ...getState(app), projects: [broken, project], selectedProject: undefined, selectedWorkspace: { ...workspace, id: "adhoc", projectId: "", path: "/adhoc" } });
+    Reflect.set(app, "chooserView", "other");
+    await app.updateComplete;
+    await vi.waitFor(() => {
+      const chooser = app.shadowRoot?.querySelector<HTMLElement & { serviceProjectId: string; serviceWorkspaceId: string }>("workstream-chooser");
+      expect([chooser?.serviceProjectId, chooser?.serviceWorkspaceId]).toEqual([project.id, workspace.id]);
+    });
+  });
+
   it("an open that succeeds during a machine switch still receives that machine's projects", async () => {
     const app = await mountChooser([]);
     setState(app, { ...getState(app), machines: [machine, remote] });
