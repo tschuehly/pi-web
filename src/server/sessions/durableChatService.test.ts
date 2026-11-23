@@ -1055,7 +1055,7 @@ describe("Durable Chats: send_chat_message", () => {
   const set: DurableChatResourceSet = { resources: { sources: [] }, compaction: { enabled: true, reserveTokens: 1, keepRecentTokens: 1 }, skillList: [] };
   const answered = (host: FakeHost) => host.requests.filter((request) => request.method === "chatMessaged").map((request) => request.params);
   /** The target's host answers `chatMessage` with this delivery. */
-  const target = (delivery = "started") => { const host = new FakeHost(); host.answer = (request) => (request.method === "chatMessage" ? { delivery } : request.method === "status" ? status : null); return host; };
+  const target = (delivery = "started") => { const host = new FakeHost(); host.answer = (request) => (request.method === "chatMessage" ? { delivery: request.params?.["wake"] === false ? "noted" : delivery } : request.method === "status" ? status : null); return host; };
 
   async function pair(extra: Partial<ConstructorParameters<typeof DurableChatService>[0]> = {}) {
     const made = await service(() => target(), set, extra);
@@ -1085,9 +1085,9 @@ describe("Durable Chats: send_chat_message", () => {
     // The host names a different sender: the daemon ignores it.
     host.push({ type: "durable.chat-message", requestId: "m1", chat: "code-only-agent", text: "Rebase on main and rerun the gate.", wake: true, from: { chatId: "owner", name: "The owner" } });
     await vi.waitFor(() => { expect(answered(host)).toHaveLength(2); });
-    expect(answered(host)[1]).toEqual({ requestId: "m1", result: { chatId: b.id, key: "code-only-agent", name: "Code only agent", delivery: "started" } });
+    expect(answered(host)[1]).toEqual({ requestId: "m1", result: { chatId: b.id, key: "code-only-agent", name: "Code only agent", delivery: "started", hop: 1 } });
     const delivered = only(launched.slice(1)).requests.find((request) => request.method === "chatMessage")?.params;
-    expect(delivered).toMatchObject({ requestId: "m1", from: { chatId: a.id, key: "cloud-builds-agents", name: "Cloud builds for agents" }, text: "Rebase on main and rerun the gate.", wake: true });
+    expect(delivered).toEqual({ requestId: "m1", from: { chatId: a.id, key: "cloud-builds-agents", name: "Cloud builds for agents" }, text: "Rebase on main and rerun the gate.", wake: true, urgent: false, hop: 1 });
     // Keys persist and never change after a rename; the UUID works too.
     locator.update(b.id, { name: "Renamed chat" });
     host.push({ type: "durable.chat-message", requestId: "m2", chat: b.id, text: "Second", wake: false });
@@ -1130,10 +1130,63 @@ describe("Durable Chats: send_chat_message", () => {
     const bHost = only(launched.slice(1));
     expect(await send(bHost, "r1", a.id, 1)).toBeUndefined();
     now += 60_000;
-    expect(await send(host, "3", b.id, 4)).toBe("send_chat_message: you sent 2 messages to code-only-agent in the last 5 minutes; wait 3 more minutes, or ask the owner if it is urgent.");
+    expect(await send(host, "3", b.id, 4)).toBe("send_chat_message: you sent 2 messages to code-only-agent in the last 5 minutes; stop and report to the owner instead of retrying.");
     now += 3 * 60_000;
     expect(await send(host, "4", b.id, 5)).toBeUndefined();
     expect(bHost.requests.filter((request) => request.method === "chatMessage").map((request) => request.params?.["requestId"])).toEqual(["1", "2", "4"]);
+  });
+
+  it("allows 10 sends per sending chat in any hour across targets; retries do not count", async () => {
+    let now = Date.parse("2026-11-24T10:00:00Z");
+    const made = await service(() => target(), set, { now: () => now });
+    await made.durable.start("/work/a");
+    const host = only(made.launched);
+    const targets = Array.from({ length: 6 }, (_, i) => made.locator.create(`/work/t${String(i)}`).id);
+    let count = 0;
+    const send = async (requestId: string, chat: string) => {
+      host.push({ type: "durable.chat-message", requestId, chat, text: `msg ${requestId}`, wake: true });
+      count += 1;
+      await vi.waitFor(() => { expect(answered(host)).toHaveLength(count); });
+      return answered(host)[count - 1]?.["error"];
+    };
+    for (let i = 0; i < 10; i++) {
+      expect(await send(`s${String(i)}`, targets[Math.floor(i / 2)] ?? "")).toBeUndefined();
+      now += 4 * 60_000;
+    }
+    expect(await send("s9", targets[4] ?? "")).toBeUndefined(); // a retry of the 10th
+    expect(await send("s10", targets[5] ?? "")).toBe("send_chat_message: you sent 10 chat messages in the last hour; stop and report to the owner instead of retrying.");
+    now = Date.parse("2026-11-24T10:00:00Z") + 60 * 60_000 + 1;
+    expect(await send("s11", targets[5] ?? "")).toBeUndefined();
+  });
+
+  it("hop counter: a reply chain wakes through hop 5; hop 6 is a note without waking; an owner prompt resets it", async () => {
+    let now = Date.parse("2026-11-24T10:00:00Z");
+    const { durable, host, launched, a, b } = await pair({ now: () => now });
+    const sent = new Map<FakeHost, number>();
+    const send = async (from: FakeHost, requestId: string, chat: string, urgent?: boolean) => {
+      from.push({ type: "durable.chat-message", requestId, chat, text: `msg ${requestId}`, wake: true, ...(urgent === undefined ? {} : { urgent }) });
+      const count = (sent.get(from) ?? 0) + 1;
+      sent.set(from, count);
+      await vi.waitFor(() => { expect(answered(from)).toHaveLength(count); });
+      now += 5 * 60_000;
+      return answered(from).at(-1)?.["result"];
+    };
+    const delivered = (to: FakeHost) => to.requests.filter((request) => request.method === "chatMessage").at(-1)?.params;
+    expect(await send(host, "h1", b.id)).toMatchObject({ hop: 1, delivery: "started" });
+    const bHost = only(launched.slice(1));
+    expect(await send(bHost, "h2", a.id, true)).toMatchObject({ hop: 2 });
+    expect(delivered(host)).toMatchObject({ hop: 2, wake: true, urgent: true });
+    expect(await send(host, "h3", b.id)).toMatchObject({ hop: 3 });
+    expect(await send(bHost, "h4", a.id)).toMatchObject({ hop: 4 });
+    expect(await send(host, "h5", b.id)).toMatchObject({ hop: 5, delivery: "started" });
+    expect(delivered(bHost)).toMatchObject({ hop: 5, wake: true });
+    const held = await send(bHost, "h6", a.id, true);
+    expect(held).toEqual({ chatId: a.id, key: "cloud-builds-agents", name: "Cloud builds for agents", delivery: "noted", hop: 6, held: true });
+    expect(delivered(host)).toMatchObject({ requestId: "h6", hop: 6, wake: false, urgent: false });
+    // The owner prompts A: its chain restarts at hop 1.
+    await durable.prompt({ id: a.id, cwd: a.cwd }, "owner here");
+    expect(await send(host, "h7", b.id)).toMatchObject({ hop: 1 });
+    expect(delivered(bHost)).toMatchObject({ hop: 1, wake: true });
   });
 
   it("tells the sender when the target's host predates chat messages", async () => {

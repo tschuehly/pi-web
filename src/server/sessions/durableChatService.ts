@@ -365,8 +365,10 @@ export class DurableChatService {
   readonly #spawns = new Map<string, Promise<SpawnSessionResult>>();
   /** send_chat_message deliveries by sender and request ID: a retried request gets the same answer and counts once. */
   readonly #chatMessages = new Map<string, Promise<ChatMessageResult>>();
-  /** When each chat sent to each target (`<from>\0<to>`), in memory only: the loop guard. */
+  /** When each chat sent to each target (`<from>\0<to>`), and to any target (`<from>`), in memory only: the loop guard. */
   readonly #chatMessagesSent = new Map<string, number[]>();
+  /** Each chat's place in a reply chain: the hop of the last chat message delivered to it; an owner prompt resets it. */
+  readonly #hops = new Map<string, number>();
   /** Chats whose host last reported a running turn, for send_chat_message's list. */
   readonly #streaming = new Set<string>();
 
@@ -587,8 +589,10 @@ export class DurableChatService {
    * Resolves once the host committed the input; a queued input shows in status until it is placed. The client's
    * operation ID makes a retried request the same input; `/skill:name` expands as in a legacy Chat.
    */
-  async prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string }): Promise<void> {
+  async prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string; spawned?: true }): Promise<void> {
     const operationId = options?.operationId;
+    // The owner speaks: this chat's reply chain starts again (spawn_session's assignment is not the owner).
+    if (options?.spawned !== true) this.#hops.delete(ref.id);
     if (typeof text !== "string") throw new Error("text field must be a non-empty string");
     if (streamingBehavior !== undefined && streamingBehavior !== "steer" && streamingBehavior !== "followUp") throw new Error("streamingBehavior must be steer or followUp");
     // As a legacy Chat: images go inline (resized by Pi), named [PIC_n] in a trailing legend unless a command takes them.
@@ -1420,7 +1424,7 @@ export class DurableChatService {
       if (model !== undefined) await this.setModel(ref, model.provider, model.modelId);
       // The host clamps the level to the Chat's model, as Pi does.
       if (event.thinkingLevel !== undefined) await (await this.#for(ref)).request("setThinkingLevel", { level: event.thinkingLevel });
-      await this.prompt(ref, event.prompt, undefined, undefined, { operationId: `spawn-${event.requestId}` });
+      await this.prompt(ref, event.prompt, undefined, undefined, { operationId: `spawn-${event.requestId}`, spawned: true });
     } catch (error) {
       // A Chat a dead daemon started may already run: only a new one is undone.
       if (earlier !== undefined) throw error;
@@ -1498,27 +1502,32 @@ export class DurableChatService {
     if (target.id === sender.id) throw new Error("send_chat_message: a chat cannot message itself");
     const key = this.#chatKey(target);
     const now = this.#now();
-    const direction = `${sender.id}\0${target.id}`;
-    const recent = (this.#chatMessagesSent.get(direction) ?? []).filter((at) => now - at < CHAT_MESSAGE_WINDOW_MS);
-    const [oldest] = recent;
-    if (oldest !== undefined && recent.length >= CHAT_MESSAGE_LIMIT) {
-      const wait = Math.max(1, Math.ceil((oldest + CHAT_MESSAGE_WINDOW_MS - now) / 60_000));
-      throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_LIMIT)} messages to ${key} in the last 5 minutes; wait ${String(wait)} more minute${wait === 1 ? "" : "s"}, or ask the owner if it is urgent.`);
-    }
-    recent.push(now);
-    this.#chatMessagesSent.set(direction, recent);
+    const direction = (this.#chatMessagesSent.get(`${sender.id}\0${target.id}`) ?? []).filter((at) => now - at < CHAT_MESSAGE_WINDOW_MS);
+    const hourly = (this.#chatMessagesSent.get(sender.id) ?? []).filter((at) => now - at < CHAT_MESSAGE_HOUR_MS);
+    if (direction.length >= CHAT_MESSAGE_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_LIMIT)} messages to ${key} in the last 5 minutes; stop and report to the owner instead of retrying.`);
+    if (hourly.length >= CHAT_MESSAGE_HOURLY_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_HOURLY_LIMIT)} chat messages in the last hour; stop and report to the owner instead of retrying.`);
+    direction.push(now);
+    hourly.push(now);
+    this.#chatMessagesSent.set(`${sender.id}\0${target.id}`, direction);
+    this.#chatMessagesSent.set(sender.id, hourly);
+    const hop = (this.#hops.get(sender.id) ?? 0) + 1;
+    // From hop 6 a reply chain no longer wakes anyone: delivered as a note, and the sender tells the owner to step in.
+    const held = event.wake !== false && hop >= CHAT_MESSAGE_HOP_LIMIT;
+    const wake = event.wake !== false && !held;
     try {
       const connection = await this.#connection(target);
       const { result } = await connection.request("chatMessage", {
-        requestId: event.requestId, from: { chatId: sender.id, key: this.#chatKey(sender), name: chatName(sender) }, text, wake: event.wake !== false,
+        requestId: event.requestId, from: { chatId: sender.id, key: this.#chatKey(sender), name: chatName(sender) }, text, wake, urgent: wake && event.urgent === true, hop,
       });
       const delivery = isRecord(result) ? result["delivery"] : undefined;
-      if (delivery !== "started" && delivery !== "queued" && delivery !== "noted") throw new Error("The target chat's host sent a malformed delivery");
-      this.deps.logger?.info?.({ from: sender.id, to: target.id, delivery, length: text.length }, "send_chat_message delivered");
-      return { chatId: target.id, key, name: chatName(this.deps.locator.durable(target.id) ?? target), delivery };
+      if (delivery !== "started" && delivery !== "queued" && delivery !== "steered" && delivery !== "noted") throw new Error("The target chat's host sent a malformed delivery");
+      this.#hops.set(target.id, hop);
+      this.deps.logger?.info?.({ from: sender.id, to: target.id, delivery, hop, length: text.length }, "send_chat_message delivered");
+      return { chatId: target.id, key, name: chatName(this.deps.locator.durable(target.id) ?? target), delivery, hop, ...(held ? { held: true } : {}) };
     } catch (error) {
-      // A failed delivery does not count toward the limit.
-      recent.splice(recent.indexOf(now), 1);
+      // A failed delivery does not count toward the limits.
+      direction.splice(direction.indexOf(now), 1);
+      hourly.splice(hourly.indexOf(now), 1);
       if (error instanceof Error && error.message === "Unknown method chatMessage") throw new Error("The target chat's host is too old; upgrade its host", { cause: error });
       throw error;
     }
@@ -1718,11 +1727,11 @@ interface HostNotificationEvent { type: "durable.notification"; severity: "warni
 /** spawn_session: start an independent Chat in a workspace of the spawning Chat's project, answered with `spawned`. */
 interface HostSpawnEvent { type: "durable.spawn"; requestId: string; spawningCwd: string; prompt: string; cwd?: string; model?: string; thinkingLevel?: string }
 /** send_chat_message from a Durable Chat's lead: deliver to another Chat, answered with `chatMessaged`. */
-interface HostChatMessageEvent { type: "durable.chat-message"; requestId: string; chat: unknown; text: unknown; wake?: unknown }
+interface HostChatMessageEvent { type: "durable.chat-message"; requestId: string; chat: unknown; text: unknown; wake?: unknown; urgent?: unknown }
 /** send_chat_message's list of other Chats, answered with `chatMessaged`. */
 interface HostChatListEvent { type: "durable.chat-list"; requestId: string }
 type HostEvent = HostAttentionEvent | HostNotificationEvent | HostSpawnEvent | HostChatMessageEvent | HostChatListEvent;
-interface ChatMessageResult { chatId: string; key: string; name: string; delivery: "started" | "queued" | "noted" }
+interface ChatMessageResult { chatId: string; key: string; name: string; delivery: "started" | "queued" | "steered" | "noted"; hop: number; held?: true }
 interface ChatListEntry { id: string; key: string; title: string; cwd: string; state: "running" | "idle" | "closed" }
 
 const CHAT_MESSAGE_MAX_LENGTH = 8000;
@@ -1730,6 +1739,9 @@ const CHAT_LIST_LIMIT = 15;
 /** The loop guard: a chat sends to one target at most this many times in any rolling window. */
 const CHAT_MESSAGE_LIMIT = 2;
 const CHAT_MESSAGE_WINDOW_MS = 5 * 60_000;
+const CHAT_MESSAGE_HOURLY_LIMIT = 10;
+const CHAT_MESSAGE_HOUR_MS = 60 * 60_000;
+const CHAT_MESSAGE_HOP_LIMIT = 6;
 const CHAT_KEY_STOP_WORDS = new Set(["a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into", "is", "it", "its", "of", "on", "or", "the", "this", "that", "to", "via", "vs", "with"]);
 
 /** The name other chats see: the Chat's title, else its first message. */
