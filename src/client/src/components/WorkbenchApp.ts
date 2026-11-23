@@ -928,6 +928,8 @@ export class WorkbenchApp extends LitElement {
       return Date.now() > expires || closedTarget ? store : moveChats(store, id, targetWindowId, sessionIds);
     })?.then((stored) => {
       if (closedTarget) this.setApp({ error: "That window has closed, so the Chats stay here." });
+      // Its last Chat moved away: the empty window closes (the macOS app closes on webViewDidClose; a browser only for windows it opened).
+      else if (stored && this.windows.window?.chats.length === 0) window.close();
       return stored;
     });
   }
