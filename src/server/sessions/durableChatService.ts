@@ -613,7 +613,7 @@ export class DurableChatService {
     const expanded = expandPromptTemplate(skilled, templates);
     const providerText = !explicit || template ? expanded : appendInlineImageReferenceMapping(expanded, references);
     this.#maybeTitle(ref, template ? body : text, connection);
-    await connection.request("prompt", {
+    const { result } = await connection.request("prompt", {
       operationId: operationId ?? randomUUID(), text: providerText,
       ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }),
       ...(images.length === 0 ? {} : {
@@ -621,8 +621,9 @@ export class DurableChatService {
         attachments: parsed.map((attachment) => ({ reference: attachment.reference, mimeType: attachment.mimeType, ...(attachment.name === undefined ? {} : { name: attachment.name }) })),
       }),
     });
-    // The host admitted the owner's input: this chat's reply chain starts again (spawn_session's assignment is not the owner).
-    if (options?.spawned !== true) this.#hops.delete(ref.id);
+    // The host admitted a new owner input (not a replayed operation; an older host does not say): this chat's reply chain
+    // starts again. spawn_session's assignment is not the owner.
+    if (options?.spawned !== true && isRecord(result) && result["fresh"] === true) this.#hops.delete(ref.id);
   }
 
   /** Files saved into the Chat's workspace, exactly as a legacy Chat saves them (the prompt then names their paths). */
@@ -1445,24 +1446,29 @@ export class DurableChatService {
 
   /**
    * The key and name other chats see. The key is assigned and saved the first time it is needed and never changes after.
-   * Both come from the title, else from the first message as the host's redactor masks it whole, before anything cuts or
-   * lowercases it (a token cut short or hyphenated is one no redactor knows); no first message when the host cannot redact.
+   * Both come from the title, else from the first message, each as the host's redactor masks it whole, before anything
+   * cuts or lowercases it (a token cut short or hyphenated is one no redactor knows); neither when the host cannot redact.
    */
   async #chatIdentity(record: DurableChatRecord, connection: DurableHostConnection): Promise<{ key: string; name: string }> {
     const before = this.deps.locator.durable(record.id) ?? record;
-    const needed = before.firstMessage !== "" && (before.name === undefined || before.key === undefined);
-    const first = !needed ? "" : await connection.request("redact", { text: before.firstMessage }).then(
-      ({ result }) => (typeof result === "string" ? result.replace(/\[REDACTED[^\]]*\]/gu, " ").trim() : ""),
-      () => "",
+    const masked = (text: string) => connection.request("redact", { text }).then(
+      ({ result }) => {
+        const clean = typeof result === "string" ? result.replace(/\[REDACTED[^\]]*\]/gu, " ").replace(/\s+/gu, " ").trim() : "";
+        return clean === "" ? undefined : clean;
+      },
+      () => undefined,
     );
+    const title = before.name === undefined ? undefined : await masked(before.name);
+    const needed = before.firstMessage !== "" && (title === undefined || before.key === undefined);
+    const first = !needed ? "" : (await masked(before.firstMessage)) ?? "";
     // Read again after the await, with no await before the save: a concurrent send may have assigned the key meanwhile.
     const live = this.deps.locator.durable(record.id) ?? before;
     let key = live.key;
     if (key === undefined) {
-      key = chatKey({ id: live.id, ...(live.name === undefined ? {} : { name: live.name }), firstMessage: first }, new Set(this.deps.locator.all().flatMap((other) => (other.key === undefined ? [] : [other.key]))));
+      key = chatKey({ id: live.id, ...(title === undefined ? {} : { name: title }), firstMessage: first }, new Set(this.deps.locator.all().flatMap((other) => (other.key === undefined ? [] : [other.key]))));
       this.deps.locator.update(live.id, { key });
     }
-    return { key, name: live.name ?? (first.slice(0, 60).trim() || "Durable Chat") };
+    return { key, name: title ?? (first.slice(0, 60).trim() || "Durable Chat") };
   }
 
   /** A target named by key first, then by chat ID; never a legacy Chat (it has no Durable record). */
@@ -1530,6 +1536,14 @@ export class DurableChatService {
     if (direction.length >= CHAT_MESSAGE_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_LIMIT)} messages to ${key} in the last 5 minutes; stop and report to the owner instead of retrying.`);
     if (hourly.length >= CHAT_MESSAGE_HOURLY_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_HOURLY_LIMIT)} chat messages in the last hour; stop and report to the owner instead of retrying.`);
     for (const window of windows) this.#chatMessagesSent.set(window, [...(this.#chatMessagesSent.get(window) ?? []), { at: now, requestId: event.requestId }]);
+    // shortcut: a replay after a daemon restart counts until the target answers it as a duplicate, so a full window refuses it first; persist the windows if that shows up.
+    const uncount = () => {
+      for (const window of windows) {
+        const kept = (this.#chatMessagesSent.get(window) ?? []).filter((sent) => sent.requestId !== event.requestId);
+        if (kept.length === 0) this.#chatMessagesSent.delete(window);
+        else this.#chatMessagesSent.set(window, kept);
+      }
+    };
     const hop = (this.#hops.get(sender.id) ?? 0) + 1;
     // From hop 6 a reply chain no longer wakes anyone: delivered as a note, and the sender tells the owner to step in.
     const held = event.wake !== false && hop >= CHAT_MESSAGE_HOP_LIMIT;
@@ -1537,21 +1551,22 @@ export class DurableChatService {
     try {
       const connection = await this.#connection(target);
       const { result } = await connection.request("chatMessage", {
-        requestId: event.requestId, from: { chatId: sender.id, key: from.key, name: from.name }, text, wake, urgent: wake && event.urgent === true, hop,
+        requestId: event.requestId, from: { chatId: sender.id, key: from.key, name: from.name }, text, wake, urgent: wake && event.urgent === true, hop, ...(held ? { held: true } : {}),
       });
       const delivery = isRecord(result) ? result["delivery"] : undefined;
       if (delivery !== "started" && delivery !== "queued" && delivery !== "steered" && delivery !== "noted") throw new Error("The target chat's host sent a malformed delivery");
+      // A replay the target took before (a restarted daemon forgot it): the hop and held flag it was admitted with, and no quota.
+      const duplicate = isRecord(result) && result["duplicate"] === true;
+      if (duplicate) uncount();
+      const firstHop = duplicate && typeof result["hop"] === "number" ? result["hop"] : hop;
+      const firstHeld = duplicate ? result["held"] === true : held;
       // An unrelated low-hop note never lowers the chain the target is in.
-      this.#hops.set(target.id, Math.max(this.#hops.get(target.id) ?? 0, hop));
-      this.deps.logger?.info?.({ from: sender.id, to: target.id, delivery, hop, length: text.length }, "send_chat_message delivered");
-      return { chatId: target.id, key, name: to.name, delivery, hop, ...(held ? { held: true } : {}) };
+      this.#hops.set(target.id, Math.max(this.#hops.get(target.id) ?? 0, firstHop));
+      this.deps.logger?.info?.({ from: sender.id, to: target.id, delivery, hop: firstHop, duplicate, length: text.length }, "send_chat_message delivered");
+      return { chatId: target.id, key, name: to.name, delivery, hop: firstHop, ...(firstHeld ? { held: true } : {}) };
     } catch (error) {
       // A failed delivery does not count toward the limits: its own entry goes from the current windows.
-      for (const window of windows) {
-        const kept = (this.#chatMessagesSent.get(window) ?? []).filter((sent) => sent.requestId !== event.requestId);
-        if (kept.length === 0) this.#chatMessagesSent.delete(window);
-        else this.#chatMessagesSent.set(window, kept);
-      }
+      uncount();
       if (error instanceof Error && error.message === "Unknown method chatMessage") throw new Error("The target chat's host is too old; upgrade its host", { cause: error });
       // The target's restore waits for its owner: refused now, never delivered later.
       if (error instanceof Error && error.message === CHAT_PAUSED) throw new Error(`${key} is paused until the owner resumes it; the message was not delivered`, { cause: error });
