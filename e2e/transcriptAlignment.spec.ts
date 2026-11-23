@@ -32,10 +32,10 @@ const transcript = (page: Page) => page.locator('.tile[data-focused="true"] main
 /** Kind name → how to find its element inside `.chat`; nested kinds sit inside another block and must not draw a bar of their own. */
 const KINDS: { kind: string; selector: string; nested?: true }[] = [
   { kind: "history fold (exchange)", selector: "details.exchange-history > summary" },
-  { kind: "user message", selector: ".chat > article.msg.user.conversation-message" },
-  { kind: "assistant message", selector: ".chat > article.msg.assistant.conversation-message" },
+  { kind: "user message", selector: ".chat-content > article.msg.user.conversation-message" },
+  { kind: "assistant message", selector: ".chat-content > article.msg.assistant.conversation-message" },
   { kind: "compaction summary", selector: "details.history-group" },
-  { kind: "working-mode card", selector: ".chat > .event-group.visible-events:has(.working-mode-card)" },
+  { kind: "working-mode card", selector: ".chat-content > .event-group.visible-events:has(.working-mode-card)" },
   { kind: "thinking group", selector: "details.thinking-group" },
   { kind: "thinking › tool fold", selector: "details.thinking-group details.tool-fold", nested: true },
   { kind: "single tool row (bash)", selector: "tool:success" },
@@ -45,7 +45,7 @@ const KINDS: { kind: string; selector: string; nested?: true }[] = [
   { kind: "goal lifecycle card", selector: "article:has(> .goal-lifecycle)" },
   { kind: "subagent completion", selector: "article:has(> .subagent-completion)" },
   { kind: "ask_user record", selector: "article.ask-user-record-shell" },
-  { kind: "quiet notice (lone)", selector: ".chat > article.msg.notice-line" },
+  { kind: "quiet notice (lone)", selector: ".chat-content > article.msg.notice-line" },
   { kind: "notice fold", selector: "details.notice-fold" },
   { kind: "tool image output", selector: "article.tool-image-output" },
 ];

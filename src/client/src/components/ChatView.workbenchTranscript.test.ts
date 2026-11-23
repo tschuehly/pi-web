@@ -128,7 +128,7 @@ describe("Workbench transcript on the upstream chat surface", () => {
     const ask = (askId: string): PendingAskUser => ({ askId, askedAt: "2026-07-20T00:00:00.000Z", updatedAt: "2026-07-20T00:00:00.000Z", revision: "", turnsSinceUpdate: 0, questions: [{ id: "q", question: "Which?", options: [] }] });
     let host: ChatView | undefined;
     const root = await mount([], (view) => { view.pendingAsks = [ask("one"), ask("two")]; view.dense = true; host = view; });
-    expect([...root.querySelectorAll(".chat > ask-user-card.open-question-card")].map((card) => card.getAttribute("data-scroll-anchor-id"))).toEqual(["ask:one", "ask:two"]);
+    expect([...root.querySelectorAll(".chat-content > ask-user-card.open-question-card")].map((card) => card.getAttribute("data-scroll-anchor-id"))).toEqual(["ask:one", "ask:two"]);
     expect(host?.hasAttribute("dense")).toBe(true);
   });
 

@@ -38,12 +38,13 @@ export const chatStyles = css`
   .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; white-space: nowrap !important; border: 0 !important; }
   /* Contain sticky headers in the scroller's paint context, below its overlay scrollbar. */
   .chat { isolation: isolate; --pi-chat-sticky-top: 0px; flex: 1 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 0; box-sizing: border-box; }
+  .chat-content { display: flow-root; }
   .chat-wrap > .chat-jumps { position: absolute; right: 0; bottom: 0; }
   .chat-wrap.plain .msg-header, .chat-wrap.plain .event-group > summary { position: static; top: auto; }
   .chat-wrap.plain *, .chat-wrap.plain *::before, .chat-wrap.plain *::after { transition: none !important; animation: none !important; box-shadow: none !important; text-shadow: none !important; filter: none !important; backdrop-filter: none !important; transform: none !important; border-radius: 0 !important; }
   .chat-wrap.plain .chat-image { --pi-image-radius: 0; }
   .msg { --ui-transcript-bg: var(--pi-bg); display: flow-root; max-width: 100%; min-width: 0; margin: 0; padding: 12px 16px 16px; overflow: visible; }
-  .chat > .msg:last-child, .chat > .session-activity:last-child { margin-bottom: 0; }
+  .chat-content > .msg:last-child, .chat-content > .session-activity:last-child { margin-bottom: 0; }
   .msg.conversation-message { padding: 12px; --ui-transcript-bg: var(--pi-chat-conversation-bg, color-mix(in srgb, var(--pi-muted) 6%, var(--pi-bg))); --formatted-link-color: color-mix(in srgb, var(--pi-accent) 45%, var(--pi-text) 55%); --formatted-muted-color: color-mix(in srgb, var(--pi-text-secondary) 80%, var(--pi-text) 20%); border-inline-start: 3px solid var(--pi-chat-conversation-border, color-mix(in srgb, var(--pi-muted) 55%, var(--pi-border) 45%)); padding-inline-start: 12px; }
   .msg.user { --ui-transcript-bg: var(--pi-chat-user-bg, color-mix(in srgb, var(--pi-accent) 6%, var(--pi-bg))); border-inline-start-color: var(--pi-chat-user-border, color-mix(in srgb, var(--pi-accent) 55%, var(--pi-bg))); }
   .msg.tool { color: var(--pi-text); }

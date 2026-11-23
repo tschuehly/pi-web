@@ -18,7 +18,7 @@ describe("ChatView open extension dialogs", () => {
     view.pendingDialogs = [oldest, openDialog("dlg-2", "Pick a region", { kind: "select", options: ["eu", "us"] })];
     await view.updateComplete;
 
-    const card = requiredElement(view.shadowRoot?.querySelector<ExtensionDialogCard>(".chat > extension-dialog-card.open-dialog-card"), "open dialog card");
+    const card = requiredElement(view.shadowRoot?.querySelector<ExtensionDialogCard>(".chat-content > extension-dialog-card.open-dialog-card"), "open dialog card");
     expect(card).toBeInstanceOf(ExtensionDialogCard);
     expect(card.hasAttribute("data-scroll-anchor-id")).toBe(false);
     expect(card.dialog).toBe(oldest);
@@ -30,7 +30,7 @@ describe("ChatView open extension dialogs", () => {
     view.pendingDialogs = [openDialog("dlg-1", "Allow file writes?")];
     await view.updateComplete;
 
-    expect(view.shadowRoot?.querySelector(".chat > extension-dialog-card.open-dialog-card")).not.toBeNull();
+    expect(view.shadowRoot?.querySelector(".chat-content > extension-dialog-card.open-dialog-card")).not.toBeNull();
     expect(view.shadowRoot?.querySelector(".queued-dialogs")).toBeNull();
   });
 
@@ -43,7 +43,7 @@ describe("ChatView open extension dialogs", () => {
     view.pendingDialogs = [openDialog("dlg-1", "Allow file writes?")];
     await view.updateComplete;
 
-    const form = requiredElement(view.shadowRoot?.querySelector(".chat > extension-dialog-card.open-dialog-card"), "open dialog");
+    const form = requiredElement(view.shadowRoot?.querySelector(".chat-content > extension-dialog-card.open-dialog-card"), "open dialog");
     vi.spyOn(form, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 400, 600, 800));
     flush();
     expect(write).toHaveBeenCalledExactlyOnceWith(2000);
@@ -97,7 +97,7 @@ describe("ChatView closed extension dialogs", () => {
     view.pendingDialogs = [openDialog("dlg-1", "Allow file writes?")];
     await view.updateComplete;
 
-    const cards = [...(view.shadowRoot?.querySelectorAll<ExtensionDialogCard>(".chat > extension-dialog-card") ?? [])];
+    const cards = [...(view.shadowRoot?.querySelectorAll<ExtensionDialogCard>(".chat-content > extension-dialog-card") ?? [])];
     expect(cards).toHaveLength(2);
     const closedCard = requiredElement(cards[0], "closed dialog card");
     expect(closedCard.classList.contains("closed-dialog-card")).toBe(true);

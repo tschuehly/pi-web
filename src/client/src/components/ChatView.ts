@@ -271,9 +271,9 @@ export class ChatView extends LitElement {
     canRequestEarlier: () => this.onLoadMore !== undefined,
     requestEarlier: () => { this.requestLoadMore(); },
     getOpenForm: (kind) => this.renderRoot.querySelector<HTMLElement>(kind === "dialog"
-      ? ".chat > extension-dialog-card.open-dialog-card"
-      : kind === "ask" ? ".chat > ask-user-card.open-question-card:last-of-type"
-      : ".chat > ask-user-card.open-question-card, .chat > extension-dialog-card.open-dialog-card") ?? undefined,
+      ? ".chat-content > extension-dialog-card.open-dialog-card"
+      : kind === "ask" ? ".chat-content > ask-user-card.open-question-card:last-of-type"
+      : ".chat-content > ask-user-card.open-question-card, .chat-content > extension-dialog-card.open-dialog-card") ?? undefined,
   });
   private groupedMessagesInput?: ChatLine[];
   private groupedMessagesStart = 0;
@@ -284,7 +284,11 @@ export class ChatView extends LitElement {
   private loadMoreRequested = false;
   private readonly onViewportResize = () => { this.scrollFlows.onViewportResize(); };
   // Composer growth, drawers and Grid dividers shrink the transcript without resizing the window.
-  private readonly transcriptResize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(this.onViewportResize);
+  private readonly transcriptResize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver((entries) => {
+    if (entries.some((entry) => entry.target === this.observedTranscript)) this.onViewportResize();
+    // Images and nested tool disclosures can grow without resizing the viewport or updating ChatView.
+    else if (this.scrollFlows.followingLive) this.scrollFlows.onContentLayoutChanged();
+  });
   private observedTranscript: Element | undefined;
   // Formatting completes independently of message updates. Reuse the existing
   // layout/restore flow without making content loading wait for enhancement.
@@ -304,9 +308,17 @@ export class ChatView extends LitElement {
       if (event.target instanceof HTMLDetailsElement) this.scrollFlows.onContentLayoutChanged();
     },
   };
+  // A gesture consumed inside tool output isn't a request to read earlier messages.
+  private scrollsNestedOutputUp(event: Event): boolean {
+    for (const node of event.composedPath()) {
+      if (node === event.currentTarget) break;
+      if (node instanceof HTMLElement && node.scrollTop > 0 && /^(auto|scroll)$/.test(getComputedStyle(node).overflowY)) return true;
+    }
+    return false;
+  }
   private readonly handleWheel = (event: WheelEvent) => {
     if (event.deltaY !== 0) this.scrollFlows.onInteraction();
-    if (event.deltaY < 0) this.scrollFlows.onUpIntent();
+    if (event.deltaY < 0 && !this.scrollsNestedOutputUp(event)) this.scrollFlows.onUpIntent();
   };
   private readonly handleTouchStart = (event: TouchEvent) => {
     this.touchY = event.touches[0]?.clientY;
@@ -314,7 +326,7 @@ export class ChatView extends LitElement {
   };
   private readonly handleTouchMove = (event: TouchEvent) => {
     const y = event.touches[0]?.clientY;
-    if (this.touchY !== undefined && y !== undefined && y > this.touchY) this.scrollFlows.onUpIntent();
+    if (this.touchY !== undefined && y !== undefined && y > this.touchY && !this.scrollsNestedOutputUp(event)) this.scrollFlows.onUpIntent();
     this.touchY = y;
   };
   private readonly handleTouchEnd = () => { this.touchY = undefined; };
@@ -451,6 +463,8 @@ export class ChatView extends LitElement {
     if (transcript !== undefined && transcript !== this.observedTranscript) {
       this.transcriptResize?.disconnect();
       this.transcriptResize?.observe(transcript);
+      const content = transcript.querySelector(".chat-content");
+      if (content !== null) this.transcriptResize?.observe(content);
       this.observedTranscript = transcript;
     }
     if (changed.has("loadingMore") && !this.loadingMore) this.loadMoreRequested = false;
@@ -525,22 +539,24 @@ export class ChatView extends LitElement {
           @touchmove=${this.handlesScrollIntent ? this.handleTouchMove : undefined}
           @touchend=${this.handlesScrollIntent ? this.handleTouchEnd : undefined}
           @touchcancel=${this.handlesScrollIntent ? this.handleTouchEnd : undefined}>
-          ${this.renderHistoryBoundary()}
-          ${keyed(transcriptIdentity, html`
-            ${exchange.history.length === 0 ? nothing : html`
-              <details class="exchange-history" open>
-                <summary>${renderDisclosureChevron()}Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
-                <div class="exchange-history-body">${renderGroups(exchange.history, 0)}</div>
-              </details>
-            `}
-            ${exchange.startsOutsideLoadedPage ? html`<div class="exchange-boundary" role="note">Current loaded tail · the latest user message is in earlier history</div>` : nothing}
-            ${renderGroups(exchange.current, exchange.history.length)}
-          `)}
-          ${this.transcriptFilter !== "everything" && groups.length === 0 ? html`<p class="filter-empty" role="status">No messages matching ${this.filterLabel()} in loaded history.${this.hasMore ? " Load earlier messages to continue." : ""}</p>` : nothing}
-          ${this.renderQueuedMessages()}
-          ${this.renderSessionActivity()}
-          ${this.renderOpenAsks()}
-          ${this.renderExtensionDialogs()}
+          <div class="chat-content">
+            ${this.renderHistoryBoundary()}
+            ${keyed(transcriptIdentity, html`
+              ${exchange.history.length === 0 ? nothing : html`
+                <details class="exchange-history" open>
+                  <summary>${renderDisclosureChevron()}Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
+                  <div class="exchange-history-body">${renderGroups(exchange.history, 0)}</div>
+                </details>
+              `}
+              ${exchange.startsOutsideLoadedPage ? html`<div class="exchange-boundary" role="note">Current loaded tail · the latest user message is in earlier history</div>` : nothing}
+              ${renderGroups(exchange.current, exchange.history.length)}
+            `)}
+            ${this.transcriptFilter !== "everything" && groups.length === 0 ? html`<p class="filter-empty" role="status">No messages matching ${this.filterLabel()} in loaded history.${this.hasMore ? " Load earlier messages to continue." : ""}</p>` : nothing}
+            ${this.renderQueuedMessages()}
+            ${this.renderSessionActivity()}
+            ${this.renderOpenAsks()}
+            ${this.renderExtensionDialogs()}
+          </div>
         </div>
         ${this.renderReplySelection()}
         ${this.workbench && this.messages.length > 0 ? html`<conversation-meter ?dense=${this.dense}></conversation-meter>` : nothing}
@@ -1047,7 +1063,7 @@ export class ChatView extends LitElement {
     .subagent-completion-instruction { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-text); }
     :is(.goal-lifecycle, .background-bash-card, .working-mode-card, .subagent-completion) > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .queued-send-now-button, .queued-send-all-button { color: var(--pi-warning); }
-    .chat > ask-user-card.open-question-card { display: block; margin: 8px 12px; }
+    .chat-content > ask-user-card.open-question-card { display: block; margin: 8px 12px; }
     /* Dense (a grid tile): spacing halves; the filter shows on hover. Dense is a Workbench tile, so the rail below applies too. */
     :host([dense]) .transcript-filter { top: 4px; right: 6px; opacity: 0; transition: opacity .12s ease; }
     :host([dense]:hover) .transcript-filter, :host([dense]) .transcript-filter:focus-within { opacity: 1; }
@@ -1073,13 +1089,13 @@ export class ChatView extends LitElement {
       --ask-card-border: 0; --ask-card-radius: 0; --ask-card-bg: var(--pi-bg);
     }
     :host([workbench][dense]) { --rail-pad: 16px; --rail-gap: 4px; }
-    :host([workbench]) :is(.chat, .exchange-history-body) > :is(.msg, .notice-fold, .exchange-boundary, ask-user-card),
+    :host([workbench]) :is(.chat-content, .exchange-history-body) > :is(.msg, .notice-fold, .exchange-boundary, ask-user-card),
     :host([workbench]) .exchange-history > summary,
     :host([workbench]) .visible-events > .group-body > .group-msg {
       --ui-activity-edge-width: 0px; --ui-transcript-bg: var(--pi-bg);
       position: relative; box-sizing: border-box; margin-inline: 0; margin-block-end: 0; border: 0; border-inline-start: 3px solid var(--rail-tone, var(--pi-border)); border-radius: 0; background: transparent;
     }
-    :host([workbench]) :is(.chat, .exchange-history, .exchange-history-body, .visible-events > .group-body) > * + * { margin-block-start: var(--rail-gap); }
+    :host([workbench]) :is(.chat-content, .exchange-history, .exchange-history-body, .visible-events > .group-body) > * + * { margin-block-start: var(--rail-gap); }
     :host([workbench]) .msg.user { --rail-tone: var(--pi-accent); }
     :host([workbench]) .msg.assistant { --rail-tone: var(--pi-text-secondary); }
     :host([workbench]) :is(.msg, .group-msg).error, :host([workbench]) .group-msg:has(tool-execution-view[data-status="error"], .tool-result.error) { --rail-tone: var(--pi-danger); }
