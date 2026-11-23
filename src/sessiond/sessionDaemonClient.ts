@@ -73,7 +73,7 @@ export class SessionDaemonClient {
       try {
         return await this.requestSocket(method, path, payload, options.signal);
       } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
+        const code = error instanceof Error && "code" in error ? error.code : undefined;
         if ((code !== "ENOENT" && code !== "ECONNREFUSED") || options.signal?.aborted === true || Date.now() >= deadline) throw error;
         await sleep(200, undefined, options.signal === undefined ? undefined : { signal: options.signal });
       }

@@ -22,8 +22,9 @@ if (process.platform === "win32") {
 }
 
 const npmExecPath = process.env["npm_execpath"];
-if (npmExecPath === undefined || npmExecPath === "") {
-  throw new Error("npm_execpath is required; run this check through `npm run smoke:package-install`");
+// pnpm sets npm_execpath to its own binary; this smoke test installs the package the way npm users do.
+if (npmExecPath === undefined || !/npm-cli\.[cm]?js$/u.test(npmExecPath)) {
+  throw new Error("npm_execpath must be npm; run this check through `npm run smoke:package-install`");
 }
 
 const root = await mkdtemp(join(tmpdir(), "pi-web-package-install-"));

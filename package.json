@@ -150,7 +150,7 @@
     "url": "https://github.com/jmfederico/pi-web/issues"
   },
   "homepage": "https://pi-web.dev/",
-  "packageManager": "npm@11.11.0",
+  "packageManager": "pnpm@12.21.0",
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-ai": "*",

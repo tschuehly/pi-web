@@ -395,8 +395,9 @@ async function bundledServerPlugins(pluginsRoot) {
 }
 function runNpm(args, cwd, timeoutMs = 30_000) {
   const npmExecPath = process.env["npm_execpath"];
-  if (npmExecPath === undefined || npmExecPath.length === 0) {
-    throw new Error("npm_execpath is required to verify npm package contents");
+  // pnpm sets npm_execpath to its own binary; this check needs npm because npm users install the package.
+  if (npmExecPath === undefined || !/npm-cli\.[cm]?js$/u.test(npmExecPath)) {
+    throw new Error("npm_execpath must be npm to verify npm package contents; run this check through `npm run check:artifacts`");
   }
   return execUtf8(process.execPath, [npmExecPath, ...args], cwd, timeoutMs);
 }

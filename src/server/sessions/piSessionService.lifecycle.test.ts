@@ -443,7 +443,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     let streaming = false;
     let finishResolve: ((match: ResolvedSessionFile) => void) | undefined;
     const resolved = new Promise<ResolvedSessionFile>((resolve) => { finishResolve = resolve; });
-    let gate: Promise<ResolvedSessionFile> | undefined;
+    let gated = false;
     const runtimeBranch = [{ type: "message", message: { role: "user", content: "live runtime" } }];
     const fake = fakeRuntime(sessionId, {
       sessionFile: undefined,
@@ -460,7 +460,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       list: () => Promise.resolve([sessionRecord(sessionId)]),
       listAll: () => Promise.resolve([sessionRecord(sessionId)]),
       invalidateSessionFile: () => undefined,
-      resolveSessionFile: () => gate ?? Promise.resolve({ id: sessionId, cwd: "/workspace", path: `/sessions/${sessionId}.jsonl` }),
+      resolveSessionFile: () => gated ? resolved : Promise.resolve({ id: sessionId, cwd: "/workspace", path: `/sessions/${sessionId}.jsonl` }),
       readBranch,
       open: () => fake.session.sessionManager,
     };
@@ -476,7 +476,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     // Loaded first: a Chat no runtime holds is read cold (piSessionService.messages.test.ts).
     await service.status(sessionRef(sessionId));
     readBranch.mockClear();
-    gate = resolved;
+    gated = true;
     const messages = service.messages(sessionRef(sessionId));
     await vi.waitFor(() => { expect(finishResolve).toBeTypeOf("function"); });
     streaming = true;

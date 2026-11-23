@@ -98,7 +98,7 @@ describe("SessionDaemonClient daemon restart", () => {
     expect(Date.now() - started).toBeLessThan(150);
     const controller = new AbortController();
     const pending = client.request("GET", "/runtime", undefined, { signal: controller.signal, waitForStartup: true });
-    setTimeout(() => controller.abort(), 300);
+    setTimeout(() => { controller.abort(); }, 300);
     const aborted = Date.now();
     await expect(pending).rejects.toThrow();
     expect(Date.now() - aborted).toBeLessThan(450);

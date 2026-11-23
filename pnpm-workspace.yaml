@@ -1,0 +1,11 @@
+# Install scripts run only where a package needs them: node-pty compiles its native module on Linux (it ships
+# prebuilds only for macOS and Windows). The others work without theirs, so they stay off.
+allowBuilds:
+  '@google/genai': false
+  esbuild: false
+  node-pty: true
+  protobufjs: false
+# One undici for everything: pi-coding-agent pins 8.10.2 while pi-web needs ^8.11.2, and openai takes undici as a
+# peer, so two versions would load pi-ai and pi-agent-core twice and break `instanceof AgentSession` (npm hoisted one).
+overrides:
+  undici: 8.11.2
