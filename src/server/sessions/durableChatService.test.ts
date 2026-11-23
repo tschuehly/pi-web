@@ -314,6 +314,7 @@ describe("Durable Chats", () => {
     await expect(durable.commands(ref)).resolves.toEqual([
       expect.objectContaining({ name: "mode", source: "extension" }),
       expect.objectContaining({ name: "name", source: "builtin" }),
+      expect.objectContaining({ name: "pair", source: "extension" }),
       expect.objectContaining({ name: "session", source: "builtin" }),
       { name: "skill:tidy", description: "Tidy up", source: "skill" },
     ]);
@@ -397,14 +398,14 @@ describe("Durable Chats", () => {
     const ref = { id: chat.id, cwd: chat.cwd };
     only(launched).answer = (request) => request.method === "compact" ? { type: "done" } : status;
     expect((await durable.status(ref)).capabilities).toEqual(["compact", "tool-groups"]);
-    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["compact", "mode", "name", "session"]);
+    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["compact", "mode", "name", "pair", "session"]);
     await expect(durable.runCommand(ref, "/compact Keep the test names")).resolves.toEqual({ type: "done" });
     await expect(durable.runCommand(ref, "/compact")).resolves.toEqual({ type: "done" });
     expect(only(launched).requests.filter((request) => request.method === "compact").map((request) => request.params)).toEqual([{ instructions: "Keep the test names" }, {}]);
 
     // An older host without the capability: no /compact command, and running it is refused visibly.
     await durable.stop(ref);
-    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "session"]);
+    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "pair", "session"]);
     await expect(durable.runCommand(ref, "/compact")).resolves.toEqual({ type: "unsupported", message: "/compact is not available in this Durable Chat's host" });
     expect(launched[1]?.requests.some((request) => request.method === "compact")).toBe(false);
   });
@@ -440,7 +441,7 @@ describe("Durable Chats", () => {
       { name: "ping", description: "Send a Telegram notification", source: "extension" },
       { name: "monitors", source: "extension" },
     ]));
-    expect(commands.map((command) => command.name)).toEqual(["mode", "monitors", "name", "ping", "session"]);
+    expect(commands.map((command) => command.name)).toEqual(["mode", "monitors", "name", "pair", "ping", "session"]);
     await expect(durable.runCommand(ref, "/ping deploy done")).resolves.toEqual({ type: "done" });
     expect(only(launched).requests.find((request) => request.method === "command")?.params).toMatchObject({ name: "ping", args: "deploy done" });
     await expect(durable.runCommand(ref, "/google-account")).resolves.toEqual({ type: "unsupported", message: "/google-account is not available in Durable Chats: deferred" });
@@ -614,6 +615,7 @@ describe("Durable Chats", () => {
     await expect(durable.commands(ref)).resolves.toEqual([
       expect.objectContaining({ name: "mode" }),
       expect.objectContaining({ name: "name" }),
+      expect.objectContaining({ name: "pair" }),
       { name: "quota-check", description: "Check Claude quota", source: "extension" },
       expect.objectContaining({ name: "session" }),
     ]);
@@ -629,7 +631,7 @@ describe("Durable Chats", () => {
     const chat = await durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
     only(launched).answer = (request) => { if (request.method === "commands" || request.method === "command") throw new Error(`Unknown method ${request.method}`); return status; };
-    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "session"]);
+    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "pair", "session"]);
     await expect(durable.runCommand(ref, "/quota-check")).resolves.toEqual({ type: "unsupported", message: "/quota-check is not available in Durable Chats yet" });
   });
 
@@ -1414,5 +1416,374 @@ describe("Durable Chats: send_chat_message", () => {
     expect(await send("new")).toMatchObject({ result: { delivery: "started", hop: 1 } });
     // B is in the held chain: its own next send is held too.
     expect(await send("from-b", only(made.launched.slice(1)))).toMatchObject({ result: { hop: 7, held: true } });
+  });
+});
+
+describe("Durable Chats: live review (/pair)", () => {
+  const set: DurableChatResourceSet = { resources: { sources: [] }, compaction: { enabled: true, reserveTokens: 1, keepRecentTokens: 1 }, skillList: [] };
+  /** Every host supports live review, takes chat messages (started), prompts (fresh), and redacts nothing. */
+  const host = (_launch?: number, capabilities: string[] = ["liveReview"]) => {
+    const fake = new FakeHost(DURABLE_HOST_PROTOCOL, capabilities);
+    fake.answer = (request) => {
+      if (request.method === "chatMessage") return { delivery: request.params?.["wake"] === false ? "noted" : "started" };
+      if (request.method === "prompt") return { submissionId: 1, fresh: true };
+      if (request.method === "redact") return String(request.params?.["text"]);
+      return request.method === "status" ? status : null;
+    };
+    return fake;
+  };
+  const digests = (fake: FakeHost | undefined) => (fake?.requests ?? []).filter((request) => request.method === "chatMessage").map((request) => request.params);
+  const edit = (path: string, newText: string) => ({ type: "message.end", message: { role: "assistant", content: [{ type: "text", text: `Editing ${path}` }, { type: "toolCall", id: path, name: "edit", arguments: { path, edits: [{ oldText: "i <= n", newText }] } }] } });
+  const toolEnd = (toolName = "edit") => ({ type: "tool.end", toolName, toolCallId: "t", text: "Successfully replaced text. TOOL-OUTPUT", isError: false });
+
+  async function paired(args = "", extra: Partial<ConstructorParameters<typeof DurableChatService>[0]> = {}, existing?: { root: string }) {
+    const made = existing === undefined ? await service(host, set, extra) : await reopen(existing.root, extra);
+    const main = await made.durable.start("/work/a");
+    made.locator.update(main.id, { name: "Cloud builds for agents" });
+    const ref = { id: main.id, cwd: main.cwd };
+    const result = await made.durable.runCommand(ref, `/pair ${args}`);
+    return { ...made, main, ref, result, mainHost: only(made.launched), reviewerHost: made.launched[1] };
+  }
+
+  /** A second daemon over the same records and stores, as after a restart. */
+  function reopen(root: string, extra: Partial<ConstructorParameters<typeof DurableChatService>[0]> = {}) {
+    const hub = new SessionEventHub();
+    const locator = new SessionRuntimeLocator(root);
+    const launched: FakeHost[] = [];
+    const durable = new DurableChatService({ locator, events: hub, launch: () => { const fake = host(); launched.push(fake); return fake; }, storesDir: join(root, "durable"), resources: () => Promise.resolve(set), ...extra });
+    return Promise.resolve({ durable, hub, locator, launched, root, unread: [] });
+  }
+
+  it("/pair starts a reviewer chat in the same workspace on Sol at thinking low, names it, and records the pairing and its knobs in both records", async () => {
+    const { durable, locator, root, main, result, reviewerHost } = await paired();
+    const reviewer = only(locator.all().filter((record) => record.id !== main.id));
+    expect(reviewer.cwd).toBe("/work/a");
+    expect(reviewer.name).toBe("Live review · Cloud builds for agents");
+    expect(reviewerHost?.requests.find((request) => request.method === "setModel")?.params).toEqual({ provider: "openai", modelId: "gpt-6.2-sol" });
+    expect(reviewerHost?.requests.find((request) => request.method === "setThinkingLevel")?.params).toEqual({ level: "low" });
+    expect(reviewerHost?.requests.some((request) => request.method === "prompt")).toBe(false);
+    const reread = new SessionRuntimeLocator(root);
+    expect(reread.durable(main.id)?.liveReview).toMatchObject({ reviewerId: reviewer.id, model: "openai/gpt-6.2-sol", thinking: "low", trigger: "turn5", brief: "silent", turn: 0, digests: 0 });
+    expect(reread.durable(reviewer.id)?.reviewing).toBe(main.id);
+    expect(result).toEqual({ type: "done", message: 'Live review on: "Live review · Cloud builds for agents" reviews this chat with openai/gpt-6.2-sol at thinking low, trigger turn5, brief silent. /pair stop ends it.' });
+    expect((await durable.commands({ id: main.id, cwd: main.cwd })).map((command) => command.name)).toContain("pair");
+  });
+
+  it("turn5: a digest after 5 finished tool calls holds the edit's arguments and no tool output; while the reviewer is busy the next ones merge, then go at its turn end", async () => {
+    const { mainHost, reviewerHost, main } = await paired("--brief coach");
+    mainHost.push({ type: "agent.start" });
+    mainHost.push({ type: "message.end", message: { role: "user", content: [{ type: "text", text: "Sum the list" }] } });
+    mainHost.push(edit("src/sum.ts", "i < n - 1"));
+    for (let i = 0; i < 4; i++) mainHost.push(toolEnd());
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(digests(reviewerHost)).toHaveLength(0);
+    mainHost.push(toolEnd());
+    await vi.waitFor(() => { expect(digests(reviewerHost)).toHaveLength(1); });
+    const first = digests(reviewerHost)[0];
+    expect(first).toMatchObject({ requestId: "live-review-digest-1", from: { chatId: main.id, key: "cloud-builds-agents", name: "Cloud builds for agents" }, wake: true, urgent: false, liveReview: { kind: "digest", turn: 1, trigger: "turn5", brief: "coach" } });
+    expect(first?.["text"]).toBe('Owner: Sum the list\nAssistant: Editing src/sum.ts\nTool call edit {"path":"src/sum.ts","edits":[{"oldText":"i <= n","newText":"i < n - 1"}]}\nFiles touched: src/sum.ts');
+    expect(JSON.stringify(digests(reviewerHost))).not.toContain("TOOL-OUTPUT");
+    // The reviewer is still on digest 1: the next 5 calls and the turn end wait, merged into one.
+    mainHost.push(edit("src/a.ts", "a"));
+    for (let i = 0; i < 5; i++) mainHost.push(toolEnd());
+    mainHost.push(edit("src/b.ts", "b"));
+    mainHost.push({ type: "agent.end" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(digests(reviewerHost)).toHaveLength(1);
+    reviewerHost?.push({ type: "agent.end" });
+    await vi.waitFor(() => { expect(digests(reviewerHost)).toHaveLength(2); });
+    expect(digests(reviewerHost)[1]).toMatchObject({ requestId: "live-review-digest-2", liveReview: { kind: "digest", turn: 1 } });
+    expect(String(digests(reviewerHost)[1]?.["text"])).toMatch(/src\/a\.ts[\s\S]*src\/b\.ts[\s\S]*Files touched: src\/b\.ts, src\/a\.ts$/);
+  });
+
+  it("the trigger knob: turn sends only at the turn end; edits after every edit call", async () => {
+    const turn = await paired("--trigger turn");
+    turn.mainHost.push({ type: "agent.start" });
+    turn.mainHost.push(edit("x.ts", "1"));
+    for (let i = 0; i < 6; i++) turn.mainHost.push(toolEnd());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(digests(turn.reviewerHost)).toHaveLength(0);
+    turn.mainHost.push({ type: "agent.end" });
+    await vi.waitFor(() => { expect(digests(turn.reviewerHost)).toHaveLength(1); });
+    expect(digests(turn.reviewerHost)[0]).toMatchObject({ liveReview: { trigger: "turn", brief: "silent" } });
+    const edits = await paired("--trigger edits");
+    edits.mainHost.push({ type: "agent.start" });
+    edits.mainHost.push(edit("y.ts", "1"));
+    edits.mainHost.push(toolEnd("read"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(digests(edits.reviewerHost)).toHaveLength(0);
+    edits.mainHost.push(toolEnd("edit"));
+    await vi.waitFor(() => { expect(digests(edits.reviewerHost)).toHaveLength(1); });
+  });
+
+  it("the pairing survives a daemon restart: turn and digest numbers continue", async () => {
+    const first = await paired("--trigger turn");
+    first.mainHost.push({ type: "agent.start" });
+    first.mainHost.push(edit("x.ts", "1"));
+    first.mainHost.push({ type: "agent.end" });
+    await vi.waitFor(() => { expect(digests(first.reviewerHost)).toHaveLength(1); });
+    const reviewerId = first.locator.durable(first.main.id)?.liveReview?.reviewerId ?? "";
+    await first.durable.dispose();
+    const second = await reopen(first.root);
+    const ref = { id: first.main.id, cwd: "/work/a" };
+    await second.durable.status(ref);
+    const mainHost = only(second.launched);
+    mainHost.push({ type: "agent.start" });
+    mainHost.push(edit("z.ts", "2"));
+    mainHost.push({ type: "agent.end" });
+    await vi.waitFor(() => { expect(second.launched).toHaveLength(2); });
+    await vi.waitFor(() => { expect(digests(second.launched[1])).toHaveLength(1); });
+    expect(digests(second.launched[1])[0]).toMatchObject({ requestId: "live-review-digest-2", liveReview: { kind: "digest", turn: 2, trigger: "turn" } });
+    expect(second.locator.durable(ref.id)?.liveReview?.reviewerId).toBe(reviewerId);
+  });
+
+  it("/pair stop ends it and the reviewer chat stays; no pairing twice, none from a reviewer, a usage error for bad arguments", async () => {
+    const { durable, locator, main, ref, mainHost, reviewerHost } = await paired();
+    const reviewerId = locator.durable(main.id)?.liveReview?.reviewerId ?? "";
+    await expect(durable.runCommand(ref, "/pair")).resolves.toEqual({ type: "unsupported", message: 'This chat already has a live reviewer, "Live review · Cloud builds for agents"; /pair stop ends it first.' });
+    await expect(durable.runCommand({ id: reviewerId, cwd: "/work/a" }, "/pair")).resolves.toEqual({ type: "unsupported", message: "This chat is a live reviewer; it cannot have one." });
+    await expect(durable.runCommand(ref, "/pair --trigger often")).resolves.toEqual({ type: "unsupported", message: "Usage: /pair [<provider/model>] [--trigger turn|turn5|edits] [--brief silent|coach], or /pair stop" });
+    await expect(durable.runCommand(ref, "/pair stop")).resolves.toEqual({ type: "done", message: 'Live review stopped; "Live review · Cloud builds for agents" stays readable.' });
+    expect(locator.durable(main.id)?.liveReview).toBeUndefined();
+    expect(locator.durable(reviewerId)?.reviewing).toBeUndefined();
+    expect(locator.durable(reviewerId)).toBeDefined();
+    mainHost.push({ type: "agent.start" });
+    mainHost.push(edit("x.ts", "1"));
+    mainHost.push({ type: "agent.end" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(digests(reviewerHost)).toHaveLength(0);
+    await expect(durable.runCommand(ref, "/pair stop")).resolves.toEqual({ type: "unsupported", message: "This chat has no live reviewer." });
+  });
+
+  it("an agent cannot start a pairing: a spawned chat's prompt and a chat message reading /pair are plain text", async () => {
+    const resolveSpawnTarget = () => Promise.resolve({ allowed: true as const, cwd: "/work/a" });
+    const made = await service(host, set, { spawnTargets: { resolveSpawnTarget } });
+    const lead = await made.durable.start("/work/a");
+    const lead$ = only(made.launched);
+    lead$.push({ type: "durable.spawn", requestId: "s", spawningCwd: "/work/a", prompt: "/pair" });
+    await vi.waitFor(() => { expect(lead$.requests.some((request) => request.method === "spawned")).toBe(true); });
+    const child = only(made.locator.all().filter((record) => record.id !== lead.id));
+    expect(made.launched[1]?.requests.find((request) => request.method === "prompt")?.params).toMatchObject({ text: "/pair" });
+    lead$.push({ type: "durable.chat-message", requestId: "m", chat: child.id, text: "/pair", wake: true });
+    await vi.waitFor(() => { expect(lead$.requests.some((request) => request.method === "chatMessaged")).toBe(true); });
+    expect(made.locator.all()).toHaveLength(2);
+    expect(made.locator.all().every((record) => record.liveReview === undefined && record.reviewing === undefined)).toBe(true);
+  });
+
+  it("the reviewer's messages to its main chat are exempt from both limits and the hop counter, and say they come from the live reviewer", async () => {
+    let now = Date.parse("2026-11-24T10:00:00Z");
+    const { locator, main, mainHost, reviewerHost } = await paired("", { now: () => now });
+    const other = locator.create("/work/b");
+    const answers = (fake: FakeHost | undefined) => (fake?.requests ?? []).filter((request) => request.method === "chatMessaged").map((request) => request.params);
+    for (let i = 0; i < 12; i++) {
+      reviewerHost?.push({ type: "durable.chat-message", requestId: `r${String(i)}`, chat: "cloud-builds-agents", text: `finding ${String(i)}`, wake: true, urgent: true });
+      await vi.waitFor(() => { expect(answers(reviewerHost)).toHaveLength(i + 1); });
+      now += 1000;
+    }
+    expect(answers(reviewerHost).every((answer) => answer?.["error"] === undefined)).toBe(true);
+    expect(answers(reviewerHost)[0]).toEqual({ requestId: "r0", result: { chatId: main.id, key: "cloud-builds-agents", name: "Cloud builds for agents", delivery: "started" } });
+    const delivered = digests(mainHost);
+    expect(delivered).toHaveLength(12);
+    expect(delivered[0]).toMatchObject({ requestId: "r0", wake: true, urgent: true, liveReview: { kind: "reviewer" } });
+    expect(delivered[0]).not.toHaveProperty("hop");
+    // The main chat's own chain is untouched: its next message elsewhere is hop 1.
+    mainHost.push({ type: "durable.chat-message", requestId: "m", chat: other.id, text: "hi", wake: true });
+    await vi.waitFor(() => { expect(answers(mainHost)).toHaveLength(1); });
+    expect(answers(mainHost)[0]).toMatchObject({ result: { hop: 1 } });
+  });
+
+  /** The main Chat runs one turn: its first input, an edit and 5 finished tool calls, then the turn end. */
+  const turn = (fake: FakeHost, input: object) => {
+    fake.push({ type: "agent.start" });
+    fake.push(input);
+    fake.push(edit("src/sum.ts", "i < n"));
+    for (let i = 0; i < 5; i++) fake.push(toolEnd());
+    fake.push({ type: "agent.end" });
+  };
+  const ownerPrompt = (text: string) => ({ type: "message.end", message: { role: "user", content: [{ type: "text", text }] } });
+  const fromReviewer = (delivery: string) => ({ type: "message.end", message: { role: "custom", customType: "workbench:chat-message", content: "Chat message · live reviewer", details: { delivery, liveReview: { kind: "reviewer" } } } });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+  it("no runaway loop: a reviewer that answers every digest and a main that answers every finding stop after one round", async () => {
+    const { mainHost, reviewerHost } = await paired();
+    if (reviewerHost === undefined) throw new Error("no reviewer host");
+    const [mainAnswer, reviewerAnswer] = [mainHost.answer, reviewerHost.answer];
+    let findings = 0;
+    // The reviewer sends one normal finding per digest (at most 6, so a loop ends the test instead of running forever).
+    reviewerHost.answer = (request) => {
+      if (request.method === "chatMessage" && findings++ < 6) setTimeout(() => {
+        reviewerHost.push({ type: "agent.start" });
+        reviewerHost.push({ type: "durable.chat-message", requestId: `f${String(findings)}`, chat: "cloud-builds-agents", text: "src/sum.ts:1 off by one", wake: true });
+        reviewerHost.push({ type: "agent.end" });
+      }, 1);
+      return reviewerAnswer(request);
+    };
+    // The main Chat is idle, so each finding starts a turn, which answers it with more edits.
+    mainHost.answer = (request) => {
+      if (request.method === "chatMessage") setTimeout(() => { turn(mainHost, fromReviewer("started")); }, 1);
+      return mainAnswer(request);
+    };
+    turn(mainHost, ownerPrompt("Sum the list"));
+    await vi.waitFor(() => { expect(digests(mainHost)).toHaveLength(1); });
+    await settle();
+    expect(digests(reviewerHost)).toHaveLength(1);
+    expect(digests(mainHost)).toHaveLength(1);
+    // The owner's next turn digests again, and holds the main Chat's answer to the finding.
+    turn(mainHost, ownerPrompt("Now the average"));
+    await vi.waitFor(() => { expect(digests(reviewerHost)).toHaveLength(2); });
+    expect(String(digests(reviewerHost)[1]?.["text"])).toMatch(/^Assistant: Editing src\/sum\.ts[\s\S]*Owner: Now the average/u);
+  });
+
+  it("a reviewer steer into the owner's turn keeps that turn's digests", async () => {
+    const { mainHost, reviewerHost } = await paired();
+    mainHost.push({ type: "agent.start" });
+    mainHost.push(ownerPrompt("Sum the list"));
+    for (let i = 0; i < 5; i++) mainHost.push(toolEnd());
+    await vi.waitFor(() => { expect(digests(reviewerHost)).toHaveLength(1); });
+    reviewerHost?.push({ type: "agent.end" });
+    mainHost.push(fromReviewer("steered"));
+    mainHost.push(edit("src/sum.ts", "i < n"));
+    for (let i = 0; i < 5; i++) mainHost.push(toolEnd());
+    await vi.waitFor(() => { expect(digests(reviewerHost)).toHaveLength(2); });
+  });
+
+  it("each field goes through the main chat host's redactor whole, before the digest cuts or escapes it; without a redactor it is omitted", async () => {
+    /** Built from parts, so the commit secret scanner sees no key block. */
+    const pemEdge = (edge: string) => `-----${edge} ${["PRIVATE", "KEY"].join(" ")}-----`;
+    const pem = `${pemEdge("BEGIN")}\n${"QUJD".repeat(10_000)}\n${pemEdge("END")}`;
+    const secret = "tok\\en-s3cr3t";
+    const redacting = (launch: number) => {
+      const fake = host(launch);
+      const base = fake.answer;
+      fake.answer = (request) => request.method === "redact"
+        ? String(request.params?.["text"]).replace(new RegExp(`${pemEdge("BEGIN")}[\\s\\S]*?${pemEdge("END")}`, "gu"), "[REDACTED:private-key]").replaceAll(secret, "[REDACTED:token]")
+        : base(request);
+      return fake;
+    };
+    const made = await service(redacting, set);
+    const main = await made.durable.start("/work/a");
+    await made.durable.runCommand({ id: main.id, cwd: main.cwd }, "/pair --trigger turn");
+    const mainHost = only(made.launched);
+    mainHost.push({ type: "agent.start" });
+    mainHost.push(ownerPrompt(`Use ${secret}`));
+    mainHost.push({ type: "message.end", message: { role: "assistant", content: [{ type: "toolCall", id: "w", name: "write", arguments: { path: "id_rsa", content: pem } }] } });
+    mainHost.push({ type: "agent.end" });
+    await vi.waitFor(() => { expect(digests(made.launched[1])).toHaveLength(1); });
+    const text = String(digests(made.launched[1])[0]?.["text"]);
+    expect(text).toBe('Owner: Use [REDACTED:token]\nTool call write {"path":"id_rsa","content":"[REDACTED:private-key]"}\nFiles touched: id_rsa');
+    // A main host that cannot redact: each field is left out.
+    const blind = await paired("--trigger turn");
+    const base = blind.mainHost.answer;
+    blind.mainHost.answer = (request) => { if (request.method === "redact") throw new Error("Unknown method redact"); return base(request); };
+    blind.mainHost.push({ type: "agent.start" });
+    blind.mainHost.push(ownerPrompt(`Use ${secret}`));
+    blind.mainHost.push({ type: "agent.end" });
+    await vi.waitFor(() => { expect(digests(blind.reviewerHost)).toHaveLength(1); });
+    expect(digests(blind.reviewerHost)[0]?.["text"]).toBe("Owner: [redaction unavailable: omitted]");
+  });
+
+  it("two /pair at once start one reviewer; a /pair stop right behind a /pair ends the pairing it started", async () => {
+    const made = await service(host, set);
+    const main = await made.durable.start("/work/a");
+    made.locator.update(main.id, { name: "Cloud builds for agents" });
+    const ref = { id: main.id, cwd: main.cwd };
+    const results = await Promise.all([made.durable.runCommand(ref, "/pair"), made.durable.runCommand(ref, "/pair")]);
+    expect(results.map((result) => result.type).sort()).toEqual(["done", "unsupported"]);
+    const reviewers = made.locator.all().filter((record) => record.id !== main.id);
+    expect(reviewers).toHaveLength(1);
+    expect(made.locator.durable(main.id)?.liveReview?.reviewerId).toBe(reviewers[0]?.id);
+    await made.durable.runCommand(ref, "/pair stop");
+    const [started, stopped] = await Promise.all([made.durable.runCommand(ref, "/pair"), made.durable.runCommand(ref, "/pair stop")]);
+    expect([started.type, stopped.type]).toEqual(["done", "done"]);
+    expect(made.locator.durable(main.id)?.liveReview).toBeUndefined();
+    expect(made.locator.all().every((record) => record.reviewing === undefined)).toBe(true);
+  });
+
+  it("ending either chat explicitly unlinks the pair and drops its pending digest; the next main turn relaunches no reviewer", async () => {
+    const endReviewer = await paired("--trigger turn");
+    const reviewerId = endReviewer.locator.durable(endReviewer.main.id)?.liveReview?.reviewerId ?? "";
+    // A digest waits for the busy reviewer.
+    turn(endReviewer.mainHost, ownerPrompt("Sum the list"));
+    await vi.waitFor(() => { expect(digests(endReviewer.reviewerHost)).toHaveLength(1); });
+    turn(endReviewer.mainHost, ownerPrompt("Again"));
+    await endReviewer.durable.stop({ id: reviewerId, cwd: "/work/a" });
+    expect(endReviewer.locator.durable(endReviewer.main.id)?.liveReview).toBeUndefined();
+    expect(endReviewer.locator.durable(reviewerId)?.reviewing).toBeUndefined();
+    turn(endReviewer.mainHost, ownerPrompt("Once more"));
+    await settle();
+    expect(endReviewer.launched).toHaveLength(2);
+    expect(digests(endReviewer.reviewerHost)).toHaveLength(1);
+    await expect(endReviewer.durable.runCommand(endReviewer.ref, "/pair stop")).resolves.toEqual({ type: "unsupported", message: "This chat has no live reviewer." });
+
+    const endMain = await paired("--trigger turn");
+    const otherReviewer = endMain.locator.durable(endMain.main.id)?.liveReview?.reviewerId ?? "";
+    await endMain.durable.stopIfUnwatched(endMain.ref, true);
+    expect(endMain.locator.durable(endMain.main.id)?.liveReview).toBeUndefined();
+    expect(endMain.locator.durable(otherReviewer)?.reviewing).toBeUndefined();
+    expect(endMain.locator.durable(otherReviewer)).toBeDefined();
+  });
+
+  it("an explicit end of the main chat while its reviewer is starting leaves no pair behind", async () => {
+    let held: Request | undefined;
+    const made = await service((launch) => {
+      const fake = host(launch);
+      const answer = fake.answer;
+      if (launch === 1) fake.answer = (request) => (request.method === "setThinkingLevel" ? ((held = request), NO_REPLY) : answer(request));
+      return fake;
+    }, set);
+    const main = await made.durable.start("/work/a");
+    const ref = { id: main.id, cwd: main.cwd };
+    const pairing = made.durable.runCommand(ref, "/pair");
+    await vi.waitFor(() => { expect(held).toBeDefined(); });
+    const ended = made.durable.stop(ref);
+    await settle();
+    made.launched[1]?.emit("message", { id: held?.id, result: null });
+    await Promise.all([pairing, ended]);
+    expect(made.locator.durable(main.id)?.liveReview).toBeUndefined();
+    expect(made.locator.all().every((record) => record.reviewing === undefined)).toBe(true);
+  });
+
+  it("ending a reviewer that /pair stop already replaced leaves the replacement pair", async () => {
+    const { durable, locator, main, ref } = await paired("--trigger turn");
+    const oldReviewer = locator.durable(main.id)?.liveReview?.reviewerId ?? "";
+    const stopped = durable.runCommand(ref, "/pair stop");
+    const started = durable.runCommand(ref, "/pair");
+    const ended = durable.stop({ id: oldReviewer, cwd: "/work/a" });
+    await Promise.all([stopped, started, ended]);
+    const replacement = locator.durable(main.id)?.liveReview?.reviewerId;
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(oldReviewer);
+    expect(locator.durable(replacement ?? "")?.reviewing).toBe(main.id);
+    expect(locator.durable(oldReviewer)?.reviewing).toBeUndefined();
+  });
+
+  it("a routine idle close of both hosts keeps the pair", async () => {
+    let now = Date.parse("2026-11-17T08:00:00Z");
+    const { durable, locator, main, launched } = await paired("--trigger turn", { now: () => now });
+    const reviewerId = locator.durable(main.id)?.liveReview?.reviewerId ?? "";
+    now += IDLE_HOST_CLOSE_MS;
+    await durable.closeIdleHosts();
+    expect(launched.every((fake) => fake.requests.some((request) => request.method === "close"))).toBe(true);
+    expect(locator.durable(main.id)?.liveReview?.reviewerId).toBe(reviewerId);
+    expect(locator.durable(reviewerId)?.reviewing).toBe(main.id);
+  });
+
+  it("/pair refuses unless both hosts support live review; /pair stop works on any host", async () => {
+    const oldMain = await service((launch) => host(launch, []), set);
+    const main = await oldMain.durable.start("/work/a");
+    await expect(oldMain.durable.runCommand({ id: main.id, cwd: main.cwd }, "/pair")).resolves.toEqual({ type: "unsupported", message: "Live review needs this chat's host to support it: upgrade host, then /pair again." });
+    expect(oldMain.locator.all()).toHaveLength(1);
+    const oldReviewer = await service((launch) => host(launch, launch === 0 ? ["liveReview"] : []), set);
+    const main2 = await oldReviewer.durable.start("/work/a");
+    await expect(oldReviewer.durable.runCommand({ id: main2.id, cwd: main2.cwd }, "/pair")).resolves.toEqual({ type: "unsupported", message: "Live review needs the reviewer chat's host to support it: upgrade host, then /pair again." });
+    expect(oldReviewer.locator.all().map((record) => record.id)).toEqual([main2.id]);
+    expect(oldReviewer.locator.durable(main2.id)?.liveReview).toBeUndefined();
+    // A pairing whose hosts went back to an old version still stops.
+    const first = await paired();
+    await first.durable.dispose();
+    const second = await reopen(first.root);
+    second.durable = new DurableChatService({ locator: second.locator, events: second.hub, launch: () => { const fake = host(0, []); second.launched.push(fake); return fake; }, storesDir: join(first.root, "durable"), resources: () => Promise.resolve(set) });
+    await expect(second.durable.runCommand(first.ref, "/pair stop")).resolves.toMatchObject({ type: "done" });
+    expect(second.locator.durable(first.main.id)?.liveReview).toBeUndefined();
   });
 });

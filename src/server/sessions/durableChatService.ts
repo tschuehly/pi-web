@@ -32,6 +32,7 @@ import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstrea
 import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
 import { type DurableChatRecord, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
+import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
 
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
 export const DURABLE_HOST_PROTOCOL = 2;
@@ -374,6 +375,14 @@ export class DurableChatService {
   readonly #hops = new Map<string, number>();
   /** Chats whose host last reported a running turn, for send_chat_message's list. */
   readonly #streaming = new Set<string>();
+  /** Live review: each paired main Chat's work since its last digest; in memory, so a daemon restart drops a partial digest. */
+  readonly #liveReviews = new Map<string, LiveReviewCollector>();
+  /** Reviewer Chats working on a digest (delivered, its turn not ended yet), so the next digest waits and merges. */
+  readonly #reviewing = new Set<string>();
+  /** Live review: each main Chat's events in order, as each waits for its fields' redaction. */
+  readonly #reviewEvents = new Map<string, Promise<void>>();
+  /** Live review: `/pair`, `/pair stop` and an explicit end, one at a time per main Chat. */
+  readonly #pairings = new Map<string, Promise<unknown>>();
 
   owns(sessionId: string): boolean {
     return this.deps.locator.durable(sessionId) !== undefined;
@@ -731,6 +740,7 @@ export class DurableChatService {
       ...(connection.capabilities.includes("compact") ? [{ name: "compact", description: "Manually compact session context", argumentHint: "[instructions]", source: "builtin" as const }] : []),
       ...BUILTIN_COMMANDS.filter((command) => command.name === "name" || command.name === "session" || (command.name === "tree" && connection.capabilities.includes("tree"))),
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now; /mode unalign clears the alignment", source: "extension" as const },
+      { name: "pair", description: "Live review: a reviewer chat watches this chat's work and messages it on a defect; /pair stop ends it", argumentHint: "[provider/model] [--trigger turn|turn5|edits] [--brief silent|coach] | stop", source: "extension" as const },
       ...hostCommands.map((command) => ({ ...command, source: "extension" as const })),
       ...(this.#templates.get(ref.id) ?? []).map((template) => ({
         name: template.name, source: "prompt" as const,
@@ -751,6 +761,8 @@ export class DurableChatService {
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
     const rest = trimmed.slice(name.length + 1).trim();
     if (name === "name") return this.#name(ref, rest);
+    // An agent's prompt or message reading /pair is text; only the command route calls this (see its shortcut).
+    if (name === "pair") return this.#serializePairing(ref.id, () => this.#pair(ref, rest));
     const checkpointTitle = CHECKPOINT_TITLE_COMMAND.exec(trimmed)?.[1];
     if (checkpointTitle !== undefined) {
       // A Workstream checkpoint's title for its Chat (the Workbench client sends it): no turn, as in a legacy Chat.
@@ -985,6 +997,7 @@ export class DurableChatService {
    * Reaches the host an earlier daemon started too. The store keeps every admitted input and reopens paused on next use.
    */
   async stop(ref: SessionRouteRef): Promise<void> {
+    await this.#unpair(ref.id);
     await this.#end(ref.id, true);
   }
 
@@ -1009,13 +1022,15 @@ export class DurableChatService {
       if (busy !== undefined) return { stopped: false, busy };
       if (watched()) return { stopped: false, watched: true };
     }
+    await this.#unpair(record.id);
     await this.#end(record.id, true);
     return { stopped: true };
   }
 
   /**
-   * Stop-all: every family host, connected or only recorded by an earlier daemon, ends as `stop` ends one, and so does
-   * every family with unfinished background jobs whose host is gone.
+   * Stop-all: every family host, connected or only recorded by an earlier daemon, ends with its background jobs, and so
+   * does every family with unfinished background jobs whose host is gone. Live review pairs stay, as across a daemon
+   * restart: no owner ended a Chat.
    */
   async stopAll(): Promise<void> {
     const recorded = this.deps.locator.all().filter((record) => record.host !== undefined).map((record) => record.id);
@@ -1366,6 +1381,7 @@ export class DurableChatService {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host exited");
         void this.#unread(record, "closed");
         this.#streaming.delete(record.id);
+        if (this.#reviewing.delete(record.id) && record.reviewing !== undefined) void this.#sendDigest(record.reviewing);
         this.deps.events.publish(record.id, { type: "agent.end" });
       },
       (error) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host process error"); },
@@ -1531,7 +1547,9 @@ export class DurableChatService {
       if (kept.length === 0) this.#chatMessagesSent.delete(window);
       else this.#chatMessagesSent.set(window, kept);
     }
-    const windows = [`${sender.id}\0${target.id}`, sender.id];
+    // A live reviewer messaging the main Chat it watches: no limits and no reply chain (the main Chat never replies).
+    const live = sender.reviewing === target.id && target.liveReview?.reviewerId === sender.id;
+    const windows = live ? [] : [`${sender.id}\0${target.id}`, sender.id];
     const [direction = [], hourly = []] = windows.map((window) => this.#chatMessagesSent.get(window));
     if (direction.length >= CHAT_MESSAGE_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_LIMIT)} messages to ${key} in the last 5 minutes; stop and report to the owner instead of retrying.`);
     if (hourly.length >= CHAT_MESSAGE_HOURLY_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_HOURLY_LIMIT)} chat messages in the last hour; stop and report to the owner instead of retrying.`);
@@ -1546,12 +1564,13 @@ export class DurableChatService {
     };
     const hop = (this.#hops.get(sender.id) ?? 0) + 1;
     // From hop 6 a reply chain no longer wakes anyone: delivered as a note, and the sender tells the owner to step in.
-    const held = event.wake !== false && hop >= CHAT_MESSAGE_HOP_LIMIT;
+    const held = !live && event.wake !== false && hop >= CHAT_MESSAGE_HOP_LIMIT;
     const wake = event.wake !== false && !held;
     try {
       const connection = await this.#connection(target);
       const { result } = await connection.request("chatMessage", {
-        requestId: event.requestId, from: { chatId: sender.id, key: from.key, name: from.name }, text, wake, urgent: wake && event.urgent === true, hop, ...(held ? { held: true } : {}),
+        requestId: event.requestId, from: { chatId: sender.id, key: from.key, name: from.name }, text, wake, urgent: wake && event.urgent === true,
+        ...(live ? { liveReview: { kind: "reviewer" } } : { hop }), ...(held ? { held: true } : {}),
       });
       const delivery = isRecord(result) ? result["delivery"] : undefined;
       if (delivery !== "started" && delivery !== "queued" && delivery !== "steered" && delivery !== "noted") throw new Error("The target chat's host sent a malformed delivery");
@@ -1560,6 +1579,7 @@ export class DurableChatService {
       if (duplicate) uncount();
       const firstHop = duplicate && typeof result["hop"] === "number" ? result["hop"] : hop;
       const firstHeld = duplicate ? result["held"] === true : held;
+      if (live) return { chatId: target.id, key, name: to.name, delivery };
       // An unrelated low-hop note never lowers the chain the target is in.
       this.#hops.set(target.id, Math.max(this.#hops.get(target.id) ?? 0, firstHop));
       this.deps.logger?.info?.({ from: sender.id, to: target.id, delivery, hop: firstHop, duplicate, length: text.length }, "send_chat_message delivered");
@@ -1571,6 +1591,144 @@ export class DurableChatService {
       // The target's restore waits for its owner: refused now, never delivered later.
       if (error instanceof Error && error.message === CHAT_PAUSED) throw new Error(`${key} is paused until the owner resumes it; the message was not delivered`, { cause: error });
       throw error;
+    }
+  }
+
+  /**
+   * `/pair`: start a reviewer Durable Chat in this Chat's workspace, as spawn_session does (the model asked for, thinking
+   * low), and record the pairing in both records; `/pair stop` forgets it, and the reviewer Chat stays readable.
+   */
+  async #pair(ref: SessionRouteRef, args: string): Promise<ClientCommandResult> {
+    const main = this.#record(ref);
+    let command: ReturnType<typeof parsePairCommand>;
+    try {
+      command = parsePairCommand(args);
+    } catch {
+      return { type: "unsupported", message: PAIR_USAGE };
+    }
+    const pairing = main.liveReview;
+    const reviewerName = (id: string) => this.deps.locator.durable(id)?.name ?? "the reviewer chat";
+    if ("stop" in command) {
+      if (pairing === undefined) return { type: "unsupported", message: "This chat has no live reviewer." };
+      this.#unlink(main.id, pairing.reviewerId);
+      return { type: "done", message: `Live review stopped; "${reviewerName(pairing.reviewerId)}" stays readable.` };
+    }
+    if (main.reviewing !== undefined) return { type: "unsupported", message: "This chat is a live reviewer; it cannot have one." };
+    if (pairing !== undefined) return { type: "unsupported", message: `This chat already has a live reviewer, "${reviewerName(pairing.reviewerId)}"; /pair stop ends it first.` };
+    const model = parseModelSpec(command.model);
+    if (model === undefined) return { type: "unsupported", message: PAIR_USAGE };
+    const connection = await this.#connection(main);
+    // An older host would show the reviewer's messages as ordinary mail and drop the reviewer's brief.
+    if (!connection.capabilities.includes("liveReview")) return { type: "unsupported", message: "Live review needs this chat's host to support it: upgrade host, then /pair again." };
+    const { name } = await this.#chatIdentity(main, connection);
+    const reviewer = await this.start(main.cwd);
+    const reviewerRef = { id: reviewer.id, cwd: reviewer.cwd };
+    try {
+      if (!(await this.#for(reviewerRef)).capabilities.includes("liveReview")) {
+        await this.stop(reviewerRef);
+        this.deps.locator.remove(reviewer.id);
+        return { type: "unsupported", message: "Live review needs the reviewer chat's host to support it: upgrade host, then /pair again." };
+      }
+      await this.setModel(reviewerRef, model.provider, model.modelId);
+      await (await this.#for(reviewerRef)).request("setThinkingLevel", { level: "low" });
+    } catch (error) {
+      await this.stop(reviewerRef);
+      this.deps.locator.remove(reviewer.id);
+      throw error;
+    }
+    const title = `Live review · ${name}`.slice(0, CHECKPOINT_SESSION_TITLE_MAX_LENGTH);
+    this.#setName(reviewer.id, title, "manual");
+    const next: LiveReviewPairing = { reviewerId: reviewer.id, model: command.model, thinking: "low", trigger: command.trigger, brief: command.brief, turn: 0, digests: 0, startedAt: new Date(this.#now()).toISOString() };
+    this.deps.locator.updateAll([[main.id, { liveReview: next }], [reviewer.id, { reviewing: main.id }]]);
+    const record = this.deps.locator.durable(reviewer.id);
+    if (record !== undefined) this.deps.events.publishGlobal({ type: "session.created", session: this.info(record) });
+    this.deps.logger?.info?.({ sessionId: main.id, reviewerId: reviewer.id, model: command.model, trigger: command.trigger, brief: command.brief }, "live review started");
+    return { type: "done", message: `Live review on: "${title}" reviews this chat with ${command.model} at thinking low, trigger ${command.trigger}, brief ${command.brief}. /pair stop ends it.` };
+  }
+
+  /** Run a pairing change after the ones before it for the same main Chat, so two `/pair` never start two reviewers. */
+  #serializePairing<T>(mainId: string, change: () => Promise<T>): Promise<T> {
+    const run = (this.#pairings.get(mainId) ?? Promise.resolve()).then(change, change);
+    this.#pairings.set(mainId, run.catch(() => undefined));
+    return run;
+  }
+
+  /**
+   * An explicit end of either Chat ends its pairing (an idle close or a daemon restart keeps it). It waits behind the
+   * main Chat's pairing changes, so a `/pair` still starting is undone, and a reviewer's end undoes only its own pair.
+   */
+  async #unpair(sessionId: string): Promise<void> {
+    const mainId = this.deps.locator.durable(sessionId)?.reviewing ?? sessionId;
+    await this.#serializePairing(mainId, () => {
+      const reviewerId = this.deps.locator.durable(mainId)?.liveReview?.reviewerId;
+      if (reviewerId !== undefined && (mainId === sessionId || reviewerId === sessionId)) this.#unlink(mainId, reviewerId);
+      else if (mainId !== sessionId && this.deps.locator.durable(sessionId)?.reviewing === mainId) this.deps.locator.update(sessionId, { reviewing: undefined });
+      return Promise.resolve();
+    });
+  }
+
+  /** Forget a pairing in both records at once and drop its pending digest. */
+  #unlink(mainId: string, reviewerId: string): void {
+    this.deps.locator.updateAll([[mainId, { liveReview: undefined }], [reviewerId, { reviewing: undefined }]]);
+    this.#liveReviews.delete(mainId);
+    this.#reviewing.delete(reviewerId);
+    this.deps.logger?.info?.({ sessionId: mainId, reviewerId }, "live review stopped");
+  }
+
+  /** A paired main Chat's event goes into its next digest; a reviewer's turn end lets the waiting digest go. */
+  #liveReviewEvent(record: DurableChatRecord, event: { type: string }, connection: DurableHostConnection): void {
+    if (record.reviewing !== undefined && event.type === "agent.end") {
+      this.#reviewing.delete(record.id);
+      void this.#sendDigest(record.reviewing);
+    }
+    const pairing = record.liveReview;
+    if (pairing === undefined) return;
+    if (event.type === "agent.start") this.deps.locator.update(record.id, { liveReview: { ...pairing, turn: pairing.turn + 1 } });
+    let review = this.#liveReviews.get(record.id);
+    if (review === undefined) this.#liveReviews.set(record.id, review = new LiveReviewCollector(pairing.trigger));
+    const collector = review;
+    // Each field through this main Chat host's redactor whole, before the digest cuts or escapes it.
+    const redact = (text: string) => connection.request("redact", { text }).then(({ result }) => {
+      if (typeof result !== "string") throw new Error("The host's redactor returned no text");
+      return result;
+    });
+    const next = (this.#reviewEvents.get(record.id) ?? Promise.resolve()).then(async () => {
+      await collector.add(event, redact);
+      if (collector.due && this.#liveReviews.get(record.id) === collector) void this.#sendDigest(record.id);
+    }).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "live review event not collected"); });
+    this.#reviewEvents.set(record.id, next);
+  }
+
+  /**
+   * Send the main Chat's due digest to its reviewer as a waking chat message, unless the reviewer still works on the last
+   * one: then it waits for the reviewer's turn end and covers everything since. Exempt from send_chat_message's limits.
+   */
+  async #sendDigest(mainId: string): Promise<void> {
+    const main = this.deps.locator.durable(mainId);
+    const pairing = main?.liveReview;
+    const review = this.#liveReviews.get(mainId);
+    if (main === undefined || pairing === undefined || review?.due !== true) return;
+    const reviewer = this.deps.locator.durable(pairing.reviewerId);
+    if (reviewer === undefined || this.#reviewing.has(reviewer.id) || this.#streaming.has(reviewer.id)) return;
+    const digest = review.take();
+    if (digest === undefined) return;
+    const { text } = digest;
+    this.#reviewing.add(reviewer.id);
+    const number = pairing.digests + 1;
+    this.deps.locator.update(mainId, { liveReview: { ...pairing, digests: number } });
+    try {
+      const connection = await this.#connection(reviewer);
+      const from = await this.#chatIdentity(main, connection);
+      await connection.request("chatMessage", {
+        requestId: `live-review-digest-${String(number)}`, from: { chatId: main.id, ...from }, text, wake: true, urgent: false,
+        liveReview: { kind: "digest", turn: Math.max(1, pairing.turn), trigger: pairing.trigger, brief: pairing.brief },
+      });
+      this.deps.logger?.info?.({ sessionId: mainId, reviewerId: reviewer.id, digest: number, turn: pairing.turn, length: text.length }, "live review digest sent");
+    } catch (error) {
+      // The reviewer did not take it: the next digest carries it.
+      this.#reviewing.delete(reviewer.id);
+      review.putBack(digest);
+      this.deps.logger?.warn({ sessionId: mainId, reviewerId: reviewer.id, err: error }, "live review digest not delivered");
     }
   }
 
@@ -1614,6 +1772,8 @@ export class DurableChatService {
     if (event.type === "status.update") {
       if (event.status.isStreaming) this.#streaming.add(sessionId);
       else this.#streaming.delete(sessionId);
+      // A reviewer that went idle takes the live review digest that waited for it.
+      if (!event.status.isStreaming && record.reviewing !== undefined) void this.#sendDigest(record.reviewing);
       if (connection.upgradePending && restartSafe(event.status)) void this.upgradePendingHosts(sessionId);
       const status = { ...browserStatus(event.status, connection), sessionId };
       this.deps.events.publish(sessionId, { type: "status.update", status }, scope);
@@ -1636,6 +1796,7 @@ export class DurableChatService {
     if (event.type === "message.end" && record.firstMessage === "") {
       if (isRecord(event.message) && event.message["role"] === "user") this.deps.locator.update(sessionId, { firstMessage: textOf(event.message["content"]) });
     }
+    this.#liveReviewEvent(record, event, connection);
   }
 }
 
@@ -1772,7 +1933,7 @@ interface HostChatMessageEvent { type: "durable.chat-message"; requestId: string
 /** send_chat_message's list of other Chats, answered with `chatMessaged`. */
 interface HostChatListEvent { type: "durable.chat-list"; requestId: string }
 type HostEvent = HostAttentionEvent | HostNotificationEvent | HostSpawnEvent | HostChatMessageEvent | HostChatListEvent;
-interface ChatMessageResult { chatId: string; key: string; name: string; delivery: "started" | "queued" | "steered" | "noted"; hop: number; held?: true }
+interface ChatMessageResult { chatId: string; key: string; name: string; delivery: "started" | "queued" | "steered" | "noted"; hop?: number; held?: true }
 interface ChatListEntry { id: string; key: string; title: string; cwd: string; state: "running" | "idle" | "closed" }
 
 const CHAT_MESSAGE_MAX_LENGTH = 8000;
