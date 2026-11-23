@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { isLiveReviewPairing, type LiveReviewPairing } from "./liveReview.js";
 
 /**
  * Which runtime owns a Chat. Legacy Chats have no record: the legacy runtime stays the default. A Durable Chat's
@@ -23,6 +24,10 @@ export interface DurableChatRecord {
   nameSource?: "manual" | "auto" | "checkpoint";
   /** send_chat_message's 3-word key, assigned once and never changed (a renamed Chat keeps it). */
   key?: string;
+  /** Live review (`/pair`): this Chat's reviewer and the pairing's knobs and counters. */
+  liveReview?: LiveReviewPairing;
+  /** Live review: the main Chat this reviewer Chat watches. */
+  reviewing?: string;
   /** The family's launchd host the daemon last attached to (Phase C1); a restarted daemon reattaches through it. */
   host?: DurableHostAttachment;
   /**
@@ -116,10 +121,21 @@ export class SessionRuntimeLocator {
     return record;
   }
 
-  update(sessionId: string, change: Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "key">>): void {
+  /** Change fields; a live review field given as undefined is removed (the pairing ended). */
+  update(sessionId: string, change: Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "key">> & { liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined }): void {
     const record = this.#chats.get(sessionId);
     if (record === undefined) return;
-    this.#chats.set(sessionId, { ...record, ...change });
+    const { liveReview, reviewing, ...rest } = change;
+    const next: DurableChatRecord = { ...record, ...rest };
+    if ("liveReview" in change) {
+      if (liveReview === undefined) delete next.liveReview;
+      else next.liveReview = liveReview;
+    }
+    if ("reviewing" in change) {
+      if (reviewing === undefined) delete next.reviewing;
+      else next.reviewing = reviewing;
+    }
+    this.#chats.set(sessionId, next);
     this.#persist();
   }
 
@@ -206,6 +222,8 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
     && (value["name"] === undefined || typeof value["name"] === "string")
     && (value["nameSource"] === undefined || value["nameSource"] === "manual" || value["nameSource"] === "auto" || value["nameSource"] === "checkpoint")
     && (value["key"] === undefined || typeof value["key"] === "string")
+    && (value["liveReview"] === undefined || isLiveReviewPairing(value["liveReview"]))
+    && (value["reviewing"] === undefined || typeof value["reviewing"] === "string")
     && (value["host"] === undefined || isHostAttachment(value["host"]))
     && (value["hostEntry"] === undefined || typeof value["hostEntry"] === "string")
     && (value["hostStore"] === undefined || isStoreCode(value["hostStore"]))
