@@ -151,7 +151,7 @@ describe("SessionController ask submission", () => {
     );
     saveAskDraft(sessionKey(oldSession.id), "ask-1", { q1: { values: ["pg"] } });
 
-    await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }] });
+    expect(await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }] })).toBe(true);
 
     expect(submitCalls).toEqual([{ askId: "ask-1", answers: [{ id: "q1", values: ["pg"] }], machineId: "local" }]);
     expect(loadAskDraft(sessionKey(oldSession.id), "ask-1")).toEqual({});
@@ -240,7 +240,7 @@ describe("SessionController ask submission", () => {
     );
     saveAskDraft(sessionKey(oldSession.id), "ask-1", { q1: { values: ["pg"] } });
 
-    await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }] });
+    expect(await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }] })).toBe(false);
 
     expect(Object.values(state.browserErrors).map((error) => error.message)).toContain("Error: submit failed");
     expect(loadAskDraft(sessionKey(oldSession.id), "ask-1")).toEqual({ q1: { values: ["pg"] } });

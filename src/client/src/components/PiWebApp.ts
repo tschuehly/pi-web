@@ -3638,7 +3638,7 @@ export class PiWebApp extends LitElement {
     void this.sessions.dismissWarning(dismissId);
   };
 
-  private readonly handleSubmitAsk = (askId: string, submission: AskUserSubmission): Promise<void> => this.sessions.submitAsk(askId, submission);
+  private readonly handleSubmitAsk = (askId: string, submission: AskUserSubmission): Promise<boolean> => this.sessions.submitAsk(askId, submission);
   private readonly handleResolveEffect = (id: string, resolution: SessionEffectResolution): void => { void this.sessions.resolveEffect(id, resolution); };
   private readonly handleUpgradeDurableHost = (mode: "quiet" | "now" | "cancel"): void => { void this.sessions.upgradeDurableHost(mode); };
 

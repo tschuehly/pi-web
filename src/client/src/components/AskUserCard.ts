@@ -27,9 +27,10 @@ import "./FormattedText";
 import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 
-// Lucide "pencil" and "undo-2" (https://lucide.dev, ISC).
+// Lucide "pencil", "undo-2" and "sticky-note" (https://lucide.dev, ISC).
 const PENCIL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>`;
 const UNDO_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path></svg>`;
+const NOTE_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"></path><path d="M15 3v4a2 2 0 0 0 2 2h4"></path></svg>`;
 
 /** "updated 5 min ago"-style age of an ISO timestamp. */
 export function updatedAgo(iso: string, now = Date.now()): string {
@@ -40,7 +41,8 @@ export function updatedAgo(iso: string, now = Date.now()): string {
   return hours < 24 ? `updated ${String(hours)} h ago` : `updated ${String(Math.floor(hours / 24))} d ago`;
 }
 
-export type AskUserSubmitCallback = (askId: string, submission: AskUserSubmission) => void | Promise<void>;
+/** May return a promise; resolving to `false` means the submit did not reach the daemon (the caller showed why), so the card keeps its draft. */
+export type AskUserSubmitCallback = (askId: string, submission: AskUserSubmission) => unknown;
 
 interface DisplayedRecordAnswer {
   values: string[];
@@ -74,6 +76,8 @@ export class AskUserCard extends LitElement {
   @state() private answers: AskDraftAnswers = {};
   /** Free text on the whole set, sent with the answers. */
   @state() private note = "";
+  /** The Note field hides behind its icon until opened; a saved note keeps it open. */
+  @state() private noteOpen = false;
   @state() private confirmingPartialSubmit = false;
   @state() private submitting = false;
   /** Per question id: the option edited in its own row, and the answer Revert restores. Its text is the Custom answer. */
@@ -89,6 +93,7 @@ export class AskUserCard extends LitElement {
     this.modelIdentity = identity;
     this.answers = this.loadCurrentDraft();
     this.note = this.ask === undefined || this.draftSessionId === "" ? "" : loadAskNote(this.draftSessionId, this.ask.askId);
+    this.noteOpen = this.note !== "";
     this.confirmingPartialSubmit = false;
     this.submitting = false;
     this.inlineEdits = {};
@@ -124,16 +129,19 @@ export class AskUserCard extends LitElement {
           <div class="questions">
             ${ask.questions.map((question, index) => html`${index === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, index)}`)}
           </div>
-          <label class="ask-note">
-            <span>Note</span>
-            <textarea rows="2" maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)} placeholder="Optional, for the whole set" .value=${this.note} @input=${this.changeNote}></textarea>
-          </label>
+          ${this.noteOpen ? html`
+            <label class="ask-note">
+              <span>Note</span>
+              <textarea rows="2" maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)} placeholder="Optional, for the whole set" .value=${this.note} @input=${this.changeNote}></textarea>
+            </label>
+          ` : null}
           <footer class="form-footer">
             ${this.confirmingPartialSubmit && unanswered.length > 0
               ? this.renderPartialSubmitConfirmation(ask, unanswered)
               : html`
+                  ${this.noteOpen ? null : html`<button class="note-toggle" type="button" aria-label="Add note" title="Add a note for the whole set" @click=${this.openNote}>${NOTE_ICON}</button>`}
                   <button class="primary-action" type="submit" ?disabled=${this.submitting}>
-                    ${this.submitting ? "Sending…" : ask.questions.length > 1 ? "Send all" : "Send answers"}
+                    ${this.submitting ? "Sending…" : "Send answers"}
                   </button>
                 `}
           </footer>
@@ -264,7 +272,7 @@ export class AskUserCard extends LitElement {
         </p>
         <div class="confirmation-actions">
           <button class="secondary-action" type="button" @click=${() => { this.keepEditing(ask, unanswered); }}>Keep editing</button>
-          <button class="primary-action send-anyway" type="button" ?disabled=${this.submitting} @click=${() => { this.submitAnswers(ask); }}>
+          <button class="primary-action send-anyway" type="button" ?disabled=${this.submitting} @click=${() => { void this.submitAnswers(ask); }}>
             ${this.submitting ? "Sending…" : "Send anyway"}
           </button>
         </div>
@@ -396,6 +404,12 @@ export class AskUserCard extends LitElement {
     if (this.ask !== undefined && this.draftSessionId !== "") saveAskNote(this.draftSessionId, this.ask.askId, this.note);
   };
 
+  private readonly openNote = async (): Promise<void> => {
+    this.noteOpen = true;
+    await this.updateComplete;
+    this.renderRoot.querySelector<HTMLTextAreaElement>(".ask-note textarea")?.focus();
+  };
+
   private setAnswer(question: AskUserQuestion, answer: AskDraftAnswer): void {
     const next: AskDraftAnswers = answer.values.length === 0 && answer.otherText === undefined
       ? Object.fromEntries(Object.entries(this.answers).filter(([id]) => id !== question.id))
@@ -414,29 +428,44 @@ export class AskUserCard extends LitElement {
       void this.showPartialSubmitConfirmation();
       return;
     }
-    this.submitAnswers(ask);
+    void this.submitAnswers(ask);
   }
 
-  private submitAnswers(ask: PendingAskUser): void {
+  private submitAnswers(ask: PendingAskUser): Promise<boolean> {
     const note = this.note.trim();
-    this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), revision: ask.revision });
+    return this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), revision: ask.revision });
   }
 
-  private send(ask: PendingAskUser, submission: AskUserSubmission): void {
-    if (this.submitting) return;
+  /**
+   * Sends what is answered, for the drawer's Send all: a fully answered set as its Send would, a partly answered one
+   * as a partial submit that keeps the rest open (a partial takes no note, so the note waits for the rest).
+   * `undefined` when nothing was sent because nothing is answered or a send is under way.
+   */
+  sendAnswered(): Promise<boolean> | undefined {
+    const ask = this.ask;
+    if (ask === undefined || this.outcome !== undefined || this.submitting) return undefined;
+    const answers = toSubmission(ask.questions, this.answers).answers;
+    if (answers.length === 0) return undefined;
+    if (unansweredQuestions(ask.questions, this.answers).length === 0) return this.submitAnswers(ask);
+    return this.send(ask, { answers, revision: ask.revision, partial: true });
+  }
+
+  /** True when the submit reached the daemon; on false the card and its draft stay intact. */
+  private send(ask: PendingAskUser, submission: AskUserSubmission): Promise<boolean> {
     const callback = this.onSubmit;
-    if (callback === undefined) return;
+    if (this.submitting || callback === undefined) return Promise.resolve(false);
     this.submitting = true;
     const askId = ask.askId;
-    void Promise.resolve()
+    return Promise.resolve()
       .then(() => callback(askId, submission))
-      .catch(() => {
+      .then((result) => result !== false)
+      .catch(() => false)
+      .then((sent) => {
         // The parent controller owns the visible transport error. Keeping this
         // card and its draft intact is the only recovery needed at this boundary.
-        this.focusAfterRevision = undefined;
-      })
-      .finally(() => {
+        if (!sent) this.focusAfterRevision = undefined;
         if (this.ask?.askId === askId) this.submitting = false;
+        return sent;
       });
   }
 
@@ -446,7 +475,7 @@ export class AskUserCard extends LitElement {
     if (answer === undefined) return;
     // The sent question leaves the form, taking the focused button with it; the next revision focuses the question in its place.
     this.focusAfterRevision = index;
-    this.send(ask, { answers: [answer], revision: ask.revision, partial: true });
+    void this.send(ask, { answers: [answer], revision: ask.revision, partial: true });
   }
 
   private async showPartialSubmitConfirmation(): Promise<void> {
@@ -693,6 +722,9 @@ export class AskUserCard extends LitElement {
     }
     .ask-note { display: grid; gap: 5px; padding: 0 16px 12px var(--ui-transcript-inline-start, 16px); color: var(--pi-muted); font-size: 12px; }
     .ask-note textarea { min-height: 44px; }
+    .note-toggle { display: grid; place-items: center; padding: 6px; border-color: transparent; background: transparent; color: var(--pi-muted); }
+    .note-toggle:hover:not(:disabled) { color: var(--pi-text); }
+    .note-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .form-footer {
       display: flex;
       align-items: center;
@@ -747,6 +779,7 @@ export class AskUserCard extends LitElement {
       .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
       .partial-confirmation { align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }
+      .note-toggle { align-self: flex-start; }
       .primary-action { min-height: 42px; }
     }
     /* Embedded in the question drawer: no frame of its own, one header line, composer-dense spacing. */

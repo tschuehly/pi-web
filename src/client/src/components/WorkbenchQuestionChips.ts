@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { PendingAskUser } from "../../../shared/apiTypes";
 import type { SessionStatus } from "../api";
@@ -38,6 +38,9 @@ export class WorkbenchQuestionChips extends LitElement {
   @property({ attribute: false }) onToggleRoster?: () => void;
   /** Reflected so the Chat can hand the drawer the transcript's area. */
   @property({ type: Boolean, reflect: true }) open = false;
+  /** Send all's progress over the sets it sends, while it runs. */
+  @state() private sendingAll: { done: number; total: number } | undefined;
+  @state() private sendAllError = "";
 
   protected override willUpdate(): void {
     if (this.asks.length === 0) this.open = false;
@@ -61,14 +64,18 @@ export class WorkbenchQuestionChips extends LitElement {
     const count = openQuestionCount(this.asks);
     const title = `${String(count)} open ${count === 1 ? "question" : "questions"}`;
     // Drafts live in the browser, so the count is read back from them; cards announce edits with ask-draft-change.
-    const answered = this.asks.reduce((sum, ask) => sum + answeredCount(ask.questions, loadAskDraft(this.draftSessionId, ask.askId, undefined, ask.questions)), 0);
+    const answeredBySet = this.answeredBySet();
+    const answered = answeredBySet.reduce((sum, [, n]) => sum + n, 0);
+    // Send all appears once two or more sets hold answers; one set keeps its own Send.
+    const sendAll = answeredBySet.length < 2 && this.sendingAll === undefined ? nothing : html`<button type="button" class="send-all" ?disabled=${this.sendingAll !== undefined} @click=${() => { void this.sendAll(); }}>${this.sendingAll === undefined ? `Send all ${String(answered)} ${answered === 1 ? "answer" : "answers"}` : `Sending ${String(this.sendingAll.done + 1)} of ${String(this.sendingAll.total)}…`}</button>`;
     const closeButton = html`<button type="button" class="close" slot="actions" title="Close questions (Esc)" aria-label="Close questions" @click=${() => { this.close(); }}>${CHEVRON_DOWN_ICON}</button>`;
     // One set lends its header line the drawer's title and close button; several keep a drawer header above them.
     const single = this.asks.length === 1;
     return {
       drawer: !this.open ? nothing : html`
         <section id="question-drawer" class="drawer" aria-label="Open questions" @keydown=${this.onKeydown} @ask-draft-change=${() => { this.requestUpdate(); }}>
-          ${single ? nothing : html`<header><span>${title}</span>${closeButton}</header>`}
+          ${single ? nothing : html`<header><span>${title}</span><span class="header-actions">${sendAll}${closeButton}</span></header>`}
+          ${this.sendAllError === "" ? nothing : html`<p class="send-all-error" role="alert">${this.sendAllError}</p>`}
           <div class="sets">
             ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
           </div>
@@ -76,6 +83,30 @@ export class WorkbenchQuestionChips extends LitElement {
       bar: html`<button type="button" class="bar" slot="aside" aria-expanded=${String(this.open)} aria-controls="question-drawer" @keydown=${this.onKeydown}
         @click=${() => { if (this.open) this.close(); else void this.openQuestion(this.asks[0]?.askId ?? "", 0); }}>${QUESTION_ICON}<span><span class="title">${title}</span>${answered === 0 ? nothing : html`<span class="answered"> · ${String(answered)} answered</span>`}</span></button>`,
     };
+  }
+
+  /** Open sets holding at least one drafted answer, with how many; drafts live in the browser. */
+  private answeredBySet(): [string, number][] {
+    return this.asks.map((ask): [string, number] => [ask.askId, answeredCount(ask.questions, loadAskDraft(this.draftSessionId, ask.askId, undefined, ask.questions))]).filter(([, n]) => n > 0);
+  }
+
+  /**
+   * Sends every set's answered questions, one set after another, through each card's own submit, so a partly answered
+   * set keeps its other questions open. A set whose send fails keeps its draft; the rest still go.
+   */
+  private async sendAll(): Promise<void> {
+    if (this.sendingAll !== undefined) return;
+    const askIds = this.answeredBySet().map(([askId]) => askId);
+    this.sendAllError = "";
+    let failed = 0;
+    for (const [done, askId] of askIds.entries()) {
+      this.sendingAll = { done, total: askIds.length };
+      const card = this.renderRoot.querySelector<AskUserCard>(`ask-user-card[data-ask="${CSS.escape(askId)}"]`);
+      const sent = card?.sendAnswered();
+      if (sent !== undefined && !(await sent)) failed += 1;
+    }
+    this.sendingAll = undefined;
+    if (failed > 0) this.sendAllError = `${String(failed)} of ${String(askIds.length)} ${askIds.length === 1 ? "set was" : "sets were"} not sent; their answers are kept.`;
   }
 
   private readonly onKeydown = (event: KeyboardEvent): void => {
@@ -118,6 +149,12 @@ export class WorkbenchQuestionChips extends LitElement {
     /* Fills the transcript's area above the Activity and questions row, flush with the Chat's edges. */
     .drawer { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--pi-surface); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
     header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); font: 12px system-ui, sans-serif; }
+    .header-actions { display: flex; align-items: center; gap: 6px; }
+    .send-all { min-height: 24px; padding: 2px 10px; border: 1px solid var(--pi-accent); border-radius: 6px; background: var(--pi-accent); color: var(--pi-accent-contrast, white); font: 600 12px system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+    .send-all:hover:not(:disabled) { background: color-mix(in srgb, var(--pi-accent) 86%, white); }
+    .send-all:disabled { cursor: wait; opacity: .75; }
+    .send-all:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .send-all-error { flex: 0 0 auto; margin: 0; padding: 6px 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-danger); font: 12px system-ui, sans-serif; }
     .close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); cursor: pointer; }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .close svg { width: 16px; height: 16px; }
