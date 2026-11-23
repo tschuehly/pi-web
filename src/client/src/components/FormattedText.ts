@@ -170,7 +170,7 @@ export class FormattedText extends LitElement {
       anchor.setAttribute("title", absolute);
       const copy = this.createIconButton("file-copy-button", "Copy full path", "Copy full path", COPY_ICON);
       anchor.after(copy);
-      if (reveal) anchor.after(this.createIconButton("file-reveal-button", "Show in Finder", `Show ${anchor.textContent.trim()} in Finder`, REVEAL_ICON));
+      if (reveal && absolute.startsWith("/")) anchor.after(this.createIconButton("file-reveal-button", "Show in Finder", `Show ${anchor.textContent.trim()} in Finder`, REVEAL_ICON));
     });
   }
 
@@ -234,7 +234,8 @@ export class FormattedText extends LitElement {
       const path = anchor.getAttribute("data-workspace-file");
       const outside = anchor.getAttribute("data-outside-file");
       const absolute = this.absoluteLinkPath(anchor, this.workspaceContext);
-      const native = this.workspaceContext.machineId === "local" ? window.piWebNative : undefined;
+      // shortcut: the macOS app gets only absolute paths, so `~/` links open in the Files pane; expand `~` natively to reveal them too.
+      const native = this.workspaceContext.machineId === "local" && absolute?.startsWith("/") === true ? window.piWebNative : undefined;
       const context = this.workspaceContext;
       // The macOS app reveals documents the Files pane cannot show (e.g. .docx) in Finder; nothing opens.
       if (absolute !== null && native?.revealLocalFile !== undefined && REVEAL_IN_FINDER.test(absolute)) {

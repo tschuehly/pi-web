@@ -1,6 +1,6 @@
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AD_HOC_FOLDER_PROJECT_ID, adHocFolderWorkspaceId } from "../shared/workspaceFiles.js";
 import type { FileContentResponse, FileTreeResponse } from "../shared/apiTypes.js";
 import type { Project, WorkspaceProviderResolution } from "./types.js";
@@ -112,9 +112,26 @@ describe("ad-hoc folder workspace file routes", () => {
       expect(response.statusCode, missing).toBe(404);
       expect(response.json<{ error: string }>().error).toContain("is not an existing directory");
     }
-    for (const malformed of ["relative-path", "folder:relative/path"]) {
+    for (const malformed of ["relative-path", "folder:relative/path", "folder:~user/x", "folder:~x"]) {
       const response = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${AD_HOC_FOLDER_PROJECT_ID}/workspaces/${encodeURIComponent(malformed)}/tree` });
       expect(response.statusCode, malformed).toBe(404);
+    }
+  });
+
+  it("expands a ~ folder to the serving machine's home directory", async () => {
+    const home = join(appTestContext.tempDir, "home");
+    await mkdir(join(home, ".pi-workbench", "scratch"), { recursive: true });
+    await writeFile(join(home, ".pi-workbench", "scratch", "draft.md"), "draft");
+    await writeFile(join(home, "top.md"), "top");
+    vi.stubEnv("HOME", home);
+    try {
+      for (const [folder, path, content] of [["~/.pi-workbench/scratch", "draft.md", "draft"], ["~", "top.md", "top"]]) {
+        const response = await appTestContext.app.inject({ method: "GET", url: `${folderUrl(folder ?? "", "file")}?path=${path ?? ""}` });
+        expect(response.statusCode, folder).toBe(200);
+        expect(response.json<FileContentResponse>().content).toBe(content);
+      }
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 

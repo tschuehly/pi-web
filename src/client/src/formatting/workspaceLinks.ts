@@ -53,7 +53,7 @@ export function fileLinkLines(href: string): LineRange | undefined {
 /** Classification only: filesystem containment and symlink checks belong to the server. */
 export function workspaceMarkdownFilePath(href: string, context: MarkdownWorkspaceContext): string | undefined {
   const decoded = decodedFileReference(href);
-  if (decoded === undefined) return undefined;
+  if (decoded === undefined || decoded.startsWith("~/")) return undefined;
   let path = decoded;
   const absolute = path.startsWith("/");
   if (context.sourcePath === undefined) {
@@ -77,12 +77,28 @@ export function workspaceMarkdownFilePath(href: string, context: MarkdownWorkspa
   return parts.length === 0 ? undefined : parts.join("/");
 }
 
-/** The absolute path of a Chat file link that leaves the Chat's folder (`../x` or `/elsewhere/x`). */
+/** The absolute path of a Chat file link that leaves the Chat's folder (`../x` or `/elsewhere/x`), or a `~/x` home path the server expands. */
 export function outsideChatFilePath(href: string, context: MarkdownWorkspaceContext): string | undefined {
   if (context.sourcePath !== undefined) return undefined;
   const path = decodedFileReference(href);
+  if (path?.startsWith("~/") === true) {
+    const rest = chatLinkTarget(path.slice(2), "/~");
+    return rest === undefined || rest.startsWith("/") ? undefined : `~/${rest}`;
+  }
   const target = path === undefined ? undefined : chatLinkTarget(path, context.root);
   return target?.startsWith("/") === true ? target : undefined;
+}
+
+/**
+ * The Markdown link destination for inline code whose whole text is one file path: `/x`, `~/x`, `./x`, `../x`,
+ * or a relative `dir/name.ext`, optionally with a `:40` or `#L40-L58` suffix. Undefined for anything else.
+ */
+export function inlineCodeFileHref(text: string): string | undefined {
+  const match = /^(\S+?)((?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)?)$/.exec(text.trim());
+  if (match === null) return undefined;
+  const [, path = "", suffix = ""] = match;
+  if (!/^(?:(?:\/|~\/|\.\.?\/)[^/]|[^/:]+(?:\/[^/]+)*\/[^/]*[^/.]\.[a-z][a-z\d]*$)/i.test(path)) return undefined;
+  return `${path.split("/").map(encodeURIComponent).join("/")}${suffix}`;
 }
 
 /** A Markdown destination decoded once to a file path, or undefined for URLs, fragments and unsafe characters. */

@@ -227,6 +227,41 @@ describe("workspace Markdown downloads", () => {
     expect(url.searchParams.get("path")).toBe(path);
   });
 
+  it.each([
+    ["`/srv/work/docs/a.md`", "data-workspace-file", "docs/a.md", undefined],
+    ["`/home/me/notes.md`", "data-outside-file", "/home/me/notes.md", undefined],
+    ["`~/.pi-workbench/scratch/draft.md`", "data-outside-file", "~/.pi-workbench/scratch/draft.md", undefined],
+    ["`src/client/a.ts`", "data-workspace-file", "src/client/a.ts", undefined],
+    ["`src/a.ts:40`", "data-workspace-file", "src/a.ts", "40-40"],
+    ["`src/a.ts#L40-L58`", "data-workspace-file", "src/a.ts", "40-58"],
+  ])("links inline code %s like the matching Markdown link, keeping the code", (text, attribute, path, lines) => {
+    const anchor = link(text, workspace);
+    expect(anchor.getAttribute(attribute)).toBe(path);
+    expect(anchor.getAttribute("data-lines") ?? undefined).toBe(lines);
+    expect(anchor.target).toBe("_self");
+    expect(anchor.querySelector(":scope > code")?.textContent).toBe(text.slice(1, -1));
+  });
+
+  it("routes ~/ links through a ~ folder workspace the server expands", () => {
+    for (const text of ["`~/.pi-workbench/scratch/draft.md`", "[draft](~/.pi-workbench/scratch/draft.md)", "`~/top.md`"]) {
+      const anchor = link(text, workspace);
+      const path = anchor.getAttribute("data-outside-file") ?? "";
+      const url = new URL(anchor.href);
+      expect(url.pathname).toContain(`/workspaces/${encodeURIComponent(`folder:${path.slice(0, path.lastIndexOf("/"))}`)}/file/preview`);
+      expect(url.searchParams.get("path")).toBe(path.slice(path.lastIndexOf("/") + 1));
+    }
+  });
+
+  it.each(["`origin/main`", "`npm run dev`", "`https://example.com/a.md`", "[`/srv/x.md`](https://example.com)", "```\n/srv/work/a.md\n```", "`a/b`"])("leaves %s unlinked as a file", (text) => {
+    const div = render(text, workspace);
+    expect(div.querySelector("[data-workspace-file], [data-outside-file]")).toBeNull();
+    expect(div.querySelector("code")?.textContent.trim()).not.toBe("");
+  });
+
+  it("does not link inline code without a workspace context", () => {
+    expect(render("`/srv/work/a.md`").querySelector("a")).toBeNull();
+  });
+
   it("isolates identical nested Markdown by source path and rejects escapes", () => {
     const text = "[sibling](./target.txt) [parent](../shared.txt) [escape](../../../../outside.txt)";
     const first = render(text, { ...workspace, sourcePath: "docs/a/notes.md" });
