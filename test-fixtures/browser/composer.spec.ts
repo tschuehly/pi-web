@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 const paragraph = "This closed session still posts afk warnings, so the owner keeps getting pinged about a Chat that ended hours ago and nobody can tell why [PIC_1]";
 
-async function open(page: Page, width: number): Promise<void> {
-  await page.goto(`/composer.html?width=${String(width)}`);
+async function open(page: Page, width: number, zoom = 1): Promise<void> {
+  await page.goto(`/composer.html?width=${String(width)}&zoom=${String(zoom)}`);
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
 }
 
@@ -87,5 +87,26 @@ for (const width of [640, 420]) {
     expect(Math.abs(row.bottom - empty.row.bottom)).toBeLessThan(2);
     for (const icon of icons) expect(lines[0]?.right ?? Infinity).toBeLessThanOrEqual(icon.left);
     await page.screenshot({ path: test.info().outputPath(`dense-short-${String(width)}.png`) });
+  });
+}
+
+// Thomas's Grid tile draft: one long sentence ran past the input on a single line, scrolled sideways, instead of wrapping.
+const sentence = "Spawn a subagent that reads through all sessions that used the tooling with luna subs how it is being used";
+for (const [width, zoom] of [[1270, 1], [900, 1], [640, 1], [420, 1], [1270, 1.25], [640, 2], [640, 0.8]] as const) {
+  test(`dense composer wraps one long typed sentence instead of scrolling sideways (tile ${String(width)}px, interface scale ${String(zoom)})`, async ({ page }) => {
+    await open(page, width, zoom);
+    const input = page.locator("prompt-editor .cm-content");
+    await input.focus();
+    // Long enough to overflow the widest tile at least once.
+    await input.pressSequentially(width > 700 ? `${sentence} and then ${sentence.toLowerCase()}` : sentence);
+    const { row, lines } = await layout(page);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(line.left).toBeGreaterThanOrEqual(row.left - 1);
+      expect(line.right).toBeLessThanOrEqual(row.left + row.width + 1);
+    }
+    const scroll = await page.locator("prompt-editor").evaluate((host) => [".cm-scroller", ".cm-content"].map((selector) => { const element = host.shadowRoot?.querySelector(selector); return element === null || element === undefined ? -1 : element.scrollWidth - element.clientWidth + element.scrollLeft; }));
+    expect(scroll).toEqual([0, 0]);
+    await page.screenshot({ path: test.info().outputPath(`dense-sentence-${String(width)}.png`) });
   });
 }

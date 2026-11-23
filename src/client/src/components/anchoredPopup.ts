@@ -136,7 +136,7 @@ export class AnchoredPopupController implements ReactiveController {
   }
 }
 
-function cssZoom(element: HTMLElement): number {
+export function cssZoom(element: HTMLElement): number {
   // Older WebKit lacks currentCSSZoom; the interface scale is the root's zoom.
   const root = element.ownerDocument.documentElement;
   const zoom = "currentCSSZoom" in element ? element.currentCSSZoom : Number.parseFloat(getComputedStyle(root).zoom);

@@ -24,7 +24,7 @@ import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUs
 import { composerKeyboardSubmissionEnabled, composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
-import { AnchoredPopupController } from "./anchoredPopup";
+import { AnchoredPopupController, cssZoom } from "./anchoredPopup";
 import { renderActivityIcon, renderAttachIcon, renderCameraIcon, renderPhotosIcon, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
 import "./WorkingModeControls";
 import "./ModelEffortPicker";
@@ -749,7 +749,8 @@ export class PromptEditor extends LitElement {
       const first = icons[0]?.getBoundingClientRect().left ?? 0;
       const last = icons.at(-1)?.getBoundingClientRect().right ?? first;
       this.trailingIconsHeight = Math.max(...icons.map((icon) => icon.getBoundingClientRect().height));
-      row.style.setProperty("--dense-trailing-width", `${String(Math.ceil(last - first + gap))}px`);
+      // Rects are screen pixels; the custom property is a CSS length the interface scale (root zoom) multiplies again.
+      row.style.setProperty("--dense-trailing-width", `${String(Math.ceil((last - first) / cssZoom(row) + gap))}px`);
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
