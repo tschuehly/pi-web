@@ -248,7 +248,7 @@ describe("WorkbenchQuestionChips", () => {
     second?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
     await second?.updateComplete;
     await chips.updateComplete;
-    expect(sendAll()?.textContent.trim()).toBe("Send 2 answers");
+    expect(sendAll()?.textContent.trim()).toBe("Send all 2 answers");
 
     sendAll()?.click();
     await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledTimes(2); });

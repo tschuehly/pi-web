@@ -141,7 +141,7 @@ export class AskUserCard extends LitElement {
               : html`
                   ${this.noteOpen ? null : html`<button class="note-toggle" type="button" aria-label="Add note" title="Add a note for the whole set" @click=${this.openNote}>${NOTE_ICON}</button>`}
                   <button class="primary-action" type="submit" ?disabled=${this.submitting}>
-                    ${this.submitting ? "Sending…" : ask.questions.length > 1 ? "Send all" : "Send answers"}
+                    ${this.submitting ? "Sending…" : "Send answers"}
                   </button>
                 `}
           </footer>
@@ -722,7 +722,7 @@ export class AskUserCard extends LitElement {
     }
     .ask-note { display: grid; gap: 5px; padding: 0 16px 12px var(--ui-transcript-inline-start, 16px); color: var(--pi-muted); font-size: 12px; }
     .ask-note textarea { min-height: 44px; }
-    .note-toggle { display: grid; place-items: center; margin-inline-end: auto; padding: 6px; border-color: transparent; background: transparent; color: var(--pi-muted); }
+    .note-toggle { display: grid; place-items: center; padding: 6px; border-color: transparent; background: transparent; color: var(--pi-muted); }
     .note-toggle:hover:not(:disabled) { color: var(--pi-text); }
     .note-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .form-footer {

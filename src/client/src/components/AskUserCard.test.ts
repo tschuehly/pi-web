@@ -153,7 +153,7 @@ describe("ask-user-card live form", () => {
     expect(root.activeElement).toBe(editedStackText);
     expect(inputWithValue(root, "lit").checked).toBe(true);
 
-    buttonWithText(root, "Send all").click();
+    buttonWithText(root, "Send answers").click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenCalledWith("ask-1", {
       revision: "r1",
@@ -274,7 +274,7 @@ describe("ask-user-card live form", () => {
 
     inputWithValue(root, "vim").click();
     await card.updateComplete;
-    buttonWithText(root, "Send all").click();
+    buttonWithText(root, "Send answers").click();
     await card.updateComplete;
     await Promise.resolve();
 
@@ -355,7 +355,7 @@ describe("ask-user-card revisions", () => {
     expect(inputWithValue(renderRoot(card), "zsh").checked).toBe(true);
     inputWithValue(renderRoot(card), "code").click();
     await card.updateComplete;
-    buttonWithText(renderRoot(card), "Send all").click();
+    buttonWithText(renderRoot(card), "Send answers").click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r2", answers: [{ id: "editor", values: ["code"] }, { id: "shell", values: ["zsh"] }] });
   });

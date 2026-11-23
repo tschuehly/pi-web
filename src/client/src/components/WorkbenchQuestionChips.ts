@@ -67,7 +67,7 @@ export class WorkbenchQuestionChips extends LitElement {
     const answeredBySet = this.answeredBySet();
     const answered = answeredBySet.reduce((sum, [, n]) => sum + n, 0);
     // Send all appears once two or more sets hold answers; one set keeps its own Send.
-    const sendAll = answeredBySet.length < 2 && this.sendingAll === undefined ? nothing : html`<button type="button" class="send-all" ?disabled=${this.sendingAll !== undefined} @click=${() => { void this.sendAll(); }}>${this.sendingAll === undefined ? `Send ${String(answered)} ${answered === 1 ? "answer" : "answers"}` : `Sending ${String(this.sendingAll.done + 1)} of ${String(this.sendingAll.total)}…`}</button>`;
+    const sendAll = answeredBySet.length < 2 && this.sendingAll === undefined ? nothing : html`<button type="button" class="send-all" ?disabled=${this.sendingAll !== undefined} @click=${() => { void this.sendAll(); }}>${this.sendingAll === undefined ? `Send all ${String(answered)} ${answered === 1 ? "answer" : "answers"}` : `Sending ${String(this.sendingAll.done + 1)} of ${String(this.sendingAll.total)}…`}</button>`;
     const closeButton = html`<button type="button" class="close" slot="actions" title="Close questions (Esc)" aria-label="Close questions" @click=${() => { this.close(); }}>${CHEVRON_DOWN_ICON}</button>`;
     // One set lends its header line the drawer's title and close button; several keep a drawer header above them.
     const single = this.asks.length === 1;
