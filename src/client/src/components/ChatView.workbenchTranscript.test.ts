@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from "vitest";
-import type { PendingAskUser } from "../api";
+import type { PendingAskUser, SessionStatus } from "../api";
+import { WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
 import type { ChatLine, ToolExecutionPart } from "../chatTypes";
 import { ChatView, conversationMeterPosition, filterChatGroups } from "./ChatView";
 import { groupChatMessages } from "../chatGroups";
@@ -25,8 +26,41 @@ async function mount(messages: ChatLine[], setup: (view: ChatView) => void = () 
   return view.shadowRoot;
 }
 
+function attention(value: string): SessionStatus {
+  const mode = { alignment: "Default", attention: value, checking: "Default", orchestration: "Main" };
+  return {
+    sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+    extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "applied", selected: mode, applied: mode }) },
+  };
+}
+
 // Workbench transcript features carried onto upstream's chat templates.
 describe("Workbench transcript on the upstream chat surface", () => {
+  it("expands reasoning by default only under Focused Attention, and a manual open survives the group growing", async () => {
+    const thought: ChatLine = { role: "assistant", entryId: "t1", parts: [{ type: "thinking", text: "first thought" }] };
+    const focused = await mount([thought], (view) => { view.status = attention("Focused"); });
+    expect(focused.querySelector<HTMLDetailsElement>("details.thinking-group")?.open).toBe(true);
+    document.body.replaceChildren();
+
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.status = attention("Default");
+    view.messages = [thought];
+    document.body.append(view);
+    await view.updateComplete;
+    const group = () => view.shadowRoot?.querySelector<HTMLDetailsElement>("details.thinking-group");
+    expect(group()?.open).toBe(false);
+    expect(group()?.querySelector(".thinking-text")).toBeNull();
+    const opened = group();
+    if (opened === null || opened === undefined) throw new Error("Expected thinking group");
+    opened.open = true;
+    opened.dispatchEvent(new Event("toggle"));
+    view.messages = [thought, tool("a", "success"), { role: "assistant", entryId: "t2", parts: [{ type: "thinking", text: "second thought" }] }];
+    await view.updateComplete;
+    expect(group()?.open).toBe(true);
+  });
+
   it("keeps reasoning open, folds routine tools between it to one line, and leaves a failed tool visible", async () => {
     const root = await mount([
       { role: "user", entryId: "u", parts: [{ type: "text", text: "Go" }] },
@@ -36,7 +70,7 @@ describe("Workbench transcript on the upstream chat surface", () => {
       { role: "assistant", entryId: "t2", parts: [{ type: "thinking", text: "second thought" }] },
       tool("c", "error", "bash"),
       { role: "assistant", entryId: "r", parts: [{ type: "text", text: "Done" }] },
-    ]);
+    ], (view) => { view.status = attention("Focused"); });
     const thinking = root.querySelector<HTMLDetailsElement>("details.thinking-group");
     expect(thinking?.open).toBe(true);
     expect([...(thinking?.querySelectorAll(".tool-fold > summary") ?? [])].map((summary) => summary.textContent.replace(/\s+/gu, " ").trim())).toEqual(["2 tool calls · running"]);
