@@ -5,6 +5,8 @@ This project is expected to run locally using split systemd user services:
 - `pi-web-sessiond.service` runs `npm run start:sessiond` in non-autoreload, non-auto-restart mode.
 - `pi-web-ui-dev.service` runs the web/API and Vite UI in dev autoreload mode with `npm run dev:web` and `npm run dev:client`.
 
+Install dependencies with `pnpm install` (pnpm 12, pinned in `packageManager`); never `npm install` or `npm ci`, which recreate `package-lock.json`. Scripts run with `pnpm run` or `npm run` alike.
+
 When working on this project, assume the session runtime owner is long-lived and separate from the autoreloading UI/API process. Browser disconnects and UI/API restarts should not stop active Pi sessions.
 
 If you make changes that affect `src/server/sessiond.ts`, session runtime ownership, the session daemon protocol, or any code path only loaded by the session daemon, inform the user that a manual restart of the session daemon is needed.
