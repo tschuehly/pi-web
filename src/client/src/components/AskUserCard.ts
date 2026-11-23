@@ -134,8 +134,7 @@ export class AskUserCard extends LitElement {
           </div>
           ${this.noteOpen ? html`
             <label class="ask-note">
-              <span>Note</span>
-              <textarea rows="2" maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)} placeholder="Optional, for the whole set" .value=${this.note} @input=${this.changeNote}></textarea>
+              <textarea rows="1" aria-label="Note for the whole set" maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)} placeholder="Note for the whole set (optional)" .value=${this.note} @input=${this.changeNote}></textarea>
             </label>
           ` : null}
           <footer class="form-footer">
@@ -406,6 +405,9 @@ export class AskUserCard extends LitElement {
     const input = event.currentTarget;
     if (!(input instanceof HTMLTextAreaElement)) return;
     this.note = input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH);
+    // One line that grows with its text (up to the CSS max-height), where field-sizing is unsupported.
+    input.style.height = "auto";
+    input.style.height = `${String(input.scrollHeight + 2)}px`;
     if (this.ask !== undefined && this.draftSessionId !== "") saveAskNote(this.draftSessionId, this.ask.askId, this.note);
   };
 
@@ -725,8 +727,10 @@ export class AskUserCard extends LitElement {
       padding: 8px;
       font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif);
     }
-    .ask-note { display: grid; gap: 5px; padding: 0 16px 12px var(--ui-transcript-inline-start, 16px); color: var(--pi-muted); font-size: 12px; }
-    .ask-note textarea { min-height: 44px; }
+    .ask-note { display: grid; padding: 0 16px 10px var(--ui-transcript-inline-start, 16px); }
+    /* A quiet one-line field that grows with its text; focus tints the border instead of a second ring. */
+    .ask-note textarea { min-height: 0; max-height: 8lh; field-sizing: content; resize: none; padding: 5px 10px; border-color: var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); }
+    .ask-note textarea:focus-visible { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent); }
     .note-toggle { display: grid; place-items: center; padding: 6px; border-color: transparent; background: transparent; color: var(--pi-muted); }
     .note-toggle:hover:not(:disabled) { color: var(--pi-text); }
     .note-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
