@@ -604,11 +604,19 @@ export class AskUserCard extends LitElement {
 
   /** Sends one question's answer at once (a partial submit); the daemon keeps the other questions open under a new revision. */
   private submitOne(ask: PendingAskUser, question: AskUserQuestion, index: number): void {
-    const answer = toSubmission([question], this.answers).answers[0];
-    if (answer === undefined) return;
-    // The sent question leaves the form, taking the focused button with it; the next revision focuses the question in its place.
-    this.focusAfterRevision = index;
-    void this.send(ask, { answers: [answer], revision: ask.revision, partial: true, ...this.contextSubmission() });
+    // A follow-up shows because of its unsent parents' draft answers; they go with it, as the daemon judges showIf on the submission.
+    const parents: AskUserQuestion[] = [];
+    for (let id = question.showIf?.question; id !== undefined;) {
+      const parent = ask.questions.find((each) => each.id === id);
+      if (parent === undefined) break;
+      parents.unshift(parent);
+      id = parent.showIf?.question;
+    }
+    const answers = toSubmission([...parents, question], this.answers).answers;
+    if (!answers.some((answer) => answer.id === question.id)) return;
+    // The sent questions leave the form, taking the focused button with them; the next revision focuses the question in its place.
+    this.focusAfterRevision = index - parents.length;
+    void this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission() });
   }
 
   private async showPartialSubmitConfirmation(): Promise<void> {
