@@ -133,8 +133,9 @@ export class AskUserCard extends LitElement {
     this.answers = this.loadCurrentDraft();
     this.note = this.ask === undefined || this.draftSessionId === "" ? "" : loadAskNote(this.draftSessionId, this.ask.askId);
     this.noteOpen = this.note !== "";
-    const context = this.ask?.context;
-    this.editedContext = context === undefined || this.draftSessionId === "" || this.outcome !== undefined ? undefined : loadAskContext(this.draftSessionId, this.ask?.askId ?? "", context);
+    // A context the user cleared with a partial send is absent: his new edit is made against "".
+    const context = this.ask?.context ?? "";
+    this.editedContext = this.ask === undefined || this.draftSessionId === "" || this.outcome !== undefined ? undefined : loadAskContext(this.draftSessionId, this.ask.askId, context);
     this.confirmingPartialSubmit = false;
     this.submitting = false;
     this.inlineEdits = {};
@@ -205,9 +206,9 @@ export class AskUserCard extends LitElement {
    * The open set's context, editable from the start in the Markdown field styled as the read text. Diagrams and diffs
    * the live preview leaves as code are drawn under it from the current text.
    */
-  private renderContextEditor(context: string | undefined): TemplateResult | null {
-    if (context === undefined) return null;
-    const text = this.editedContext ?? context;
+  private renderContextEditor(context: string | undefined): TemplateResult {
+    // An absent context (cleared by a partial send) stays an empty field the user can write a new one into.
+    const text = this.editedContext ?? context ?? "";
     const media = renderedOnlyFences(text);
     return html`
       <div class="ask-context">
@@ -524,23 +525,26 @@ export class AskUserCard extends LitElement {
   private readonly changeContext = (event: Event): void => {
     const input = event.currentTarget;
     const ask = this.ask;
-    if (!(input instanceof AskMarkdownField) || ask?.context === undefined) return;
-    this.editedContext = input.value === ask.context ? undefined : input.value;
-    if (this.draftSessionId !== "") saveAskContext(this.draftSessionId, ask.askId, ask.context, input.value);
+    if (!(input instanceof AskMarkdownField) || ask === undefined) return;
+    const context = ask.context ?? "";
+    this.editedContext = input.value === context ? undefined : input.value;
+    if (this.draftSessionId !== "") saveAskContext(this.draftSessionId, ask.askId, context, input.value);
   };
 
   private readonly revertContext = (): void => {
     const ask = this.ask;
-    if (ask?.context === undefined) return;
+    if (ask === undefined) return;
     this.editedContext = undefined;
-    if (this.draftSessionId !== "") saveAskContext(this.draftSessionId, ask.askId, ask.context, ask.context);
+    if (this.draftSessionId !== "") saveAskContext(this.draftSessionId, ask.askId, ask.context ?? "", ask.context ?? "");
     this.renderRoot.querySelector<HTMLElement>(".context-editor")?.focus();
   };
 
   /** The edited context for a submission: nothing when unchanged, `""` when the user cleared it. */
   private contextSubmission(): Pick<AskUserSubmission, "context"> {
     const context = this.editedContext;
-    return context === undefined ? {} : { context: context.trim() === "" ? "" : context };
+    // Blank over an absent context changes nothing, so it is no edit.
+    if (context === undefined || (context.trim() === "" && (this.ask?.context ?? "") === "")) return {};
+    return { context: context.trim() === "" ? "" : context };
   }
 
   private readonly openNote = async (): Promise<void> => {
