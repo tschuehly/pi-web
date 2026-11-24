@@ -314,6 +314,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
         .outcome=${part.outcome}
         .draftSessionId=${context.askDraftSessionId}
         .workspaceContext=${context.workspaceContext}
+        .contentRendering=${context.contentRendering}
       ></ask-user-card>
     `;
     if (part.type === "subagentCompletion") return html`

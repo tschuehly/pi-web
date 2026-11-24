@@ -7,6 +7,7 @@ import { uiButtonStyles } from "./ui/controlStyles";
 import { uiTranscriptStyles } from "./ui/transcriptStyles";
 import { renderDisclosureChevron } from "./tabIcons";
 import "./BashLogButton";
+import { diffLineClass, diffLineStyles, isAddedDiffLine, isRemovedDiffLine } from "../formatting/diffViews";
 
 const MAX_COLLAPSED_DIFF_LINES = 180;
 
@@ -191,7 +192,7 @@ export class ToolExecutionView extends LitElement {
     window.setTimeout(() => { this.copied = false; }, 1200);
   }
 
-  static override styles = [uiButtonStyles, uiTranscriptStyles, css`
+  static override styles = [uiButtonStyles, uiTranscriptStyles, diffLineStyles, css`
     :host { display: block; width: 100%; max-width: 100%; min-width: 0; color: var(--pi-text); }
     .tool-card { display: grid; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; padding: 0; color: var(--pi-text); }
     .tool-card.running, .tool-card.pending { --ui-activity-tone: var(--pi-warning); }
@@ -208,8 +209,8 @@ export class ToolExecutionView extends LitElement {
     .row-result { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--pi-muted); text-overflow: ellipsis; white-space: nowrap; }
     .tool-meta { flex: 0 0 auto; display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 8px; color: var(--pi-text-secondary); font-size: 12px; }
     .diff-stats { display: inline-flex; gap: 3px; }
-    .added, .diff .added { color: color-mix(in srgb, var(--pi-success) 65%, var(--pi-text) 35%); }
-    .removed, .diff .removed { color: color-mix(in srgb, var(--pi-danger) 65%, var(--pi-text) 35%); }
+    .added { color: color-mix(in srgb, var(--pi-success) 65%, var(--pi-text) 35%); }
+    .removed { color: color-mix(in srgb, var(--pi-danger) 65%, var(--pi-text) 35%); }
     .status-label { color: var(--pi-text-secondary); }
     .notice { margin: 0; padding: 8px 12px 8px var(--ui-transcript-inline-start, 12px); color: var(--pi-warning); }
     .muted { margin: 0; color: var(--pi-muted); }
@@ -231,13 +232,6 @@ export class ToolExecutionView extends LitElement {
     .diff-toolbar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .diff { box-sizing: border-box; width: calc(100% - 12px - var(--ui-transcript-inline-start, 12px)); max-width: 100%; min-width: 0; margin: 0 12px 0 var(--ui-transcript-inline-start, 12px); overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--pi-border-muted); border-radius: 0; background: var(--pi-bg); padding: 8px 0; color: var(--pi-muted); font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); line-height: 1.45; }
     .diff-content { display: block; width: max-content; min-width: 100%; }
-    .diff span { display: block; min-height: 1.45em; padding: 0 8px; white-space: pre; }
-    .diff .context { color: var(--pi-muted); }
-    .diff .hunk { color: var(--pi-accent); }
-    .diff .file { color: var(--pi-dim); }
-    .diff .meta { color: var(--pi-dim); }
-    .diff .added { background: color-mix(in srgb, var(--pi-success) 12%, transparent); }
-    .diff .removed { background: color-mix(in srgb, var(--pi-danger) 12%, transparent); }
     .show-more { justify-self: start; margin-inline: var(--ui-transcript-inline-start, 12px) 12px; }
   `];
 }
@@ -304,23 +298,6 @@ function countDiffLines(diff: string): { added: number; removed: number; lines: 
     else if (isRemovedDiffLine(line)) removed++;
   }
   return { added, removed, lines: lines.length };
-}
-
-function diffLineClass(line: string): string {
-  if (isAddedDiffLine(line)) return "added";
-  if (isRemovedDiffLine(line)) return "removed";
-  if (line.startsWith("@@")) return "hunk";
-  if (line.startsWith("+++") || line.startsWith("---")) return "file";
-  if (line.startsWith("diff ") || line.startsWith("index ")) return "meta";
-  return "context";
-}
-
-function isAddedDiffLine(line: string): boolean {
-  return line.startsWith("+") && !line.startsWith("+++");
-}
-
-function isRemovedDiffLine(line: string): boolean {
-  return line.startsWith("-") && !line.startsWith("---");
 }
 
 function statusIcon(status: ToolExecutionPart["status"]): string {

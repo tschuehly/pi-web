@@ -8,6 +8,7 @@ import "./AskUserCard";
 import "./DelegateRoster";
 import { answeredCount, loadAskDraft, visibleQuestions } from "../askDrafts";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
+import type { ChatContentRendering } from "../formatting/contentRendering";
 
 // Lucide "message-circle-question" and "chevron-down" (https://lucide.dev, ISC).
 const QUESTION_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>`;
@@ -32,6 +33,7 @@ export class WorkbenchQuestionChips extends LitElement {
   @property({ attribute: false }) draftSessionId = "";
   @property({ attribute: false }) onSubmit?: AskUserSubmitCallback;
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
+  @property({ attribute: false }) contentRendering: ChatContentRendering | undefined;
   /** Forwarded to the Activity roster. */
   @property({ attribute: false }) status?: SessionStatus;
   @property({ type: Boolean }) rosterCollapsed = true;
@@ -78,7 +80,7 @@ export class WorkbenchQuestionChips extends LitElement {
           ${single ? nothing : html`<header><span>${title}</span><span class="header-actions">${sendAll}${closeButton}</span></header>`}
           ${this.sendAllError === "" ? nothing : html`<p class="send-all-error" role="alert">${this.sendAllError}</p>`}
           <div class="sets">
-            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
+            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
           </div>
         </section>`,
       bar: html`<button type="button" class="bar" slot="aside" aria-expanded=${String(this.open)} aria-controls="question-drawer" @keydown=${this.onKeydown}

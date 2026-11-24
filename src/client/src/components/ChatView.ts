@@ -873,6 +873,7 @@ export class ChatView extends LitElement {
         .ask=${ask}
         .draftSessionId=${this.askDraftSessionId}
         .workspaceContext=${this.workspaceContext}
+        .contentRendering=${this.contentRendering}
         .onSubmit=${this.onSubmitAsk}
       ></ask-user-card>
     `);

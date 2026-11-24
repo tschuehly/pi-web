@@ -11,6 +11,8 @@ import { rememberExternalMarkdownImageDimensions, restoreExternalMarkdownImageDi
 import { workspaceContextChanged, type MarkdownWorkspaceContext, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { formattedTextStyles } from "./formattedTextStyles";
 import { codeBlockFrameStyles } from "./codeBlockFrameStyles";
+import { ContentRendererHost } from "./ContentRendererHost";
+import { diffLineStyles, enhanceDiffBlocks, wordDiffStyles } from "../formatting/diffViews";
 
 const FILE_LINK_SELECTOR = "a[data-workspace-file], a[data-outside-file]";
 // ponytail: binary documents the Files pane cannot show; others (text, code, Makefile, .mp4/.mov/.webm video) open in the pane. Extend as needed.
@@ -34,6 +36,10 @@ export class FormattedText extends LitElement {
   @property({ attribute: false }) codeBlocks: CodeBlockPolicy = DEFAULT_CODE_BLOCK_POLICY;
   @property({ attribute: false }) contentRendering: ChatContentRendering | undefined;
   @property() machineId = "local";
+  /** Fold each image and Mermaid diagram behind a one-line disclosure (the ask card's context and details). */
+  @property({ type: Boolean, attribute: "fold-media" }) foldMedia = false;
+  /** Draw ```diff fences as coloured lines and ```worddiff fences as word diffs (the ask card's context and details). */
+  @property({ type: Boolean, attribute: "diff-views" }) diffViews = false;
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
 
   private readonly enhancement = new VisibleContentController(this);
@@ -96,6 +102,8 @@ export class FormattedText extends LitElement {
     // HTML is memoized independently of geometry; apply hints on every DOM mount,
     // in this update's microtask before paint or the chat's position-restoration frame.
     restoreExternalMarkdownImageDimensions(this.renderRoot);
+    if (this.diffViews) enhanceDiffBlocks(this.renderRoot);
+    if (this.foldMedia) this.foldMediaBlocks();
     this.enhanceQuotes();
     this.enhanceFileLinks();
     if (this.layoutChanged) {
@@ -133,6 +141,8 @@ export class FormattedText extends LitElement {
       this.layoutChanged = true;
       this.content = this.contentRendering?.renderMarkdown({
         text: this.text,
+        // Opening a folded diagram is the request to see it, so it renders without a second click.
+        allowManualPreview: this.foldMedia,
         machineId: this.workspaceContext?.machineId ?? this.machineId,
         toSafeHtml: (text) => text === this.text && this.markup !== undefined ? this.markup
           : toSafeMarkdownHtml(text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks),
@@ -188,6 +198,22 @@ export class FormattedText extends LitElement {
   private absoluteLinkPath(anchor: Element, context: MarkdownWorkspaceContext): string | null {
     const path = anchor.getAttribute("data-workspace-file");
     return anchor.getAttribute("data-outside-file") ?? (path === null ? null : `${context.root.replace(/\/+$/, "")}/${path}`);
+  }
+
+  private foldMediaBlocks(): void {
+    this.renderRoot.querySelectorAll<HTMLElement>("img, pi-web-markdown-image, pi-web-content-renderer, .code-block-wrapper").forEach((element) => {
+      const image = element.localName === "img" || element.localName === "pi-web-markdown-image";
+      const diagram = element instanceof ContentRendererHost ? element.language === "mermaid"
+        : element.querySelector(":scope > pre > code.language-mermaid") !== null;
+      if ((!image && !diagram) || element.parentElement?.closest("details.folded-media")) return;
+      const alt = (element.getAttribute("alt") ?? element.getAttribute("description") ?? "").trim();
+      const details = document.createElement("details");
+      details.className = "folded-media";
+      const summary = document.createElement("summary");
+      summary.textContent = diagram ? "Show diagram" : alt === "" ? "Show image" : `Show image: ${alt}`;
+      element.replaceWith(details);
+      details.append(summary, element);
+    });
   }
 
   private enhanceQuotes(): void {
@@ -301,10 +327,14 @@ export class FormattedText extends LitElement {
     button.setAttribute("aria-label", label);
   }
 
-  static override styles = [formattedTextStyles, codeBlockFrameStyles, css`
+  static override styles = [formattedTextStyles, codeBlockFrameStyles, diffLineStyles, wordDiffStyles, css`
     .pending-source { white-space: pre-wrap; overflow-wrap: anywhere; }
     .enhanced-content { display: contents; }
     .enhanced-content[hidden] { display: none; }
+    .folded-media { display: block; margin: 4px 0; }
+    .folded-media > summary { width: fit-content; color: var(--pi-accent); cursor: pointer; }
+    .folded-media > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; border-radius: 4px; }
+    .folded-media[open] > summary { margin-bottom: 6px; }
     .quote-copy-button { position: absolute; top: 6px; right: 6px; z-index: 1; display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 0; font: 14px system-ui, sans-serif; line-height: 1; cursor: pointer; opacity: 0; }
     .quote-copy-button:hover, .quote-copy-button:focus { color: var(--pi-text); border-color: var(--pi-accent); opacity: 1; }
     .copyable-quote { position: relative; padding-right: 40px; }
