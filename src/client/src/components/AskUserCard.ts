@@ -291,6 +291,7 @@ export class AskUserCard extends LitElement {
         <header class="card-header">
           <h2 id="ask-user-record-heading">Questions</h2>
           <span class=${`header-status ${outcome.reason}`}>${recordLabel}</span>
+          <slot name="actions"></slot>
         </header>
         ${this.renderContext(outcome.context)}
         <p class="record-summary">
@@ -800,6 +801,8 @@ export class AskUserCard extends LitElement {
     /* One reading column: numbers and controls hang in the gutter between the 12px inset and the text. */
     :host([flat]) .card { --ask-reading-start: calc(12px + var(--question-number-column) + var(--question-copy-gap)); }
     :host([flat]) .open-card .ask-context { padding: 8px 12px 8px var(--ask-reading-start); }
+    /* A sent record kept in the drawer reads in the same column, its numbers and bullets hanging in the gutter. */
+    :host([flat]) .record-card :is(.ask-context, .record-summary, .record-question) { padding-inline: var(--ask-reading-start) 12px; }
     :host([flat]) .questions { padding-top: 8px; }
     :host([flat]) .question-separator { margin-bottom: 8px; }
     :host([flat]) fieldset.question { padding: 0 12px 8px; }

@@ -2,7 +2,7 @@ import { api as defaultApi, type AskUserCloseResponse, type AskUserSubmission, t
 import type { AppState, ClosedExtensionDialog } from "../appState";
 import { NetworkRequestError } from "../api/http";
 import { retriesOperations, withOperationRetry } from "../api/operationRetry";
-import { chatSupports, type ChatCapability, type SessionEffectResolution } from "../../../shared/apiTypes";
+import { chatSupports, type AskUserOutcome, type ChatCapability, type SessionEffectResolution } from "../../../shared/apiTypes";
 import { BrowserErrorReporter, sessionBrowserErrorScope, workspaceBrowserErrorScope, type SessionBrowserErrorOwner } from "../browserErrors";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
 import { textMessage } from "../chatMessages";
@@ -1483,8 +1483,8 @@ export class SessionController {
   }
 
   /** Send the answers the user entered for the session's open ask. */
-  /** False when the submit did not reach the daemon; the session error says why. */
-  submitAsk(askId: string, submission: AskUserSubmission): Promise<boolean> {
+  /** False when the submit did not reach the daemon (the session error says why); the closed record when this send closed or partly sent the ask. */
+  submitAsk(askId: string, submission: AskUserSubmission): Promise<AskUserOutcome | boolean> {
     return this.closeOpenAsk(askId, (session, machineId) => retriesOperations(session)
       ? withOperationRetry((operationId) => this.api.submitAsk(session, askId, submission, machineId, operationId))
       : this.api.submitAsk(session, askId, submission, machineId));
@@ -1523,7 +1523,7 @@ export class SessionController {
   }
 
   /** Close the session's open ask without answering it. */
-  cancelAsk(askId: string): Promise<boolean> {
+  cancelAsk(askId: string): Promise<AskUserOutcome | boolean> {
     return this.closeOpenAsk(askId, (session, machineId) => this.api.cancelAsk(session, askId, machineId));
   }
 
@@ -1598,7 +1598,7 @@ export class SessionController {
     }
   }
 
-  private async closeOpenAsk(askId: string, close: (session: SessionInfo, machineId: string) => Promise<AskUserCloseResponse>): Promise<boolean> {
+  private async closeOpenAsk(askId: string, close: (session: SessionInfo, machineId: string) => Promise<AskUserCloseResponse>): Promise<AskUserOutcome | boolean> {
     const state = this.getState();
     const session = state.selectedSession;
     if (session === undefined || session.archived === true || isClientPendingStartSessionInfo(session)) return false;
@@ -1615,7 +1615,7 @@ export class SessionController {
       // Both outcomes carry the recomputed status, so no follow-up status
       // request is needed to learn what the session's open ask is now.
       if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(response.sessionStatus);
-      return true;
+      return response.outcome ?? true;
     } catch (error) {
       this.reportSessionError(session, machineId, error, errorOwner);
       return false;

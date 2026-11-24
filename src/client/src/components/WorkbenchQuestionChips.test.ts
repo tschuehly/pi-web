@@ -342,6 +342,37 @@ describe("WorkbenchQuestionChips", () => {
     expect(drawer(chips)).toBeNull();
   });
 
+  it("keeps the last sent set open as its record with context and detail until dismissed, below newer open sets", async () => {
+    const question = { id: "db", question: "Which database?", detail: "Postgres scales further.", options: [{ value: "pg", label: "Postgres" }] };
+    const detailed = ask("abc-1", { questions: [question] });
+    const { chips, onSubmit } = await mount([detailed]);
+    // The daemon's status drops the set before the send resolves with its closed record.
+    onSubmit.mockImplementation(async (askId) => {
+      chips.asks = [];
+      await chips.updateComplete;
+      return { askId, reason: "submitted", askedAt: detailed.askedAt, closedAt: detailed.askedAt, context: detailed.context, questions: [{ question, answered: true, values: ["pg"] }], answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1" };
+    });
+    await openWith(chips);
+    cards(chips)[0]?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
+    await cards(chips)[0]?.updateComplete;
+    cards(chips)[0]?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+
+    await vi.waitFor(() => { expect(text(cards(chips)[0])).toContain("Answers sent"); });
+    expect(drawer(chips)).not.toBeNull();
+    const shown = [...(cards(chips)[0]?.shadowRoot?.querySelectorAll<HTMLElement & { text: string }>("formatted-text") ?? [])].map((each) => each.text);
+    expect(shown).toEqual([detailed.context, "Postgres scales further."]);
+    expect(bar(chips)?.textContent.trim()).toBe("No open questions");
+
+    chips.asks = [ask("def-2")];
+    await chips.updateComplete;
+    expect(cards(chips).map((card) => card.ask?.askId ?? `record:${card.outcome?.askId ?? ""}`)).toEqual(["def-2", "record:abc-1"]);
+    expect(bar(chips)?.textContent.trim()).toBe("1 open question");
+
+    chips.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Dismiss sent answers"]')?.click();
+    await chips.updateComplete;
+    expect(cards(chips).map((card) => card.ask?.askId)).toEqual(["def-2"]);
+  });
+
   it("formats the update age coarsely", () => {
     const now = Date.parse("2026-10-19T10:00:00.000Z");
     expect(updatedAgo("2026-10-19T09:59:30.000Z", now)).toBe("updated just now");
