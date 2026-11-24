@@ -11,7 +11,7 @@ import { rememberExternalMarkdownImageDimensions, restoreExternalMarkdownImageDi
 import { workspaceContextChanged, type MarkdownWorkspaceContext, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { formattedTextStyles } from "./formattedTextStyles";
 import { codeBlockFrameStyles } from "./codeBlockFrameStyles";
-import { ContentRendererHost } from "./ContentRendererHost";
+import { foldMediaMarkup, revealFoldedMedia } from "../formatting/foldedMedia";
 import { diffLineStyles, enhanceDiffBlocks, wordDiffStyles } from "../formatting/diffViews";
 
 const FILE_LINK_SELECTOR = "a[data-workspace-file], a[data-outside-file]";
@@ -130,7 +130,7 @@ export class FormattedText extends LitElement {
     // that view until its update is ready: a raw tail after a Markdown block adds
     // a temporary line on every streaming chunk.
     const showSource = this.replacing || this.content === undefined;
-    return html`<div class=${className} dir="auto" @load=${this.onImageLoad} @click=${this.onFormattedClick}><div class="enhanced-content" ?hidden=${this.replacing}>${this.content}</div><span class="pending-source" ?hidden=${!showSource}>${showSource ? this.text : ""}</span></div>`;
+    return html`<div class=${className} dir="auto" @load=${this.onImageLoad} @toggle=${this.onFoldToggle} @click=${this.onFormattedClick}><div class="enhanced-content" ?hidden=${this.replacing}>${this.content}</div><span class="pending-source" ?hidden=${!showSource}>${showSource ? this.text : ""}</span></div>`;
   }
 
   protected override update(changes: PropertyValues<this>): void {
@@ -153,7 +153,6 @@ export class FormattedText extends LitElement {
     // in this update's microtask before paint or the chat's position-restoration frame.
     restoreExternalMarkdownImageDimensions(this.renderRoot);
     if (this.diffViews) enhanceDiffBlocks(this.renderRoot);
-    if (this.foldMedia) this.foldMediaBlocks();
     this.enhanceQuotes();
     this.enhanceFileLinks();
     if (this.layoutChanged) {
@@ -164,7 +163,7 @@ export class FormattedText extends LitElement {
 
   private formatMarkdown(): void {
     try {
-      this.markup = toSafeMarkdownHtml(this.text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks);
+      this.markup = this.safeHtml(this.text);
       if (this.codeBlocks.previews && this.contentRendering !== undefined) {
         this.phase = "preview";
         if (this.content === undefined) this.showMarkdown();
@@ -191,11 +190,8 @@ export class FormattedText extends LitElement {
       this.layoutChanged = true;
       this.content = this.contentRendering?.renderMarkdown({
         text: this.text,
-        // Opening a folded diagram is the request to see it, so it renders without a second click.
-        allowManualPreview: this.foldMedia,
         machineId: this.workspaceContext?.machineId ?? this.machineId,
-        toSafeHtml: (text) => text === this.text && this.markup !== undefined ? this.markup
-          : toSafeMarkdownHtml(text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks),
+        toSafeHtml: (text) => text === this.text && this.markup !== undefined ? this.markup : this.safeHtml(text),
       }, this.intentKey, this.codeBlocks);
       this.displayedText = this.text;
       this.replacing = false;
@@ -205,6 +201,20 @@ export class FormattedText extends LitElement {
     }
     this.phase = "done";
   }
+
+  /** Sanitized HTML of `text`; with `foldMedia` its images are folded before they mount, so none loads unopened. */
+  private safeHtml(text: string): string {
+    const markup = toSafeMarkdownHtml(text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks);
+    return this.foldMedia ? foldMediaMarkup(markup) : markup;
+  }
+
+  private readonly onFoldToggle = {
+    // Toggle does not bubble.
+    capture: true,
+    handleEvent: (event: Event): void => {
+      if (event.target instanceof HTMLDetailsElement) revealFoldedMedia(event.target);
+    },
+  };
 
   private readonly onImageLoad = {
     // Native image loads do not bubble. Capture only inside this formatting root.
@@ -242,22 +252,6 @@ export class FormattedText extends LitElement {
     button.setAttribute("aria-label", label);
     button.innerHTML = icon;
     return button;
-  }
-
-  private foldMediaBlocks(): void {
-    this.renderRoot.querySelectorAll<HTMLElement>("img, pi-web-markdown-image, pi-web-content-renderer, .code-block-wrapper").forEach((element) => {
-      const image = element.localName === "img" || element.localName === "pi-web-markdown-image";
-      const diagram = element instanceof ContentRendererHost ? element.language === "mermaid"
-        : element.querySelector(":scope > pre > code.language-mermaid") !== null;
-      if ((!image && !diagram) || element.parentElement?.closest("details.folded-media")) return;
-      const alt = (element.getAttribute("alt") ?? element.getAttribute("description") ?? "").trim();
-      const details = document.createElement("details");
-      details.className = "folded-media";
-      const summary = document.createElement("summary");
-      summary.textContent = diagram ? "Show diagram" : alt === "" ? "Show image" : `Show image: ${alt}`;
-      element.replaceWith(details);
-      details.append(summary, element);
-    });
   }
 
   private enhanceQuotes(): void {

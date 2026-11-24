@@ -4,52 +4,14 @@ import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH } from "../../../shared/apiTypes";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
 import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
+import { foldMediaMarkup, revealFoldedMedia } from "../formatting/foldedMedia";
 import { openChatFileLink } from "./FormattedText";
-import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages } from "./workbenchFilesEditor";
-
-// Attributes that load an image; a folded image keeps them as `data-` attributes until opened.
-const IMAGE_SOURCES = ["src", "srcset", "preview-url"];
-
-/** Folds each image of sanitized preview HTML behind a closed "Show image" disclosure without a source, as the Chat folds context media. */
-function foldImages(markup: string): string {
-  const template = document.createElement("template");
-  template.innerHTML = markup;
-  for (const image of template.content.querySelectorAll("img, pi-web-markdown-image")) {
-    for (const name of IMAGE_SOURCES) {
-      const source = image.getAttribute(name);
-      if (source === null) continue;
-      image.setAttribute(`data-${name}`, source);
-      image.removeAttribute(name);
-    }
-    const alt = (image.getAttribute("alt") ?? image.getAttribute("description") ?? "").trim();
-    const details = document.createElement("details");
-    details.className = "folded-media";
-    const summary = document.createElement("summary");
-    summary.textContent = alt === "" ? "Show image" : `Show image: ${alt}`;
-    image.replaceWith(details);
-    details.append(summary, image);
-  }
-  return template.innerHTML;
-}
-
-/** Opens or closes a folded image; its source is set on the first opening. */
-function toggleFold(details: HTMLDetailsElement): void {
-  details.open = !details.open;
-  if (!details.open) return;
-  for (const image of details.querySelectorAll("[data-src], [data-srcset], [data-preview-url]")) {
-    for (const name of IMAGE_SOURCES) {
-      const source = image.getAttribute(`data-${name}`);
-      if (source === null) continue;
-      image.setAttribute(name, source);
-      image.removeAttribute(`data-${name}`);
-    }
-  }
-}
+import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages, resetEditHistory } from "./workbenchFilesEditor";
 
 /**
  * A multi-line answer of the ask card in the Files pane's Markdown editor (live preview, highlighting, undo).
  * Light DOM, so the card's shadow root carries its styles and focus moves into it like into a textarea.
- * Dispatches `ask-field-input` after each edit by the user; setting `value` replaces the text without one.
+ * Dispatches `ask-field-input` after each edit by the user; setting `value` replaces the text without one and drops the undo history.
  */
 export class AskMarkdownField extends HTMLElement {
   #view: EditorView | undefined;
@@ -72,10 +34,13 @@ export class AskMarkdownField extends HTMLElement {
   set value(text: string) {
     this.#value = text;
     const view = this.#view;
-    if (view === undefined || view.state.doc.toString() === text) return;
+    // The editor keeps "\n" line breaks; a "\r\n" text equal to its doc is no change.
+    if (view === undefined || view.state.toText(text).eq(view.state.doc)) return;
     this.#replacing = true;
     try {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+      // The draft changed underneath (a revision, another question's text): Undo must not bring the old text back.
+      resetEditHistory(view);
     } finally {
       this.#replacing = false;
     }
@@ -96,33 +61,34 @@ export class AskMarkdownField extends HTMLElement {
   connectedCallback(): void {
     if (this.#view !== undefined) return;
     const root = this.getRootNode();
+    const state = EditorState.create({
+      doc: this.#value,
+      extensions: [
+        editHistory(), drawSelection(),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        filesHighlighting, markdownWithCodeLanguages(), EditorView.lineWrapping,
+        livePreview((source) => foldMediaMarkup(toSafeMarkdownHtml(source, this.workspaceContext)), (anchor) => {
+          // File links open as in the Chat (Files pane, Finder); other links in a new tab.
+          const context = this.workspaceContext;
+          if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
+        }),
+        // The textarea's maxlength: an edit that would pass the limit is refused.
+        EditorState.transactionFilter.of((tr) => tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr),
+        this.placeholderText === "" ? [] : placeholder(this.placeholderText),
+        this.#attributes.of(this.#contentAttributes()),
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged || this.#replacing) return;
+          this.#value = update.state.doc.toString();
+          this.dispatchEvent(new Event("ask-field-input", { bubbles: true }));
+        }),
+      ],
+    });
     this.#view = new EditorView({
       parent: this,
       ...(root instanceof ShadowRoot || root instanceof Document ? { root } : {}),
-      state: EditorState.create({
-        doc: this.#value,
-        // Live preview shows the Markdown marks of the cursor's line; starting after the text keeps a heading on top rendered.
-        selection: { anchor: this.#value.length },
-        extensions: [
-          editHistory(), drawSelection(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-          filesHighlighting, markdownWithCodeLanguages(), EditorView.lineWrapping,
-          livePreview((source) => foldImages(toSafeMarkdownHtml(source, this.workspaceContext)), (anchor) => {
-            // File links open as in the Chat (Files pane, Finder); other links in a new tab.
-            const context = this.workspaceContext;
-            if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
-          }),
-          // The textarea's maxlength: an edit that would pass the limit is refused.
-          EditorState.transactionFilter.of((tr) => tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr),
-          this.placeholderText === "" ? [] : placeholder(this.placeholderText),
-          this.#attributes.of(this.#contentAttributes()),
-          EditorView.updateListener.of((update) => {
-            if (!update.docChanged || this.#replacing) return;
-            this.#value = update.state.doc.toString();
-            this.dispatchEvent(new Event("ask-field-input", { bubbles: true }));
-          }),
-        ],
-      }),
+      // Live preview shows the Markdown marks of the cursor's line; starting after the text keeps a heading on top rendered.
+      // The doc's length, not the text's: the editor turns "\r\n" into one "\n".
+      state: state.update({ selection: { anchor: state.doc.length } }).state,
     });
   }
 
@@ -149,7 +115,7 @@ export class AskMarkdownField extends HTMLElement {
   }
 
   #foldSummary(event: Event): HTMLDetailsElement | undefined {
-    const summary = event.target instanceof Element ? event.target.closest(".lp-img details.folded-media > summary") : null;
+    const summary = event.target instanceof Element ? event.target.closest("details.folded-media > summary") : null;
     return summary?.parentElement instanceof HTMLDetailsElement ? summary.parentElement : undefined;
   }
 
@@ -158,7 +124,8 @@ export class AskMarkdownField extends HTMLElement {
     if (details === undefined) return;
     event.preventDefault();
     event.stopPropagation();
-    toggleFold(details);
+    details.open = !details.open;
+    revealFoldedMedia(details);
   }
 
   #contentAttributes() {

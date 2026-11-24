@@ -542,11 +542,14 @@ export const editHistory = (): Extension => historySlot.of(history());
 export function applyDiskChange(view: EditorView, base: string, disk: string): boolean {
   const { spec, overlaps } = diskChangeSpec(view.state, base, disk);
   view.dispatch(spec);
-  if (overlaps) {
-    view.dispatch({ effects: historySlot.reconfigure([]) });
-    view.dispatch({ effects: historySlot.reconfigure(history()) });
-  }
+  if (overlaps) resetEditHistory(view);
   return overlaps;
+}
+
+/** Drops the editor's undo history, so Undo cannot bring back text replaced underneath the user. */
+export function resetEditHistory(view: EditorView): void {
+  view.dispatch({ effects: historySlot.reconfigure([]) });
+  view.dispatch({ effects: historySlot.reconfigure(history()) });
 }
 
 // ---------------- highlighted line range (Chat links with #L40-L58) ----------------

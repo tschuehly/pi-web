@@ -4,6 +4,7 @@ import type { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
 import { loadAskContext, loadAskNote, saveAskDraft, saveAskNote } from "../askDrafts";
+import { undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { AskMarkdownField } from "./AskMarkdownField";
 import { AskUserCard, renderedOnlyFences, type AskUserSubmitCallback } from "./AskUserCard";
@@ -546,6 +547,39 @@ describe("ask-user-card single-answer send", () => {
     expect(buttonWithText(renderRoot(lone), "Send answers")).toBeDefined();
   });
 
+  it("keeps each question's own editor and undo history when a partial send or revision changes the set", async () => {
+    const why = question("why", "Why?", []);
+    const how = question("how", "How?", []);
+    const card = await mountOpenAsk(openAsk([why, how]), vi.fn<AskUserSubmitCallback>());
+    const fields = () => [...renderRoot(card).querySelectorAll(".other-answer ask-markdown-field")].map((field) => markdownField(renderRoot(card), `#${field.id}`));
+    const [whyField, howField] = fields();
+    typeInto(requiredElement(whyField, "why field"), "Because A.");
+    typeInto(requiredElement(howField, "how field"), "Like B.");
+    await card.updateComplete;
+    [...renderRoot(card).querySelectorAll<HTMLButtonElement>(".send-one")][0]?.click();
+    await Promise.resolve();
+
+    // The first question was sent; the remaining one keeps its editor, so Undo never brings back the other question's text.
+    card.ask = { ...openAsk([how]), revision: "r2" };
+    await card.updateComplete;
+    const remaining = requiredElement(fields()[0], "remaining field");
+    expect([remaining === howField, remaining.value]).toEqual([true, "Like B."]);
+    undo(editorView(remaining));
+    expect(remaining.value).not.toBe("Because A.");
+
+    // A revision that changes the question drops its draft underneath the editor; Undo cannot restore the dropped text.
+    typeInto(remaining, "Like C.");
+    await card.updateComplete;
+    // A replacement within 500 ms of typing would join the typed undo step; the owner's next revision comes later.
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 1000);
+    card.ask = { ...openAsk([question("how", "How, exactly?", [])]), revision: "r3" };
+    await card.updateComplete;
+    expect([remaining.isConnected, remaining === fields()[0], remaining.value]).toEqual([true, true, ""]);
+    undo(editorView(remaining));
+    expect(remaining.value).toBe("");
+  });
+
   it("keeps the other questions' drafts when a partial send returns the ask under a new revision", async () => {
     const editor = question("editor", "Choose an editor", [option("vim", "Vim")]);
     const shell = question("shell", "Choose a shell", [option("zsh", "Zsh")]);
@@ -632,6 +666,14 @@ describe("ask-user-card context", () => {
     expect(markdownField(renderRoot(reloaded), ".context-editor").value).toBe("Plan: ship Monday.");
     expect(loadAskContext("local:session-1", "ask-1", "Plan: ship Monday.")).toBeUndefined();
     expect(renderRoot(reloaded).querySelector(".context-actions")).toBeNull();
+  });
+
+  it("opens a context with Windows line endings, cursor after its text, and keeps it unchanged", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "## Plan\r\nShip it.\r\n" }, onSubmit);
+    const view = editorView(markdownField(renderRoot(card), ".context-editor"));
+    expect([view.state.doc.toString(), view.state.selection.main.head]).toEqual(["## Plan\nShip it.\n", 17]);
+    expect(renderRoot(card).querySelector(".context-actions")).toBeNull();
   });
 
   it("sends no context while it is unchanged", async () => {
@@ -729,6 +771,26 @@ describe("ask-user-card context", () => {
     expect(context.innerHTML).toContain("<strong>Postgres</strong>");
     expect(renderRoot(card).querySelector(".ask-context ~ .record-questions")).not.toBeNull();
     expect(renderRoot(card).querySelector(".context-edited")).toBeNull();
+  });
+
+  it("keeps a sent record's context image without a source until its disclosure opens", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      context: "See ![Login screen](https://example.com/login.png)",
+      questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
+      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+    const formatted = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.ask-context"), "ask context");
+    const sourceChanges = watchImageSources(requiredElement(formatted.shadowRoot, "ask context shadow root"));
+    const context = await renderedContext(card);
+    const fold = requiredElement(context.querySelector<HTMLDetailsElement>("details.folded-media"), "image fold");
+
+    expect([fold.open, fold.querySelector("img")?.hasAttribute("src"), sourceChanges()]).toEqual([false, false, []]);
+    requiredElement(fold.querySelector("summary"), "image summary").click();
+    expect([fold.open, fold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/login.png"]);
   });
 
   it("shows the user's edited context in a record, labelled as edited", async () => {
@@ -838,9 +900,12 @@ describe("ask-user-card media", () => {
     const media = "Compare these.\n\n![Login screen](https://example.com/login.png)\n\n```mermaid\npie\n  \"A\": 2\n```\n\n```diff\n-a\n+b\n```";
     // A manual renderer, like the Mermaid plugin: the Chat shows its source until asked.
     const rendering = createContentRenderingService((request) => request.language === "mermaid"
-      ? [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", render: () => html`<b class="diagram-preview">drawn</b>` } }] : []);
+      ? [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", render: () => html`<b class="diagram-preview">drawn</b>` } }]
+      : request.language === "chart" ? [{ id: "chart", label: "Chart", renderer: { id: "chart", render: () => html`<b class="chart-preview">drawn</b>` } }] : []);
     const card = new AskUserCard();
-    card.ask = { ...openAsk([question("pick", "Pick one", [option("a", "A")], { detail: media })]), context: media };
+    // A manual renderer that is not a folded diagram waits for its own Render click, even in question details.
+    const detail = `${media}\n\n\`\`\`chart\nbar 1 2\n\`\`\``;
+    card.ask = { ...openAsk([question("pick", "Pick one", [option("a", "A")], { detail })]), context: media };
     card.contentRendering = rendering;
     card.setAttribute("flat", "");
     document.body.append(card);
@@ -852,12 +917,22 @@ describe("ask-user-card media", () => {
     expect([imageSummary.textContent, imageFold.open, imageFold.querySelector("img")?.hasAttribute("src")]).toEqual(["Show image: Login screen", false, false]);
     imageSummary.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     expect([imageFold.open, imageFold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/login.png"]);
+    // An image in a table folds the same way, without a source until its own disclosure opens.
+    card.ask = { ...card.ask, askId: "ask-table", context: "| Screen |\n| --- |\n| ![Table shot](https://example.com/table.png) |\n\nEnd." };
+    await card.updateComplete;
+    const tableFold = requiredElement(renderRoot(card).querySelector<HTMLDetailsElement>(".context-editor .lp-table details.folded-media"), "table image fold");
+    expect([tableFold.querySelector("summary")?.textContent, tableFold.open, tableFold.querySelector("img")?.hasAttribute("src")]).toEqual(["Show image: Table shot", false, false]);
+    requiredElement(tableFold.querySelector("summary"), "table image summary").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect([tableFold.open, tableFold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/table.png"]);
+    card.ask = { ...card.ask, askId: "ask-1", context: media };
+    await card.updateComplete;
     const contextMedia = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.context-media"), "context media");
     await settleDeferredContent(contextMedia);
     expect([...contextMedia.renderRoot.querySelectorAll("details.folded-media summary")].map((summary) => summary.textContent)).toEqual(["Show diagram"]);
     expect(contextMedia.renderRoot.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
     for (const selector of ["formatted-text.question-detail"]) {
       const formatted = requiredElement(renderRoot(card).querySelector<LitElement>(selector), selector);
+      const sourceChanges = watchImageSources(requiredElement(formatted.shadowRoot, "detail shadow root"));
       await settleDeferredContent(formatted);
       for (const host of formatted.renderRoot.querySelectorAll<ContentRendererHost>("pi-web-content-renderer")) {
         await settleDeferredContent(host);
@@ -866,7 +941,10 @@ describe("ask-user-card media", () => {
       const root = formatted.renderRoot;
       const folds = [...root.querySelectorAll("details.folded-media")];
       expect(folds.map((fold) => [fold.querySelector("summary")?.textContent, fold.hasAttribute("open")])).toEqual([["Show image: Login screen", false], ["Show diagram", false]]);
-      expect(folds[0]?.querySelector("img")?.getAttribute("src")).toBe("https://example.com/login.png");
+      // Source-free until opened: the image never had a source in the DOM.
+      expect([folds[0]?.querySelector("img")?.hasAttribute("src"), sourceChanges()]).toEqual([false, []]);
+      requiredElement(folds[0]?.querySelector("summary"), "image summary").click();
+      expect([folds[0]?.hasAttribute("open"), folds[0]?.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/login.png"]);
       expect(root.querySelector("p")?.textContent).toBe("Compare these.");
       expect(root.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
       const host = requiredElement(folds[1]?.querySelector<ContentRendererHost>("pi-web-content-renderer"), "diagram host");
@@ -876,6 +954,8 @@ describe("ask-user-card media", () => {
       await settleDeferredContent(host);
       expect(folds[1]?.hasAttribute("open")).toBe(true);
       expect(host.renderRoot.querySelector(".diagram-preview")?.textContent).toBe("drawn");
+      const chart = requiredElement([...root.querySelectorAll<ContentRendererHost>("pi-web-content-renderer")].find((candidate) => candidate.language === "chart"), "chart host");
+      expect([chart.closest("details"), chart.renderRoot.querySelector(".chart-preview")]).toEqual([null, null]);
     }
   });
 });
@@ -996,6 +1076,13 @@ function markdownField(root: ShadowRoot, selector: string): AskMarkdownField {
   return field;
 }
 
+/** Reports each image source attribute set or removed under `root` since the call (a folded image must never get one before it opens). */
+function watchImageSources(root: Node): () => (string | null)[] {
+  const observer = new MutationObserver(() => undefined);
+  observer.observe(root, { subtree: true, attributes: true, attributeFilter: ["src", "srcset", "preview-url"] });
+  return () => observer.takeRecords().map((record) => record.attributeName);
+}
+
 function editorView(field: AskMarkdownField): EditorView {
   return requiredElement(EditorView.findFromDOM(requiredElement(field.querySelector<HTMLElement>(".cm-editor"), "editor")), "editor view");
 }
@@ -1003,7 +1090,8 @@ function editorView(field: AskMarkdownField): EditorView {
 /** Replaces the field's text as the user's edit would. */
 function typeInto(field: AskMarkdownField, text: string): void {
   const view = editorView(field);
-  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+  // Typed, as a keyboard edit is: the history keeps it apart from programmatic replacements.
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: "input.type" });
 }
 
 function requiredElement<T>(value: T | null | undefined, label: string): T {
