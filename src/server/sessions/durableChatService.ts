@@ -998,7 +998,7 @@ export class DurableChatService {
     const earlier = isRecord(result) && Array.isArray(result["earlier"]) ? result["earlier"].filter(isAskOutcome) : [];
     // `order`: the set's question ids as posted and revised, so the record numbers them in set order, as a legacy Chat's.
     const order = isRecord(result) && Array.isArray(result["order"]) ? result["order"].filter((id) => typeof id === "string") : [];
-    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"])) return { result: "closed", outcome: withEarlierAnswers(result["outcome"], earlier, order), sessionStatus };
+    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"])) return { result: "closed", outcome: withEarlierAnswers(result["outcome"], earlier, order, asks.find((ask) => ask.askId === askId)?.contextEdited === true), sessionStatus };
     return { result: "stale", sessionStatus };
   }
 

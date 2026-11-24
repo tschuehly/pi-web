@@ -2241,7 +2241,8 @@ export class PiSessionService implements SessionRouteService {
     // Checked before the store closes the ask so a refused delivery cannot
     // discard answers the user already submitted.
     this.assertTreeNavigationInactive(session, "answer questions");
-    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission, (outcome) => { this.recordAskClosed(session, outcome); }));
+    const edited = this.contextEdited(session, askId);
+    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission, (outcome) => { this.recordAskClosed(session, outcome); }), edited);
   }
 
   /**
@@ -2253,7 +2254,13 @@ export class PiSessionService implements SessionRouteService {
     await this.assertWritable(ref);
     const session = await this.getOrOpen(ref);
     this.assertTreeNavigationInactive(session, "dismiss questions");
-    return this.closeAsk(session, this.pendingAskStore.cancel(session.sessionId, askId, (outcome) => { this.recordAskClosed(session, outcome); }));
+    const edited = this.contextEdited(session, askId);
+    return this.closeAsk(session, this.pendingAskStore.cancel(session.sessionId, askId, (outcome) => { this.recordAskClosed(session, outcome); }), edited);
+  }
+
+  /** Whether the user's edit supplied the open set's context, read before a close drops the set. */
+  private contextEdited(session: PiAgentSession, askId: string): boolean {
+    return this.pendingAskStore.pendingAsks(session.sessionId).find((ask) => ask.askId === askId)?.contextEdited === true;
   }
 
   /**
@@ -2272,7 +2279,7 @@ export class PiSessionService implements SessionRouteService {
    * that went away is ordinary, and the returned status tells the browser what
    * the session's open ask is now.
    */
-  private async closeAsk(session: PiAgentSession, result: PendingAskCloseResult): Promise<AskUserCloseResponse> {
+  private async closeAsk(session: PiAgentSession, result: PendingAskCloseResult, contextEdited: boolean): Promise<AskUserCloseResponse> {
     if (result.status === "stale") return { result: "stale", sessionStatus: this.statusFromSession(session) };
     const { outcome, ask } = result;
     // A partial send keeps the ask open under a new revision; browsers replace its card as on an update.
@@ -2282,7 +2289,7 @@ export class PiSessionService implements SessionRouteService {
     this.publishStatus(session);
     // The browser keeps the whole set's record, answers its earlier partial sends gave (from any browser) included.
     const { earlier, order } = ask === undefined ? partialAsksFromTranscript(session.sessionManager.getBranch(), outcome.askId) : { earlier: [], order: [] };
-    return { result: "closed", outcome: withEarlierAnswers(outcome, earlier, order), sessionStatus: this.statusFromSession(session) };
+    return { result: "closed", outcome: withEarlierAnswers(outcome, earlier, order, contextEdited), sessionStatus: this.statusFromSession(session) };
   }
 
   private deliverAskOutcome(session: PiAgentSession, outcome: AskUserOutcome): Promise<void> {

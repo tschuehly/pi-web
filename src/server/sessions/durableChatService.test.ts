@@ -532,6 +532,24 @@ describe("Durable Chats", () => {
     expect(closed.outcome?.questions.map((record) => record.question.id)).toEqual(["db", "cache"]);
   });
 
+  it("labels the whole record's context as the user's edit only while the host's set says the user supplied it", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const db = { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] };
+    const cache = { id: "cache", question: "Which cache?", options: [{ value: "redis", label: "Redis" }] };
+    // db went with the user's edit "Mine"; the context of the rest reads "Mine" either way.
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r2", turnsSinceUpdate: 0, context: "Mine", questions: [cache] };
+    const earlier = { askId: "ask-1", reason: "submitted", askedAt: ask.askedAt, closedAt: ask.askedAt, context: "Pick", editedContext: "Mine", questions: [{ question: db, answered: true, values: ["pg"] }], answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.cache", partial: true, revision: "r2" };
+    const close = async (open: PendingAskUser, operationId: string) => {
+      only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"], earlier: [earlier] } : { ...status, pendingAsks: [open] });
+      return (await durable.submitAsk(ref, "ask-1", { answers: [{ id: "cache", values: ["redis"] }], revision: "r2" }, operationId)).outcome;
+    };
+    expect(await close({ ...ask, contextEdited: true }, "op-u")).toMatchObject({ editedContext: "Mine" });
+    // The agent revised the context back to the same text: its revision, not the user's edit.
+    expect(await close(ask, "op-a")).not.toHaveProperty("editedContext");
+  });
+
   it("turns a host attention signal into one global session.attention event", async () => {
     const { durable, hub, launched } = await service();
     const chat = await durable.start("/work/a");

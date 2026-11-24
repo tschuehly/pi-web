@@ -462,9 +462,26 @@ describe("PendingAskStore edited context", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
     const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, context: "Mine" });
+    const edited = store.pendingAsks(sessionId)[0]?.contextEdited === true;
     const rest = store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }] });
     if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
-    expect(withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"])).toMatchObject({ editedContext: "Mine", answeredCount: 2 });
+    expect(withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"], edited)).toMatchObject({ editedContext: "Mine", answeredCount: 2 });
+  });
+
+  it("tracks who supplied the context: an agent revision back to the user's text is the agent's, not the user's edit", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, context: "Mine" });
+    expect(store.pendingAsks(sessionId)[0]?.contextEdited).toBe(true);
+    expect(store.update({ sessionId, askId: ask.askId })?.contextEdited).toBe(true);
+    store.update({ sessionId, askId: ask.askId, context: "Agent's revision" });
+    const back = store.update({ sessionId, askId: ask.askId, context: "Mine" });
+    expect(back).not.toHaveProperty("contextEdited");
+    const rest = store.submit(sessionId, ask.askId, { revision: back?.revision ?? "", answers: [{ id: "q2", values: ["no"] }] });
+    if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
+    const whole = withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"], back?.contextEdited === true);
+    expect(whole.context).toBe("Mine");
+    expect(whole).not.toHaveProperty("editedContext");
   });
 
   it("drops an earlier edit from the whole set's record once the agent revised the context after it", () => {
