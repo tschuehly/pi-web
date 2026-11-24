@@ -12,6 +12,7 @@ import { workspaceContextChanged, type MarkdownWorkspaceContext, type OutsideFil
 import { formattedTextStyles } from "./formattedTextStyles";
 import { codeBlockFrameStyles } from "./codeBlockFrameStyles";
 import { ContentRendererHost } from "./ContentRendererHost";
+import { diffLineStyles, enhanceDiffBlocks, wordDiffStyles } from "../formatting/diffViews";
 
 const FILE_LINK_SELECTOR = "a[data-workspace-file], a[data-outside-file]";
 // ponytail: binary documents the Files pane cannot show; others (text, code, Makefile, .mp4/.mov/.webm video) open in the pane. Extend as needed.
@@ -37,6 +38,8 @@ export class FormattedText extends LitElement {
   @property() machineId = "local";
   /** Fold each image and Mermaid diagram behind a one-line disclosure (the ask card's context and details). */
   @property({ type: Boolean, attribute: "fold-media" }) foldMedia = false;
+  /** Draw ```diff fences as coloured lines and ```worddiff fences as word diffs (the ask card's context and details). */
+  @property({ type: Boolean, attribute: "diff-views" }) diffViews = false;
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
 
   private readonly enhancement = new VisibleContentController(this);
@@ -99,6 +102,7 @@ export class FormattedText extends LitElement {
     // HTML is memoized independently of geometry; apply hints on every DOM mount,
     // in this update's microtask before paint or the chat's position-restoration frame.
     restoreExternalMarkdownImageDimensions(this.renderRoot);
+    if (this.diffViews) enhanceDiffBlocks(this.renderRoot);
     if (this.foldMedia) this.foldMediaBlocks();
     this.enhanceQuotes();
     this.enhanceFileLinks();
@@ -323,7 +327,7 @@ export class FormattedText extends LitElement {
     button.setAttribute("aria-label", label);
   }
 
-  static override styles = [formattedTextStyles, codeBlockFrameStyles, css`
+  static override styles = [formattedTextStyles, codeBlockFrameStyles, diffLineStyles, wordDiffStyles, css`
     .pending-source { white-space: pre-wrap; overflow-wrap: anywhere; }
     .enhanced-content { display: contents; }
     .enhanced-content[hidden] { display: none; }

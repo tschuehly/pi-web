@@ -512,8 +512,8 @@ async function renderedContext(card: AskUserCard): Promise<ShadowRoot> {
 }
 
 describe("ask-user-card media", () => {
-  it("folds each image and Mermaid diagram in the context and details behind a disclosure that draws the diagram when opened", async () => {
-    const media = "Compare these.\n\n![Login screen](https://example.com/login.png)\n\n```mermaid\npie\n  \"A\": 2\n```";
+  it("folds each image and Mermaid diagram in the context and details behind a disclosure that draws the diagram when opened, and colours diff fences", async () => {
+    const media = "Compare these.\n\n![Login screen](https://example.com/login.png)\n\n```mermaid\npie\n  \"A\": 2\n```\n\n```diff\n-a\n+b\n```";
     // A manual renderer, like the Mermaid plugin: the Chat shows its source until asked.
     const rendering = createContentRenderingService((request) => request.language === "mermaid"
       ? [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", render: () => html`<b class="diagram-preview">drawn</b>` } }] : []);
@@ -536,6 +536,7 @@ describe("ask-user-card media", () => {
       expect(folds.map((fold) => [fold.querySelector("summary")?.textContent, fold.hasAttribute("open")])).toEqual([["Show image: Login screen", false], ["Show diagram", false]]);
       expect(folds[0]?.querySelector("img")?.getAttribute("src")).toBe("https://example.com/login.png");
       expect(root.querySelector("p")?.textContent).toBe("Compare these.");
+      expect(root.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
       const host = requiredElement(folds[1]?.querySelector<ContentRendererHost>("pi-web-content-renderer"), "diagram host");
       expect(host.renderRoot.querySelector(".diagram-preview")).toBeNull();
       requiredElement(folds[1]?.querySelector("summary"), "diagram summary").click();

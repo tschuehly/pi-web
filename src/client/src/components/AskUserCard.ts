@@ -157,7 +157,7 @@ export class AskUserCard extends LitElement {
 
   /** The model's explanation for the question set, rendered like Chat Markdown. */
   private renderContext(context: string | undefined): TemplateResult | null {
-    return context === undefined ? null : html`<formatted-text class="ask-context" fold-media .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>`;
+    return context === undefined ? null : html`<formatted-text class="ask-context" fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>`;
   }
 
   private renderQuestion(ask: PendingAskUser, question: AskUserQuestion, index: number, number: number, sendOne: boolean): TemplateResult {
@@ -261,7 +261,7 @@ export class AskUserCard extends LitElement {
 
   /** A question's Markdown detail, in body text like the context. */
   private renderDetail(detail: string | undefined, id?: string): TemplateResult | null {
-    return detail === undefined ? null : html`<formatted-text class="question-detail" id=${ifDefined(id)} fold-media .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
+    return detail === undefined ? null : html`<formatted-text class="question-detail" id=${ifDefined(id)} fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
   }
 
   private renderPartialSubmitConfirmation(ask: PendingAskUser, unanswered: AskUserQuestion[]): TemplateResult {
