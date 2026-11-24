@@ -300,6 +300,14 @@ describe("ask-user-card live form", () => {
     });
   });
 
+  it("rounds an integer question's native bounds to whole numbers so step=1 never blocks a value the shared validator accepts", async () => {
+    const card = await mountOpenAsk(openAsk([
+      { id: "copies", question: "Copies?", options: [], kind: "number", minimum: 0.5, maximum: 5.5, integer: true },
+    ]));
+    const copies = requiredElement(renderRoot(card).querySelector<HTMLInputElement>("input[type='number']"), "number input");
+    expect([copies.min, copies.max, copies.step]).toEqual(["1", "5", "1"]);
+  });
+
   it("renders typed questions as a switch, text, number and date fields on their defaults, shows a field's error, and sends values", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([
