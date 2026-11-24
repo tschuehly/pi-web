@@ -687,4 +687,22 @@ describe("PendingAskStore dependent questions (showIf)", () => {
     expect(other.status === "closed" ? other.ask?.questions.map((q) => q.id) : undefined).toEqual(["location", "machine", "disk"]);
     expect(() => store.submit(sessionId, third.askId, { revision: other.status === "closed" ? other.ask?.revision ?? "" : "", answers: [{ id: "machine", values: ["yes"] }], partial: true })).toThrow(/needs at least one answer/);
   });
+
+  it("keeps a follow-up's answer sent alone with the choice or boolean parent answer that shows it", () => {
+    const store = testStore();
+    const ask = openDependent(store);
+    const choice = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["no"] }], partial: true });
+    if (choice.status !== "closed") throw new Error("expected closed");
+    expect(choice.outcome.questions.map((record) => [record.question.id, record.answered, record.skipped])).toEqual([["location", true, undefined], ["machine", true, undefined], ["disk", false, true]]);
+    expect(choice.ask?.questions.map((q) => q.id)).toEqual(["other"]);
+
+    const typed = store.open({ sessionId, context, questions: [
+      question("backup", { options: [], kind: "boolean" }),
+      question("folder", { options: [], kind: "text", showIf: { question: "backup", values: ["true"] } }),
+      question("other"),
+    ] });
+    const toggled = store.submit(sessionId, typed.askId, { revision: typed.revision, answers: [{ id: "backup", values: [], value: true }, { id: "folder", values: [], value: "~/b" }], partial: true });
+    if (toggled.status !== "closed") throw new Error("expected closed");
+    expect(toggled.outcome.questions.map((record) => [record.question.id, record.answered, record.value])).toEqual([["backup", true, true], ["folder", true, "~/b"]]);
+  });
 });

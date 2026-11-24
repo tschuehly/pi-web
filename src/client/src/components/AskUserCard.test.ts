@@ -406,6 +406,30 @@ describe("ask-user-card dependent questions", () => {
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", answers: [{ id: "location", values: ["vps"] }] });
   });
 
+  it("sends a follow-up's own Send with the unsent parent answers that show it, so the daemon keeps it", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(dependentAsk(), onSubmit);
+    const root = renderRoot(card);
+    inputWithValue(root, "home").click();
+    await card.updateComplete;
+    inputWithValue(root, "pc").click();
+    await card.updateComplete;
+    [...root.querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["pc"] }], revision: "r1", partial: true });
+
+    const toggled = vi.fn<AskUserSubmitCallback>();
+    const typed = await mountOpenAsk({ ...openAsk([
+      { id: "backup", question: "Enable backup?", options: [], kind: "boolean" },
+      { id: "folder", question: "Folder?", options: [], kind: "text", default: "~/b", showIf: { question: "backup", values: ["true"] } },
+    ]), askId: "ask-2" }, toggled);
+    requiredElement(renderRoot(typed).querySelector<HTMLInputElement>("input[role='switch']"), "switch").click();
+    await typed.updateComplete;
+    [...renderRoot(typed).querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
+    await Promise.resolve();
+    expect(toggled).toHaveBeenCalledWith("ask-2", { answers: [{ id: "backup", values: [], value: true }, { id: "folder", values: [], value: "~/b" }], revision: "r1", partial: true });
+  });
+
   it("offers Send anyway only for visible unanswered questions", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(dependentAsk(), onSubmit);
