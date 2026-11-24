@@ -294,7 +294,10 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
         `;
       }
       if (message.role === "bash") return html`<pre class="part shell-output">${text}</pre>`;
-      return html`<formatted-text .imagesEnabled=${context.behaviors.loadImages} .codeBlocks=${context.behaviors.codeBlocks} .intentKey=${intentKey} class="part" .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .text=${text}></formatted-text>`;
+      // Run buttons only on this machine's committed assistant messages; user text, quotes and streaming stay inert.
+      const ownerRun = message.role === "assistant" && message.entryId !== undefined && context.machineId === "local"
+        ? { session: context.session, machineId: context.machineId, entryId: message.entryId } : undefined;
+      return html`<formatted-text .imagesEnabled=${context.behaviors.loadImages} .codeBlocks=${context.behaviors.codeBlocks} .intentKey=${intentKey} class="part" .contentRendering=${context.contentRendering} .machineId=${context.machineId} .workspaceContext=${context.workspaceContext} .ownerRun=${ownerRun} .text=${text}></formatted-text>`;
     }
     if (part.type === "skillInvocation") {
       const key = `skill:${intentKey}`;

@@ -2,8 +2,15 @@ import { parseSessionDefaults } from "../../../shared/sessionDefaults";
 import type { SessionDefaultsUpdate, SessionEffectResolution } from "../../../shared/apiTypes";
 import type { AskUserSubmission, DeleteWorkspaceFileResponse, ExtensionDialogAnswer,  MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, QueuedSessionMessage, ServerNoticeDismissRequest, SessionBulkMutationRef, SessionCleanupRequest, SessionModelScopeMode, SessionNotificationDismissThrough, SessionQueueMessageMutation, SessionRef, SessionTreeForkRequest, SessionTreeForkResult, SessionTreeNavigateRequest, SessionUnreadAcknowledgeRequest, WorkspaceRemovalRequest, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
 import { WORKSPACE_SEARCH_CURSOR } from "../../../shared/workspaceFiles";
+import type { OwnerRunProposal } from "../../../shared/ownerRun";
 import { resolveAppUrl } from "../appUrl";
 import { request } from "./http";
+
+function parseOwnerRunStatus(value: unknown): { status: "started" | "terminal opened" } {
+  const status: unknown = typeof value === "object" && value !== null ? Reflect.get(value, "status") : undefined;
+  if (status !== "started" && status !== "terminal opened") throw new Error("Expected an owner run status");
+  return { status };
+}
 import {
   arrayOf,
   parseAborted,
@@ -312,6 +319,7 @@ export const sessionsApi = {
   prompt: (session: SessionRef, text: string, streamingBehavior?: "steer" | "followUp", machineId = "local", attachments?: PromptAttachment[], operationId?: string) => request(sessionPath(session, "prompt", machineId), parseAccepted, { method: "POST", body: sessionBody(session, { text, ...(streamingBehavior === undefined ? {} : { streamingBehavior }), ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {}), ...(operationId === undefined ? {} : { operationId }) }) }),
   saveAttachments: (session: SessionRef, attachments: PromptAttachment[], machineId = "local", folder?: string) => request(sessionPath(session, "attachments", machineId), parseSavedAttachments, { method: "POST", body: sessionBody(session, { attachments, ...(folder === undefined ? {} : { folder }) }) }),
   shell: (session: SessionRef, text: string, machineId = "local") => request(sessionPath(session, "shell", machineId), parseAccepted, { method: "POST", body: sessionBody(session, { text }) }),
+  ownerRun: (session: SessionRef, entryId: string, proposal: OwnerRunProposal, machineId = "local") => request(sessionPath(session, "owner-runs", machineId), parseOwnerRunStatus, { method: "POST", body: sessionBody(session, { entryId, proposal }) }),
   runCommand: (session: SessionRef, text: string, machineId = "local") => request(sessionPath(session, "commands/run", machineId), parseCommandResult, { method: "POST", body: sessionBody(session, { text }) }),
   respondToCommand: (session: SessionRef, requestId: string, value: string, machineId = "local") => request(sessionPath(session, "commands/respond", machineId), parseCommandResult, { method: "POST", body: sessionBody(session, { requestId, value }) }),
   navigateTree: (session: SessionRef, navigation: SessionTreeNavigateRequest, machineId = "local") => request(sessionPath(session, "tree/navigate", machineId), parseSessionTreeNavigateResult, {

@@ -549,6 +549,17 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
+  // The owner confirmed a pi-run block in the browser; the body names it, the Chat's transcript supplies what runs.
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; entryId?: unknown; proposal?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/owner-runs`, async (request, reply) => {
+    try {
+      const body = optionalRecord(request.body);
+      if (sessions.ownerRun === undefined) throw new Error("The run button works in Durable Chats only");
+      return await sessions.ownerRun(sessionRefFromBody(request.params.sessionId, body), requireString(body, "entryId"), body["proposal"]);
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
   // shortcut: no owner check, so any local process (an agent's bash too) can POST a command such as /pair here, as on every PI WEB route; owner authentication for PI WEB closes it.
   app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; text?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/commands/run`, async (request, reply) => {
     try {

@@ -1,5 +1,5 @@
 import { execFile, fork } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -33,6 +33,7 @@ import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type
 import { type DurableChatRecord, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
+import { committedOwnerRun, openOwnerCommandInTerminal, ownerRunFolder, ownerRunResultText, runOwnerCommand, type OwnerRunResult } from "./ownerRuns.js";
 
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
 export const DURABLE_HOST_PROTOCOL = 2;
@@ -293,6 +294,9 @@ export class DurableChatService {
   /** History reads of Chats with no host (`#readCold`), by Chat ID, chained one after another. */
   readonly #coldReads = new Map<string, Promise<unknown[] | undefined>>();
   #coldQueue: Promise<void> = Promise.resolve();
+  /** Owner-run proposals already started, by Chat, entry and proposal: each runs once. */
+  // shortcut: in memory, so after a daemon restart a proposal can run again (after a second confirmation); persist it if that matters.
+  readonly #ownerRuns = new Set<string>();
 
   constructor(private readonly deps: {
     locator: SessionRuntimeLocator;
@@ -654,6 +658,36 @@ export class DurableChatService {
     const connection = await this.#for(ref);
     this.#require(connection, "shell");
     await connection.request("shell", { text });
+  }
+
+  /**
+   * The owner confirmed a pi-run block of the assistant message `entryId`: it runs once, outside the write fence, in its
+   * folder. The block is read from the transcript, never from the browser. Its result reaches the agent as a follow-up
+   * (an idle Chat wakes), without slash or skill expansion.
+   */
+  async ownerRun(ref: SessionRouteRef, entryId: string, proposal: unknown): Promise<{ status: "started" | "terminal opened" }> {
+    const connection = await this.#for(ref);
+    const run = committedOwnerRun(hostTranscript((await connection.request("transcript")).result).messages, entryId, proposal);
+    const key = JSON.stringify([ref.id, entryId, run.mode, run.cwd, run.command]);
+    if (this.#ownerRuns.has(key)) throw new Error("This command already ran");
+    await ownerRunFolder(run.cwd);
+    this.#ownerRuns.add(key);
+    const deliver = async (result: OwnerRunResult) => {
+      const operationId = `owner-run:${createHash("sha256").update(key).digest("hex")}`;
+      await (await this.#for(ref)).request("prompt", { operationId, text: ownerRunResultText(run, result), mode: "followUp" });
+    };
+    const failed = (error: unknown) => { this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered"); };
+    if (run.mode === "run") {
+      void runOwnerCommand(run).then(deliver).catch(failed);
+      return { status: "started" };
+    }
+    try {
+      void deliver(await openOwnerCommandInTerminal(run)).catch(failed);
+    } catch (error) {
+      this.#ownerRuns.delete(key);
+      throw error;
+    }
+    return { status: "terminal opened" };
   }
 
   async availableThinkingLevels(ref: SessionRouteRef): Promise<ClientThinkingLevel[]> {

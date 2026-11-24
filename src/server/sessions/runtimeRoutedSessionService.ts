@@ -117,6 +117,7 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     prompt: (ref, text, streamingBehavior, attachments, options) => isDurable(ref) ? durable.prompt(ref, text, streamingBehavior, attachments, options) : legacy.prompt(ref, text, streamingBehavior, attachments, options),
     saveAttachments: (ref, attachments, folder) => isDurable(ref) ? durable.saveAttachments(ref, attachments, folder) : legacy.saveAttachments(ref, attachments, folder),
     shell: (ref, text) => isDurable(ref) ? durable.shell(ref, text) : legacy.shell(ref, text),
+    ownerRun: (ref, entryId, proposal) => isDurable(ref) ? durable.ownerRun(ref, entryId, proposal) : Promise.reject(new Error("The run button works in Durable Chats only")),
     runCommand: (ref, text) => isDurable(ref) ? durable.runCommand(ref, text) : legacy.runCommand(ref, text),
     respondToCommand: (ref, requestId, value) => isDurable(ref) ? unavailable("commands.respond") : legacy.respondToCommand(ref, requestId, value),
     navigateTree: (ref, request) => isDurable(ref) ? durable.navigateTree(ref, request) : legacy.navigateTree(ref, request),

@@ -4,11 +4,12 @@ import { replaceLocalMarkdownImages } from "./markdownImages";
 import { workspaceFilePreviewUrl } from "../api/urls";
 import { resolveAppUrl } from "../appUrl";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
+import { isOwnerRunInfo, ownerRunProposal, ownerRunProposals, sameOwnerRun, type OwnerRunProposal } from "../../../shared/ownerRun";
 import { fileLinkLines, inlineCodeFileHref, outsideChatFilePath, workspaceMarkdownFilePath, type MarkdownWorkspaceContext } from "./workspaceLinks";
 
 const nativeCodeRenderer = new marked.Renderer();
 
-function markdownRenderer(codeBlocks: CodeBlockPolicy): Renderer {
+function markdownRenderer(codeBlocks: CodeBlockPolicy, runnable?: readonly OwnerRunProposal[]): Renderer {
   const renderer = new marked.Renderer();
   renderer.html = ({ text }) => escapeHtml(text);
   renderer.blockquote = function ({ text, tokens }) {
@@ -16,6 +17,7 @@ function markdownRenderer(codeBlocks: CodeBlockPolicy): Renderer {
     return `<blockquote data-quote-source="${escapeHtml(text).replaceAll('"', "&quot;")}">\n${this.parser.parse(tokens)}</blockquote>\n`;
   };
   renderer.code = (token) => {
+    if (runnable !== undefined && isOwnerRunInfo(token.lang)) return ownerRunBlock(token.lang ?? "", token.text, runnable);
     const block = codeBlocks.presentation === "code"
       ? nativeCodeRenderer.code(token)
       : `<div class="plain-code-block">${escapeHtml(token.text)}\n</div>\n`;
@@ -31,6 +33,21 @@ function markdownRenderer(codeBlocks: CodeBlockPolicy): Renderer {
     return `<div class="code-block-wrapper code-block-frame">${header}${block}</div>\n`;
   };
   return renderer;
+}
+
+/**
+ * A pi-run block of a committed assistant message: always framed, with a Review button when the message's own top-level
+ * parse (the one the server repeats) has the same proposal, else the reason it cannot run.
+ */
+function ownerRunBlock(info: string, text: string, runnable: readonly OwnerRunProposal[]): string {
+  const proposal = ownerRunProposal(info, text);
+  const control = "error" in proposal
+    ? `<span class="owner-run-invalid">Not runnable: ${escapeHtml(proposal.error)}</span>`
+    : runnable.some((candidate) => sameOwnerRun(candidate, proposal))
+      ? `<button type="button" class="owner-run-button ui-button ui-button--compact" data-owner-run="${escapeHtml(JSON.stringify(proposal)).replaceAll('"', "&quot;")}">${proposal.mode === "terminal" ? "Review for Terminal…" : "Review command…"}</button>`
+      : '<span class="owner-run-invalid">Not runnable: only a closed top-level block runs</span>';
+  const label = `<span class="code-block-label">${"mode" in proposal && proposal.mode === "terminal" ? "pi-run terminal" : "pi-run"}</span>`;
+  return `<div class="code-block-wrapper code-block-frame owner-run-block"><div class="code-block-header" role="group" aria-label="Proposed command">${label}${control}</div><pre><code>${escapeHtml(text)}\n</code></pre></div>\n`;
 }
 
 /**
@@ -58,15 +75,16 @@ marked.use({ extensions: [spacedLocalPathLink] });
 const MAX_MARKDOWN_CACHE_ENTRIES = 300;
 const markdownHtmlCache = new Map<string, string>();
 
-export function toSafeMarkdownHtml(text: string, workspace?: MarkdownWorkspaceContext, imageIntentKey?: string, imagesEnabled = true, codeBlocks: CodeBlockPolicy = DEFAULT_CODE_BLOCK_POLICY): string {
+/** `ownerRuns`: pi-run blocks get a run button (committed assistant text only). */
+export function toSafeMarkdownHtml(text: string, workspace?: MarkdownWorkspaceContext, imageIntentKey?: string, imagesEnabled = true, codeBlocks: CodeBlockPolicy = DEFAULT_CODE_BLOCK_POLICY, ownerRuns = false): string {
   // Overflow is applied at the component boundary; preview policy does not alter HTML.
   // Only workspace links depend on the effective application base, not route/query changes.
-  const key = JSON.stringify([text, imagesEnabled, codeBlocks.presentation, codeBlocks.copy, workspace === undefined ? null : [
+  const key = JSON.stringify([text, imagesEnabled, codeBlocks.presentation, codeBlocks.copy, ownerRuns, workspace === undefined ? null : [
     workspace.machineId, workspace.projectId, workspace.workspaceId, workspace.root, workspace.sourcePath, resolveAppUrl(""), imageIntentKey,
   ]]);
   const cached = markdownHtmlCache.get(key);
   if (cached !== undefined) return cached;
-  const html = marked.parse(text, { async: false, breaks: true, gfm: true, renderer: markdownRenderer(codeBlocks) });
+  const html = marked.parse(text, { async: false, breaks: true, gfm: true, renderer: markdownRenderer(codeBlocks, ownerRuns ? ownerRunProposals(text) : undefined) });
   const safeHtml = sanitizeHtml(html, workspace, imageIntentKey, imagesEnabled);
   markdownHtmlCache.set(key, safeHtml);
   if (markdownHtmlCache.size > MAX_MARKDOWN_CACHE_ENTRIES) {

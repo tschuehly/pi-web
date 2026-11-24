@@ -16,7 +16,8 @@ import { startMockModelServer, type MockModelServer } from "./mockModels/server"
  */
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const LIVE_PORT = 8505;
+// The live PI WEB and the installed Durable one.
+const LIVE_PORTS = [8505, 8506];
 /** Durable hosts as launchd jobs (Phase C1) run under trial labels only, never the production prefix. */
 export const E2E_DURABLE_LABEL_PREFIX = "com.pi-workbench.durable-trial.host";
 export const E2E_PROJECT_ID = "e2e-project";
@@ -107,7 +108,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     // Keep the Unix socket below macOS's 104-byte path ceiling, including a session-scoped TMPDIR.
     const socket = join(root, "s");
     const port = await freePort();
-    if (port === LIVE_PORT) throw new Error("Refusing to use the live PI WEB port");
+    if (LIVE_PORTS.includes(port)) throw new Error("Refusing to use a live PI WEB port");
     await Promise.all([mkdir(sessionDir, { recursive: true }), mkdir(join(project, "docs"), { recursive: true }), mkdir(join(project, "entries"), { recursive: true }), mkdir(adHocFolder, { recursive: true })]);
     await seedProject(project);
     await writeJson(join(dataDir, "projects.json"), { projects: [{ id: E2E_PROJECT_ID, name: "e2e", path: project, createdAt: new Date().toISOString() }] });

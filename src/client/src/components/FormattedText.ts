@@ -11,6 +11,8 @@ import { rememberExternalMarkdownImageDimensions, restoreExternalMarkdownImageDi
 import { workspaceContextChanged, type MarkdownWorkspaceContext, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
 import { formattedTextStyles } from "./formattedTextStyles";
 import { codeBlockFrameStyles } from "./codeBlockFrameStyles";
+import { openOwnerRunDialog, type OwnerRunTarget } from "./OwnerRunDialog";
+import { ownerRunFromJson } from "../../../shared/ownerRun";
 
 const FILE_LINK_SELECTOR = "a[data-workspace-file], a[data-outside-file]";
 // ponytail: binary documents the Files pane cannot show; others (text, code, Makefile, .mp4/.mov/.webm video) open in the pane. Extend as needed.
@@ -35,6 +37,8 @@ export class FormattedText extends LitElement {
   @property({ attribute: false }) contentRendering: ChatContentRendering | undefined;
   @property() machineId = "local";
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
+  /** The committed assistant message this text belongs to: its pi-run blocks get a run button. */
+  @property({ attribute: false, hasChanged: (next?: OwnerRunTarget, previous?: OwnerRunTarget) => JSON.stringify(next) !== JSON.stringify(previous) }) ownerRun: OwnerRunTarget | undefined;
 
   private readonly enhancement = new VisibleContentController(this);
   private phase: "markdown" | "preview" | "done" = "markdown";
@@ -46,7 +50,7 @@ export class FormattedText extends LitElement {
   private layoutChanged = false;
 
   protected override willUpdate(changes: PropertyValues<this>): void {
-    const inputs = ["text", "intentKey", "imagesEnabled", "codeBlocks", "contentRendering", "machineId", "workspaceContext"] as const;
+    const inputs = ["text", "intentKey", "imagesEnabled", "codeBlocks", "contentRendering", "machineId", "workspaceContext", "ownerRun"] as const;
     if (!inputs.some((key) => changes.has(key))) return;
     this.enhancement.cancel();
     this.scheduled = false;
@@ -106,7 +110,7 @@ export class FormattedText extends LitElement {
 
   private formatMarkdown(): void {
     try {
-      this.markup = toSafeMarkdownHtml(this.text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks);
+      this.markup = toSafeMarkdownHtml(this.text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks, this.ownerRun !== undefined);
       if (this.codeBlocks.previews && this.contentRendering !== undefined) {
         this.phase = "preview";
         if (this.content === undefined) this.showMarkdown();
@@ -135,7 +139,7 @@ export class FormattedText extends LitElement {
         text: this.text,
         machineId: this.workspaceContext?.machineId ?? this.machineId,
         toSafeHtml: (text) => text === this.text && this.markup !== undefined ? this.markup
-          : toSafeMarkdownHtml(text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks),
+          : toSafeMarkdownHtml(text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks, this.ownerRun !== undefined),
       }, this.intentKey, this.codeBlocks);
       this.displayedText = this.text;
       this.replacing = false;
@@ -213,6 +217,13 @@ export class FormattedText extends LitElement {
 
   private readonly onFormattedClick = (event: MouseEvent): void => {
     if (!(event.target instanceof Element)) return;
+    const ownerRun = event.target.closest<HTMLElement>(".owner-run-button");
+    if (ownerRun !== null && this.ownerRun !== undefined) {
+      const data: unknown = JSON.parse(ownerRun.dataset["ownerRun"] ?? "null");
+      const proposal = ownerRunFromJson(data);
+      if (!("error" in proposal)) openOwnerRunDialog(this.ownerRun, proposal);
+      return;
+    }
     const reveal = event.target.closest(".file-reveal-button");
     const revealed = reveal?.previousElementSibling;
     if (revealed instanceof Element && this.workspaceContext !== undefined) {
@@ -303,6 +314,8 @@ export class FormattedText extends LitElement {
 
   static override styles = [formattedTextStyles, codeBlockFrameStyles, css`
     .pending-source { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .owner-run-block .code-block-header { justify-content: space-between; }
+    .owner-run-invalid { color: var(--pi-muted); font-size: 12px; }
     .enhanced-content { display: contents; }
     .enhanced-content[hidden] { display: none; }
     .quote-copy-button { position: absolute; top: 6px; right: 6px; z-index: 1; display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 0; font: 14px system-ui, sans-serif; line-height: 1; cursor: pointer; opacity: 0; }

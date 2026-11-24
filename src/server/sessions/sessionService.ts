@@ -117,6 +117,8 @@ export interface SessionRouteService {
   archiveMany(refs: readonly SessionBulkMutationRef[]): Promise<SessionBulkArchiveResponse>;
   deleteArchivedMany(refs: readonly SessionBulkMutationRef[]): Promise<SessionBulkDeleteArchivedResponse>;
   shell(ref: SessionRouteRef, text: string): Promise<void>;
+  /** Durable Chats only: run a confirmed pi-run block of an assistant message outside the write fence (ownerRuns.ts). */
+  ownerRun?(ref: SessionRouteRef, entryId: string, proposal: unknown): Promise<{ status: "started" | "terminal opened" }>;
   runCommand(ref: SessionRouteRef, text: string): Promise<ClientCommandResult>;
   respondToCommand(ref: SessionRouteRef, requestId: string, value: string): Promise<ClientCommandResult>;
   navigateTree(ref: SessionRouteRef, request: ClientSessionTreeNavigateRequest): Promise<ClientSessionTreeNavigateResult>;
