@@ -787,6 +787,36 @@ describe("ask-user-card context", () => {
   });
 });
 
+describe("ask-markdown-field", () => {
+  it("destroys its editor when removed, releasing the window listeners, and rebuilds it with the text when re-added", async () => {
+    const field = new AskMarkdownField();
+    document.body.append(field);
+    typeInto(field, "Typed **draft**");
+    const view = editorView(field);
+    const destroy = vi.spyOn(view, "destroy");
+    const removed = vi.spyOn(window, "removeEventListener");
+
+    // A move within one task keeps the editor.
+    field.remove();
+    document.body.append(field);
+    await Promise.resolve();
+    expect([destroy.mock.calls.length, editorView(field)]).toEqual([0, view]);
+
+    field.remove();
+    await Promise.resolve();
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(removed.mock.calls.map(([type]) => type)).toEqual(expect.arrayContaining(["scroll", "resize"]));
+    expect(field.querySelector(".cm-editor")).toBeNull();
+    expect(field.value).toBe("Typed **draft**");
+
+    document.body.append(field);
+    const rebuilt = editorView(field);
+    expect(rebuilt).not.toBe(view);
+    expect(rebuilt.state.doc.toString()).toBe("Typed **draft**");
+    removed.mockRestore();
+  });
+});
+
 describe("renderedOnlyFences", () => {
   it("keeps only the mermaid, diff and worddiff fences, whole, including an unclosed last one", () => {
     const text = "Intro\n\n```ts\nconst a = 1;\n```\n\n```mermaid\npie\n```\n\n~~~~worddiff\nold\n>>>\nnew\n~~~~\n\n```diff\n-a";
@@ -816,8 +846,12 @@ describe("ask-user-card media", () => {
     document.body.append(card);
     await card.updateComplete;
 
-    // The context's image renders in the editor's live preview; its diagram and diff are drawn under it.
-    expect(requiredElement(renderRoot(card).querySelector(".context-editor .lp-img img"), "context image").getAttribute("src")).toBe("https://example.com/login.png");
+    // The context's image folds in the editor's live preview and loads only once opened (by keyboard here); its diagram and diff are drawn under it.
+    const imageFold = requiredElement(renderRoot(card).querySelector<HTMLDetailsElement>(".context-editor .lp-img details.folded-media"), "context image fold");
+    const imageSummary = requiredElement(imageFold.querySelector("summary"), "context image summary");
+    expect([imageSummary.textContent, imageFold.open, imageFold.querySelector("img")?.hasAttribute("src")]).toEqual(["Show image: Login screen", false, false]);
+    imageSummary.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect([imageFold.open, imageFold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/login.png"]);
     const contextMedia = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.context-media"), "context media");
     await settleDeferredContent(contextMedia);
     expect([...contextMedia.renderRoot.querySelectorAll("details.folded-media summary")].map((summary) => summary.textContent)).toEqual(["Show diagram"]);
