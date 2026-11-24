@@ -351,7 +351,10 @@ export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly As
   const questions = [...records, ...outcome.questions].sort((a, b) => rank(a) - rank(b));
   const answeredCount = questions.filter((record) => record.answered).length;
   const skipped = questions.filter((record) => record.skipped === true).length;
-  return { ...outcome, questions, answeredCount, summary: summaryLine(questions.length - skipped, answeredCount, outcome.unansweredIds) + skippedSummary(questions) };
+  // An edit goes out once, with the send that carried it, so the last send may carry none.
+  // shortcut: an agent revising the context after the user's edit still shows the edit, upgrade if agents start revising mid-answer.
+  const editedContext = outcome.editedContext ?? [...earlier].reverse().find((each) => each.askId === outcome.askId && each.editedContext !== undefined)?.editedContext;
+  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, summary: summaryLine(questions.length - skipped, answeredCount, outcome.unansweredIds) + skippedSummary(questions) };
 }
 
 /** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
