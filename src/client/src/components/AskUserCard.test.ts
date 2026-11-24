@@ -6,6 +6,9 @@ import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../s
 import { loadAskNote, saveAskDraft, saveAskNote } from "../askDrafts";
 import { AskUserCard, type AskUserSubmitCallback } from "./AskUserCard";
 import { settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
+import { html } from "lit";
+import { createContentRenderingService } from "../formatting/contentRendering";
+import type { ContentRendererHost } from "./ContentRendererHost";
 
 useDeferredContent();
 
@@ -507,6 +510,42 @@ async function renderedContext(card: AskUserCard): Promise<ShadowRoot> {
   await settleDeferredContent(formatted);
   return requiredElement(formatted.shadowRoot, "ask context shadow root");
 }
+
+describe("ask-user-card media", () => {
+  it("folds each image and Mermaid diagram in the context and details behind a disclosure that draws the diagram when opened", async () => {
+    const media = "Compare these.\n\n![Login screen](https://example.com/login.png)\n\n```mermaid\npie\n  \"A\": 2\n```";
+    // A manual renderer, like the Mermaid plugin: the Chat shows its source until asked.
+    const rendering = createContentRenderingService((request) => request.language === "mermaid"
+      ? [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", render: () => html`<b class="diagram-preview">drawn</b>` } }] : []);
+    const card = new AskUserCard();
+    card.ask = { ...openAsk([question("pick", "Pick one", [option("a", "A")], { detail: media })]), context: media };
+    card.contentRendering = rendering;
+    card.setAttribute("flat", "");
+    document.body.append(card);
+    await card.updateComplete;
+
+    for (const selector of ["formatted-text.ask-context", "formatted-text.question-detail"]) {
+      const formatted = requiredElement(renderRoot(card).querySelector<LitElement>(selector), selector);
+      await settleDeferredContent(formatted);
+      for (const host of formatted.renderRoot.querySelectorAll<ContentRendererHost>("pi-web-content-renderer")) {
+        await settleDeferredContent(host);
+        await settleDeferredContent(host);
+      }
+      const root = formatted.renderRoot;
+      const folds = [...root.querySelectorAll("details.folded-media")];
+      expect(folds.map((fold) => [fold.querySelector("summary")?.textContent, fold.hasAttribute("open")])).toEqual([["Show image: Login screen", false], ["Show diagram", false]]);
+      expect(folds[0]?.querySelector("img")?.getAttribute("src")).toBe("https://example.com/login.png");
+      expect(root.querySelector("p")?.textContent).toBe("Compare these.");
+      const host = requiredElement(folds[1]?.querySelector<ContentRendererHost>("pi-web-content-renderer"), "diagram host");
+      expect(host.renderRoot.querySelector(".diagram-preview")).toBeNull();
+      requiredElement(folds[1]?.querySelector("summary"), "diagram summary").click();
+      await settleDeferredContent(host);
+      await settleDeferredContent(host);
+      expect(folds[1]?.hasAttribute("open")).toBe(true);
+      expect(host.renderRoot.querySelector(".diagram-preview")?.textContent).toBe("drawn");
+    }
+  });
+});
 
 describe("ask-user-card record mode", () => {
   it("has no answer controls and displays draft answers retained for a superseded ask", async () => {

@@ -27,6 +27,7 @@ import {
 import "./FormattedText";
 import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
+import type { ChatContentRendering } from "../formatting/contentRendering";
 
 // Lucide "pencil", "undo-2" and "sticky-note" (https://lucide.dev, ISC).
 const PENCIL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>`;
@@ -73,6 +74,8 @@ export class AskUserCard extends LitElement {
   @property({ attribute: false }) onSubmit?: AskUserSubmitCallback;
   /** Lets file links in the context open in the Files pane, as they do in the Chat. */
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
+  /** The Chat's content renderers (Mermaid), so context and details draw diagrams like Chat messages. */
+  @property({ attribute: false }) contentRendering: ChatContentRendering | undefined;
 
   @state() private answers: AskDraftAnswers = {};
   /** Free text on the whole set, sent with the answers. */
@@ -154,7 +157,7 @@ export class AskUserCard extends LitElement {
 
   /** The model's explanation for the question set, rendered like Chat Markdown. */
   private renderContext(context: string | undefined): TemplateResult | null {
-    return context === undefined ? null : html`<formatted-text class="ask-context" .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>`;
+    return context === undefined ? null : html`<formatted-text class="ask-context" fold-media .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>`;
   }
 
   private renderQuestion(ask: PendingAskUser, question: AskUserQuestion, index: number, number: number, sendOne: boolean): TemplateResult {
@@ -258,7 +261,7 @@ export class AskUserCard extends LitElement {
 
   /** A question's Markdown detail, in body text like the context. */
   private renderDetail(detail: string | undefined, id?: string): TemplateResult | null {
-    return detail === undefined ? null : html`<formatted-text class="question-detail" id=${ifDefined(id)} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
+    return detail === undefined ? null : html`<formatted-text class="question-detail" id=${ifDefined(id)} fold-media .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
   }
 
   private renderPartialSubmitConfirmation(ask: PendingAskUser, unanswered: AskUserQuestion[]): TemplateResult {

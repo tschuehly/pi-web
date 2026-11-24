@@ -54,6 +54,7 @@ describe("createAskUserToolDefinition", () => {
     expect(advertised).not.toContain("five short lines");
     expect(advertised).toContain("update: <askId>");
     expect(advertised).toContain("withdraw: <askId>");
+    expect(advertised).toContain("Markdown images (https or workspace file path) and ```mermaid diagrams");
     expect(advertised).not.toMatch(/ends? (this|the) run|alone and last/);
   });
 
