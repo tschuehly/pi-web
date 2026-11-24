@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServerPluginExecFile } from "../plugins/serverPluginExec.js";
@@ -47,16 +47,26 @@ export async function ownerRunFolder(cwd: string): Promise<string> {
 
 const exec = createServerPluginExecFile({ maxTimeoutMs: OWNER_RUN_TIMEOUT_MS, maxOutputBytes: OWNER_RUN_OUTPUT_BYTES });
 
-/** `/bin/bash -c <command>` in the folder with the server's environment and closed stdin; 10 minutes, 32 KiB per stream. */
-export async function runOwnerCommand(proposal: OwnerRunProposal): Promise<OwnerRunResult> {
+/**
+ * The shell enters the folder itself and refuses to go on unless it is the checked real folder: one swapped for a link
+ * after the check would otherwise run the command somewhere else.
+ */
+function inFolder(proposal: OwnerRunProposal): string {
+  const dir = shellQuote(proposal.cwd);
+  return `cd -P -- ${dir} && [ "$PWD" = ${dir} ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\n${proposal.command}\n`;
+}
+
+/** `/bin/bash -c` in the folder with the server's environment and closed stdin; 10 minutes, 32 KiB per stream. */
+export async function runOwnerCommand(proposal: OwnerRunProposal, signal: AbortSignal = new AbortController().signal): Promise<OwnerRunResult> {
   const started = Date.now();
   try {
-    const result = await exec({ file: "/bin/bash", args: ["-c", proposal.command], cwd: proposal.cwd, signal: new AbortController().signal });
+    const result = await exec({ file: "/bin/bash", args: ["-c", inFolder(proposal)], cwd: proposal.cwd, signal });
     return {
       status: "exited", exitCode: result.exitCode, signal: result.signal, durationMs: Date.now() - started,
       stdout: result.stdout, stderr: result.stderr, truncated: result.stdoutTruncated || result.stderrTruncated,
     };
   } catch (error) {
+    // shortcut: a timeout drops the output captured so far (the shared exec helper rejects without it); return it if agents need it.
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     return { status: timedOut ? "timed out" : "failed to start", durationMs: Date.now() - started, error: error instanceof Error ? error.message : String(error) };
   }
@@ -66,8 +76,13 @@ export async function runOwnerCommand(proposal: OwnerRunProposal): Promise<Owner
 export async function openOwnerCommandInTerminal(proposal: OwnerRunProposal, open: (file: string) => Promise<void> = openInTerminal): Promise<OwnerRunResult> {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-owner-run-"));
   const file = join(dir, "run.command");
-  await writeFile(file, `#!/bin/bash\nrm -rf -- ${shellQuote(dir)}\ncd -- ${shellQuote(proposal.cwd)} || exit\n${proposal.command}\n`, { mode: 0o700 });
-  await open(file);
+  try {
+    await writeFile(file, `#!/bin/bash\nrm -rf -- ${shellQuote(dir)}\n${inFolder(proposal)}`, { mode: 0o700 });
+    await open(file);
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
   return { status: "terminal opened" };
 }
 

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1843,3 +1843,50 @@ describe("Durable Chats: live review (/pair)", () => {
 function isTitleRequest(request: { method: string; params?: Record<string, unknown> }): boolean {
   return request.method === "complete" && String(request.params?.["prompt"]).startsWith("Create a 2-6 word title");
 }
+
+describe("the owner's run button", () => {
+  /** A Chat whose assistant message `a1` proposes `command` in `cwd`; the host redacts `SECRET`. */
+  async function proposing(command: (cwd: string) => string, redact: (text: string) => unknown = (text) => text.replaceAll("SECRET", "[REDACTED]")) {
+    const cwd = await realpath(await mkdtemp(join(tmpdir(), "pi-web-owner-run-")));
+    roots.push(cwd);
+    const text = `Run it:\n\n\`\`\`pi-run cwd="${cwd}"\n${command(cwd)}\n\`\`\`\n`;
+    const answer = (request: Request) => request.method === "transcript" ? { messages: [{ entryId: "a1", role: "assistant", content: [{ type: "text", text }] }], partial: null, status }
+      : request.method === "redact" ? redact(String(request.params?.["text"])) : request.method === "status" ? status : null;
+    const made = await service(() => { const host = new FakeHost(); host.answer = answer; return host; });
+    const chat = await made.durable.start(cwd);
+    return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode: "run", cwd, command: command(cwd) } };
+  }
+  const prompts = (launched: FakeHost[]) => launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"));
+
+  it("two confirmations at once run it once; the result is redacted and sent as a follow-up under its own operation", async () => {
+    const { durable, launched, ref, proposal } = await proposing((cwd) => `echo run >> ${cwd}/count; echo SECRET-token; exit 3`);
+    const results = await Promise.allSettled([durable.ownerRun(ref, "a1", proposal), durable.ownerRun(ref, "a1", proposal)]);
+    expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+    await vi.waitFor(() => { expect(prompts(launched)).toHaveLength(1); });
+    const [prompt] = prompts(launched);
+    expect(prompt?.params?.["mode"]).toBe("followUp");
+    expect(String(prompt?.params?.["operationId"])).toMatch(/^owner-run:[0-9a-f-]{36}$/);
+    expect(prompt?.params?.["text"]).toContain('"exitCode": 3');
+    expect(prompt?.params?.["text"]).toContain("[REDACTED]-token");
+    expect(prompt?.params?.["text"]).not.toContain("SECRET");
+    expect(await readFile(join(proposal.cwd, "count"), "utf8")).toBe("run\n");
+  });
+
+  it("withholds the output when the host cannot redact it", async () => {
+    const { durable, launched, ref, proposal } = await proposing(() => "echo SECRET", () => { throw new Error("no redactor"); });
+    await durable.ownerRun(ref, "a1", proposal);
+    await vi.waitFor(() => { expect(prompts(launched)).toHaveLength(1); });
+    expect(prompts(launched)[0]?.params?.["text"]).toContain("output withheld");
+    expect(prompts(launched)[0]?.params?.["text"]).not.toContain("\"stdout\"");
+  });
+
+  it("stopping the Chat cancels its run and never reopens it for the result", async () => {
+    const { durable, launched, ref, proposal } = await proposing((cwd) => `sleep 1; touch ${cwd}/finished`);
+    await durable.ownerRun(ref, "a1", proposal);
+    await durable.stop(ref);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(launched).toHaveLength(1);
+    expect(prompts(launched)).toEqual([]);
+    await expect(stat(join(proposal.cwd, "finished"))).rejects.toThrow("ENOENT");
+  });
+});

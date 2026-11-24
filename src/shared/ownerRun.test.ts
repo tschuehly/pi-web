@@ -19,6 +19,7 @@ describe("ownerRunProposals", () => {
       '```pi-run cwd="relative"\necho bad\n```',
       '```pi-run sudo cwd="/x"\necho unknown option\n```',
       '```pi-run cwd="/x"\n\n```',
+      '```pi-run cwd="/reports/a\\.b"\necho escaped\n```',
       '```pi-run cwd="/x"\necho streaming',
     ].join("\n\n");
     expect(ownerRunProposals(text)).toEqual([]);
@@ -27,6 +28,9 @@ describe("ownerRunProposals", () => {
   it("refuses control and bidi characters and oversized commands", () => {
     expect(ownerRunProposal('pi-run cwd="/x"', "echo \u202eevil")).toHaveProperty("error");
     expect(ownerRunProposal('pi-run cwd="/x"', "echo \u0007")).toHaveProperty("error");
+    expect(ownerRunProposal('pi-run cwd="/x\u2060y"', "echo")).toHaveProperty("error");
+    expect(ownerRunProposal('pi-run cwd="/x"', "echo a\u2028rm -rf ~")).toHaveProperty("error");
+    expect(ownerRunProposal('pi-run cwd="/x"', "echo \u200bhidden")).toHaveProperty("error");
     expect(ownerRunProposal('pi-run cwd="/x\u0000"', "echo")).toHaveProperty("error");
     expect(ownerRunProposal('pi-run cwd="/x\\"y"', "echo")).toHaveProperty("error");
     expect(ownerRunProposal('pi-run cwd="/x"', "x".repeat(8 * 1024 + 1))).toHaveProperty("error");

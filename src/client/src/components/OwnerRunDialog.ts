@@ -78,7 +78,7 @@ export class OwnerRunDialog extends LitElement {
     h1 { font-size: 20px; line-height: 1.2; }
     dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; }
     dt { color: var(--pi-muted); }
-    dd { margin: 0; overflow-wrap: anywhere; }
+    dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
     code, .command { font-family: var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     .command { margin: 0; max-height: 40vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-bg); padding: 10px 12px; }
     .warning, .dialog-error, .result { border: 1px solid var(--pi-border); border-radius: 10px; padding: 10px 12px; }

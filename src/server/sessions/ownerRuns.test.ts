@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, realpath, rm, symlink } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -49,6 +49,18 @@ describe("runOwnerCommand", () => {
     expect(result).toMatchObject({ status: "exited", exitCode: 7, stdout: `${dir}\n`, stderr: "oops\n", truncated: false });
   });
 
+  it("refuses to run when the checked folder became a link to another one", async () => {
+    const dir = await folder();
+    const other = await folder();
+    const result = await runOwnerCommand({ mode: "run", cwd: join(dir, "swapped"), command: "touch ran" }).catch(() => undefined);
+    expect(result?.status).toBe("failed to start");
+    await symlink(other, join(dir, "swapped"));
+    const swapped = await runOwnerCommand({ mode: "run", cwd: join(dir, "swapped"), command: "touch ran" });
+    expect(swapped.exitCode).toBe(125);
+    expect(swapped.stderr).toContain("the folder changed");
+    await expect(stat(join(other, "ran"))).rejects.toThrow("ENOENT");
+  });
+
   it("caps each stream", async () => {
     const result = await runOwnerCommand({ mode: "run", cwd: await folder(), command: `head -c ${String(OWNER_RUN_OUTPUT_BYTES * 2)} /dev/zero` });
     expect(result.stdout).toHaveLength(OWNER_RUN_OUTPUT_BYTES);
@@ -63,7 +75,13 @@ describe("openOwnerCommandInTerminal", () => {
     const script = await readFile(opened, "utf8");
     dirs.push(join(opened, ".."));
     expect(result).toEqual({ status: "terminal opened" });
-    expect(script).toBe(`#!/bin/bash\nrm -rf -- '${join(opened, "..")}'\ncd -- '/tmp/it'\\''s here' || exit\nsudo true\n`);
+    expect(script).toBe(`#!/bin/bash\nrm -rf -- '${join(opened, "..")}'\ncd -P -- '/tmp/it'\\''s here' && [ "$PWD" = '/tmp/it'\\''s here' ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\nsudo true\n`);
+  });
+
+  it("leaves no script behind when Terminal does not open", async () => {
+    let written = "";
+    await expect(openOwnerCommandInTerminal({ mode: "terminal", cwd: "/tmp", command: "true" }, (file) => { written = file; return Promise.reject(new Error("no Terminal")); })).rejects.toThrow("no Terminal");
+    await expect(stat(written)).rejects.toThrow("ENOENT");
   });
 });
 

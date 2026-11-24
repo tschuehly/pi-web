@@ -108,6 +108,14 @@ function sanitizeHtml(html: string, workspace: MarkdownWorkspaceContext | undefi
   template.innerHTML = html;
   if (workspace !== undefined) replaceLocalMarkdownImages(template.content, workspace, imageIntentKey);
   template.content.querySelectorAll("script, style, iframe, object, embed").forEach((node) => { node.remove(); });
+  // A quoted or listed copy of a runnable block is not the proposal; only a top-level block keeps its button.
+  template.content.querySelectorAll(".owner-run-button").forEach((button) => {
+    if (button.closest(".owner-run-block")?.parentNode === template.content) return;
+    const note = document.createElement("span");
+    note.className = "owner-run-invalid";
+    note.textContent = "Not runnable: only a closed top-level block runs";
+    button.replaceWith(note);
+  });
   if (workspace !== undefined) linkInlineCodeFilePaths(template.content, workspace);
   template.content.querySelectorAll("*").forEach((element) => {
     const href = element.tagName === "A" ? element.getAttribute("href") : null;

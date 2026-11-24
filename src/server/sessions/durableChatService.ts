@@ -1,5 +1,5 @@
 import { execFile, fork } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -297,6 +297,7 @@ export class DurableChatService {
   /** Owner-run proposals already started, by Chat, entry and proposal: each runs once. */
   // shortcut: in memory, so after a daemon restart a proposal can run again (after a second confirmation); persist it if that matters.
   readonly #ownerRuns = new Set<string>();
+  readonly #ownerRunCancels = new Map<string, Set<AbortController>>();
 
   constructor(private readonly deps: {
     locator: SessionRuntimeLocator;
@@ -668,22 +669,36 @@ export class DurableChatService {
   async ownerRun(ref: SessionRouteRef, entryId: string, proposal: unknown): Promise<{ status: "started" | "terminal opened" }> {
     const connection = await this.#for(ref);
     const run = committedOwnerRun(hostTranscript((await connection.request("transcript")).result).messages, entryId, proposal);
+    await ownerRunFolder(run.cwd);
+    // No await between the check and the claim: two confirmations at once run it once.
     const key = JSON.stringify([ref.id, entryId, run.mode, run.cwd, run.command]);
     if (this.#ownerRuns.has(key)) throw new Error("This command already ran");
-    await ownerRunFolder(run.cwd);
     this.#ownerRuns.add(key);
+    // Stopping the Chat cancels its runs and drops their results, so a late result never reopens an ended Chat.
+    const cancel = new AbortController();
+    const running = this.#ownerRunCancels.get(ref.id) ?? new Set<AbortController>();
+    this.#ownerRunCancels.set(ref.id, running.add(cancel));
+    // Each run its own result: a run allowed again after a daemon restart is a new input, not a replay of the first.
+    const operationId = `owner-run:${randomUUID()}`;
     const deliver = async (result: OwnerRunResult) => {
-      const operationId = `owner-run:${createHash("sha256").update(key).digest("hex")}`;
-      await (await this.#for(ref)).request("prompt", { operationId, text: ownerRunResultText(run, result), mode: "followUp" });
+      running.delete(cancel);
+      if (cancel.signal.aborted) return;
+      const host = await this.#for(ref);
+      // Through the host's redactor, as `!` output is; output it cannot redact is withheld.
+      const redacted = await host.request("redact", { text: ownerRunResultText(run, result) }).then(({ result: text }) => typeof text === "string" ? text : undefined, () => undefined);
+      const text = redacted ?? ownerRunResultText(run, { status: result.status, ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }), error: "output withheld: the host could not redact it" });
+      // shortcut: a result the host refuses is only logged (the command does not run again); keep it for a retry if that happens.
+      await host.request("prompt", { operationId, text, mode: "followUp" });
     };
     const failed = (error: unknown) => { this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered"); };
     if (run.mode === "run") {
-      void runOwnerCommand(run).then(deliver).catch(failed);
+      void runOwnerCommand(run, cancel.signal).then(deliver).catch(failed);
       return { status: "started" };
     }
     try {
       void deliver(await openOwnerCommandInTerminal(run)).catch(failed);
     } catch (error) {
+      running.delete(cancel);
       this.#ownerRuns.delete(key);
       throw error;
     }
@@ -1081,6 +1096,8 @@ export class DurableChatService {
    * Reaches the host an earlier daemon started too. The store keeps every admitted input and reopens paused on next use.
    */
   async stop(ref: SessionRouteRef): Promise<void> {
+    for (const cancel of this.#ownerRunCancels.get(ref.id) ?? []) cancel.abort();
+    this.#ownerRunCancels.delete(ref.id);
     await this.#unpair(ref.id);
     await this.#end(ref.id, true);
   }

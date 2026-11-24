@@ -33,6 +33,13 @@ it("a committed assistant message's top-level pi-run block gets a Review button;
   expect(view.renderRoot.querySelector("blockquote .owner-run-invalid")?.textContent).toContain("only a closed top-level block runs");
 });
 
+it("a quoted copy of the same block gets no button", async () => {
+  const block = '```pi-run cwd="/work/repo"\npwd\n```';
+  const view = await mount(`${block}\n\n> ${block.replaceAll("\n", "\n> ")}\n`);
+  expect(view.renderRoot.querySelectorAll(".owner-run-button")).toHaveLength(1);
+  expect(view.renderRoot.querySelector("blockquote .owner-run-button")).toBeNull();
+});
+
 it("text without a run target (user messages, tool output) shows pi-run blocks as plain code", async () => {
   const view = await mount(proposalText, false);
   expect(view.renderRoot.querySelector(".owner-run-button, .owner-run-invalid")).toBeNull();

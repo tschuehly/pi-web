@@ -10,9 +10,10 @@ export interface OwnerRunProposal { mode: "run" | "terminal"; cwd: string; comma
 export const OWNER_RUN_MAX_COMMAND_BYTES = 8 * 1024;
 // Markdown unescapes backslashes in an info string, so the folder is quoted literally: no quote or backslash inside.
 const INFO = /^pi-run(?: (terminal))? cwd="([^"\\]*)"$/u;
-// C0/C1 controls except tab and newline, and the bidi/invisible marks that make shown text differ from what runs.
-// eslint-disable-next-line no-control-regex -- matching control characters is the point
-const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/u;
+// Controls (tab and newline are checked apart), format and default-ignorable characters (bidi marks, zero-width joiners,
+// U+2060…), and line/paragraph separators: anything that makes the shown text differ from what runs.
+const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
+const unsafe = (text: string) => UNSAFE.test(text.replace(/[\t\n]/gu, ""));
 
 /** Whether a code block's info string asks for a run button at all (valid or not). */
 export function isOwnerRunInfo(info: string | undefined): boolean {
@@ -24,9 +25,9 @@ export function ownerRunProposal(info: string, command: string): OwnerRunProposa
   const match = INFO.exec(info.trim());
   if (match === null) return { error: 'the first line must be exactly ```pi-run cwd="/absolute/folder"``` or ```pi-run terminal cwd="…"```' };
   const cwd = match[2] ?? "";
-  if (!cwd.startsWith("/") || UNSAFE.test(cwd)) return { error: "cwd must be an absolute folder path" };
+  if (!cwd.startsWith("/") || unsafe(cwd)) return { error: "cwd must be an absolute folder path" };
   if (command.trim() === "") return { error: "the command is empty" };
-  if (UNSAFE.test(command)) return { error: "the command contains control or invisible characters" };
+  if (unsafe(command)) return { error: "the command contains control or invisible characters" };
   if (new TextEncoder().encode(command).length > OWNER_RUN_MAX_COMMAND_BYTES) return { error: "the command is longer than 8 KiB" };
   return { mode: match[1] === "terminal" ? "terminal" : "run", cwd, command };
 }
@@ -36,7 +37,8 @@ export function ownerRunProposals(markdown: string): OwnerRunProposal[] {
   return marked.lexer(markdown, { gfm: true }).flatMap((token) => {
     if (token.type !== "code") return [];
     const lang: unknown = token.lang;
-    if (typeof lang !== "string" || !isOwnerRunInfo(lang) || !closedFence(token.raw)) return [];
+    // Markdown unescapes the info string; a backslash in the authored line would show and run something else than written.
+    if (typeof lang !== "string" || !isOwnerRunInfo(lang) || !closedFence(token.raw) || (token.raw.split("\n", 1)[0] ?? "").includes("\\")) return [];
     const proposal = ownerRunProposal(lang, typeof token.text === "string" ? token.text : "");
     return "error" in proposal ? [] : [proposal];
   });
