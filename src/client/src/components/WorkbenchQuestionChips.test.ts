@@ -113,7 +113,7 @@ describe("WorkbenchQuestionChips", () => {
     const [first, second] = cards(chips);
     expect(AskUserCard.styles.cssText).not.toContain("context-beside");
     expect(first?.shadowRoot?.querySelector(".ask-context + form .questions")).not.toBeNull();
-    expect(first?.shadowRoot?.querySelector("formatted-text")).not.toBeNull();
+    expect(first?.shadowRoot?.querySelector(".ask-context ask-markdown-field.context-editor")).not.toBeNull();
     expect(text(first)).toContain("abc.db");
     expect(text(first)).toContain("Postgres Recommended");
     expect(first?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.checked).toBe(true);

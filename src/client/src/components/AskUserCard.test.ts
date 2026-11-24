@@ -3,10 +3,10 @@
 import type { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
-import { loadAskNote, saveAskDraft, saveAskNote } from "../askDrafts";
+import { loadAskContext, loadAskNote, saveAskDraft, saveAskNote } from "../askDrafts";
 import { EditorView } from "@codemirror/view";
 import { AskMarkdownField } from "./AskMarkdownField";
-import { AskUserCard, type AskUserSubmitCallback } from "./AskUserCard";
+import { AskUserCard, renderedOnlyFences, type AskUserSubmitCallback } from "./AskUserCard";
 import { settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
 import { html } from "lit";
 import { createContentRenderingService } from "../formatting/contentRendering";
@@ -515,12 +515,99 @@ describe("ask-user-card revisions", () => {
 });
 
 describe("ask-user-card context", () => {
-  it("renders the ask context as Markdown above the open questions", async () => {
+  it("shows the open set's context in a Markdown editor, pre-filled and editable from the start, in the body font", async () => {
     const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "The cache is **stale**." });
-    const context = await renderedContext(card);
+    const root = renderRoot(card);
+    const editor = markdownField(root, ".ask-context ask-markdown-field.context-editor");
 
-    expect(context.innerHTML).toContain("<strong>stale</strong>");
-    expect(renderRoot(card).querySelector(".ask-context + form .questions")).not.toBeNull();
+    expect(editor.value).toBe("The cache is **stale**.");
+    expect(editor.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("true");
+    expect(editor.querySelector(".cm-gutters")).toBeNull();
+    // Live preview hides the Markdown marks off the cursor line, as the Files pane does.
+    expect(editor.querySelector(".lp-on")).not.toBeNull();
+    expect(root.querySelector("formatted-text.ask-context")).toBeNull();
+    expect(root.querySelector(".ask-context + form .questions")).not.toBeNull();
+    expect(root.querySelector(".context-actions")).toBeNull();
+    const styles = AskUserCard.styles.toString();
+    expect(styles).toContain(".card .context-editor .cm-scroller, .card .context-editor .cm-content { font: inherit; line-height: 1.45; }");
+    expect(styles).toMatch(/\.card \.context-editor \{[^}]*border: 0;[^}]*background: color-mix/);
+  });
+
+  it("keeps an edited context in the draft, sends it with the answers, and restores the agent's text on Revert", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const ask = { ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "Plan: ship Monday." };
+    const card = await mountOpenAsk(ask, onSubmit);
+    typeInto(markdownField(renderRoot(card), ".context-editor"), "Plan: ship Friday.");
+    await card.updateComplete;
+
+    expect(loadAskContext("local:session-1", "ask-1", "Plan: ship Monday.")).toBe("Plan: ship Friday.");
+    expect(renderRoot(card).querySelector(".context-actions")?.textContent).toContain("Edited");
+    // A remount (reload) restores the edit from the draft.
+    card.remove();
+    const reloaded = await mountOpenAsk(ask, onSubmit);
+    expect(markdownField(renderRoot(reloaded), ".context-editor").value).toBe("Plan: ship Friday.");
+    inputWithValue(renderRoot(reloaded), "pg").click();
+    buttonWithText(renderRoot(reloaded), "Send answers").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenLastCalledWith("ask-1", { revision: "r1", context: "Plan: ship Friday.", answers: [{ id: "db", values: ["pg"] }] });
+
+    buttonWithText(renderRoot(reloaded), "Revert").click();
+    await reloaded.updateComplete;
+    expect(markdownField(renderRoot(reloaded), ".context-editor").value).toBe("Plan: ship Monday.");
+    expect(loadAskContext("local:session-1", "ask-1", "Plan: ship Monday.")).toBeUndefined();
+    expect(renderRoot(reloaded).querySelector(".context-actions")).toBeNull();
+  });
+
+  it("sends no context while it is unchanged", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "Plan." }, onSubmit);
+    const editor = markdownField(renderRoot(card), ".context-editor");
+    typeInto(editor, "Plan!");
+    typeInto(editor, "Plan.");
+    inputWithValue(renderRoot(card), "pg").click();
+    buttonWithText(renderRoot(card), "Send answers").click();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", answers: [{ id: "db", values: ["pg"] }] });
+  });
+
+  it("carries the edited context with a single-answer send", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")]), question("cache", "Which cache?", [])]), context: "Plan." }, onSubmit);
+    typeInto(markdownField(renderRoot(card), ".context-editor"), "My plan.");
+    inputWithValue(renderRoot(card), "pg").click();
+    await card.updateComplete;
+    buttonWithText(renderRoot(card), "Send").click();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", partial: true, context: "My plan.", answers: [{ id: "db", values: ["pg"] }] });
+  });
+
+  it("resets the edit when a revision changes the context, and keeps it when the context stays", async () => {
+    const ask = { ...openAsk([question("db", "Which database?", [])]), context: "Plan A." };
+    const card = await mountOpenAsk(ask);
+    typeInto(markdownField(renderRoot(card), ".context-editor"), "Plan A, edited.");
+    await card.updateComplete;
+
+    card.ask = { ...ask, revision: "r2" };
+    await card.updateComplete;
+    expect(markdownField(renderRoot(card), ".context-editor").value).toBe("Plan A, edited.");
+
+    card.ask = { ...ask, revision: "r3", context: "Plan B." };
+    await card.updateComplete;
+    expect(markdownField(renderRoot(card), ".context-editor").value).toBe("Plan B.");
+    expect(renderRoot(card).querySelector(".context-actions")).toBeNull();
+  });
+
+  it("draws the diagrams and diffs live preview leaves as code under the editor, following the edits", async () => {
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [])]), context: "Intro only." });
+    expect(renderRoot(card).querySelector("formatted-text.context-media")).toBeNull();
+    typeInto(markdownField(renderRoot(card), ".context-editor"), "Now:\n\n```diff\n-a\n+b\n```\n");
+    await card.updateComplete;
+    const media = requiredElement(renderRoot(card).querySelector<LitElement & { text: string }>("formatted-text.context-media"), "context media");
+    expect(media.text).toBe("```diff\n-a\n+b\n```");
+    await settleDeferredContent(media);
+    expect(media.renderRoot.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
   });
 
   it("renders the context above the questions of a closed ask record", async () => {
@@ -537,12 +624,32 @@ describe("ask-user-card context", () => {
 
     expect(context.innerHTML).toContain("<strong>Postgres</strong>");
     expect(renderRoot(card).querySelector(".ask-context ~ .record-questions")).not.toBeNull();
+    expect(renderRoot(card).querySelector(".context-edited")).toBeNull();
+  });
+
+  it("shows the user's edited context in a record, labelled as edited", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      context: "Recommend **Postgres**.", editedContext: "Recommend **SQLite**.",
+      questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
+      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+
+    expect((await renderedContext(card)).innerHTML).toContain("<strong>SQLite</strong>");
+    expect(renderRoot(card).querySelector(".context-edited + formatted-text.ask-context")).not.toBeNull();
   });
 
   it("opens a local video linked from the context through the host, like a Chat link", async () => {
-    const ask = { ...openAsk([question("db", "Which take?", [])]), context: "Watch [IMG_2430.MOV](/Users/me/Bilder & Videos/IMG_2430.MOV)." };
     const card = new AskUserCard();
-    card.ask = ask;
+    card.outcome = {
+      askId: "ask-1", reason: "cancelled", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      context: "Watch [IMG_2430.MOV](/Users/me/Bilder & Videos/IMG_2430.MOV).",
+      questions: [unansweredRecord(question("db", "Which take?", []))],
+      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
     card.workspaceContext = { machineId: "local", projectId: "p", workspaceId: "w", root: "/work" };
     document.body.append(card);
     await card.updateComplete;
@@ -554,10 +661,33 @@ describe("ask-user-card context", () => {
     expect(opened.mock.calls[0]?.[0]).toMatchObject({ detail: { machineId: "local", path: "/Users/me/Bilder & Videos/IMG_2430.MOV" } });
   });
 
+  it("opens a file link clicked in the context editor through the host, like a Chat link", async () => {
+    const card = new AskUserCard();
+    card.ask = { ...openAsk([question("db", "Which take?", [])]), context: "Watch [IMG_2430.MOV](/Users/me/IMG_2430.MOV)." };
+    card.workspaceContext = { machineId: "local", projectId: "p", workspaceId: "w", root: "/work" };
+    document.body.append(card);
+    await card.updateComplete;
+    const opened = vi.fn((event: Event) => { event.preventDefault(); });
+    document.body.addEventListener("outside-file-open", opened, { once: true });
+
+    const link = requiredElement(markdownField(renderRoot(card), ".context-editor").querySelector(".lp-link"), "editor link");
+    link.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+
+    expect(opened.mock.calls[0]?.[0]).toMatchObject({ detail: { machineId: "local", path: "/Users/me/IMG_2430.MOV" } });
+  });
+
   it("renders no context block when the ask carries none", async () => {
     const card = await mountOpenAsk(openAsk([question("db", "Which database?", [])]));
 
     expect(renderRoot(card).querySelector(".ask-context")).toBeNull();
+  });
+});
+
+describe("renderedOnlyFences", () => {
+  it("keeps only the mermaid, diff and worddiff fences, whole, including an unclosed last one", () => {
+    const text = "Intro\n\n```ts\nconst a = 1;\n```\n\n```mermaid\npie\n```\n\n~~~~worddiff\nold\n>>>\nnew\n~~~~\n\n```diff\n-a";
+    expect(renderedOnlyFences(text)).toBe("```mermaid\npie\n```\n\n~~~~worddiff\nold\n>>>\nnew\n~~~~\n\n```diff\n-a");
+    expect(renderedOnlyFences("Just text with `code`.")).toBe("");
   });
 });
 
@@ -582,7 +712,13 @@ describe("ask-user-card media", () => {
     document.body.append(card);
     await card.updateComplete;
 
-    for (const selector of ["formatted-text.ask-context", "formatted-text.question-detail"]) {
+    // The context's image renders in the editor's live preview; its diagram and diff are drawn under it.
+    expect(requiredElement(renderRoot(card).querySelector(".context-editor .lp-img img"), "context image").getAttribute("src")).toBe("https://example.com/login.png");
+    const contextMedia = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.context-media"), "context media");
+    await settleDeferredContent(contextMedia);
+    expect([...contextMedia.renderRoot.querySelectorAll("details.folded-media summary")].map((summary) => summary.textContent)).toEqual(["Show diagram"]);
+    expect(contextMedia.renderRoot.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
+    for (const selector of ["formatted-text.question-detail"]) {
       const formatted = requiredElement(renderRoot(card).querySelector<LitElement>(selector), selector);
       await settleDeferredContent(formatted);
       for (const host of formatted.renderRoot.querySelectorAll<ContentRendererHost>("pi-web-content-renderer")) {

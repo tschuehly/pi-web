@@ -3,6 +3,8 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view";
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH } from "../../../shared/apiTypes";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
+import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
+import { openChatFileLink } from "./FormattedText";
 import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages } from "./workbenchFilesEditor";
 
 /**
@@ -21,6 +23,8 @@ export class AskMarkdownField extends HTMLElement {
   maxLength = ASK_USER_OTHER_TEXT_MAX_LENGTH;
   /** Shown while empty; read when the field connects. */
   placeholderText = "";
+  /** Resolves workspace image paths in the live preview, as the Chat does. */
+  workspaceContext: MarkdownWorkspaceContext | undefined;
 
   get value(): string {
     return this.#view?.state.doc.toString() ?? this.#value;
@@ -54,7 +58,11 @@ export class AskMarkdownField extends HTMLElement {
           editHistory(), drawSelection(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           filesHighlighting, markdownWithCodeLanguages(), EditorView.lineWrapping,
-          livePreview((source) => toSafeMarkdownHtml(source), (anchor) => { window.open(anchor.href, "_blank", "noopener"); }),
+          livePreview((source) => toSafeMarkdownHtml(source, this.workspaceContext), (anchor) => {
+            // File links open as in the Chat (Files pane, Finder); other links in a new tab.
+            const context = this.workspaceContext;
+            if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
+          }),
           // The textarea's maxlength: an edit that would pass the limit is refused.
           EditorState.transactionFilter.of((tr) => tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr),
           this.placeholderText === "" ? [] : placeholder(this.placeholderText),

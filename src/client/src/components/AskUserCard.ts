@@ -2,6 +2,7 @@ import { LitElement, css, html, svg, type PropertyValues, type TemplateResult } 
 import { customElement, property, state } from "lit/decorators.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import {
+  ASK_USER_CONTEXT_MAX_LENGTH,
   ASK_USER_OTHER_TEXT_MAX_LENGTH,
   ASK_USER_STALE_TURNS,
   askQuestionRef,
@@ -14,8 +15,10 @@ import {
 import {
   answeredCount,
   askedFingerprint,
+  loadAskContext,
   loadAskDraft,
   loadAskNote,
+  saveAskContext,
   saveAskDraft,
   saveAskNote,
   toSubmission,
@@ -44,6 +47,30 @@ export function updatedAgo(iso: string, now = Date.now()): string {
   if (minutes < 60) return `updated ${String(minutes)} min ago`;
   const hours = Math.floor(minutes / 60);
   return hours < 24 ? `updated ${String(hours)} h ago` : `updated ${String(Math.floor(hours / 24))} d ago`;
+}
+
+/**
+ * The fences of `markdown` that only the read view draws (mermaid, diff, worddiff), so the context editor can show
+ * them rendered under it; empty when there are none.
+ */
+export function renderedOnlyFences(markdown: string): string {
+  const blocks: string[] = [];
+  let open: { fence: string; lines: string[] } | undefined;
+  for (const line of markdown.split("\n")) {
+    if (open === undefined) {
+      const start = /^ {0,3}(`{3,}|~{3,})\s*(?:mermaid|diff|worddiff)(?:\s|$)/u.exec(line);
+      if (start?.[1] !== undefined) open = { fence: start[1], lines: [line] };
+      continue;
+    }
+    open.lines.push(line);
+    if (line.trim().startsWith(open.fence) && line.trim().replace(/[`~]/gu, "") === "") {
+      blocks.push(open.lines.join("\n"));
+      open = undefined;
+    }
+  }
+  // An unclosed fence runs to the end, as Markdown reads it.
+  if (open !== undefined) blocks.push(open.lines.join("\n"));
+  return blocks.join("\n\n");
 }
 
 /** May return a promise; resolving to `false` means the submit did not reach the daemon (the caller showed why), so the card keeps its draft. */
@@ -84,6 +111,8 @@ export class AskUserCard extends LitElement {
   @state() private answers: AskDraftAnswers = {};
   /** Free text on the whole set, sent with the answers. */
   @state() private note = "";
+  /** The user's edit of the ask's context; `undefined` while it is unchanged. */
+  @state() private editedContext: string | undefined;
   /** The Note field hides behind its icon until opened; a saved note keeps it open. */
   @state() private noteOpen = false;
   @state() private confirmingPartialSubmit = false;
@@ -102,6 +131,8 @@ export class AskUserCard extends LitElement {
     this.answers = this.loadCurrentDraft();
     this.note = this.ask === undefined || this.draftSessionId === "" ? "" : loadAskNote(this.draftSessionId, this.ask.askId);
     this.noteOpen = this.note !== "";
+    const context = this.ask?.context;
+    this.editedContext = context === undefined || this.draftSessionId === "" || this.outcome !== undefined ? undefined : loadAskContext(this.draftSessionId, this.ask?.askId ?? "", context);
     this.confirmingPartialSubmit = false;
     this.submitting = false;
     this.inlineEdits = {};
@@ -134,7 +165,7 @@ export class AskUserCard extends LitElement {
           </span>
           <slot name="actions"></slot>
         </header>
-        ${this.renderContext(ask.context)}
+        ${this.renderContextEditor(ask.context)}
         <form class="ask-form" @submit=${(event: SubmitEvent) => { this.handleSubmit(event, ask); }}>
           <div class="questions">
             ${visible.map((question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
@@ -159,9 +190,34 @@ export class AskUserCard extends LitElement {
     `;
   }
 
-  /** The model's explanation for the question set, rendered like Chat Markdown. */
-  private renderContext(context: string | undefined): TemplateResult | null {
-    return context === undefined ? null : html`<formatted-text class="ask-context" fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>`;
+  /** The model's explanation for the question set, rendered like Chat Markdown; a record marks the user's edit of it. */
+  private renderContext(context: string | undefined, edited = false): TemplateResult | null {
+    return context === undefined ? null : html`
+      ${edited ? html`<p class="context-edited">Context edited by you</p>` : null}
+      <formatted-text class="ask-context" fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>
+    `;
+  }
+
+  /**
+   * The open set's context, editable from the start in the Markdown field styled as the read text. Diagrams and diffs
+   * the live preview leaves as code are drawn under it from the current text.
+   */
+  private renderContextEditor(context: string | undefined): TemplateResult | null {
+    if (context === undefined) return null;
+    const text = this.editedContext ?? context;
+    const media = renderedOnlyFences(text);
+    return html`
+      <div class="ask-context">
+        <ask-markdown-field class="context-editor" .label=${"Context (editable)"} .maxLength=${ASK_USER_CONTEXT_MAX_LENGTH} .workspaceContext=${this.workspaceContext} .value=${text} @ask-field-input=${this.changeContext}></ask-markdown-field>
+        ${this.editedContext === undefined ? null : html`
+          <div class="context-actions">
+            <span class="context-edited">Edited</span>
+            <button class="revert-edit" type="button" title="Restore the agent's context" @click=${this.revertContext}>${UNDO_ICON}Revert</button>
+          </div>
+        `}
+        ${media === "" ? null : html`<formatted-text class="context-media" fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${media}></formatted-text>`}
+      </div>
+    `;
   }
 
   private renderQuestion(ask: PendingAskUser, question: AskUserQuestion, index: number, number: number, sendOne: boolean): TemplateResult {
@@ -344,7 +400,7 @@ export class AskUserCard extends LitElement {
           <span class=${`header-status ${outcome.reason}`}>${recordLabel}</span>
           <slot name="actions"></slot>
         </header>
-        ${this.renderContext(outcome.context)}
+        ${this.renderContext(outcome.editedContext ?? outcome.context, outcome.editedContext !== undefined)}
         <p class="record-summary">
           ${outcome.reason === "superseded"
             ? "A newer question set replaced this one. Draft answers shown below were not sent to the model."
@@ -461,6 +517,28 @@ export class AskUserCard extends LitElement {
     if (this.ask !== undefined && this.draftSessionId !== "") saveAskNote(this.draftSessionId, this.ask.askId, this.note);
   };
 
+  private readonly changeContext = (event: Event): void => {
+    const input = event.currentTarget;
+    const ask = this.ask;
+    if (!(input instanceof AskMarkdownField) || ask?.context === undefined) return;
+    this.editedContext = input.value === ask.context ? undefined : input.value;
+    if (this.draftSessionId !== "") saveAskContext(this.draftSessionId, ask.askId, ask.context, input.value);
+  };
+
+  private readonly revertContext = (): void => {
+    const ask = this.ask;
+    if (ask?.context === undefined) return;
+    this.editedContext = undefined;
+    if (this.draftSessionId !== "") saveAskContext(this.draftSessionId, ask.askId, ask.context, ask.context);
+    this.renderRoot.querySelector<HTMLElement>(".context-editor")?.focus();
+  };
+
+  /** The edited context for a submission; nothing when unchanged, or cleared (blank reads as no edit). */
+  private contextSubmission(): Pick<AskUserSubmission, "context"> {
+    const context = this.editedContext;
+    return context === undefined || context.trim() === "" ? {} : { context };
+  }
+
   private readonly openNote = async (): Promise<void> => {
     this.noteOpen = true;
     await this.updateComplete;
@@ -488,7 +566,7 @@ export class AskUserCard extends LitElement {
 
   private submitAnswers(ask: PendingAskUser): Promise<boolean> {
     const note = this.note.trim();
-    return this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), revision: ask.revision });
+    return this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision });
   }
 
   /**
@@ -502,7 +580,7 @@ export class AskUserCard extends LitElement {
     const answers = toSubmission(ask.questions, this.answers).answers;
     if (answers.length === 0) return undefined;
     if (unansweredQuestions(ask.questions, this.answers).length === 0) return this.submitAnswers(ask);
-    return this.send(ask, { answers, revision: ask.revision, partial: true });
+    return this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission() });
   }
 
   /** True when the submit reached the daemon; on false the card and its draft stay intact. */
@@ -530,7 +608,7 @@ export class AskUserCard extends LitElement {
     if (answer === undefined) return;
     // The sent question leaves the form, taking the focused button with it; the next revision focuses the question in its place.
     this.focusAfterRevision = index;
-    void this.send(ask, { answers: [answer], revision: ask.revision, partial: true });
+    void this.send(ask, { answers: [answer], revision: ask.revision, partial: true, ...this.contextSubmission() });
   }
 
   private async showPartialSubmitConfirmation(): Promise<void> {
@@ -674,6 +752,19 @@ export class AskUserCard extends LitElement {
     .question-ref { color: var(--pi-muted); font-size: 11px; font-weight: 500; }
     .recommended { margin-inline-start: 4px; padding: 1px 6px; border-radius: 999px; background: var(--pi-success-bg); color: var(--pi-success); font-size: 11px; font-weight: 650; }
     .ask-context { display: block; padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
+    /* The editable context reads as the rendered text: its font, size, line height and colours, a faint tint, a quiet focus ring. */
+    .card .context-editor { margin-inline: -6px; width: calc(100% + 12px); border: 0; border-radius: 6px; background: color-mix(in srgb, var(--pi-text) 4%, transparent); }
+    .card .context-editor .cm-editor { min-height: 0; max-height: none; }
+    /* CodeMirror's base theme sets a monospace scroller; the context keeps the card's body font. */
+    .card .context-editor .cm-scroller, .card .context-editor .cm-content { font: inherit; line-height: 1.45; }
+    .card .context-editor .cm-content { padding: 4px 0; }
+    .card .context-editor .cm-line { padding: 0 6px; }
+    .card .context-editor:focus-within { outline: 1px solid color-mix(in srgb, var(--pi-accent) 60%, transparent); outline-offset: 0; }
+    .context-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 2px; }
+    .context-edited { margin: 0; color: var(--pi-muted); font-size: 11px; }
+    .record-card .context-edited { padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
+    .record-card .context-edited + .ask-context { padding-top: 2px; }
+    .context-media { display: block; margin-top: 6px; }
     .questions { display: grid; padding-top: 8px; }
     fieldset.question {
       min-width: 0;
@@ -878,7 +969,7 @@ export class AskUserCard extends LitElement {
     :host([flat]) .card { --ask-reading-start: calc(12px + var(--question-number-column) + var(--question-copy-gap)); }
     :host([flat]) .open-card .ask-context { padding: 8px 12px 8px var(--ask-reading-start); }
     /* A sent record kept in the drawer reads in the same column, its numbers and bullets hanging in the gutter. */
-    :host([flat]) .record-card :is(.ask-context, .record-summary, .record-question) { padding-inline: var(--ask-reading-start) 12px; }
+    :host([flat]) .record-card :is(.ask-context, .context-edited, .record-summary, .record-question) { padding-inline: var(--ask-reading-start) 12px; }
     :host([flat]) .questions { padding-top: 8px; }
     :host([flat]) .question-separator { margin-bottom: 8px; }
     :host([flat]) fieldset.question { padding: 0 12px 8px; }

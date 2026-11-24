@@ -17,6 +17,56 @@ import { diffLineStyles, enhanceDiffBlocks, wordDiffStyles } from "../formatting
 const FILE_LINK_SELECTOR = "a[data-workspace-file], a[data-outside-file]";
 // ponytail: binary documents the Files pane cannot show; others (text, code, Makefile, .mp4/.mov/.webm video) open in the pane. Extend as needed.
 const REVEAL_IN_FINDER = /\.(docx?|docm|xlsx?|xlsm|xlsb|pptx?|pptm|ppsx|key|pages|numbers|odt|ods|odp|odg|rtf|epub|zip|dmg|pkg|mp3|m4a|wav|flac|aac|mkv)$/i;
+
+/** The absolute local path of a Chat file link: outside links carry it, workspace links are relative to the root. */
+function absoluteLinkPath(anchor: Element, context: MarkdownWorkspaceContext): string | null {
+  const path = anchor.getAttribute("data-workspace-file");
+  return anchor.getAttribute("data-outside-file") ?? (path === null ? null : `${context.root.replace(/\/+$/, "")}/${path}`);
+}
+
+/** Asks the host to open a Chat file link from `source`; true when a host handled (cancelled) the request. */
+function requestFileOpen(source: EventTarget, context: MarkdownWorkspaceContext, path: string | null, outside: string | null, anchor: Element): boolean {
+  const [start = 0, end = start] = (anchor.getAttribute("data-lines") ?? "").split("-").map(Number);
+  const lines = start > 0 ? { lines: { start, end } } : {};
+  const request = path !== null
+    ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...context, path, ...lines }, bubbles: true, composed: true, cancelable: true })
+    : outside === null ? undefined
+    : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: context.machineId, path: outside, ...lines }, bubbles: true, composed: true, cancelable: true });
+  return request !== undefined && !source.dispatchEvent(request);
+}
+
+/**
+ * Opens a rendered Chat file link (`data-workspace-file` / `data-outside-file`) as clicking it in the Chat does, with
+ * events dispatched from `source`; true when something took it, so the caller cancels the browser's navigation.
+ */
+export function openChatFileLink(source: EventTarget, context: MarkdownWorkspaceContext, anchor: Element): boolean {
+  if (!anchor.matches(FILE_LINK_SELECTOR)) return false;
+  const path = anchor.getAttribute("data-workspace-file");
+  const outside = anchor.getAttribute("data-outside-file");
+  const absolute = absoluteLinkPath(anchor, context);
+  // The macOS app expands `~/` itself.
+  const native = context.machineId === "local" ? window.piWebNative : undefined;
+  // The macOS app reveals documents the Files pane cannot show (e.g. .docx) in Finder; nothing opens.
+  if (absolute !== null && native?.revealLocalFile !== undefined && REVEAL_IN_FINDER.test(absolute)) {
+    void native.revealLocalFile(absolute).catch((error: unknown) => {
+      console.warn("Could not show the file in Finder", error);
+      requestFileOpen(source, context, path, outside, anchor);
+    });
+    return true;
+  }
+  // The macOS app opens local HTML pages in the browser (their scripts and assets work there) and folders in Finder.
+  // It alone knows what is a folder, so every link asks it first; the files it refuses open in the pane.
+  const openLocalFile = native?.openLocalFile;
+  const html = absolute !== null && /\.html?$/i.test(absolute);
+  if (absolute !== null && openLocalFile !== undefined) {
+    void openLocalFile(absolute).catch((error: unknown) => {
+      if (html) { console.warn("Could not open HTML file in the browser", error); return; }
+      requestFileOpen(source, context, path, outside, anchor);
+    });
+    return true;
+  }
+  return requestFileOpen(source, context, path, outside, anchor);
+}
 // Lucide folder-search.
 const REVEAL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1"/><path d="m21 21-1.9-1.9"/><circle cx="17" cy="17" r="3"/></svg>';
 // Lucide copy.
@@ -174,7 +224,7 @@ export class FormattedText extends LitElement {
     if (context === undefined) return;
     const reveal = context.machineId === "local" && window.piWebNative?.revealLocalFile !== undefined;
     this.renderRoot.querySelectorAll(FILE_LINK_SELECTOR).forEach((anchor) => {
-      const absolute = this.absoluteLinkPath(anchor, context);
+      const absolute = absoluteLinkPath(anchor, context);
       if (absolute === null || anchor.hasAttribute("data-full-path")) return;
       anchor.setAttribute("data-full-path", absolute);
       anchor.setAttribute("title", absolute);
@@ -192,12 +242,6 @@ export class FormattedText extends LitElement {
     button.setAttribute("aria-label", label);
     button.innerHTML = icon;
     return button;
-  }
-
-  /** The absolute local path of a Chat file link: outside links carry it, workspace links are relative to the root. */
-  private absoluteLinkPath(anchor: Element, context: MarkdownWorkspaceContext): string | null {
-    const path = anchor.getAttribute("data-workspace-file");
-    return anchor.getAttribute("data-outside-file") ?? (path === null ? null : `${context.root.replace(/\/+$/, "")}/${path}`);
   }
 
   private foldMediaBlocks(): void {
@@ -242,7 +286,7 @@ export class FormattedText extends LitElement {
     const reveal = event.target.closest(".file-reveal-button");
     const revealed = reveal?.previousElementSibling;
     if (revealed instanceof Element && this.workspaceContext !== undefined) {
-      const absolute = this.absoluteLinkPath(revealed, this.workspaceContext);
+      const absolute = absoluteLinkPath(revealed, this.workspaceContext);
       if (absolute !== null) void window.piWebNative?.revealLocalFile?.(absolute).catch((error: unknown) => { console.warn("Could not show the file in Finder", error); });
       return;
     }
@@ -257,34 +301,7 @@ export class FormattedText extends LitElement {
     if (anchor instanceof HTMLAnchorElement && this.workspaceContext !== undefined
       && !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
       && (!anchor.target || anchor.target === "_self")) {
-      const path = anchor.getAttribute("data-workspace-file");
-      const outside = anchor.getAttribute("data-outside-file");
-      const absolute = this.absoluteLinkPath(anchor, this.workspaceContext);
-      // The macOS app expands `~/` itself.
-      const native = this.workspaceContext.machineId === "local" ? window.piWebNative : undefined;
-      const context = this.workspaceContext;
-      // The macOS app reveals documents the Files pane cannot show (e.g. .docx) in Finder; nothing opens.
-      if (absolute !== null && native?.revealLocalFile !== undefined && REVEAL_IN_FINDER.test(absolute)) {
-        event.preventDefault();
-        void native.revealLocalFile(absolute).catch((error: unknown) => {
-          console.warn("Could not show the file in Finder", error);
-          this.requestFileOpen(context, path, outside, anchor);
-        });
-        return;
-      }
-      // The macOS app opens local HTML pages in the browser (their scripts and assets work there) and folders in Finder.
-      // It alone knows what is a folder, so every link asks it first; the files it refuses open in the pane.
-      const openLocalFile = native?.openLocalFile;
-      const html = absolute !== null && /\.html?$/i.test(absolute);
-      if (absolute !== null && openLocalFile !== undefined) {
-        event.preventDefault();
-        void openLocalFile(absolute).catch((error: unknown) => {
-          if (html) { console.warn("Could not open HTML file in the browser", error); return; }
-          this.requestFileOpen(context, path, outside, anchor);
-        });
-        return;
-      }
-      if (this.requestFileOpen(this.workspaceContext, path, outside, anchor)) event.preventDefault();
+      if (openChatFileLink(this, this.workspaceContext, anchor)) event.preventDefault();
       return;
     }
     const button = event.target.closest(".code-copy-button, .quote-copy-button");
@@ -299,17 +316,6 @@ export class FormattedText extends LitElement {
     if (!(code instanceof HTMLElement)) return;
     void this.copyText(code.textContent, button, "code block");
   };
-
-  /** Asks the host to open a Chat file link; true when a host handled (cancelled) the request. */
-  private requestFileOpen(context: NonNullable<FormattedText["workspaceContext"]>, path: string | null, outside: string | null, anchor: Element): boolean {
-    const [start = 0, end = start] = (anchor.getAttribute("data-lines") ?? "").split("-").map(Number);
-    const lines = start > 0 ? { lines: { start, end } } : {};
-    const request = path !== null
-      ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...context, path, ...lines }, bubbles: true, composed: true, cancelable: true })
-      : outside === null ? undefined
-      : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: context.machineId, path: outside, ...lines }, bubbles: true, composed: true, cancelable: true });
-    return request !== undefined && !this.dispatchEvent(request);
-  }
 
   private async copyText(text: string, button: HTMLButtonElement, kind: CopyKind): Promise<void> {
     const copied = await writeClipboardText(text);

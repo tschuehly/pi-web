@@ -102,10 +102,33 @@ export function saveAskNote(sessionId: string, askId: string, note: string, stor
   }
 }
 
+/** The user's unsent edit of the set's context, or `undefined`; an edit of another wording of the context is dropped. */
+export function loadAskContext(sessionId: string, askId: string, original: string, storage = browserStorage()): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(storage?.getItem(`${draftStorageKey(sessionId, askId)}:context`) ?? "null");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+    const { original: stored, edited }: Record<string, unknown> = { ...parsed };
+    return stored === original && typeof edited === "string" && edited !== original ? edited : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Keeps the edit with the context it was made from, so a revision that changes the context resets it. */
+export function saveAskContext(sessionId: string, askId: string, original: string, edited: string, storage = browserStorage()): void {
+  try {
+    if (edited === original) storage?.removeItem(`${draftStorageKey(sessionId, askId)}:context`);
+    else storage?.setItem(`${draftStorageKey(sessionId, askId)}:context`, JSON.stringify({ original, edited }));
+  } catch {
+    // Ignore localStorage quota/privacy errors.
+  }
+}
+
 export function clearAskDraft(sessionId: string, askId: string, storage = browserStorage()): void {
   try {
     storage?.removeItem(draftStorageKey(sessionId, askId));
     storage?.removeItem(`${draftStorageKey(sessionId, askId)}:note`);
+    storage?.removeItem(`${draftStorageKey(sessionId, askId)}:context`);
   } catch {
     // Ignore localStorage quota/privacy errors.
   }

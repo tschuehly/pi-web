@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserQuestion } from "../../shared/apiTypes";
-import { answeredCount, askedFingerprint, clearAskDraft, loadAskDraft, saveAskDraft, toSubmission, typedDraftValue, unansweredQuestions, visibleQuestions, type AskDraftAnswers } from "./askDrafts";
+import { answeredCount, askedFingerprint, clearAskDraft, loadAskContext, loadAskDraft, saveAskContext, saveAskDraft, toSubmission, typedDraftValue, unansweredQuestions, visibleQuestions, type AskDraftAnswers } from "./askDrafts";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -147,6 +147,21 @@ describe("ask draft storage", () => {
     clearAskDraft("local:s1", "ask-1", storage);
 
     expect(loadAskDraft("local:s1", "ask-1", storage)).toEqual({});
+  });
+
+  it("keeps an edited context only for the context it was made from, and clears it with the draft", () => {
+    const storage = new MemoryStorage();
+    saveAskContext("local:s1", "ask-1", "Plan A", "Plan A, mine", storage);
+
+    expect(loadAskContext("local:s1", "ask-1", "Plan A", storage)).toBe("Plan A, mine");
+    expect(loadAskContext("local:s1", "ask-1", "Plan B", storage)).toBeUndefined();
+    saveAskContext("local:s1", "ask-1", "Plan A", "Plan A", storage);
+    expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1:context")).toBeNull();
+    saveAskContext("local:s1", "ask-1", "Plan A", "Plan A, mine", storage);
+    clearAskDraft("local:s1", "ask-1", storage);
+    expect(loadAskContext("local:s1", "ask-1", "Plan A", storage)).toBeUndefined();
+    storage.setItem("pi-web:ask-draft:local:s1:ask-1:context", "{not json");
+    expect(loadAskContext("local:s1", "ask-1", "Plan A", storage)).toBeUndefined();
   });
 
   it("treats unreadable and malformed drafts as empty instead of failing", () => {
