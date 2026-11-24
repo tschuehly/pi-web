@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import type { PendingAskUser } from "../../../shared/apiTypes";
+import type { AskUserOutcome, PendingAskUser } from "../../../shared/apiTypes";
 import type { SessionStatus } from "../api";
 import type { AskUserCard, AskUserSubmitCallback } from "./AskUserCard";
 import "./AskUserCard";
@@ -10,9 +10,13 @@ import { answeredCount, loadAskDraft, visibleQuestions } from "../askDrafts";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import type { ChatContentRendering } from "../formatting/contentRendering";
 
-// Lucide "message-circle-question" and "chevron-down" (https://lucide.dev, ISC).
+// Lucide "message-circle-question", "chevron-down" and "x" (https://lucide.dev, ISC).
 const QUESTION_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>`;
+const X_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
 const CHEVRON_DOWN_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>`;
+
+/** The submit callback resolves to the closed record when its send closed or partly sent the set (the session controller returns it). */
+const isOutcome = (value: unknown): value is AskUserOutcome => typeof value === "object" && value !== null && "reason" in value && "askId" in value;
 
 /** Open questions across a Chat's sets, without those a dependent `showIf` hides under the stored drafts; a Chat tab shows this count. */
 export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined, draftSessionId: string): number =>
@@ -24,7 +28,8 @@ export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined, d
  * the roster's entries span the row below and the drawer opens above it. The bar opens a drawer with every set's form,
  * oldest first, each its context above its questions; while open (announced by `question-drawer-toggle`) the Chat gives
  * the drawer the transcript's whole area. Sent questions and answered sets drop out because the daemon stops reporting
- * them, leaving their record in the transcript.
+ * them, leaving their record in the transcript; a set sent from the open drawer stays in it as that read-only record,
+ * context included, until the owner dismisses it or closes the drawer.
  */
 @customElement("workbench-question-chips")
 export class WorkbenchQuestionChips extends LitElement {
@@ -44,10 +49,28 @@ export class WorkbenchQuestionChips extends LitElement {
   /** Send all's progress over the sets it sends, while it runs. */
   @state() private sendingAll: { done: number; total: number } | undefined;
   @state() private sendAllError = "";
+  /** Records of sets this drawer session closed by sending, kept so the owner can finish reading them. */
+  @state() private sent: AskUserOutcome[] = [];
+  /** Sends under way; the new status can drop the last set before its send resolves with the record to keep. */
+  private sending = 0;
 
   protected override willUpdate(): void {
-    if (this.asks.length === 0) this.open = false;
+    if (!this.open) this.sent = [];
+    if (this.asks.length === 0 && this.sent.length === 0 && this.sending === 0) this.open = false;
   }
+
+  /** Forwards a card's send and, when it closed the set while the drawer is open, keeps the closed record the daemon returned. */
+  private readonly submit: AskUserSubmitCallback = async (askId, submission) => {
+    this.sending += 1;
+    try {
+      const result = await this.onSubmit?.(askId, submission);
+      if (this.open && isOutcome(result) && result.askId === askId && result.partial !== true) this.sent = [...this.sent.filter((each) => each.askId !== askId), result];
+      return result;
+    } finally {
+      this.sending -= 1;
+      this.requestUpdate();
+    }
+  };
 
   protected override updated(changed: PropertyValues<this>): void {
     // The Chat lays out on this event, not on `:has([open])`: WebKit never restyles `:has(...)::part(...)` when the attribute flips.
@@ -55,7 +78,7 @@ export class WorkbenchQuestionChips extends LitElement {
   }
 
   override render() {
-    const questions = this.asks.length === 0 ? undefined : this.renderQuestions();
+    const questions = this.asks.length === 0 && this.sent.length === 0 ? undefined : this.renderQuestions();
     // One template, so the roster element stays mounted as questions come and go.
     return html`
       ${questions?.drawer ?? nothing}
@@ -65,7 +88,7 @@ export class WorkbenchQuestionChips extends LitElement {
 
   private renderQuestions(): { drawer: TemplateResult | typeof nothing; bar: TemplateResult } {
     const count = openQuestionCount(this.asks, this.draftSessionId);
-    const title = `${String(count)} open ${count === 1 ? "question" : "questions"}`;
+    const title = count === 0 ? "No open questions" : `${String(count)} open ${count === 1 ? "question" : "questions"}`;
     // Drafts live in the browser, so the count is read back from them; cards announce edits with ask-draft-change.
     const answeredBySet = this.answeredBySet();
     const answered = answeredBySet.reduce((sum, [, n]) => sum + n, 0);
@@ -73,14 +96,16 @@ export class WorkbenchQuestionChips extends LitElement {
     const sendAll = answeredBySet.length < 2 && this.sendingAll === undefined ? nothing : html`<button type="button" class="send-all" ?disabled=${this.sendingAll !== undefined} @click=${() => { void this.sendAll(); }}>${this.sendingAll === undefined ? `Send all ${String(answered)} ${answered === 1 ? "answer" : "answers"}` : `Sending ${String(this.sendingAll.done + 1)} of ${String(this.sendingAll.total)}…`}</button>`;
     const closeButton = html`<button type="button" class="close" slot="actions" title="Close questions (Esc)" aria-label="Close questions" @click=${() => { this.close(); }}>${CHEVRON_DOWN_ICON}</button>`;
     // One set lends its header line the drawer's title and close button; several keep a drawer header above them.
-    const single = this.asks.length === 1;
+    const single = this.asks.length === 1 && this.sent.length === 0;
+    // Kept records go below the open sets: those still need answers, while a record is only being finished reading.
     return {
       drawer: !this.open ? nothing : html`
         <section id="question-drawer" class="drawer" aria-label="Open questions" @keydown=${this.onKeydown} @ask-draft-change=${() => { this.requestUpdate(); }}>
           ${single ? nothing : html`<header><span>${title}</span><span class="header-actions">${sendAll}${closeButton}</span></header>`}
           ${this.sendAllError === "" ? nothing : html`<p class="send-all-error" role="alert">${this.sendAllError}</p>`}
           <div class="sets">
-            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .onSubmit=${this.onSubmit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
+            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .onSubmit=${this.onSubmit === undefined ? undefined : this.submit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
+            ${repeat(this.sent, (outcome) => outcome.askId, (outcome) => html`<ask-user-card flat data-record=${outcome.askId} .outcome=${outcome} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering}><button type="button" class="close" slot="actions" title="Dismiss" aria-label="Dismiss sent answers" @click=${() => { this.sent = this.sent.filter((each) => each !== outcome); }}>${X_ICON}</button></ask-user-card>`)}
           </div>
         </section>`,
       bar: html`<button type="button" class="bar" slot="aside" aria-expanded=${String(this.open)} aria-controls="question-drawer" @keydown=${this.onKeydown}

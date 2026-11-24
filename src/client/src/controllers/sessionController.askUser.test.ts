@@ -151,7 +151,7 @@ describe("SessionController ask submission", () => {
     );
     saveAskDraft(sessionKey(oldSession.id), "ask-1", { q1: { values: ["pg"] } });
 
-    expect(await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }] })).toBe(true);
+    expect(await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }] })).toMatchObject({ askId: "ask-1", reason: "submitted" });
 
     expect(submitCalls).toEqual([{ askId: "ask-1", answers: [{ id: "q1", values: ["pg"] }], machineId: "local" }]);
     expect(loadAskDraft(sessionKey(oldSession.id), "ask-1")).toEqual({});
