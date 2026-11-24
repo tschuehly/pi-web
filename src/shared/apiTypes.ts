@@ -803,6 +803,11 @@ export const ASK_USER_ANSWERS_CUSTOM_TYPE = "pi-web.ask.answers";
 
 /** Largest question set one `ask_user` call may post. */
 export const ASK_USER_QUESTION_LIMIT = 20;
+/**
+ * Largest record of one closed set: its sends over every revision together (an agent may
+ * revise an open set to new questions after a partial send). Larger than one post.
+ */
+export const ASK_USER_RECORD_QUESTION_LIMIT = 100;
 /** Largest option list one question may offer. */
 export const ASK_USER_OPTION_LIMIT = 12;
 /** Length bound for ids: the ask id, question ids, and option values. */

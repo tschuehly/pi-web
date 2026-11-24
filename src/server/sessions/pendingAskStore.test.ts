@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_DETAIL_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, type AskUserQuestion } from "../../shared/apiTypes.js";
+import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_DETAIL_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, ASK_USER_RECORD_QUESTION_LIMIT, type AskUserOutcome, type AskUserQuestion } from "../../shared/apiTypes.js";
+import { parseAskUserOutcome } from "../../client/src/api/parsers.js";
 import {
   PendingAskStore,
   PendingAskValidationError,
@@ -464,6 +465,33 @@ describe("PendingAskStore edited context", () => {
     const rest = store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }] });
     if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
     expect(withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"])).toMatchObject({ editedContext: "Mine", answeredCount: 2 });
+  });
+});
+
+describe("PendingAskStore whole-set record", () => {
+  it("keeps a set revised to a full new set after a partial send whole, and the browser accepts it", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true });
+    const fresh = Array.from({ length: ASK_USER_QUESTION_LIMIT }, (_, index) => question(`n${index.toString()}`));
+    const revised = store.update({ sessionId, askId: ask.askId, questions: fresh });
+    const rest = store.submit(sessionId, ask.askId, { revision: revised?.revision ?? "", answers: fresh.map((each) => ({ id: each.id, values: ["no"] })) });
+    if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
+    const whole = withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2", ...fresh.map((each) => each.id)]);
+    expect(whole.questions).toHaveLength(ASK_USER_QUESTION_LIMIT + 1);
+    expect(parseAskUserOutcome(whole).questions).toHaveLength(ASK_USER_QUESTION_LIMIT + 1);
+  });
+
+  it("bounds the record, dropping the oldest earlier answers first", () => {
+    const records = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => ({ question: question(`${prefix}${index.toString()}`), answered: true, values: ["yes"] }));
+    const send = (questions: AskUserOutcome["questions"], partial: boolean): AskUserOutcome => ({ askId: "ask-1", reason: "submitted", askedAt: "t", closedAt: "t", questions, answeredCount: questions.length, unansweredIds: [], summary: "s", ...(partial ? { partial: true as const, revision: "r" } : {}) });
+    const earlier = Array.from({ length: 6 }, (_, sendIndex) => send(records(`s${sendIndex.toString()}-`, ASK_USER_QUESTION_LIMIT), true));
+    const whole = withEarlierAnswers(send(records("last-", 5), false), earlier);
+    expect(whole.questions).toHaveLength(ASK_USER_RECORD_QUESTION_LIMIT);
+    expect(whole.questions[0]?.question.id).toBe("s1-5");
+    expect(whole.questions.at(-1)?.question.id).toBe("last-4");
+    expect(whole).toMatchObject({ answeredCount: ASK_USER_RECORD_QUESTION_LIMIT });
+    expect(() => parseAskUserOutcome(whole)).not.toThrow();
   });
 });
 

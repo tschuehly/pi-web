@@ -6,6 +6,7 @@ import {
   ASK_USER_OPTION_LIMIT,
   ASK_USER_OTHER_TEXT_MAX_LENGTH,
   ASK_USER_QUESTION_LIMIT,
+  ASK_USER_RECORD_QUESTION_LIMIT,
   ASK_USER_TEXT_MAX_LENGTH,
   type AskUserAnswer,
   type AskUserCloseReason,
@@ -347,7 +348,9 @@ function askUserOutcome(
  * over all of them. The transcript and the model keep each send's own record.
  */
 export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly AskUserOutcome[], order: readonly string[] = []): AskUserOutcome {
-  const records = earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.questions);
+  // shortcut: past the record limit the oldest earlier answers drop out (each send's own record keeps them), raise the limit if sets get revised that often.
+  const all = earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.questions);
+  const records = all.slice(Math.max(0, all.length + outcome.questions.length - ASK_USER_RECORD_QUESTION_LIMIT));
   if (outcome.partial === true || records.length === 0) return outcome;
   const rank = (record: AskUserQuestionRecord) => { const index = order.indexOf(record.question.id); return index < 0 ? order.length : index; };
   const questions = [...records, ...outcome.questions].sort((a, b) => rank(a) - rank(b));
