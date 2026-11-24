@@ -634,6 +634,14 @@ describe("ask-user-card context", () => {
     expect(renderRoot(reloaded).querySelector(".context-actions")).toBeNull();
   });
 
+  it("opens a context with Windows line endings, cursor after its text, and keeps it unchanged", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "## Plan\r\nShip it.\r\n" }, onSubmit);
+    const view = editorView(markdownField(renderRoot(card), ".context-editor"));
+    expect([view.state.doc.toString(), view.state.selection.main.head]).toEqual(["## Plan\nShip it.\n", 17]);
+    expect(renderRoot(card).querySelector(".context-actions")).toBeNull();
+  });
+
   it("sends no context while it is unchanged", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "Plan." }, onSubmit);

@@ -72,7 +72,8 @@ export class AskMarkdownField extends HTMLElement {
   set value(text: string) {
     this.#value = text;
     const view = this.#view;
-    if (view === undefined || view.state.doc.toString() === text) return;
+    // The editor keeps "\n" line breaks; a "\r\n" text equal to its doc is no change.
+    if (view === undefined || view.state.toText(text).eq(view.state.doc)) return;
     this.#replacing = true;
     try {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
@@ -96,33 +97,34 @@ export class AskMarkdownField extends HTMLElement {
   connectedCallback(): void {
     if (this.#view !== undefined) return;
     const root = this.getRootNode();
+    const state = EditorState.create({
+      doc: this.#value,
+      extensions: [
+        editHistory(), drawSelection(),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        filesHighlighting, markdownWithCodeLanguages(), EditorView.lineWrapping,
+        livePreview((source) => foldImages(toSafeMarkdownHtml(source, this.workspaceContext)), (anchor) => {
+          // File links open as in the Chat (Files pane, Finder); other links in a new tab.
+          const context = this.workspaceContext;
+          if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
+        }),
+        // The textarea's maxlength: an edit that would pass the limit is refused.
+        EditorState.transactionFilter.of((tr) => tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr),
+        this.placeholderText === "" ? [] : placeholder(this.placeholderText),
+        this.#attributes.of(this.#contentAttributes()),
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged || this.#replacing) return;
+          this.#value = update.state.doc.toString();
+          this.dispatchEvent(new Event("ask-field-input", { bubbles: true }));
+        }),
+      ],
+    });
     this.#view = new EditorView({
       parent: this,
       ...(root instanceof ShadowRoot || root instanceof Document ? { root } : {}),
-      state: EditorState.create({
-        doc: this.#value,
-        // Live preview shows the Markdown marks of the cursor's line; starting after the text keeps a heading on top rendered.
-        selection: { anchor: this.#value.length },
-        extensions: [
-          editHistory(), drawSelection(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-          filesHighlighting, markdownWithCodeLanguages(), EditorView.lineWrapping,
-          livePreview((source) => foldImages(toSafeMarkdownHtml(source, this.workspaceContext)), (anchor) => {
-            // File links open as in the Chat (Files pane, Finder); other links in a new tab.
-            const context = this.workspaceContext;
-            if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
-          }),
-          // The textarea's maxlength: an edit that would pass the limit is refused.
-          EditorState.transactionFilter.of((tr) => tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr),
-          this.placeholderText === "" ? [] : placeholder(this.placeholderText),
-          this.#attributes.of(this.#contentAttributes()),
-          EditorView.updateListener.of((update) => {
-            if (!update.docChanged || this.#replacing) return;
-            this.#value = update.state.doc.toString();
-            this.dispatchEvent(new Event("ask-field-input", { bubbles: true }));
-          }),
-        ],
-      }),
+      // Live preview shows the Markdown marks of the cursor's line; starting after the text keeps a heading on top rendered.
+      // The doc's length, not the text's: the editor turns "\r\n" into one "\n".
+      state: state.update({ selection: { anchor: state.doc.length } }).state,
     });
   }
 
