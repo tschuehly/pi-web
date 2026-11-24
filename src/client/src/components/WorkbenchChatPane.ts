@@ -48,6 +48,8 @@ export class WorkbenchChatPane extends LitElement {
   @property({ attribute: false }) revealTarget: ChatRevealTarget | undefined;
   @property({ type: Boolean }) dense = false;
   @property({ type: Boolean }) focused = false;
+  /** A Workstream's Chat: the owner's first request first has the agent orient itself in the Workstream for it. */
+  @property({ type: Boolean }) orientFirstRequest = false;
   @property() defaultStreamingBehavior: "steer" | "followUp" = "steer";
   @state() private rosterCollapsed = true;
   /** The question drawer is open and takes the transcript's area. */
@@ -146,9 +148,9 @@ export class WorkbenchChatPane extends LitElement {
     const { sessions, notifications, auth } = runtime;
     const machineId = selectedMachineId(state);
     const send = (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string): Promise<boolean> => {
-      this.dispatchEvent(new Event("workbench-prompt", { bubbles: true, composed: true }));
       if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && auth.handleSlashCommand(text)) return Promise.resolve(true);
-      return sessions.send(text, streamingBehavior, attachments, delivery, folder);
+      const first = this.orientFirstRequest && state.messagePageStart === 0 && !state.messages.some((message) => message.role === "user") && !text.trimStart().startsWith("/");
+      return sessions.send(first ? `/skill:orient request\n\n${text}` : text, streamingBehavior, attachments, delivery, folder);
     };
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${machineId} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>

@@ -933,7 +933,7 @@ describe("Workbench Chat chooser", () => {
     expect(getState(app).selectedWorkspace?.id).toBe(worktree.id);
   });
 
-  it("records and confirms a Workstream launch around Chat creation, then orients without preloading a prompt", async () => {
+  it("records and confirms a Workstream launch around Chat creation, without orienting or preloading a prompt", async () => {
     const started = session("new-session", "");
     const protocol: string[] = [];
     const calls: WorkstreamServiceCall[] = [];
@@ -958,7 +958,7 @@ describe("Workbench Chat chooser", () => {
 
     await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
     const [pending, confirmed] = calls.filter((call) => call.operation === "append").map((call) => call.input);
-    expect(protocol).toEqual(["inspect", "append", "start", "inspect", "append", "inspect"]);
+    expect(protocol).toEqual(["inspect", "append", "start", "inspect", "append"]);
     expect(pending).toEqual({
       workstreamId: "workstream",
       expectedRevision: 70,
@@ -983,67 +983,32 @@ describe("Workbench Chat chooser", () => {
     });
     expect(startSession).toHaveBeenCalledWith(workspace.path, "local", `pi-web:${key}`);
     expect(prompt).not.toHaveBeenCalled();
-    // No linked Chat shows recent user input, so orientation is full.
-    await vi.waitFor(() => { expect(command).toHaveBeenCalledWith(expect.objectContaining({ id: "new-session" }), "/skill:orient full", "local"); });
-    expect(command).toHaveBeenCalledTimes(1);
+    // Nothing runs on its own: the owner's first request orients the agent.
+    expect(command).not.toHaveBeenCalled();
     expect(loadDraft(machineSessionKey("local", "new-session"))).toBe("");
     expect(app.shadowRoot?.activeElement?.tagName).toBe("PROMPT-EDITOR");
     expect(locate).toHaveBeenCalledWith("previous", "local");
     expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
   });
 
-  it.each([{ hoursAgo: 4, depth: "full" }, { hoursAgo: 2, depth: "brief" }])("orients a newly confirmed Workstream Chat $depth after $hoursAgo hours without user input", async ({ hoursAgo, depth }) => {
+  it("sends a new Workstream Chat's first request with an orientation for it", async () => {
     const calls: WorkstreamServiceCall[] = [];
-    let inspectCount = 0;
     stubWorkstreamService(calls, (body) => body.operation === "inspect"
-      ? { ok: true, value: { id: "workstream", revision: inspectCount++ === 0 ? 1 : 2, sessions: [{ id: "previous", status: "active", latestCheckpoint: null }, { id: "new-session", status: "active", latestCheckpoint: null }], humanTasks: [] } }
-      : { ok: true, value: { acceptedRevision: 2 } });
+      ? { ok: true, value: { id: "workstream", title: "Release", revision: 2, sessions: [{ id: "previous", status: "active", latestCheckpoint: null }, { id: "new-session", status: "active", latestCheckpoint: null }], humanTasks: [] } }
+      : body.operation === "list" ? { ok: true, value: [{ id: "workstream", title: "Release", revision: 2 }] } : { ok: true, value: { acceptedRevision: 2 } });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "startSession").mockResolvedValue(session("new-session", ""));
-    vi.spyOn(api, "messages").mockResolvedValue({ messages: [{ role: "user", timestamp: Date.now() - hoursAgo * 3_600_000 }], start: 0, total: 1 });
-    const command = vi.spyOn(api, "runCommand").mockResolvedValue({ type: "done" });
-    const app = await mountChooser([]);
-
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
-    }));
-    await vi.waitFor(() => { expect(command).toHaveBeenCalledWith(expect.objectContaining({ id: "new-session", cwd: workspace.path }), `/skill:orient ${depth}`, "local"); });
-    expect(command).toHaveBeenCalledTimes(1);
-    expect(calls.filter((call) => call.operation === "append")).toHaveLength(2);
-    expect(getState(app).selectedSession?.id).toBe("new-session");
-    expect(loadDraft(machineSessionKey("local", "new-session"))).toBe("");
-  });
-
-  it("does not inject delayed orientation after the owner submits the new Chat's first prompt", async () => {
-    const calls: WorkstreamServiceCall[] = [];
-    let inspectCount = 0;
-    stubWorkstreamService(calls, (body) => body.operation === "inspect"
-      ? { ok: true, value: { id: "workstream", revision: inspectCount++ === 0 ? 1 : 2, sessions: [{ id: "previous", status: "active", latestCheckpoint: null }, { id: "new-session", status: "active", latestCheckpoint: null }], humanTasks: [] } }
-      : { ok: true, value: { acceptedRevision: 2 } });
-    vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
-    vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
-    vi.spyOn(api, "startSession").mockResolvedValue(session("new-session", ""));
-    let releaseHistory: () => void = () => { /* starts only after prior history is requested */ };
-    const messages = vi.spyOn(api, "messages").mockImplementation(async (current) => {
-      if (current.id === "previous") {
-        await new Promise<void>((resolve) => { releaseHistory = resolve; });
-        return { messages: [{ role: "user", timestamp: Date.now() - 4 * 3_600_000 }], start: 0, total: 1 };
-      }
-      return { messages: [], start: 0, total: 0 };
-    });
-    vi.spyOn(api, "prompt").mockResolvedValue({ accepted: true });
+    vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
     const command = vi.spyOn(api, "runCommand").mockResolvedValue({ type: "done" });
     const app = await mountChooser([]);
     app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
       detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
     }));
-    await vi.waitFor(() => { expect(messages.mock.calls.some(([current]) => current.id === "previous")).toBe(true); });
-    await promptEditor(app).onSend?.("Owner's first prompt");
-    releaseHistory();
-    await vi.waitFor(() => { expect(Reflect.get(app, "orientationPendingSessionId")).toBeUndefined(); });
-    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
-    expect(command).not.toHaveBeenCalled();
+    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector<WorkbenchChatPane>("workbench-chat-pane")?.orientFirstRequest).toBe(true); });
+    await promptEditor(app).onSend?.("Add a hover count");
+    // A skill runs as a command, which the agent receives expanded.
+    await vi.waitFor(() => { expect(command).toHaveBeenCalledWith(expect.objectContaining({ id: "new-session" }), "/skill:orient request\n\nAdd a hover count", "local"); });
   });
 
   it("rejects a temporary Workstream directory before recording a pending launch", async () => {
@@ -1103,7 +1068,8 @@ describe("Workbench Chat chooser", () => {
     }));
 
     await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
-    await vi.waitFor(() => { expect(command).toHaveBeenCalledWith(expect.objectContaining({ id: "first-session" }), "/skill:orient full", "local"); });
+    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+    expect(command).not.toHaveBeenCalled();
     expect(loadDraft(machineSessionKey("local", "first-session"))).toBe("");
     expect(locate).not.toHaveBeenCalled();
     expect(startSession).toHaveBeenCalledWith(workspace.path, "local", `pi-web:${key}`);
