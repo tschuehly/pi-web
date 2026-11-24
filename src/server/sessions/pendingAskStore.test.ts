@@ -517,6 +517,9 @@ describe("PendingAskStore whole-set record", () => {
     expect(whole.questions[0]?.question.id).toBe("s1-5");
     expect(whole.questions.at(-1)?.question.id).toBe("last-4");
     expect(whole).toMatchObject({ answeredCount: ASK_USER_RECORD_QUESTION_LIMIT });
+    // The summary still states the whole set and says how many answers the record leaves out.
+    const total = 6 * ASK_USER_QUESTION_LIMIT + 5;
+    expect(whole.summary).toBe(`Answered ${total.toString()} of ${total.toString()}; none left unanswered; ${(total - ASK_USER_RECORD_QUESTION_LIMIT).toString()} earlier answers not shown`);
     expect(() => parseAskUserOutcome(whole)).not.toThrow();
   });
 });

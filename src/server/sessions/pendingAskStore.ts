@@ -348,9 +348,12 @@ function askUserOutcome(
  * over all of them. The transcript and the model keep each send's own record.
  */
 export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly AskUserOutcome[], order: readonly string[] = []): AskUserOutcome {
-  // shortcut: past the record limit the oldest earlier answers drop out (each send's own record keeps them), raise the limit if sets get revised that often.
+  // shortcut: past the record limit the oldest earlier answers drop out (each send's own record keeps them; the summary
+  // counts them and says how many are not shown), page the record if sets get revised that often.
   const all = earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.questions);
-  const records = all.slice(Math.max(0, all.length + outcome.questions.length - ASK_USER_RECORD_QUESTION_LIMIT));
+  const cut = Math.max(0, all.length + outcome.questions.length - ASK_USER_RECORD_QUESTION_LIMIT);
+  const records = all.slice(cut);
+  const hidden = all.slice(0, cut);
   if (outcome.partial === true || records.length === 0) return outcome;
   const rank = (record: AskUserQuestionRecord) => { const index = order.indexOf(record.question.id); return index < 0 ? order.length : index; };
   const questions = [...records, ...outcome.questions].sort((a, b) => rank(a) - rank(b));
@@ -362,7 +365,8 @@ export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly As
   // it still applies only while the final context is that edit ("" = cleared): an agent's later revision wins.
   const lastEdit = [...earlier].reverse().find((each) => each.askId === outcome.askId && each.editedContext !== undefined)?.editedContext;
   const editedContext = outcome.editedContext ?? (lastEdit !== undefined && lastEdit === (outcome.context ?? "") ? lastEdit : undefined);
-  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, unansweredIds, summary: summaryLine(questions.length - skipped, answeredCount, unansweredIds) + skippedSummary(questions) };
+  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, unansweredIds, summary: summaryLine(questions.length + hidden.length - skipped - hidden.filter((record) => record.skipped === true).length, answeredCount + hidden.filter((record) => record.answered).length, unansweredIds) + skippedSummary(questions)
+      + (hidden.length === 0 ? "" : `; ${hidden.length.toString()} earlier ${hidden.length === 1 ? "answer" : "answers"} not shown`) };
 }
 
 /** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
