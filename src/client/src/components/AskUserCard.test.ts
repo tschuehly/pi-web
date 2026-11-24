@@ -739,6 +739,26 @@ describe("ask-user-card context", () => {
     expect(renderRoot(card).querySelector(".context-edited")).toBeNull();
   });
 
+  it("keeps a sent record's context image without a source until its disclosure opens", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      context: "See ![Login screen](https://example.com/login.png)",
+      questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
+      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+    const formatted = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.ask-context"), "ask context");
+    const sourceChanges = watchImageSources(requiredElement(formatted.shadowRoot, "ask context shadow root"));
+    const context = await renderedContext(card);
+    const fold = requiredElement(context.querySelector<HTMLDetailsElement>("details.folded-media"), "image fold");
+
+    expect([fold.open, fold.querySelector("img")?.hasAttribute("src"), sourceChanges()]).toEqual([false, false, []]);
+    requiredElement(fold.querySelector("summary"), "image summary").click();
+    expect([fold.open, fold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/login.png"]);
+  });
+
   it("shows the user's edited context in a record, labelled as edited", async () => {
     const card = new AskUserCard();
     card.outcome = {
@@ -860,12 +880,22 @@ describe("ask-user-card media", () => {
     expect([imageSummary.textContent, imageFold.open, imageFold.querySelector("img")?.hasAttribute("src")]).toEqual(["Show image: Login screen", false, false]);
     imageSummary.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     expect([imageFold.open, imageFold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/login.png"]);
+    // An image in a table folds the same way, without a source until its own disclosure opens.
+    card.ask = { ...card.ask, askId: "ask-table", context: "| Screen |\n| --- |\n| ![Table shot](https://example.com/table.png) |\n\nEnd." };
+    await card.updateComplete;
+    const tableFold = requiredElement(renderRoot(card).querySelector<HTMLDetailsElement>(".context-editor .lp-table details.folded-media"), "table image fold");
+    expect([tableFold.querySelector("summary")?.textContent, tableFold.open, tableFold.querySelector("img")?.hasAttribute("src")]).toEqual(["Show image: Table shot", false, false]);
+    requiredElement(tableFold.querySelector("summary"), "table image summary").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect([tableFold.open, tableFold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/table.png"]);
+    card.ask = { ...card.ask, askId: "ask-1", context: media };
+    await card.updateComplete;
     const contextMedia = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.context-media"), "context media");
     await settleDeferredContent(contextMedia);
     expect([...contextMedia.renderRoot.querySelectorAll("details.folded-media summary")].map((summary) => summary.textContent)).toEqual(["Show diagram"]);
     expect(contextMedia.renderRoot.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
     for (const selector of ["formatted-text.question-detail"]) {
       const formatted = requiredElement(renderRoot(card).querySelector<LitElement>(selector), selector);
+      const sourceChanges = watchImageSources(requiredElement(formatted.shadowRoot, "detail shadow root"));
       await settleDeferredContent(formatted);
       for (const host of formatted.renderRoot.querySelectorAll<ContentRendererHost>("pi-web-content-renderer")) {
         await settleDeferredContent(host);
@@ -874,7 +904,10 @@ describe("ask-user-card media", () => {
       const root = formatted.renderRoot;
       const folds = [...root.querySelectorAll("details.folded-media")];
       expect(folds.map((fold) => [fold.querySelector("summary")?.textContent, fold.hasAttribute("open")])).toEqual([["Show image: Login screen", false], ["Show diagram", false]]);
-      expect(folds[0]?.querySelector("img")?.getAttribute("src")).toBe("https://example.com/login.png");
+      // Source-free until opened: the image never had a source in the DOM.
+      expect([folds[0]?.querySelector("img")?.hasAttribute("src"), sourceChanges()]).toEqual([false, []]);
+      requiredElement(folds[0]?.querySelector("summary"), "image summary").click();
+      expect([folds[0]?.hasAttribute("open"), folds[0]?.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/login.png"]);
       expect(root.querySelector("p")?.textContent).toBe("Compare these.");
       expect(root.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
       const host = requiredElement(folds[1]?.querySelector<ContentRendererHost>("pi-web-content-renderer"), "diagram host");
@@ -1002,6 +1035,13 @@ function markdownField(root: ShadowRoot, selector: string): AskMarkdownField {
   const field = root.querySelector(selector);
   if (!(field instanceof AskMarkdownField)) throw new Error(`Expected a Markdown field at ${selector}`);
   return field;
+}
+
+/** Reports each image source attribute set or removed under `root` since the call (a folded image must never get one before it opens). */
+function watchImageSources(root: Node): () => (string | null)[] {
+  const observer = new MutationObserver(() => undefined);
+  observer.observe(root, { subtree: true, attributes: true, attributeFilter: ["src", "srcset", "preview-url"] });
+  return () => observer.takeRecords().map((record) => record.attributeName);
 }
 
 function editorView(field: AskMarkdownField): EditorView {

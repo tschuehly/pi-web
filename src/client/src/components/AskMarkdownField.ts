@@ -4,47 +4,9 @@ import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH } from "../../../shared/apiTypes";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
 import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
+import { foldMediaMarkup, revealFoldedMedia } from "../formatting/foldedMedia";
 import { openChatFileLink } from "./FormattedText";
 import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages } from "./workbenchFilesEditor";
-
-// Attributes that load an image; a folded image keeps them as `data-` attributes until opened.
-const IMAGE_SOURCES = ["src", "srcset", "preview-url"];
-
-/** Folds each image of sanitized preview HTML behind a closed "Show image" disclosure without a source, as the Chat folds context media. */
-function foldImages(markup: string): string {
-  const template = document.createElement("template");
-  template.innerHTML = markup;
-  for (const image of template.content.querySelectorAll("img, pi-web-markdown-image")) {
-    for (const name of IMAGE_SOURCES) {
-      const source = image.getAttribute(name);
-      if (source === null) continue;
-      image.setAttribute(`data-${name}`, source);
-      image.removeAttribute(name);
-    }
-    const alt = (image.getAttribute("alt") ?? image.getAttribute("description") ?? "").trim();
-    const details = document.createElement("details");
-    details.className = "folded-media";
-    const summary = document.createElement("summary");
-    summary.textContent = alt === "" ? "Show image" : `Show image: ${alt}`;
-    image.replaceWith(details);
-    details.append(summary, image);
-  }
-  return template.innerHTML;
-}
-
-/** Opens or closes a folded image; its source is set on the first opening. */
-function toggleFold(details: HTMLDetailsElement): void {
-  details.open = !details.open;
-  if (!details.open) return;
-  for (const image of details.querySelectorAll("[data-src], [data-srcset], [data-preview-url]")) {
-    for (const name of IMAGE_SOURCES) {
-      const source = image.getAttribute(`data-${name}`);
-      if (source === null) continue;
-      image.setAttribute(name, source);
-      image.removeAttribute(`data-${name}`);
-    }
-  }
-}
 
 /**
  * A multi-line answer of the ask card in the Files pane's Markdown editor (live preview, highlighting, undo).
@@ -103,7 +65,7 @@ export class AskMarkdownField extends HTMLElement {
         editHistory(), drawSelection(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         filesHighlighting, markdownWithCodeLanguages(), EditorView.lineWrapping,
-        livePreview((source) => foldImages(toSafeMarkdownHtml(source, this.workspaceContext)), (anchor) => {
+        livePreview((source) => foldMediaMarkup(toSafeMarkdownHtml(source, this.workspaceContext)), (anchor) => {
           // File links open as in the Chat (Files pane, Finder); other links in a new tab.
           const context = this.workspaceContext;
           if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
@@ -151,7 +113,7 @@ export class AskMarkdownField extends HTMLElement {
   }
 
   #foldSummary(event: Event): HTMLDetailsElement | undefined {
-    const summary = event.target instanceof Element ? event.target.closest(".lp-img details.folded-media > summary") : null;
+    const summary = event.target instanceof Element ? event.target.closest("details.folded-media > summary") : null;
     return summary?.parentElement instanceof HTMLDetailsElement ? summary.parentElement : undefined;
   }
 
@@ -160,7 +122,8 @@ export class AskMarkdownField extends HTMLElement {
     if (details === undefined) return;
     event.preventDefault();
     event.stopPropagation();
-    toggleFold(details);
+    details.open = !details.open;
+    revealFoldedMedia(details);
   }
 
   #contentAttributes() {
