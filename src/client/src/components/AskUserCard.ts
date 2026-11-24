@@ -614,6 +614,11 @@ export class AskUserCard extends LitElement {
     }
     const answers = toSubmission([...parents, question], this.answers).answers;
     if (!answers.some((answer) => answer.id === question.id)) return;
+    // A send that answers every visible question closes the set, so it goes as the full submit that carries the note.
+    if (visibleQuestions(ask.questions, this.answers).every((each) => answers.some((answer) => answer.id === each.id))) {
+      void this.submitAnswers(ask);
+      return;
+    }
     // The sent questions leave the form, taking the focused button with them; the next revision focuses the question in its place.
     this.focusAfterRevision = index - parents.length;
     void this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission() });

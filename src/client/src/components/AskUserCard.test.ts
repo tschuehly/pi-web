@@ -427,7 +427,34 @@ describe("ask-user-card dependent questions", () => {
     await typed.updateComplete;
     [...renderRoot(typed).querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
     await Promise.resolve();
-    expect(toggled).toHaveBeenCalledWith("ask-2", { answers: [{ id: "backup", values: [], value: true }, { id: "folder", values: [], value: "~/b" }], revision: "r1", partial: true });
+    // It answers every visible question, so it closes the set as a full submit.
+    expect(toggled).toHaveBeenCalledWith("ask-2", { answers: [{ id: "backup", values: [], value: true }, { id: "folder", values: [], value: "~/b" }], revision: "r1" });
+  });
+
+  it("sends the note with a follow-up's own Send that answers every visible question, and keeps it in the draft otherwise", async () => {
+    saveAskNote("local:session-1", "ask-1", "Ship it this week.");
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(dependentAsk(), onSubmit);
+    const root = renderRoot(card);
+    inputWithValue(root, "home").click();
+    await card.updateComplete;
+    inputWithValue(root, "pc").click();
+    await card.updateComplete;
+    // The GPU question still shows unanswered: a partial send, the note waits in the draft.
+    [...root.querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenLastCalledWith("ask-1", { answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["pc"] }], revision: "r1", partial: true });
+    expect(loadAskNote("local:session-1", "ask-1")).toBe("Ship it this week.");
+
+    const closing = vi.fn<AskUserSubmitCallback>();
+    card.remove();
+    const again = await mountOpenAsk({ ...dependentAsk(), askId: "ask-1", revision: "r2" }, closing);
+    const againRoot = renderRoot(again);
+    inputWithValue(againRoot, "mini").click();
+    await again.updateComplete;
+    [...againRoot.querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
+    await Promise.resolve();
+    expect(closing).toHaveBeenCalledWith("ask-1", { answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["mini"] }], note: "Ship it this week.", revision: "r2" });
   });
 
   it("offers Send anyway only for visible unanswered questions", async () => {
