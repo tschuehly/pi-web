@@ -155,6 +155,9 @@ describe("ask draft storage", () => {
     const padded = typed("code", { kind: "text", multiline: true, minLength: 6, default: "  code" });
     expect(typedDraftValue(padded, loadAskDraft("local:s1", "ask-2", storage, [padded])["code"])).toEqual({ value: "  code" });
     expect(typedDraftValue(padded, { values: [], value: "   " })).toBeUndefined();
+    // A one-line field cannot show a line break, so it does not send one; a multiline field does.
+    expect(typedDraftValue(typed("line", { kind: "text" }), { values: [], value: "first\nsecond" })).toEqual({ value: "first\nsecond", error: "must be one line" });
+    expect(typedDraftValue(padded, { values: [], value: "first\nsecond" })).toEqual({ value: "first\nsecond" });
 
     saveAskDraft("local:s1", "ask-1", { ...preset, t: { values: [], value: "", asked: askedFingerprint(text) } }, storage);
     expect(loadAskDraft("local:s1", "ask-1", storage, questions)["t"]?.value).toBe("");
