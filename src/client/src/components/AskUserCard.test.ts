@@ -599,6 +599,21 @@ describe("ask-user-card single-answer send", () => {
     expect(remaining.value).toBe("");
   });
 
+  it("drops a field's undo history when its question is reworded, even when the new default equals the typed text", async () => {
+    const notes: AskUserQuestion = { id: "notes", question: "Notes?", options: [], kind: "text", multiline: true };
+    const card = await mountOpenAsk(openAsk([notes]));
+    const field = markdownField(renderRoot(card), "ask-markdown-field#ask-user-other-0");
+    typeInto(field, "Draft.");
+    await card.updateComplete;
+
+    card.ask = { ...openAsk([{ ...notes, detail: "Reworded.", default: "Draft." }]), revision: "r2" };
+    await card.updateComplete;
+    expect([field.isConnected, field.value]).toEqual([true, "Draft."]);
+    undo(editorView(field));
+
+    expect(field.value).toBe("Draft.");
+  });
+
   it("keeps the other questions' drafts when a partial send returns the ask under a new revision", async () => {
     const editor = question("editor", "Choose an editor", [option("vim", "Vim")]);
     const shell = question("shell", "Choose a shell", [option("zsh", "Zsh")]);

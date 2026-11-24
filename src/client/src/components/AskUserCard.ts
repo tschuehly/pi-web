@@ -289,6 +289,7 @@ export class AskUserCard extends LitElement {
               <ask-markdown-field
                 id=${this.otherInputId(index)}
                 .label=${"Custom answer"}
+                .historyKey=${this.historyKey(question)}
                 .value=${answer?.otherText ?? ""}
                 @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
               ></ask-markdown-field>
@@ -329,7 +330,7 @@ export class AskUserCard extends LitElement {
     return html`
       <div class="typed-field">
         ${question.kind === "text" && question.multiline === true
-          ? html`<ask-markdown-field id=${id} class=${error === undefined ? "" : "invalid"} .label=${question.question} .maxLength=${question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH} .invalid=${error !== undefined} .describedBy=${errorId} .value=${raw} @ask-field-input=${change}></ask-markdown-field>`
+          ? html`<ask-markdown-field id=${id} class=${error === undefined ? "" : "invalid"} .label=${question.question} .maxLength=${question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH} .invalid=${error !== undefined} .describedBy=${errorId} .historyKey=${this.historyKey(question)} .value=${raw} @ask-field-input=${change}></ask-markdown-field>`
           : html`<input
               id=${id}
               type=${question.kind === "number" ? "number" : question.kind === "date" ? "date" : "text"}
@@ -350,6 +351,11 @@ export class AskUserCard extends LitElement {
     `;
   }
 
+  /** What a question's field answers: Undo never crosses into another ask or another wording of the question. */
+  private historyKey(question: AskUserQuestion): string {
+    return `${this.ask?.askId ?? ""}\n${askedFingerprint(question)}`;
+  }
+
   /** An option being edited in place: its row becomes the Custom answer's textarea, selected, with a way back. */
   private renderInlineEdit(question: AskUserQuestion, index: number, label: string, text: string): TemplateResult {
     return html`
@@ -358,6 +364,7 @@ export class AskUserCard extends LitElement {
         <ask-markdown-field
           id=${this.otherInputId(index)}
           .label=${`Custom answer, edited from ${label}`}
+          .historyKey=${this.historyKey(question)}
           .value=${text}
           @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
           @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.revertEdit(question, index); } }}
