@@ -866,9 +866,12 @@ describe("ask-user-card media", () => {
     const media = "Compare these.\n\n![Login screen](https://example.com/login.png)\n\n```mermaid\npie\n  \"A\": 2\n```\n\n```diff\n-a\n+b\n```";
     // A manual renderer, like the Mermaid plugin: the Chat shows its source until asked.
     const rendering = createContentRenderingService((request) => request.language === "mermaid"
-      ? [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", render: () => html`<b class="diagram-preview">drawn</b>` } }] : []);
+      ? [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", render: () => html`<b class="diagram-preview">drawn</b>` } }]
+      : request.language === "chart" ? [{ id: "chart", label: "Chart", renderer: { id: "chart", render: () => html`<b class="chart-preview">drawn</b>` } }] : []);
     const card = new AskUserCard();
-    card.ask = { ...openAsk([question("pick", "Pick one", [option("a", "A")], { detail: media })]), context: media };
+    // A manual renderer that is not a folded diagram waits for its own Render click, even in question details.
+    const detail = `${media}\n\n\`\`\`chart\nbar 1 2\n\`\`\``;
+    card.ask = { ...openAsk([question("pick", "Pick one", [option("a", "A")], { detail })]), context: media };
     card.contentRendering = rendering;
     card.setAttribute("flat", "");
     document.body.append(card);
@@ -917,6 +920,8 @@ describe("ask-user-card media", () => {
       await settleDeferredContent(host);
       expect(folds[1]?.hasAttribute("open")).toBe(true);
       expect(host.renderRoot.querySelector(".diagram-preview")?.textContent).toBe("drawn");
+      const chart = requiredElement([...root.querySelectorAll<ContentRendererHost>("pi-web-content-renderer")].find((candidate) => candidate.language === "chart"), "chart host");
+      expect([chart.closest("details"), chart.renderRoot.querySelector(".chart-preview")]).toEqual([null, null]);
     }
   });
 });

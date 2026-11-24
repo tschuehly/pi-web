@@ -1,3 +1,5 @@
+import type { ContentRendererHost } from "../components/ContentRendererHost";
+
 // The one source-free disclosure of the ask card's media: the context editor, read-only details and sent records.
 const IMAGES = "img, pi-web-markdown-image";
 // Attributes that load an image; a folded image keeps them as `data-folded-` attributes until opened.
@@ -41,7 +43,7 @@ export function foldMediaMarkup(markup: string): string {
   return template.innerHTML;
 }
 
-/** Shows what an opened disclosure holds: its images get their sources. */
+/** Shows what an opened disclosure holds: its images get their sources, its diagram may render (opening is the request to see it). */
 export function revealFoldedMedia(details: HTMLDetailsElement): void {
   if (!details.open || !details.classList.contains("folded-media")) return;
   for (const image of details.querySelectorAll(IMAGES)) {
@@ -52,4 +54,5 @@ export function revealFoldedMedia(details: HTMLDetailsElement): void {
       image.removeAttribute(folded(name));
     }
   }
+  for (const host of details.querySelectorAll<ContentRendererHost>("pi-web-content-renderer")) host.allowManualPreview = true;
 }

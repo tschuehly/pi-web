@@ -190,8 +190,6 @@ export class FormattedText extends LitElement {
       this.layoutChanged = true;
       this.content = this.contentRendering?.renderMarkdown({
         text: this.text,
-        // Opening a folded diagram is the request to see it, so it renders without a second click.
-        allowManualPreview: this.foldMedia,
         machineId: this.workspaceContext?.machineId ?? this.machineId,
         toSafeHtml: (text) => text === this.text && this.markup !== undefined ? this.markup : this.safeHtml(text),
       }, this.intentKey, this.codeBlocks);
