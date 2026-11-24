@@ -1207,6 +1207,11 @@ describe("session routes", () => {
       const cold = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
       expect(cold.json()).toEqual({ pendingAsks: [], running: false });
       expect(routeService.calls).toEqual([{ openAsks: { id: "session-1", cwd: requestCwd } }]);
+
+      // A deleted Chat is a 404, so a caller can tell it from a failed read.
+      routeService.openAsksError = new Error("Session not found");
+      const gone = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
+      expect(gone.statusCode).toBe(404);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -1941,9 +1946,10 @@ class CapturingRouteSessionService implements SessionRouteService {
   }
 
   openAsksResponse: PendingAskUser[] | undefined = [];
+  openAsksError: Error | undefined;
   openAsks(lookup: SessionRouteRef) {
     this.calls.push({ openAsks: lookup });
-    return Promise.resolve(this.openAsksResponse);
+    return this.openAsksError === undefined ? Promise.resolve(this.openAsksResponse) : Promise.reject(this.openAsksError);
   }
 
   attentionResponse: SessionAttentionRequest | undefined;

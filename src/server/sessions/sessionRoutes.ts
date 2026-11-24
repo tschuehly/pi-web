@@ -259,7 +259,14 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/asks`, async (request, reply) => {
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
     if (ref === undefined) return reply;
-    const pendingAsks = await sessions.openAsks(ref);
+    let pendingAsks;
+    try {
+      pendingAsks = await sessions.openAsks(ref);
+    } catch (error) {
+      // A deleted Chat is a 404, so a watcher can tell it from a failed read.
+      if (isSessionNotFoundError(error)) return reply.code(404).send({ error: errorMessage(error) });
+      throw error;
+    }
     // A cold Durable Chat: not read, so the caller keeps what it knew, and nothing started its host.
     if (pendingAsks === undefined) return { pendingAsks: [], running: false };
     const attentionRequest = await sessions.attentionRequest(ref);
