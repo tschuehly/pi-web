@@ -124,6 +124,21 @@ export function saveAskContext(sessionId: string, askId: string, original: strin
   }
 }
 
+/**
+ * After a partial send carried the context edit `sent` (`""` = cleared), the set's context is `sent`: an edit equal to
+ * it is consumed, so a later revision back to the old context does not bring it back; newer typing stays, as an edit of `sent`.
+ */
+export function rebaseAskContext(sessionId: string, askId: string, sent: string, storage = browserStorage()): void {
+  try {
+    const parsed: unknown = JSON.parse(storage?.getItem(`${draftStorageKey(sessionId, askId)}:context`) ?? "null");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+    const { edited }: Record<string, unknown> = { ...parsed };
+    if (typeof edited === "string") saveAskContext(sessionId, askId, sent, edited.trim() === "" ? "" : edited, storage);
+  } catch {
+    // Ignore unreadable drafts and localStorage quota/privacy errors.
+  }
+}
+
 export function clearAskDraft(sessionId: string, askId: string, storage = browserStorage()): void {
   try {
     storage?.removeItem(draftStorageKey(sessionId, askId));
