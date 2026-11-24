@@ -104,6 +104,16 @@ test("an image attachment reaches the model and shows in the transcript after a 
   const restored = chat(page).locator("img").first();
   await expect(restored).toBeVisible();
   await expect.poll(() => restored.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  // The host's backup copy (pi-workbench durable-pilot src/backup.ts) holds the Chat with its image and passes SQLite's check.
+  const copy = join(fixture().root, "backup-staging", "chats", sessionId, "session.sqlite");
+  await expect.poll(() => readFile(copy).then((bytes) => bytes.includes("describe the picture") && bytes.includes("image/png"), () => false)).toBe(true);
+  const { DatabaseSync } = await import("node:sqlite");
+  const database = new DatabaseSync(copy, { readOnly: true });
+  try {
+    expect(database.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
+  } finally {
+    database.close();
+  }
 });
 
 test("the thinking level is chosen per Chat, survives a host restart and is sent with the next request", async ({ page }) => {
