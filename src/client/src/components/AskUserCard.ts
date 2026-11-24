@@ -768,6 +768,9 @@ export class AskUserCard extends LitElement {
     .card .context-editor .cm-content { padding: 4px 0; }
     .card .context-editor .cm-line { padding: 0 6px; }
     .card .context-editor:focus-within { outline: 1px solid color-mix(in srgb, var(--pi-accent) 60%, transparent); outline-offset: 0; }
+    /* A folded image in a Markdown field's live preview, styled like the Chat's folded media. */
+    ask-markdown-field .folded-media > summary { width: fit-content; color: var(--pi-accent); cursor: pointer; }
+    ask-markdown-field .folded-media > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; border-radius: 4px; }
     .context-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 2px; }
     .context-edited { margin: 0; color: var(--pi-muted); font-size: 11px; }
     .record-card .context-edited { padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }

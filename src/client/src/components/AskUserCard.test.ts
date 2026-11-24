@@ -741,8 +741,12 @@ describe("ask-user-card media", () => {
     document.body.append(card);
     await card.updateComplete;
 
-    // The context's image renders in the editor's live preview; its diagram and diff are drawn under it.
-    expect(requiredElement(renderRoot(card).querySelector(".context-editor .lp-img img"), "context image").getAttribute("src")).toBe("https://example.com/login.png");
+    // The context's image folds in the editor's live preview and loads only once opened (by keyboard here); its diagram and diff are drawn under it.
+    const imageFold = requiredElement(renderRoot(card).querySelector<HTMLDetailsElement>(".context-editor .lp-img details.folded-media"), "context image fold");
+    const imageSummary = requiredElement(imageFold.querySelector("summary"), "context image summary");
+    expect([imageSummary.textContent, imageFold.open, imageFold.querySelector("img")?.hasAttribute("src")]).toEqual(["Show image: Login screen", false, false]);
+    imageSummary.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect([imageFold.open, imageFold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/login.png"]);
     const contextMedia = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.context-media"), "context media");
     await settleDeferredContent(contextMedia);
     expect([...contextMedia.renderRoot.querySelectorAll("details.folded-media summary")].map((summary) => summary.textContent)).toEqual(["Show diagram"]);
