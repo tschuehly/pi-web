@@ -246,7 +246,8 @@ export function typedDraftValue(question: AskUserQuestion, answer: AskDraftAnswe
   if (typeof raw === "boolean") return question.kind === "boolean" ? { value: raw } : undefined;
   const text = raw.trim();
   if (text === "" || question.kind === "boolean") return undefined;
-  const value = question.kind === "number" ? Number(text) : text;
+  // Text goes as typed, so Markdown and a default compare unchanged; numbers and dates drop stray spaces.
+  const value = question.kind === "number" ? Number(text) : question.kind === "text" ? raw : text;
   const error = askValueError(question, value);
   return error === undefined ? { value } : { value, error };
 }

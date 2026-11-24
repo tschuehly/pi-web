@@ -620,13 +620,25 @@ describe("ask outcome rendering", () => {
       { id: "d", values: [], value: "2026-12-01" },
     ])();
     if (result.status !== "closed") throw new Error("expected the ask to close");
-    expect(result.outcome.questions.map((record) => [record.answered, record.value])).toStrictEqual([[true, false], [true, false], [true, 7], [true, "hi"], [true, "2026-12-01"], [false, undefined]]);
+    expect(result.outcome.questions.map((record) => [record.answered, record.value])).toStrictEqual([[true, false], [true, false], [true, 7], [true, "  hi "], [true, "2026-12-01"], [false, undefined]]);
     const text = renderAskUserAnswersText(result.outcome);
     expect(text).toContain("- ask.on: Question on?\n  Answered: off (default, unchanged)\n");
     expect(text).toContain("- ask.off: Question off?\n  Answered: off\n");
     expect(text).toContain("  Answered: 7 (default, unchanged)\n");
-    expect(text).toContain("  Answered: \"hi\"\n");
+    expect(text).toContain("  Answered: \"  hi \"\n");
     expect(text).toContain("  Answered: 2026-12-01 (default, unchanged)\n");
+  });
+
+  it("keeps typed text verbatim, so a padded Markdown default opens, passes its minimum and reads as unchanged; blank is no answer and no default", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("code", { options: [], kind: "text", multiline: true, minLength: 6, default: "  code" }), question("other", { options: [], kind: "text" })] });
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "other", values: [], value: "   " }] })).not.toThrow();
+    const again = store.open({ sessionId, context, questions: [question("code", { options: [], kind: "text", multiline: true, minLength: 6, default: "  code" })] });
+    const result = store.submit(sessionId, again.askId, { revision: again.revision, answers: [{ id: "code", values: [], value: "  code" }] });
+    if (result.status !== "closed") throw new Error("expected closed");
+    expect(result.outcome.questions[0]?.value).toBe("  code");
+    expect(renderAskUserAnswersText(result.outcome)).toContain("  Answered: \"  code\" (default, unchanged)\n");
+    expect(() => store.open({ sessionId, context, questions: [question("t", { options: [], kind: "text", default: "  " })] })).toThrow("default of question t must not be blank");
   });
 
   it("shows a question under a boolean only while that switch has the listed state", () => {

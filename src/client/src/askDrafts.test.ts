@@ -136,6 +136,11 @@ describe("ask draft storage", () => {
     expect(typedDraftValue(number, { values: [], value: "11" })).toEqual({ value: 11, error: "must be at most 10" });
     expect(toSubmission(questions, { ...preset, n: { values: [], value: "11" } }).answers.map((answer) => answer.id)).not.toContain("n");
 
+    // Text goes as typed: a padded Markdown default fits its minimum and sends unchanged; blank sends nothing.
+    const padded = typed("code", { kind: "text", multiline: true, minLength: 6, default: "  code" });
+    expect(typedDraftValue(padded, loadAskDraft("local:s1", "ask-2", storage, [padded])["code"])).toEqual({ value: "  code" });
+    expect(typedDraftValue(padded, { values: [], value: "   " })).toBeUndefined();
+
     saveAskDraft("local:s1", "ask-1", { ...preset, t: { values: [], value: "", asked: askedFingerprint(text) } }, storage);
     expect(loadAskDraft("local:s1", "ask-1", storage, questions)["t"]?.value).toBe("");
   });

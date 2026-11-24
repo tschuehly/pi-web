@@ -882,6 +882,8 @@ export function askValueError(question: Pick<AskUserQuestion, "kind" | "minLengt
       return typeof value === "boolean" ? undefined : "must be true or false";
     case "text":
       if (typeof value !== "string") return "must be text";
+      // Text is kept verbatim, but blank reads as unanswered, so a blank default could never be sent.
+      if (value.trim() === "") return "must not be blank";
       if (value.length > (question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)) return `must be at most ${String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)} characters`;
       return question.minLength !== undefined && value.length < question.minLength ? `must be at least ${String(question.minLength)} characters` : undefined;
     case "number":

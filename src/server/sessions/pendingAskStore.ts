@@ -498,9 +498,9 @@ function validateSubmission(ask: PendingAskUser, submission: AskUserSubmission):
 function validateAnswer(question: AskUserQuestion, answer: AskUserAnswer): AskUserAnswer | undefined {
   if ((question.kind ?? "choice") !== "choice") {
     if (answer.values.length > 0 || answer.otherText !== undefined) throw new PendingAskValidationError(`Question ${question.id} takes a value, not options`);
-    // Text is trimmed like Custom text; blank reads as untouched.
-    const value = typeof answer.value === "string" ? answer.value.trim() : answer.value;
-    if (value === undefined || value === "") return undefined;
+    // Blank reads as untouched; other text is kept as typed (Markdown indentation, a default left unchanged).
+    const value = typeof answer.value === "string" && question.kind !== "text" ? answer.value.trim() : answer.value;
+    if (value === undefined || (typeof value === "string" && value.trim() === "")) return undefined;
     const error = askValueError(question, value);
     if (error !== undefined) throw new PendingAskValidationError(`Answer to question ${question.id} ${error}`);
     return { id: question.id, values: [], value };
