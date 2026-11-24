@@ -860,32 +860,36 @@ describe("Durable Chats", () => {
     expect(viewed(only(launched.slice(2)))).toEqual([]);
   });
 
-  it("sends setViewed only on a change, and resends after a failed send", async () => {
+  it("retries a failed last-close setViewed(false) on the live connection without another change", async () => {
+    let failFalse = false;
     const { durable, hub, launched } = await service((): FakeHost => {
       const host = new FakeHost(DURABLE_HOST_PROTOCOL, ["viewed"]);
       const answer = host.answer;
-      let failures = 1;
       host.answer = (request) => {
-        if (request.method === "setViewed" && failures-- > 0) throw new Error("no");
+        if (request.method === "setViewed" && failFalse && (request.params as { viewed: boolean }).viewed === false) {
+          failFalse = false;
+          throw new Error("no");
+        }
         return answer(request);
       };
       return host;
     });
     const chat = await durable.start("/work/a");
-    const ref = { id: chat.id, cwd: chat.cwd };
-    await durable.status(ref);
+    await durable.status({ id: chat.id, cwd: chat.cwd });
     const viewed = () => only(launched).requests.filter((request) => request.method === "setViewed").map((request) => request.params);
     const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-    const notify = async () => { (hub as unknown as { notifySubscribers(id: string, watched: boolean): void }).notifySubscribers(chat.id, false); await settle(); };
-
-    // The ready-time send failed, so the same state goes out again on the next notification.
+    const browser = Object.assign(new EventEmitter(), { OPEN: 1, readyState: 1, send: () => undefined, terminate: () => undefined });
+    hub.add(chat.id, browser);
     await settle();
-    expect(viewed()).toEqual([{ viewed: false }]);
-    await notify();
-    expect(viewed()).toEqual([{ viewed: false }, { viewed: false }]);
-    // Now it was taken: a notification without a state change sends nothing.
-    await notify();
-    expect(viewed()).toEqual([{ viewed: false }, { viewed: false }]);
+    expect(viewed()).toEqual([{ viewed: false }, { viewed: true }]);
+
+    // The last browser leaves and that send fails; the Chat stays closed, yet the host hears false again by itself.
+    failFalse = true;
+    browser.emit("close");
+    await vi.waitFor(() => expect(viewed()).toEqual([{ viewed: false }, { viewed: true }, { viewed: false }, { viewed: false }]), { timeout: 3000 });
+    // Taken: nothing more goes out.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(viewed()).toHaveLength(4);
   });
 
   it("the idle close ends a host that only serves Atelier Pages", async () => {

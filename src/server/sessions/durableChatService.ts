@@ -43,6 +43,8 @@ export const DURABLE_HOST_PROTOCOL = 2;
 const QUEUE_MOVED = /^Queued messages changed|is no longer queued; it cannot be edited$/;
 export const IDLE_HOST_CLOSE_MS = 2 * 60 * 60 * 1000;
 const IDLE_HOST_SWEEP_MS = 10 * 60 * 1000;
+/** First resend delay after a failed `setViewed`; doubles per failure. */
+const VIEWED_RETRY_MS = 500;
 
 /** How the owner resolves an interrupted unsafe tool call that may have run. */
 export type DurableEffectResolution = "done" | "not-done" | "retry";
@@ -162,6 +164,8 @@ class DurableHostConnection {
   closeIfRestartSafe = false;
   /** The `viewed` state last sent to this host (`setViewed`); undefined until the first send. */
   viewedSent: boolean | undefined;
+  /** The pending resend of a failed `setViewed` (see `#sendViewed`). */
+  viewedRetry: NodeJS.Timeout | undefined;
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
@@ -349,15 +353,27 @@ export class DurableChatService {
     this.#unsubscribeViewed = deps.events.onSessionSubscribersChange?.((sessionId) => { void this.#connections.get(sessionId)?.then((connection) => this.#sendViewed(sessionId, connection), () => undefined); });
   }
 
-  /** Tell a host with the `viewed` capability whether a browser has its Chat open; only a change is sent. */
-  async #sendViewed(sessionId: string, connection: DurableHostConnection): Promise<void> {
+  /**
+   * Tell a host with the `viewed` capability whether a browser has its Chat open; only a change is sent. A failed
+   * send of the latest state is retried on the same connection (backoff capped at 30 s) while it stays the Chat's.
+   */
+  async #sendViewed(sessionId: string, connection: DurableHostConnection, attempt = 0): Promise<void> {
     if (!connection.capabilities.includes("viewed")) return;
+    clearTimeout(connection.viewedRetry);
+    connection.viewedRetry = undefined;
     const viewed = this.deps.events.hasSessionSubscribers?.(sessionId) === true;
     if (connection.viewedSent === viewed) return;
     connection.viewedSent = viewed;
     await connection.request("setViewed", { viewed }).catch((error: unknown) => {
-      if (connection.viewedSent === viewed) connection.viewedSent = undefined;
       this.deps.logger?.warn({ sessionId, err: error }, "Durable Chat host did not take setViewed");
+      // A newer send owns the state (and its own retry).
+      if (connection.viewedSent !== viewed) return;
+      connection.viewedSent = undefined;
+      connection.viewedRetry = setTimeout(() => {
+        connection.viewedRetry = undefined;
+        void this.#connections.get(sessionId)?.then((live) => live === connection ? this.#sendViewed(sessionId, connection, attempt + 1) : undefined, () => undefined);
+      }, Math.min(VIEWED_RETRY_MS * 2 ** attempt, 30_000));
+      connection.viewedRetry.unref();
     });
   }
 
