@@ -5,6 +5,7 @@ import {
   PendingAskValidationError,
   renderAskUserAnswersText,
   renderOpenAsksReminder,
+  withEarlierAnswers,
 } from "./pendingAskStore.js";
 
 const sessionId = "session-1";
@@ -454,6 +455,15 @@ describe("PendingAskStore edited context", () => {
     expect(result.ask?.context).toBe("Mine");
     const rest = store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }], context: "Mine" });
     expect(rest.status === "closed" && rest.outcome).not.toHaveProperty("editedContext");
+  });
+
+  it("keeps an edit an earlier partial send delivered in the whole set's record, so it still reads as edited by the user", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, context: "Mine" });
+    const rest = store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }] });
+    if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
+    expect(withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"])).toMatchObject({ editedContext: "Mine", answeredCount: 2 });
   });
 });
 

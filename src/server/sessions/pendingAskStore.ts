@@ -341,6 +341,24 @@ function askUserOutcome(
   };
 }
 
+/**
+ * The browser's record of a set closed after partial sends: the final close's record with the questions the
+ * earlier partial records closed, in `order` (the set's question ids; others keep send order), counts and summary
+ * over all of them. The transcript and the model keep each send's own record.
+ */
+export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly AskUserOutcome[], order: readonly string[] = []): AskUserOutcome {
+  const records = earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.questions);
+  if (outcome.partial === true || records.length === 0) return outcome;
+  const rank = (record: AskUserQuestionRecord) => { const index = order.indexOf(record.question.id); return index < 0 ? order.length : index; };
+  const questions = [...records, ...outcome.questions].sort((a, b) => rank(a) - rank(b));
+  const answeredCount = questions.filter((record) => record.answered).length;
+  const skipped = questions.filter((record) => record.skipped === true).length;
+  // An edit goes out once, with the send that carried it, so the last send may carry none.
+  // shortcut: an agent revising the context after the user's edit still shows the edit, upgrade if agents start revising mid-answer.
+  const editedContext = outcome.editedContext ?? [...earlier].reverse().find((each) => each.askId === outcome.askId && each.editedContext !== undefined)?.editedContext;
+  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, summary: summaryLine(questions.length - skipped, answeredCount, outcome.unansweredIds) + skippedSummary(questions) };
+}
+
 /** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
 function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, skipped: ReadonlySet<string>, remaining: readonly AskUserQuestion[], revision: string, closedAt: string, editedContext?: string): AskUserOutcome {
   const questions = ask.questions.filter((question) => answers.has(question.id) || skipped.has(question.id)).map((question) => questionRecord(question, answers.get(question.id), skipped.has(question.id)));

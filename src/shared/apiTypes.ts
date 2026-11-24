@@ -1037,7 +1037,10 @@ export interface AskUserOutcome {
  */
 export interface AskUserCloseResponse {
   result: "closed" | "stale";
-  /** Present only when this call is the one that closed the ask, or (with `partial`) that sent part of it. */
+  /**
+   * Present only when this call is the one that closed the ask, or (with `partial`) that sent part of it. The last
+   * send's record is the whole set's: questions earlier partial sends closed, from any browser, are included.
+   */
   outcome?: AskUserOutcome;
   sessionStatus: SessionStatus;
 }

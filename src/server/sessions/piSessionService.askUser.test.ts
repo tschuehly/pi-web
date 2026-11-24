@@ -377,6 +377,28 @@ describe("PiSessionService.submitAsk", () => {
     await restarted.service.dispose();
   });
 
+  it("returns the whole set's record on its last send, with the answer a partial send gave before a restart (or from another browser), in the set's order", async () => {
+    const branch: unknown[] = [];
+    const { service, store } = askService({ withActiveSession: true, branch });
+    await service.status(sessionRef(ACTIVE_SESSION_ID));
+    const two = [...questions, { id: "why", question: "Why now?", options: [] }];
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions: two });
+    branch.push({ type: "message", message: { role: "toolResult", toolName: "ask_user", details: { ask: store.pendingAsks(ACTIVE_SESSION_ID)[0], sessionId: ACTIVE_SESSION_ID } } });
+    await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "why", values: [], otherText: "Launch" }], revision: "r1", partial: true });
+    await service.dispose();
+
+    const restarted = askService({ withActiveSession: true, branch });
+    await restarted.service.status(sessionRef(ACTIVE_SESSION_ID));
+    const response = await restarted.service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: "r2" });
+
+    expect(response.outcome?.questions.map((record) => [record.question.id, record.values, record.otherText])).toEqual([["db", ["pg"], undefined], ["why", [], "Launch"]]);
+    expect(response.outcome).toMatchObject({ answeredCount: 2, unansweredIds: [], summary: "Answered 2 of 2; none left unanswered" });
+    // The transcript and the model keep the last send's own record.
+    const recorded = branch.filter((entry) => typeof entry === "object" && entry !== null && Reflect.get(entry, "customType") === ASK_USER_CLOSED_CUSTOM_TYPE).at(-1);
+    expect(recorded).toMatchObject({ data: { answeredCount: 1, questions: [{ question: { id: "db" } }] } });
+    await restarted.service.dispose();
+  });
+
   it("redelivers several recorded closes one at a time on runtime start, each exactly once", async () => {
     const closed = (askId: string) => ({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: { askId, reason: "submitted", askedAt: T0, closedAt: T0, context, questions: [], answeredCount: 0, unansweredIds: [], summary: "Answered 0 of 0" } });
     const branch: unknown[] = [postedAsk("ask-1"), postedAsk("bsk-2"), closed("ask-1"), closed("bsk-2")];

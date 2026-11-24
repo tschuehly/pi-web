@@ -138,7 +138,7 @@ export class AskUserCard extends LitElement {
     this.inlineEdits = {};
     const focusIndex = this.focusAfterRevision;
     this.focusAfterRevision = undefined;
-    if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0) this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
+    if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0) void this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
   }
 
   override render(): TemplateResult | null {
@@ -377,7 +377,7 @@ export class AskUserCard extends LitElement {
           ${unanswered.map((question, index) => html`${index === 0 ? " " : ", "}<button
             class="question-jump"
             type="button"
-            @click=${() => { this.focusQuestion(ask.questions.indexOf(question)); }}
+            @click=${() => { void this.focusQuestion(ask.questions.indexOf(question)); }}
           >${question.question}</button>`)}?
         </p>
         <div class="confirmation-actions">
@@ -494,7 +494,7 @@ export class AskUserCard extends LitElement {
     if (edit === undefined) return;
     this.endInlineEdit(question);
     this.setAnswer(question, edit.previous ?? { values: [] });
-    this.focusQuestion(index);
+    void this.focusQuestion(index);
   }
 
   private endInlineEdit(question: AskUserQuestion): void {
@@ -635,16 +635,17 @@ export class AskUserCard extends LitElement {
   private keepEditing(ask: PendingAskUser, unanswered: AskUserQuestion[]): void {
     this.confirmingPartialSubmit = false;
     const first = unanswered[0];
-    if (first !== undefined) this.focusQuestion(ask.questions.indexOf(first));
+    if (first !== undefined) void this.focusQuestion(ask.questions.indexOf(first));
   }
 
   /** Focus the `index`th question's first control, as a chip opening this set does. */
-  focusQuestion(index: number): void {
-    if (index < 0) return;
-    void this.updateComplete.then(() => {
+  /** Focuses a question's first control; `preventScroll` leaves the scrolling to the caller, e.g. to show the set's context first. */
+  focusQuestion(index: number, preventScroll = false): Promise<void> {
+    if (index < 0) return Promise.resolve();
+    return this.updateComplete.then(() => {
       const fieldset = this.renderRoot.querySelector<HTMLElement>(`#${this.questionFieldsetId(index)}`);
       const firstControl = fieldset?.querySelector<HTMLElement>("input, ask-markdown-field");
-      (firstControl ?? fieldset)?.focus();
+      (firstControl ?? fieldset)?.focus({ preventScroll });
     });
   }
 

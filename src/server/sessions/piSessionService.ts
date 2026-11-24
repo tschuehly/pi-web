@@ -106,8 +106,8 @@ import { DAEMON_RESTART_CUSTOM_TYPE, renderDaemonRestartMessage, takeInterrupted
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
 import { createAskUserToolDefinition, type AskUserToolDeps } from "./askUserTool.js";
 import { createRequestAttentionToolDefinition, type RequestAttentionToolDeps } from "./requestAttentionTool.js";
-import { openAsksFromTranscript } from "./openAsksFromTranscript.js";
-import { ASK_USER_CLOSED_CUSTOM_TYPE, ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
+import { openAsksFromTranscript, partialAsksFromTranscript } from "./openAsksFromTranscript.js";
+import { ASK_USER_CLOSED_CUSTOM_TYPE, ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, withEarlierAnswers, type PendingAskCloseResult, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
 import { PendingExtensionDialogStore, type ExtensionDialogCancelReason } from "./pendingExtensionDialogStore.js";
 import { ExtensionDialogWaiters, effectiveExtensionDialogTimeoutMs, extensionDialogCancelValue } from "./extensionDialogWaiters.js";
 import { DEFAULT_EXTENSION_DIALOGS_TIMEOUT_MS } from "../../config.js";
@@ -2280,7 +2280,9 @@ export class PiSessionService implements SessionRouteService {
     else this.events.publish(session.sessionId, { type: "ask.opened", ask });
     await this.deliverAskOutcome(session, outcome);
     this.publishStatus(session);
-    return { result: "closed", outcome, sessionStatus: this.statusFromSession(session) };
+    // The browser keeps the whole set's record, answers its earlier partial sends gave (from any browser) included.
+    const { earlier, order } = ask === undefined ? partialAsksFromTranscript(session.sessionManager.getBranch(), outcome.askId) : { earlier: [], order: [] };
+    return { result: "closed", outcome: withEarlierAnswers(outcome, earlier, order), sessionStatus: this.statusFromSession(session) };
   }
 
   private deliverAskOutcome(session: PiAgentSession, outcome: AskUserOutcome): Promise<void> {

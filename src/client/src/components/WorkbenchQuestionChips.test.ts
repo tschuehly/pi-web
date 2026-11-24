@@ -130,8 +130,28 @@ describe("WorkbenchQuestionChips", () => {
 
     await openWith(chips);
 
-    await vi.waitFor(() => { expect(focus).toHaveBeenCalledWith(0); });
+    await vi.waitFor(() => { expect(focus).toHaveBeenCalledWith(0, true); });
     expect(focus.mock.contexts[0]).toBe(cards(chips)[0]);
+  });
+
+  it("opens at the top of the first set, its heading and context in view, with focus on its first question", async () => {
+    const { chips } = await mount([ask("abc-1"), twoQuestions]);
+    // Layout stand-in: the first card starts at the top of the scrolled list; focusing a control scrolls it into view as a browser does.
+    const focused: (FocusOptions | undefined)[] = [];
+    vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+      focused.push(options);
+      const sets = chips.shadowRoot?.querySelector<HTMLElement>(".sets");
+      if (sets !== null && sets !== undefined && options?.preventScroll !== true) sets.scrollTop = 489;
+    });
+    vi.spyOn(AskUserCard.prototype, "getBoundingClientRect").mockImplementation(function (this: AskUserCard) {
+      const sets = chips.shadowRoot?.querySelector<HTMLElement>(".sets");
+      return DOMRect.fromRect({ y: this === cards(chips)[0] ? -(sets?.scrollTop ?? 0) : 0, height: 100 });
+    });
+
+    await openWith(chips);
+
+    await vi.waitFor(() => { expect(focused).toEqual([{ preventScroll: true }]); });
+    expect(chips.shadowRoot?.querySelector<HTMLElement>(".sets")?.scrollTop).toBe(0);    vi.restoreAllMocks();
   });
 
   it("opens a question for a caller and refuses one no open set asks", async () => {
@@ -143,7 +163,7 @@ describe("WorkbenchQuestionChips", () => {
     expect(await chips.openQuestion("def-2", 1)).toBe(true);
 
     expect(drawer(chips)).not.toBeNull();
-    expect(focus).toHaveBeenCalledWith(1);
+    expect(focus).toHaveBeenCalledWith(1, false);
     expect(focus.mock.contexts[0]).toBe(cards(chips)[1]);
   });
 
@@ -373,23 +393,28 @@ describe("WorkbenchQuestionChips", () => {
     expect(cards(chips).map((card) => card.ask?.askId)).toEqual(["def-2"]);
   });
 
-  it("keeps every answer of a set sent one question at a time in its record: two partial sends out of order, then the last", async () => {
+  it("keeps the whole-set record the daemon returns for a set sent one question at a time, earlier sends from another device included", async () => {
     const questions = ["db", "cache", "queue"].map((id) => ({ id, question: `Which ${id}?`, options: [{ value: `${id}-a`, label: `${id} A` }] }));
     const three = ask("abc-1", { questions });
     const { chips, onSubmit } = await mount([three]);
     let revision = 1;
     // Each send closes its questions; the daemon's status drops them before the send resolves with its record.
+    // Its last send returns the whole set's record (pendingAskStore's withEarlierAnswers), "cache" sent from another device included.
     onSubmit.mockImplementation(async (askId, submission) => {
       const sent = new Set(submission.answers.map((answer) => answer.id));
       const open = (chips.asks[0]?.questions ?? []).filter((question) => !sent.has(question.id));
       revision += 1;
       chips.asks = open.length === 0 ? [] : [{ ...three, questions: open, revision: `r${String(revision)}` }];
       await chips.updateComplete;
-      const records = questions.filter((question) => sent.has(question.id)).map((question) => ({ question, answered: true, values: [`${question.id}-a`] }));
-      return { askId, reason: "submitted", askedAt: three.askedAt, closedAt: three.askedAt, context: three.context, questions: records, answeredCount: records.length, unansweredIds: [], summary: `Answered ${String(records.length)}`, ...(submission.partial === true ? { partial: true, revision: `r${String(revision)}` } : {}) };
+      const records = questions.filter((question) => open.length === 0 || sent.has(question.id)).map((question) => ({ question, answered: true, values: [`${question.id}-a`] }));
+      return { askId, reason: "submitted", askedAt: three.askedAt, closedAt: three.askedAt, context: three.context, questions: records, answeredCount: records.length, unansweredIds: [], summary: open.length === 0 ? "Answered 3 of 3; none left unanswered" : `Answered ${String(records.length)}`, ...(submission.partial === true ? { partial: true, revision: `r${String(revision)}` } : {}) };
     });
     await openWith(chips);
-    for (const id of ["cache", "db", "queue"]) {
+    // "cache" went from another device: this drawer only sees the set without it.
+    chips.asks = [{ ...three, questions: questions.filter((question) => question.id !== "cache"), revision: "r2" }];
+    revision = 2;
+    await chips.updateComplete;
+    for (const id of ["db", "queue"]) {
       const card = cards(chips)[0];
       card?.shadowRoot?.querySelector<HTMLInputElement>(`input[value="${id}-a"]`)?.click();
       await card?.updateComplete;
