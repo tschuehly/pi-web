@@ -130,8 +130,28 @@ describe("WorkbenchQuestionChips", () => {
 
     await openWith(chips);
 
-    await vi.waitFor(() => { expect(focus).toHaveBeenCalledWith(0); });
+    await vi.waitFor(() => { expect(focus).toHaveBeenCalledWith(0, true); });
     expect(focus.mock.contexts[0]).toBe(cards(chips)[0]);
+  });
+
+  it("opens at the top of the first set, its heading and context in view, with focus on its first question", async () => {
+    const { chips } = await mount([ask("abc-1"), twoQuestions]);
+    // Layout stand-in: the first card starts at the top of the scrolled list; focusing a control scrolls it into view as a browser does.
+    const focused: (FocusOptions | undefined)[] = [];
+    vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+      focused.push(options);
+      const sets = chips.shadowRoot?.querySelector<HTMLElement>(".sets");
+      if (sets !== null && sets !== undefined && options?.preventScroll !== true) sets.scrollTop = 489;
+    });
+    vi.spyOn(AskUserCard.prototype, "getBoundingClientRect").mockImplementation(function (this: AskUserCard) {
+      const sets = chips.shadowRoot?.querySelector<HTMLElement>(".sets");
+      return DOMRect.fromRect({ y: this === cards(chips)[0] ? -(sets?.scrollTop ?? 0) : 0, height: 100 });
+    });
+
+    await openWith(chips);
+
+    await vi.waitFor(() => { expect(focused).toEqual([{ preventScroll: true }]); });
+    expect(chips.shadowRoot?.querySelector<HTMLElement>(".sets")?.scrollTop).toBe(0);    vi.restoreAllMocks();
   });
 
   it("opens a question for a caller and refuses one no open set asks", async () => {
@@ -143,7 +163,7 @@ describe("WorkbenchQuestionChips", () => {
     expect(await chips.openQuestion("def-2", 1)).toBe(true);
 
     expect(drawer(chips)).not.toBeNull();
-    expect(focus).toHaveBeenCalledWith(1);
+    expect(focus).toHaveBeenCalledWith(1, false);
     expect(focus.mock.contexts[0]).toBe(cards(chips)[1]);
   });
 

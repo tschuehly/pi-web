@@ -151,7 +151,10 @@ export class WorkbenchQuestionChips extends LitElement {
     await this.updateComplete;
     const card = this.renderRoot.querySelector<AskUserCard>(`ask-user-card[data-ask="${CSS.escape(askId)}"]`);
     await card?.updateComplete;
-    card?.focusQuestion(questionIndex);
+    // At a set's first question the drawer opens at the set's top, so its heading and context show; focus still lands on the question.
+    await card?.focusQuestion(questionIndex, questionIndex === 0);
+    const sets = this.renderRoot.querySelector<HTMLElement>(".sets");
+    if (questionIndex === 0 && card !== null && sets !== null) sets.scrollTop += card.getBoundingClientRect().top - sets.getBoundingClientRect().top;
     return true;
   }
 
