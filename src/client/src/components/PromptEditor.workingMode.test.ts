@@ -36,7 +36,7 @@ describe("PromptEditor Working Mode controls", () => {
 
     const actions = required(editor.shadowRoot?.querySelector(".actions"));
     const order = [...actions.children].map((child) => child.classList.contains("usage") ? "usage" : child.classList.contains("composer-actions") ? "composer-actions" : child.localName);
-    expect(order).toEqual(["model-effort-picker", "usage", "working-mode-controls", "composer-actions"]);
+    expect(order).toEqual(["model-effort-picker", "usage", "working-mode-controls", "full-access-toggle", "composer-actions"]);
     const composerActions = required(actions.querySelector<HTMLElement>(".composer-actions"));
     expect([...composerActions.children].map((child) => child.getAttribute("aria-label"))).toEqual(["Attach files", "Send message", "Stop current work"]);
 
