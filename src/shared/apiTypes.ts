@@ -976,7 +976,7 @@ export interface AskUserSubmission {
    * takes no note. One that answers every remaining question closes the ask like a full submit.
    */
   partial?: boolean;
-  /** The user's edit of {@link PendingAskUser.context}; sent only when it differs. A partial send that carries it makes it the open ask's context. */
+  /** The user's edit of {@link PendingAskUser.context}; sent only when it differs; blank means the user cleared it. A partial send that carries it makes it the open ask's context. */
   context?: string;
 }
 
@@ -1007,7 +1007,7 @@ export interface AskUserOutcome {
   closedAt: string;
   /** The ask's {@link PendingAskUser.context}, so the record shows it too. */
   context?: string;
-  /** The user's edited version of `context`; absent when he left it unchanged. */
+  /** The user's edited version of `context`; `""` when he cleared it, absent when he left it unchanged. */
   editedContext?: string;
   questions: AskUserQuestionRecord[];
   /** The user's note on the whole set, trimmed; absent when none was given. */

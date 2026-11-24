@@ -413,16 +413,29 @@ describe("PendingAskStore edited context", () => {
     expect(renderAskUserAnswersText(result.outcome)).toContain(["set ask-1.", "", "The user edited the context:", "````markdown", edited, "````", "", "- ask.q1"].join("\n"));
   });
 
-  it("adds nothing when the context comes back unchanged or blank", () => {
+  it("adds nothing when the context comes back unchanged", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
     const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], context });
     if (result.status !== "closed") throw new Error("expected closed");
     expect(result.outcome).not.toHaveProperty("editedContext");
     expect(renderAskUserAnswersText(result.outcome)).not.toContain("edited the context");
-    const other = store.open({ sessionId, context, questions: [question("q1")] });
-    const blank = store.submit(sessionId, other.askId, { revision: other.revision, answers: [], context: "  " });
-    expect(blank.status === "closed" && blank.outcome).not.toHaveProperty("editedContext");
+  });
+
+  it("records a blank context as cleared and tells the model, never falling back to the original", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1")] });
+    const blank = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], context: "  " });
+    if (blank.status !== "closed") throw new Error("expected closed");
+    expect(blank.outcome).toMatchObject({ context, editedContext: "" });
+    expect(renderAskUserAnswersText(blank.outcome)).toContain(["set ask-1.", "", "The user cleared the context.", "", "- ask.q1"].join("\n"));
+
+    // A partial send that clears it leaves the rest of the set without a context.
+    const two = openTwoQuestions(store);
+    const partial = store.submit(sessionId, two.askId, { revision: two.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, context: "" });
+    if (partial.status !== "closed") throw new Error("expected closed");
+    expect(partial.outcome.editedContext).toBe("");
+    expect(partial.ask).not.toHaveProperty("context");
   });
 
   it("rejects an edited context over the context limit, keeping the ask open", () => {

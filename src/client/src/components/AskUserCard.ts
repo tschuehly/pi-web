@@ -192,6 +192,7 @@ export class AskUserCard extends LitElement {
 
   /** The model's explanation for the question set, rendered like Chat Markdown; a record marks the user's edit of it. */
   private renderContext(context: string | undefined, edited = false): TemplateResult | null {
+    if (edited && context === "") return html`<p class="context-edited">Context cleared by you</p>`;
     return context === undefined ? null : html`
       ${edited ? html`<p class="context-edited">Context edited by you</p>` : null}
       <formatted-text class="ask-context" fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>
@@ -534,10 +535,10 @@ export class AskUserCard extends LitElement {
     this.renderRoot.querySelector<HTMLElement>(".context-editor")?.focus();
   };
 
-  /** The edited context for a submission; nothing when unchanged, or cleared (blank reads as no edit). */
+  /** The edited context for a submission: nothing when unchanged, `""` when the user cleared it. */
   private contextSubmission(): Pick<AskUserSubmission, "context"> {
     const context = this.editedContext;
-    return context === undefined || context.trim() === "" ? {} : { context };
+    return context === undefined ? {} : { context: context.trim() === "" ? "" : context };
   }
 
   private readonly openNote = async (): Promise<void> => {

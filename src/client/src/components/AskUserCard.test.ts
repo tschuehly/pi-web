@@ -647,6 +647,34 @@ describe("ask-user-card context", () => {
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", answers: [{ id: "db", values: ["pg"] }] });
   });
 
+  it("sends a cleared context as cleared rather than leaving the agent's text in place", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "Approve: drop the table." }, onSubmit);
+    typeInto(markdownField(renderRoot(card), ".context-editor"), "  ");
+    await card.updateComplete;
+    expect(renderRoot(card).querySelector(".context-actions")?.textContent).toContain("Edited");
+    inputWithValue(renderRoot(card), "pg").click();
+    buttonWithText(renderRoot(card), "Send answers").click();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", context: "", answers: [{ id: "db", values: ["pg"] }] });
+  });
+
+  it("shows a context the user cleared as cleared in the record", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      context: "Approve: drop the table.", editedContext: "",
+      questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
+      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+
+    expect(renderRoot(card).querySelector(".context-edited")?.textContent).toBe("Context cleared by you");
+    expect(renderRoot(card).querySelector("formatted-text.ask-context")).toBeNull();
+  });
+
   it("carries the edited context with a single-answer send", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")]), question("cache", "Which cache?", [])]), context: "Plan." }, onSubmit);

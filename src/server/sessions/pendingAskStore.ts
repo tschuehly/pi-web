@@ -175,8 +175,10 @@ export class PendingAskStore {
         const revision = this.createRevision();
         const outcome = partialOutcome(ask, answers, skipped, remaining, revision, this.timestamp(), editedContext);
         record?.(outcome);
-        // The edited context goes out once, with this send; the questions left open then show the user's version.
-        const updated: PendingAskUser = { ...ask, revision, questions: remaining, ...(editedContext === undefined ? {} : { context: editedContext }) };
+        // The edited context goes out once, with this send; the questions left open then show the user's version (none when he cleared it).
+        const updated: PendingAskUser = { ...ask, revision, questions: remaining };
+        if (editedContext === "") delete updated.context;
+        else if (editedContext !== undefined) updated.context = editedContext;
         this.setAsk(sessionId, updated);
         return { status: "closed", outcome, ask: cloneAsk(updated) };
       }
@@ -267,7 +269,7 @@ export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
     ? `The user submitted answers to question set ${outcome.askId}.`
     : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
   const note = outcome.note === undefined ? [] : ["", `Note from the user: ${JSON.stringify(outcome.note)}`];
-  const edited = outcome.editedContext === undefined ? [] : ["The user edited the context:", fenced(outcome.editedContext), ""];
+  const edited = outcome.editedContext === undefined ? [] : outcome.editedContext === "" ? ["The user cleared the context.", ""] : ["The user edited the context:", fenced(outcome.editedContext), ""];
   return [lead, "", ...edited, ...outcome.questions.map((record) => questionLines(outcome.askId, record)).flat(), ...note, "", outcome.summary].join("\n");
 }
 
@@ -526,11 +528,11 @@ function stripNumbering(text: string): string {
   return stripped.trim() === "" ? text : stripped;
 }
 
-/** The user's edit of the ask's context; blank or unchanged reads as no edit. */
+/** The user's edit of the ask's context; unchanged reads as no edit, blank as `""`: he cleared it. */
 function normalizeEditedContext(ask: PendingAskUser, context: string | undefined): string | undefined {
-  if (context === undefined) return undefined;
+  if (context === undefined || context === ask.context) return undefined;
   if (context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new PendingAskValidationError("context exceeds its length limit");
-  return context.trim() === "" || context === ask.context ? undefined : context;
+  return context.trim() === "" ? "" : context;
 }
 
 function normalizeNote(note: string | undefined): string | undefined {
