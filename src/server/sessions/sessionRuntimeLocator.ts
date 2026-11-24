@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { isLiveReviewPairing, type LiveReviewPairing } from "./liveReview.js";
 
-type RecordChange = Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "shortName" | "shortNameSource" | "key">> & { liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined };
+type RecordChange = Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "shortNameSource" | "key">> & { shortName?: string | undefined; liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined };
 
 /**
  * Which runtime owns a Chat. Legacy Chats have no record: the legacy runtime stays the default. A Durable Chat's
@@ -140,8 +140,12 @@ export class SessionRuntimeLocator {
   #change(sessionId: string, change: RecordChange): void {
     const record = this.#chats.get(sessionId);
     if (record === undefined) return;
-    const { liveReview, reviewing, ...rest } = change;
+    const { liveReview, reviewing, shortName, ...rest } = change;
     const next: DurableChatRecord = { ...record, ...rest };
+    if ("shortName" in change) {
+      if (shortName === undefined) delete next.shortName;
+      else next.shortName = shortName;
+    }
     if ("liveReview" in change) {
       if (liveReview === undefined) delete next.liveReview;
       else next.liveReview = liveReview;

@@ -623,6 +623,9 @@ export class DurableChatService {
     const expanded = expandPromptTemplate(skilled, templates);
     const providerText = !explicit || template ? expanded : appendInlineImageReferenceMapping(expanded, references);
     this.#maybeTitle(ref, template ? body : text, connection);
+    // Chats titled before tab names existed, or while their host was down, get one on their next prompt.
+    const titled = this.deps.locator.durable(ref.id);
+    if (titled?.name !== undefined && titled.shortName === undefined && titled.shortNameSource !== "manual") this.#retab(ref.id);
     const { result } = await connection.request("prompt", {
       operationId: operationId ?? randomUUID(), text: providerText,
       ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }),
@@ -837,7 +840,9 @@ export class DurableChatService {
   }
 
   #setName(sessionId: string, name: string, nameSource: NonNullable<DurableChatRecord["nameSource"]>): ClientSession {
-    this.deps.locator.update(sessionId, { name, nameSource });
+    // A generated tab name belongs to the old title: the tab shows the new title until its own is generated.
+    const generated = this.deps.locator.durable(sessionId)?.shortNameSource !== "manual";
+    this.deps.locator.update(sessionId, { name, nameSource, ...(generated ? { shortName: undefined } : {}) });
     this.#retab(sessionId);
     return this.#publishName(sessionId);
   }
@@ -845,9 +850,9 @@ export class DurableChatService {
   #tabName(ref: SessionRouteRef, shortName: string): ClientCommandResult {
     this.#record(ref);
     if (shortName === "") {
-      this.deps.locator.update(ref.id, { shortNameSource: "auto" });
+      this.deps.locator.update(ref.id, { shortName: undefined, shortNameSource: "auto" });
       this.#retab(ref.id);
-      return { type: "done", message: "The tab takes a generated name again" };
+      return { type: "done", message: "The tab takes a generated name again", session: this.#publishName(ref.id) };
     }
     const clean = cleanTabName(shortName);
     if (clean === undefined) return { type: "unsupported", message: "Usage: /tabname <one or two words, at most 24 characters>" };
@@ -866,7 +871,7 @@ export class DurableChatService {
       const model = naming.model === undefined ? undefined : parseModelSpec(naming.model);
       const { result } = await (await connection).request("complete", {
         systemPrompt: SESSION_TITLE_SYSTEM_PROMPT, prompt: tabNamePrompt(title),
-        maxTokens: 12, reasoning: naming.thinkingLevel ?? "minimal", timeoutMs: naming.timeoutMs ?? 10_000,
+        maxTokens: naming.maxTokens ?? 24, reasoning: naming.thinkingLevel ?? "minimal", timeoutMs: naming.timeoutMs ?? 10_000,
         ...(model === undefined ? {} : { model }),
       });
       const shortName = typeof result === "string" ? cleanTabName(result) : undefined;

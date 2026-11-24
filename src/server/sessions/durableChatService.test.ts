@@ -819,17 +819,39 @@ describe("Durable Chats: composer and attention parity (fleet P028 P030 P031 P03
     expect(events).toContainEqual({ type: "session.name", sessionId: chat.id, name: "Durable · Migration plan review", shortName: "Migration review" });
     expect(durable.list("/work/a")[0]?.shortName).toBe("Migration review");
 
-    // A long answer names no tab; the owner's name stays through a new title, and an empty /tabname hands it back.
+    // A long answer names no tab, and the old title's generated name goes with it; the owner's name stays through a
+    // new title, and an empty /tabname hands it back.
     tabName = "A far too long tab name";
     await durable.runCommand(ref, "/name Database migration");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(locator.durable(chat.id)?.shortName).toBeUndefined();
     expect(await durable.runCommand(ref, "/tabname Way too many words")).toMatchObject({ type: "unsupported" });
     expect(await durable.runCommand(ref, "/tabname Migrations")).toMatchObject({ type: "done", session: { shortName: "Migrations" } });
     tabName = "DB migration";
     await durable.runCommand(ref, "/name Database migration rollout");
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(locator.durable(chat.id)).toMatchObject({ shortName: "Migrations", shortNameSource: "manual" });
-    await durable.runCommand(ref, "/tabname");
+    expect(await durable.runCommand(ref, "/tabname")).toMatchObject({ type: "done" });
     await vi.waitFor(() => { expect(locator.durable(chat.id)).toMatchObject({ shortName: "DB migration", shortNameSource: "auto" }); });
+  });
+
+  it("clears an owner's tab name even with no host to name it again, and names an older titled Chat's tab on its next prompt", async () => {
+    const { durable, launched, locator } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await durable.runCommand(ref, "/tabname Foo");
+    // A Chat titled before tab names existed: a title, no tab name.
+    locator.update(chat.id, { name: "Old release checklist", nameSource: "auto", shortName: undefined, shortNameSource: "auto" });
+    expect(locator.durable(chat.id)?.shortName).toBeUndefined();
+    await durable.runCommand(ref, "/tabname Foo");
+    only(launched).answer = () => { throw new Error("host gone"); };
+    expect(await durable.runCommand(ref, "/tabname")).toMatchObject({ type: "done" });
+    expect(locator.durable(chat.id)).toMatchObject({ shortNameSource: "auto" });
+    expect(locator.durable(chat.id)?.shortName).toBeUndefined();
+
+    only(launched).answer = (request) => request.method === "complete" ? "Release list" : request.method === "status" ? status : null;
+    await durable.prompt(ref, "continue");
+    await vi.waitFor(() => { expect(locator.durable(chat.id)).toMatchObject({ shortName: "Release list", shortNameSource: "auto" }); });
   });
 
   it("P031 falls back to the prompt's first words when the title request fails, and never overrides an owner's /name", async () => {

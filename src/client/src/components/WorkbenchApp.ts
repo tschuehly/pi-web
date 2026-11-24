@@ -1625,9 +1625,10 @@ export class WorkbenchApp extends LitElement {
       if (chat === undefined) return;
       const { cwd } = await api.locate(chat.sessionId, chat.machineId);
       const result = await api.runCommand({ id: chat.sessionId, cwd }, `/tabname ${detail.name}`.trim(), chat.machineId);
-      if (result.type === "unsupported") throw new Error(result.message);
+      // Older (non-Durable) Chats answer "Unknown command: /tabname".
+      if (result.type === "unsupported") throw new Error(result.message.startsWith("Unknown command") ? "only Durable Chats have tab names" : result.message);
       const shortName = result.type === "done" ? result.session?.shortName : undefined;
-      void this.updateWindow((store, id) => updateChat(store, id, chat.sessionId, { shortName: detail.name === "" ? undefined : shortName }));
+      void this.updateWindow((store, id) => updateChat(store, id, chat.sessionId, { shortName }));
     } catch (error) {
       this.setApp({ error: `Could not rename the tab: ${error instanceof Error ? error.message : String(error)}` });
     }
