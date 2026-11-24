@@ -26,6 +26,8 @@ import {
   type AskDraftAnswers,
 } from "../askDrafts";
 import "./FormattedText";
+import { AskMarkdownField } from "./AskMarkdownField";
+import { livePreviewStyles } from "./workbenchFilesEditor";
 import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 
@@ -135,9 +137,9 @@ export class AskUserCard extends LitElement {
             ${visible.map((question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
           </div>
           ${this.noteOpen ? html`
-            <label class="ask-note">
-              <textarea rows="1" aria-label="Note for the whole set" maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)} placeholder="Note for the whole set (optional)" .value=${this.note} @input=${this.changeNote}></textarea>
-            </label>
+            <div class="ask-note">
+              <ask-markdown-field .label=${"Note for the whole set"} .placeholderText=${"Note for the whole set (optional)"} .value=${this.note} @ask-field-input=${this.changeNote}></ask-markdown-field>
+            </div>
           ` : null}
           <footer class="form-footer">
             ${this.confirmingPartialSubmit && unanswered.length > 0
@@ -219,16 +221,15 @@ export class AskUserCard extends LitElement {
             </label>
           `}
           ${customSelected && inlineEdit === undefined ? html`
-            <label class="other-answer" for=${this.otherInputId(index)}>
-              <span>Custom answer</span>
-              <textarea
+            <div class="other-answer">
+              <span aria-hidden="true">Custom answer</span>
+              <ask-markdown-field
                 id=${this.otherInputId(index)}
-                rows="3"
-                maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)}
+                .label=${"Custom answer"}
                 .value=${answer?.otherText ?? ""}
-                @input=${(event: Event) => { this.changeOtherText(question, event); }}
-              ></textarea>
-            </label>
+                @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
+              ></ask-markdown-field>
+            </div>
           ` : null}
         </div>
         `}
@@ -259,13 +260,13 @@ export class AskUserCard extends LitElement {
     const errorId = error === undefined ? undefined : `${id}-error`;
     const change = (event: Event): void => {
       const input = event.currentTarget;
-      if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) this.setAnswer(question, { values: [], value: input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) });
+      if (input instanceof HTMLInputElement || input instanceof AskMarkdownField) this.setAnswer(question, { values: [], value: input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) });
     };
     const maxLength = String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH);
     return html`
       <div class="typed-field">
         ${question.kind === "text" && question.multiline === true
-          ? html`<textarea id=${id} rows="3" aria-label=${question.question} minlength=${ifDefined(question.minLength)} maxlength=${maxLength} aria-invalid=${error === undefined ? "false" : "true"} aria-describedby=${ifDefined(errorId)} .value=${raw} @input=${change}></textarea>`
+          ? html`<ask-markdown-field id=${id} class=${error === undefined ? "" : "invalid"} .label=${question.question} .maxLength=${question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH} .invalid=${error !== undefined} .describedBy=${errorId} .value=${raw} @ask-field-input=${change}></ask-markdown-field>`
           : html`<input
               id=${id}
               type=${question.kind === "number" ? "number" : question.kind === "date" ? "date" : "text"}
@@ -291,15 +292,13 @@ export class AskUserCard extends LitElement {
     return html`
       <div class="option-row inline-edit">
         <span class="inline-edit-marker">${PENCIL_ICON}</span>
-        <textarea
+        <ask-markdown-field
           id=${this.otherInputId(index)}
-          rows="2"
-          aria-label=${`Custom answer, edited from ${label}`}
-          maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)}
+          .label=${`Custom answer, edited from ${label}`}
           .value=${text}
-          @input=${(event: Event) => { this.changeOtherText(question, event); }}
+          @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
           @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.revertEdit(question, index); } }}
-        ></textarea>
+        ></ask-markdown-field>
         <button class="revert-edit" type="button" title="Revert to the option (Esc)" @click=${() => { this.revertEdit(question, index); }}>${UNDO_ICON}Revert</button>
       </div>
     `;
@@ -443,7 +442,7 @@ export class AskUserCard extends LitElement {
 
   private changeOtherText(question: AskUserQuestion, event: Event): void {
     const input = event.currentTarget;
-    if (!(input instanceof HTMLTextAreaElement)) return;
+    if (!(input instanceof AskMarkdownField)) return;
     const current = this.answers[question.id];
     this.setAnswer(question, {
       values: [...(current?.values ?? [])],
@@ -453,18 +452,15 @@ export class AskUserCard extends LitElement {
 
   private readonly changeNote = (event: Event): void => {
     const input = event.currentTarget;
-    if (!(input instanceof HTMLTextAreaElement)) return;
+    if (!(input instanceof AskMarkdownField)) return;
     this.note = input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH);
-    // One line that grows with its text (up to the CSS max-height), where field-sizing is unsupported.
-    input.style.height = "auto";
-    input.style.height = `${String(input.scrollHeight + 2)}px`;
     if (this.ask !== undefined && this.draftSessionId !== "") saveAskNote(this.draftSessionId, this.ask.askId, this.note);
   };
 
   private readonly openNote = async (): Promise<void> => {
     this.noteOpen = true;
     await this.updateComplete;
-    this.renderRoot.querySelector<HTMLTextAreaElement>(".ask-note textarea")?.focus();
+    this.renderRoot.querySelector<HTMLElement>(".ask-note ask-markdown-field")?.focus();
   };
 
   private setAnswer(question: AskUserQuestion, answer: AskDraftAnswer): void {
@@ -550,16 +546,17 @@ export class AskUserCard extends LitElement {
     if (index < 0) return;
     void this.updateComplete.then(() => {
       const fieldset = this.renderRoot.querySelector<HTMLElement>(`#${this.questionFieldsetId(index)}`);
-      const firstControl = fieldset?.querySelector<HTMLElement>("input, textarea");
+      const firstControl = fieldset?.querySelector<HTMLElement>("input, ask-markdown-field");
       (firstControl ?? fieldset)?.focus();
     });
   }
 
   private async focusOtherInput(index: number, cursorAtEnd = false): Promise<void> {
     await this.updateComplete;
-    const input = this.renderRoot.querySelector<HTMLTextAreaElement>(`#${this.otherInputId(index)}`);
-    input?.focus();
-    if (cursorAtEnd && input !== null) input.setSelectionRange(input.value.length, input.value.length);
+    const input = this.renderRoot.querySelector(`#${this.otherInputId(index)}`);
+    if (!(input instanceof AskMarkdownField)) return;
+    if (cursorAtEnd) input.focusEnd();
+    else input.focus();
   }
 
   private isOtherSelected(question: AskUserQuestion, answer: AskDraftAnswer | undefined): boolean {
@@ -739,7 +736,8 @@ export class AskUserCard extends LitElement {
       background: var(--pi-selection-bg);
     }
     .inline-edit-marker { display: flex; margin-top: 3px; color: var(--pi-accent); }
-    .inline-edit textarea { min-height: 52px; background: var(--pi-surface); }
+    .card .inline-edit ask-markdown-field { flex: 1; min-width: 0; background: var(--pi-surface); }
+    .card .inline-edit ask-markdown-field .cm-editor { min-height: 52px; }
     .revert-edit { grid-column: 2; justify-self: end; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-color: transparent; background: transparent; color: var(--pi-muted); font-size: 12px; }
     .revert-edit:hover:not(:disabled) { color: var(--pi-text); }
     /* 1px border + 8px padding + 16px control + 5px gap = the number gutter, so option text starts where question text does. */
@@ -756,7 +754,7 @@ export class AskUserCard extends LitElement {
     .option:hover, :where(.option-row:hover) > .option { border-color: var(--pi-border); background: var(--pi-surface-hover); }
     .option:has(input:checked) { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     input { margin: 2px 0 0; accent-color: var(--pi-accent); }
-    input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    input:focus-visible, button:focus-visible, ask-markdown-field:focus-within { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .option-copy { min-width: 0; display: grid; gap: 2px; }
     .option-label { line-height: 1.35; }
     .option-detail { color: var(--pi-muted); font-size: 12px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -788,22 +786,22 @@ export class AskUserCard extends LitElement {
     .send-one { padding: 3px 10px; font-size: 12px; }
     .send-one:not(:disabled) { border-color: var(--pi-accent); color: var(--pi-accent); font-weight: 650; }
     .send-one:disabled { cursor: default; }
-    textarea {
-      box-sizing: border-box;
-      width: 100%;
-      min-height: 68px;
-      resize: vertical;
-      border: 1px solid var(--pi-border);
-      border-radius: 8px;
-      background: var(--pi-bg);
-      color: var(--pi-text);
-      padding: 8px;
-      font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif);
-    }
+    /* Multi-line answers: the Files pane's Markdown editor in a textarea's frame; .card outranks CodeMirror's base theme. */
+    ${livePreviewStyles}
+    ask-markdown-field { display: block; box-sizing: border-box; width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); color: var(--pi-text); }
+    .card ask-markdown-field .cm-editor { min-height: 68px; max-height: 50vh; background: transparent; color: var(--pi-text); }
+    .card ask-markdown-field .cm-editor.cm-focused { outline: none; }
+    .card ask-markdown-field .cm-scroller { overflow: auto; }
+    .card ask-markdown-field .cm-content { padding: 8px 0; font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); caret-color: var(--pi-accent); }
+    .card ask-markdown-field .cm-line { padding: 0 8px; }
+    .card ask-markdown-field .cm-placeholder { color: var(--pi-muted); }
+    ask-markdown-field.invalid { border-color: var(--pi-danger); }
     .ask-note { display: grid; padding: 0 16px 10px var(--ui-transcript-inline-start, 16px); }
     /* A quiet one-line field that grows with its text; focus tints the border instead of a second ring. */
-    .ask-note textarea { min-height: 0; max-height: 8lh; field-sizing: content; resize: none; padding: 5px 10px; border-color: var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); }
-    .ask-note textarea:focus-visible { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent); }
+    .ask-note ask-markdown-field { border-color: var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); }
+    .card .ask-note ask-markdown-field .cm-editor { min-height: 0; max-height: 8lh; }
+    .card .ask-note ask-markdown-field .cm-content { padding: 5px 0; }
+    .ask-note ask-markdown-field:focus-within { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent); }
     .note-toggle { display: grid; place-items: center; padding: 6px; border-color: transparent; background: transparent; color: var(--pi-muted); }
     .note-toggle:hover:not(:disabled) { color: var(--pi-text); }
     .note-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

@@ -4,6 +4,8 @@ import type { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
 import { loadAskNote, saveAskDraft, saveAskNote } from "../askDrafts";
+import { EditorView } from "@codemirror/view";
+import { AskMarkdownField } from "./AskMarkdownField";
 import { AskUserCard, type AskUserSubmitCallback } from "./AskUserCard";
 import { settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
 
@@ -104,14 +106,13 @@ describe("ask-user-card live form", () => {
     await card.updateComplete;
     await Promise.resolve();
 
-    const textarea = requiredElement(root.querySelector("textarea"), "custom textarea");
-    const label = requiredElement(textarea.closest("label"), "custom label");
-    expect(label.textContent).toContain("Custom answer");
-    expect(getComputedStyle(textarea).fontSize).toBe("16px");
-    expect(root.activeElement).toBe(textarea);
+    const field = markdownField(root, ".other-answer ask-markdown-field");
+    expect(field.closest(".other-answer")?.textContent).toContain("Custom answer");
+    expect(field.querySelector(".cm-content")?.getAttribute("aria-label")).toBe("Custom answer");
+    expect(AskUserCard.styles.cssText).toContain("font: var(--pi-control-font-size, 16px)");
+    expect(field.contains(root.activeElement)).toBe(true);
 
-    textarea.value = "Svelte";
-    textarea.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    typeInto(field, "Svelte");
     await card.updateComplete;
     buttonWithText(root, "Send answers").click();
     await Promise.resolve();
@@ -139,36 +140,33 @@ describe("ask-user-card live form", () => {
     requiredElement(editButtons[1], "edit VS Code").click();
     await card.updateComplete;
     await Promise.resolve();
-    const editorText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-0"), "editor textarea");
+    const editorText = markdownField(root, "#ask-user-other-0");
     const editedRow = requiredElement(editorText.closest(".option-row.inline-edit"), "inline edit row");
     expect(editedRow.previousElementSibling?.querySelector("input")?.value).toBe("vim");
     expect(editorText.value).toBe("VS Code");
-    expect(editorText.getAttribute("aria-label")).toBe("Custom answer, edited from VS Code");
-    expect(root.activeElement).toBe(editorText);
-    expect(editorText.selectionStart).toBe("VS Code".length);
+    expect(editorText.querySelector(".cm-content")?.getAttribute("aria-label")).toBe("Custom answer, edited from VS Code");
+    expect(editorText.contains(root.activeElement)).toBe(true);
+    expect(editorView(editorText).state.selection.main.head).toBe("VS Code".length);
     expect(inputWithValue(root, "vim").checked).toBe(false);
     expect(root.querySelector("#ask-user-question-0 input[value='code']")).toBeNull();
     expect(inputWithValue(root, "__pi_web_other__").checked).toBe(false);
-    expect(root.querySelectorAll("#ask-user-question-0 textarea")).toHaveLength(1);
+    expect(root.querySelectorAll("#ask-user-question-0 ask-markdown-field")).toHaveLength(1);
     expect(root.querySelector("#ask-user-question-0 .other-answer")).toBeNull();
-    editorText.value = "VS Code Insiders";
-    editorText.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    typeInto(editorText, "VS Code Insiders");
 
     // Checkbox: editing keeps other checked options, does not toggle the edited one, and replaces old custom text.
     inputWithValue(root, "lit").click();
     requiredElement(root.querySelector<HTMLInputElement>("#ask-user-question-1 input[value='__pi_web_other__']"), "stack custom").click();
     await card.updateComplete;
-    const stackText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-1"), "stack textarea");
-    stackText.value = "Svelte";
-    stackText.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    typeInto(markdownField(root, "#ask-user-other-1"), "Svelte");
     await card.updateComplete;
     requiredElement(editButtons[3], "edit React").click();
     await card.updateComplete;
     await Promise.resolve();
-    const editedStackText = requiredElement(root.querySelector<HTMLTextAreaElement>("#ask-user-other-1"), "stack textarea");
+    const editedStackText = markdownField(root, "#ask-user-other-1");
     expect(editedStackText.closest(".inline-edit")).not.toBeNull();
     expect(editedStackText.value).toBe("React");
-    expect(root.activeElement).toBe(editedStackText);
+    expect(editedStackText.contains(root.activeElement)).toBe(true);
     expect(inputWithValue(root, "lit").checked).toBe(true);
 
     buttonWithText(root, "Send answers").click();
@@ -191,21 +189,20 @@ describe("ask-user-card live form", () => {
     await card.updateComplete;
     requiredElement(root.querySelectorAll<HTMLButtonElement>("button[aria-label='Edit this answer']")[1], "edit VS Code").click();
     await card.updateComplete;
-    const textarea = requiredElement(root.querySelector<HTMLTextAreaElement>(".inline-edit textarea"), "inline textarea");
-    textarea.value = "VS Code, but lighter";
-    textarea.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    const textarea = markdownField(root, ".inline-edit ask-markdown-field");
+    typeInto(textarea, "VS Code, but lighter");
     // The draft holds the edit as the Custom answer, as before.
     expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ editor: { values: [], otherText: "VS Code, but lighter" } });
 
     const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true });
-    textarea.dispatchEvent(escape);
+    requiredElement(textarea.querySelector(".cm-content"), "editor content").dispatchEvent(escape);
     await card.updateComplete;
     expect(escape.defaultPrevented).toBe(true);
     expect(outside).not.toHaveBeenCalled();
     expect(root.querySelector(".inline-edit")).toBeNull();
     expect(inputWithValue(root, "vim").checked).toBe(true);
     expect(inputWithValue(root, "code").checked).toBe(false);
-    expect(root.querySelector("textarea#ask-user-other-0")).toBeNull();
+    expect(root.querySelector("#ask-user-other-0")).toBeNull();
     expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ editor: { values: ["vim"] } });
 
     // Without an earlier answer, Revert leaves the question unanswered.
@@ -235,14 +232,13 @@ describe("ask-user-card live form", () => {
     requiredElement(root.querySelector<HTMLButtonElement>('button[aria-label="Add note"]'), "note icon").click();
     await card.updateComplete;
     await Promise.resolve();
-    const note = requiredElement(root.querySelector<HTMLTextAreaElement>(".ask-note textarea"), "note");
-    expect(root.activeElement).toBe(note);
+    const note = markdownField(root, ".ask-note ask-markdown-field");
+    expect(note.contains(root.activeElement)).toBe(true);
     expect(root.querySelector('button[aria-label="Add note"]')).toBeNull();
     expect(note.closest("form")?.querySelector(".ask-note + .form-footer")).not.toBeNull();
 
     inputWithValue(root, "pg").click();
-    note.value = "  Ship it this week.  ";
-    note.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    typeInto(note, "  Ship it this week.  ");
     await card.updateComplete;
     expect(loadAskNote("local:session-1", "ask-1")).toBe("  Ship it this week.  ");
     buttonWithText(root, "Send answers").click();
@@ -255,7 +251,7 @@ describe("ask-user-card live form", () => {
     saveAskNote("local:session-1", "ask-1", "Half typed");
     const card = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]));
     const root = renderRoot(card);
-    expect(root.querySelector<HTMLTextAreaElement>(".ask-note textarea")?.value).toBe("Half typed");
+    expect(markdownField(root, ".ask-note ask-markdown-field").value).toBe("Half typed");
     expect(root.querySelector('button[aria-label="Add note"]')).toBeNull();
   });
 
@@ -265,12 +261,11 @@ describe("ask-user-card live form", () => {
       question("notes", "Anything else?", []),
     ]), onSubmit);
     const root = renderRoot(card);
-    const textarea = requiredElement(root.querySelector("textarea"), "custom textarea");
+    const field = markdownField(root, ".other-answer ask-markdown-field");
 
     expect(root.querySelector("input")).toBeNull();
-    expect(requiredElement(textarea.closest("label"), "custom label").textContent).toContain("Custom answer");
-    textarea.value = "Keep the first version small.";
-    textarea.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    expect(field.closest(".other-answer")?.textContent).toContain("Custom answer");
+    typeInto(field, "Keep the first version small.");
     await card.updateComplete;
     buttonWithText(root, "Send answers").click();
     await Promise.resolve();
@@ -293,12 +288,17 @@ describe("ask-user-card live form", () => {
     const toggle = requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch");
     expect(toggle.checked).toBe(false);
     expect(toggle.getAttribute("aria-label")).toBe("Enable backup?");
-    expect(root.querySelector("textarea")).toBeNull();
+    expect(root.querySelector("ask-markdown-field")).toBeNull();
     expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("2 of 3 answered");
 
     toggle.click();
     await card.updateComplete;
-    expect(requiredElement(root.querySelector("textarea"), "folder textarea").value).toBe("~/b");
+    // The multi-line field starts on its default, and what the user types there is the draft and the answer.
+    const folder = markdownField(root, "#ask-user-other-1");
+    expect(folder.value).toBe("~/b");
+    typeInto(folder, "~/b/archive");
+    await card.updateComplete;
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ folder: { value: "~/b/archive" } });
     const copies = requiredElement(root.querySelector<HTMLInputElement>("input[type='number']"), "number input");
     expect([copies.value, copies.max, copies.step]).toEqual(["2", "5", "1"]);
     copies.value = "9";
@@ -320,7 +320,7 @@ describe("ask-user-card live form", () => {
       revision: "r1",
       answers: [
         { id: "backup", values: [], value: true },
-        { id: "folder", values: [], value: "~/b" },
+        { id: "folder", values: [], value: "~/b/archive" },
         { id: "copies", values: [], value: 3 },
         { id: "due", values: [], value: "2026-12-01" },
       ],
@@ -594,7 +594,7 @@ describe("ask-user-card record mode", () => {
     await card.updateComplete;
     const root = renderRoot(card);
 
-    expect(root.querySelector("input, textarea, button, select")).toBeNull();
+    expect(root.querySelector("input, textarea, button, select, ask-markdown-field")).toBeNull();
     expect(root.textContent).toContain("Superseded");
     expect(root.textContent).toContain("Fast");
     expect(root.textContent).toContain("It keeps the feedback loop short.");
@@ -674,6 +674,22 @@ function inputWithValue(root: ShadowRoot, value: string): HTMLInputElement {
 function buttonWithText(root: ShadowRoot, text: string): HTMLButtonElement {
   const button = [...root.querySelectorAll("button")].find((candidate) => candidate.textContent.trim() === text);
   return requiredElement(button, `button named ${text}`);
+}
+
+function markdownField(root: ShadowRoot, selector: string): AskMarkdownField {
+  const field = root.querySelector(selector);
+  if (!(field instanceof AskMarkdownField)) throw new Error(`Expected a Markdown field at ${selector}`);
+  return field;
+}
+
+function editorView(field: AskMarkdownField): EditorView {
+  return requiredElement(EditorView.findFromDOM(requiredElement(field.querySelector<HTMLElement>(".cm-editor"), "editor")), "editor view");
+}
+
+/** Replaces the field's text as the user's edit would. */
+function typeInto(field: AskMarkdownField, text: string): void {
+  const view = editorView(field);
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
 }
 
 function requiredElement<T>(value: T | null | undefined, label: string): T {
