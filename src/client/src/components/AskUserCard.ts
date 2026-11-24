@@ -418,9 +418,7 @@ export class AskUserCard extends LitElement {
   };
 
   private setAnswer(question: AskUserQuestion, answer: AskDraftAnswer): void {
-    const next: AskDraftAnswers = answer.values.length === 0 && answer.otherText === undefined
-      ? Object.fromEntries(Object.entries(this.answers).filter(([id]) => id !== question.id))
-      : { ...this.answers, [question.id]: { ...answer, asked: askedFingerprint(question) } };
+    const next: AskDraftAnswers = { ...this.answers, [question.id]: { ...answer, asked: askedFingerprint(question) } };
     this.answers = next;
     this.confirmingPartialSubmit = false;
     if (this.ask !== undefined && this.draftSessionId !== "") saveAskDraft(this.draftSessionId, this.ask.askId, next);

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserQuestion } from "../../shared/apiTypes";
-import { answeredCount, clearAskDraft, loadAskDraft, saveAskDraft, toSubmission, unansweredQuestions, type AskDraftAnswers } from "./askDrafts";
+import { answeredCount, askedFingerprint, clearAskDraft, loadAskDraft, saveAskDraft, toSubmission, unansweredQuestions, type AskDraftAnswers } from "./askDrafts";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -92,6 +92,20 @@ describe("ask draft storage", () => {
 
     expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1")).toBeNull();
     expect(loadAskDraft("local:s1", "ask-1", storage)).toEqual({});
+  });
+
+  it("starts an undrafted question on its recommended options but keeps a draft the user cleared", () => {
+    const storage = new MemoryStorage();
+    const single: AskUserQuestion = { ...singleSelect, options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite", recommended: true }] };
+    const multi: AskUserQuestion = { ...multiSelect, options: multiSelect.options.map((option) => ({ ...option, recommended: true })) };
+    const preselected = loadAskDraft("local:s1", "ask-1", storage, [single, multi]);
+    expect(preselected["q1"]?.values).toEqual(["pg"]);
+    expect(preselected["q2"]?.values).toEqual(["metrics", "tracing"]);
+    expect(answeredCount([single, multi], preselected)).toBe(2);
+
+    saveAskDraft("local:s1", "ask-1", { ...preselected, q2: { values: [], asked: askedFingerprint(multi) } }, storage);
+
+    expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])["q2"]?.values).toEqual([]);
   });
 
   it("clears a draft once its ask is closed", () => {

@@ -41,20 +41,32 @@ function browserStorage(): Storage | undefined {
  * a different wording of their question are dropped.
  */
 export function loadAskDraft(sessionId: string, askId: string, storage = browserStorage(), questions?: readonly AskUserQuestion[]): AskDraftAnswers {
+  let answers: AskDraftAnswers;
   try {
     const stored = storage?.getItem(draftStorageKey(sessionId, askId));
-    const answers = stored === null || stored === undefined ? {} : draftAnswersFromJson(stored);
-    if (questions === undefined) return answers;
-    const current = new Map(questions.map((question) => [question.id, askedFingerprint(question)]));
-    return Object.fromEntries(Object.entries(answers).filter(([id, answer]) => answer.asked !== undefined && answer.asked === current.get(id)));
+    answers = stored === null || stored === undefined ? {} : draftAnswersFromJson(stored);
   } catch {
-    return {};
+    answers = {};
   }
+  if (questions === undefined) return answers;
+  const current = new Map(questions.map((question) => [question.id, askedFingerprint(question)]));
+  return { ...recommendedAnswers(questions), ...Object.fromEntries(Object.entries(answers).filter(([id, answer]) => answer.asked !== undefined && answer.asked === current.get(id))) };
+}
+
+/** A question with no draft starts with its recommended options selected (the first one if single choice); any draft, even a cleared one, wins. */
+function recommendedAnswers(questions: readonly AskUserQuestion[]): AskDraftAnswers {
+  const answers: AskDraftAnswers = {};
+  for (const question of questions) {
+    const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
+    if (recommended.length > 0) answers[question.id] = { values: question.multiple === true ? recommended : recommended.slice(0, 1), asked: askedFingerprint(question) };
+  }
+  return answers;
 }
 
 export function saveAskDraft(sessionId: string, askId: string, answers: AskDraftAnswers, storage = browserStorage()): void {
   try {
-    const entries = Object.entries(answers).filter(([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "");
+    // An answer the user cleared keeps its entry (it has `asked`), so recommendations do not come back over it.
+    const entries = Object.entries(answers).filter(([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "" || answer.asked !== undefined);
     if (entries.length === 0) storage?.removeItem(draftStorageKey(sessionId, askId));
     else storage?.setItem(draftStorageKey(sessionId, askId), JSON.stringify(Object.fromEntries(entries)));
   } catch {

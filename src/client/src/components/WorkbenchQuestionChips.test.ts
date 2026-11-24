@@ -23,7 +23,7 @@ function ask(askId: string, patch: Partial<PendingAskUser> = {}): PendingAskUser
     revision: "r1",
     turnsSinceUpdate: 0,
     context: "**Finding:** the cache is stale.",
-    questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite" }] }],
+    questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }, { value: "sqlite", label: "SQLite" }] }],
     ...patch,
   };
 }
@@ -102,7 +102,8 @@ describe("WorkbenchQuestionChips", () => {
   it("opens a drawer of every set with its context above the questions, recommended option, Custom and Send", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-19T10:05:00.000Z"));
-    const { chips } = await mount([ask("abc-1"), ask("def-2", { turnsSinceUpdate: 6, updatedAt: "2026-10-19T08:00:00.000Z" })]);
+    const recommended = { questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite" }] }] };
+    const { chips } = await mount([ask("abc-1", recommended), ask("def-2", { turnsSinceUpdate: 6, updatedAt: "2026-10-19T08:00:00.000Z" })]);
 
     await openWith(chips);
 
@@ -115,6 +116,7 @@ describe("WorkbenchQuestionChips", () => {
     expect(first?.shadowRoot?.querySelector("formatted-text")).not.toBeNull();
     expect(text(first)).toContain("abc.db");
     expect(text(first)).toContain("Postgres Recommended");
+    expect(first?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.checked).toBe(true);
     expect(text(first)).toContain("Custom");
     expect(text(first)).toContain("updated 5 min ago");
     expect(text(second)).toContain("may be stale");

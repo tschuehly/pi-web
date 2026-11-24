@@ -74,6 +74,24 @@ describe("ask-user-card live form", () => {
     });
   });
 
+  it("starts on the recommended options, counted as answered, and keeps them cleared once the user unticks them", async () => {
+    const ask = openAsk([
+      question("platforms", "Target platforms", [{ ...option("web", "Web"), recommended: true }, { ...option("desktop", "Desktop"), recommended: true }], { multiple: true }),
+    ]);
+    const card = await mountOpenAsk(ask);
+    const root = renderRoot(card);
+
+    expect(inputWithValue(root, "web").checked && inputWithValue(root, "desktop").checked).toBe(true);
+    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 1 answered");
+    inputWithValue(root, "web").click();
+    inputWithValue(root, "desktop").click();
+    card.remove();
+
+    const reloaded = renderRoot(await mountOpenAsk(ask));
+    expect(inputWithValue(reloaded, "web").checked || inputWithValue(reloaded, "desktop").checked).toBe(false);
+    expect(reloaded.querySelector("[aria-live='polite']")?.textContent).toContain("0 of 1 answered");
+  });
+
   it("always offers and focuses a labelled custom field while preserving multi-select options", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([
