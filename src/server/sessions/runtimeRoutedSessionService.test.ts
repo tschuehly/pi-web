@@ -103,8 +103,9 @@ describe("runtime-routed session service", () => {
     await routed.status({ id: durableChat.id, cwd: "/work/a" });
     await routed.abort({ id: durableChat.id, cwd: "/work/a" });
     expect(calls).toEqual(["prompt", "abort"]);
-    // The first prompt also asks the Chat's host for its title.
-    expect(hosts[0]?.methods).toEqual(["complete", "prompt", "status", "abort"]);
+    // The first prompt also asks the Chat's host for its title, and that title for its tab name.
+    expect(hosts[0]?.methods[0]).toBe("complete");
+    expect(hosts[0]?.methods.filter((method) => method !== "complete")).toEqual(["prompt", "status", "abort"]);
   });
 
   it("refuses MCP sign-in for a Durable Chat visibly and keeps legacy Chats on the legacy MCP auth service", async () => {

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionStatus } from "../api";
 import { emptyWindow, focusChat, openChat, type WindowChat, type WindowStore, type WorkbenchWindow } from "../workbenchWindows";
 import { chatTabStatus, endedOutside, WorkbenchWindowTabs, type ChatTabCloseDetail, type ChatTabSelectDetail } from "./WorkbenchWindowTabs";
@@ -303,5 +303,30 @@ describe("tab row as the macOS title bar", () => {
     tabs.remove();
 
     expect(calls).toEqual(["titlebar true", "drag", "zoom", "titlebar false"]);
+  });
+});
+
+describe("tab short names", () => {
+  it("shows a Chat's and a Workstream's short name, the full title as tooltip, and renames either on double-click", async () => {
+    const short = { ...release, shortTitle: "Rel" };
+    const store = [{ ...chat("a1", short), shortName: "First" }, chat("a2", short), { ...chat("x"), shortName: "Loose" }].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") });
+    const window = focusChat(store, "w", "a1")["w"];
+    if (window === undefined) throw new Error("missing window");
+    const { tabs, root } = await mount("a1", { ...window, layout: "tabs" });
+    const renames: unknown[] = [];
+    tabs.addEventListener("tab-rename", (event) => { if (event instanceof CustomEvent) renames.push(event.detail); });
+    const answers = ["Release", null, ""];
+    const prompt = vi.fn<(message?: string, current?: string) => string | null>(() => answers.shift() ?? null);
+    vi.stubGlobal("prompt", prompt);
+
+    expect([...root.querySelectorAll(".workstreams [role=tab] .title")].map((title) => title.textContent)).toEqual(["Rel", "Loose"]);
+    expect([...root.querySelectorAll(".lower .chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("title")])).toEqual([["First", "Chat a1"], ["Chat a2", "Chat a2"]]);
+    root.querySelector(".workstream-tab")?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    root.querySelector('.lower [data-session="a1"]')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    root.querySelector('.lower [data-session="a2"]')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+
+    expect(prompt.mock.calls.map((call) => call[1])).toEqual(["Rel", "First", ""]);
+    expect(renames).toEqual([{ workstreamId: "release", name: "Release" }, { sessionId: "a2", name: "" }]);
+    vi.unstubAllGlobals();
   });
 });

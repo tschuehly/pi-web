@@ -294,6 +294,7 @@ export function parseSessionInfo(value: unknown): SessionInfo {
     ...optionalField("startupToken", optionalString(record, "startupToken")),
     ...(agentSubsession === true ? { agentSubsession: true } : {}),
     ...(name === undefined ? {} : { name }),
+    ...optionalField("shortName", optionalString(record, "shortName")),
     ...(metadata === undefined ? {} : { metadata }),
     created: requireString(record, "created"),
     modified: requireString(record, "modified"),
@@ -990,6 +991,7 @@ function parseSessionNameEvent(record: Record<string, unknown>): Extract<Session
     type: "session.name",
     sessionId: requireNonEmptyString(record, "sessionId"),
     ...optionalField("name", optionalString(record, "name")),
+    ...optionalField("shortName", optionalString(record, "shortName")),
   };
 }
 

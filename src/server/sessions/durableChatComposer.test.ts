@@ -183,7 +183,7 @@ describe("Durable Chat composer", () => {
       skillList: [{ name: "tidy", filePath: join(skillDir, "SKILL.md"), baseDir: skillDir }],
       promptList: [{ name: "review", description: "Review code", argumentHint: "<path>", content: "Review $1 (all: $@) ${2:-carefully}" }],
     } });
-    expect((await durable.commands(ref)).map((command) => [command.name, command.source])).toEqual([["mode", "extension"], ["name", "builtin"], ["pair", "extension"], ["review", "prompt"], ["session", "builtin"], ["skill:tidy", "skill"]]);
+    expect((await durable.commands(ref)).map((command) => [command.name, command.source])).toEqual([["mode", "extension"], ["name", "builtin"], ["pair", "extension"], ["review", "prompt"], ["session", "builtin"], ["skill:tidy", "skill"], ["tabname", "builtin"]]);
     await expect(durable.runCommand(ref, '/review src "two words" /skill:tidy')).resolves.toEqual({ type: "done" });
     await durable.prompt(ref, "/review lib");
     await durable.prompt(ref, "/unknown x");

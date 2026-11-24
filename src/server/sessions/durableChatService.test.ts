@@ -317,6 +317,7 @@ describe("Durable Chats", () => {
       expect.objectContaining({ name: "pair", source: "extension" }),
       expect.objectContaining({ name: "session", source: "builtin" }),
       { name: "skill:tidy", description: "Tidy up", source: "skill" },
+      expect.objectContaining({ name: "tabname", source: "builtin" }),
     ]);
     await durable.prompt(ref, "/skill:tidy src only", undefined, undefined, { operationId: "op-7" });
     const prompt = only(launched).requests.find((request) => request.method === "prompt");
@@ -398,14 +399,14 @@ describe("Durable Chats", () => {
     const ref = { id: chat.id, cwd: chat.cwd };
     only(launched).answer = (request) => request.method === "compact" ? { type: "done" } : status;
     expect((await durable.status(ref)).capabilities).toEqual(["compact", "tool-groups"]);
-    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["compact", "mode", "name", "pair", "session"]);
+    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["compact", "mode", "name", "pair", "session", "tabname"]);
     await expect(durable.runCommand(ref, "/compact Keep the test names")).resolves.toEqual({ type: "done" });
     await expect(durable.runCommand(ref, "/compact")).resolves.toEqual({ type: "done" });
     expect(only(launched).requests.filter((request) => request.method === "compact").map((request) => request.params)).toEqual([{ instructions: "Keep the test names" }, {}]);
 
     // An older host without the capability: no /compact command, and running it is refused visibly.
     await durable.stop(ref);
-    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "pair", "session"]);
+    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "pair", "session", "tabname"]);
     await expect(durable.runCommand(ref, "/compact")).resolves.toEqual({ type: "unsupported", message: "/compact is not available in this Durable Chat's host" });
     expect(launched[1]?.requests.some((request) => request.method === "compact")).toBe(false);
   });
@@ -441,7 +442,7 @@ describe("Durable Chats", () => {
       { name: "ping", description: "Send a Telegram notification", source: "extension" },
       { name: "monitors", source: "extension" },
     ]));
-    expect(commands.map((command) => command.name)).toEqual(["mode", "monitors", "name", "pair", "ping", "session"]);
+    expect(commands.map((command) => command.name)).toEqual(["mode", "monitors", "name", "pair", "ping", "session", "tabname"]);
     await expect(durable.runCommand(ref, "/ping deploy done")).resolves.toEqual({ type: "done" });
     expect(only(launched).requests.find((request) => request.method === "command")?.params).toMatchObject({ name: "ping", args: "deploy done" });
     await expect(durable.runCommand(ref, "/google-account")).resolves.toEqual({ type: "unsupported", message: "/google-account is not available in Durable Chats: deferred" });
@@ -618,6 +619,7 @@ describe("Durable Chats", () => {
       expect.objectContaining({ name: "pair" }),
       { name: "quota-check", description: "Check Claude quota", source: "extension" },
       expect.objectContaining({ name: "session" }),
+      expect.objectContaining({ name: "tabname" }),
     ]);
     await expect(durable.runCommand(ref, "/quota-check  repair ")).resolves.toEqual({ type: "done", message: "Claude quota telemetry is fresh." });
     const command = only(launched).requests.find((request) => request.method === "command");
@@ -631,7 +633,7 @@ describe("Durable Chats", () => {
     const chat = await durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
     only(launched).answer = (request) => { if (request.method === "commands" || request.method === "command") throw new Error(`Unknown method ${request.method}`); return status; };
-    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "pair", "session"]);
+    expect((await durable.commands(ref)).map((command) => command.name)).toEqual(["mode", "name", "pair", "session", "tabname"]);
     await expect(durable.runCommand(ref, "/quota-check")).resolves.toEqual({ type: "unsupported", message: "/quota-check is not available in Durable Chats yet" });
   });
 
@@ -786,7 +788,7 @@ describe("Durable Chats: composer and attention parity (fleet P028 P030 P031 P03
     const events = globalEvents(hub);
     await durable.prompt(ref, "Please review this substantial migration plan");
     await vi.waitFor(() => { expect(durable.list("/work/a")[0]?.name).toBe("Durable · Migration review"); });
-    const complete = host.requests.filter((request) => request.method === "complete");
+    const complete = host.requests.filter(isTitleRequest);
     expect(complete).toHaveLength(1);
     expect(complete[0]?.params).toMatchObject({
       systemPrompt: SESSION_TITLE_SYSTEM_PROMPT,
@@ -800,7 +802,34 @@ describe("Durable Chats: composer and attention parity (fleet P028 P030 P031 P03
     await durable.prompt(ref, "continue");
     await durable.runCommand(ref, "/name Explicit owner title");
     expect(locator.durable(chat.id)).toMatchObject({ name: "Explicit owner title", nameSource: "manual" });
-    expect(host.requests.filter((request) => request.method === "complete")).toHaveLength(1);
+    expect(host.requests.filter(isTitleRequest)).toHaveLength(1);
+  });
+
+  it("names a Chat's tab in one or two words from each new title, never over the owner's /tabname", async () => {
+    const { durable, hub, launched, locator } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const host = only(launched);
+    let tabName = "Migration review";
+    host.answer = (request) => request.method === "complete" ? (String(request.params?.["prompt"]).startsWith("Create a one- or two-word tab label") ? tabName : "Migration plan review") : request.method === "status" ? status : null;
+    const events = globalEvents(hub);
+    await durable.prompt(ref, "Please review this substantial migration plan");
+    await vi.waitFor(() => { expect(locator.durable(chat.id)).toMatchObject({ shortName: "Migration review", shortNameSource: "auto" }); });
+    expect(host.requests.find((request) => request.method === "complete" && !isTitleRequest(request))?.params?.["prompt"]).toBe("Create a one- or two-word tab label for this chat title:\n\nMigration plan review");
+    expect(events).toContainEqual({ type: "session.name", sessionId: chat.id, name: "Durable · Migration plan review", shortName: "Migration review" });
+    expect(durable.list("/work/a")[0]?.shortName).toBe("Migration review");
+
+    // A long answer names no tab; the owner's name stays through a new title, and an empty /tabname hands it back.
+    tabName = "A far too long tab name";
+    await durable.runCommand(ref, "/name Database migration");
+    expect(await durable.runCommand(ref, "/tabname Way too many words")).toMatchObject({ type: "unsupported" });
+    expect(await durable.runCommand(ref, "/tabname Migrations")).toMatchObject({ type: "done", session: { shortName: "Migrations" } });
+    tabName = "DB migration";
+    await durable.runCommand(ref, "/name Database migration rollout");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(locator.durable(chat.id)).toMatchObject({ shortName: "Migrations", shortNameSource: "manual" });
+    await durable.runCommand(ref, "/tabname");
+    await vi.waitFor(() => { expect(locator.durable(chat.id)).toMatchObject({ shortName: "DB migration", shortNameSource: "auto" }); });
   });
 
   it("P031 falls back to the prompt's first words when the title request fails, and never overrides an owner's /name", async () => {
@@ -815,7 +844,7 @@ describe("Durable Chats: composer and attention parity (fleet P028 P030 P031 P03
     if (host === undefined) throw new Error("second host");
     await durable.runCommand({ id: named.id, cwd: "/work/b" }, "/name Mine");
     await durable.prompt({ id: named.id, cwd: "/work/b" }, "Fix the flaky login test");
-    expect(host.requests.some((request) => request.method === "complete")).toBe(false);
+    expect(host.requests.some(isTitleRequest)).toBe(false);
     expect(durable.list("/work/b")[0]?.name).toBe("Durable · Mine");
   });
 
@@ -1787,3 +1816,8 @@ describe("Durable Chats: live review (/pair)", () => {
     expect(second.locator.durable(first.main.id)?.liveReview).toBeUndefined();
   });
 });
+
+/** A Chat-title request, as opposed to a tab-name one. */
+function isTitleRequest(request: { method: string; params?: Record<string, unknown> }): boolean {
+  return request.method === "complete" && String(request.params?.["prompt"]).startsWith("Create a 2-6 word title");
+}

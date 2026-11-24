@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { isLiveReviewPairing, type LiveReviewPairing } from "./liveReview.js";
 
-type RecordChange = Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "key">> & { liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined };
+type RecordChange = Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "shortName" | "shortNameSource" | "key">> & { liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined };
 
 /**
  * Which runtime owns a Chat. Legacy Chats have no record: the legacy runtime stays the default. A Durable Chat's
@@ -24,6 +24,9 @@ export interface DurableChatRecord {
   name?: string;
   /** Who set `name`; absent means the owner (`/name`), which generated titles never replace. */
   nameSource?: "manual" | "auto" | "checkpoint";
+  /** The tab's one- or two-word name: generated from `name`, or the owner's (`/tabname`), which generation never replaces. */
+  shortName?: string;
+  shortNameSource?: "manual" | "auto";
   /** send_chat_message's 3-word key, assigned once and never changed (a renamed Chat keeps it). */
   key?: string;
   /** Live review (`/pair`): this Chat's reviewer and the pairing's knobs and counters. */
@@ -232,6 +235,8 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
     && typeof value["messageCount"] === "number"
     && (value["name"] === undefined || typeof value["name"] === "string")
     && (value["nameSource"] === undefined || value["nameSource"] === "manual" || value["nameSource"] === "auto" || value["nameSource"] === "checkpoint")
+    && (value["shortName"] === undefined || typeof value["shortName"] === "string")
+    && (value["shortNameSource"] === undefined || value["shortNameSource"] === "manual" || value["shortNameSource"] === "auto")
     && (value["key"] === undefined || typeof value["key"] === "string")
     && (value["liveReview"] === undefined || isLiveReviewPairing(value["liveReview"]))
     && (value["reviewing"] === undefined || typeof value["reviewing"] === "string")

@@ -69,6 +69,8 @@ export interface ChatTabMenuDetail { sessionIds: string[]; label: string; client
 
 export interface ChatTabSelectDetail { sessionId: string }
 export interface ChatTabCloseDetail { sessionIds: string[] }
+/** A tab's new one- or two-word name, empty to restore the generated one: a Chat's, or a Workstream's for its tab. */
+export interface TabRenameDetail { sessionId?: string; workstreamId?: string; name: string }
 export interface WindowLayoutDetail { layout: WindowLayout }
 
 /** The Workstream identity colour, as the home card's marker uses it. */
@@ -98,7 +100,7 @@ export class WorkbenchWindowTabs extends LitElement {
   /** This window's id, carried by a drag so the receiving window knows where the Chats come from. */
   @property({ attribute: false }) windowId = "";
 
-  private emit(type: string, detail: ChatTabSelectDetail | ChatTabCloseDetail | ChatTabMenuDetail | DraggedChats | WindowLayoutDetail | undefined): void {
+  private emit(type: string, detail: ChatTabSelectDetail | ChatTabCloseDetail | TabRenameDetail | ChatTabMenuDetail | DraggedChats | WindowLayoutDetail | undefined): void {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
@@ -108,6 +110,12 @@ export class WorkbenchWindowTabs extends LitElement {
 
   private close(sessionIds: string[]): void {
     this.emit("chat-tab-close", { sessionIds });
+  }
+
+  /** Double-click renames a tab; a cancelled prompt changes nothing. */
+  private rename(target: { sessionId: string } | { workstreamId: string }, current: string): void {
+    const name = window.prompt("Tab name, one or two words (empty restores the generated name)", current);
+    if (name !== null) this.emit("tab-rename", { ...target, name: name.trim() });
   }
 
   /** Right-click, drag and drop, shared by Workstream and Chat tabs. */
@@ -280,6 +288,7 @@ export class WorkbenchWindowTabs extends LitElement {
 
   private renderWorkstreamTab(window: WorkbenchWindow, group: ChatGroup, selected: boolean) {
     const label = group.workstream?.title ?? "No Workstream";
+    const workstream = group.workstream;
     const open = () => { this.select(workstreamTabTarget(window, group.key)); };
     // A Workstream with one Chat has no lower tab, so its tab stands for that Chat: its status, its menu and ×.
     const only = group.chats.length === 1 ? group.chats[0] : undefined;
@@ -287,9 +296,10 @@ export class WorkbenchWindowTabs extends LitElement {
     return html`
       <div role="tab" tabindex="0" class=${group.workstream === undefined ? "workstream-tab" : "workstream-tab tinted"} data-session=${only?.sessionId ?? nothing} style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${only === undefined ? `Workstream: ${label}` : `Workstream: ${label} · ${only.title}`} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
-        @auxclick=${(event: MouseEvent) => { if (only !== undefined && event.button === 1) this.close([only.sessionId]); }}>
+        @auxclick=${(event: MouseEvent) => { if (only !== undefined && event.button === 1) this.close([only.sessionId]); }}
+        @dblclick=${() => { if (workstream !== undefined) this.rename({ workstreamId: workstream.id }, workstream.shortTitle ?? ""); }}>
         ${only === undefined ? nothing : this.renderChatMarker(only)}
-        <span class="title">${label}</span>
+        <span class="title">${workstream?.shortTitle ?? label}</span>
         ${only === undefined
           ? html`<span class="count" aria-label=${`${String(group.chats.length)} Chats`}>${String(group.chats.length)}</span>`
           : this.renderCloseButton(only)}
@@ -304,9 +314,10 @@ export class WorkbenchWindowTabs extends LitElement {
     return html`
       <div role="tab" tabindex="0" class=${tintFrom === undefined ? "chat-tab" : "chat-tab tinted"} style=${workstreamStyle(tintFrom)} data-session=${chat.sessionId} data-status=${status} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.title} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
-        @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([chat.sessionId]); }}>
+        @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([chat.sessionId]); }}
+        @dblclick=${() => { this.rename({ sessionId: chat.sessionId }, chat.shortName ?? ""); }}>
         ${this.renderChatMarker(chat)}
-        <span class="title">${chat.title}</span>
+        <span class="title">${chat.shortName ?? chat.title}</span>
         ${this.renderCloseButton(chat)}
       </div>`;
   }

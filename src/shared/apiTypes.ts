@@ -635,6 +635,8 @@ export interface SessionInfo extends SessionRef {
   /** Explicitly public, namespaced session data; never arbitrary Pi custom entries. */
   metadata?: import("./pluginApiTypes.js").SessionUiMetadata;
   name?: string;
+  /** Durable Chats: the tab's one- or two-word name, generated from `name` or set with `/tabname`. */
+  shortName?: string;
   created: string;
   modified: string;
   messageCount: number;
@@ -1603,7 +1605,7 @@ type SessionUiEventBody =
   | { type: "session.diagnostic"; message: string }
   | { type: "dialog.opened"; dialog: PendingExtensionDialog }
   | { type: "dialog.closed"; dialogId: string; reason: ExtensionDialogCloseReason; answer?: ExtensionDialogAnswer }
-  | { type: "session.name"; sessionId: string; name?: string }
+  | { type: "session.name"; sessionId: string; name?: string; shortName?: string }
   | { type: "session.created"; session: SessionInfo }
   /** The selected branch/runtime changed; clients refresh reads without changing local selection or drafts. */
   | { type: "session.tree.changed" }

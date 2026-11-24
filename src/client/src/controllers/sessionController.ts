@@ -237,7 +237,7 @@ export class SessionController {
     if (event.type === "status.update") this.queueStatusUpdate(event.status);
     else if (event.type === "activity.update") this.queueActivityUpdate(event.activity);
     else if (event.type === "session.created") this.applyCreatedSession(event.session);
-    else if (event.type === "session.name") this.applySessionName(event.sessionId, event.name);
+    else if (event.type === "session.name") this.applySessionName(event.sessionId, event.name, event.shortName);
     else if (event.type === "models.changed") this.onModelScopeChanged?.(event.revision);
     else if (event.type === "session.startup") this.queueStartupProgress(event);
   }
@@ -2367,12 +2367,14 @@ export class SessionController {
     this.setState({ pendingAsks: state.pendingAsks.filter((ask) => ask.askId !== askId) });
   }
 
-  private applySessionName(sessionId: string, name: string | undefined) {
+  private applySessionName(sessionId: string, name: string | undefined, shortName: string | undefined) {
     const rename = (session: SessionInfo) => {
       if (session.id !== sessionId) return session;
       const next = { ...session };
       if (name === undefined || name === "") delete next.name;
       else next.name = name;
+      if (shortName === undefined) delete next.shortName;
+      else next.shortName = shortName;
       return next;
     };
     const selectedSession = this.getState().selectedSession;
@@ -2448,7 +2450,7 @@ export class SessionController {
     if (transcript) {
       this.setState({ messages: transcript });
     } else if (event.type === "session.name") {
-      this.applySessionName(event.sessionId, event.name);
+      this.applySessionName(event.sessionId, event.name, event.shortName);
     }
   }
 

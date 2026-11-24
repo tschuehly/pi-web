@@ -26,7 +26,7 @@ import { catalogWithEnabledFirst, resolveEnabledModelIds } from "./sessionModelS
 import type { ModelRuntime } from "../../piSdk.js";
 import type { SpawnSessionResult } from "./spawnSessionTool.js";
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
-import { cleanSessionName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, sessionTitleInput, shortSessionNamePrompt } from "./sessionNameGenerator.js";
+import { cleanSessionName, cleanTabName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, sessionTitleInput, shortSessionNamePrompt, tabNamePrompt } from "./sessionNameGenerator.js";
 import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
 import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
@@ -115,7 +115,7 @@ interface HostEvents {
   readonly mediaIndex?: SessionMediaIndex;
   /** Notification inbox summaries (the daemon's shared notification catalog). */
   publishNotificationSummary?(event: SessionNotificationSummaryEvent): void;
-  publishGlobal(event: { type: "session.created"; session: ClientSession } | { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string } | SessionAttentionEvent): void;
+  publishGlobal(event: { type: "session.created"; session: ClientSession } | { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string; shortName?: string } | SessionAttentionEvent): void;
   currentSeq(sessionId: string): number;
   /** Whether a browser watches the Chat: its host is never idle (legacy idle unload). */
   hasSessionSubscribers?(sessionId: string): boolean;
@@ -469,6 +469,7 @@ export class DurableChatService {
       path: `durable:${record.id}`,
       persisted: true,
       name: record.name !== undefined ? `Durable · ${record.name}` : record.firstMessage === "" ? "Durable Chat" : `Durable · ${record.firstMessage.slice(0, 60)}`,
+      ...(record.shortName === undefined ? {} : { shortName: record.shortName }),
       created: record.created,
       modified: record.modified,
       messageCount: record.messageCount,
@@ -739,6 +740,7 @@ export class DurableChatService {
     return [
       ...(connection.capabilities.includes("compact") ? [{ name: "compact", description: "Manually compact session context", argumentHint: "[instructions]", source: "builtin" as const }] : []),
       ...BUILTIN_COMMANDS.filter((command) => command.name === "name" || command.name === "session" || (command.name === "tree" && connection.capabilities.includes("tree"))),
+      { name: "tabname", description: "Name this Chat's tab in one or two words; without a name, the tab takes a generated one again", argumentHint: "[name]", source: "builtin" as const },
       { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now; /mode unalign clears the alignment", source: "extension" as const },
       { name: "pair", description: "Live review: a reviewer chat watches this chat's work and messages it on a defect; /pair stop ends it", argumentHint: "[provider/model] [--trigger turn|turn5|edits] [--brief silent|coach] | stop", source: "extension" as const },
       ...hostCommands.map((command) => ({ ...command, source: "extension" as const })),
@@ -761,6 +763,7 @@ export class DurableChatService {
     const name = /^\/(\S+)/.exec(trimmed)?.[1] ?? "";
     const rest = trimmed.slice(name.length + 1).trim();
     if (name === "name") return this.#name(ref, rest);
+    if (name === "tabname") return this.#tabName(ref, rest);
     // An agent's prompt or message reading /pair is text; only the command route calls this (see its shortcut).
     if (name === "pair") return this.#serializePairing(ref.id, () => this.#pair(ref, rest));
     const checkpointTitle = CHECKPOINT_TITLE_COMMAND.exec(trimmed)?.[1];
@@ -835,10 +838,52 @@ export class DurableChatService {
 
   #setName(sessionId: string, name: string, nameSource: NonNullable<DurableChatRecord["nameSource"]>): ClientSession {
     this.deps.locator.update(sessionId, { name, nameSource });
+    this.#retab(sessionId);
+    return this.#publishName(sessionId);
+  }
+
+  #tabName(ref: SessionRouteRef, shortName: string): ClientCommandResult {
+    this.#record(ref);
+    if (shortName === "") {
+      this.deps.locator.update(ref.id, { shortNameSource: "auto" });
+      this.#retab(ref.id);
+      return { type: "done", message: "The tab takes a generated name again" };
+    }
+    const clean = cleanTabName(shortName);
+    if (clean === undefined) return { type: "unsupported", message: "Usage: /tabname <one or two words, at most 24 characters>" };
+    this.deps.locator.update(ref.id, { shortName: clean, shortNameSource: "manual" });
+    return { type: "done", message: `Tab named: ${clean}`, session: this.#publishName(ref.id) };
+  }
+
+  /** A generated tab name for the Chat's title, asked through its running host; never over the owner's `/tabname`. */
+  #retab(sessionId: string): void {
+    const record = this.deps.locator.durable(sessionId);
+    const connection = this.#connections.get(sessionId);
+    const title = record?.name;
+    if (title === undefined || record?.shortNameSource === "manual" || connection === undefined) return;
+    void (async () => {
+      const naming = this.deps.config === undefined ? {} : (await this.deps.config.read()).effectiveConfig.sessionNaming ?? {};
+      const model = naming.model === undefined ? undefined : parseModelSpec(naming.model);
+      const { result } = await (await connection).request("complete", {
+        systemPrompt: SESSION_TITLE_SYSTEM_PROMPT, prompt: tabNamePrompt(title),
+        maxTokens: 12, reasoning: naming.thinkingLevel ?? "minimal", timeoutMs: naming.timeoutMs ?? 10_000,
+        ...(model === undefined ? {} : { model }),
+      });
+      const shortName = typeof result === "string" ? cleanTabName(result) : undefined;
+      const current = this.deps.locator.durable(sessionId);
+      if (shortName === undefined || current?.name !== title || current.shortNameSource === "manual") return;
+      this.deps.locator.update(sessionId, { shortName, shortNameSource: "auto" });
+      this.#publishName(sessionId);
+    })().catch((error: unknown) => {
+      this.deps.logger?.warn({ sessionId, err: error }, "Durable Chat tab naming failed; the tab shows the title");
+    });
+  }
+
+  #publishName(sessionId: string): ClientSession {
     const record = this.deps.locator.durable(sessionId);
     if (record === undefined) throw new Error("Session not found");
     const session = this.info(record);
-    const event = { type: "session.name" as const, sessionId, ...(session.name === undefined ? {} : { name: session.name }) };
+    const event = { type: "session.name" as const, sessionId, ...(session.name === undefined ? {} : { name: session.name }), ...(session.shortName === undefined ? {} : { shortName: session.shortName }) };
     this.deps.events.publish(sessionId, event);
     this.deps.events.publishGlobal(event);
     return session;

@@ -7,12 +7,16 @@
 export interface WindowWorkstream {
   id: string;
   title: string;
+  /** Its tab's one- or two-word name. */
+  shortTitle?: string | undefined;
 }
 
 export interface WindowChat {
   sessionId: string;
   startupToken?: string | undefined;
   title: string;
+  /** Its tab's one- or two-word name (Durable Chats). */
+  shortName?: string | undefined;
   machineId: string;
   projectId?: string | undefined;
   workspaceId?: string | undefined;
@@ -136,13 +140,13 @@ export function focusChat(store: WindowStore, windowId: string, sessionId: strin
 }
 
 /** Title or Workstream of an open Chat; the same store when nothing changes. */
-export function updateChat(store: WindowStore, windowId: string, sessionId: string, patch: Partial<Pick<WindowChat, "title" | "workstream">>): WindowStore {
+export function updateChat(store: WindowStore, windowId: string, sessionId: string, patch: Partial<Pick<WindowChat, "title" | "shortName" | "workstream">>): WindowStore {
   const window = store[windowId];
   const index = window?.chats.findIndex((chat) => chat.sessionId === sessionId) ?? -1;
   const current = window?.chats[index];
   if (window === undefined || current === undefined) return store;
   const updated: WindowChat = { ...current, ...patch };
-  if (updated.title === current.title && updated.workstream?.id === current.workstream?.id && updated.workstream?.title === current.workstream?.title) return store;
+  if (updated.title === current.title && updated.shortName === current.shortName && updated.workstream?.id === current.workstream?.id && updated.workstream?.title === current.workstream?.title && updated.workstream?.shortTitle === current.workstream?.shortTitle) return store;
   const next = cloneWindow(window);
   next.chats[index] = updated;
   return { ...store, [windowId]: window.focused === sessionId ? focus(next, sessionId) : next };
@@ -318,10 +322,11 @@ function parseChat(value: unknown): WindowChat | undefined {
     sessionId: value["sessionId"],
     startupToken: optionalString(value["startupToken"]),
     title: value["title"],
+    shortName: optionalString(value["shortName"]),
     machineId: value["machineId"],
     projectId: optionalString(value["projectId"]),
     workspaceId: optionalString(value["workspaceId"]),
-    workstream: isRecord(workstream) && typeof workstream["id"] === "string" && typeof workstream["title"] === "string" ? { id: workstream["id"], title: workstream["title"] } : undefined,
+    workstream: isRecord(workstream) && typeof workstream["id"] === "string" && typeof workstream["title"] === "string" ? { id: workstream["id"], title: workstream["title"], shortTitle: optionalString(workstream["shortTitle"]) } : undefined,
   };
 }
 

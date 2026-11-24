@@ -52,7 +52,7 @@ import type { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import "./WorkbenchSettingsPanel";
 import "./WorkbenchFilesPane";
 import { openQuestionCount } from "./WorkbenchQuestionChips";
-import { carriesChats, chatStatusDotStyles, chatTabStatus, droppedChats, endedOutside, renderChatStatusDot, startChatDrag, type ChatTabCloseDetail, type ChatTabMenuDetail, type ChatTabSelectDetail, type ChatTabStatus, type DraggedChats } from "./WorkbenchWindowTabs";
+import { carriesChats, chatStatusDotStyles, chatTabStatus, droppedChats, endedOutside, renderChatStatusDot, startChatDrag, type ChatTabCloseDetail, type ChatTabMenuDetail, type ChatTabSelectDetail, type ChatTabStatus, type DraggedChats, type TabRenameDetail } from "./WorkbenchWindowTabs";
 import type { WorkbenchChatPane } from "./WorkbenchChatPane";
 import "./WorkbenchChatPane";
 import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, watchWorkstreams, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamServiceContext, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
@@ -300,7 +300,7 @@ export class WorkbenchApp extends LitElement {
   /** A Chat as this window records it, in the workspace it shows it in. */
   private windowChat(session: SessionInfo, workspace: Workspace | undefined, machineId = selectedMachineId(this.app)): WindowChat {
     const registered = workspace !== undefined && workspace.projectId !== "";
-    return { sessionId: session.id, startupToken: session.startupToken, title: sessionTitle(session), machineId, projectId: registered ? workspace.projectId : undefined, workspaceId: registered ? workspace.id : undefined };
+    return { sessionId: session.id, startupToken: session.startupToken, title: sessionTitle(session), shortName: session.shortName, machineId, projectId: registered ? workspace.projectId : undefined, workspaceId: registered ? workspace.id : undefined };
   }
 
   /** Another window asks this one to show one of its Chats, or to hand Chats dropped there over to it. */
@@ -379,7 +379,7 @@ export class WorkbenchApp extends LitElement {
       const session = runtime.state.selectedSession;
       if (session !== undefined && this.focused.current !== runtime) {
         if (previous.status?.isStreaming === true && runtime.state.status?.isStreaming === false) this.unreadChats.add(session.id);
-        if (previous.selectedSession?.id === session.id && previous.selectedSession !== session && this.windows.window?.chats.some((row) => row.sessionId === session.id && row.title !== sessionTitle(session)) === true) void this.updateWindow((store, id) => updateChat(store, id, session.id, { title: sessionTitle(session) }));
+        if (previous.selectedSession?.id === session.id && previous.selectedSession !== session && this.windows.window?.chats.some((row) => row.sessionId === session.id && (row.title !== sessionTitle(session) || row.shortName !== session.shortName)) === true) void this.updateWindow((store, id) => updateChat(store, id, session.id, { title: sessionTitle(session), shortName: session.shortName }));
       }
       this.focused.changed(runtime, patch);
       if (session !== undefined && previous.selectedSession?.id !== session.id && runtime === this.focused.current && this.windows.window?.layout === "grid") void this.preparePage(session.id);
@@ -727,7 +727,8 @@ export class WorkbenchApp extends LitElement {
     this.unreadChats.delete(session.id);
     const title = sessionTitle(session);
     // Every newly selected Chat was claimed before it showed; only a changed session row can change its title.
-    if (previous.selectedSession !== session && previous.selectedSession?.id === session.id && this.windows.window?.chats.find((chat) => chat.sessionId === session.id)?.title !== title) void this.updateWindow((store, id) => updateChat(store, id, session.id, { title }));
+    const row = this.windows.window?.chats.find((chat) => chat.sessionId === session.id);
+    if (previous.selectedSession !== session && previous.selectedSession?.id === session.id && row !== undefined && (row.title !== title || row.shortName !== session.shortName)) void this.updateWindow((store, id) => updateChat(store, id, session.id, { title, shortName: session.shortName }));
   }
 
   /** Resolves to whether the store took a change; false when nothing changed or it could not be stored. */
@@ -1090,7 +1091,7 @@ export class WorkbenchApp extends LitElement {
     const session = this.app.selectedSession;
     if (!changed.has("currentWorkstream") || session === undefined || this.currentWorkstream === undefined || this.currentWorkstreamError !== "") return;
     const snapshot = this.currentWorkstream;
-    void this.updateWindow((store, id) => updateChat(store, id, session.id, { workstream: snapshot === null ? undefined : { id: snapshot.id, title: snapshot.title } }));
+    void this.updateWindow((store, id) => updateChat(store, id, session.id, { workstream: snapshot === null ? undefined : { id: snapshot.id, title: snapshot.title, shortTitle: snapshot.shortTitle ?? undefined } }));
   }
 
   /**
@@ -1608,6 +1609,30 @@ export class WorkbenchApp extends LitElement {
     return this.app.selectedWorkspace === undefined ? undefined : this.workstreamContexts.get(selectedMachineId(this.app));
   }
 
+  /** A Chat's tab name through its `/tabname` command; a Workstream's through its store, for every tab showing it. */
+  private async renameTab(detail: TabRenameDetail): Promise<void> {
+    try {
+      if (detail.workstreamId !== undefined) {
+        const context = await this.resolveWorkstreamServiceContext();
+        if (context === undefined) throw new Error("the Workstream service is not available here");
+        const snapshot = await inspectWorkstream(context, detail.workstreamId);
+        const shortTitle = detail.name === "" ? null : detail.name;
+        await appendWorkstream(context, { workstreamId: snapshot.id, expectedRevision: snapshot.revision, idempotencyKey: `pi-web:${randomHex(16)}`, records: [{ type: "short-title.set", producer: "owner", payload: { shortTitle } }] });
+        void this.updateWindow((store, id) => (store[id]?.chats ?? []).reduce((next, chat) => chat.workstream?.id === snapshot.id ? updateChat(next, id, chat.sessionId, { workstream: { ...chat.workstream, shortTitle: shortTitle ?? undefined } }) : next, store));
+        return;
+      }
+      const chat = this.windows.window?.chats.find((row) => row.sessionId === detail.sessionId);
+      if (chat === undefined) return;
+      const { cwd } = await api.locate(chat.sessionId, chat.machineId);
+      const result = await api.runCommand({ id: chat.sessionId, cwd }, `/tabname ${detail.name}`.trim(), chat.machineId);
+      if (result.type === "unsupported") throw new Error(result.message);
+      const shortName = result.type === "done" ? result.session?.shortName : undefined;
+      void this.updateWindow((store, id) => updateChat(store, id, chat.sessionId, { shortName: detail.name === "" ? undefined : shortName }));
+    } catch (error) {
+      this.setApp({ error: `Could not rename the tab: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+
   private async resolveWorkstreamServiceContext(): Promise<WorkstreamServiceContext | undefined> {
     if (this.workstreamServiceContext !== undefined || this.app.selectedWorkspace === undefined || this.app.selectedProject !== undefined) return this.workstreamServiceContext;
     return this.machineWorkstreamContext();
@@ -1805,6 +1830,7 @@ export class WorkbenchApp extends LitElement {
       <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()}
         @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { this.swipe.cancel(); void this.showWindowChat(event.detail.sessionId); }}
         @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { void this.closeWindowChats(event.detail.sessionIds); }}
+        @tab-rename=${(event: CustomEvent<TabRenameDetail>) => { void this.renameTab(event.detail); }}
         @window-home=${() => { this.goHome(); }}
         @window-layout=${() => { this.toggleWindowLayout(); }}
         @chat-tab-menu=${(event: CustomEvent<ChatTabMenuDetail>) => { this.openWindowMenu(event.detail); }}

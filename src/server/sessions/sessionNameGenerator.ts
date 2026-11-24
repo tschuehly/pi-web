@@ -103,6 +103,17 @@ export function fallbackSessionName(firstMessage: unknown): string | undefined {
     .join(" "));
 }
 
+/** The request text of a Chat's tab name, made from its title. */
+export function tabNamePrompt(title: string): string {
+  return `Create a one- or two-word tab label for this chat title:\n\n${truncateInput(title)}`;
+}
+
+/** A tab name is one or two words of at most 24 characters; anything else names no tab. */
+export function cleanTabName(value: string): string | undefined {
+  const name = cleanSessionName(value);
+  return name !== undefined && name.length <= 24 && name.split(" ").length <= 2 ? name : undefined;
+}
+
 export function cleanSessionName(value: string): string | undefined {
   const title = (value.split("\n", 1)[0] ?? "")
     .replace(/^\s*(title|session title)\s*:\s*/i, "")

@@ -27,6 +27,7 @@ type HumanTaskAnswer = { kind: "yes-no" | "choice"; optionId: string } | { kind:
 export type WorkstreamSessionAnchor = { machineId: string; projectId: string; workspaceId: string } | { machineId?: never; projectId?: never; workspaceId?: never };
 export type WorkstreamAppendRecord =
   | { type: "title.set"; producer: "owner"; sourceSessionId?: string; payload: { title: string } }
+  | { type: "short-title.set"; producer: "owner"; sourceSessionId?: string; payload: { shortTitle: string | null } }
   | { type: "checkpoint.replaced"; producer: "owner"; sourceSessionId: string; payload: { sessionId: string; checkpoint: { id: string; whatChanged: string; remains: string; next: string; waitingOn?: WorkstreamWaitingOn; references?: string[]; sessionTitle?: string } } }
   | { type: "human-task.answered"; producer: "owner"; sourceSessionId?: string; payload: { taskId: string; answerId: string; answer: HumanTaskAnswer } }
   | { type: "session.pending"; producer: "pi-web"; sourceSessionId?: string; payload: { associationKey: string; derivationKind?: "checkpoint" } & WorkstreamSessionAnchor }
@@ -40,6 +41,8 @@ interface WorkstreamHumanTask {
 }
 export interface WorkstreamSnapshot {
   id: string; title: string; revision: number; updatedAt: string; closed: boolean;
+  /** The Workstream's one- or two-word tab name; absent from older Workbench services. */
+  shortTitle?: string | null;
   sessions: WorkstreamSession[];
   humanTasks: WorkstreamHumanTask[];
   links: { id: string; kind: string; reference: string; label?: string }[];
