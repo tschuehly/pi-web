@@ -281,6 +281,52 @@ describe("ask-user-card live form", () => {
     });
   });
 
+  it("renders typed questions as a switch, text, number and date fields on their defaults, shows a field's error, and sends values", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([
+      { id: "backup", question: "Enable backup?", options: [], kind: "boolean" },
+      { id: "folder", question: "Folder?", options: [], kind: "text", multiline: true, default: "~/b", showIf: { question: "backup", values: ["true"] } },
+      { id: "copies", question: "Copies?", options: [], kind: "number", default: 2, maximum: 5, integer: true },
+      { id: "due", question: "Due?", options: [], kind: "date" },
+    ]), onSubmit);
+    const root = renderRoot(card);
+    const toggle = requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch");
+    expect(toggle.checked).toBe(false);
+    expect(toggle.getAttribute("aria-label")).toBe("Enable backup?");
+    expect(root.querySelector("textarea")).toBeNull();
+    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("2 of 3 answered");
+
+    toggle.click();
+    await card.updateComplete;
+    expect(requiredElement(root.querySelector("textarea"), "folder textarea").value).toBe("~/b");
+    const copies = requiredElement(root.querySelector<HTMLInputElement>("input[type='number']"), "number input");
+    expect([copies.value, copies.max, copies.step]).toEqual(["2", "5", "1"]);
+    copies.value = "9";
+    copies.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await card.updateComplete;
+    expect(root.querySelector(".field-error")?.textContent).toBe("Must be at most 5");
+    expect(copies.getAttribute("aria-invalid")).toBe("true");
+    copies.value = "3";
+    copies.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    const due = requiredElement(root.querySelector<HTMLInputElement>("input[type='date']"), "date input");
+    due.value = "2026-12-01";
+    due.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await card.updateComplete;
+    expect(root.querySelector(".field-error")).toBeNull();
+    buttonWithText(root, "Send answers").click();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", {
+      revision: "r1",
+      answers: [
+        { id: "backup", values: [], value: true },
+        { id: "folder", values: [], value: "~/b" },
+        { id: "copies", values: [], value: 3 },
+        { id: "due", values: [], value: "2026-12-01" },
+      ],
+    });
+  });
+
   it("names unanswered questions before allowing a partial submit", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([
@@ -383,6 +429,18 @@ describe("ask-user-card dependent questions", () => {
     document.body.append(card);
     await card.updateComplete;
     expect(renderRoot(card).querySelector(".unanswered-record")?.textContent).toBe("Skipped · condition not met");
+  });
+
+  it("shows a typed answer in the record", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [{ question: { id: "b", question: "On?", options: [], kind: "boolean" }, answered: true, values: [], value: true }, { question: { id: "n", question: "N?", options: [], kind: "number" }, answered: true, values: [], value: 7 }],
+      answeredCount: 2, unansweredIds: [], summary: "Answered 2 of 2; none left unanswered",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+    expect([...renderRoot(card).querySelectorAll(".record-answers li")].map((item) => item.textContent)).toEqual(["On", "7"]);
   });
 });
 

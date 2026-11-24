@@ -605,7 +605,7 @@ describe("session routes", () => {
         payload: {
           cwd: "/repo/./",
           askId: "ask-1",
-          answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }],
+          answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }, { id: "copies", values: [], value: 3 }],
           note: "Ship it.",
           revision: "r3",
           partial: true,
@@ -622,7 +622,7 @@ describe("session routes", () => {
       expect(routeService.submitAskCalls).toEqual([{
         lookup: { id: "session-1", cwd: resolve("/repo") },
         askId: "ask-1",
-        submission: { answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }], note: "Ship it.", revision: "r3", partial: true },
+        submission: { answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }, { id: "copies", values: [], value: 3 }], note: "Ship it.", revision: "r3", partial: true },
       }]);
       expect(cancelled.statusCode).toBe(200);
       expect(cancelled.json()).toMatchObject({ result: "stale" });

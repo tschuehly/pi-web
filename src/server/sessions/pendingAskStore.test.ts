@@ -537,6 +537,54 @@ describe("ask outcome rendering", () => {
     expect(text).toContain("  Answered: selected a\n");
   });
 
+  it("records typed answers as values, marks a default left unchanged, and rejects values that do not fit", () => {
+    const store = testStore();
+    const typed = (id: string, kind: NonNullable<AskUserQuestion["kind"]>, extra: Partial<AskUserQuestion> = {}) => question(id, { options: [], kind, ...extra });
+    const ask = store.open({ sessionId, context, questions: [
+      typed("on", "boolean"),
+      typed("off", "boolean", { default: true }),
+      typed("n", "number", { default: 7, minimum: 1, maximum: 10, integer: true }),
+      typed("t", "text", { maxLength: 5 }),
+      typed("d", "date", { default: "2026-12-01" }),
+      question("c"),
+    ] });
+    const send = (answers: { id: string; values: string[]; value?: boolean | number | string }[]) => () => store.submit(sessionId, ask.askId, { revision: ask.revision, answers });
+    expect(send([{ id: "n", values: [], value: 11 }])).toThrow("Answer to question n must be at most 10");
+    expect(send([{ id: "n", values: [], value: 2.5 }])).toThrow("Answer to question n must be a whole number");
+    expect(send([{ id: "n", values: [], value: "7" }])).toThrow("Answer to question n must be a number");
+    expect(send([{ id: "t", values: [], value: "toolong" }])).toThrow("Answer to question t must be at most 5 characters");
+    expect(send([{ id: "d", values: [], value: "2026-02-30" }])).toThrow("Answer to question d must be a date as YYYY-MM-DD");
+    expect(send([{ id: "on", values: ["yes"] }])).toThrow("Question on takes a value, not options");
+    expect(send([{ id: "c", values: [], value: true }])).toThrow("Question c takes options, not a value");
+
+    const result = send([
+      { id: "on", values: [], value: false },
+      { id: "off", values: [], value: false },
+      { id: "n", values: [], value: 7 },
+      { id: "t", values: [], value: "  hi " },
+      { id: "d", values: [], value: "2026-12-01" },
+    ])();
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+    expect(result.outcome.questions.map((record) => [record.answered, record.value])).toStrictEqual([[true, false], [true, false], [true, 7], [true, "hi"], [true, "2026-12-01"], [false, undefined]]);
+    const text = renderAskUserAnswersText(result.outcome);
+    expect(text).toContain("- ask.on: Question on?\n  Answered: off (default, unchanged)\n");
+    expect(text).toContain("- ask.off: Question off?\n  Answered: off\n");
+    expect(text).toContain("  Answered: 7 (default, unchanged)\n");
+    expect(text).toContain("  Answered: \"hi\"\n");
+    expect(text).toContain("  Answered: 2026-12-01 (default, unchanged)\n");
+  });
+
+  it("shows a question under a boolean only while that switch has the listed state", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [
+      question("backup", { options: [], kind: "boolean" }),
+      question("folder", { options: [], kind: "text", showIf: { question: "backup", values: ["true"] } }),
+    ] });
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "backup", values: [], value: false }, { id: "folder", values: [], value: "~/b" }] });
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+    expect(result.outcome.questions[1]).toMatchObject({ answered: false, skipped: true });
+  });
+
   it("carries the user's trimmed note on the outcome and into the model-facing text", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("q1")] });

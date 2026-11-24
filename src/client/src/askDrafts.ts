@@ -1,4 +1,4 @@
-import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserAnswer, type AskUserQuestion, type AskUserSubmission, hiddenAskQuestionIds } from "../../shared/apiTypes";
+import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserAnswer, type AskUserQuestion, type AskUserSubmission, askAnswerSelection, askValueError, hiddenAskQuestionIds } from "../../shared/apiTypes";
 
 /**
  * What the user has entered for one question but has not submitted yet. Kept in
@@ -8,6 +8,8 @@ import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserAnswer, type AskUserQuestio
 export interface AskDraftAnswer {
   values: string[];
   otherText?: string;
+  /** A typed question's field as entered: a boolean for a switch, the input's text otherwise. */
+  value?: boolean | string;
   /** {@link askedFingerprint} of the question as the user saw it; a revised question drops the answer. */
   asked?: string;
 }
@@ -50,13 +52,21 @@ export function loadAskDraft(sessionId: string, askId: string, storage = browser
   }
   if (questions === undefined) return answers;
   const current = new Map(questions.map((question) => [question.id, askedFingerprint(question)]));
-  return { ...recommendedAnswers(questions), ...Object.fromEntries(Object.entries(answers).filter(([id, answer]) => answer.asked !== undefined && answer.asked === current.get(id))) };
+  return { ...presetAnswers(questions), ...Object.fromEntries(Object.entries(answers).filter(([id, answer]) => answer.asked !== undefined && answer.asked === current.get(id))) };
 }
 
-/** A question with no draft starts with its recommended options selected (the first one if single choice); any draft, even a cleared one, wins. */
-function recommendedAnswers(questions: readonly AskUserQuestion[]): AskDraftAnswers {
+/**
+ * A question with no draft starts with its recommended options selected (the first one if single choice), a typed one
+ * on its default (a switch without one on off); any draft, even a cleared one, wins.
+ */
+function presetAnswers(questions: readonly AskUserQuestion[]): AskDraftAnswers {
   const answers: AskDraftAnswers = {};
   for (const question of questions) {
+    if ((question.kind ?? "choice") !== "choice") {
+      const preset = question.kind === "boolean" ? question.default === true : question.default === undefined ? undefined : String(question.default);
+      if (preset !== undefined) answers[question.id] = { values: [], value: preset, asked: askedFingerprint(question) };
+      continue;
+    }
     const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
     if (recommended.length > 0) answers[question.id] = { values: question.multiple === true ? recommended : recommended.slice(0, 1), asked: askedFingerprint(question) };
   }
@@ -66,7 +76,7 @@ function recommendedAnswers(questions: readonly AskUserQuestion[]): AskDraftAnsw
 export function saveAskDraft(sessionId: string, askId: string, answers: AskDraftAnswers, storage = browserStorage()): void {
   try {
     // An answer the user cleared keeps its entry (it has `asked`), so recommendations do not come back over it.
-    const entries = Object.entries(answers).filter(([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "" || answer.asked !== undefined);
+    const entries = Object.entries(answers).filter(([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "" || answer.value !== undefined || answer.asked !== undefined);
     if (entries.length === 0) storage?.removeItem(draftStorageKey(sessionId, askId));
     else storage?.setItem(draftStorageKey(sessionId, askId), JSON.stringify(Object.fromEntries(entries)));
   } catch {
@@ -118,9 +128,15 @@ function draftAnswerFromValue(value: unknown): AskDraftAnswer | undefined {
   const values = record["values"];
   const otherText = record["otherText"];
   const asked = record["asked"];
+  const field = record["value"];
   if (!Array.isArray(values) || !values.every((entry) => typeof entry === "string")) return undefined;
   if (otherText !== undefined && typeof otherText !== "string") return undefined;
-  return { values: [...values], ...(otherText === undefined ? {} : { otherText }), ...(typeof asked === "string" ? { asked } : {}) };
+  return {
+    values: [...values],
+    ...(otherText === undefined ? {} : { otherText }),
+    ...(typeof field === "boolean" || typeof field === "string" ? { value: field } : {}),
+    ...(typeof asked === "string" ? { asked } : {}),
+  };
 }
 
 /**
@@ -131,7 +147,7 @@ export function visibleQuestions(questions: readonly AskUserQuestion[], answers:
   const byId = new Map(questions.map((question) => [question.id, question]));
   const hidden = hiddenAskQuestionIds(questions, (id) => {
     const question = byId.get(id);
-    return question === undefined ? [] : submittableAnswer(question, answers[id])?.values ?? [];
+    return question === undefined ? [] : askAnswerSelection(submittableAnswer(question, answers[id]));
   });
   return questions.filter((question) => !hidden.has(question.id));
 }
@@ -174,6 +190,11 @@ export function toSubmission(questions: readonly AskUserQuestion[], answers: Ask
  */
 function submittableAnswer(question: AskUserQuestion, answer: AskDraftAnswer | undefined): AskUserAnswer | undefined {
   if (answer === undefined) return undefined;
+  if ((question.kind ?? "choice") !== "choice") {
+    const typed = typedDraftValue(question, answer);
+    // A field with an error sends nothing: it counts as unanswered while the card shows why.
+    return typed === undefined || typed.error !== undefined ? undefined : { id: question.id, values: [], value: typed.value };
+  }
   const offered = new Set(question.options.map((option) => option.value));
   const values = [...new Set(answer.values)].filter((value) => offered.has(value));
   const otherText = normalizedOtherText(answer.otherText);
@@ -190,4 +211,19 @@ function normalizedOtherText(otherText: string | undefined): string | undefined 
   if (otherText === undefined) return undefined;
   const trimmed = otherText.trim().slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH);
   return trimmed === "" ? undefined : trimmed;
+}
+
+/**
+ * A typed question's draft as the value it would send and, when that value does not fit the question, why
+ * ("must be at most 10"); `undefined` while the field is empty.
+ */
+export function typedDraftValue(question: AskUserQuestion, answer: AskDraftAnswer | undefined): { value: boolean | number | string; error?: string } | undefined {
+  const raw = answer?.value;
+  if (raw === undefined) return undefined;
+  if (typeof raw === "boolean") return question.kind === "boolean" ? { value: raw } : undefined;
+  const text = raw.trim();
+  if (text === "" || question.kind === "boolean") return undefined;
+  const value = question.kind === "number" ? Number(text) : text;
+  const error = askValueError(question, value);
+  return error === undefined ? { value } : { value, error };
 }

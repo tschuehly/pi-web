@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserQuestion } from "../../shared/apiTypes";
-import { answeredCount, askedFingerprint, clearAskDraft, loadAskDraft, saveAskDraft, toSubmission, unansweredQuestions, type AskDraftAnswers } from "./askDrafts";
+import { answeredCount, askedFingerprint, clearAskDraft, loadAskDraft, saveAskDraft, toSubmission, typedDraftValue, unansweredQuestions, visibleQuestions, type AskDraftAnswers } from "./askDrafts";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -106,6 +106,38 @@ describe("ask draft storage", () => {
     saveAskDraft("local:s1", "ask-1", { ...preselected, q2: { values: [], asked: askedFingerprint(multi) } }, storage);
 
     expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])["q2"]?.values).toEqual([]);
+  });
+
+  it("starts typed questions on their defaults, a switch on off, and keeps a field the user cleared", () => {
+    const storage = new MemoryStorage();
+    const typed = (id: string, extra: Partial<AskUserQuestion>): AskUserQuestion => ({ id, question: `${id}?`, options: [], ...extra });
+    const questions = [
+      typed("on", { kind: "boolean" }),
+      typed("t", { kind: "text", default: "hi" }),
+      typed("n", { kind: "number", default: 7, maximum: 10 }),
+      typed("d", { kind: "date", default: "2026-12-01" }),
+      typed("empty", { kind: "text" }),
+      typed("child", { kind: "text", showIf: { question: "on", values: ["true"] } }),
+    ];
+    const [, text, number] = questions;
+    if (text === undefined || number === undefined) throw new Error("expected the typed questions");
+    const preset = loadAskDraft("local:s1", "ask-1", storage, questions);
+    expect(toSubmission(questions, preset).answers).toEqual([
+      { id: "on", values: [], value: false },
+      { id: "t", values: [], value: "hi" },
+      { id: "n", values: [], value: 7 },
+      { id: "d", values: [], value: "2026-12-01" },
+    ]);
+    expect(answeredCount(questions, preset)).toBe(4);
+    expect(visibleQuestions(questions, preset).map((question) => question.id)).not.toContain("child");
+    expect(visibleQuestions(questions, { ...preset, on: { values: [], value: true } }).map((question) => question.id)).toContain("child");
+
+    // An out-of-range number is not sent; the card shows why.
+    expect(typedDraftValue(number, { values: [], value: "11" })).toEqual({ value: 11, error: "must be at most 10" });
+    expect(toSubmission(questions, { ...preset, n: { values: [], value: "11" } }).answers.map((answer) => answer.id)).not.toContain("n");
+
+    saveAskDraft("local:s1", "ask-1", { ...preset, t: { values: [], value: "", asked: askedFingerprint(text) } }, storage);
+    expect(loadAskDraft("local:s1", "ask-1", storage, questions)["t"]?.value).toBe("");
   });
 
   it("clears a draft once its ask is closed", () => {

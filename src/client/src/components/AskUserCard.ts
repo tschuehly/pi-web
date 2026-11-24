@@ -19,6 +19,7 @@ import {
   saveAskDraft,
   saveAskNote,
   toSubmission,
+  typedDraftValue,
   unansweredQuestions,
   visibleQuestions,
   type AskDraftAnswer,
@@ -48,6 +49,7 @@ export type AskUserSubmitCallback = (askId: string, submission: AskUserSubmissio
 interface DisplayedRecordAnswer {
   values: string[];
   otherText?: string;
+  value?: boolean | number | string;
   fromDraft: boolean;
 }
 
@@ -178,6 +180,7 @@ export class AskUserCard extends LitElement {
           <span>${question.question} <code class="question-ref" title="Reference for this question">${askQuestionRef(ask.askId, question.id)}</code></span>
         </legend>
         ${this.renderDetail(question.detail, detailId)}
+        ${(question.kind ?? "choice") !== "choice" ? this.renderTypedField(question, index, answer) : html`
         <div class="options">
           ${question.options.map((option) => option.value === inlineEdit ? this.renderInlineEdit(question, index, option.label, answer?.otherText ?? "") : html`
             <div class="option-row">
@@ -228,12 +231,58 @@ export class AskUserCard extends LitElement {
             </label>
           ` : null}
         </div>
+        `}
         ${sendOne ? html`
           <div class="question-actions">
             <button class="send-one" type="button" ?disabled=${!answered || this.submitting} title="Send just this answer now; the other questions stay open" @click=${() => { this.submitOne(ask, question, index); }}>Send</button>
           </div>
         ` : null}
       </fieldset>
+    `;
+  }
+
+  /** A typed question's input: a switch, a text field or textarea, a number, or a date, with why its value does not fit under it. */
+  private renderTypedField(question: AskUserQuestion, index: number, answer: AskDraftAnswer | undefined): TemplateResult {
+    const id = this.otherInputId(index);
+    if (question.kind === "boolean") {
+      const on = answer?.value === true;
+      return html`
+        <label class="typed-field switch">
+          <input id=${id} type="checkbox" role="switch" aria-label=${question.question} .checked=${on} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.setAnswer(question, { values: [], value: event.currentTarget.checked }); }} />
+          <span class="switch-track" aria-hidden="true"></span>
+          <span class="switch-state" aria-hidden="true">${on ? "On" : "Off"}</span>
+        </label>
+      `;
+    }
+    const raw = typeof answer?.value === "string" ? answer.value : "";
+    const error = typedDraftValue(question, answer)?.error;
+    const errorId = error === undefined ? undefined : `${id}-error`;
+    const change = (event: Event): void => {
+      const input = event.currentTarget;
+      if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) this.setAnswer(question, { values: [], value: input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) });
+    };
+    const maxLength = String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH);
+    return html`
+      <div class="typed-field">
+        ${question.kind === "text" && question.multiline === true
+          ? html`<textarea id=${id} rows="3" aria-label=${question.question} minlength=${ifDefined(question.minLength)} maxlength=${maxLength} aria-invalid=${error === undefined ? "false" : "true"} aria-describedby=${ifDefined(errorId)} .value=${raw} @input=${change}></textarea>`
+          : html`<input
+              id=${id}
+              type=${question.kind === "number" ? "number" : question.kind === "date" ? "date" : "text"}
+              aria-label=${question.question}
+              min=${ifDefined(question.minimum)}
+              max=${ifDefined(question.maximum)}
+              step=${ifDefined(question.kind === "number" ? (question.integer === true ? "1" : "any") : undefined)}
+              inputmode=${ifDefined(question.kind === "number" ? (question.integer === true ? "numeric" : "decimal") : undefined)}
+              minlength=${ifDefined(question.kind === "text" ? question.minLength : undefined)}
+              maxlength=${ifDefined(question.kind === "text" ? maxLength : undefined)}
+              aria-invalid=${error === undefined ? "false" : "true"}
+              aria-describedby=${ifDefined(errorId)}
+              .value=${raw}
+              @input=${change}
+            />`}
+        ${errorId === undefined ? null : html`<p class="field-error" id=${errorId}>${error?.replace(/^m/u, "M")}</p>`}
+      </div>
     `;
   }
 
@@ -323,6 +372,7 @@ export class AskUserCard extends LitElement {
               <ul class="record-answers">
                 ${answer.values.map((value) => html`<li>${this.optionLabel(record.question, value)}</li>`)}
                 ${answer.otherText === undefined ? null : html`<li><strong>Custom:</strong> <span class="other-record-text">${answer.otherText}</span></li>`}
+                ${answer.value === undefined ? null : html`<li class="other-record-text">${typeof answer.value === "boolean" ? (answer.value ? "On" : "Off") : String(answer.value)}</li>`}
               </ul>
               ${answer.fromDraft ? html`<p class="draft-note">Draft answer · not sent</p>` : null}
             `}
@@ -522,6 +572,7 @@ export class AskUserCard extends LitElement {
       return {
         values: [...record.values],
         ...(record.otherText === undefined ? {} : { otherText: record.otherText }),
+        ...(record.value === undefined ? {} : { value: record.value }),
         fromDraft: false,
       };
     }
@@ -531,6 +582,7 @@ export class AskUserCard extends LitElement {
     return {
       values: [...answer.values],
       ...(answer.otherText === undefined ? {} : { otherText: answer.otherText }),
+      ...(answer.value === undefined ? {} : { value: answer.value }),
       fromDraft: true,
     };
   }
@@ -709,6 +761,29 @@ export class AskUserCard extends LitElement {
     .option-label { line-height: 1.35; }
     .option-detail { color: var(--pi-muted); font-size: 12px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
     .other-answer { display: grid; gap: 5px; color: var(--pi-muted); font-size: 12px; padding: 4px 0 4px calc(var(--question-number-column) + var(--question-copy-gap)); }
+    .typed-field { display: grid; gap: 4px; padding: 4px 0 4px calc(var(--question-number-column) + var(--question-copy-gap)); }
+    .typed-field input:not([type="checkbox"]) {
+      box-sizing: border-box;
+      width: 100%;
+      margin: 0;
+      border: 1px solid var(--pi-border);
+      border-radius: 8px;
+      background: var(--pi-bg);
+      color: var(--pi-text);
+      padding: 8px;
+      font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif);
+    }
+    .typed-field input[type="number"], .typed-field input[type="date"] { width: auto; min-width: 11em; justify-self: start; }
+    .typed-field [aria-invalid="true"] { border-color: var(--pi-danger); }
+    .field-error { margin: 0; color: var(--pi-danger); font-size: 12px; }
+    .switch { position: relative; display: inline-flex; align-items: center; gap: 8px; justify-self: start; cursor: pointer; }
+    /* The real checkbox stays focusable and clickable over the drawn track. */
+    .switch input { position: absolute; inset-inline-start: calc(var(--question-number-column) + var(--question-copy-gap)); width: 36px; height: 20px; margin: 0; opacity: 0; cursor: pointer; }
+    .switch-track { position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--pi-border); transition: background 0.15s; }
+    .switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--pi-surface); transition: transform 0.15s; }
+    .switch input:checked + .switch-track { background: var(--pi-accent); }
+    .switch input:checked + .switch-track::after { transform: translateX(16px); }
+    .switch input:focus-visible + .switch-track { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .question-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
     .send-one { padding: 3px 10px; font-size: 12px; }
     .send-one:not(:disabled) { border-color: var(--pi-accent); color: var(--pi-accent); font-weight: 650; }
@@ -813,7 +888,7 @@ export class AskUserCard extends LitElement {
     :host([flat]) .form-footer button:not(.question-jump) { padding: 5px 10px; }
     :host([flat]) .edit-option { top: 1px; }
     :host([flat]) .inline-edit { padding-block: 4px; }
-    @media (prefers-reduced-motion: reduce) { .edit-option { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .edit-option, .switch-track, .switch-track::after { transition: none; } }
   `;
 }
 

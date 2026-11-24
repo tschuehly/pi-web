@@ -831,10 +831,14 @@ function askUserAnswerFromValue(value: unknown): AskUserAnswer {
   const otherText = record["otherText"];
   if (otherText !== undefined && typeof otherText !== "string") throw new Error("otherText field must be a string");
   if (typeof otherText === "string" && otherText.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("otherText field is too long");
+  const typed = record["value"];
+  if (typed !== undefined && typeof typed !== "boolean" && !(typeof typed === "number" && Number.isFinite(typed)) && typeof typed !== "string") throw new Error("value field must be a boolean, number, or string");
+  if (typeof typed === "string" && typed.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("value field is too long");
   return {
     id: requireBoundedId(record["id"], "id"),
     values: values.map((entry) => requireBoundedId(entry, "values entry")),
     ...(otherText === undefined ? {} : { otherText }),
+    ...(typed === undefined ? {} : { value: typed }),
   };
 }
 

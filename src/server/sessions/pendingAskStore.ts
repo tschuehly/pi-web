@@ -16,7 +16,10 @@ import {
   type AskUserShowIf,
   type AskUserSubmission,
   type PendingAskUser,
+  ASK_USER_QUESTION_KINDS,
+  askAnswerSelection,
   askQuestionRef,
+  askValueError,
   hiddenAskQuestionIds,
 } from "../../shared/apiTypes.js";
 
@@ -154,7 +157,7 @@ export class PendingAskStore {
     if (ask === undefined || submission.revision !== ask.revision) return { status: "stale" };
     const answers = validateSubmission(ask, submission);
     // A question hidden by its condition is never answered: a stale draft answer to it is dropped.
-    const hidden = hiddenAskQuestionIds(ask.questions, (id) => answers.get(id)?.values ?? []);
+    const hidden = hiddenAskQuestionIds(ask.questions, (id) => askAnswerSelection(answers.get(id)));
     for (const id of hidden) answers.delete(id);
     const note = normalizeNote(submission.note);
     if (submission.partial === true) {
@@ -285,6 +288,12 @@ function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
     return [header, `  Skipped, not shown: it applies only when ${askQuestionRef(askId, condition.question)} is ${condition.values.join(" or ")}, which was not picked.`];
   }
   if (!record.answered) return [header, "  Unanswered."];
+  const { value, question } = record;
+  if (value !== undefined) {
+    const shown = typeof value === "boolean" ? (value ? "on" : "off") : question.kind === "text" ? JSON.stringify(value) : String(value);
+    // A typed field starts on its default (a boolean on off); say when the user left it so.
+    return [header, `  Answered: ${shown}${value === (question.default ?? (question.kind === "boolean" ? false : undefined)) ? " (default, unchanged)" : ""}`];
+  }
   const parts = [...record.values.map((value) => `selected ${value}`)];
   if (record.otherText !== undefined) parts.push(`custom: ${JSON.stringify(record.otherText)}`);
   // The card preselects the recommended options (the first one for single choice); say when the user left them as they were.
@@ -341,11 +350,13 @@ function questionRecord(question: AskUserQuestion, answer: AskUserAnswer | undef
   if (skipped) return { question: cloneQuestion(question), answered: false, values: [], skipped: true };
   const values = answer?.values ?? [];
   const otherText = answer?.otherText;
+  const value = answer?.value;
   return {
     question: cloneQuestion(question),
-    answered: values.length > 0 || otherText !== undefined,
+    answered: values.length > 0 || otherText !== undefined || value !== undefined,
     values: [...values],
     ...(otherText === undefined ? {} : { otherText }),
+    ...(value === undefined ? {} : { value }),
   };
 }
 
@@ -387,8 +398,11 @@ function validateShowIf(showIf: AskUserShowIf, id: string, earlier: ReadonlyMap<
   const parent = earlier.get(showIf.question);
   if (parent === undefined) throw new PendingAskValidationError(`showIf of question ${id} must name an earlier question of this set, not ${showIf.question}`);
   if (showIf.values.length === 0) throw new PendingAskValidationError(`showIf of question ${id} must list at least one option value of question ${parent.id}`);
-  const offered = new Set(parent.options.map((option) => option.value));
+  const kind = parent.kind ?? "choice";
+  if (kind !== "choice" && kind !== "boolean") throw new PendingAskValidationError(`showIf of question ${id}: question ${parent.id} is a ${kind} question; showIf needs a choice or boolean question`);
+  const offered = new Set(kind === "boolean" ? ["true", "false"] : parent.options.map((option) => option.value));
   const unknown = showIf.values.find((value) => !offered.has(value));
+  if (unknown !== undefined && kind === "boolean") throw new PendingAskValidationError(`showIf of question ${id}: question ${parent.id} is a boolean; use "true" or "false", not ${unknown}`);
   if (unknown !== undefined) throw new PendingAskValidationError(`showIf of question ${id}: question ${parent.id} has no option ${unknown}`);
   return { question: parent.id, values: [...new Set(showIf.values)] };
 }
@@ -412,7 +426,34 @@ function validateQuestion(question: AskUserQuestion, id: string): AskUserQuestio
     ...(detail === undefined ? {} : { detail: requireText(detail, `detail of question ${id}`, ASK_USER_DETAIL_MAX_LENGTH) }),
     options,
     ...(question.multiple === true ? { multiple: true } : {}),
+    ...validateTyped(question, id),
   };
+}
+
+/** A typed question's kind and the fields that kind takes; other fields are dropped, as unknown ones are. */
+function validateTyped(question: AskUserQuestion, id: string): Partial<AskUserQuestion> {
+  const kind = question.kind ?? "choice";
+  if (kind === "choice") return {};
+  if (!ASK_USER_QUESTION_KINDS.includes(kind)) throw new PendingAskValidationError(`Question ${id} has unknown kind ${kind}`);
+  if (question.options.length > 0 || question.multiple === true) throw new PendingAskValidationError(`Question ${id} of kind ${kind} takes no options or multiple`);
+  const { minLength, maxLength, minimum, maximum } = question;
+  const typed: Partial<AskUserQuestion> = kind === "text"
+    ? { kind, ...(question.multiline === true ? { multiline: true } : {}), ...(minLength === undefined ? {} : { minLength }), ...(maxLength === undefined ? {} : { maxLength }) }
+    : kind === "number"
+    ? { kind, ...(minimum === undefined ? {} : { minimum }), ...(maximum === undefined ? {} : { maximum }), ...(question.integer === true ? { integer: true } : {}) }
+    : { kind };
+  for (const [field, bound] of Object.entries({ minLength: typed.minLength, maxLength: typed.maxLength })) {
+    if (bound !== undefined && !(Number.isInteger(bound) && bound >= 0 && bound <= ASK_USER_OTHER_TEXT_MAX_LENGTH)) throw new PendingAskValidationError(`${field} of question ${id} must be a whole number from 0 to ${ASK_USER_OTHER_TEXT_MAX_LENGTH.toString()}`);
+  }
+  for (const [field, bound] of Object.entries({ minimum: typed.minimum, maximum: typed.maximum })) {
+    if (bound !== undefined && !Number.isFinite(bound)) throw new PendingAskValidationError(`${field} of question ${id} must be a number`);
+  }
+  if ((typed.minLength ?? 0) > (typed.maxLength ?? Infinity)) throw new PendingAskValidationError(`minLength of question ${id} exceeds its maxLength`);
+  if ((typed.minimum ?? -Infinity) > (typed.maximum ?? Infinity)) throw new PendingAskValidationError(`minimum of question ${id} exceeds its maximum`);
+  if (question.default === undefined) return typed;
+  const error = askValueError(typed, question.default);
+  if (error !== undefined) throw new PendingAskValidationError(`default of question ${id} ${error}`);
+  return { ...typed, default: question.default };
 }
 
 function validateOption(option: AskUserQuestionOption, value: string, questionId: string): AskUserQuestionOption {
@@ -441,6 +482,16 @@ function validateSubmission(ask: PendingAskUser, submission: AskUserSubmission):
 }
 
 function validateAnswer(question: AskUserQuestion, answer: AskUserAnswer): AskUserAnswer | undefined {
+  if ((question.kind ?? "choice") !== "choice") {
+    if (answer.values.length > 0 || answer.otherText !== undefined) throw new PendingAskValidationError(`Question ${question.id} takes a value, not options`);
+    // Text is trimmed like Custom text; blank reads as untouched.
+    const value = typeof answer.value === "string" ? answer.value.trim() : answer.value;
+    if (value === undefined || value === "") return undefined;
+    const error = askValueError(question, value);
+    if (error !== undefined) throw new PendingAskValidationError(`Answer to question ${question.id} ${error}`);
+    return { id: question.id, values: [], value };
+  }
+  if (answer.value !== undefined) throw new PendingAskValidationError(`Question ${question.id} takes options, not a value`);
   const optionValues = new Set(question.options.map((option) => option.value));
   const values: string[] = [];
   for (const value of answer.values) {

@@ -851,8 +851,56 @@ export interface AskUserQuestion {
   options: AskUserQuestionOption[];
   /** When true, several options may be selected at once. */
   multiple?: boolean;
-  /** Show the question only while an earlier question of the set has one of these option values selected. */
+  /** Show the question only while an earlier question of the set has one of these option values selected ("true"/"false" for a boolean one). */
   showIf?: AskUserShowIf;
+  /** Absent means "choice" (options). The other kinds take no options and answer with {@link AskUserAnswer.value}. */
+  kind?: AskUserQuestionKind;
+  /** Prefilled answer of a typed kind (boolean, text, number, or YYYY-MM-DD); a boolean without one starts off. */
+  default?: boolean | number | string;
+  /** text: a textarea instead of one line. */
+  multiline?: boolean;
+  /** text: bounds on the answer's length. */
+  minLength?: number;
+  maxLength?: number;
+  /** number: bounds on the answer. */
+  minimum?: number;
+  maximum?: number;
+  /** number: whole numbers only. */
+  integer?: boolean;
+}
+
+export type AskUserQuestionKind = "choice" | "boolean" | "text" | "number" | "date";
+export const ASK_USER_QUESTION_KINDS: readonly AskUserQuestionKind[] = ["choice", "boolean", "text", "number", "date"];
+
+/**
+ * Why `value` does not fit a typed question ("must be at most 10"), or `undefined` when it does. Shared by the
+ * daemon's checks of defaults and answers and the card's field errors; the Durable host keeps a copy for defaults.
+ */
+export function askValueError(question: Pick<AskUserQuestion, "kind" | "minLength" | "maxLength" | "minimum" | "maximum" | "integer">, value: unknown): string | undefined {
+  switch (question.kind) {
+    case "boolean":
+      return typeof value === "boolean" ? undefined : "must be true or false";
+    case "text":
+      if (typeof value !== "string") return "must be text";
+      if (value.length > (question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)) return `must be at most ${String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)} characters`;
+      return question.minLength !== undefined && value.length < question.minLength ? `must be at least ${String(question.minLength)} characters` : undefined;
+    case "number":
+      if (typeof value !== "number" || !Number.isFinite(value)) return "must be a number";
+      if (question.integer === true && !Number.isInteger(value)) return "must be a whole number";
+      if (question.minimum !== undefined && value < question.minimum) return `must be at least ${String(question.minimum)}`;
+      return question.maximum !== undefined && value > question.maximum ? `must be at most ${String(question.maximum)}` : undefined;
+    case "date":
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().startsWith(value) ? undefined : "must be a date as YYYY-MM-DD";
+    case "choice":
+    case undefined:
+      return undefined;
+  }
+  return undefined;
+}
+
+/** What a `showIf` tests of an answer: its selected options, or "true"/"false" for a boolean answer. */
+export function askAnswerSelection(answer: { values: readonly string[]; value?: unknown } | undefined): readonly string[] {
+  return typeof answer?.value === "boolean" ? [String(answer.value)] : answer?.values ?? [];
 }
 
 /** Condition of a dependent question: an earlier question's id and the option values that show it. */
@@ -911,6 +959,8 @@ export interface AskUserAnswer {
   values: string[];
   /** Free text typed as the question's custom answer. */
   otherText?: string;
+  /** The answer to a typed question ({@link AskUserQuestion.kind} other than "choice"); `values` is then empty. */
+  value?: boolean | number | string;
 }
 
 /** One submit of the open ask: answers for some or all of its questions. */
@@ -938,6 +988,7 @@ export interface AskUserQuestionRecord {
   answered: boolean;
   values: string[];
   otherText?: string;
+  value?: boolean | number | string;
   /** The question stayed hidden because its {@link AskUserQuestion.showIf} condition was not met; never answered. */
   skipped?: true;
 }

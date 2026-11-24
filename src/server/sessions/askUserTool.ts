@@ -5,6 +5,7 @@ import {
   ASK_USER_DETAIL_MAX_LENGTH,
   ASK_USER_ID_MAX_LENGTH,
   ASK_USER_OPTION_LIMIT,
+  ASK_USER_OTHER_TEXT_MAX_LENGTH,
   ASK_USER_QUESTION_LIMIT,
   ASK_USER_TEXT_MAX_LENGTH,
   type AskUserOutcome,
@@ -71,8 +72,16 @@ const AskUserQuestionParams = Type.Object({
   })),
   showIf: Type.Optional(Type.Object({
     question: Type.String({ maxLength: ASK_USER_ID_MAX_LENGTH, description: "id of an earlier question in this set." }),
-    values: Type.Array(Type.String({ maxLength: ASK_USER_ID_MAX_LENGTH }), { minItems: 1, maxItems: ASK_USER_OPTION_LIMIT, description: "Its option values that show this question." }),
+    values: Type.Array(Type.String({ maxLength: ASK_USER_ID_MAX_LENGTH }), { minItems: 1, maxItems: ASK_USER_OPTION_LIMIT, description: "Its option values (boolean: \"true\"/\"false\") that show this question." }),
   }, { description: "Show this question only while that earlier question has one of these options picked; hidden, it is skipped." })),
+  kind: Type.Optional(Type.Union([Type.Literal("choice"), Type.Literal("boolean"), Type.Literal("text"), Type.Literal("number"), Type.Literal("date")], { description: "Default choice; other kinds take no options." })),
+  default: Type.Optional(Type.Union([Type.Boolean(), Type.Number(), Type.String({ maxLength: ASK_USER_OTHER_TEXT_MAX_LENGTH })], { description: "Prefilled answer; date as YYYY-MM-DD." })),
+  multiline: Type.Optional(Type.Boolean({ description: "text: a textarea." })),
+  minLength: Type.Optional(Type.Integer({ minimum: 0, maximum: ASK_USER_OTHER_TEXT_MAX_LENGTH })),
+  maxLength: Type.Optional(Type.Integer({ minimum: 0, maximum: ASK_USER_OTHER_TEXT_MAX_LENGTH })),
+  minimum: Type.Optional(Type.Number()),
+  maximum: Type.Optional(Type.Number()),
+  integer: Type.Optional(Type.Boolean()),
 });
 
 const AskUserParams = Type.Object({
@@ -97,7 +106,18 @@ const AskUserParams = Type.Object({
 
 /** Shapes one schema question into the domain question; the store owns validation. */
 function toQuestion(param: Static<typeof AskUserQuestionParams>): AskUserQuestion {
-  const { options, multiple, showIf } = param;
+  const { options, multiple, showIf, kind, multiline, minLength, maxLength, minimum, maximum, integer } = param;
+  // Typed-kind fields copy as given; the store keeps those the kind takes.
+  const typed = {
+    ...(kind === undefined ? {} : { kind }),
+    ...(param.default === undefined ? {} : { default: param.default }),
+    ...(multiline === undefined ? {} : { multiline }),
+    ...(minLength === undefined ? {} : { minLength }),
+    ...(maxLength === undefined ? {} : { maxLength }),
+    ...(minimum === undefined ? {} : { minimum }),
+    ...(maximum === undefined ? {} : { maximum }),
+    ...(integer === undefined ? {} : { integer }),
+  };
   return {
     id: param.id,
     question: param.question,
@@ -105,6 +125,7 @@ function toQuestion(param: Static<typeof AskUserQuestionParams>): AskUserQuestio
     options: (options ?? []).map(toOption),
     ...(multiple === undefined ? {} : { multiple }),
     ...(showIf === undefined ? {} : { showIf: { question: showIf.question, values: [...showIf.values] } }),
+    ...typed,
   };
 }
 
