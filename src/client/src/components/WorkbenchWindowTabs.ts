@@ -74,6 +74,9 @@ export interface TabRenameDetail { sessionId?: string; workstreamId?: string; na
 export interface WindowLayoutDetail { layout: WindowLayout }
 
 /** The Workstream identity colour, as the home card's marker uses it. */
+/** Marks a Workstream's tab, which otherwise reads like a Chat's once it holds a single Chat (lucide "layers"). */
+const workstreamIcon = html`<svg class="ws-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>`;
+
 const workstreamStyle = (workstreamId: string | undefined) => styleMap(workstreamId === undefined ? {} : { "--ws": workstreamAccentColor(workstreamId) });
 
 const onActivationKey = (activate: () => void) => (event: KeyboardEvent) => {
@@ -299,6 +302,7 @@ export class WorkbenchWindowTabs extends LitElement {
         @auxclick=${(event: MouseEvent) => { if (only !== undefined && event.button === 1) this.close([only.sessionId]); }}
         @dblclick=${() => { if (workstream !== undefined) this.rename({ workstreamId: workstream.id }, workstream.shortTitle ?? ""); }}>
         ${only === undefined ? nothing : this.renderChatMarker(only)}
+        ${workstream === undefined ? nothing : workstreamIcon}
         <span class="title">${workstream?.shortTitle ?? label}</span>
         ${only === undefined
           ? html`<span class="count" aria-label=${`${String(group.chats.length)} Chats`}>${String(group.chats.length)}</span>`
@@ -312,7 +316,7 @@ export class WorkbenchWindowTabs extends LitElement {
     const open = () => { this.select(chat.sessionId); };
     const move = this.moveHandlers([chat.sessionId], chat.title);
     return html`
-      <div role="tab" tabindex="0" class=${tintFrom === undefined ? "chat-tab" : "chat-tab tinted"} style=${workstreamStyle(tintFrom)} data-session=${chat.sessionId} data-status=${status} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.title} draggable="true"
+      <div role="tab" tabindex="0" class=${tintFrom === undefined ? "chat-tab" : "chat-tab tinted"} style=${workstreamStyle(tintFrom)} data-session=${chat.sessionId} data-status=${status} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
         @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([chat.sessionId]); }}
         @dblclick=${() => { this.rename({ sessionId: chat.sessionId }, chat.shortName ?? ""); }}>
@@ -364,6 +368,7 @@ export class WorkbenchWindowTabs extends LitElement {
     .tabs.lower { height: 32px; padding: 0 6px 0 2px; border-top: 1px solid var(--pi-border-muted); }
     .workstream-tab { padding: 0 10px; font-weight: 500; }
     .workstream-tab[data-session] { padding-right: 4px; }
+    .ws-icon { flex: 0 0 auto; width: 12px; height: 12px; color: var(--ws, var(--pi-muted)); }
     .count { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
     .tabs.chats { min-width: 120px; font-size: 12px; }
     .workstreams .chat-tab { font-weight: 500; }

@@ -151,8 +151,11 @@ describe("window tabs", () => {
     expect(css).toMatch(/\.workstream-tab, \.chat-tab \{[^}]*min-width: 120px; max-width: 200px;[^}]*overflow: hidden/);
     expect(css).toMatch(/\.title \{[^}]*text-overflow: ellipsis/);
     expect(css).not.toMatch(/visibility: hidden/);
-    expect(root.querySelector(".lower .chat-tab")?.getAttribute("title")).toBe("Chat a1");
+    expect(root.querySelector(".lower .chat-tab")?.getAttribute("title")).toBe("Workstream: Release · Chat a1");
     expect(root.querySelector(".workstream-tab")?.getAttribute("title")).toBe("Workstream: Release");
+    // A Workstream's tab carries its icon, so one holding a single Chat still reads as a Workstream.
+    expect(root.querySelector(".workstream-tab .ws-icon")).not.toBeNull();
+    expect(root.querySelector(".chat-tab .ws-icon")).toBeNull();
   });
 
   it("shows nothing for a window without Chats, and no selected tab while the home shows", async () => {
@@ -320,7 +323,7 @@ describe("tab short names", () => {
     vi.stubGlobal("prompt", prompt);
 
     expect([...root.querySelectorAll(".workstreams [role=tab] .title")].map((title) => title.textContent)).toEqual(["Rel", "Loose"]);
-    expect([...root.querySelectorAll(".lower .chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("title")])).toEqual([["First", "Chat a1"], ["Chat a2", "Chat a2"]]);
+    expect([...root.querySelectorAll(".lower .chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("title")])).toEqual([["First", "Workstream: Release · Chat a1"], ["Chat a2", "Workstream: Release · Chat a2"]]);
     root.querySelector(".workstream-tab")?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     root.querySelector('.lower [data-session="a1"]')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     root.querySelector('.lower [data-session="a2"]')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
