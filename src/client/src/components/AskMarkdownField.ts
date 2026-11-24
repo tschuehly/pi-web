@@ -126,6 +126,16 @@ export class AskMarkdownField extends HTMLElement {
     });
   }
 
+  disconnectedCallback(): void {
+    // A move (removed and re-added in one task) keeps the editor, its cursor and undo history; a removal frees its window and document listeners.
+    queueMicrotask(() => {
+      if (this.isConnected || this.#view === undefined) return;
+      this.#value = this.#view.state.doc.toString();
+      this.#view.destroy();
+      this.#view = undefined;
+    });
+  }
+
   override focus(): void {
     this.#view?.focus();
   }
