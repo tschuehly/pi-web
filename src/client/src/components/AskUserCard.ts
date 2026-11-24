@@ -331,8 +331,8 @@ export class AskUserCard extends LitElement {
               id=${id}
               type=${question.kind === "number" ? "number" : question.kind === "date" ? "date" : "text"}
               aria-label=${question.question}
-              min=${ifDefined(question.minimum)}
-              max=${ifDefined(question.maximum)}
+              min=${ifDefined(question.integer === true && question.minimum !== undefined ? Math.ceil(question.minimum) : question.minimum)}
+              max=${ifDefined(question.integer === true && question.maximum !== undefined ? Math.floor(question.maximum) : question.maximum)}
               step=${ifDefined(question.kind === "number" ? (question.integer === true ? "1" : "any") : undefined)}
               inputmode=${ifDefined(question.kind === "number" ? (question.integer === true ? "numeric" : "decimal") : undefined)}
               minlength=${ifDefined(question.kind === "text" ? question.minLength : undefined)}
