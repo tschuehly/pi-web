@@ -54,6 +54,8 @@ export class AskMarkdownField extends HTMLElement {
       ...(root instanceof ShadowRoot || root instanceof Document ? { root } : {}),
       state: EditorState.create({
         doc: this.#value,
+        // Live preview shows the Markdown marks of the cursor's line; starting after the text keeps a heading on top rendered.
+        selection: { anchor: this.#value.length },
         extensions: [
           editHistory(), drawSelection(),
           keymap.of([...defaultKeymap, ...historyKeymap]),

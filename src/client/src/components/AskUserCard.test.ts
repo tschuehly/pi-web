@@ -525,6 +525,11 @@ describe("ask-user-card context", () => {
     expect(editor.querySelector(".cm-gutters")).toBeNull();
     // Live preview hides the Markdown marks off the cursor line, as the Files pane does.
     expect(editor.querySelector(".lp-on")).not.toBeNull();
+    expect(editor.querySelector(".lp-on")).not.toBeNull();
+    // The cursor starts after the text, so a heading on the first line shows rendered, without its "## ".
+    card.ask = { ...openAsk([question("db", "Which database?", [])]), askId: "ask-2", context: "## Plan\nShip it." };
+    await card.updateComplete;
+    expect(markdownField(root, ".context-editor").querySelector(".cm-line")?.textContent).toBe("Plan");
     expect(root.querySelector("formatted-text.ask-context")).toBeNull();
     expect(root.querySelector(".ask-context + form .questions")).not.toBeNull();
     expect(root.querySelector(".context-actions")).toBeNull();
