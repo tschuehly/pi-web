@@ -532,6 +532,21 @@ describe("Durable Chats", () => {
     expect(closed.outcome?.questions.map((record) => record.question.id)).toEqual(["db", "cache"]);
   });
 
+  it("reads open asks and attention only from a running host: a cold Chat answers undefined and starts no host", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, context: "Pick", questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] }] };
+    only(launched).answer = (request) => (request.method === "status" ? { ...status, pendingAsks: [ask], attentionRequest: { id: "att-1", reason: "Look" } } : null);
+    await expect(durable.openAsks(ref)).resolves.toEqual([ask]);
+    await expect(durable.attentionRequest(ref)).resolves.toEqual({ id: "att-1", reason: "Look" });
+    only(launched).kill();
+    await expect(durable.openAsks(ref)).resolves.toBeUndefined();
+    await expect(durable.attentionRequest(ref)).resolves.toBeUndefined();
+    expect(launched).toHaveLength(1);
+    await expect(durable.openAsks({ id: "missing", cwd: "/work/a" })).rejects.toThrow("Session not found");
+  });
+
   it("turns a host attention signal into one global session.attention event", async () => {
     const { durable, hub, launched } = await service();
     const chat = await durable.start("/work/a");

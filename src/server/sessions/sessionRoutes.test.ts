@@ -11,6 +11,7 @@ import type {
   ExtensionDialogAnswer,
   ExtensionDialogCloseResponse,
   MessagePage,
+  PendingAskUser,
   SessionBulkArchiveResponse,
   SessionBulkDeleteArchivedResponse,
   SessionBulkMutationRef,
@@ -1199,6 +1200,13 @@ describe("session routes", () => {
       routeService.attentionResponse = { id: "attention-1", reason: "Review the PR" };
       const restored = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
       expect(restored.json()).toEqual({ pendingAsks: [], attentionRequest: { id: "attention-1", reason: "Review the PR" } });
+
+      // A Durable Chat whose host is not running: nothing was read, and the read started nothing.
+      routeService.openAsksResponse = undefined;
+      routeService.calls.length = 0;
+      const cold = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
+      expect(cold.json()).toEqual({ pendingAsks: [], running: false });
+      expect(routeService.calls).toEqual([{ openAsks: { id: "session-1", cwd: requestCwd } }]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -1932,9 +1940,10 @@ class CapturingRouteSessionService implements SessionRouteService {
     return this.mediaError === undefined ? Promise.resolve(this.mediaResponse) : Promise.reject(this.mediaError);
   }
 
+  openAsksResponse: PendingAskUser[] | undefined = [];
   openAsks(lookup: SessionRouteRef) {
     this.calls.push({ openAsks: lookup });
-    return Promise.resolve([]);
+    return Promise.resolve(this.openAsksResponse);
   }
 
   attentionResponse: SessionAttentionRequest | undefined;

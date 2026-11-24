@@ -954,12 +954,23 @@ export class DurableChatService {
     ].join("\n");
   }
 
-  async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[]> {
-    return (await this.status(ref)).pendingAsks ?? [];
+  /** The running host's open asks; undefined when none runs, as this read never starts one. */
+  async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[] | undefined> {
+    const status = await this.#runningStatus(ref);
+    return status === undefined ? undefined : status.pendingAsks ?? [];
   }
 
   async attentionRequest(ref: SessionRouteRef): Promise<SessionAttentionRequest | undefined> {
-    return (await this.status(ref)).attentionRequest;
+    return (await this.#runningStatus(ref))?.attentionRequest;
+  }
+
+  /**
+   * The status of the Chat's connected (or connecting) host, else undefined: never starts a host. A host with an open
+   * ask is never idle-closed (`familyBusy`), so only a crash or the owner's stop leaves an open ask on a cold Chat.
+   */
+  async #runningStatus(ref: SessionRouteRef): Promise<HostTranscript["status"] | undefined> {
+    const connection = await this.#connections.get(this.#record(ref).id)?.catch(() => undefined);
+    return connection === undefined ? undefined : hostStatus((await connection.request("status")).result);
   }
 
   async acknowledgeAttention(ref: SessionRouteRef, requestId: string): Promise<boolean> {

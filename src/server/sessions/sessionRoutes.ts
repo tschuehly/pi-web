@@ -260,6 +260,8 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
     if (ref === undefined) return reply;
     const pendingAsks = await sessions.openAsks(ref);
+    // A cold Durable Chat: not read, so the caller keeps what it knew, and nothing started its host.
+    if (pendingAsks === undefined) return { pendingAsks: [], running: false };
     const attentionRequest = await sessions.attentionRequest(ref);
     return attentionRequest === undefined ? { pendingAsks } : { pendingAsks, attentionRequest };
   });
