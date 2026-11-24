@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes.js";
-import { openAsksFromTranscript } from "./openAsksFromTranscript.js";
+import { openAsksFromTranscript, partialAsksFromTranscript } from "./openAsksFromTranscript.js";
 import { ASK_USER_CLOSED_CUSTOM_TYPE, PendingAskStore } from "./pendingAskStore.js";
 
 const SESSION = "session-1";
@@ -111,5 +111,16 @@ describe("openAsksFromTranscript", () => {
     const branch = [posted({ ask: ask("parent") }), closedRecord("parent")];
 
     expect(openAsksFromTranscript(branch, "forked-session")).toEqual({ open: [], undelivered: [] });
+  });
+});
+
+describe("partialAsksFromTranscript", () => {
+  it("keeps each question where the set first listed it, though a revision lists only the open ones", () => {
+    const two = [{ id: "db", question: "Which database?", options: [] }, { id: "cache", question: "Which cache?", options: [] }];
+    const partial = { type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: { askId: "a1", reason: "submitted", questions: [], partial: true, revision: "r2" } };
+    // db went with a partial send; the agent then revised the set, which now lists cache and a new question.
+    const branch = [posted({ ask: { ...ask("a1"), questions: two } }), partial, posted({ ask: { ...ask("a1", "r3"), questions: [two[1], { id: "ttl", question: "TTL?", options: [] }] } })];
+
+    expect(partialAsksFromTranscript(branch, "a1")).toEqual({ earlier: [partial.data], order: ["db", "cache", "ttl"] });
   });
 });

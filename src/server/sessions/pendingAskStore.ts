@@ -356,9 +356,10 @@ export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly As
   const questions = [...records, ...outcome.questions].sort((a, b) => rank(a) - rank(b));
   const answeredCount = questions.filter((record) => record.answered).length;
   const skipped = questions.filter((record) => record.skipped === true).length;
-  // An edit goes out once, with the send that carried it, so the last send may carry none.
-  // shortcut: an agent revising the context after the user's edit still shows the edit, upgrade if agents start revising mid-answer.
-  const editedContext = outcome.editedContext ?? [...earlier].reverse().find((each) => each.askId === outcome.askId && each.editedContext !== undefined)?.editedContext;
+  // An edit goes out once, with the send that carried it, so the last send may carry none. It became the set's context, so
+  // it still applies only while the final context is that edit ("" = cleared): an agent's later revision wins.
+  const lastEdit = [...earlier].reverse().find((each) => each.askId === outcome.askId && each.editedContext !== undefined)?.editedContext;
+  const editedContext = outcome.editedContext ?? (lastEdit !== undefined && lastEdit === (outcome.context ?? "") ? lastEdit : undefined);
   return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, summary: summaryLine(questions.length - skipped, answeredCount, outcome.unansweredIds) + skippedSummary(questions) };
 }
 

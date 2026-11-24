@@ -518,6 +518,20 @@ describe("Durable Chats", () => {
     expect(String(only(only(launched).requests.filter((r) => r.method === "closeAsk")).params?.["content"])).not.toContain("selected pg");
   });
 
+  it("numbers the whole set's record in the set's question order the host returns, not in send order", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const db = { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] };
+    const cache = { id: "cache", question: "Which cache?", options: [{ value: "redis", label: "Redis" }] };
+    // The second question, cache, went first with a partial send; db is left.
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r2", turnsSinceUpdate: 0, context: "Pick", questions: [db] };
+    const earlier = { askId: "ask-1", reason: "submitted", askedAt: ask.askedAt, closedAt: ask.askedAt, context: "Pick", questions: [{ question: cache, answered: true, values: ["redis"] }], answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.db", partial: true, revision: "r2" };
+    only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"], earlier: [earlier], order: ["db", "cache"] } : { ...status, pendingAsks: [ask] });
+    const closed = await durable.submitAsk(ref, "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: "r2" }, "op-o");
+    expect(closed.outcome?.questions.map((record) => record.question.id)).toEqual(["db", "cache"]);
+  });
+
   it("turns a host attention signal into one global session.attention event", async () => {
     const { durable, hub, launched } = await service();
     const chat = await durable.start("/work/a");

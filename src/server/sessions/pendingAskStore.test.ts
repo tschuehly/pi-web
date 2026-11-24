@@ -466,6 +466,18 @@ describe("PendingAskStore edited context", () => {
     if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
     expect(withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"])).toMatchObject({ editedContext: "Mine", answeredCount: 2 });
   });
+
+  it("drops an earlier edit from the whole set's record once the agent revised the context after it", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, context: "Mine" });
+    const revised = store.update({ sessionId, askId: ask.askId, context: "Agent's revision" });
+    const rest = store.submit(sessionId, ask.askId, { revision: revised?.revision ?? "", answers: [{ id: "q2", values: ["no"] }] });
+    if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
+    const whole = withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"]);
+    expect(whole.context).toBe("Agent's revision");
+    expect(whole).not.toHaveProperty("editedContext");
+  });
 });
 
 describe("PendingAskStore whole-set record", () => {

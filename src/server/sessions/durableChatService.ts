@@ -996,7 +996,9 @@ export class DurableChatService {
     const sessionStatus = await this.status(ref);
     // The host's earlier partial-send records of the set (`earlier`, oldest first) make the browser's record whole.
     const earlier = isRecord(result) && Array.isArray(result["earlier"]) ? result["earlier"].filter(isAskOutcome) : [];
-    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"])) return { result: "closed", outcome: withEarlierAnswers(result["outcome"], earlier), sessionStatus };
+    // `order`: the set's question ids as posted and revised, so the record numbers them in set order, as a legacy Chat's.
+    const order = isRecord(result) && Array.isArray(result["order"]) ? result["order"].filter((id) => typeof id === "string") : [];
+    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"])) return { result: "closed", outcome: withEarlierAnswers(result["outcome"], earlier, order), sessionStatus };
     return { result: "stale", sessionStatus };
   }
 

@@ -66,16 +66,17 @@ export function openAsksFromTranscript(branch: readonly unknown[], sessionId: st
   return { open: [...open.values()], undelivered: [...undelivered.values()] };
 }
 
-/** The branch's partial-send records of one ask, oldest first, and its question order as last posted or revised. */
+/** The branch's partial-send records of one ask, oldest first, and its question order: each id where its post or a revision first listed it. */
 export function partialAsksFromTranscript(branch: readonly unknown[], askId: string): { earlier: AskUserOutcome[]; order: string[] } {
   const earlier: AskUserOutcome[] = [];
-  let order: string[] = [];
+  const order: string[] = [];
   for (const entry of branch) {
     if (!isRecord(entry)) continue;
     const message = entry["type"] === "message" ? entry["message"] : undefined;
     if (isRecord(message) && message["role"] === "toolResult" && message["toolName"] === "ask_user" && isRecord(message["details"])) {
       const ask = parseAsk(message["details"]["ask"]);
-      if (ask?.askId === askId) order = ask.questions.map((question) => question.id);
+      // A revision lists only the questions still open, so the order keeps every id where it first appeared.
+      if (ask?.askId === askId) order.push(...ask.questions.map((question) => question.id).filter((id) => !order.includes(id)));
     } else if (entry["type"] === "custom" && entry["customType"] === ASK_USER_CLOSED_CUSTOM_TYPE && isOutcome(entry["data"]) && entry["data"].askId === askId && entry["data"].partial === true) {
       earlier.push(entry["data"]);
     }
