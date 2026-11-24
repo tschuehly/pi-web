@@ -373,6 +373,43 @@ describe("WorkbenchQuestionChips", () => {
     expect(cards(chips).map((card) => card.ask?.askId)).toEqual(["def-2"]);
   });
 
+  it("keeps every answer of a set sent one question at a time in its record: two partial sends out of order, then the last", async () => {
+    const questions = ["db", "cache", "queue"].map((id) => ({ id, question: `Which ${id}?`, options: [{ value: `${id}-a`, label: `${id} A` }] }));
+    const three = ask("abc-1", { questions });
+    const { chips, onSubmit } = await mount([three]);
+    let revision = 1;
+    // Each send closes its questions; the daemon's status drops them before the send resolves with its record.
+    onSubmit.mockImplementation(async (askId, submission) => {
+      const sent = new Set(submission.answers.map((answer) => answer.id));
+      const open = (chips.asks[0]?.questions ?? []).filter((question) => !sent.has(question.id));
+      revision += 1;
+      chips.asks = open.length === 0 ? [] : [{ ...three, questions: open, revision: `r${String(revision)}` }];
+      await chips.updateComplete;
+      const records = questions.filter((question) => sent.has(question.id)).map((question) => ({ question, answered: true, values: [`${question.id}-a`] }));
+      return { askId, reason: "submitted", askedAt: three.askedAt, closedAt: three.askedAt, context: three.context, questions: records, answeredCount: records.length, unansweredIds: [], summary: `Answered ${String(records.length)}`, ...(submission.partial === true ? { partial: true, revision: `r${String(revision)}` } : {}) };
+    });
+    await openWith(chips);
+    for (const id of ["cache", "db", "queue"]) {
+      const card = cards(chips)[0];
+      card?.shadowRoot?.querySelector<HTMLInputElement>(`input[value="${id}-a"]`)?.click();
+      await card?.updateComplete;
+      // The last open question goes with the set's Send; the others with their own.
+      const send = id === "queue" ? card?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]') : card?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".send-one")[chips.asks[0]?.questions.findIndex((question) => question.id === id) ?? -1];
+      send?.click();
+      await vi.waitFor(() => { expect(onSubmit).toHaveBeenLastCalledWith("abc-1", expect.objectContaining({ answers: [{ id, values: [`${id}-a`] }] })); });
+      await chips.updateComplete;
+      await cards(chips)[0]?.updateComplete;
+    }
+
+    await vi.waitFor(() => { expect(text(cards(chips)[0])).toContain("Answers sent"); });
+    const record = cards(chips)[0]?.outcome;
+    expect(record?.questions.map((each) => [each.question.id, each.values])).toEqual([["db", ["db-a"]], ["cache", ["cache-a"]], ["queue", ["queue-a"]]]);
+    expect(record?.summary).toBe("Answered 3 of 3; none left unanswered");
+    expect(text(cards(chips)[0])).toContain("cache A");
+    const shown = [...(cards(chips)[0]?.shadowRoot?.querySelectorAll<HTMLElement & { text: string }>("formatted-text") ?? [])].map((each) => each.text);
+    expect(shown).toContain(three.context);
+  });
+
   it("formats the update age coarsely", () => {
     const now = Date.parse("2026-10-19T10:00:00.000Z");
     expect(updatedAgo("2026-10-19T09:59:30.000Z", now)).toBe("updated just now");

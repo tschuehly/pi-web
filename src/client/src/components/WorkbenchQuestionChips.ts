@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import type { AskUserOutcome, PendingAskUser } from "../../../shared/apiTypes";
+import type { AskUserOutcome, AskUserQuestionRecord, PendingAskUser } from "../../../shared/apiTypes";
 import type { SessionStatus } from "../api";
 import type { AskUserCard, AskUserSubmitCallback } from "./AskUserCard";
 import "./AskUserCard";
@@ -18,6 +18,18 @@ const CHEVRON_DOWN_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusa
 /** The submit callback resolves to the closed record when its send closed or partly sent the set (the session controller returns it). */
 const isOutcome = (value: unknown): value is AskUserOutcome => typeof value === "object" && value !== null && "reason" in value && "askId" in value;
 
+/** The final send's record with the questions earlier partial sends closed, in the set's order, its counts and summary over all of them. */
+function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly AskUserQuestionRecord[], order: readonly string[]): AskUserOutcome {
+  if (earlier.length === 0) return outcome;
+  const rank = (record: AskUserQuestionRecord) => { const index = order.indexOf(record.question.id); return index < 0 ? order.length : index; };
+  const questions = [...earlier, ...outcome.questions].sort((a, b) => rank(a) - rank(b));
+  const answeredCount = questions.filter((record) => record.answered).length;
+  const skipped = questions.filter((record) => record.skipped === true).map((record) => record.question.id);
+  // Worded as the daemon's summary (pendingAskStore's summaryLine and skippedSummary).
+  const summary = `Answered ${String(answeredCount)} of ${String(questions.length - skipped.length)}; ${outcome.unansweredIds.length === 0 ? "none left unanswered" : `unanswered: ${outcome.unansweredIds.join(", ")}`}${skipped.length === 0 ? "" : `; skipped (condition not met): ${skipped.join(", ")}`}`;
+  return { ...outcome, questions, answeredCount, summary };
+}
+
 /** Open questions across a Chat's sets, without those a dependent `showIf` hides under the stored drafts; a Chat tab shows this count. */
 export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined, draftSessionId: string): number =>
   (asks ?? []).reduce((sum, ask) => sum + visibleQuestions(ask.questions, loadAskDraft(draftSessionId, ask.askId, undefined, ask.questions)).length, 0);
@@ -28,8 +40,8 @@ export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined, d
  * the roster's entries span the row below and the drawer opens above it. The bar opens a drawer with every set's form,
  * oldest first, each its context above its questions; while open (announced by `question-drawer-toggle`) the Chat gives
  * the drawer the transcript's whole area. Sent questions and answered sets drop out because the daemon stops reporting
- * them, leaving their record in the transcript; a set sent from the open drawer stays in it as that read-only record,
- * context included, until the owner dismisses it or closes the drawer.
+ * them, leaving their record in the transcript; a set sent from the open drawer stays in it as that read-only record
+ * (context and the answers its earlier one-by-one sends gave included) until the owner dismisses it or closes the drawer.
  */
 @customElement("workbench-question-chips")
 export class WorkbenchQuestionChips extends LitElement {
@@ -53,18 +65,29 @@ export class WorkbenchQuestionChips extends LitElement {
   @state() private sent: AskUserOutcome[] = [];
   /** Sends under way; the new status can drop the last set before its send resolves with the record to keep. */
   private sending = 0;
+  /** Per open set, the questions its partial sends closed and its question order, so its kept record shows every answer. */
+  private readonly partials = new Map<string, { order: string[]; records: AskUserQuestionRecord[] }>();
 
   protected override willUpdate(): void {
     if (!this.open) this.sent = [];
+    if (this.sending === 0) for (const askId of this.partials.keys()) if (!this.asks.some((ask) => ask.askId === askId)) this.partials.delete(askId);
     if (this.asks.length === 0 && this.sent.length === 0 && this.sending === 0) this.open = false;
   }
 
   /** Forwards a card's send and, when it closed the set while the drawer is open, keeps the closed record the daemon returned. */
   private readonly submit: AskUserSubmitCallback = async (askId, submission) => {
     this.sending += 1;
+    // Read before the send: its new status can drop the questions it closes.
+    const order = this.partials.get(askId)?.order ?? this.asks.find((ask) => ask.askId === askId)?.questions.map((question) => question.id) ?? [];
     try {
       const result = await this.onSubmit?.(askId, submission);
-      if (this.open && isOutcome(result) && result.askId === askId && result.partial !== true) this.sent = [...this.sent.filter((each) => each.askId !== askId), result];
+      if (!isOutcome(result) || result.askId !== askId) return result;
+      const earlier = this.partials.get(askId)?.records ?? [];
+      if (result.partial === true) this.partials.set(askId, { order, records: [...earlier, ...result.questions] });
+      else {
+        this.partials.delete(askId);
+        if (this.open) this.sent = [...this.sent.filter((each) => each.askId !== askId), withEarlierAnswers(result, earlier, order)];
+      }
       return result;
     } finally {
       this.sending -= 1;
