@@ -279,6 +279,18 @@ describe("chat tab status", () => {
     expect(chatTabStatus(undefined, false)).toBe("idle");
   });
 
+  it("tells waiting on a running child and a lone shell command apart from working", () => {
+    const delegates = (activity: string) => JSON.stringify({ schemaVersion: 1, items: [{ id: "c1", kind: "subagent", activity }] });
+    expect(chatTabStatus(status({ extensionStatuses: { "pi-workbench:activity": delegates("running") } }), true)).toBe("waiting");
+    expect(chatTabStatus(status({ isStreaming: true, extensionStatuses: { "pi-workbench:activity": delegates("running") } }), false)).toBe("running");
+    // A finished child waiting to be collected is not work in progress.
+    expect(chatTabStatus(status({ extensionStatuses: { "pi-workbench:activity": delegates("success") } }), false)).toBe("idle");
+    expect(chatTabStatus(status({ isBashRunning: true }), false)).toBe("shell");
+    const job = JSON.stringify({ schemaVersion: 1, jobs: [{ id: "j1", elapsedSeconds: 3, bytes: 0 }] });
+    expect(chatTabStatus(status({ extensionStatuses: { "pi-workbench:background-bash": job } }), false)).toBe("shell");
+    expect(chatTabStatus(status({ isBashRunning: true, extensionStatuses: { "pi-workbench:activity": delegates("running") } }), false)).toBe("waiting");
+  });
+
   it("shows needs you while the agent's attention request is unacknowledged", () => {
     expect(chatTabStatus(status({ isStreaming: true, attentionRequest: { id: "a", reason: "Review the PR" } }), true)).toBe("needs");
     expect(chatTabStatus({ attentionRequest: { id: "a", reason: "Review the PR" } }, false)).toBe("needs");

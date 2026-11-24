@@ -2,18 +2,27 @@ import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { styleMap } from "lit/directives/style-map.js";
 import type { SessionStatus } from "../api";
+import { ACTIVITY_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY, delegateOutcome, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, visibleShellExecutions } from "../extensionStatusSnapshots";
 import { gridPage, gridPageCount, gridPageLead, NO_WORKSTREAM_KEY, windowGroups, workstreamKey, workstreamTabTarget, type ChatGroup, type WindowChat, type WindowLayout, type WorkbenchWindow } from "../workbenchWindows";
 import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import { renderBuiltinTabIcon } from "./tabIcons";
 
-export type ChatTabStatus = "needs" | "running" | "done" | "idle";
+export type ChatTabStatus = "needs" | "running" | "waiting" | "shell" | "done" | "idle";
 
-const STATUS_LABELS: Record<ChatTabStatus, string> = { needs: "Needs you", running: "Working", done: "Done while you were away", idle: "Idle" };
+const STATUS_LABELS: Record<ChatTabStatus, string> = { needs: "Needs you", running: "Working", waiting: "Waiting on a Subagent or Worker", shell: "Running a shell command", done: "Done while you were away", idle: "Idle" };
 
-/** Needs you › working › done while you were away (`unread`) › idle. A partial status is what a restored Chat read without opening it. */
+/**
+ * Needs you › working (its own turn) › waiting on a running Subagent or Worker › only a shell command running (`!`, a
+ * bash call or a background job) › done while you were away (`unread`) › idle. A partial status is what a restored Chat
+ * read without opening it.
+ */
 export function chatTabStatus(status: Partial<SessionStatus> | undefined, unread: boolean): ChatTabStatus {
   if ((status?.pendingAsks?.length ?? 0) > 0 || status?.pendingAsk !== undefined || (status?.pendingDialogs?.length ?? 0) > 0 || status?.attentionRequest !== undefined) return "needs";
-  if (status?.isStreaming === true || status?.isCompacting === true || status?.isBashRunning === true) return "running";
+  if (status?.isStreaming === true || status?.isCompacting === true) return "running";
+  const extensions = status?.extensionStatuses;
+  if (parseDelegateActivitySnapshot(extensions?.[ACTIVITY_STATUS_KEY]).some((delegate) => delegateOutcome(delegate) === "running")) return "waiting";
+  if (status?.isBashRunning === true || visibleShellExecutions(status?.activeToolExecutions).length > 0
+    || parseBackgroundBashStatusSnapshot(extensions?.[BACKGROUND_BASH_STATUS_KEY]).length > 0) return "shell";
   return unread ? "done" : "idle";
 }
 
@@ -28,8 +37,13 @@ export const chatStatusDotStyles = css`
   .dot[data-status="running"] { border: 0; background: var(--pi-success); animation: pulse 1.2s ease-in-out infinite; }
   .dot[data-status="needs"] { width: 10px; height: 10px; border: 0; background: var(--pi-warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pi-warning) 35%, transparent); }
   .dot[data-status="done"] { border: 0; background: var(--pi-accent); }
+  /* Waiting on a child: a green ring with a turning gap. Only a shell running: a green prompt. */
+  .dot[data-status="waiting"] { border-color: var(--pi-success); border-top-color: transparent; animation: spin 1.6s linear infinite; }
+  .dot[data-status="shell"] { width: auto; height: auto; border: 0; border-radius: 0; color: var(--pi-success); font: 700 9px/1 ui-monospace, monospace; }
+  .dot[data-status="shell"]::before { content: ">_"; }
   @keyframes pulse { 50% { opacity: .35; } }
-  @media (prefers-reduced-motion: reduce) { .dot[data-status="running"] { animation: none; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .dot[data-status="running"], .dot[data-status="waiting"] { animation: none; } }
 `;
 
 /** Chats dragged out of a window's tabs or tiles; only PI WEB pages of the same origin can read the type. */
