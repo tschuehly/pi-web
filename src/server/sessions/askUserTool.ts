@@ -45,7 +45,7 @@ const AskUserOptionParams = Type.Object({
     description: "Optional clarification shown under the label.",
   })),
   recommended: Type.Optional(Type.Boolean({
-    description: "Mark the option you recommend.",
+    description: "Mark the option you recommend; it starts selected.",
   })),
 });
 
@@ -147,7 +147,7 @@ export function createAskUserToolDefinition(deps: AskUserToolDeps) {
     promptSnippet: "ask_user: post, revise, or withdraw a self-contained question set for the user; returns immediately, answers arrive later as a follow-up",
     promptGuidelines: [
       "Use ask_user to batch the decisions you need from the user into one question set rather than asking in prose. It returns immediately: keep working on anything that does not depend on the answers, and end your turn if nothing does. The answers come back as a follow-up message that wakes you; do not poll or repost.",
-      "Put all explanation into the ask_user set and none into your Chat message, which only says that questions were posted: the panel covers the Chat. `context` holds what all questions share; each question's `detail` says what the item is, gives an example, and where it stands; each option's `detail` states its consequence, and the recommended option is marked. Do not number the question text; the panel numbers it.",
+      "Put all explanation into the ask_user set and none into your Chat message, which only says that questions were posted: the panel covers the Chat. `context` holds what all questions share; each question's `detail` says what the item is, gives an example, and where it stands; each option's `detail` states its consequence, and the recommended option starts selected. Do not number the question text; the panel numbers it. When one decision covers several independent items, use multiple: true with one option per item.",
       "Keep open ask_user sets current: when the facts change, call ask_user with update: <askId> (no other fields just confirms it) or withdraw: <askId>.",
     ],
     parameters: AskUserParams,

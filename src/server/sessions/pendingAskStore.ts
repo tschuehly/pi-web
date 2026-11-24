@@ -287,7 +287,11 @@ function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
   if (!record.answered) return [header, "  Unanswered."];
   const parts = [...record.values.map((value) => `selected ${value}`)];
   if (record.otherText !== undefined) parts.push(`custom: ${JSON.stringify(record.otherText)}`);
-  return [header, `  Answered: ${parts.join("; ")}`];
+  // The card preselects the recommended options (the first one for single choice); say when the user left them as they were.
+  const recommended = record.question.options.filter((option) => option.recommended === true).map((option) => option.value);
+  const preselected = record.question.multiple === true ? recommended : recommended.slice(0, 1);
+  const unchanged = preselected.length > 0 && record.otherText === undefined && record.values.length === preselected.length && preselected.every((value) => record.values.includes(value));
+  return [header, `  Answered: ${parts.join("; ")}${unchanged ? " (recommended, unchanged)" : ""}`];
 }
 
 function askUserOutcome(

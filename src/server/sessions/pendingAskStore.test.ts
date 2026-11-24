@@ -525,6 +525,18 @@ describe("ask outcome rendering", () => {
     ].join("\n"));
   });
 
+  it("tells the model when the user left the recommended options as they were", () => {
+    const store = testStore();
+    const recommended = { options: [{ value: "a", label: "A", recommended: true }, { value: "b", label: "B", recommended: true }, { value: "c", label: "C" }], multiple: true };
+    const ask = store.open({ sessionId, context, questions: [question("q1", recommended), question("q2", recommended)] });
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["a", "b"] }, { id: "q2", values: ["a"] }] });
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+
+    const text = renderAskUserAnswersText(result.outcome);
+    expect(text).toContain("  Answered: selected a; selected b (recommended, unchanged)\n");
+    expect(text).toContain("  Answered: selected a\n");
+  });
+
   it("carries the user's trimmed note on the outcome and into the model-facing text", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("q1")] });
