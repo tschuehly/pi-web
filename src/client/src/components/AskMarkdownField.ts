@@ -6,12 +6,12 @@ import { toSafeMarkdownHtml } from "../formatting/markdown";
 import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import { foldMediaMarkup, revealFoldedMedia } from "../formatting/foldedMedia";
 import { openChatFileLink } from "./FormattedText";
-import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages } from "./workbenchFilesEditor";
+import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages, resetEditHistory } from "./workbenchFilesEditor";
 
 /**
  * A multi-line answer of the ask card in the Files pane's Markdown editor (live preview, highlighting, undo).
  * Light DOM, so the card's shadow root carries its styles and focus moves into it like into a textarea.
- * Dispatches `ask-field-input` after each edit by the user; setting `value` replaces the text without one.
+ * Dispatches `ask-field-input` after each edit by the user; setting `value` replaces the text without one and drops the undo history.
  */
 export class AskMarkdownField extends HTMLElement {
   #view: EditorView | undefined;
@@ -39,6 +39,8 @@ export class AskMarkdownField extends HTMLElement {
     this.#replacing = true;
     try {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+      // The draft changed underneath (a revision, another question's text): Undo must not bring the old text back.
+      resetEditHistory(view);
     } finally {
       this.#replacing = false;
     }

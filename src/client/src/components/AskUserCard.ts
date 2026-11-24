@@ -1,6 +1,7 @@
 import { LitElement, css, html, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { repeat } from "lit/directives/repeat.js";
 import {
   ASK_USER_CONTEXT_MAX_LENGTH,
   ASK_USER_OTHER_TEXT_MAX_LENGTH,
@@ -168,7 +169,7 @@ export class AskUserCard extends LitElement {
         ${this.renderContextEditor(ask.context)}
         <form class="ask-form" @submit=${(event: SubmitEvent) => { this.handleSubmit(event, ask); }}>
           <div class="questions">
-            ${visible.map((question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
+            ${repeat(visible, (question) => question.id, (question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
           </div>
           ${this.noteOpen ? html`
             <div class="ask-note">

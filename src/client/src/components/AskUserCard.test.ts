@@ -4,6 +4,7 @@ import type { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
 import { loadAskContext, loadAskNote, saveAskDraft, saveAskNote } from "../askDrafts";
+import { undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { AskMarkdownField } from "./AskMarkdownField";
 import { AskUserCard, renderedOnlyFences, type AskUserSubmitCallback } from "./AskUserCard";
@@ -546,6 +547,39 @@ describe("ask-user-card single-answer send", () => {
     expect(buttonWithText(renderRoot(lone), "Send answers")).toBeDefined();
   });
 
+  it("keeps each question's own editor and undo history when a partial send or revision changes the set", async () => {
+    const why = question("why", "Why?", []);
+    const how = question("how", "How?", []);
+    const card = await mountOpenAsk(openAsk([why, how]), vi.fn<AskUserSubmitCallback>());
+    const fields = () => [...renderRoot(card).querySelectorAll(".other-answer ask-markdown-field")].map((field) => markdownField(renderRoot(card), `#${field.id}`));
+    const [whyField, howField] = fields();
+    typeInto(requiredElement(whyField, "why field"), "Because A.");
+    typeInto(requiredElement(howField, "how field"), "Like B.");
+    await card.updateComplete;
+    [...renderRoot(card).querySelectorAll<HTMLButtonElement>(".send-one")][0]?.click();
+    await Promise.resolve();
+
+    // The first question was sent; the remaining one keeps its editor, so Undo never brings back the other question's text.
+    card.ask = { ...openAsk([how]), revision: "r2" };
+    await card.updateComplete;
+    const remaining = requiredElement(fields()[0], "remaining field");
+    expect([remaining === howField, remaining.value]).toEqual([true, "Like B."]);
+    undo(editorView(remaining));
+    expect(remaining.value).not.toBe("Because A.");
+
+    // A revision that changes the question drops its draft underneath the editor; Undo cannot restore the dropped text.
+    typeInto(remaining, "Like C.");
+    await card.updateComplete;
+    // A replacement within 500 ms of typing would join the typed undo step; the owner's next revision comes later.
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 1000);
+    card.ask = { ...openAsk([question("how", "How, exactly?", [])]), revision: "r3" };
+    await card.updateComplete;
+    expect([remaining.isConnected, remaining === fields()[0], remaining.value]).toEqual([true, true, ""]);
+    undo(editorView(remaining));
+    expect(remaining.value).toBe("");
+  });
+
   it("keeps the other questions' drafts when a partial send returns the ask under a new revision", async () => {
     const editor = question("editor", "Choose an editor", [option("vim", "Vim")]);
     const shell = question("shell", "Choose a shell", [option("zsh", "Zsh")]);
@@ -1056,7 +1090,8 @@ function editorView(field: AskMarkdownField): EditorView {
 /** Replaces the field's text as the user's edit would. */
 function typeInto(field: AskMarkdownField, text: string): void {
   const view = editorView(field);
-  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+  // Typed, as a keyboard edit is: the history keeps it apart from programmatic replacements.
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: "input.type" });
 }
 
 function requiredElement<T>(value: T | null | undefined, label: string): T {
