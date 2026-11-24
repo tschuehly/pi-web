@@ -827,6 +827,39 @@ describe("Durable Chats", () => {
     expect(only(launched).requests.filter((request) => request.method === "close").map((request) => request.params)).toEqual([{ end: true }]);
   });
 
+  it("tells a viewed-capable host when its first browser opens the Chat and its last one leaves, again after a reconnect", async () => {
+    const { durable, hub, launched } = await service((launch) => new FakeHost(DURABLE_HOST_PROTOCOL, launch === 2 ? [] : ["viewed"]));
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await durable.status(ref);
+    const socket = () => Object.assign(new EventEmitter(), { OPEN: 1, readyState: 1, send: () => undefined, terminate: () => undefined });
+    const viewed = (host: FakeHost) => host.requests.filter((request) => request.method === "setViewed").map((request) => request.params);
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Ready with no browser: the host hears the current state once.
+    expect(viewed(only(launched))).toEqual([{ viewed: false }]);
+    const first = socket();
+    const second = socket();
+    hub.add(chat.id, first);
+    hub.add(chat.id, second);
+    await settle();
+    first.emit("close");
+    await settle();
+    expect(viewed(only(launched))).toEqual([{ viewed: false }, { viewed: true }]);
+    second.emit("close");
+    await settle();
+    expect(viewed(only(launched))).toEqual([{ viewed: false }, { viewed: true }, { viewed: false }]);
+
+    // A new host for a watched Chat hears it at its ready handshake; a host without the capability hears nothing.
+    hub.add(chat.id, socket());
+    await durable.stop(ref);
+    await durable.status(ref);
+    expect(viewed(only(launched.slice(1)))).toEqual([{ viewed: true }]);
+    await durable.stop(ref);
+    await durable.status(ref);
+    expect(viewed(only(launched.slice(2)))).toEqual([]);
+  });
+
   it("the idle close ends a host that only serves Atelier Pages", async () => {
     let now = Date.parse("2026-11-17T08:00:00Z");
     const { durable, launched } = await service(undefined, undefined, { now: () => now });

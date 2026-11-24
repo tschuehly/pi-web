@@ -120,6 +120,8 @@ interface HostEvents {
   currentSeq(sessionId: string): number;
   /** Whether a browser watches the Chat: its host is never idle (legacy idle unload). */
   hasSessionSubscribers?(sessionId: string): boolean;
+  /** First browser subscriber joined (true) or last one left (false); drives the host's `setViewed`. */
+  onSessionSubscribersChange?(listener: (sessionId: string, watched: boolean) => void): void;
 }
 
 interface HostTranscript {
@@ -158,6 +160,8 @@ class DurableHostConnection {
   upgradeQuiet = false;
   /** The host's ready message says it closes only if still restart-safe, checked and quiesced in the host (B's close). */
   closeIfRestartSafe = false;
+  /** The `viewed` state last sent to this host (`setViewed`); undefined until the first send. */
+  viewedSent: boolean | undefined;
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
@@ -342,6 +346,19 @@ export class DurableChatService {
   }) {
     this.#idleSweep = setInterval(() => { void this.closeIdleHosts().then(() => this.upgradePendingHosts()); }, IDLE_HOST_SWEEP_MS);
     this.#idleSweep.unref();
+    deps.events.onSessionSubscribersChange?.((sessionId) => { void this.#connections.get(sessionId)?.then((connection) => this.#sendViewed(sessionId, connection), () => undefined); });
+  }
+
+  /** Tell a host with the `viewed` capability whether a browser has its Chat open; only a change is sent. */
+  async #sendViewed(sessionId: string, connection: DurableHostConnection): Promise<void> {
+    if (!connection.capabilities.includes("viewed")) return;
+    const viewed = this.deps.events.hasSessionSubscribers?.(sessionId) === true;
+    if (connection.viewedSent === viewed) return;
+    connection.viewedSent = viewed;
+    await connection.request("setViewed", { viewed }).catch((error: unknown) => {
+      if (connection.viewedSent === viewed) connection.viewedSent = undefined;
+      this.deps.logger?.warn({ sessionId, err: error }, "Durable Chat host did not take setViewed");
+    });
   }
 
   readonly #idleSweep: NodeJS.Timeout;
@@ -1531,6 +1548,7 @@ export class DurableChatService {
         this.#templates.set(record.id, loaded.promptList ?? []);
         await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction, spawnSessions: this.deps.spawnTargets !== undefined, chatMessages: true });
       }
+      await this.#sendViewed(record.id, connection);
       return connection;
     });
     this.#connections.set(record.id, opened);

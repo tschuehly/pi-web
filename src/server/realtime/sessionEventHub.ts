@@ -17,12 +17,14 @@ export class SessionEventHub {
   private readonly seqBySession = new Map<string, number>();
   private readonly globalUpdates = new Map<string, { sent: string | undefined; sentAt: number; pending: string | undefined; timer: ReturnType<typeof setTimeout> | undefined }>();
   private globalJoinFrame: (() => RealtimeEvent) | undefined;
+  private readonly subscriberListeners = new Set<(sessionId: string, watched: boolean) => void>();
 
   /** The service and routes use this same owned index; service disposal clears it. */
   constructor(readonly mediaIndex = new SessionMediaIndex()) {}
 
   add(sessionId: string, socket: RealtimeSocket, mediaMode?: typeof SESSION_MEDIA_MODE): void {
     let subscribers = this.socketsBySession.get(sessionId);
+    const first = !subscribers;
     if (!subscribers) {
       subscribers = { inline: new Set(), reference: new Set() };
       this.socketsBySession.set(sessionId, subscribers);
@@ -31,8 +33,21 @@ export class SessionEventHub {
     sockets.add(socket);
     socket.on("close", () => {
       sockets.delete(socket);
-      if (subscribers.inline.size === 0 && subscribers.reference.size === 0) this.socketsBySession.delete(sessionId);
+      if (subscribers.inline.size === 0 && subscribers.reference.size === 0 && this.socketsBySession.get(sessionId) === subscribers) {
+        this.socketsBySession.delete(sessionId);
+        this.notifySubscribers(sessionId, false);
+      }
     });
+    if (first) this.notifySubscribers(sessionId, true);
+  }
+
+  /** Called when a session gains its first browser subscriber (true) or loses its last (false). */
+  onSessionSubscribersChange(listener: (sessionId: string, watched: boolean) => void): void {
+    this.subscriberListeners.add(listener);
+  }
+
+  private notifySubscribers(sessionId: string, watched: boolean): void {
+    for (const listener of this.subscriberListeners) listener(sessionId, watched);
   }
 
   /** Whether a browser is subscribed to this session's events. */
