@@ -153,6 +153,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       Object.assign(env, {
         PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_WEB_DURABLE_AGENT_DIR: durableAgent, PI_TELEMETRY_DIR: join(root, "telemetry"),
         PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
+        // Durable hosts' backup copies (pi-workbench durable-pilot src/backup.ts) stay out of the owner's backup folder.
+        PI_WORKBENCH_BACKUP_DIR: join(root, "backup-staging"),
         // Subagents: routing reads a fixture quota snapshot (specs refresh it), never quota-axi; routed children answer
         // through the mock like any Chat.
         PI_WORKBENCH_QUOTA_CACHE: join(root, "quota-cache.json"),
