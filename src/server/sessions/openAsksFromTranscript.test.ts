@@ -87,6 +87,16 @@ describe("openAsksFromTranscript", () => {
     expect(live.pendingAsks(SESSION).map((open) => open.questions.map((q) => q.id))).toEqual([["other"]]);
   });
 
+  it("rebuilds the rest of a set with the context its partial send edited", () => {
+    const live = new PendingAskStore({ createAskId: () => "a1", createRevision: (() => { let n = 0; return () => `r${String(++n)}`; })() });
+    const set = live.open({ sessionId: SESSION, context: "Why", questions: [{ id: "db", question: "Which db?", options: [] }, { id: "cache", question: "Which cache?", options: [] }] });
+    const branch: unknown[] = [posted({ ask: set })];
+    live.submit(SESSION, "a1", { revision: "r1", answers: [{ id: "db", values: [], otherText: "pg" }], partial: true, context: "Mine" }, (outcome) => branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }));
+
+    expect(openAsksFromTranscript(branch, SESSION).open).toEqual(live.pendingAsks(SESSION));
+    expect(live.pendingAsks(SESSION)[0]?.context).toBe("Mine");
+  });
+
   it("restores only asks the session itself posted, so a fork does not inherit its parent's", () => {
     const branch = [posted({ ask: ask("parent") }), closedRecord("parent")];
 

@@ -490,6 +490,7 @@ export function parseAskUserOutcome(value: unknown): AskUserOutcome {
     askedAt: requireNonEmptyString(record, "askedAt"),
     closedAt: requireNonEmptyString(record, "closedAt"),
     ...optionalField("context", optionalBoundedNonEmptyString(record, "context", ASK_USER_CONTEXT_MAX_LENGTH)),
+    ...optionalField("editedContext", optionalBoundedNonEmptyString(record, "editedContext", ASK_USER_CONTEXT_MAX_LENGTH)),
     questions,
     ...optionalField("note", optionalBoundedNonEmptyString(record, "note", ASK_USER_OTHER_TEXT_MAX_LENGTH)),
     answeredCount,

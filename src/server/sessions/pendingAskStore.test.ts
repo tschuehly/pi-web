@@ -402,6 +402,48 @@ describe("PendingAskStore partial submit", () => {
   });
 });
 
+describe("PendingAskStore edited context", () => {
+  it("records the user's edited context and shows it to the model before the answers, fenced", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    const edited = "My plan:\n```diff\n-a\n+b\n```";
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], context: edited });
+    if (result.status !== "closed") throw new Error("expected closed");
+    expect(result.outcome).toMatchObject({ context, editedContext: edited });
+    expect(renderAskUserAnswersText(result.outcome)).toContain(["set ask-1.", "", "The user edited the context:", "````markdown", edited, "````", "", "- ask.q1"].join("\n"));
+  });
+
+  it("adds nothing when the context comes back unchanged or blank", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], context });
+    if (result.status !== "closed") throw new Error("expected closed");
+    expect(result.outcome).not.toHaveProperty("editedContext");
+    expect(renderAskUserAnswersText(result.outcome)).not.toContain("edited the context");
+    const other = store.open({ sessionId, context, questions: [question("q1")] });
+    const blank = store.submit(sessionId, other.askId, { revision: other.revision, answers: [], context: "  " });
+    expect(blank.status === "closed" && blank.outcome).not.toHaveProperty("editedContext");
+  });
+
+  it("rejects an edited context over the context limit, keeping the ask open", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) })).toThrow(/context exceeds/);
+    expect(store.pendingAsks(sessionId)).toHaveLength(1);
+  });
+
+  it("sends the edit once with a partial send, which makes it the open ask's context", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, context: "Mine" });
+    if (result.status !== "closed") throw new Error("expected closed");
+    expect(result.outcome.editedContext).toBe("Mine");
+    expect(result.ask?.context).toBe("Mine");
+    const rest = store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }], context: "Mine" });
+    expect(rest.status === "closed" && rest.outcome).not.toHaveProperty("editedContext");
+  });
+});
+
 describe("PendingAskStore open asks", () => {
   it("keeps several asks of one session open, oldest first", () => {
     const store = testStore();

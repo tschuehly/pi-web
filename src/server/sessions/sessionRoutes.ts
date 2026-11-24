@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type AskUserAnswer, type AskUserCloseResponse, type AskUserSubmission, type ExtensionDialogAnswerRequest, type ExtensionDialogCancelRequest, type SessionBulkMutationRequest, type SessionBulkMutationRef, type SessionCleanupRequest, type SessionModelScopeMode, type SessionTreeForkRequest, type SessionTreeNavigateRequest, type SessionTreeSummaryChoice, type SessionUnreadAcknowledgeRequest } from "../../shared/apiTypes.js";
+import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type AskUserAnswer, type AskUserCloseResponse, type AskUserSubmission, type ExtensionDialogAnswerRequest, type ExtensionDialogCancelRequest, type SessionBulkMutationRequest, type SessionBulkMutationRef, type SessionCleanupRequest, type SessionModelScopeMode, type SessionTreeForkRequest, type SessionTreeNavigateRequest, type SessionTreeSummaryChoice, type SessionUnreadAcknowledgeRequest } from "../../shared/apiTypes.js";
 import { parseSessionDefaultsUpdate } from "../../shared/sessionDefaults.js";
 import { projectBrowserMessageResponse, projectBrowserStreamSnapshot, projectBrowserTranscriptSnapshot, type BrowserImageProjector } from "../browserMessageProjection.js";
 import { isSessionMediaId, SESSION_MEDIA_MODE } from "../../shared/sessionMedia.js";
@@ -820,7 +820,10 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   if (typeof note === "string" && note.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("note field is too long");
   const partial = body["partial"];
   if (partial !== undefined && typeof partial !== "boolean") throw new Error("partial field must be a boolean");
-  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}) };
+  const context = body["context"];
+  if (context !== undefined && typeof context !== "string") throw new Error("context field must be a string");
+  if (typeof context === "string" && context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new Error("context field is too long");
+  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}), ...(context === undefined ? {} : { context }) };
 }
 
 function askUserAnswerFromValue(value: unknown): AskUserAnswer {

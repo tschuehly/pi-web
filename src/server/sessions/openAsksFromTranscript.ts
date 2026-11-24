@@ -48,7 +48,8 @@ export function openAsksFromTranscript(branch: readonly unknown[], sessionId: st
         // A partial send: the sent questions leave the ask, which continues under the recorded revision.
         if (ask === undefined) continue;
         const sent = new Set(outcome.questions.map((record) => record.question.id));
-        open.set(ask.askId, { ...ask, revision: outcome.revision, questions: ask.questions.filter((question) => !sent.has(question.id)) });
+        // A context the user edited in that send became the ask's context, as the store does.
+        open.set(ask.askId, { ...ask, revision: outcome.revision, questions: ask.questions.filter((question) => !sent.has(question.id)), ...(typeof outcome.editedContext === "string" ? { context: outcome.editedContext } : {}) });
         undelivered.set(deliveryKey(outcome.askId, outcome.partial, outcome.revision), outcome);
       } else if (open.delete(outcome.askId)) undelivered.set(deliveryKey(outcome.askId, outcome.partial, outcome.revision), outcome);
     } else if (entry["type"] === "custom_message" && entry["customType"] === ASK_USER_ANSWERS_CUSTOM_TYPE) {

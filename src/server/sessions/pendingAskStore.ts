@@ -160,6 +160,7 @@ export class PendingAskStore {
     const hidden = hiddenAskQuestionIds(ask.questions, (id) => askAnswerSelection(answers.get(id)));
     for (const id of hidden) answers.delete(id);
     const note = normalizeNote(submission.note);
+    const editedContext = normalizeEditedContext(ask, submission.context);
     if (submission.partial === true) {
       if (note !== undefined) throw new PendingAskValidationError("A partial submit takes no note; send the note with the whole set");
       if (answers.size === 0) throw new PendingAskValidationError("A partial submit needs at least one answer");
@@ -172,14 +173,15 @@ export class PendingAskStore {
       const remaining = ask.questions.filter((question) => !answers.has(question.id) && !skipped.has(question.id));
       if (remaining.length > 0) {
         const revision = this.createRevision();
-        const outcome = partialOutcome(ask, answers, skipped, remaining, revision, this.timestamp());
+        const outcome = partialOutcome(ask, answers, skipped, remaining, revision, this.timestamp(), editedContext);
         record?.(outcome);
-        const updated: PendingAskUser = { ...ask, revision, questions: remaining };
+        // The edited context goes out once, with this send; the questions left open then show the user's version.
+        const updated: PendingAskUser = { ...ask, revision, questions: remaining, ...(editedContext === undefined ? {} : { context: editedContext }) };
         this.setAsk(sessionId, updated);
         return { status: "closed", outcome, ask: cloneAsk(updated) };
       }
     }
-    return closed(this.close(sessionId, askId, "submitted", answers, record, note, hidden));
+    return closed(this.close(sessionId, askId, "submitted", answers, record, note, hidden, editedContext));
   }
 
   /**
@@ -234,11 +236,11 @@ export class PendingAskStore {
     this.openBySessionId.set(sessionId, asks);
   }
 
-  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string, skipped: ReadonlySet<string> = new Set()): AskUserOutcome | undefined {
+  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string, skipped: ReadonlySet<string> = new Set(), editedContext?: string): AskUserOutcome | undefined {
     const asks = this.openBySessionId.get(sessionId);
     const ask = asks?.get(askId);
     if (asks === undefined || ask === undefined) return undefined;
-    const outcome = askUserOutcome(ask, answers, reason, this.timestamp(), note, skipped);
+    const outcome = askUserOutcome(ask, answers, reason, this.timestamp(), note, skipped, editedContext);
     record?.(outcome);
     asks.delete(askId);
     if (asks.size === 0) this.openBySessionId.delete(sessionId);
@@ -265,7 +267,8 @@ export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
     ? `The user submitted answers to question set ${outcome.askId}.`
     : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
   const note = outcome.note === undefined ? [] : ["", `Note from the user: ${JSON.stringify(outcome.note)}`];
-  return [lead, "", ...outcome.questions.map((record) => questionLines(outcome.askId, record)).flat(), ...note, "", outcome.summary].join("\n");
+  const edited = outcome.editedContext === undefined ? [] : ["The user edited the context:", fenced(outcome.editedContext), ""];
+  return [lead, "", ...edited, ...outcome.questions.map((record) => questionLines(outcome.askId, record)).flat(), ...note, "", outcome.summary].join("\n");
 }
 
 /**
@@ -279,6 +282,12 @@ export function renderOpenAsksReminder(asks: readonly PendingAskUser[]): string 
     ...asks.map((ask) => `- ${ask.askId} (${ask.questions.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}; updated ${ask.updatedAt}, ${ask.turnsSinceUpdate.toString()} turns ago): ${ask.questions[0]?.question ?? ""}`),
     "If one no longer matches the situation and ask_user is available, update or withdraw it; otherwise leave it.",
   ].join("\n");
+}
+
+/** A code fence longer than any backtick run in `text`, so fences inside it stay inside. */
+function fenced(text: string): string {
+  const fence = "`".repeat(Math.max(3, ...[...text.matchAll(/`+/gu)].map((run) => run[0].length + 1)));
+  return `${fence}markdown\n${text}\n${fence}`;
 }
 
 function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
@@ -310,6 +319,7 @@ function askUserOutcome(
   closedAt: string,
   note?: string,
   skipped: ReadonlySet<string> = new Set(),
+  editedContext?: string,
 ): AskUserOutcome {
   const questions = ask.questions.map((question) => questionRecord(question, answers.get(question.id), skipped.has(question.id)));
   const unansweredIds = questions.filter((record) => !record.answered && record.skipped !== true).map((record) => record.question.id);
@@ -320,6 +330,7 @@ function askUserOutcome(
     askedAt: ask.askedAt,
     closedAt,
     ...(ask.context === undefined ? {} : { context: ask.context }),
+    ...(editedContext === undefined ? {} : { editedContext }),
     questions,
     ...(note === undefined ? {} : { note }),
     answeredCount,
@@ -329,7 +340,7 @@ function askUserOutcome(
 }
 
 /** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
-function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, skipped: ReadonlySet<string>, remaining: readonly AskUserQuestion[], revision: string, closedAt: string): AskUserOutcome {
+function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, skipped: ReadonlySet<string>, remaining: readonly AskUserQuestion[], revision: string, closedAt: string, editedContext?: string): AskUserOutcome {
   const questions = ask.questions.filter((question) => answers.has(question.id) || skipped.has(question.id)).map((question) => questionRecord(question, answers.get(question.id), skipped.has(question.id)));
   return {
     askId: ask.askId,
@@ -337,6 +348,7 @@ function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, skipped: 
     askedAt: ask.askedAt,
     closedAt,
     ...(ask.context === undefined ? {} : { context: ask.context }),
+    ...(editedContext === undefined ? {} : { editedContext }),
     questions,
     answeredCount: answers.size,
     unansweredIds: [],
@@ -512,6 +524,13 @@ function validateAnswer(question: AskUserQuestion, answer: AskUserAnswer): AskUs
 function stripNumbering(text: string): string {
   const stripped = text.replace(/^\s*\d+(?:\s*[-–]\s*\d+)?[.)]\s+/u, "");
   return stripped.trim() === "" ? text : stripped;
+}
+
+/** The user's edit of the ask's context; blank or unchanged reads as no edit. */
+function normalizeEditedContext(ask: PendingAskUser, context: string | undefined): string | undefined {
+  if (context === undefined) return undefined;
+  if (context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new PendingAskValidationError("context exceeds its length limit");
+  return context.trim() === "" || context === ask.context ? undefined : context;
 }
 
 function normalizeNote(note: string | undefined): string | undefined {
