@@ -158,13 +158,31 @@ export class WorkbenchWindowTabs extends LitElement {
       this.observedStrips = strips;
     }
     if (changed.has("selected")) this.keepSelectedInView();
+    this.showTabsInTitlebar(this.renderRoot.querySelector(".bar") !== null);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.showTabsInTitlebar(false);
     this.stripResizes?.disconnect();
     this.observedStrips = [];
   }
+
+  private tabsInTitlebar = false;
+  /** macOS app: the tab row stands in for the title bar while it shows, like a browser's. */
+  private showTabsInTitlebar(shown: boolean) {
+    if (shown === this.tabsInTitlebar) return;
+    this.tabsInTitlebar = shown;
+    window.piWebNative?.setTabsInTitlebar?.(shown);
+  }
+
+  /** The row's empty space moves the window, and a double click zooms it, as a title bar does. */
+  private readonly onBarMouseDown = (event: MouseEvent) => {
+    const hit = event.composedPath()[0];
+    if (event.button !== 0 || !(hit instanceof Element) || !hit.matches(".bar, .tabs, .actions, .lead, .window-name")) return;
+    if (event.detail === 2) window.piWebNative?.zoomWindow?.();
+    else if (event.detail === 1) window.piWebNative?.dragWindow?.();
+  };
 
   private status(chat: WindowChat): ChatTabStatus {
     return this.statuses[chat.sessionId] ?? "idle";
@@ -188,7 +206,7 @@ export class WorkbenchWindowTabs extends LitElement {
     const chatsLabel = (group: ChatGroup | undefined) => `${group?.workstream?.title ?? "No Workstream"} Chats`;
     return html`
       <nav aria-label=${window.name} @dragover=${this.onDragOver} @drop=${this.onDrop}>
-        <div class="bar">
+        <div class="bar" @mousedown=${this.onBarMouseDown}>
           ${!tabs ? this.renderGridLead(window) : workstreamTabs ? html`
             <div class="tabs workstreams" role="tablist" aria-label=${`${window.name} Workstreams`}>
               ${groups.map((group) => group.key === NO_WORKSTREAM_KEY
@@ -220,7 +238,7 @@ export class WorkbenchWindowTabs extends LitElement {
     const move = this.moveHandlers([chat.sessionId], chat.title);
     return html`
       <nav aria-label=${window.name} @dragover=${this.onDragOver} @drop=${this.onDrop}>
-        <div class="bar">
+        <div class="bar" @mousedown=${this.onBarMouseDown}>
           <div class=${chat.workstream === undefined ? "solo" : "solo tinted"} style=${workstreamStyle(chat.workstream?.id)} data-session=${chat.sessionId} data-status=${this.status(chat)} role="button" tabindex="0" aria-current=${this.selected === chat.sessionId ? "page" : "false"} title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`} draggable="true"
             @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}>
             ${this.renderChatMarker(chat)}
@@ -309,7 +327,8 @@ export class WorkbenchWindowTabs extends LitElement {
     button { font: inherit; color: inherit; cursor: pointer; }
     svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     /* One row, one type size: the tabs, then the Chat's menu and the window actions, tight and compact. */
-    .bar { display: flex; align-items: center; gap: 8px; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 6px 0 2px; font-size: 12px; }
+    /* --pi-titlebar-inset: set by the macOS app to clear the traffic lights while this row is the title bar. */
+    .bar { display: flex; align-items: center; gap: 8px; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 6px 0 calc(2px + var(--pi-titlebar-inset, 0px)); font-size: 12px; }
     /*
      * One language for both rows: quiet text tabs, the selected one in --pi-text with a 2px underline. A Workstream's
      * tabs in the first row sit on a tint of its colour (--ws), stronger when selected; Chats without one and the lower

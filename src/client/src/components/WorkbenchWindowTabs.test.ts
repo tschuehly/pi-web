@@ -281,3 +281,27 @@ describe("chat tab status", () => {
     expect(chatTabStatus({ attentionRequest: { id: "a", reason: "Review the PR" } }, false)).toBe("needs");
   });
 });
+
+describe("tab row as the macOS title bar", () => {
+  afterEach(() => { delete window.piWebNative; });
+
+  it("claims the title bar while its row shows, drags or zooms from empty space only, and releases it when removed", async () => {
+    const calls: string[] = [];
+    window.piWebNative = {
+      pickDirectory: () => Promise.resolve(null),
+      setTabsInTitlebar: (shown) => { calls.push(`titlebar ${String(shown)}`); },
+      dragWindow: () => { calls.push("drag"); },
+      zoomWindow: () => { calls.push("zoom"); },
+    };
+    const { tabs, root } = await mount("a1");
+    const press = (element: Element | null, detail: number) => element?.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail, bubbles: true, composed: true }));
+
+    press(root.querySelector(".bar"), 1);
+    press(root.querySelector(".tabs"), 2);
+    press(root.querySelector(".chat-tab .title"), 1);
+    press(root.querySelector(".add"), 1);
+    tabs.remove();
+
+    expect(calls).toEqual(["titlebar true", "drag", "zoom", "titlebar false"]);
+  });
+});
