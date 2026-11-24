@@ -63,6 +63,23 @@ export function openAsksFromTranscript(branch: readonly unknown[], sessionId: st
   return { open: [...open.values()], undelivered: [...undelivered.values()] };
 }
 
+/** The branch's partial-send records of one ask, oldest first, and its question order as last posted or revised. */
+export function partialAsksFromTranscript(branch: readonly unknown[], askId: string): { earlier: AskUserOutcome[]; order: string[] } {
+  const earlier: AskUserOutcome[] = [];
+  let order: string[] = [];
+  for (const entry of branch) {
+    if (!isRecord(entry)) continue;
+    const message = entry["type"] === "message" ? entry["message"] : undefined;
+    if (isRecord(message) && message["role"] === "toolResult" && message["toolName"] === "ask_user" && isRecord(message["details"])) {
+      const ask = parseAsk(message["details"]["ask"]);
+      if (ask?.askId === askId) order = ask.questions.map((question) => question.id);
+    } else if (entry["type"] === "custom" && entry["customType"] === ASK_USER_CLOSED_CUSTOM_TYPE && isOutcome(entry["data"]) && entry["data"].askId === askId && entry["data"].partial === true) {
+      earlier.push(entry["data"]);
+    }
+  }
+  return { earlier, order };
+}
+
 /** One ask can send several partial answers before it closes, so each delivery is keyed by the revision it left. */
 function deliveryKey(askId: string, partial: unknown, revision: unknown): string {
   return partial === true && typeof revision === "string" ? `${askId}@${revision}` : askId;

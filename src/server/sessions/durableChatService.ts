@@ -29,7 +29,7 @@ import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import { cleanSessionName, cleanTabName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, sessionTitleInput, shortSessionNamePrompt, tabNamePrompt } from "./sessionNameGenerator.js";
 import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
 import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
-import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
+import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, withEarlierAnswers, type PendingAskCloseResult } from "./pendingAskStore.js";
 import { type DurableChatRecord, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
@@ -994,7 +994,9 @@ export class DurableChatService {
       ...(outcome === undefined ? { revision: "stale" } : {}),
     });
     const sessionStatus = await this.status(ref);
-    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"])) return { result: "closed", outcome: result["outcome"], sessionStatus };
+    // The host's earlier partial-send records of the set (`earlier`, oldest first) make the browser's record whole.
+    const earlier = isRecord(result) && Array.isArray(result["earlier"]) ? result["earlier"].filter(isAskOutcome) : [];
+    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"])) return { result: "closed", outcome: withEarlierAnswers(result["outcome"], earlier), sessionStatus };
     return { result: "stale", sessionStatus };
   }
 
