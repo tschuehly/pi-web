@@ -494,6 +494,20 @@ describe("PendingAskStore whole-set record", () => {
     expect(parseAskUserOutcome(whole).questions).toHaveLength(ASK_USER_QUESTION_LIMIT + 1);
   });
 
+  it("names the unanswered questions in the whole record's set order, so the browser accepts a set revised to another order", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("a"), question("b"), question("c")] });
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "a", values: ["yes"] }], partial: true });
+    const revised = store.update({ sessionId, askId: ask.askId, questions: [question("c"), question("b")] });
+    const rest = store.submit(sessionId, ask.askId, { revision: revised?.revision ?? "", answers: [] });
+    if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
+    const whole = withEarlierAnswers(rest.outcome, [first.outcome], ["a", "b", "c"]);
+    expect(whole.questions.map((record) => record.question.id)).toEqual(["a", "b", "c"]);
+    expect(whole.unansweredIds).toEqual(["b", "c"]);
+    expect(whole.summary).toBe("Answered 1 of 3; unanswered: b, c");
+    expect(() => parseAskUserOutcome(whole)).not.toThrow();
+  });
+
   it("bounds the record, dropping the oldest earlier answers first", () => {
     const records = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => ({ question: question(`${prefix}${index.toString()}`), answered: true, values: ["yes"] }));
     const send = (questions: AskUserOutcome["questions"], partial: boolean): AskUserOutcome => ({ askId: "ask-1", reason: "submitted", askedAt: "t", closedAt: "t", questions, answeredCount: questions.length, unansweredIds: [], summary: "s", ...(partial ? { partial: true as const, revision: "r" } : {}) });

@@ -356,11 +356,13 @@ export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly As
   const questions = [...records, ...outcome.questions].sort((a, b) => rank(a) - rank(b));
   const answeredCount = questions.filter((record) => record.answered).length;
   const skipped = questions.filter((record) => record.skipped === true).length;
+  // From the sorted records, not the final send's: a revision may list the open questions in another order.
+  const unansweredIds = questions.filter((record) => !record.answered && record.skipped !== true).map((record) => record.question.id);
   // An edit goes out once, with the send that carried it, so the last send may carry none. It became the set's context, so
   // it still applies only while the final context is that edit ("" = cleared): an agent's later revision wins.
   const lastEdit = [...earlier].reverse().find((each) => each.askId === outcome.askId && each.editedContext !== undefined)?.editedContext;
   const editedContext = outcome.editedContext ?? (lastEdit !== undefined && lastEdit === (outcome.context ?? "") ? lastEdit : undefined);
-  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, summary: summaryLine(questions.length - skipped, answeredCount, outcome.unansweredIds) + skippedSummary(questions) };
+  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, unansweredIds, summary: summaryLine(questions.length - skipped, answeredCount, unansweredIds) + skippedSummary(questions) };
 }
 
 /** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
