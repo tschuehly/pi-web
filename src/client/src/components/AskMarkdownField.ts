@@ -13,7 +13,10 @@ import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages,
  * Light DOM, so the card's shadow root carries its styles and focus moves into it like into a textarea.
  * Dispatches `ask-field-input` after each edit by the user; setting `value` replaces the text without one and drops the undo history.
  */
-export class AskMarkdownField extends HTMLElement {
+// Modules importing the card also load in plain-node tests (ChatView.test.ts) where no DOM exists.
+const ElementBase = (globalThis.HTMLElement ?? class {}) as typeof HTMLElement;
+
+export class AskMarkdownField extends ElementBase {
   #view: EditorView | undefined;
   #value = "";
   #label = "";
@@ -142,7 +145,7 @@ export class AskMarkdownField extends HTMLElement {
   }
 }
 
-if (customElements.get("ask-markdown-field") === undefined) customElements.define("ask-markdown-field", AskMarkdownField);
+if (typeof customElements !== "undefined" && customElements.get("ask-markdown-field") === undefined) customElements.define("ask-markdown-field", AskMarkdownField);
 
 declare global {
   interface HTMLElementTagNameMap {
