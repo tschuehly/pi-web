@@ -121,7 +121,7 @@ interface HostEvents {
   /** Whether a browser watches the Chat: its host is never idle (legacy idle unload). */
   hasSessionSubscribers?(sessionId: string): boolean;
   /** First browser subscriber joined (true) or last one left (false); drives the host's `setViewed`. */
-  onSessionSubscribersChange?(listener: (sessionId: string, watched: boolean) => void): void;
+  onSessionSubscribersChange?(listener: (sessionId: string, watched: boolean) => void): () => void;
 }
 
 interface HostTranscript {
@@ -346,7 +346,7 @@ export class DurableChatService {
   }) {
     this.#idleSweep = setInterval(() => { void this.closeIdleHosts().then(() => this.upgradePendingHosts()); }, IDLE_HOST_SWEEP_MS);
     this.#idleSweep.unref();
-    deps.events.onSessionSubscribersChange?.((sessionId) => { void this.#connections.get(sessionId)?.then((connection) => this.#sendViewed(sessionId, connection), () => undefined); });
+    this.#unsubscribeViewed = deps.events.onSessionSubscribersChange?.((sessionId) => { void this.#connections.get(sessionId)?.then((connection) => this.#sendViewed(sessionId, connection), () => undefined); });
   }
 
   /** Tell a host with the `viewed` capability whether a browser has its Chat open; only a change is sent. */
@@ -362,6 +362,7 @@ export class DurableChatService {
   }
 
   readonly #idleSweep: NodeJS.Timeout;
+  readonly #unsubscribeViewed: (() => void) | undefined;
   /** Ordered restarts in progress, by Chat (see `#upgradeOnce`). */
   readonly #upgrades = new Map<string, Promise<string | undefined>>();
   /** Chats an automatic upgrade is checking or restarting. */
@@ -1478,6 +1479,7 @@ export class DurableChatService {
    */
   async dispose(): Promise<void> {
     clearInterval(this.#idleSweep);
+    this.#unsubscribeViewed?.();
     const connections = [...this.#connections.values()];
     this.#connections.clear();
     await Promise.all(connections.map(async (pending) => {

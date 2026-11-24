@@ -860,6 +860,34 @@ describe("Durable Chats", () => {
     expect(viewed(only(launched.slice(2)))).toEqual([]);
   });
 
+  it("sends setViewed only on a change, and resends after a failed send", async () => {
+    const { durable, hub, launched } = await service((): FakeHost => {
+      const host = new FakeHost(DURABLE_HOST_PROTOCOL, ["viewed"]);
+      const answer = host.answer;
+      let failures = 1;
+      host.answer = (request) => {
+        if (request.method === "setViewed" && failures-- > 0) throw new Error("no");
+        return answer(request);
+      };
+      return host;
+    });
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await durable.status(ref);
+    const viewed = () => only(launched).requests.filter((request) => request.method === "setViewed").map((request) => request.params);
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const notify = async () => { (hub as unknown as { notifySubscribers(id: string, watched: boolean): void }).notifySubscribers(chat.id, false); await settle(); };
+
+    // The ready-time send failed, so the same state goes out again on the next notification.
+    await settle();
+    expect(viewed()).toEqual([{ viewed: false }]);
+    await notify();
+    expect(viewed()).toEqual([{ viewed: false }, { viewed: false }]);
+    // Now it was taken: a notification without a state change sends nothing.
+    await notify();
+    expect(viewed()).toEqual([{ viewed: false }, { viewed: false }]);
+  });
+
   it("the idle close ends a host that only serves Atelier Pages", async () => {
     let now = Date.parse("2026-11-17T08:00:00Z");
     const { durable, launched } = await service(undefined, undefined, { now: () => now });

@@ -42,8 +42,9 @@ export class SessionEventHub {
   }
 
   /** Called when a session gains its first browser subscriber (true) or loses its last (false). */
-  onSessionSubscribersChange(listener: (sessionId: string, watched: boolean) => void): void {
+  onSessionSubscribersChange(listener: (sessionId: string, watched: boolean) => void): () => void {
     this.subscriberListeners.add(listener);
+    return () => { this.subscriberListeners.delete(listener); };
   }
 
   private notifySubscribers(sessionId: string, watched: boolean): void {
