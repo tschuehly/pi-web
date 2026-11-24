@@ -59,6 +59,17 @@ describe("ask-user-card live form", () => {
     expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 2 answered");
   });
 
+  it("renders and answers questions whose ids name Object properties", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([question("constructor", "Which editor?", [option("vim", "Vim")]), question("__proto__", "Why?", [])]), onSubmit);
+    expect(renderRoot(card).querySelectorAll("fieldset")).toHaveLength(2);
+
+    inputWithValue(renderRoot(card), "vim").click();
+    await card.updateComplete;
+
+    expect(renderRoot(card).querySelector("[aria-live='polite']")?.textContent).toContain("1 of 2 answered");
+  });
+
   it("accumulates several checkbox values for a multi-select question", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([

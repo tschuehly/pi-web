@@ -108,6 +108,21 @@ describe("ask draft storage", () => {
     expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])["q2"]?.values).toEqual([]);
   });
 
+  it("keys answers by own question ids, so ids like constructor and __proto__ work", () => {
+    const storage = new MemoryStorage();
+    const untouched: AskUserQuestion = { ...singleSelect, id: "constructor" };
+    const preset: AskUserQuestion = { ...singleSelect, id: "__proto__", options: [{ value: "pg", label: "Postgres", recommended: true }] };
+    const asked = [untouched, preset];
+
+    const draft = loadAskDraft("local:s1", "ask-1", storage, asked);
+    expect(answeredCount(asked, draft)).toBe(1);
+    expect(unansweredQuestions(asked, draft)).toEqual([untouched]);
+    expect(toSubmission(asked, draft)).toEqual({ answers: [{ id: "__proto__", values: ["pg"] }] });
+
+    saveAskDraft("local:s1", "ask-1", { ...draft, constructor: { values: ["sqlite"], asked: askedFingerprint(untouched) } }, storage);
+    expect(toSubmission(asked, loadAskDraft("local:s1", "ask-1", storage, asked))).toEqual({ answers: [{ id: "constructor", values: ["sqlite"] }, { id: "__proto__", values: ["pg"] }] });
+  });
+
   it("starts typed questions on their defaults, a switch on off, and keeps a field the user cleared", () => {
     const storage = new MemoryStorage();
     const typed = (id: string, extra: Partial<AskUserQuestion>): AskUserQuestion => ({ id, question: `${id}?`, options: [], ...extra });
