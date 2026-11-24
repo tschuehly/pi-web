@@ -183,6 +183,26 @@ describe("ask-user-card live form", () => {
     });
   });
 
+  it("sends an edited checked option only as its correction, keeps the other checked ones, and Revert restores it", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([
+      question("plan", "What ships?", [{ ...option("friday", "Deploy Friday"), recommended: true }, { ...option("docs", "Docs"), recommended: true }], { multiple: true }),
+    ]), onSubmit);
+    const root = renderRoot(card);
+    requiredElement(root.querySelector<HTMLButtonElement>("button[aria-label='Edit this answer']"), "edit Deploy Friday").click();
+    await card.updateComplete;
+    typeInto(markdownField(root, ".inline-edit ask-markdown-field"), "Deploy Monday");
+    await card.updateComplete;
+    buttonWithText(root, "Send answers").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenLastCalledWith("ask-1", { revision: "r1", answers: [{ id: "plan", values: ["docs"], otherText: "Deploy Monday" }] });
+
+    buttonWithText(root, "Revert").click();
+    await card.updateComplete;
+    expect(inputWithValue(root, "friday").checked).toBe(true);
+    expect(inputWithValue(root, "docs").checked).toBe(true);
+  });
+
   it("reverts an inline edit with Esc or Revert to the answer from before it, keeping the drawer open", async () => {
     const card = await mountOpenAsk(openAsk([question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")])]));
     const root = renderRoot(card);

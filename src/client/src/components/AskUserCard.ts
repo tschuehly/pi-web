@@ -474,13 +474,14 @@ export class AskUserCard extends LitElement {
     if (input.checked) void this.focusOtherInput(index);
   }
 
-  /** Starts a Custom answer from an option's label and detail, edited in that option's row; the option itself stays unchanged. */
+  /** Starts a Custom answer from an option's label and detail, edited in that option's row in place of the option. */
   private editOption(question: AskUserQuestion, index: number, value: string, text: string): void {
     const current = this.answers[question.id];
     const previous = this.inlineEdits[question.id]?.previous ?? current;
     this.inlineEdits = { ...this.inlineEdits, [question.id]: { value, previous } };
     this.setAnswer(question, {
-      values: question.multiple === true ? [...(current?.values ?? [])] : [],
+      // The edit replaces the option, so its own value leaves the selection; Revert brings it back.
+      values: question.multiple === true ? (current?.values ?? []).filter((selected) => selected !== value) : [],
       otherText: text.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH),
     });
     void this.focusOtherInput(index, true);
