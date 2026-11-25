@@ -2399,38 +2399,6 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
   });
 
-  it("refocusing a retained Chat whose socket stayed open reads no snapshot; one that reconnected reads one", async () => {
-    const sessionSockets = new Map<string, SilentWebSocket>();
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); const id = /sessions\/([^/?]+)/.exec(url)?.[1]; if (id !== undefined && !url.endsWith("/api/machines/local/events")) sessionSockets.set(id, this); } });
-    const app = await mountWithWorkstreamChats();
-    const openSocket = (id: string) => { const socket = sessionSockets.get(id); if (socket === undefined) throw new Error(`no socket for ${id}`); socket.readyState = SilentWebSocket.OPEN; socket.onopen?.(); return socket; };
-    workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sessionSockets.has("a2")).toBe(true); });
-    await settled(app);
-    openSocket("a2");
-    openSocket("b1");
-    const snapshot = vi.mocked(api.transcriptSnapshot);
-    snapshot.mockClear();
-    const reads = () => snapshot.mock.calls.map(([row]) => row.id);
-
-    workstreamTab(app, "Docs").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
-    workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
-    await settled(app);
-    expect(reads()).toEqual([]);
-
-    // A dropped socket reconnects and catches up from one snapshot.
-    const dropped = sessionSockets.get("a2");
-    if (dropped === undefined) throw new Error("no socket for a2");
-    sessionSockets.delete("a2");
-    dropped.readyState = 3;
-    dropped.onclose?.();
-    await vi.waitFor(() => { expect(sessionSockets.has("a2")).toBe(true); }, { timeout: 2_000 });
-    openSocket("a2");
-    await vi.waitFor(() => { expect(reads()).toEqual(["a2"]); });
-  });
-
   it("counts each Chat's open questions on its tab, live from this window and from status another window caused", async () => {
     const app = await mountWithWorkstreamChats();
     workstreamTab(app, "Release").click();

@@ -39,10 +39,6 @@ export class SessionSocket {
     this.onEvent = onEvent;
   }
 
-  get live(): boolean {
-    return this.socket?.readyState === WebSocket.OPEN;
-  }
-
   close(): void {
     this.shouldReconnect = false;
     window.clearTimeout(this.reconnectTimer);

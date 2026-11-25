@@ -41,8 +41,6 @@ export interface SessionEventSocket {
   ): void;
   setHandler(onEvent: (event: SessionUiEvent) => void): void;
   close(): void;
-  /** Open and receiving frames; a socket that reconnects refreshes itself through onReconnect. */
-  readonly live?: boolean;
 }
 
 export interface SessionNotificationSessionBridge {
@@ -383,11 +381,6 @@ export class SessionController {
   /** Reusing a selected row must not abandon a join retired by a newer URL. */
   canReuseSelectedSession(): boolean {
     return !this.disposed && navigationIsCurrent(this.selectedSessionJoinNavigation);
-  }
-
-  /** The selected Chat's event socket is open, so its transcript is current without a new snapshot. */
-  get isLive(): boolean {
-    return this.socket.live === true;
   }
 
   get isChatLoadDeferred(): boolean {
