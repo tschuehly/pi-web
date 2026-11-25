@@ -2,7 +2,7 @@ import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { LitElement, css, html, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { piWebApi } from "../api";
-import type { InstallLatestPreview, InstallPair } from "../../../shared/installLatest";
+import { nothingInstalled, type InstallLatestPreview, type InstallPair } from "../../../shared/installLatest";
 import "./ModalSurface";
 
 const short = (sha: string) => sha.slice(0, 7);
@@ -50,10 +50,12 @@ export class InstallLatestDialog extends LitElement {
               <dt>PI WEB</dt><dd><code>${short(preview.installed.piWeb)} → ${short(preview.latest.piWeb)}</code></dd>
             </dl>
             ${preview.upToDate ? html`<p class="result">Up to date: ${pair(preview.installed)} is the latest.</p>` : html`
-              <ul class="merges" aria-label="New merges">
+              ${nothingInstalled(preview.installed)
+                ? html`<p class="result">Nothing installed yet: Install sets up the latest pair ${pair(preview.latest)}.</p>`
+                : html`<ul class="merges" aria-label="New merges">
                 ${preview.merges.map((merge) => html`<li><span class="repo">${merge.repo}</span> <code>${short(merge.sha)}</code> ${merge.subject}</li>`)}
-              </ul>
-              <p class="warning">Installing restarts PI WEB, which interrupts every open session except Durable Chats.</p>`}`}
+              </ul>`}
+              <p class="warning">Install switches Pi Workbench and PI WEB to the latest pair at once. PI WEB restarts about 3 seconds later, which interrupts every open session except Durable Chats. It refuses if another install happened since this check, or while subagents or workers run.</p>`}`}
           ${this.message === "" ? null : html`<p class=${phase === "done" ? "result" : "dialog-error"} role=${phase === "done" ? "status" : "alert"}>${this.message}</p>`}
         </div>
         <footer>

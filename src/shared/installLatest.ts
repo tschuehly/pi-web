@@ -1,5 +1,11 @@
-/** One build pair: the Pi Workbench and PI WEB revisions installed together (pi-workbench `promote-installed latest`). */
+/**
+ * One build pair: the Pi Workbench and PI WEB revisions installed together (pi-workbench `promote-installed latest`).
+ * The installed pair names a product with nothing installed yet `none`; `latest --from none none` is the first install.
+ */
 export interface InstallPair { workbench: string; piWeb: string }
+
+export const NOT_INSTALLED = "none";
+export const nothingInstalled = (pair: InstallPair): boolean => pair.workbench === NOT_INSTALLED || pair.piWeb === NOT_INSTALLED;
 
 /** A merge on an integration branch that the latest pair has and the installed pair lacks. */
 export interface InstallMerge { repo: "pi-workbench" | "pi-web"; sha: string; subject: string }
@@ -8,12 +14,12 @@ export interface InstallMerge { repo: "pi-workbench" | "pi-web"; sha: string; su
 export interface InstallLatestPreview { installed: InstallPair; latest: InstallPair; merges: InstallMerge[]; upToDate: boolean }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-// A Git object name: the script passes these back as arguments, so nothing else may get through.
-const SHA = /^[0-9a-f]{7,64}$/u;
+// A Git object name or `none`: the script passes these back as arguments, so nothing else may get through.
+const REV = /^(?:[0-9a-f]{7,64}|none)$/u;
 
 export function parseInstallPair(value: unknown): InstallPair {
   if (!isRecord(value) || typeof value["workbench"] !== "string" || typeof value["piWeb"] !== "string"
-    || !SHA.test(value["workbench"]) || !SHA.test(value["piWeb"])) throw new TypeError("Expected a {workbench, piWeb} revision pair");
+    || !REV.test(value["workbench"]) || !REV.test(value["piWeb"])) throw new TypeError("Expected a {workbench, piWeb} revision pair");
   return { workbench: value["workbench"], piWeb: value["piWeb"] };
 }
 

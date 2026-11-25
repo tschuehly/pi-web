@@ -63,3 +63,14 @@ it("shows a failed check and offers no install", async () => {
   expect(dialog.renderRoot.querySelector("[role=alert]")?.textContent).toBe("git fetch failed");
   expect(button(dialog)?.disabled).toBe(true);
 });
+
+it("nothing installed yet offers the first install of the latest pair", async () => {
+  const none = { workbench: "none", piWeb: "none" };
+  vi.spyOn(piWebApi, "installLatestPreview").mockResolvedValue({ ...PREVIEW, installed: none, merges: [] });
+  const install = vi.spyOn(piWebApi, "installLatest").mockResolvedValue({ status: "scheduled" });
+  const dialog = await open();
+  expect(dialog.renderRoot.textContent).toContain("Nothing installed yet: Install sets up the latest pair 2bb37ed · 7549a70.");
+  expect(dialog.renderRoot.querySelector(".warning")?.textContent).toContain("refuses if another install happened");
+  button(dialog)?.click();
+  await vi.waitFor(() => { expect(install).toHaveBeenCalledWith(none); });
+});
