@@ -1,5 +1,5 @@
 import { execFile, fork } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -33,7 +33,7 @@ import { PendingAskStore, renderAskUserFollowUp, withEarlierAnswers, type Pendin
 import { type DurableChatRecord, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
-import { committedOwnerRun, openOwnerCommandInTerminal, ownerRunFolder, ownerRunResultText, runOwnerCommand, type OwnerRunResult } from "./ownerRuns.js";
+import { committedOwnerRun, openOwnerCommandInTerminal, ownerRunFolder, ownerRunResultText, ownerRunScript, type OwnerRunResult } from "./ownerRuns.js";
 
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
 export const DURABLE_HOST_PROTOCOL = 2;
@@ -663,18 +663,31 @@ export class DurableChatService {
 
   /**
    * The owner confirmed a pi-run block of the assistant message `entryId`: it runs once, outside the write fence, in its
-   * folder. The block is read from the transcript, never from the browser. Its result reaches the agent as a follow-up
-   * (an idle Chat wakes), without slash or skill expansion.
+   * folder. The block is read from the transcript, never from the browser. A run is the Chat host's background job (its
+   * own process group, log, 12-hour limit, cancel), whose completion reaches the agent as any job's does (an idle Chat
+   * wakes); Terminal's opening reaches it as a follow-up, without slash or skill expansion.
    */
   async ownerRun(ref: SessionRouteRef, entryId: string, proposal: unknown): Promise<{ status: "started" | "terminal opened" }> {
     const connection = await this.#for(ref);
     const run = committedOwnerRun(hostTranscript((await connection.request("transcript")).result).messages, entryId, proposal);
+    if (run.mode === "run") this.#require(connection, "owner-run");
     await ownerRunFolder(run.cwd);
     // No await between the check and the claim: two confirmations at once run it once.
     const key = JSON.stringify([ref.id, entryId, run.mode, run.cwd, run.command]);
     if (this.#ownerRuns.has(key)) throw new Error("This command already ran");
     this.#ownerRuns.add(key);
-    // Stopping the Chat cancels its runs and drops their results, so a late result never reopens an ended Chat.
+    if (run.mode === "run") {
+      // Named by the proposal, so the host launches it once even when this request is retried or the daemon restarted.
+      const operationId = `owner-run:${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
+      try {
+        await connection.request("ownerRun", { operationId, command: ownerRunScript(run), cwd: run.cwd });
+      } catch (error) {
+        this.#ownerRuns.delete(key);
+        throw error;
+      }
+      return { status: "started" };
+    }
+    // Stopping the Chat drops the Terminal notice, so a late one never reopens an ended Chat (its jobs end with the host).
     const cancel = new AbortController();
     const running = this.#ownerRunCancels.get(ref.id) ?? new Set<AbortController>();
     this.#ownerRunCancels.set(ref.id, running.add(cancel));
@@ -691,10 +704,6 @@ export class DurableChatService {
       await host.request("prompt", { operationId, text, mode: "followUp" });
     };
     const failed = (error: unknown) => { this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered"); };
-    if (run.mode === "run") {
-      void runOwnerCommand(run, cancel.signal).then(deliver).catch(failed);
-      return { status: "started" };
-    }
     try {
       void deliver(await openOwnerCommandInTerminal(run)).catch(failed);
     } catch (error) {

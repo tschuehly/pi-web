@@ -1,8 +1,9 @@
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, realpath, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { committedOwnerRun, openOwnerCommandInTerminal, OWNER_RUN_OUTPUT_BYTES, ownerRunFolder, ownerRunResultText, runOwnerCommand } from "./ownerRuns";
+import { committedOwnerRun, openOwnerCommandInTerminal, ownerRunFolder, ownerRunResultText, ownerRunScript } from "./ownerRuns";
 
 const block = (cwd: string, command: string, mode = "") => `Please run:\n\n\`\`\`pi-run${mode} cwd="${cwd}"\n${command}\n\`\`\`\n`;
 const dirs: string[] = [];
@@ -42,29 +43,24 @@ describe("ownerRunFolder", () => {
   });
 });
 
-describe("runOwnerCommand", () => {
-  it("runs the command in its folder with bash and reports output and exit code", async () => {
+describe("ownerRunScript", () => {
+  // As the Chat host's background job runs it: `bash -c <script>`, started in some other folder.
+  const bash = (script: string) => spawnSync("/bin/bash", ["-c", script], { cwd: "/", encoding: "utf8" });
+
+  it("enters the folder, then runs the command", async () => {
     const dir = await folder();
-    const result = await runOwnerCommand({ mode: "run", cwd: dir, command: "pwd; echo oops >&2; exit 7" });
-    expect(result).toMatchObject({ status: "exited", exitCode: 7, stdout: `${dir}\n`, stderr: "oops\n", truncated: false });
+    const result = bash(ownerRunScript({ mode: "run", cwd: dir, command: "pwd; echo oops >&2; exit 7" }));
+    expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toEqual({ status: 7, stdout: `${dir}\n`, stderr: "oops\n" });
   });
 
   it("refuses to run when the checked folder became a link to another one", async () => {
     const dir = await folder();
     const other = await folder();
-    const result = await runOwnerCommand({ mode: "run", cwd: join(dir, "swapped"), command: "touch ran" }).catch(() => undefined);
-    expect(result?.status).toBe("failed to start");
     await symlink(other, join(dir, "swapped"));
-    const swapped = await runOwnerCommand({ mode: "run", cwd: join(dir, "swapped"), command: "touch ran" });
-    expect(swapped.exitCode).toBe(125);
+    const swapped = bash(ownerRunScript({ mode: "run", cwd: join(dir, "swapped"), command: "touch ran" }));
+    expect(swapped.status).toBe(125);
     expect(swapped.stderr).toContain("the folder changed");
     await expect(stat(join(other, "ran"))).rejects.toThrow("ENOENT");
-  });
-
-  it("caps each stream", async () => {
-    const result = await runOwnerCommand({ mode: "run", cwd: await folder(), command: `head -c ${String(OWNER_RUN_OUTPUT_BYTES * 2)} /dev/zero` });
-    expect(result.stdout).toHaveLength(OWNER_RUN_OUTPUT_BYTES);
-    expect(result.truncated).toBe(true);
   });
 });
 

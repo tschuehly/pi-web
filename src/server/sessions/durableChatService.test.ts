@@ -1935,48 +1935,44 @@ function isTitleRequest(request: { method: string; params?: Record<string, unkno
 }
 
 describe("the owner's run button", () => {
-  /** A Chat whose assistant message `a1` proposes `command` in `cwd`; the host redacts `SECRET`. */
-  async function proposing(command: (cwd: string) => string, redact: (text: string) => unknown = (text) => text.replaceAll("SECRET", "[REDACTED]")) {
+  /** A Chat whose assistant message `a1` proposes `command` in `cwd`, on a host with `capabilities`; `ownerRun` answers as `launch`. */
+  async function proposing(command: string, { capabilities = ["owner-run"], launch = () => ({ jobId: "job-1", logPath: "/jobs/job-1/output.log" }) }: { capabilities?: string[]; launch?: () => unknown } = {}) {
     const cwd = await realpath(await mkdtemp(join(tmpdir(), "pi-web-owner-run-")));
     roots.push(cwd);
-    const text = `Run it:\n\n\`\`\`pi-run cwd="${cwd}"\n${command(cwd)}\n\`\`\`\n`;
+    const text = `Run it:\n\n\`\`\`pi-run cwd="${cwd}"\n${command}\n\`\`\`\n`;
     const answer = (request: Request) => request.method === "transcript" ? { messages: [{ entryId: "a1", role: "assistant", content: [{ type: "text", text }] }], partial: null, status }
-      : request.method === "redact" ? redact(String(request.params?.["text"])) : request.method === "status" ? status : null;
-    const made = await service(() => { const host = new FakeHost(); host.answer = answer; return host; });
+      : request.method === "ownerRun" ? launch() : request.method === "status" ? status : null;
+    const made = await service(() => { const host = new FakeHost(DURABLE_HOST_PROTOCOL, capabilities); host.answer = answer; return host; });
     const chat = await made.durable.start(cwd);
-    return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode: "run", cwd, command: command(cwd) } };
+    return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode: "run", cwd, command } };
   }
-  const prompts = (launched: FakeHost[]) => launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"));
+  const runs = (launched: FakeHost[]) => launched.flatMap((host) => host.requests.filter((request) => request.method === "ownerRun"));
 
-  it("two confirmations at once run it once; the result is redacted and sent as a follow-up under its own operation", async () => {
-    const { durable, launched, ref, proposal } = await proposing((cwd) => `echo run >> ${cwd}/count; echo SECRET-token; exit 3`);
+  it("two confirmations at once start it once, as the host's background job: the guarded script in its folder, named by the proposal", async () => {
+    const { durable, launched, ref, proposal, cwd } = await proposing("pwd; exit 7");
     const results = await Promise.allSettled([durable.ownerRun(ref, "a1", proposal), durable.ownerRun(ref, "a1", proposal)]);
     expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
-    await vi.waitFor(() => { expect(prompts(launched)).toHaveLength(1); });
-    const [prompt] = prompts(launched);
-    expect(prompt?.params?.["mode"]).toBe("followUp");
-    expect(String(prompt?.params?.["operationId"])).toMatch(/^owner-run:[0-9a-f-]{36}$/);
-    expect(prompt?.params?.["text"]).toContain('"exitCode": 3');
-    expect(prompt?.params?.["text"]).toContain("[REDACTED]-token");
-    expect(prompt?.params?.["text"]).not.toContain("SECRET");
-    expect(await readFile(join(proposal.cwd, "count"), "utf8")).toBe("run\n");
+    expect(results.find((result) => result.status === "fulfilled")).toEqual({ status: "fulfilled", value: { status: "started" } });
+    const [run, ...more] = runs(launched);
+    expect(more).toEqual([]);
+    expect(run?.params).toEqual({ operationId: expect.stringMatching(/^owner-run:[0-9a-f]{32}$/), cwd, command: `cd -P -- '${cwd}' && [ "$PWD" = '${cwd}' ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\npwd; exit 7\n` });
+    // The agent learns the result from the job's completion, not from a prompt of PI WEB's.
+    expect(launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"))).toEqual([]);
   });
 
-  it("withholds the output when the host cannot redact it", async () => {
-    const { durable, launched, ref, proposal } = await proposing(() => "echo SECRET", () => { throw new Error("no redactor"); });
-    await durable.ownerRun(ref, "a1", proposal);
-    await vi.waitFor(() => { expect(prompts(launched)).toHaveLength(1); });
-    expect(prompts(launched)[0]?.params?.["text"]).toContain("output withheld");
-    expect(prompts(launched)[0]?.params?.["text"]).not.toContain("\"stdout\"");
+  it("refuses a host without run buttons before anything starts", async () => {
+    const { durable, launched, ref, proposal } = await proposing("true", { capabilities: [] });
+    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("Run buttons");
+    expect(runs(launched)).toEqual([]);
   });
 
-  it("stopping the Chat cancels its run and never reopens it for the result", async () => {
-    const { durable, launched, ref, proposal } = await proposing((cwd) => `sleep 1; touch ${cwd}/finished`);
-    await durable.ownerRun(ref, "a1", proposal);
-    await durable.stop(ref);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    expect(launched).toHaveLength(1);
-    expect(prompts(launched)).toEqual([]);
-    await expect(stat(join(proposal.cwd, "finished"))).rejects.toThrow("ENOENT");
+  it("a launch the host refused can be confirmed again, under the same operation", async () => {
+    let refuse = true;
+    const { durable, launched, ref, proposal } = await proposing("true", { launch: () => { if (refuse) throw new Error("Working directory does not exist"); return { jobId: "job-1" }; } });
+    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("Working directory does not exist");
+    refuse = false;
+    await expect(durable.ownerRun(ref, "a1", proposal)).resolves.toEqual({ status: "started" });
+    const [first, second] = runs(launched);
+    expect(second?.params?.["operationId"]).toBe(first?.params?.["operationId"]);
   });
 });

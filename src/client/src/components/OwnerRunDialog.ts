@@ -35,8 +35,8 @@ export class OwnerRunDialog extends LitElement {
           <p class="warning">The agent proposed this command. It runs as you on this Mac, not in the agent's sandbox, so it can change or delete anything you can. Read all of it.</p>
           <dl>
             <dt>Folder</dt><dd><code>${proposal.cwd}</code></dd>
-            <dt>Runs in</dt><dd>${terminal ? "a new Terminal window" : "/bin/bash -c, 10 minute limit"}</dd>
-            <dt>Result</dt><dd>${terminal ? "Terminal; output and exit code are not returned" : "output and exit code go back to the agent"}</dd>
+            <dt>Runs in</dt><dd>${terminal ? "a new Terminal window" : "a background job of this Chat, 12 hour limit"}</dd>
+            <dt>Result</dt><dd>${terminal ? "Terminal; output and exit code are not returned" : "output and exit code go back to the agent when it ends"}</dd>
           </dl>
           <pre class="command">${proposal.command}</pre>
           ${this.message === "" ? null : html`<p class=${this.phase === "done" ? "result" : "dialog-error"} role="status">${this.message}</p>`}

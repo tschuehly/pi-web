@@ -57,10 +57,10 @@ test("a proposed pi-run block runs only after Run once, in its folder, and its e
   await expect(dialog.getByText(/^Started/)).toBeVisible();
   await dialog.getByRole("button", { name: "Close" }).click();
 
-  // The idle Chat wakes with the result: the folder it ran in and exit code 7.
+  // The idle Chat wakes with the host's background-job completion: exit code 7 and the folder it ran in (`pwd`).
   const answer = chat(page).locator(".msg.assistant").filter({ hasText: "ok: [Owner run result]" });
-  await expect(answer).toContainText('"exitCode": 7');
-  await expect(answer).toContainText(`"stdout": "${project}\\n"`);
+  await expect(answer).toContainText("(exit 7)");
+  await expect(answer).toContainText(project);
   const after = await requests(sessionId);
   expect(after.slice(before).map((request) => request.label)).toEqual([expect.stringMatching(/^\[Owner run result\]/)]);
 
