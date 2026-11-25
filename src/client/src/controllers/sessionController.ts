@@ -1,11 +1,12 @@
 import { api as defaultApi, type AskUserCloseResponse, type AskUserSubmission, type CommandResult, type ExtensionDialogAnswer, type ExtensionDialogCloseReason, type ExtensionDialogCloseResponse, type ExtensionDialogOutcome, type MessagePage, type PendingAskUser, type PendingExtensionDialog, type PromptAttachment, type QueuedSessionMessage, type SessionActivity, type SessionBulkFailure, type SessionCleanupExecuteResponse, type SessionInfo, type SessionModelCatalogEntry, type SessionModelScopeMode, type SessionRef, type SessionStatus, type SessionStreamSnapshot, type SessionTreeForkResult, type SessionTreeNavigateResult, type SessionTreeSnapshot, type SessionTreeSummaryChoice, type Workspace } from "../api";
 import type { AppState, ClosedExtensionDialog } from "../appState";
+import type { ChatLine } from "../chatTypes";
 import { NetworkRequestError } from "../api/http";
 import { retriesOperations, withOperationRetry } from "../api/operationRetry";
 import { chatSupports, type AskUserOutcome, type ChatCapability, type SessionEffectResolution } from "../../../shared/apiTypes";
 import { BrowserErrorReporter, sessionBrowserErrorScope, workspaceBrowserErrorScope, type SessionBrowserErrorOwner } from "../browserErrors";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
-import { normalizeMessages, textMessage } from "../chatMessages";
+import { linkEarlierAskImages, normalizeMessages, textMessage } from "../chatMessages";
 import { machineSessionKey } from "../machineKeys";
 import { samePromptChipTarget, type PromptChipTarget } from "../promptChips";
 import { isCreatingSessionId } from "../route";
@@ -558,10 +559,10 @@ export class SessionController {
       // Prepend only the earlier rows: the visible tail may hold live replies the history cache has not seen yet.
       const visible = this.getState();
       const raw = this.transcripts.rawHistoryPage(key);
-      const earlier = raw === undefined ? [] : raw.messages.slice(0, Math.max(0, visible.messagePageStart - raw.start));
+      // Only the earlier page is normalized: re-normalizing rendered live rows loses their tool pairing and stream anchors.
+      const earlier = raw === undefined ? [] : normalizeMessages(raw.messages.slice(0, Math.max(0, visible.messagePageStart - raw.start)));
       this.setState({
-        // Normalized as one list, so a call at the end of the earlier page takes its result at the top of the visible tail.
-        messages: normalizeMessages([...earlier, ...visible.messages]),
+        messages: linkEarlierAskImages(joinLiveToolResults(earlier, visible.messages)),
         messagePageStart: Math.min(history.messagePageStart, visible.messagePageStart),
         messagePageEnd: Math.max(history.messagePageEnd, visible.messagePageEnd),
         messagePageTotal: Math.max(history.messagePageTotal, visible.messagePageTotal),
@@ -2827,4 +2828,32 @@ function isSessionNotFoundError(error: unknown): boolean {
 /** An `@path` reference to a saved attachment, quoted when the path has spaces. */
 function fileReference(path: string): string {
   return path.includes(" ") ? `@"${path}"` : `@${path}`;
+}
+
+/**
+ * Pagers never split a call from results committed at read time, but a result arriving live after the visible tail was read
+ * (for example after a tail of only a notice) renders as a standalone row while its call sits on the earlier page. Move each
+ * such row into its pending call by toolCallId; every other row is kept as rendered.
+ */
+function joinLiveToolResults(earlier: ChatLine[], visible: ChatLine[]): ChatLine[] {
+  const pending = new Map<string, number>();
+  earlier.forEach((line, index) => {
+    const part = line.parts[0];
+    if (part?.type === "toolExecution" && part.status === "pending" && part.toolCallId !== undefined) pending.set(part.toolCallId, index);
+  });
+  if (pending.size === 0) return [...earlier, ...visible];
+  const joined = [...earlier];
+  const tail = visible.filter((line) => {
+    const part = line.parts[0];
+    if (line.role !== "tool" || part?.type !== "toolExecution" || part.status === "pending" || part.toolCallId === undefined) return true;
+    const index = pending.get(part.toolCallId);
+    const call = index === undefined ? undefined : joined[index];
+    const callPart = call?.parts[0];
+    if (index === undefined || call === undefined || callPart?.type !== "toolExecution") return true;
+    // The live row lacks the call's arguments: keep the call's, take everything the result brought.
+    joined[index] = { ...call, parts: [{ ...callPart, ...part, summary: callPart.summary, ...(callPart.args === undefined ? {} : { args: callPart.args }) }, ...call.parts.slice(1), ...line.parts.slice(1)] };
+    pending.delete(part.toolCallId);
+    return false;
+  });
+  return [...joined, ...tail];
 }

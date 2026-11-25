@@ -201,21 +201,68 @@ describe("SessionController earlier pages", () => {
   });
 });
 
-describe("SessionController earlier pages join tool calls", () => {
-  it("merges a tool result at the top of the visible tail into its call on the earlier page", async () => {
+describe("SessionController earlier pages leave the live tail alone", () => {
+  const notice = { role: "custom", customType: "pi-workbench:child-completion", content: "child finished", display: true, timestamp: 1_000 };
+  const earlierPage = (start: number, total: number): MessagePage => ({ start: 0, total, messages: Array.from({ length: start }, (_, index) => ({ role: "user", content: `earlier ${String(index)}`, timestamp: index })) });
+
+  function tail(extra: unknown[]): MessagePage {
+    const messages = [{ role: "user", content: "prompt", timestamp: 500 }, ...extra];
+    return { start: 10, total: 10 + messages.length, messages };
+  }
+
+  it("keeps one read row when its result lands live while the earlier page loads", async () => {
+    // [prompt, call of 20 reads, 19 results, notice] paged by 20: the leading results go to the earlier page, so the
+    // visible tail is the notice alone and the last result arrives live after it, its call on the earlier page
+    // (messagePaging.test.ts "a notice-only tail" pins that split).
+    const calls = Array.from({ length: 20 }, (_, index) => ({ type: "toolCall", id: `c${String(index)}`, name: "read", arguments: { path: `f${String(index)}.ts` } }));
+    const results = calls.slice(0, 19).map((call) => ({ role: "toolResult", toolCallId: call.id, toolName: "read", content: [{ type: "text", text: `${call.id} body` }], isError: false, timestamp: 600 }));
+    const all = [{ role: "user", content: "prompt", timestamp: 500 }, { role: "assistant", content: calls, timestamp: 501 }, ...results, notice];
     const f = fixture();
-    const call = { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "read", arguments: { path: "a.ts" } }], timestamp: 199 };
-    const result = { role: "toolResult", toolCallId: "c1", toolName: "read", content: [{ type: "text", text: "file body" }], isError: false, timestamp: 200 };
-    f.transcriptSnapshot.mockReset().mockImplementation(() => transcriptSnapshotFixture({ ...oldTail, messages: [result, ...oldTail.messages.slice(1)] }, status(oldSession.id)));
-    f.messages.mockResolvedValueOnce({ ...oldEarlier, messages: [...oldEarlier.messages.slice(0, -1), call] });
+    const earlier = deferred<MessagePage>();
+    f.transcriptSnapshot.mockReset().mockImplementation(() => transcriptSnapshotFixture({ start: 21, total: 22, messages: [notice] }, status(oldSession.id)));
+    f.messages.mockReturnValueOnce(earlier.promise);
+    const earlierPage: MessagePage = { start: 0, total: 22, messages: all.slice(0, 21) };
     try {
       await f.controller.selectSession(oldSession, { updateUrl: false });
-      await f.controller.loadEarlierMessages();
-      const tools = f.state().messages.filter((line) => line.parts.some((part) => part.type === "toolExecution" || part.type === "toolResult"));
-      expect(tools).toHaveLength(1);
-      expect(tools[0]?.parts[0]).toMatchObject({ type: "toolExecution", toolCallId: "c1" });
-      expect(JSON.stringify(tools[0])).toContain("file body");
+      const loading = f.controller.loadEarlierMessages();
+      await vi.waitFor(() => { expect(f.messages).toHaveBeenCalledOnce(); });
+      const body = [{ type: "text", text: "c19 body" }];
+      f.socket.emit({ type: "tool.end", toolName: "read", toolCallId: "c19", text: "c19 body", isError: false, content: body });
+      f.socket.emit({ type: "message.end", message: { role: "toolResult", toolCallId: "c19", toolName: "read", content: body, isError: false, timestamp: 700 } });
+      earlier.resolve(earlierPage);
+      await loading;
+      const rows = f.state().messages.flatMap((line) => line.parts).filter((part) => part.type === "toolExecution" && part.toolCallId === "c19");
+      expect(rows).toEqual([expect.objectContaining({ status: "success", summary: "f19.ts", resultText: "c19 body" })]);
+      expect(f.state().messages).toHaveLength(1 + 20 + 1);
+      expect(JSON.stringify(f.state().messages.at(-1))).toContain("child finished");
     } finally {
+      earlier.resolve(earlierPage);
+      f.controller.dispose();
+    }
+  });
+
+  it("keeps a reply above a notice that lands after its empty start while the earlier page loads", async () => {
+    const current = tail([]);
+    const f = fixture();
+    const earlier = deferred<MessagePage>();
+    f.transcriptSnapshot.mockReset().mockImplementation(() => transcriptSnapshotFixture(current, status(oldSession.id)));
+    f.messages.mockReturnValueOnce(earlier.promise);
+    try {
+      await f.controller.selectSession(oldSession, { updateUrl: false });
+      const loading = f.controller.loadEarlierMessages();
+      await vi.waitFor(() => { expect(f.messages).toHaveBeenCalledOnce(); });
+      f.socket.emit({ type: "assistant.start", message: { role: "assistant", content: [], streamId: "s1" } });
+      f.socket.emit({ type: "message.append", message: notice });
+      earlier.resolve(earlierPage(10, current.total));
+      await loading;
+      f.socket.emit({ type: "assistant.delta", text: "the reply", streamId: "s1" });
+      f.socket.emit({ type: "message.end", message: { role: "assistant", content: [{ type: "text", text: "the reply" }], streamId: "s1", timestamp: 800 } });
+      const texts = f.state().messages.slice(10).map((line) => JSON.stringify(line.parts));
+      expect(texts).toHaveLength(3);
+      expect(texts[1]).toContain("the reply");
+      expect(texts[2]).toContain("child finished");
+    } finally {
+      earlier.resolve(earlierPage(10, current.total));
       f.controller.dispose();
     }
   });

@@ -18,6 +18,28 @@ describe("message paging", () => {
     expect(pageMessagesAtSafeBoundary<unknown>(messages, request ?? undefined)).toEqual(page(start, messages.length, messages.slice(start, end)));
   });
 
+  it.each(fixtures)("never splits a committed result from its call when chaining: $name", ({ messages }) => {
+    const roles = messages.map((message) => message.role);
+    for (let limit = 1; limit <= 25; limit += 1) {
+      let before = messages.length;
+      while (before > 0) {
+        const { start } = pageMessagesAtSafeBoundary<unknown>(messages, { before, limit });
+        let first = start;
+        while (roles[first] === "custom") first += 1;
+        // Session controller's Load earlier relies on this: it normalizes only the earlier page.
+        if (first < before) expect(roles[first]).not.toBe("toolResult");
+        before = start;
+      }
+    }
+  });
+
+  it("a notice-only tail: results before a trailing notice go to the earlier page with their call", () => {
+    const notice = { role: "custom", content: "child finished" };
+    const messages = [user("prompt"), toolCall("read"), ...Array.from({ length: 19 }, (_, index) => toolResult(String(index))), notice];
+    expect(pageMessagesAtSafeBoundary(messages, { limit: 20 })).toEqual(page(21, 22, [notice]));
+    expect(pageMessagesAtSafeBoundary(messages, { before: 21, limit: 100 })).toEqual(page(0, 22, messages.slice(0, 21)));
+  });
+
   it("chains pages of a call with 20 results, every message exactly once", () => {
     const messages = [user("prompt"), toolCall("read"), ...Array.from({ length: 20 }, (_, index) => toolResult(String(index))), assistantText("answer")];
     const seen: unknown[] = [];
