@@ -326,6 +326,15 @@ describe("PendingAskStore submit", () => {
   });
 });
 
+describe("PendingAskStore Custom labels", () => {
+  it("refuses an option labelled Custom, bare or as a (custom) suffix, in any case; other labels with the word stay", () => {
+    const store = testStore();
+    const open = (label: string) => () => store.open({ sessionId, context, questions: [question("q", { options: [{ value: "x", label }, { value: "y", label: "Yes" }] })] });
+    for (const label of ["Custom", " custom ", "CUSTOM", "Something else (custom)"]) expect(open(label), label).toThrow("Option x is labelled Custom; a Custom choice is always added, so drop this option");
+    for (const label of ["Customer", "Custom build", "My custom answer"]) expect(open(label)().questions[0]?.options[0]?.label).toBe(label);
+  });
+});
+
 describe("PendingAskStore approval", () => {
   it("keeps approval: true on the set, through a revision without it, and drops it on approval: false", () => {
     const store = testStore();

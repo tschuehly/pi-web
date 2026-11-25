@@ -1444,6 +1444,42 @@ describe("ask-user-card answer images", () => {
     expect(buttonWithText(root, "Send note").disabled).toBe(false);
   });
 
+  it("keeps staged images through a stale send and the revision it brings, and sends them with the next send", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>().mockResolvedValueOnce(false);
+    const ask = { ...openAsk([textQuestion("why", "Why?")]), askId: "ask-stale" };
+    const card = await mountOpenAsk(ask, onSubmit);
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    const input = requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-0"), "why");
+    input.value = "Look";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    paste(input, [pngFile("why.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    buttonWithText(root, "Send answers").click();
+    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledTimes(1); });
+    await card.updateComplete;
+    // The controller reports a stale close as not sent and applies the revised set the daemon returned.
+    card.ask = { ...ask, revision: "r2" };
+    await card.updateComplete;
+    expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
+    buttonWithText(root, "Send answers").click();
+    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledTimes(2); });
+    expect(onSubmit).toHaveBeenLastCalledWith("ask-stale", expect.objectContaining({ revision: "r2", images: [{ target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw==", name: "why.png" }] }));
+  });
+
+  it("stages images dropped on the note editor, keeping the drop from the editor", async () => {
+    const card = await mountOpenAsk({ ...openAsk([textQuestion("why", "Why?")]), askId: "ask-drop" });
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    const editor = requiredElement(root.querySelector(".ask-note .cm-content"), "note editor");
+    const event = drop(editor, [pngFile("dropped.png")]);
+    expect(event.defaultPrevented).toBe(true);
+    await vi.waitFor(() => { expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(1); });
+    expect(root.querySelector<HTMLImageElement>('.answer-images[data-target="note"] img')?.alt).toBe("dropped.png");
+  });
+
   it("sends only the question's own images with its Send; the note's wait for the whole set", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([textQuestion("why", "Why?"), textQuestion("how", "How?"), textQuestion("when", "When?")]), onSubmit);
@@ -1564,6 +1600,14 @@ function paste(target: Element, files: File[]): void {
   const event = new Event("paste", { bubbles: true, cancelable: true, composed: true });
   Reflect.set(event, "clipboardData", { files, items: files.map(() => ({ kind: "file" })), types: ["Files"] });
   target.dispatchEvent(event);
+}
+
+/** Drops files as the browser does: a bubbling, composed, cancelable drop event carrying them. */
+function drop(target: Element, files: File[]): Event {
+  const event = new Event("drop", { bubbles: true, cancelable: true, composed: true });
+  Reflect.set(event, "dataTransfer", { files, items: files.map(() => ({ kind: "file" })), types: ["Files"] });
+  target.dispatchEvent(event);
+  return event;
 }
 
 /** Opens a record's "Show full questions" disclosure; an open card has none. */
