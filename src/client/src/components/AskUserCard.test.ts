@@ -263,14 +263,11 @@ describe("ask-user-card live form", () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), onSubmit);
     const root = renderRoot(card);
-    expect(root.querySelector(".ask-note")).toBeNull();
-    requiredElement(root.querySelector<HTMLButtonElement>('button[aria-label="Add note"]'), "note icon").click();
-    await card.updateComplete;
-    await Promise.resolve();
-    const note = markdownField(root, ".ask-note ask-markdown-field");
-    expect(note.contains(root.activeElement)).toBe(true);
-    expect(root.querySelector('button[aria-label="Add note"]')).toBeNull();
-    expect(note.closest("form")?.querySelector(".ask-note + .form-footer")).not.toBeNull();
+    // The note is a multi-line field in the send bar, beside Send answers.
+    const note = markdownField(root, ".form-footer > ask-markdown-field.ask-note");
+    expect(note.parentElement?.querySelector(":scope > .primary-action")?.textContent.trim()).toBe("Send answers");
+    expect(note.querySelector(".cm-content")?.getAttribute("aria-multiline")).toBe("true");
+    expect(AskUserCard.styles.cssText).toContain(".card ask-markdown-field.ask-note .cm-editor { min-height: calc(2lh + 10px);");
 
     inputWithValue(root, "pg").click();
     typeInto(note, "  Ship it this week.  ");
@@ -282,12 +279,11 @@ describe("ask-user-card live form", () => {
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", note: "Ship it this week.", answers: [{ id: "db", values: ["pg"] }] });
   });
 
-  it("opens the note at once when the set already has a saved note draft", async () => {
+  it("shows a saved note draft in the send bar's note field", async () => {
     saveAskNote("local:session-1", "ask-1", "Half typed");
     const card = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]));
     const root = renderRoot(card);
-    expect(markdownField(root, ".ask-note ask-markdown-field").value).toBe("Half typed");
-    expect(root.querySelector('button[aria-label="Add note"]')).toBeNull();
+    expect(markdownField(root, ".form-footer > .ask-note").value).toBe("Half typed");
   });
 
   it("shows and submits the custom field directly when no options were supplied", async () => {
@@ -298,7 +294,7 @@ describe("ask-user-card live form", () => {
     const root = renderRoot(card);
     const field = markdownField(root, ".other-answer ask-markdown-field");
 
-    expect(root.querySelector("input")).toBeNull();
+    expect(root.querySelector(".questions input")).toBeNull();
     expect(field.closest(".other-answer")?.textContent).toContain("Custom answer");
     typeInto(field, "Keep the first version small.");
     await card.updateComplete;
@@ -578,6 +574,45 @@ describe("ask-user-card single-answer send", () => {
     const lone = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [])]), askId: "ask-2" });
     expect(renderRoot(lone).querySelector(".send-one")).toBeNull();
     expect(buttonWithText(renderRoot(lone), "Send answers")).toBeDefined();
+  });
+
+  it("folds the context to one line after a send until clicked, and Keep context open prevents it for this set only", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const ask = { ...openAsk([question("editor", "Editor?", [option("vim", "Vim")]), question("deploy", "Target?", [option("cloud", "Cloud")])]), context: "## Plan\nShip **today**." };
+    const card = await mountOpenAsk(ask, onSubmit);
+    const root = renderRoot(card);
+    expect(root.querySelector(".context-folded")).toBeNull();
+    inputWithValue(root, "cloud").click();
+    await card.updateComplete;
+    [...root.querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    card.ask = { ...ask, questions: [question("editor", "Editor?", [option("vim", "Vim")])], revision: "r2" };
+    await card.updateComplete;
+    const folded = requiredElement(root.querySelector<HTMLButtonElement>(".context-folded"), "folded context");
+    expect(folded.getAttribute("aria-expanded")).toBe("false");
+    expect(root.querySelector(".context-folded-line")?.textContent).toBe("Plan");
+    expect(root.querySelector(".context-editor")).toBeNull();
+    folded.click();
+    await card.updateComplete;
+    expect(root.querySelector(".context-folded")).toBeNull();
+    expect(root.querySelector(".context-editor")).not.toBeNull();
+
+    // Ticked, a send leaves the context open.
+    const keep = requiredElement(root.querySelector<HTMLInputElement>(".form-footer .keep-context input[type='checkbox']"), "keep context open");
+    expect(keep.checked).toBe(false);
+    keep.click();
+    await card.updateComplete;
+    inputWithValue(root, "vim").click();
+    buttonWithText(root, "Send answers").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await card.updateComplete;
+    expect(root.querySelector(".context-folded")).toBeNull();
+
+    // A new set starts unticked and open.
+    card.ask = { ...ask, askId: "ask-2" };
+    await card.updateComplete;
+    expect(root.querySelector<HTMLInputElement>(".keep-context input")?.checked).toBe(false);
+    expect(root.querySelector(".context-folded")).toBeNull();
   });
 
   it("keeps each question's own editor and undo history when a partial send or revision changes the set", async () => {

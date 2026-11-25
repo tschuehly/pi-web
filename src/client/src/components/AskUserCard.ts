@@ -38,10 +38,9 @@ import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import type { ChatContentRendering } from "../formatting/contentRendering";
 
-// Lucide "pencil", "undo-2" and "sticky-note" (https://lucide.dev, ISC).
+// Lucide "pencil" and "undo-2" (https://lucide.dev, ISC).
 const PENCIL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>`;
 const UNDO_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path></svg>`;
-const NOTE_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"></path><path d="M15 3v4a2 2 0 0 0 2 2h4"></path></svg>`;
 
 /** "updated 5 min ago"-style age of an ISO timestamp. */
 export function updatedAgo(iso: string, now = Date.now()): string {
@@ -116,8 +115,11 @@ export class AskUserCard extends LitElement {
   @state() private note = "";
   /** The user's edit of the ask's context; `undefined` while it is unchanged. */
   @state() private editedContext: string | undefined;
-  /** The Note field hides behind its icon until opened; a saved note keeps it open. */
-  @state() private noteOpen = false;
+  /** After a send the context folds to one line until clicked, unless the user ticked Keep context open; both reset for each new set. */
+  @state() private contextFolded = false;
+  @state() private keepContextOpen = false;
+  /** The set the fold and Keep context open belong to: a revision of it keeps them. */
+  private foldAskId: string | undefined;
   @state() private confirmingPartialSubmit = false;
   @state() private submitting = false;
   /** Per question id: the option edited in its own row, and the answer Revert restores. Its text is the Custom answer. */
@@ -133,7 +135,11 @@ export class AskUserCard extends LitElement {
     this.modelIdentity = identity;
     this.answers = this.loadCurrentDraft();
     this.note = this.ask === undefined || this.draftSessionId === "" ? "" : loadAskNote(this.draftSessionId, this.ask.askId);
-    this.noteOpen = this.note !== "";
+    if (this.ask?.askId !== this.foldAskId) {
+      this.foldAskId = this.ask?.askId;
+      this.contextFolded = false;
+      this.keepContextOpen = false;
+    }
     // A context the user cleared with a partial send is absent: his new edit is made against "".
     const context = this.ask?.context ?? "";
     this.editedContext = this.ask === undefined || this.draftSessionId === "" || this.outcome !== undefined ? undefined : loadAskContext(this.draftSessionId, this.ask.askId, context);
@@ -174,16 +180,12 @@ export class AskUserCard extends LitElement {
           <div class="questions">
             ${repeat(visible, (question) => question.id, (question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
           </div>
-          ${this.noteOpen ? html`
-            <div class="ask-note">
-              <ask-markdown-field .label=${"Note for the whole set"} .placeholderText=${"Note for the whole set (optional)"} .value=${this.note} @ask-field-input=${this.changeNote}></ask-markdown-field>
-            </div>
-          ` : null}
           <footer class="form-footer">
+            <ask-markdown-field class="ask-note" .label=${"Note for the whole set"} .placeholderText=${"Note for the whole set (optional)"} .value=${this.note} @ask-field-input=${this.changeNote}></ask-markdown-field>
             ${this.confirmingPartialSubmit && unanswered.length > 0
               ? this.renderPartialSubmitConfirmation(ask, unanswered)
               : html`
-                  ${this.noteOpen ? null : html`<button class="note-toggle" type="button" aria-label="Add note" title="Add a note for the whole set" @click=${this.openNote}>${NOTE_ICON}</button>`}
+                  <label class="keep-context"><input type="checkbox" .checked=${this.keepContextOpen} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.keepContextOpen = event.currentTarget.checked; }} />Keep context open</label>
                   <button class="primary-action" type="submit" ?disabled=${this.submitting}>
                     ${this.submitting ? "Sending…" : "Send answers"}
                   </button>
@@ -210,6 +212,16 @@ export class AskUserCard extends LitElement {
   private renderContextEditor(context: string | undefined): TemplateResult {
     // An absent context (cleared by a partial send) stays an empty field the user can write a new one into.
     const text = this.editedContext ?? context ?? "";
+    if (this.contextFolded && text.trim() !== "") {
+      const line = text.split("\n").map((each) => each.replace(/^[\s#>*+-]+/u, "").trim()).find((each) => each !== "") ?? "";
+      return html`
+        <div class="ask-context">
+          <button class="context-folded" type="button" aria-expanded="false" title="Show the context" @click=${() => { this.contextFolded = false; }}>
+            <span class="context-folded-label">Context</span><span class="context-folded-line">${line}</span>
+          </button>
+        </div>
+      `;
+    }
     const media = renderedOnlyFences(text);
     return html`
       <div class="ask-context">
@@ -577,12 +589,6 @@ export class AskUserCard extends LitElement {
     return { context: context.trim() === "" ? "" : context };
   }
 
-  private readonly openNote = async (): Promise<void> => {
-    this.noteOpen = true;
-    await this.updateComplete;
-    this.renderRoot.querySelector<HTMLElement>(".ask-note ask-markdown-field")?.focus();
-  };
-
   private setAnswer(question: AskUserQuestion, answer: AskDraftAnswer): void {
     const next: AskDraftAnswers = { ...this.answers, [question.id]: { ...answer, asked: askedFingerprint(question) } };
     this.answers = next;
@@ -635,6 +641,7 @@ export class AskUserCard extends LitElement {
         // The parent controller owns the visible transport error. Keeping this
         // card and its draft intact is the only recovery needed at this boundary.
         if (!sent) this.focusAfterRevision = undefined;
+        else if (!this.keepContextOpen) this.contextFolded = true;
         if (this.ask?.askId === askId) this.submitting = false;
         return sent;
       });
@@ -946,15 +953,17 @@ export class AskUserCard extends LitElement {
     .card ask-markdown-field .cm-line { padding: 0 8px; }
     .card ask-markdown-field .cm-placeholder { color: var(--pi-muted); }
     ask-markdown-field.invalid { border-color: var(--pi-danger); }
-    .ask-note { display: grid; padding: 0 16px 10px var(--ui-transcript-inline-start, 16px); }
-    /* A quiet one-line field that grows with its text; focus tints the border instead of a second ring. */
-    .ask-note ask-markdown-field { border-color: var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); }
-    .card .ask-note ask-markdown-field .cm-editor { min-height: 0; max-height: 8lh; }
-    .card .ask-note ask-markdown-field .cm-content { padding: 5px 0; }
-    .ask-note ask-markdown-field:focus-within { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent); }
-    .note-toggle { display: grid; place-items: center; padding: 6px; border-color: transparent; background: transparent; color: var(--pi-muted); }
-    .note-toggle:hover:not(:disabled) { color: var(--pi-text); }
-    .note-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    /* The note fills the send bar beside its button: two lines tall, growing with its text; focus tints the border instead of a second ring. */
+    ask-markdown-field.ask-note { flex: 1 1 auto; min-width: 0; width: auto; border-color: var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); }
+    .card ask-markdown-field.ask-note .cm-editor { min-height: calc(2lh + 10px); max-height: 8lh; }
+    .card ask-markdown-field.ask-note .cm-content { padding: 5px 0; }
+    ask-markdown-field.ask-note:focus-within { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent); }
+    .keep-context { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; color: var(--pi-muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
+    .keep-context input { margin: 0; accent-color: var(--pi-accent); }
+    .context-folded { display: flex; gap: 8px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--pi-muted); text-align: start; }
+    .context-folded:hover:not(:disabled) { background: transparent; color: var(--pi-text); }
+    .context-folded-label { flex: 0 0 auto; font-weight: 650; }
+    .context-folded-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .form-footer {
       display: flex;
       align-items: center;
@@ -1012,11 +1021,10 @@ export class AskUserCard extends LitElement {
     @container (max-width: 580px) {
       fieldset.question { padding: 0 12px 14px var(--ui-transcript-inline-start, 12px); }
       .record-question { padding: 14px 12px 14px var(--ui-transcript-inline-start, 12px); }
-      .record-summary, .ask-context, .ask-note, .record-lines, .record-full > summary { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
+      .record-summary, .ask-context, .record-lines, .record-full > summary { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
       .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
       .partial-confirmation { align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }
-      .note-toggle { align-self: flex-start; }
       .primary-action { min-height: 42px; }
     }
     /* Embedded in the question drawer: no frame of its own, one header line, composer-dense spacing. */
@@ -1039,7 +1047,6 @@ export class AskUserCard extends LitElement {
     :host([flat]) legend + .options { margin-top: 6px; }
     :host([flat]) .options { gap: 2px; }
     :host([flat]) .option { padding-block: 4px; }
-    :host([flat]) .ask-note { padding: 0 12px 8px var(--ask-reading-start); }
     /* The drawer scrolls the questions under their actions, which stay in view. */
     :host([flat]) .form-footer { position: sticky; bottom: 0; z-index: 6; padding: 6px 12px; background: var(--pi-surface); }
     :host([flat]) .form-footer button:not(.question-jump) { padding: 5px 10px; }
