@@ -11,22 +11,28 @@ export function normalizeMessages(messages: unknown[]): ChatLine[] {
 /**
  * A whole-set record's images from earlier one-by-one sends name their send's `revision`; their bytes are in that send's
  * own answers entry, so they are taken from it when it is on this page (matched by `[PIC_n]`, unique within one send).
+ * History and live updates both run it; lines whose images it does not change keep their identity.
  */
-function linkEarlierAskImages(lines: ChatLine[]): ChatLine[] {
+export function linkEarlierAskImages(lines: ChatLine[]): ChatLine[] {
+  type RecordPart = Extract<ChatPart, { type: "askUserRecord" }>;
   const records = lines.flatMap((line) => line.parts.flatMap((part) => part.type === "askUserRecord" ? [part] : []));
   if (!records.some((part) => part.outcome.images?.some((image) => image.revision !== undefined) === true)) return lines;
   const sends = new Map(records.flatMap((part) => part.outcome.partial === true && part.outcome.revision !== undefined ? [[`${part.outcome.askId}@${part.outcome.revision}`, part] as const] : []));
-  for (const part of records) {
+  const linked = (part: RecordPart): RecordPart => {
     const images = part.outcome.images;
-    if (images === undefined || images.every((image) => image.revision === undefined)) continue;
-    part.images = images.map((image, index) => {
+    if (images === undefined || images.every((image) => image.revision === undefined)) return part;
+    const next = images.map((image, index) => {
       if (image.revision === undefined) return part.images?.[index];
       const send = sends.get(`${part.outcome.askId}@${image.revision}`);
       const own = send?.outcome.images?.findIndex((each) => each.reference === image.reference) ?? -1;
       return own < 0 ? undefined : send?.images?.[own];
     });
-  }
-  return lines;
+    return next.every((each, index) => each === part.images?.[index]) ? part : { ...part, images: next };
+  };
+  return lines.map((line) => {
+    const parts = line.parts.map((part) => part.type === "askUserRecord" ? linked(part) : part);
+    return parts.every((part, index) => part === line.parts[index]) ? line : { ...line, parts };
+  });
 }
 
 export function textMessage(role: ChatLine["role"], text: string): ChatLine {

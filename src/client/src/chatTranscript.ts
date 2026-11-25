@@ -1,4 +1,4 @@
-import { appendText, appendThinking, askUserRecordFromToolDetails, normalizeMessage, normalizeMessages, previewFromDetails, summarizeArgs, textMessage, withMessageMeta } from "./chatMessages";
+import { appendText, appendThinking, askUserRecordFromToolDetails, linkEarlierAskImages, normalizeMessage, normalizeMessages, previewFromDetails, summarizeArgs, textMessage, withMessageMeta } from "./chatMessages";
 import type { ChatLine, ToolExecutionPart } from "./chatTypes";
 import { appendShellChunk, finalizeShellMessage, shellStartMessage } from "./shellMessages";
 import type { SessionUiEvent } from "./sessionSocket";
@@ -47,7 +47,8 @@ export function seedStreamingPartial(messages: ChatLine[], partial: unknown): Ch
 }
 
 export function applyTranscriptEvent(messages: ChatLine[], event: SessionUiEvent): ChatLine[] | undefined {
-  if (event.type === "message.append") return appendNewMessage(messages, event.message);
+  // A whole-set record arriving live takes its earlier sends' images from their entries already shown, as history does.
+  if (event.type === "message.append") return linkEarlierAskImages(appendNewMessage(messages, event.message));
   if (event.type === "assistant.start") return seedStreamingPartial(messages, event.message);
   if (event.type === "assistant.delta" || event.type === "assistant.thinking.delta") {
     const append = event.type === "assistant.delta"
@@ -73,7 +74,10 @@ export function applyTranscriptEvent(messages: ChatLine[], event: SessionUiEvent
   if (event.type === "shell.end") return finalizeShellMessage(messages, event);
   if (event.type === "command.output") return [...messages, event.level === "error" ? { ...textMessage("system", event.message), severity: "error" } : textMessage("tool", event.message)];
   if (event.type === "session.error") return [...messages, { ...textMessage("system", event.message), severity: "error" }];
-  if (event.type === "message.end") return event.message === undefined ? undefined : applyFinalMessage(messages, event.message);
+  if (event.type === "message.end") {
+    const next = event.message === undefined ? undefined : applyFinalMessage(messages, event.message);
+    return next === undefined ? undefined : linkEarlierAskImages(next);
+  }
   return undefined;
 }
 

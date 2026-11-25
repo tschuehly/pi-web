@@ -203,6 +203,24 @@ describe("applyTranscriptEvent", () => {
     ]);
   });
 
+  it("takes a live whole-set record's earlier-send images from that send's entry already shown, as a reload does", () => {
+    const [first, second] = askUserOutcome.questions;
+    if (first === undefined || second === undefined) throw new Error("fixture has two questions");
+    const image = (id: string, revision?: string) => ({ target: { kind: "question" as const, id }, reference: "[PIC_1]", mimeType: "image/png", ...(revision === undefined ? {} : { revision }) });
+    const partial: AskUserOutcome = { ...askUserOutcome, questions: [first], answeredCount: 1, unansweredIds: [], summary: "Answered 1", partial: true, revision: "r2", images: [image(first.question.id)] };
+    const whole: AskUserOutcome = { ...askUserOutcome, questions: [{ ...first, revision: "r2" }, second], images: [image(first.question.id, "r2"), image(second.question.id)] };
+    const entry = (details: AskUserOutcome, data: string) => ({ role: "custom", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content: [{ type: "text", text: "answers" }, { type: "image", data, mimeType: "image/png" }], details });
+    const imagesOf = (lines: ChatLine[] | undefined) => lines?.flatMap((line) => line.parts.flatMap((part) => part.type === "askUserRecord" ? [part.images?.map((each) => each?.data)] : []));
+
+    const reload = normalizeMessages([entry(partial, "AAAA"), entry(whole, "BBBB")]);
+    let live = applyTranscriptEvent([], { type: "message.end", message: entry(partial, "AAAA") }) ?? [];
+    live = applyTranscriptEvent(live, { type: "message.end", message: entry(whole, "BBBB") }) ?? live;
+    expect(imagesOf(live)).toEqual([["AAAA"], ["AAAA", "BBBB"]]);
+    expect(live).toEqual(reload);
+    const appended = applyTranscriptEvent(normalizeMessages([entry(partial, "AAAA")]), { type: "message.append", message: entry(whole, "BBBB") });
+    expect(imagesOf(appended)).toEqual([["AAAA"], ["AAAA", "BBBB"]]);
+  });
+
   it("keeps superseded ask records identical across live tool events and hydrated history", () => {
     const args = { questions: [{ id: "next", question: "Try again?", options: [] }] };
     const details = { ask: { askId: "ask-2" }, superseded: supersededAskUserOutcome };
