@@ -22,6 +22,11 @@ export function askedFingerprint(question: AskUserQuestion): string {
 /** Draft answers of one ask, keyed by question id. */
 export type AskDraftAnswers = Record<string, AskDraftAnswer>;
 
+/** `record[key]` only when it is the record's own entry: a question id may be `constructor` or `__proto__`. */
+export function ownEntry<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
 const draftStoragePrefix = "pi-web:ask-draft:";
 
 function draftStorageKey(sessionId: string, askId: string): string {
@@ -60,17 +65,18 @@ export function loadAskDraft(sessionId: string, askId: string, storage = browser
  * on its default (a switch without one on off); any draft, even a cleared one, wins.
  */
 function presetAnswers(questions: readonly AskUserQuestion[]): AskDraftAnswers {
-  const answers: AskDraftAnswers = {};
+  // Built with fromEntries: assigning `answers["__proto__"]` would set the prototype instead of an entry.
+  const answers: [string, AskDraftAnswer][] = [];
   for (const question of questions) {
     if ((question.kind ?? "choice") !== "choice") {
       const preset = question.kind === "boolean" ? question.default === true : question.default === undefined ? undefined : String(question.default);
-      if (preset !== undefined) answers[question.id] = { values: [], value: preset, asked: askedFingerprint(question) };
+      if (preset !== undefined) answers.push([question.id, { values: [], value: preset, asked: askedFingerprint(question) }]);
       continue;
     }
     const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
-    if (recommended.length > 0) answers[question.id] = { values: question.multiple === true ? recommended : recommended.slice(0, 1), asked: askedFingerprint(question) };
+    if (recommended.length > 0) answers.push([question.id, { values: question.multiple === true ? recommended : recommended.slice(0, 1), asked: askedFingerprint(question) }]);
   }
-  return answers;
+  return Object.fromEntries(answers);
 }
 
 export function saveAskDraft(sessionId: string, askId: string, answers: AskDraftAnswers, storage = browserStorage()): void {
@@ -124,6 +130,21 @@ export function saveAskContext(sessionId: string, askId: string, original: strin
   }
 }
 
+/**
+ * After a partial send carried the context edit `sent` (`""` = cleared), the set's context is `sent`: an edit equal to
+ * it is consumed, so a later revision back to the old context does not bring it back; newer typing stays, as an edit of `sent`.
+ */
+export function rebaseAskContext(sessionId: string, askId: string, sent: string, storage = browserStorage()): void {
+  try {
+    const parsed: unknown = JSON.parse(storage?.getItem(`${draftStorageKey(sessionId, askId)}:context`) ?? "null");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+    const { edited }: Record<string, unknown> = { ...parsed };
+    if (typeof edited === "string") saveAskContext(sessionId, askId, sent, edited.trim() === "" ? "" : edited, storage);
+  } catch {
+    // Ignore unreadable drafts and localStorage quota/privacy errors.
+  }
+}
+
 export function clearAskDraft(sessionId: string, askId: string, storage = browserStorage()): void {
   try {
     storage?.removeItem(draftStorageKey(sessionId, askId));
@@ -137,12 +158,12 @@ export function clearAskDraft(sessionId: string, askId: string, storage = browse
 function draftAnswersFromJson(stored: string): AskDraftAnswers {
   const parsed: unknown = JSON.parse(stored);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-  const answers: AskDraftAnswers = {};
+  const answers: [string, AskDraftAnswer][] = [];
   for (const [id, value] of Object.entries(parsed)) {
     const answer = draftAnswerFromValue(value);
-    if (answer !== undefined) answers[id] = answer;
+    if (answer !== undefined) answers.push([id, answer]);
   }
-  return answers;
+  return Object.fromEntries(answers);
 }
 
 function draftAnswerFromValue(value: unknown): AskDraftAnswer | undefined {
@@ -170,7 +191,7 @@ export function visibleQuestions(questions: readonly AskUserQuestion[], answers:
   const byId = new Map(questions.map((question) => [question.id, question]));
   const hidden = hiddenAskQuestionIds(questions, (id) => {
     const question = byId.get(id);
-    return question === undefined ? [] : askAnswerSelection(submittableAnswer(question, answers[id]));
+    return question === undefined ? [] : askAnswerSelection(submittableAnswer(question, ownEntry(answers, id)));
   });
   return questions.filter((question) => !hidden.has(question.id));
 }
@@ -181,12 +202,12 @@ export function visibleQuestions(questions: readonly AskUserQuestion[], answers:
  * the user reads matches what the model is told.
  */
 export function answeredCount(questions: readonly AskUserQuestion[], answers: AskDraftAnswers): number {
-  return visibleQuestions(questions, answers).filter((question) => submittableAnswer(question, answers[question.id]) !== undefined).length;
+  return visibleQuestions(questions, answers).filter((question) => submittableAnswer(question, ownEntry(answers, question.id)) !== undefined).length;
 }
 
 /** The visible questions left untouched, in the order they were asked. */
 export function unansweredQuestions(questions: readonly AskUserQuestion[], answers: AskDraftAnswers): AskUserQuestion[] {
-  return visibleQuestions(questions, answers).filter((question) => submittableAnswer(question, answers[question.id]) === undefined);
+  return visibleQuestions(questions, answers).filter((question) => submittableAnswer(question, ownEntry(answers, question.id)) === undefined);
 }
 
 /**
@@ -197,7 +218,7 @@ export function unansweredQuestions(questions: readonly AskUserQuestion[], answe
 export function toSubmission(questions: readonly AskUserQuestion[], answers: AskDraftAnswers): AskUserSubmission {
   const submitted: AskUserAnswer[] = [];
   for (const question of visibleQuestions(questions, answers)) {
-    const answer = submittableAnswer(question, answers[question.id]);
+    const answer = submittableAnswer(question, ownEntry(answers, question.id));
     if (answer !== undefined) submitted.push(answer);
   }
   return { answers: submitted };

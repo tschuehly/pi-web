@@ -881,7 +881,7 @@ export const ASK_USER_QUESTION_KINDS: readonly AskUserQuestionKind[] = ["choice"
  * Why `value` does not fit a typed question ("must be at most 10"), or `undefined` when it does. Shared by the
  * daemon's checks of defaults and answers and the card's field errors; the Durable host keeps a copy for defaults.
  */
-export function askValueError(question: Pick<AskUserQuestion, "kind" | "minLength" | "maxLength" | "minimum" | "maximum" | "integer">, value: unknown): string | undefined {
+export function askValueError(question: Pick<AskUserQuestion, "kind" | "multiline" | "minLength" | "maxLength" | "minimum" | "maximum" | "integer">, value: unknown): string | undefined {
   switch (question.kind) {
     case "boolean":
       return typeof value === "boolean" ? undefined : "must be true or false";
@@ -889,6 +889,8 @@ export function askValueError(question: Pick<AskUserQuestion, "kind" | "minLengt
       if (typeof value !== "string") return "must be text";
       // Text is kept verbatim, but blank reads as unanswered, so a blank default could never be sent.
       if (value.trim() === "") return "must not be blank";
+      // A one-line field cannot show or edit a line break, yet would send it.
+      if (question.multiline !== true && /[\r\n]/u.test(value)) return "must be one line";
       if (value.length > (question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)) return `must be at most ${String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)} characters`;
       return question.minLength !== undefined && value.length < question.minLength ? `must be at least ${String(question.minLength)} characters` : undefined;
     case "number":

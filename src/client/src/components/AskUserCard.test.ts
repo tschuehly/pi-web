@@ -59,6 +59,17 @@ describe("ask-user-card live form", () => {
     expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 2 answered");
   });
 
+  it("renders and answers questions whose ids name Object properties", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([question("constructor", "Which editor?", [option("vim", "Vim")]), question("__proto__", "Why?", [])]), onSubmit);
+    expect(renderRoot(card).querySelectorAll("fieldset")).toHaveLength(2);
+
+    inputWithValue(renderRoot(card), "vim").click();
+    await card.updateComplete;
+
+    expect(renderRoot(card).querySelector("[aria-live='polite']")?.textContent).toContain("1 of 2 answered");
+  });
+
   it("accumulates several checkbox values for a multi-select question", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([
@@ -320,7 +331,7 @@ describe("ask-user-card live form", () => {
     const toggle = requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch");
     expect(toggle.checked).toBe(false);
     expect(toggle.getAttribute("aria-label")).toBe("Enable backup?");
-    expect(root.querySelector("ask-markdown-field")).toBeNull();
+    expect(root.querySelector(".questions ask-markdown-field")).toBeNull();
     expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("2 of 3 answered");
 
     toggle.click();
@@ -588,6 +599,21 @@ describe("ask-user-card single-answer send", () => {
     expect(remaining.value).toBe("");
   });
 
+  it("drops a field's undo history when its question is reworded, even when the new default equals the typed text", async () => {
+    const notes: AskUserQuestion = { id: "notes", question: "Notes?", options: [], kind: "text", multiline: true };
+    const card = await mountOpenAsk(openAsk([notes]));
+    const field = markdownField(renderRoot(card), "ask-markdown-field#ask-user-other-0");
+    typeInto(field, "Draft.");
+    await card.updateComplete;
+
+    card.ask = { ...openAsk([{ ...notes, detail: "Reworded.", default: "Draft." }]), revision: "r2" };
+    await card.updateComplete;
+    expect([field.isConnected, field.value]).toEqual([true, "Draft."]);
+    undo(editorView(field));
+
+    expect(field.value).toBe("Draft.");
+  });
+
   it("keeps the other questions' drafts when a partial send returns the ask under a new revision", async () => {
     const editor = question("editor", "Choose an editor", [option("vim", "Vim")]);
     const shell = question("shell", "Choose a shell", [option("zsh", "Zsh")]);
@@ -737,6 +763,31 @@ describe("ask-user-card context", () => {
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", partial: true, context: "My plan.", answers: [{ id: "db", values: ["pg"] }] });
   });
 
+  it("keeps an empty editable context after a partial send cleared it, and sends a new one written there", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const cache = question("cache", "Which cache?", [option("redis", "Redis")]);
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")]), cache]), context: "Plan." }, onSubmit);
+    typeInto(markdownField(renderRoot(card), ".context-editor"), "");
+    inputWithValue(renderRoot(card), "pg").click();
+    await card.updateComplete;
+    buttonWithText(renderRoot(card), "Send").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenLastCalledWith("ask-1", { revision: "r1", partial: true, context: "", answers: [{ id: "db", values: ["pg"] }] });
+
+    // The daemon drops the cleared context from the questions left open.
+    card.ask = { ...openAsk([cache]), revision: "r2" };
+    await card.updateComplete;
+    const editor = markdownField(renderRoot(card), ".context-editor");
+    expect(editor.value).toBe("");
+    typeInto(editor, "New plan.");
+    inputWithValue(renderRoot(card), "redis").click();
+    await card.updateComplete;
+    buttonWithText(renderRoot(card), "Send answers").click();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenLastCalledWith("ask-1", { revision: "r2", context: "New plan.", answers: [{ id: "cache", values: ["redis"] }] });
+  });
+
   it("resets the edit when a revision changes the context, and keeps it when the context stays", async () => {
     const ask = { ...openAsk([question("db", "Which database?", [])]), context: "Plan A." };
     const card = await mountOpenAsk(ask);
@@ -850,10 +901,12 @@ describe("ask-user-card context", () => {
     expect(opened.mock.calls[0]?.[0]).toMatchObject({ detail: { machineId: "local", path: "/Users/me/IMG_2430.MOV" } });
   });
 
-  it("renders no context block when the ask carries none", async () => {
+  it("renders an empty editable context and no context text when the ask carries none", async () => {
     const card = await mountOpenAsk(openAsk([question("db", "Which database?", [])]));
 
-    expect(renderRoot(card).querySelector(".ask-context")).toBeNull();
+    expect(renderRoot(card).querySelector("formatted-text.ask-context")).toBeNull();
+    expect(markdownField(renderRoot(card), ".context-editor").value).toBe("");
+    expect(renderRoot(card).querySelector(".context-actions")).toBeNull();
   });
 });
 

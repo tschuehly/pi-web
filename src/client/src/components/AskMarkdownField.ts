@@ -23,6 +23,7 @@ export class AskMarkdownField extends ElementBase {
   #invalid = false;
   #describedBy: string | undefined;
   #replacing = false;
+  #historyKey: string | undefined;
   readonly #attributes = new Compartment();
   maxLength = ASK_USER_OTHER_TEXT_MAX_LENGTH;
   /** Shown while empty; read when the field connects. */
@@ -47,6 +48,13 @@ export class AskMarkdownField extends ElementBase {
     } finally {
       this.#replacing = false;
     }
+  }
+
+  /** Identity of what the text answers (the question and its wording): a change drops the undo history even when the text stays. */
+  set historyKey(key: string) {
+    const changed = this.#historyKey !== undefined && key !== this.#historyKey;
+    this.#historyKey = key;
+    if (changed && this.#view !== undefined) resetEditHistory(this.#view);
   }
 
   set label(text: string) { this.#label = text; this.#syncAttributes(); }
