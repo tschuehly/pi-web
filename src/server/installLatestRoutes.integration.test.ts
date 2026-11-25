@@ -76,9 +76,11 @@ function harness(script: string) {
     git(wb, "push", "-q", "origin", "HEAD:main");
     return { wbPin, pw2 };
   };
+  /** Someone merges to pi-workbench main after the owner looked. */
+  const mergeLater = () => { const sha = commit(seeds["pi-workbench"], "later merge", "h"); git(seeds["pi-workbench"], "push", "-q", "origin", "HEAD:main"); return sha; };
   const jobs = () => (existsSync(join(store, "jobs")) ? readdirSync(join(store, "jobs")) : []);
   const launchctl = () => (existsSync(join(home, "launchctl.log")) ? readFileSync(join(home, "launchctl.log"), "utf8") : "");
-  return { wrapper, store, first, build, moveOn, jobs, launchctl };
+  return { wrapper, store, first, build, moveOn, mergeLater, jobs, launchctl };
 }
 
 async function app(script: string) {
@@ -105,12 +107,12 @@ describe.skipIf(real === "" || !existsSync(real))("install latest routes with th
     expect(shown.merges.map((m) => `${m.repo}: ${m.subject}`))
       .toEqual(["pi-workbench: pin pi-web", "pi-workbench: Merge branch 'feature'", "pi-web: pi-web two"]);
 
-    const stale = await server.inject({ method: "POST", url: "/api/install/latest", payload: { from: { workbench: pw1, piWeb: pw1 } } });
+    const stale = await server.inject({ method: "POST", url: "/api/install/latest", payload: { from: { workbench: pw1, piWeb: pw1 }, to: shown.latest } });
     expect(stale.statusCode).toBe(409);
     expect(stale.json<{ error: string }>().error).toMatch(/^refusing: installed now is .*not the --from pair.*fresh approval/su);
     expect(h.jobs()).toEqual([]);
 
-    const scheduled = await server.inject({ method: "POST", url: "/api/install/latest", payload: { from: shown.installed } });
+    const scheduled = await server.inject({ method: "POST", url: "/api/install/latest", payload: { from: shown.installed, to: shown.latest } });
     expect(scheduled.statusCode, scheduled.body).toBe(200);
     expect(scheduled.json()).toEqual({ status: "scheduled" });
     const jobs = h.jobs();
@@ -131,8 +133,25 @@ describe.skipIf(real === "" || !existsSync(real))("install latest routes with th
     const shown = preview.json<InstallLatestPreview>();
     expect(shown).toEqual({ installed: { workbench: "none", piWeb: "none" }, latest: { workbench: wbPin, piWeb: pw2 }, merges: [], upToDate: false });
 
-    const scheduled = await server.inject({ method: "POST", url: "/api/install/latest", payload: { from: shown.installed } });
+    const scheduled = await server.inject({ method: "POST", url: "/api/install/latest", payload: { from: shown.installed, to: shown.latest } });
     expect(scheduled.statusCode, scheduled.body).toBe(200);
     expect(h.jobs()).toHaveLength(1);
+  });
+
+  it("POST refuses with 409 when origin/main moved after the preview, without scheduling", async () => {
+    const h = harness(real);
+    h.build("pi-workbench", h.first["pi-workbench"], true);
+    h.build("pi-web", h.first["pi-web"], true);
+    const { wbPin } = h.moveOn();
+    h.build("pi-workbench", wbPin);
+    const server = await app(h.wrapper);
+    const shown = (await server.inject({ method: "GET", url: "/api/install/latest" })).json<InstallLatestPreview>();
+    expect(shown.latest.workbench).toBe(wbPin);
+    const later = h.mergeLater();
+
+    const moved = await server.inject({ method: "POST", url: "/api/install/latest", payload: { from: shown.installed, to: shown.latest } });
+    expect(moved.statusCode, moved.body).toBe(409);
+    expect(moved.json<{ error: string }>().error).toMatch(new RegExp(`^refusing: latest moved since you looked: now ${later.slice(0, 12)} .*review again`, "u"));
+    expect(h.jobs()).toEqual([]);
   });
 });

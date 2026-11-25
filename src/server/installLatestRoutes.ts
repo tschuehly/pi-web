@@ -45,17 +45,18 @@ export function registerInstallLatestRoutes(app: FastifyInstance, script: string
     }
   });
 
-  app.post<{ Body: { from?: unknown } | undefined }>("/api/install/latest", async (request, reply) => {
+  app.post<{ Body: { from?: unknown; to?: unknown } | undefined }>("/api/install/latest", async (request, reply) => {
     if (script === undefined) return reply.code(503).send(unavailable);
-    let from;
+    let from, to;
     try {
       from = parseInstallPair(request.body?.from);
+      to = parseInstallPair(request.body?.to);
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
     }
     try {
-      // Exactly the pair the owner saw, so the script refuses when either branch moved since.
-      await run(script, ["latest", "--from", from.workbench, from.piWeb], 600_000);
+      // Exactly the pairs the owner saw: the script refuses when another install happened (exit 8) or latest moved (exit 9).
+      await run(script, ["latest", "--from", from.workbench, from.piWeb, "--to", to.workbench, to.piWeb], 600_000);
       return { status: "scheduled" };
     } catch (error) {
       return fail(error, reply);

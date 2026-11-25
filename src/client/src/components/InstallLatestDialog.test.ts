@@ -27,7 +27,7 @@ async function open(): Promise<InstallLatestDialog> {
 
 const button = (dialog: InstallLatestDialog) => dialog.renderRoot.querySelector<HTMLButtonElement>(".install");
 
-it("lists the merges and pairs, then installs exactly the installed pair it showed", async () => {
+it("lists the merges and pairs, then installs exactly the installed and latest pairs it showed", async () => {
   vi.spyOn(piWebApi, "installLatestPreview").mockResolvedValue(PREVIEW);
   const install = vi.spyOn(piWebApi, "installLatest").mockResolvedValue({ status: "scheduled" });
   const dialog = await open();
@@ -37,7 +37,7 @@ it("lists the merges and pairs, then installs exactly the installed pair it show
   expect(dialog.renderRoot.querySelector(".merges")?.textContent).toContain("pi-web 7549a70 Install latest menu item");
   button(dialog)?.click();
   await vi.waitFor(() => { expect(dialog.renderRoot.textContent).toContain("Installing, PI WEB restarts in a few seconds."); });
-  expect(install).toHaveBeenCalledWith(PREVIEW.installed);
+  expect(install).toHaveBeenCalledWith(PREVIEW.installed, PREVIEW.latest);
   expect(button(dialog)).toBeNull();
 });
 
@@ -48,13 +48,22 @@ it("up to date disables Install", async () => {
   expect(button(dialog)?.textContent).toBe("Up to date");
 });
 
-it("shows the script's refusal and keeps Install available", async () => {
-  vi.spyOn(piWebApi, "installLatestPreview").mockResolvedValue(PREVIEW);
-  vi.spyOn(piWebApi, "installLatest").mockRejectedValue(new Error("stale pair: pi-web moved"));
+it("shows the script's refusal and Check again reloads the preview", async () => {
+  const moved = "refusing: latest moved since you looked: now 3cc48fe0c4ab 7549a7088db3; review again";
+  const newer = { ...PREVIEW, latest: { ...PREVIEW.latest, workbench: "3cc48fe0c4ab" } };
+  const preview = vi.spyOn(piWebApi, "installLatestPreview").mockResolvedValueOnce(PREVIEW).mockResolvedValueOnce(newer);
+  const install = vi.spyOn(piWebApi, "installLatest").mockRejectedValueOnce(new Error(moved)).mockResolvedValue({ status: "scheduled" });
   const dialog = await open();
   button(dialog)?.click();
-  await vi.waitFor(() => { expect(dialog.renderRoot.querySelector("[role=alert]")?.textContent).toBe("stale pair: pi-web moved"); });
+  await vi.waitFor(() => { expect(dialog.renderRoot.querySelector("[role=alert]")?.textContent).toBe(moved); });
   expect(button(dialog)?.disabled).toBe(false);
+  dialog.renderRoot.querySelector<HTMLButtonElement>(".recheck")?.click();
+  await vi.waitFor(() => { expect(dialog.renderRoot.textContent).toContain("1aa26dc → 3cc48fe"); });
+  expect(preview).toHaveBeenCalledTimes(2);
+  expect(dialog.renderRoot.querySelector("[role=alert]")).toBeNull();
+  expect(dialog.renderRoot.querySelector(".recheck")).toBeNull();
+  button(dialog)?.click();
+  await vi.waitFor(() => { expect(install).toHaveBeenLastCalledWith(PREVIEW.installed, newer.latest); });
 });
 
 it("shows a failed check and offers no install", async () => {
@@ -72,5 +81,5 @@ it("nothing installed yet offers the first install of the latest pair", async ()
   expect(dialog.renderRoot.textContent).toContain("Nothing installed yet: Install sets up the latest pair 2bb37ed · 7549a70.");
   expect(dialog.renderRoot.querySelector(".warning")?.textContent).toContain("refuses if another install happened");
   button(dialog)?.click();
-  await vi.waitFor(() => { expect(install).toHaveBeenCalledWith(none); });
+  await vi.waitFor(() => { expect(install).toHaveBeenCalledWith(none, PREVIEW.latest); });
 });

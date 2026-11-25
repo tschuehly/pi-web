@@ -112,7 +112,7 @@ export const piWebApi = {
   checkForUpdates: (machineId = "local") => request(`${piWebStatusPath(machineId)}?refresh=1`, parsePiWebStatusResponse, { cache: "no-store" }),
   piWebRuntime: () => request("api/pi-web/runtime", parsePiWebRuntimeResponse),
   installLatestPreview: () => request("api/install/latest", parseInstallLatestPreview, { cache: "no-store" }),
-  installLatest: (from: InstallPair) => request("api/install/latest", (value) => value, { method: "POST", body: JSON.stringify({ from }) }),
+  installLatest: (from: InstallPair, to: InstallPair) => request("api/install/latest", (value) => value, { method: "POST", body: JSON.stringify({ from, to }) }),
 };
 
 export const machinesApi = {

@@ -50,25 +50,27 @@ describe("install latest routes", () => {
     expect((await (await app()).inject({ method: "GET", url: "/api/install/latest" })).statusCode).toBe(502);
   });
 
-  it("POST runs the install with exactly the owner's pair", async () => {
+  it("POST runs the install with exactly the owner's installed and latest pairs", async () => {
     await fake("");
-    const response = await (await app()).inject({ method: "POST", url: "/api/install/latest", payload: { from: PREVIEW.installed } });
+    const response = await (await app()).inject({ method: "POST", url: "/api/install/latest", payload: { from: PREVIEW.installed, to: PREVIEW.latest } });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: "scheduled" });
-    expect(await readFile(join(dir, "args"), "utf8")).toBe("latest\n--from\n1aa26dc8a2f9\n6438f6977ca2\n");
+    expect(await readFile(join(dir, "args"), "utf8")).toBe("latest\n--from\n1aa26dc8a2f9\n6438f6977ca2\n--to\n2bb37ed9b3fa\n7549a7088db3\n");
   });
 
   it("POST returns the script's refusal as 409", async () => {
-    await fake("", 4, "stale pair: pi-web moved to 7549a70");
-    const response = await (await app()).inject({ method: "POST", url: "/api/install/latest", payload: { from: PREVIEW.installed } });
+    await fake("", 9, "refusing: latest moved since you looked: now 3cc4 7549a70; review again");
+    const response = await (await app()).inject({ method: "POST", url: "/api/install/latest", payload: { from: PREVIEW.installed, to: PREVIEW.latest } });
     expect(response.statusCode).toBe(409);
-    expect(response.json()).toEqual({ error: "stale pair: pi-web moved to 7549a70" });
+    expect(response.json()).toEqual({ error: "refusing: latest moved since you looked: now 3cc4 7549a70; review again" });
   });
 
   it("POST refuses a pair that is not two revisions without running the script", async () => {
     await fake("");
-    const response = await (await app()).inject({ method: "POST", url: "/api/install/latest", payload: { from: { workbench: "--force", piWeb: "6438f69" } } });
+    const response = await (await app()).inject({ method: "POST", url: "/api/install/latest", payload: { from: { workbench: "--force", piWeb: "6438f69" }, to: PREVIEW.latest } });
     expect(response.statusCode).toBe(400);
+    const noTo = await (await app()).inject({ method: "POST", url: "/api/install/latest", payload: { from: PREVIEW.installed } });
+    expect(noTo.statusCode).toBe(400);
     await expect(readFile(join(dir, "args"), "utf8")).rejects.toThrow();
   });
 

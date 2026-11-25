@@ -10,7 +10,8 @@ const pair = (value: InstallPair) => `${short(value.workbench)} · ${short(value
 
 /**
  * Install latest: reads `promote-installed latest --dry-run`, lists what the latest pi-workbench and PI WEB merges add,
- * and installs exactly the pair shown, so the script refuses when either branch moved since. Focus starts on Cancel.
+ * and installs exactly the pairs shown, so the script refuses when another install happened or latest moved since;
+ * after a refusal, Check again reloads the preview. Focus starts on Cancel.
  */
 @customElement("install-latest-dialog")
 export class InstallLatestDialog extends LitElement {
@@ -29,6 +30,9 @@ export class InstallLatestDialog extends LitElement {
   }
 
   private async load(): Promise<void> {
+    this.phase = "loading";
+    this.preview = undefined;
+    this.message = "";
     try {
       this.preview = await piWebApi.installLatestPreview();
     } catch (error) {
@@ -55,11 +59,12 @@ export class InstallLatestDialog extends LitElement {
                 : html`<ul class="merges" aria-label="New merges">
                 ${preview.merges.map((merge) => html`<li><span class="repo">${merge.repo}</span> <code>${short(merge.sha)}</code> ${merge.subject}</li>`)}
               </ul>`}
-              <p class="warning">Install switches Pi Workbench and PI WEB to the latest pair at once. PI WEB restarts about 3 seconds later, which interrupts every open session except Durable Chats. It refuses if another install happened since this check, or while subagents or workers run.</p>`}`}
+              <p class="warning">Install switches Pi Workbench and PI WEB to the latest pair at once. PI WEB restarts about 3 seconds later, which interrupts every open session except Durable Chats. It refuses if another install happened or a newer merge landed since this check, or while subagents or workers run.</p>`}`}
           ${this.message === "" ? null : html`<p class=${phase === "done" ? "result" : "dialog-error"} role=${phase === "done" ? "status" : "alert"}>${this.message}</p>`}
         </div>
         <footer>
           <button class="cancel" @click=${() => { this.remove(); }}>${phase === "done" ? "Close" : "Cancel"}</button>
+          ${phase === "review" && this.message !== "" ? html`<button class="recheck" @click=${() => { void this.load(); }}>Check again</button>` : null}
           ${phase === "done" ? null : html`<button class="install" ?disabled=${phase !== "review" || preview === undefined || preview.upToDate} @click=${() => { void this.install(); }}>${preview?.upToDate === true ? "Up to date" : "Install"}</button>`}
         </footer>
       </modal-surface>
@@ -72,7 +77,7 @@ export class InstallLatestDialog extends LitElement {
     this.phase = "sending";
     this.message = "";
     try {
-      await piWebApi.installLatest(preview.installed);
+      await piWebApi.installLatest(preview.installed, preview.latest);
       this.phase = "done";
       this.message = "Installing, PI WEB restarts in a few seconds.";
     } catch (error) {
