@@ -577,12 +577,32 @@ describe("Durable Chats", () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
-    expect(durable.workingMode(ref)).toBeUndefined();
+    await expect(durable.workingMode(ref)).resolves.toBeUndefined();
     const mode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
     only(launched).push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": mode } } });
     only(launched).kill();
-    expect(durable.workingMode(ref)).toBe(mode);
+    await expect(durable.workingMode(ref)).resolves.toBe(mode);
     expect(launched).toHaveLength(1);
+  });
+
+  it("reads a running host's Working Mode over the saved one, and a reattached host refreshes the saved one", async () => {
+    const { durable, launched, locator, root } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const [saved, live] = ['{"aligned":false}', '{"aligned":true}'];
+    only(launched).push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": saved } } });
+    // The host changed mode while no daemon listened (no status.update reached the record).
+    only(launched).answer = (request) => (request.method === "status" ? { ...status, extensionStatuses: { "working-mode": live } } : null);
+    await expect(durable.workingMode(ref)).resolves.toBe(live);
+    await durable.dispose();
+
+    // A restarted daemon reattaches a host whose mode moved on: the record follows it before any read.
+    locator.update(chat.id, { workingMode: saved });
+    locator.setHost(chat.id, { label: "l", socket: "s", revision: "r", ownerEpoch: 1, pid: 1 });
+    const restarted = await service(() => { const host = new FakeHost(); host.answer = (request) => (request.method === "status" ? { ...status, extensionStatuses: { "working-mode": live } } : null); return host; }, undefined, { locator: new SessionRuntimeLocator(root) });
+    await restarted.durable.reattach();
+    expect(new SessionRuntimeLocator(root).durable(chat.id)?.workingMode).toBe(live);
+    await restarted.durable.dispose();
   });
 
   it("labels the whole record's context as the user's edit only while the host's set says the user supplied it", async () => {

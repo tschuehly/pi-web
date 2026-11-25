@@ -1018,9 +1018,14 @@ export class DurableChatService {
     return status === undefined ? undefined : status.pendingAsks ?? [];
   }
 
-  /** The Chat's last reported Working Mode status, kept on its record: read without a running host. */
-  workingMode(ref: SessionRouteRef): string | undefined {
-    return this.#record(ref).workingMode;
+  /** The connected host's Working Mode status (saved to the record), else the record's last one: never starts a host. */
+  async workingMode(ref: SessionRouteRef): Promise<string | undefined> {
+    const record = this.#record(ref);
+    const status = await this.#runningStatus(ref).catch(() => undefined);
+    if (status === undefined) return record.workingMode;
+    const live = status.extensionStatuses?.["working-mode"];
+    if (live !== undefined && live !== record.workingMode) this.deps.locator.update(record.id, { workingMode: live });
+    return live;
   }
 
   async attentionRequest(ref: SessionRouteRef): Promise<SessionAttentionRequest | undefined> {
@@ -1481,7 +1486,8 @@ export class DurableChatService {
   async reattach(): Promise<void> {
     await Promise.all(this.deps.locator.all().map((record) => {
       if (record.upgrade !== undefined) return this.#recoverUpgrade(record, record.upgrade);
-      return record.host === undefined ? Promise.resolve() : this.#connection(record, true).then(() => undefined, () => undefined);
+      // A reattached host may have changed Working Mode while no daemon listened: refresh the record from it.
+      return record.host === undefined ? Promise.resolve() : this.#connection(record, true).then(() => this.workingMode(record), () => undefined).then(() => undefined, () => undefined);
     }));
   }
 
