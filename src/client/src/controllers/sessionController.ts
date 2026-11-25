@@ -192,6 +192,9 @@ export class SessionController {
   // in the committed history + seeded partial and must be dropped, so every event
   // applies exactly once. Reset whenever the selection changes.
   private streamWatermark: { sessionId: string; seq: number } | undefined;
+  // A snapshot read in the current socket epoch succeeded; a new selection or a socket reconnect starts a new epoch.
+  private socketEpoch = 0;
+  private snapshotEpoch = -1;
   // Fingerprint of the last applied selected-session refresh, bound to that
   // selection: a poll whose page, status, and partial all match what is already
   // held skips the redundant merge, sessionStorage rewrite, and render. The
@@ -276,6 +279,7 @@ export class SessionController {
     this.socket.close();
     this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
+    this.socketEpoch += 1;
     this.clearPendingUpdates();
     // Note: sendingPrompts is intentionally NOT cleared here. Deselecting a
     // session must not cancel the in-flight upload indicator of the session
@@ -385,9 +389,9 @@ export class SessionController {
     return !this.disposed && navigationIsCurrent(this.selectedSessionJoinNavigation);
   }
 
-  /** The selected Chat's event socket is open, so its transcript is current without a new snapshot. */
+  /** The selected Chat's socket is open and a snapshot succeeded since it (re)opened, so its transcript is current. */
   get isLive(): boolean {
-    return this.socket.live === true;
+    return this.socket.live === true && this.snapshotEpoch === this.socketEpoch;
   }
 
   get isChatLoadDeferred(): boolean {
@@ -445,6 +449,7 @@ export class SessionController {
     this.selectedSessionJoinNavigation = options?.navigation;
     this.socket.close();
     this.streamWatermark = undefined;
+    this.socketEpoch += 1;
     this.clearPendingUpdates();
     this.selectedSessionLoadDeferred = options?.deferChatLoading === true || !this.isChatVisible();
     if (this.selectedSessionLoadDeferred) this.notifications?.clearSelectedSession();
@@ -494,7 +499,7 @@ export class SessionController {
         (event) => {
           if (this.isCurrentSessionSelection(session.id, machineId, seq)) this.applyEvent(event);
         },
-        () => { void this.refreshSelectedSession(session.id, { recoverNetwork: true }); },
+        () => { this.socketEpoch += 1; void this.refreshSelectedSession(session.id, { recoverNetwork: true }); },
         machineId,
         () => { void this.refreshSessionNotifications(session, machineId); },
       );
@@ -1774,6 +1779,7 @@ export class SessionController {
     const buffer = this.bufferRefreshEvents(target);
     const historyRevision = this.transcripts.historyRevision(key);
     const observeRuntime = this.observeSessionSnapshot?.(target.machineId, target.session.id);
+    const epoch = this.socketEpoch;
     let appliedHistoryRevision: number;
     const recoveryError = this.browserErrors.captureRecovery(
       sessionBrowserErrorScope(target.machineId, target.session.id, target.errorOwner), "session-refresh",
@@ -1796,6 +1802,7 @@ export class SessionController {
         this.lastAppliedSelectedRefresh = { selectionSeq: target.selectionSeq, partialJson: selectedRefreshPartialJson(snapshot) };
       }
       appliedHistoryRevision = this.transcripts.historyRevision(key);
+      this.snapshotEpoch = epoch;
       observeRuntime?.(status);
     } finally {
       if (this.refreshEventBuffer === buffer) this.refreshEventBuffer = undefined;
@@ -2012,6 +2019,7 @@ export class SessionController {
     this.socket.close();
     this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
+    this.socketEpoch += 1;
     this.clearPendingUpdates();
     const state = this.getState();
     const pendingStart = this.pendingSessionStarts.get(session.id);
