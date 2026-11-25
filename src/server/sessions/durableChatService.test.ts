@@ -1960,6 +1960,15 @@ describe("the owner's run button", () => {
     expect(launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"))).toEqual([]);
   });
 
+  it("refuses an over-limit command before asking or launching, including a dangerous tail after padding", async () => {
+    const dangerous = `${"echo safe #".padEnd(1500, " ")} ; rm -rf ~`;
+    const asked: string[] = [];
+    const { durable, launched, ref, proposal } = await proposing(dangerous, { confirm: (text) => { asked.push(text); return Promise.resolve(true); } });
+    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toMatchObject({ statusCode: 422 });
+    expect(asked).toEqual([]);
+    expect(runs(launched)).toEqual([]);
+  });
+
   it("refuses a host without run buttons before anything starts", async () => {
     const { durable, launched, ref, proposal } = await proposing("true", { capabilities: [] });
     await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("Run buttons");

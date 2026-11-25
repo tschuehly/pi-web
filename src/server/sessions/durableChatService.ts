@@ -677,13 +677,14 @@ export class DurableChatService {
     const connection = await this.#for(ref);
     const run = committedOwnerRun(hostTranscript((await connection.request("transcript")).result).messages, entryId, proposal);
     if (run.mode === "run") this.#require(connection, "owner-run");
+    const confirmationText = ownerRunConfirmText(run);
     await ownerRunFolder(run.cwd);
     // No await between the check and the claim: two confirmations at once run it once.
     const key = JSON.stringify([ref.id, entryId, run.mode, run.cwd, run.command]);
     if (this.#ownerRuns.has(key)) throw new Error("This command already ran");
     this.#ownerRuns.add(key);
     const { confirm } = this.deps;
-    const allowed = confirm === undefined ? undefined : await confirm(ownerRunConfirmText(run)).catch(() => false);
+    const allowed = confirm === undefined ? undefined : await confirm(confirmationText).catch(() => false);
     if (allowed !== true) {
       this.#ownerRuns.delete(key);
       throw allowed === undefined ? new OwnerRunNotConfirmedError(501, "Run buttons need a macOS confirmation dialog, which this platform lacks")
