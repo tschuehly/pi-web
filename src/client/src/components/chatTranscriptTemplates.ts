@@ -15,6 +15,7 @@ import type { ChatContentRendering } from "../formatting/contentRendering";
 import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import type { ChatLine, ChatPart, GoalLifecycleDetails } from "../chatTypes";
 import type { ImageOpenDetail } from "./ImagePresentation";
+import { transcriptImageSource } from "./TranscriptImage";
 import type { ChatMessageActionController } from "./ChatMessageActionController";
 
 const goalTransitionLabels: Record<GoalLifecycleDetails["transition"], string> = {
@@ -315,6 +316,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
       <ask-user-card
         class="part"
         .outcome=${part.outcome}
+        .recordImages=${part.images?.map((image) => context.behaviors.loadImages ? transcriptImageSource(image, context.session, context.machineId)?.src : undefined)}
         .draftSessionId=${context.askDraftSessionId}
         .workspaceContext=${context.workspaceContext}
         .contentRendering=${context.contentRendering}

@@ -63,7 +63,7 @@ import { computeEditPreview, type EditPreviewResult } from "./editPreview.js";
 import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
 import type { PiWebConfigService } from "../configRoutes.js";
-import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
+import { appendInlineImageReferenceMapping, hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 export { stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 import { ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ASK_USER_ANSWERS_CUSTOM_TYPE, EXTENSION_STATUS_KEY_MAX_LENGTH, EXTENSION_STATUS_LIMIT, EXTENSION_STATUS_TEXT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_LIMIT } from "../../shared/apiTypes.js";
 import type {
@@ -107,7 +107,7 @@ import type { WorkspaceActivityService } from "../activity/workspaceActivityServ
 import { createAskUserToolDefinition, type AskUserToolDeps } from "./askUserTool.js";
 import { createRequestAttentionToolDefinition, type RequestAttentionToolDeps } from "./requestAttentionTool.js";
 import { openAsksFromTranscript, partialAsksFromTranscript } from "./openAsksFromTranscript.js";
-import { ASK_USER_CLOSED_CUSTOM_TYPE, ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, withEarlierAnswers, type PendingAskCloseResult, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
+import { ASK_USER_CLOSED_CUSTOM_TYPE, ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, renderAskUserFollowUp, renderOpenAsksReminder, withEarlierAnswers, type PendingAskCloseResult, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
 import { PendingExtensionDialogStore, type ExtensionDialogCancelReason } from "./pendingExtensionDialogStore.js";
 import { ExtensionDialogWaiters, effectiveExtensionDialogTimeoutMs, extensionDialogCancelValue } from "./extensionDialogWaiters.js";
 import { DEFAULT_EXTENSION_DIALOGS_TIMEOUT_MS } from "../../config.js";
@@ -562,7 +562,7 @@ export interface PiAgentSession {
   prompt(text: string, options?: { streamingBehavior?: "steer" | "followUp"; images?: ImageContent[]; expandPromptTemplates?: boolean }): Promise<void>;
   steer(text: string, images?: ImageContent[]): Promise<unknown>;
   followUp(text: string, images?: ImageContent[]): Promise<unknown>;
-  sendCustomMessage(message: { customType: string; content: string; display: boolean; details?: unknown }, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void>;
+  sendCustomMessage(message: { customType: string; content: string | ({ type: "text"; text: string } | ImageContent)[]; display: boolean; details?: unknown }, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void>;
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string }>;
   navigateTree?(targetId: string, options?: PiTreeNavigationOptions): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: unknown }>;
   abortBranchSummary?(): void;
@@ -2242,7 +2242,9 @@ export class PiSessionService implements SessionRouteService {
     // discard answers the user already submitted.
     this.assertTreeNavigationInactive(session, "answer questions");
     const edited = this.contextEdited(session, askId);
-    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission, (outcome) => { this.recordAskClosed(session, outcome); }), edited);
+    // Resized as prompt images are, before the set closes, so a failed conversion keeps it open.
+    const images = (await attachmentsToInlineImages((submission.images ?? []).map((image, index) => ({ kind: "image", reference: `[PIC_${String(index + 1)}]`, mimeType: image.mimeType, data: image.data })), true)).map((entry) => entry.image);
+    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission, (outcome) => { this.recordAskClosed(session, outcome); }), edited, images);
   }
 
   /**
@@ -2279,7 +2281,7 @@ export class PiSessionService implements SessionRouteService {
    * that went away is ordinary, and the returned status tells the browser what
    * the session's open ask is now.
    */
-  private async closeAsk(session: PiAgentSession, result: PendingAskCloseResult, contextEdited: boolean): Promise<AskUserCloseResponse> {
+  private async closeAsk(session: PiAgentSession, result: PendingAskCloseResult, contextEdited: boolean, images: readonly ImageContent[] = []): Promise<AskUserCloseResponse> {
     if (result.status === "stale") return { result: "stale", sessionStatus: this.statusFromSession(session) };
     const { outcome, ask } = result;
     // A partial send keeps the ask open under a new revision; browsers replace its card as on an update.
@@ -2288,15 +2290,18 @@ export class PiSessionService implements SessionRouteService {
     // The browser and the answers card keep the whole set's record, answers its earlier partial sends gave (from any browser) included.
     const { earlier, order } = ask === undefined ? partialAsksFromTranscript(session.sessionManager.getBranch(), outcome.askId) : { earlier: [], order: [] };
     const record = withEarlierAnswers(outcome, earlier, order, contextEdited);
-    await this.deliverAskOutcome(session, outcome, record);
+    await this.deliverAskOutcome(session, outcome, record, images);
     this.publishStatus(session);
     return { result: "closed", outcome: record, sessionStatus: this.statusFromSession(session) };
   }
 
-  /** The model reads `outcome`'s text; the card shows `record` (the whole set after one-by-one sends). */
-  private deliverAskOutcome(session: PiAgentSession, outcome: AskUserOutcome, record = outcome): Promise<void> {
-    const reminder = renderOpenAsksReminder(this.pendingAskStore.pendingAsks(session.sessionId));
-    const content = [renderAskUserAnswersText(outcome), ...(reminder === "" ? [] : [reminder])].join("\n\n");
+  /**
+   * The model reads `outcome`'s text and its images; the card shows `record` (the whole set after one-by-one sends).
+   * shortcut: a redelivery after a restart has no image bytes (the closed entry keeps metadata only), so it sends the text alone.
+   */
+  private deliverAskOutcome(session: PiAgentSession, outcome: AskUserOutcome, record = outcome, images: readonly ImageContent[] = []): Promise<void> {
+    const text = renderAskUserFollowUp(images.length === 0 ? { ...outcome, images: [] } : outcome, this.pendingAskStore.pendingAsks(session.sessionId));
+    const content = images.length === 0 ? text : [{ type: "text" as const, text }, ...images];
     return this.runSessionEntryMutation(session, "deliver answers to your questions", () => session.sendCustomMessage(
       { customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content, display: true, details: record },
       { triggerTurn: true, deliverAs: "followUp" },
@@ -6524,11 +6529,7 @@ function queuedAttachmentMetadata(attachmentCount: number): { hasAttachments?: b
   return attachmentCount > 0 ? { hasAttachments: true, attachmentCount } : {};
 }
 
-export function appendInlineImageReferenceMapping(text: string, references: readonly string[]): string {
-  if (references.length === 0) return text;
-  const mapping = `Image blocks immediately following this text map in order as follows:\n${references.map((reference, index) => `${String(index + 1)}. ${reference}`).join("\n")}`;
-  return text === "" ? mapping : `${text}\n\n${mapping}`;
-}
+export { appendInlineImageReferenceMapping };
 
 function displayPromptMessage(message: unknown): unknown {
   if (!isRecord(message) || message["role"] !== "user") return message;

@@ -12,6 +12,7 @@ import {
   type AskUserAnswer,
   type AskUserCloseReason,
   type AskUserOutcome,
+  type AskUserOutcomeImage,
   type AskUserQuestion,
   type AskUserQuestionOption,
   type AskUserQuestionRecord,
@@ -25,6 +26,7 @@ import {
   askValueError,
   hiddenAskQuestionIds,
 } from "../../shared/apiTypes.js";
+import { appendInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 
 export interface PendingAskStoreOptions {
   now?: (() => Date) | undefined;
@@ -178,6 +180,7 @@ export class PendingAskStore {
     const editedContext = normalizeEditedContext(ask, submission.context);
     const approved = submission.approved === true;
     if (approved && ask.approval !== true) throw new PendingAskValidationError(`Question set ${askId} asks for no approval`);
+    const images = outcomeImages(ask, answers, submission);
     if (submission.partial === true) {
       if (approved) throw new PendingAskValidationError("A partial submit cannot approve; approve with the whole set");
       if (note !== undefined) throw new PendingAskValidationError("A partial submit takes no note; send the note with the whole set");
@@ -192,6 +195,7 @@ export class PendingAskStore {
       if (remaining.length > 0) {
         const revision = this.createRevision();
         const outcome = partialOutcome(ask, answers, skipped, remaining, revision, this.timestamp(), editedContext);
+        if (images.length > 0) outcome.images = images;
         record?.(outcome);
         // The edited context goes out once, with this send; the questions left open then show the user's version (none when he cleared it).
         const updated: PendingAskUser = { ...ask, revision, questions: remaining };
@@ -202,7 +206,7 @@ export class PendingAskStore {
         return { status: "closed", outcome, ask: cloneAsk(updated) };
       }
     }
-    return closed(this.close(sessionId, askId, "submitted", answers, record, note, hidden, editedContext, approved));
+    return closed(this.close(sessionId, askId, "submitted", answers, record, note, hidden, editedContext, approved, images));
   }
 
   /**
@@ -257,12 +261,13 @@ export class PendingAskStore {
     this.openBySessionId.set(sessionId, asks);
   }
 
-  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string, skipped: ReadonlySet<string> = new Set(), editedContext?: string, approved = false): AskUserOutcome | undefined {
+  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string, skipped: ReadonlySet<string> = new Set(), editedContext?: string, approved = false, images: AskUserOutcomeImage[] = []): AskUserOutcome | undefined {
     const asks = this.openBySessionId.get(sessionId);
     const ask = asks?.get(askId);
     if (asks === undefined || ask === undefined) return undefined;
     const outcome = askUserOutcome(ask, answers, reason, this.timestamp(), note, skipped, editedContext);
     if (approved) outcome.approved = true;
+    if (images.length > 0) outcome.images = images;
     record?.(outcome);
     asks.delete(askId);
     if (asks.size === 0) this.openBySessionId.delete(sessionId);
@@ -288,9 +293,40 @@ export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
     : outcome.reason === "submitted"
     ? `The user submitted answers to question set ${outcome.askId}.`
     : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
-  const note = outcome.note === undefined ? [] : ["", `Note from the user: ${JSON.stringify(outcome.note)}`];
+  const noteImages = imagesLine(outcome, "note");
+  const note = outcome.note === undefined && noteImages.length === 0 ? [] : ["", outcome.note === undefined ? "Note from the user: images only" : `Note from the user: ${JSON.stringify(outcome.note)}`, ...noteImages];
   const edited = outcome.editedContext === undefined ? [] : outcome.editedContext === "" ? ["The user cleared the context.", ""] : ["The user edited the context:", fenced(outcome.editedContext), ""];
-  return [...(outcome.approved === true ? ["The user approved the context."] : []), lead, "", ...edited, ...outcome.questions.map((record) => questionLines(outcome.askId, record)).flat(), ...note, "", outcome.summary].join("\n");
+  return [...(outcome.approved === true ? ["The user approved the context."] : []), lead, "", ...edited, ...outcome.questions.map((record) => [...questionLines(outcome.askId, record), ...imagesLine(outcome, record.question.id)]).flat(), ...note, "", outcome.summary].join("\n");
+}
+
+/**
+ * The whole follow-up the model reads: the answers, the reminder of the sets still open, then the legend naming the
+ * image blocks that follow the text, so it stays last.
+ */
+export function renderAskUserFollowUp(outcome: AskUserOutcome, openAsks: readonly PendingAskUser[]): string {
+  const text = [renderAskUserAnswersText(outcome), renderOpenAsksReminder(openAsks)].filter((part) => part !== "").join("\n\n");
+  return appendInlineImageReferenceMapping(text, (outcome.images ?? []).map((image) => image.reference));
+}
+
+/** `  Images: [PIC_1], [PIC_2]` under an answer or the note; the placeholders never join the answer itself, so its length limits hold. */
+function imagesLine(outcome: AskUserOutcome, target: string): string[] {
+  const references = (outcome.images ?? []).filter((image) => image.target === target).map((image) => image.reference);
+  return references.length === 0 ? [] : [`  Images: ${references.join(", ")}`];
+}
+
+/**
+ * The images of a submission as the outcome records them, numbered `[PIC_n]` in submission order. Each belongs to the
+ * note of a whole-set send or to a `kind: "text"` question this send answers.
+ */
+function outcomeImages(ask: PendingAskUser, answers: RecordedAnswers, submission: AskUserSubmission): AskUserOutcomeImage[] {
+  return (submission.images ?? []).map((image, index) => {
+    if (image.target === "note") {
+      if (submission.partial === true) throw new PendingAskValidationError("A partial submit takes no note images; send them with the whole set");
+    } else if (!answers.has(image.target) || ask.questions.find((question) => question.id === image.target)?.kind !== "text") {
+      throw new PendingAskValidationError(`Image ${String(index + 1)} belongs to no answered text question: ${image.target}`);
+    }
+    return { target: image.target, reference: `[PIC_${String(index + 1)}]`, mimeType: image.mimeType, ...(image.name === undefined ? {} : { name: image.name }) };
+  });
 }
 
 /**
@@ -385,7 +421,10 @@ export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly As
   // it still applies while the closed set's `contextEdited` says the user supplied its context: an agent's later revision wins.
   const lastEdit = [...earlier].reverse().find((each) => each.askId === outcome.askId && each.editedContext !== undefined)?.editedContext;
   const editedContext = outcome.editedContext ?? (contextEdited ? lastEdit : undefined);
-  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, unansweredIds, summary: summaryLine(questions.length + hidden.length - skipped - hidden.filter((record) => record.skipped === true).length, answeredCount + hidden.filter((record) => record.answered).length, unansweredIds) + skippedSummary(questions)
+  // Image metadata follows its questions; references repeat across sends, so the record matches images by target.
+  const shown = new Set(["note", ...questions.map((record) => record.question.id)]);
+  const images = [...earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.images ?? []), ...(outcome.images ?? [])].filter((image) => shown.has(image.target));
+  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), ...(images.length === 0 ? {} : { images }), questions, answeredCount, unansweredIds, summary: summaryLine(questions.length + hidden.length - skipped - hidden.filter((record) => record.skipped === true).length, answeredCount + hidden.filter((record) => record.answered).length, unansweredIds) + skippedSummary(questions)
       + (hidden.length === 0 ? "" : `; ${hidden.length.toString()} earlier ${hidden.length === 1 ? "answer" : "answers"} not shown`) };
 }
 

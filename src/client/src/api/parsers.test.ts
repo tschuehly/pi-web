@@ -1330,6 +1330,9 @@ describe("API parsers", () => {
     expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: true } }).pendingAsks?.[0]?.approval).toBe(true);
     expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: "yes" } }).pendingAsks?.[0]).not.toHaveProperty("approval");
     expect(parseAskUserOutcome({ ...askOutcomeWire(), approved: true }).approved).toBe(true);
+    const images = [{ target: "note", reference: "[PIC_1]", mimeType: "image/png", name: "a.png" }];
+    expect(parseAskUserOutcome({ ...askOutcomeWire(), images }).images).toEqual(images);
+    expect(() => parseAskUserOutcome({ ...askOutcomeWire(), images: [{ target: "note", reference: "PIC", mimeType: "image/png" }] })).toThrow();
     expect(() => parseAskUserOutcome({ ...askOutcomeWire(), editedContext: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) })).toThrow("String field exceeds limit: editedContext");
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) } }))
       .toThrow("String field exceeds limit: context");

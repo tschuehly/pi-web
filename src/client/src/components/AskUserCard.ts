@@ -38,6 +38,12 @@ import { livePreviewStyles } from "./workbenchFilesEditor";
 import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import type { ChatContentRendering } from "../formatting/contentRendering";
+import { askImageKey, loadAskImages, saveAskImages, type StagedAskImage } from "../askImageStaging";
+import { capturePromptAttachments, dataTransferHasFiles, filesFromDataTransfer, READ_FAILURE_MESSAGE, readFileAsBase64 } from "../promptAttachmentCapture";
+import { MAX_PROMPT_ATTACHMENTS, SUPPORTED_IMAGE_MIME_TYPES } from "../../../shared/promptAttachments";
+import { renderAttachIcon } from "./promptEditorIcons";
+import "./ImageGalleryDialog";
+import type { ImageGalleryDialog } from "./ImageGalleryDialog";
 
 // Lucide "pencil" and "undo-2" (https://lucide.dev, ISC).
 const PENCIL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>`;
@@ -86,6 +92,10 @@ export class AskUserCard extends LitElement {
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
   /** The Chat's content renderers (Mermaid), so context and details draw diagrams like Chat messages. */
   @property({ attribute: false }) contentRendering: ChatContentRendering | undefined;
+  /** The Chat's host takes images with answers (`chatSupports(status, "ask-images")`): the note and text answers accept them. */
+  @property({ attribute: false }) imagesEnabled = false;
+  /** Record mode: each `outcome.images` entry's source, in its order; `undefined` where its bytes are not at hand. */
+  @property({ attribute: false }) recordImages: readonly (string | undefined)[] | undefined;
 
   @state() private answers: AskDraftAnswers = {};
   /** Free text on the whole set, sent with the answers. */
@@ -101,6 +111,10 @@ export class AskUserCard extends LitElement {
   @state() private submitting = false;
   /** Per question id: the option edited in its own row, and the answer Revert restores. Its text is the Custom answer. */
   @state() private inlineEdits: Record<string, { value: string; previous: AskDraftAnswer | undefined }> = {};
+  /** Unsent images per target (a text question's id or "note"), mirrored in memory by askImageStaging. */
+  @state() private images: Record<string, readonly StagedAskImage[]> = {};
+  @state() private imageError: string | undefined;
+  private imageSeq = 0;
   private modelIdentity: string | undefined;
   /** Question index to focus once a single-answer send comes back as the ask's next revision. */
   private focusAfterRevision: number | undefined;
@@ -123,6 +137,8 @@ export class AskUserCard extends LitElement {
     this.confirmingPartialSubmit = false;
     this.submitting = false;
     this.inlineEdits = {};
+    this.images = this.loadImages();
+    this.imageError = undefined;
     const focusIndex = this.focusAfterRevision;
     this.focusAfterRevision = undefined;
     if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0) void this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
@@ -158,7 +174,9 @@ export class AskUserCard extends LitElement {
             ${repeat(visible, (question) => question.id, (question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
           </div>
           <footer class="form-footer">
-            <ask-markdown-field class="ask-note" .label=${"Note for the whole set"} .placeholderText=${"Note for the whole set (optional)"} .value=${this.note} @ask-field-input=${this.changeNote}></ask-markdown-field>
+            <div class="note-column">
+              ${this.renderWithImages("note", "the note", html`<ask-markdown-field class="ask-note" .label=${"Note for the whole set"} .placeholderText=${"Note for the whole set (optional)"} .value=${this.note} @ask-field-input=${this.changeNote}></ask-markdown-field>`)}
+            </div>
             ${this.confirmingPartialSubmit && unanswered.length > 0
               ? this.renderPartialSubmitConfirmation(ask, unanswered)
               : html`
@@ -343,9 +361,7 @@ export class AskUserCard extends LitElement {
       if (input instanceof HTMLInputElement || input instanceof AskMarkdownField) this.setAnswer(question, { values: [], value: input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) });
     };
     const maxLength = String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH);
-    return html`
-      <div class="typed-field">
-        ${question.kind === "text" && question.multiline === true
+    const field = question.kind === "text" && question.multiline === true
           ? html`<ask-markdown-field id=${id} class=${error === undefined ? "" : "invalid"} .label=${question.question} .maxLength=${question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH} .invalid=${error !== undefined} .describedBy=${errorId} .historyKey=${this.historyKey(question)} .value=${raw} @ask-field-input=${change}></ask-markdown-field>`
           : html`<input
               id=${id}
@@ -361,7 +377,10 @@ export class AskUserCard extends LitElement {
               aria-describedby=${ifDefined(errorId)}
               .value=${raw}
               @input=${change}
-            />`}
+            />`;
+    return html`
+      <div class="typed-field">
+        ${question.kind === "text" ? this.renderWithImages(question.id, "this answer", field) : field}
         ${errorId === undefined ? null : html`<p class="field-error" id=${errorId}>${error?.replace(/^m/u, "M")}</p>`}
       </div>
     `;
@@ -404,7 +423,7 @@ export class AskUserCard extends LitElement {
             class="question-jump"
             type="button"
             @click=${() => { void this.focusQuestion(ask.questions.indexOf(question)); }}
-          >${question.question}</button>`)}?
+          >${question.question}</button>`)}${unanswered.at(-1)?.question.trimEnd().endsWith("?") === true ? "" : "?"}
         </p>
         <div class="confirmation-actions">
           <button class="secondary-action" type="button" @click=${() => { this.keepEditing(ask, unanswered); }}>Keep editing</button>
@@ -439,7 +458,8 @@ export class AskUserCard extends LitElement {
         <ol class="record-lines" aria-label="Questions and answers">
           ${outcome.questions.map((record, index) => this.renderQuestionRecord(outcome, record, index))}
         </ol>
-        ${outcome.note === undefined ? null : html`<section class="record-question record-note"><h3>Note</h3><p class="other-record-text">${outcome.note}</p></section>`}
+        ${outcome.note === undefined && !(outcome.images ?? []).some((image) => image.target === "note") ? null : html`<section class="record-question record-note"><h3>Note</h3>${outcome.note === undefined ? null : html`<p class="other-record-text">${outcome.note}</p>`}${this.renderRecordImages(outcome, "note")}</section>`}
+        ${this.recordImages?.some((src) => src !== undefined) === true ? html`<pi-web-image-gallery-dialog></pi-web-image-gallery-dialog>` : null}
         ${full ? html`
           <details class="record-full">
             <summary>Show full questions</summary>
@@ -471,6 +491,7 @@ export class AskUserCard extends LitElement {
             : answer === undefined
             ? html`<span class="unanswered-record">Unanswered</span>`
             : html`<span class="record-answer other-record-text">${parts.join(", ")}</span>${answer.fromDraft ? html` <span class="draft-note">Draft answer · not sent</span>` : null}`}
+          ${this.renderRecordImages(outcome, record.question.id)}
         </span>
       </li>
     `;
@@ -487,6 +508,119 @@ export class AskUserCard extends LitElement {
         ${this.renderDetail(record.question.detail)}
       </section>
     `;
+  }
+
+  /**
+   * A field that takes images: paste or drop them on it, or pick them with the paperclip; each shows as a removable
+   * thumbnail under it. Without the host's support it is the field alone.
+   */
+  private renderWithImages(target: string, label: string, field: TemplateResult): TemplateResult {
+    if (!this.imagesEnabled) return field;
+    const images = ownEntry(this.images, target) ?? [];
+    const accept = SUPPORTED_IMAGE_MIME_TYPES.join(",");
+    return html`
+      <div class="with-images" @paste=${(event: ClipboardEvent) => { this.pasteImages(target, event); }} @dragover=${(event: DragEvent) => { if (event.dataTransfer !== null && dataTransferHasFiles(event.dataTransfer)) event.preventDefault(); }} @drop=${(event: DragEvent) => { this.dropImages(target, event); }}>
+        <div class="field-row">
+          ${field}
+          <button class="attach-image" type="button" title=${`Attach images to ${label}`} aria-label=${`Attach images to ${label}`} @click=${(event: Event) => { const picker = event.currentTarget instanceof HTMLElement ? event.currentTarget.nextElementSibling : null; if (picker instanceof HTMLInputElement) picker.click(); }}>${renderAttachIcon()}</button>
+          <input type="file" accept=${accept} multiple hidden @change=${(event: Event) => { this.pickImages(target, event); }} />
+        </div>
+        ${images.length === 0 ? null : html`
+          <div class="answer-images" data-target=${target} aria-label=${`Images on ${label}`}>
+            ${images.map((image) => html`
+              <span class="answer-image">
+                <img src=${`data:${image.mimeType};base64,${image.data}`} alt=${image.name ?? "attached image"} />
+                <button class="answer-image-remove" type="button" title="Remove image" aria-label=${`Remove image ${image.name ?? ""}`.trim()} @click=${() => { this.removeImage(target, image.id); }}>×</button>
+              </span>
+            `)}
+          </div>
+        `}
+        ${this.imageError === undefined || target !== this.imageErrorTarget ? null : html`<p class="field-error" role="alert">${this.imageError}</p>`}
+      </div>
+    `;
+  }
+
+  /** The record's thumbnails of one target: a click opens them all in the gallery; one without bytes shows its reference. */
+  private renderRecordImages(outcome: AskUserOutcome, target: string): TemplateResult | null {
+    const all = outcome.images ?? [];
+    const own = all.flatMap((image, index) => image.target === target ? [{ image, src: this.recordImages?.[index] }] : []);
+    if (own.length === 0) return null;
+    return html`
+      <span class="answer-images" data-target=${target}>
+        ${own.map(({ image, src }) => src === undefined
+          ? html`<span class="answer-image-missing" title=${image.name ?? image.reference}>${image.reference}</span>`
+          : html`<button class="answer-image-open" type="button" title=${`Open ${image.name ?? "image"}`} @click=${() => { this.openRecordImage(src); }}><img src=${src} alt=${image.name ?? `${image.reference} attached image`} /></button>`)}
+      </span>
+    `;
+  }
+
+  private openRecordImage(src: string): void {
+    const entries = (this.recordImages ?? []).flatMap((each, index) => each === undefined ? [] : [{ src: each, alt: this.outcome?.images?.[index]?.name ?? "attached image" }]);
+    this.renderRoot.querySelector<ImageGalleryDialog>("pi-web-image-gallery-dialog")?.show(entries, Math.max(0, entries.findIndex((entry) => entry.src === src)));
+  }
+
+  /** Which field the last image error belongs to, so it shows under that field alone. */
+  private imageErrorTarget: string | undefined;
+
+  private pasteImages(target: string, event: ClipboardEvent): void {
+    const files = filesFromDataTransfer(event.clipboardData);
+    if (files.length === 0) return;
+    event.preventDefault();
+    void this.addImages(target, files);
+  }
+
+  private dropImages(target: string, event: DragEvent): void {
+    const files = filesFromDataTransfer(event.dataTransfer);
+    if (files.length === 0) return;
+    event.preventDefault();
+    void this.addImages(target, files);
+  }
+
+  private pickImages(target: string, event: Event): void {
+    const input = event.currentTarget;
+    if (!(input instanceof HTMLInputElement) || input.files === null) return;
+    const files = Array.from(input.files);
+    input.value = "";
+    void this.addImages(target, files);
+  }
+
+  /** Reads image files as the composer does and stages them on `target`; other files and any past the set's limit are refused. */
+  private async addImages(target: string, files: readonly File[]): Promise<void> {
+    const ask = this.ask;
+    if (ask === undefined || !this.imagesEnabled) return;
+    const { attachments, error } = await capturePromptAttachments(files, readFileAsBase64);
+    if (this.ask?.askId !== ask.askId) return;
+    const images = attachments.filter((each) => each.kind === "image");
+    const room = MAX_PROMPT_ATTACHMENTS - Object.values(this.images).reduce((sum, each) => sum + each.length, 0);
+    const kept = images.slice(0, Math.max(0, room));
+    this.imageErrorTarget = target;
+    this.imageError = error ?? (images.length < attachments.length ? "Only JPEG, PNG, GIF or WebP images can be attached here."
+      : kept.length < images.length ? `At most ${String(MAX_PROMPT_ATTACHMENTS)} images per question set.` : undefined);
+    if (error === READ_FAILURE_MESSAGE && kept.length === 0) return;
+    this.setImages(target, [...(ownEntry(this.images, target) ?? []), ...kept.map((each) => ({ id: `ask-image-${String(++this.imageSeq)}`, target, mimeType: each.mimeType, data: each.data, name: each.name }))]);
+  }
+
+  private removeImage(target: string, id: string): void {
+    this.setImages(target, (ownEntry(this.images, target) ?? []).filter((image) => image.id !== id));
+    this.imageError = undefined;
+  }
+
+  private setImages(target: string, images: readonly StagedAskImage[]): void {
+    this.images = { ...this.images, [target]: images };
+    if (this.ask !== undefined && this.draftSessionId !== "") saveAskImages(askImageKey(this.draftSessionId, this.ask.askId, target), images);
+  }
+
+  /** The open set's unsent images, kept in memory across its revisions; a reload starts without them. */
+  private loadImages(): Record<string, readonly StagedAskImage[]> {
+    const ask = this.ask;
+    if (ask === undefined || this.outcome !== undefined || this.draftSessionId === "") return {};
+    return Object.fromEntries(["note", ...ask.questions.filter((question) => question.kind === "text").map((question) => question.id)].map((target) => [target, loadAskImages(askImageKey(this.draftSessionId, ask.askId, target))]));
+  }
+
+  /** The images a send carries, of `targets` in their order: `[PIC_n]` numbers follow it. */
+  private imagesFor(targets: readonly string[]): Pick<AskUserSubmission, "images"> {
+    const images = targets.flatMap((target) => (ownEntry(this.images, target) ?? []).map(({ mimeType, data, name }) => ({ target, mimeType, data, ...(name === undefined ? {} : { name }) })));
+    return images.length === 0 ? {} : { images };
   }
 
   private changeOption(question: AskUserQuestion, value: string, event: Event): void {
@@ -615,7 +749,8 @@ export class AskUserCard extends LitElement {
   /** `approved`: Approve, which closes the whole set even with questions unanswered. */
   private submitAnswers(ask: PendingAskUser, approved = false): Promise<boolean> {
     const note = this.note.trim();
-    return this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision, ...(approved ? { approved } : {}) });
+    const submission = toSubmission(ask.questions, this.answers);
+    return this.send(ask, { ...submission, ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision, ...(approved ? { approved } : {}), ...this.imagesFor([...submission.answers.map((answer) => answer.id), "note"]) });
   }
 
   /**
@@ -629,7 +764,7 @@ export class AskUserCard extends LitElement {
     const answers = toSubmission(ask.questions, this.answers).answers;
     if (answers.length === 0) return undefined;
     if (unansweredQuestions(ask.questions, this.answers).length === 0) return this.submitAnswers(ask);
-    return this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission() });
+    return this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission(), ...this.imagesFor(answers.map((answer) => answer.id)) });
   }
 
   /** True when the submit reached the daemon; on false the card and its draft stay intact. */
@@ -647,6 +782,10 @@ export class AskUserCard extends LitElement {
         // card and its draft intact is the only recovery needed at this boundary.
         if (!sent) this.focusAfterRevision = undefined;
         else if (!this.keepContextOpen) this.contextFolded = true;
+        // Sent images leave memory; the record shows them from the answers message.
+        const sentTargets = new Set(sent ? submission.images?.map((image) => image.target) : []);
+        if (this.draftSessionId !== "") for (const target of sentTargets) saveAskImages(askImageKey(this.draftSessionId, askId, target), []);
+        if (sentTargets.size > 0 && this.ask?.askId === askId) this.images = Object.fromEntries(Object.entries(this.images).filter(([target]) => !sentTargets.has(target)));
         if (this.ask?.askId === askId) this.submitting = false;
         return sent;
       });
@@ -671,7 +810,7 @@ export class AskUserCard extends LitElement {
     }
     // The sent questions leave the form, taking the focused button with them; the next revision focuses the question in its place.
     this.focusAfterRevision = index - parents.length;
-    void this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission() });
+    void this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission(), ...this.imagesFor(answers.map((answer) => answer.id)) });
   }
 
   private async showPartialSubmitConfirmation(): Promise<void> {
@@ -998,10 +1137,27 @@ export class AskUserCard extends LitElement {
     .card ask-markdown-field .cm-placeholder { color: var(--pi-muted); }
     ask-markdown-field.invalid { border-color: var(--pi-danger); }
     /* The note fills the send bar beside its buttons: two lines tall, growing with its text; focus tints the border instead of a second ring. */
-    ask-markdown-field.ask-note { flex: 1 1 auto; min-width: 0; width: auto; border-color: var(--pi-border-muted); background: var(--pi-surface); }
+    .note-column { flex: 1 1 auto; min-width: 0; }
+    ask-markdown-field.ask-note { display: block; min-width: 0; border-color: var(--pi-border-muted); background: var(--pi-surface); }
     .card ask-markdown-field.ask-note .cm-editor { min-height: calc(2lh + 10px); max-height: 8lh; }
     .card ask-markdown-field.ask-note .cm-content { padding: 5px 0; }
     ask-markdown-field.ask-note:focus-within { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent); }
+    /* A field that takes images: the paperclip beside it, the thumbnails under it. */
+    .with-images { display: grid; gap: 4px; min-width: 0; }
+    .field-row { display: flex; align-items: flex-start; gap: 4px; min-width: 0; }
+    .field-row > :first-child { flex: 1 1 auto; min-width: 0; }
+    .typed-field .field-row > :first-child { width: auto; margin-inline-start: 0; }
+    .typed-field .with-images { width: calc(100% + 8px); margin-inline-start: -8px; }
+    .attach-image { flex: 0 0 auto; display: grid; place-items: center; width: 32px; padding: 0; border-color: transparent; background: transparent; color: var(--pi-muted); }
+    .attach-image:hover:not(:disabled) { color: var(--pi-text); }
+    .attach-image svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .answer-images { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+    .record-card .answer-images { margin-top: 4px; }
+    .answer-image { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border-radius: 6px; background: var(--pi-surface-hover); }
+    .answer-image img, .answer-image-open img { display: block; width: 48px; height: 48px; object-fit: cover; border-radius: 4px; }
+    .answer-image-remove { width: 32px; padding: 0; border-color: transparent; background: transparent; color: var(--pi-muted); font-size: 16px; }
+    .answer-image-open { display: inline-flex; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; cursor: zoom-in; }
+    .answer-image-missing { color: var(--pi-muted); font-size: 12px; }
     .keep-context { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; min-height: 32px; color: var(--pi-muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
     .keep-context input { margin: 0; accent-color: var(--pi-accent); }
     .context-folded { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--pi-muted); text-align: start; }
@@ -1070,11 +1226,12 @@ export class AskUserCard extends LitElement {
     @container (max-width: 580px) {
       .card { --ask-end: 12px; }
       /* The note takes the bar's first line; Keep context open and the buttons share the second. */
-      .form-footer > ask-markdown-field.ask-note { flex-basis: 100%; }
+      .form-footer > .note-column { flex-basis: 100%; }
       .keep-context { margin-inline-end: auto; }
       .partial-confirmation { flex: 1 1 100%; align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }
       .primary-action, .approve, .confirmation-actions > button { min-height: 42px; }
+      .attach-image, .answer-image-remove { min-height: 42px; width: 42px; }
     }
     /* Embedded in the question drawer: no frame of its own, one header line, composer-dense type. */
     :host([flat]) { margin: 0; font-size: 13px; }

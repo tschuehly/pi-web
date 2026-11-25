@@ -5,6 +5,7 @@ import {
   PendingAskStore,
   PendingAskValidationError,
   renderAskUserAnswersText,
+  renderAskUserFollowUp,
   renderOpenAsksReminder,
   withEarlierAnswers,
 } from "./pendingAskStore.js";
@@ -917,5 +918,56 @@ describe("PendingAskStore dependent questions (showIf)", () => {
     const toggled = store.submit(sessionId, typed.askId, { revision: typed.revision, answers: [{ id: "backup", values: [], value: true }, { id: "folder", values: [], value: "~/b" }], partial: true });
     if (toggled.status !== "closed") throw new Error("expected closed");
     expect(toggled.outcome.questions.map((record) => [record.question.id, record.answered, record.value])).toEqual([["backup", true, true], ["folder", true, "~/b"]]);
+  });
+});
+
+describe("PendingAskStore images", () => {
+  const png = { mimeType: "image/png", data: "iVBORw0KGgo=" };
+  const textAsk = (store: PendingAskStore) => store.open({ sessionId, context, questions: [question("why", { kind: "text", options: [], minLength: 3 }), question("how", { kind: "text", options: [] })] });
+
+  it("names each answer's and the note's images on an Images line, never inside the answer, and ends with the legend", () => {
+    const store = testStore();
+    const ask = textAsk(store);
+    const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [{ id: "why", values: [], value: "Fast" }, { id: "how", values: [], value: "Like this" }],
+      note: "See both.",
+      images: [{ target: "why", ...png, name: "a.png" }, { target: "why", ...png }, { target: "note", ...png }],
+    });
+    if (result.status !== "closed") throw new Error("expected closed");
+    expect(result.outcome.images).toEqual([
+      { target: "why", reference: "[PIC_1]", mimeType: "image/png", name: "a.png" },
+      { target: "why", reference: "[PIC_2]", mimeType: "image/png" },
+      { target: "note", reference: "[PIC_3]", mimeType: "image/png" },
+    ]);
+    // minLength 3 holds for "Fast": the placeholders never join the value.
+    expect(result.outcome.questions[0]?.value).toBe("Fast");
+    const text = renderAskUserFollowUp(result.outcome, []);
+    expect(text).toContain(['  Answered: "Fast"', "  Images: [PIC_1], [PIC_2]", "- ask.how"].join("\n"));
+    expect(text).toContain(['Note from the user: "See both."', "  Images: [PIC_3]"].join("\n"));
+    expect(text.endsWith(["Image blocks immediately following this text map in order as follows:", "1. [PIC_1]", "2. [PIC_2]", "3. [PIC_3]"].join("\n"))).toBe(true);
+    expect(renderAskUserAnswersText(result.outcome)).not.toContain("Image blocks");
+  });
+
+  it("refuses an image on a question this send does not answer, on a choice question, or on the note of a partial send", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("why", { kind: "text", options: [] }), question("pick"), question("how", { kind: "text", options: [] })] });
+    const answers = [{ id: "why", values: [], value: "Fast" }, { id: "pick", values: ["yes"] }];
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: "how", ...png }] })).toThrow(PendingAskValidationError);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: "pick", ...png }] })).toThrow(PendingAskValidationError);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, partial: true, images: [{ target: "note", ...png }] })).toThrow(PendingAskValidationError);
+    const partial = store.submit(sessionId, ask.askId, { revision: ask.revision, answers, partial: true, images: [{ target: "why", ...png }] });
+    if (partial.status !== "closed") throw new Error("expected closed");
+    expect(partial.outcome.images).toEqual([{ target: "why", reference: "[PIC_1]", mimeType: "image/png" }]);
+  });
+
+  it("keeps earlier sends' image metadata in the whole set's record", () => {
+    const store = testStore();
+    const ask = textAsk(store);
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "why", values: [], value: "Fast" }], partial: true, images: [{ target: "why", ...png }] });
+    if (first.status !== "closed" || first.ask === undefined) throw new Error("expected partial");
+    const last = store.submit(sessionId, ask.askId, { revision: first.ask.revision, answers: [{ id: "how", values: [], value: "So" }], images: [{ target: "how", ...png }] });
+    if (last.status !== "closed") throw new Error("expected closed");
+    expect(withEarlierAnswers(last.outcome, [first.outcome]).images?.map((image) => image.target)).toEqual(["why", "how"]);
   });
 });

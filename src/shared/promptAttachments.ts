@@ -42,6 +42,13 @@ export function stripInlineImageReferenceMapping(text: string): string {
   return text.replace(inlineImageReferenceMappingPattern, "");
 }
 
+/** PI WEB's trailing provider legend: which `[PIC_n]` each following image block is. */
+export function appendInlineImageReferenceMapping(text: string, references: readonly string[]): string {
+  if (references.length === 0) return text;
+  const mapping = `Image blocks immediately following this text map in order as follows:\n${references.map((reference, index) => `${String(index + 1)}. ${reference}`).join("\n")}`;
+  return text === "" ? mapping : `${text}\n\n${mapping}`;
+}
+
 export function extensionForImageMimeType(mimeType: string): string {
   switch (mimeType) {
     case "image/jpeg": return "jpg";

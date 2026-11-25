@@ -479,6 +479,32 @@ describe("Durable Chats", () => {
     await expect(durable.submitAsk(ref, "ask-1", { answers: [], revision: "r1" }, "op-b")).resolves.toMatchObject({ result: "stale" });
   });
 
+  it("resizes answer images and sends them with closeAsk, named in the answers text; a host without ask-images refuses them", async () => {
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const { durable, launched } = await service((launch) => new FakeHost(DURABLE_HOST_PROTOCOL, launch === 0 ? ["ask-images"] : []));
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "why", question: "Why?", kind: "text", options: [] }] };
+    only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"] } : { ...status, pendingAsks: [ask] });
+    const closed = await durable.submitAsk(ref, "ask-1", { answers: [{ id: "why", values: [], value: "Look" }], revision: "r1", images: [{ target: "why", mimeType: "image/png", data: png, name: "shot.png" }] }, "op-i");
+    expect(closed.outcome?.images).toEqual([{ target: "why", reference: "[PIC_1]", mimeType: "image/png", name: "shot.png" }]);
+    const params = only(only(launched).requests.filter((r) => r.method === "closeAsk")).params ?? {};
+    expect(params["images"]).toMatchObject([{ type: "image", mimeType: "image/png" }]);
+    expect(JSON.stringify(params["images"])).toMatch(/"data":"[A-Za-z0-9+/]+=*"/u);
+    expect(String(params["content"])).toContain("  Images: [PIC_1]");
+    expect(String(params["content"])).toMatch(/Image blocks immediately following this text map in order as follows:\n1\. \[PIC_1\]$/u);
+  });
+
+  it("refuses answer images when the Chat's host does not report ask-images", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "why", question: "Why?", kind: "text", options: [] }] };
+    only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"] } : { ...status, pendingAsks: [ask] });
+    await expect(durable.submitAsk(ref, "ask-1", { answers: [{ id: "why", values: [], value: "Look" }], revision: "r1", images: [{ target: "why", mimeType: "image/png", data: "iVBORw0KGgo=" }] })).rejects.toThrow(/Images in answers/u);
+    expect(only(launched).requests.filter((r) => r.method === "closeAsk")).toEqual([]);
+  });
+
   it("a partial submit sends one answer and tells the model the rest of the set stays open; the host keeps it open at the new revision", async () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");

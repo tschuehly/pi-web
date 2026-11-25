@@ -874,6 +874,7 @@ export class ChatView extends LitElement {
         .draftSessionId=${this.askDraftSessionId}
         .workspaceContext=${this.workspaceContext}
         .contentRendering=${this.contentRendering}
+        .imagesEnabled=${chatSupports(this.status, "ask-images")}
         .onSubmit=${this.onSubmitAsk}
       ></ask-user-card>
     `);

@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { CHAT_CAPABILITY_LABELS, type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
-import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionNotificationDismissAllRequest, SessionNotificationDismissRequest, SessionNotificationInboxSnapshot, SessionNotificationSummaryEvent, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
+import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, AskUserSubmissionImage, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionNotificationDismissAllRequest, SessionNotificationDismissRequest, SessionNotificationInboxSnapshot, SessionNotificationSummaryEvent, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
 import { childrenRunning, familyBusy, runningWork } from "../../shared/closeBusy.js";
 import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
 import type { PiWebConfig } from "../../config.js";
@@ -29,7 +29,7 @@ import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import { cleanSessionName, cleanTabName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, sessionTitleInput, shortSessionNamePrompt, tabNamePrompt } from "./sessionNameGenerator.js";
 import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
 import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
-import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, withEarlierAnswers, type PendingAskCloseResult } from "./pendingAskStore.js";
+import { PendingAskStore, renderAskUserFollowUp, withEarlierAnswers, type PendingAskCloseResult } from "./pendingAskStore.js";
 import { type DurableChatRecord, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
@@ -1029,7 +1029,7 @@ export class DurableChatService {
 
   /** Answers to an open set, validated and rendered by PI WEB's own ask store; the host commits and delivers them. */
   async submitAsk(ref: SessionRouteRef, askId: string, submission: AskUserSubmission, operationId?: string): Promise<AskUserCloseResponse> {
-    return this.#closeAsk(ref, askId, operationId, submission.revision, (store, sessionId) => store.submit(sessionId, askId, submission));
+    return this.#closeAsk(ref, askId, operationId, submission.revision, (store, sessionId) => store.submit(sessionId, askId, submission), submission.images);
   }
 
   /** Dismiss an open set: the model is still told, naming every question unanswered, as in a legacy Chat. */
@@ -1037,8 +1037,11 @@ export class DurableChatService {
     return this.#closeAsk(ref, askId, operationId, undefined, (store, sessionId) => store.cancel(sessionId, askId));
   }
 
-  async #closeAsk(ref: SessionRouteRef, askId: string, operationId: string | undefined, revision: string | undefined, close: (store: PendingAskStore, sessionId: string) => PendingAskCloseResult): Promise<AskUserCloseResponse> {
+  async #closeAsk(ref: SessionRouteRef, askId: string, operationId: string | undefined, revision: string | undefined, close: (store: PendingAskStore, sessionId: string) => PendingAskCloseResult, attached: readonly AskUserSubmissionImage[] = []): Promise<AskUserCloseResponse> {
     const connection = await this.#for(ref);
+    // An older host would drop the images; resized (as prompt images are) before the set closes, so a failure keeps it open.
+    if (attached.length > 0) this.#require(connection, "ask-images");
+    const images = (await attachmentsToInlineImages(attached.map((image, index) => ({ kind: "image", reference: `[PIC_${String(index + 1)}]`, mimeType: image.mimeType, data: image.data })), true)).map((entry) => entry.image);
     const asks = (await this.status(ref)).pendingAsks ?? [];
     const store = new PendingAskStore();
     store.restore(ref.id, asks);
@@ -1046,9 +1049,10 @@ export class DurableChatService {
     // A set the host no longer has open may be this operation's own earlier close: the host answers that retry.
     const outcome = closed.status === "closed" ? closed.outcome : undefined;
     // The store's sets after this close, as a legacy Chat reminds: a partial send leaves its set open with the rest.
-    const content = outcome === undefined ? "" : [renderAskUserAnswersText(outcome), renderOpenAsksReminder(store.pendingAsks(ref.id))].filter((part) => part !== "").join("\n\n");
+    const content = outcome === undefined ? "" : renderAskUserFollowUp(outcome, store.pendingAsks(ref.id));
     const { result } = await connection.request("closeAsk", {
       askId, operationId: operationId ?? randomUUID(), content,
+      ...(outcome === undefined || images.length === 0 ? {} : { images }),
       outcome: outcome ?? { askId, reason: "stale" },
       ...(revision === undefined ? {} : { revision }),
       ...(outcome === undefined ? { revision: "stale" } : {}),

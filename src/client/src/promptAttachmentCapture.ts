@@ -96,3 +96,29 @@ function attachmentName(file: CapturableFile): string {
   if (isSupportedImageMimeType(file.type)) return `pasted-image.${extensionForImageMimeType(file.type)}`;
   return "pasted-file.bin";
 }
+
+export function filesFromDataTransfer(data: DataTransfer | null): File[] {
+  if (data === null) return [];
+  return Array.from(data.files);
+}
+
+export function dataTransferHasFiles(data: DataTransfer): boolean {
+  const items = Array.from(data.items);
+  if (items.length > 0) return items.some((item) => item.kind === "file");
+  return Array.from(data.types).includes("Files");
+}
+
+/** A browser file's bytes as base64, without the data: URL prefix. */
+export function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => { reject(reader.error ?? new Error("Failed to read file")); };
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") { reject(new Error("Unexpected file reader result")); return; }
+      const commaIndex = result.indexOf(",");
+      resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+}

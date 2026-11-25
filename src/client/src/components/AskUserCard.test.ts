@@ -291,8 +291,8 @@ describe("ask-user-card live form", () => {
     const card = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), onSubmit);
     const root = renderRoot(card);
     // The note is a multi-line field in the send bar, beside Send answers.
-    const note = markdownField(root, ".form-footer > ask-markdown-field.ask-note");
-    expect(note.parentElement?.querySelector(":scope > .primary-action")?.textContent.trim()).toBe("Send answers");
+    const note = markdownField(root, ".form-footer ask-markdown-field.ask-note");
+    expect(note.closest(".form-footer")?.querySelector(":scope > .primary-action")?.textContent.trim()).toBe("Send answers");
     expect(note.querySelector(".cm-content")?.getAttribute("aria-multiline")).toBe("true");
     expect(AskUserCard.styles.cssText).toContain(".card ask-markdown-field.ask-note .cm-editor { min-height: calc(2lh + 10px);");
 
@@ -310,7 +310,7 @@ describe("ask-user-card live form", () => {
     saveAskNote("local:session-1", "ask-1", "Half typed");
     const card = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]));
     const root = renderRoot(card);
-    expect(markdownField(root, ".form-footer > .ask-note").value).toBe("Half typed");
+    expect(markdownField(root, ".form-footer .ask-note").value).toBe("Half typed");
   });
 
   it("shows and submits the custom field directly when no options were supplied", async () => {
@@ -1302,6 +1302,121 @@ describe("ask-user-card record mode", () => {
     expect(root.querySelector("details.record-full")).toBeNull();
   });
 });
+
+describe("ask-user-card answer images", () => {
+  const textQuestion = (id: string, text: string): AskUserQuestion => ({ id, question: text, kind: "text", options: [] });
+
+  it("adds a removable chip when an image is pasted into the note", async () => {
+    const card = await mountOpenAsk(openAsk([textQuestion("why", "Why?")]));
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("shot.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(1); });
+    expect(root.querySelector<HTMLImageElement>('.answer-images[data-target="note"] img')?.src).toMatch(/^data:image\/png;base64,/u);
+    requiredElement(root.querySelector<HTMLButtonElement>('.answer-images[data-target="note"] .answer-image-remove'), "remove").click();
+    await card.updateComplete;
+    expect(root.querySelectorAll(".answer-image")).toHaveLength(0);
+  });
+
+  it("offers no attaching when the Chat's host cannot take images", async () => {
+    const card = await mountOpenAsk(openAsk([textQuestion("why", "Why?")]));
+    const root = renderRoot(card);
+    expect(root.querySelector(".attach-image")).toBeNull();
+    paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("shot.png")]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await card.updateComplete;
+    expect(root.querySelectorAll(".answer-image")).toHaveLength(0);
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    expect(root.querySelectorAll(".attach-image")).toHaveLength(2);
+  });
+
+  it("sends each image with its target: the text answer's and the note's", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([textQuestion("why", "Why?")]), onSubmit);
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    const input = requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-0"), "text answer");
+    input.value = "Look";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    paste(input, [pngFile("answer.png")]);
+    paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("note.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(2); });
+    buttonWithText(root, "Send answers").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", expect.objectContaining({
+      answers: [{ id: "why", values: [], value: "Look" }],
+      images: [
+        { target: "why", mimeType: "image/png", data: "iVBORw==", name: "answer.png" },
+        { target: "note", mimeType: "image/png", data: "iVBORw==", name: "note.png" },
+      ],
+    }));
+  });
+
+  it("sends only the question's own images with its Send; the note's wait for the whole set", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([textQuestion("why", "Why?"), textQuestion("how", "How?"), textQuestion("when", "When?")]), onSubmit);
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    for (const [index, name] of [[0, "why.png"], [1, "how.png"]] as const) {
+      const input = requiredElement(root.querySelector<HTMLInputElement>(`#ask-user-other-${String(index)}`), "text answer");
+      input.value = "Words";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      paste(input, [pngFile(name)]);
+    }
+    paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("note.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(3); });
+    requiredElement(root.querySelector<HTMLButtonElement>(".send-one"), "send one").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", expect.objectContaining({ partial: true, images: [{ target: "why", mimeType: "image/png", data: "iVBORw==", name: "why.png" }] }));
+  });
+
+  it("shows the record's thumbnails under their answer and the note, opening the gallery on click", async () => {
+    const why = textQuestion("why", "Why?");
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [{ question: why, answered: true, values: [], value: "Look" }], note: "See",
+      images: [{ target: "why", reference: "[PIC_1]", mimeType: "image/png" }, { target: "note", reference: "[PIC_2]", mimeType: "image/png" }],
+      answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1; none left unanswered",
+    };
+    card.recordImages = ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"];
+    document.body.append(card);
+    await card.updateComplete;
+    const root = renderRoot(card);
+    expect(root.querySelector<HTMLImageElement>(".record-line .answer-images img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+    expect(root.querySelector<HTMLImageElement>(".record-note .answer-images img")?.getAttribute("src")).toBe("data:image/png;base64,BBBB");
+    const gallery = requiredElement(root.querySelector<HTMLElement & { show: (images: unknown, index: number) => void }>("pi-web-image-gallery-dialog"), "gallery");
+    const show = vi.spyOn(gallery, "show");
+    requiredElement(root.querySelector<HTMLButtonElement>(".record-note .answer-image-open"), "thumbnail").click();
+    expect(show).toHaveBeenCalledWith([expect.objectContaining({ src: "data:image/png;base64,AAAA" }), expect.objectContaining({ src: "data:image/png;base64,BBBB" })], 1);
+  });
+
+  it("ends the partial-send question with one question mark", async () => {
+    const card = await mountOpenAsk(openAsk([question("say", "What do you say?", [option("a", "A")]), question("pick", "Pick one", [option("b", "B")])]));
+    const root = renderRoot(card);
+    inputWithValue(root, "b").click();
+    await card.updateComplete;
+    buttonWithText(root, "Send answers").click();
+    await card.updateComplete;
+    const text = requiredElement(root.querySelector("[aria-label='Confirm partial answers'] p"), "confirmation").textContent.replace(/\s+/gu, " ").trim();
+    expect(text).toBe("Send without answering: What do you say?");
+  });
+});
+
+function pngFile(name: string): File {
+  return new File([new Uint8Array([137, 80, 78, 71])], name, { type: "image/png" });
+}
+
+/** Pastes files as the browser does: a bubbling, composed paste event carrying them. */
+function paste(target: Element, files: File[]): void {
+  const event = new Event("paste", { bubbles: true, cancelable: true, composed: true });
+  Reflect.set(event, "clipboardData", { files, items: files.map(() => ({ kind: "file" })), types: ["Files"] });
+  target.dispatchEvent(event);
+}
 
 /** Opens a record's "Show full questions" disclosure; an open card has none. */
 function openFullRecord(card: AskUserCard): void {

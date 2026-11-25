@@ -1,7 +1,7 @@
 import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes";
 import { parseAskUserOutcome } from "./api/parsers";
 import { isSessionMediaId, validImageDimensions } from "../../shared/sessionMedia";
-import type { ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview, WorkingModeDial } from "./chatTypes";
+import type { ChatImagePart, ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview, WorkingModeDial } from "./chatTypes";
 import { validGoalId, WORKING_MODE_AXES as WORKING_MODE_VALUES, WORKING_MODE_AXIS_NAMES, workingModeState, type WorkingModeState } from "./extensionStatusSnapshots";
 
 export function normalizeMessages(messages: unknown[]): ChatLine[] {
@@ -373,7 +373,11 @@ function normalizeImage(part: unknown): ChatPart[] {
 
 function askUserRecordPart(message: unknown): Extract<ChatPart, { type: "askUserRecord" }> | undefined {
   if (getString(message, "role") !== "custom" || getString(message, "customType") !== ASK_USER_ANSWERS_CUSTOM_TYPE) return undefined;
-  return parsedAskUserRecord(getProperty(message, "details"));
+  const record = parsedAskUserRecord(getProperty(message, "details"));
+  // A host that took images sends text then image blocks; a string content carries none.
+  const content = getProperty(message, "content");
+  const images = Array.isArray(content) ? content.filter((part) => getString(part, "type") === "image").flatMap((part) => normalizeImage(part).filter((each): each is ChatImagePart => each.type === "image")) : [];
+  return record === undefined || images.length === 0 ? record : { ...record, images };
 }
 
 /** Project the withdrawn (or legacy superseded) ask carried by an `ask_user` tool result, if any. */

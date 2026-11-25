@@ -306,6 +306,20 @@ describe("PiSessionService.submitAsk", () => {
     await service.dispose();
   });
 
+  it("delivers the note's images after the answers text, named in its legend", async () => {
+    const { service, fake } = askService({ withActiveSession: true });
+    await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    await service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: [], otherText: "DuckDB" }], revision: "r1", images: [{ target: "note", mimeType: "image/png", data: png }] });
+    const content: unknown = fake.calls.sendCustomMessage[0]?.message.content;
+    expect(content).toMatchObject([{ type: "text" }, { type: "image", mimeType: "image/png" }]);
+    const json = JSON.stringify(content);
+    expect(json).toContain(String.raw`Note from the user: images only\n  Images: [PIC_1]`);
+    // The legend ends the text block.
+    expect(json).toContain(String.raw`map in order as follows:\n1. [PIC_1]"`);
+    await service.dispose();
+  });
+
   it("answers one of several open sets and reminds the agent of the others", async () => {
     const { service, store, fake } = askService({ withActiveSession: true });
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });

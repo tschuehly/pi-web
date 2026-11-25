@@ -8,7 +8,7 @@ import { LitElement, html, nothing, type PropertyValues, type TemplateResult } f
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import { chatSupports, type PromptAttachmentDelivery } from "../../../shared/apiTypes";
-import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE } from "../promptAttachmentCapture";
+import { capturePromptAttachments, dataTransferHasFiles, effectivePromptAttachmentDelivery, filesFromDataTransfer, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE, readFileAsBase64 } from "../promptAttachmentCapture";
 import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
@@ -1260,17 +1260,6 @@ function emptySlashCommands(): SlashCommand[] {
   return [];
 }
 
-function filesFromDataTransfer(data: DataTransfer | null): File[] {
-  if (data === null) return [];
-  return Array.from(data.files);
-}
-
-function dataTransferHasFiles(data: DataTransfer): boolean {
-  const items = Array.from(data.items);
-  if (items.length > 0) return items.some((item) => item.kind === "file");
-  return Array.from(data.types).includes("Files");
-}
-
 export function sanitizeDraftImageReferences(text: string, attachments: readonly { kind: string; reference?: string }[], pendingReferences: readonly string[] = []): string {
   const references = new Set([...pendingReferences, ...attachments.flatMap((attachment) => attachment.kind === "image" ? [attachment.reference] : [])]);
   const dangling = Array.from(text.matchAll(/\[PIC_[1-9]\d*\]/g), (match) => match[0]).filter((reference) => !references.has(reference));
@@ -1335,20 +1324,6 @@ function fileExtensionLabel(name: string): string {
   const dotIndex = trimmed.lastIndexOf(".");
   if (dotIndex >= 0 && dotIndex < trimmed.length - 1) return trimmed.slice(dotIndex + 1, dotIndex + 5).toUpperCase();
   return "FILE";
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => { reject(reader.error ?? new Error("Failed to read file")); };
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") { reject(new Error("Unexpected file reader result")); return; }
-      const commaIndex = result.indexOf(",");
-      resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
-    };
-    reader.readAsDataURL(file);
-  });
 }
 
 const proseInputAssistanceAttributes: Record<string, string> = {

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type AskUserAnswer, type AskUserCloseResponse, type AskUserSubmission, type ExtensionDialogAnswerRequest, type ExtensionDialogCancelRequest, type SessionBulkMutationRequest, type SessionBulkMutationRef, type SessionCleanupRequest, type SessionModelScopeMode, type SessionTreeForkRequest, type SessionTreeNavigateRequest, type SessionTreeSummaryChoice, type SessionUnreadAcknowledgeRequest } from "../../shared/apiTypes.js";
+import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type AskUserAnswer, type AskUserCloseResponse, type AskUserSubmission, type AskUserSubmissionImage, type ExtensionDialogAnswerRequest, type ExtensionDialogCancelRequest, type SessionBulkMutationRequest, type SessionBulkMutationRef, type SessionCleanupRequest, type SessionModelScopeMode, type SessionTreeForkRequest, type SessionTreeNavigateRequest, type SessionTreeSummaryChoice, type SessionUnreadAcknowledgeRequest } from "../../shared/apiTypes.js";
 import { parseSessionDefaultsUpdate } from "../../shared/sessionDefaults.js";
+import { parsePromptAttachments } from "../../shared/promptAttachments.js";
 import { projectBrowserMessageResponse, projectBrowserStreamSnapshot, projectBrowserTranscriptSnapshot, type BrowserImageProjector } from "../browserMessageProjection.js";
 import { isSessionMediaId, SESSION_MEDIA_MODE } from "../../shared/sessionMedia.js";
 import { isSessionImageMimeType } from "./sessionMediaIndex.js";
@@ -470,7 +471,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; note?: unknown; revision?: unknown; partial?: unknown; approved?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; note?: unknown; revision?: unknown; partial?: unknown; approved?: unknown; images?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
     try {
       const body = requireRecord(request.body);
       const askId = requireBoundedId(body["askId"], "askId");
@@ -845,7 +846,17 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   const context = body["context"];
   if (context !== undefined && typeof context !== "string") throw new Error("context field must be a string");
   if (typeof context === "string" && context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new Error("context field is too long");
-  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}), ...(context === undefined ? {} : { context }), ...(approved === true ? { approved } : {}) };
+  const images = askUserImagesFromValue(body["images"]);
+  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}), ...(context === undefined ? {} : { context }), ...(approved === true ? { approved } : {}), ...(images.length === 0 ? {} : { images }) };
+}
+
+/** Answer images, checked as prompt images are (jpeg, png, gif or webp base64, at most 16); which target they may name is the ask store's call. */
+function askUserImagesFromValue(value: unknown): AskUserSubmissionImage[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("images field must be an array");
+  const targets = value.map((entry) => requireBoundedId(requireRecord(entry)["target"], "images target"));
+  return parsePromptAttachments(value.map((entry) => ({ ...requireRecord(entry), kind: "image", reference: undefined })), { enforceInlineSizeLimit: false })
+    .map((image, index) => ({ target: targets[index] ?? "", mimeType: image.mimeType, data: image.data, ...(image.name === undefined ? {} : { name: image.name }) }));
 }
 
 function askUserAnswerFromValue(value: unknown): AskUserAnswer {

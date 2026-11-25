@@ -675,6 +675,7 @@ export const CHAT_CAPABILITY_LABELS = {
   "compact-and-continue": "Compacting and continuing",
   "tool-groups": "Tool groups",
   liveReview: "Live review",
+  "ask-images": "Images in answers",
 } as const;
 export type ChatCapability = keyof typeof CHAT_CAPABILITY_LABELS;
 
@@ -1002,6 +1003,27 @@ export interface AskUserSubmission {
   context?: string;
   /** The user pressed Approve on a set with {@link PendingAskUser.approval}: the whole set closes, approved. Not with `partial`. */
   approved?: boolean;
+  /** Images attached to the note (`target: "note"`, not with `partial`) or to an answered `kind: "text"` question; in this order they become `[PIC_1]`, `[PIC_2]`, …. */
+  images?: AskUserSubmissionImage[];
+}
+
+/** One image the user attached to an answer or the note. */
+export interface AskUserSubmissionImage {
+  /** An answered question's id, or `"note"`. */
+  target: string;
+  mimeType: string;
+  /** Base64 without a `data:` prefix. */
+  data: string;
+  name?: string;
+}
+
+/** What a closed ask records of an attached image: no bytes; they travel in the answers message's image blocks, in this order. */
+export interface AskUserOutcomeImage {
+  target: string;
+  /** `[PIC_n]`, as the model's text names it; unique within one send only. */
+  reference: string;
+  mimeType: string;
+  name?: string;
 }
 
 /**
@@ -1038,6 +1060,8 @@ export interface AskUserOutcome {
   questions: AskUserQuestionRecord[];
   /** The user's note on the whole set, trimmed; absent when none was given. */
   note?: string;
+  /** Images attached to answers and the note, in the order of the answers message's image blocks. */
+  images?: AskUserOutcomeImage[];
   answeredCount: number;
   /** Ids of the questions left unanswered (not those skipped by their condition), in the order they were asked. */
   unansweredIds: string[];
