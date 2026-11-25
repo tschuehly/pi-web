@@ -1075,15 +1075,17 @@ export class WorkbenchApp extends LitElement {
       <hr>`;
   }
 
-  /** Selects the value as the composer does (`/mode attention`); the Chat's next status shows it. */
+  /** Selects the value as the composer does (`/mode attention`) and sends it at once (`/mode send`); the Chat's next status shows it. */
   private async setChatAttention(sessionIds: readonly string[], value: string): Promise<void> {
     for (const sessionId of sessionIds) {
       const chat = this.windows.window?.chats.find((row) => row.sessionId === sessionId);
       if (chat === undefined) continue;
       try {
         const { cwd } = await api.locate(chat.sessionId, chat.machineId);
-        const result = await api.runCommand({ id: chat.sessionId, cwd }, `/mode attention ${value.toLowerCase()}`, chat.machineId);
-        if (result.type === "unsupported") throw new Error(result.message);
+        for (const command of [`/mode attention ${value.toLowerCase()}`, "/mode send"]) {
+          const result = await api.runCommand({ id: chat.sessionId, cwd }, command, chat.machineId);
+          if (result.type === "unsupported") throw new Error(result.message);
+        }
       } catch (error) {
         this.setApp({ error: `Could not set Attention for ${chat.title}: ${error instanceof Error ? error.message : String(error)}` });
       }
