@@ -7,7 +7,7 @@ import { loadAskContext, loadAskNote, saveAskDraft, saveAskNote } from "../askDr
 import { undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { AskMarkdownField } from "./AskMarkdownField";
-import { AskUserCard, renderedOnlyFences, type AskUserSubmitCallback } from "./AskUserCard";
+import { AskUserCard, type AskUserSubmitCallback } from "./AskUserCard";
 import { settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
 import { html } from "lit";
 import { createContentRenderingService } from "../formatting/contentRendering";
@@ -723,7 +723,7 @@ describe("ask-user-card context", () => {
     expect(root.querySelector(".context-actions")).toBeNull();
     const styles = AskUserCard.styles.toString();
     expect(styles).toContain(".card .context-editor .cm-scroller, .card .context-editor .cm-content { font: inherit; line-height: 1.45; }");
-    expect(styles).toMatch(/\.card \.context-editor \{[^}]*border: 0;[^}]*background: color-mix/);
+    expect(styles).toMatch(/\.card \.context-editor \{[^}]*border: 0;[^}]*background: transparent/);
   });
 
   it("keeps an edited context in the draft, sends it with the answers, and restores the agent's text on Revert", async () => {
@@ -853,15 +853,29 @@ describe("ask-user-card context", () => {
     expect(renderRoot(card).querySelector(".context-actions")).toBeNull();
   });
 
-  it("draws the diagrams and diffs live preview leaves as code under the editor, following the edits", async () => {
-    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [])]), context: "Intro only." });
-    expect(renderRoot(card).querySelector("formatted-text.context-media")).toBeNull();
-    typeInto(markdownField(renderRoot(card), ".context-editor"), "Now:\n\n```diff\n-a\n+b\n```\n");
-    await card.updateComplete;
-    const media = requiredElement(renderRoot(card).querySelector<LitElement & { text: string }>("formatted-text.context-media"), "context media");
-    expect(media.text).toBe("```diff\n-a\n+b\n```");
-    await settleDeferredContent(media);
-    expect(media.renderRoot.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
+  it("draws a diff in the context editor in place, once, and opens its source on a click", async () => {
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [])]), context: "Now:\n\n```diff\n-a\n+b\n```" });
+    const root = renderRoot(card);
+    const editor = markdownField(root, ".context-editor");
+    const drawn = requiredElement(editor.querySelector<LitElement & { text: string }>(".lp-fence-block formatted-text"), "diff drawn in the editor");
+    expect(drawn.text).toBe("```diff\n-a\n+b\n```");
+    await settleDeferredContent(drawn);
+    expect(drawn.renderRoot.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
+    // Neither its source with the ``` marks nor a second copy under the editor shows.
+    expect(editor.querySelector(".cm-content")?.textContent).not.toContain("```");
+    expect(root.querySelectorAll("formatted-text").length).toBe(1);
+    requiredElement(editor.querySelector<HTMLElement>(".lp-fence-block"), "fence block").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, composed: true }));
+    expect(editor.querySelector(".lp-fence-block")).toBeNull();
+    expect(editor.querySelector(".cm-content")?.textContent).toContain("```diff");
+  });
+
+  it("styles the context editor as the read text: no border, background or focus ring", async () => {
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [])]), context: "Plan." });
+    const editor = markdownField(renderRoot(card), ".context-editor");
+    const style = getComputedStyle(editor);
+    expect([style.borderTopWidth, style.backgroundColor]).toEqual(["0px", "transparent"]);
+    expect(AskUserCard.styles.cssText).toContain(".card .context-editor { border: 0; border-radius: 0; background: transparent; }");
+    expect(AskUserCard.styles.cssText).toContain(".card .context-editor:focus-within { outline: none; }");
   });
 
   it("renders the context of a closed ask record in its full-questions disclosure, after the answers", async () => {
@@ -989,14 +1003,6 @@ describe("ask-markdown-field", () => {
   });
 });
 
-describe("renderedOnlyFences", () => {
-  it("keeps only the mermaid, diff and worddiff fences, whole, including an unclosed last one", () => {
-    const text = "Intro\n\n```ts\nconst a = 1;\n```\n\n```mermaid\npie\n```\n\n~~~~worddiff\nold\n>>>\nnew\n~~~~\n\n```diff\n-a";
-    expect(renderedOnlyFences(text)).toBe("```mermaid\npie\n```\n\n~~~~worddiff\nold\n>>>\nnew\n~~~~\n\n```diff\n-a");
-    expect(renderedOnlyFences("Just text with `code`.")).toBe("");
-  });
-});
-
 async function renderedContext(card: AskUserCard): Promise<ShadowRoot> {
   openFullRecord(card);
   const formatted = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.ask-context"), "ask context");
@@ -1037,10 +1043,12 @@ describe("ask-user-card media", () => {
     expect([tableFold.open, tableFold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/table.png"]);
     card.ask = { ...card.ask, askId: "ask-1", context: media };
     await card.updateComplete;
-    const contextMedia = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.context-media"), "context media");
-    await settleDeferredContent(contextMedia);
-    expect([...contextMedia.renderRoot.querySelectorAll("details.folded-media summary")].map((summary) => summary.textContent)).toEqual(["Show diagram"]);
-    expect(contextMedia.renderRoot.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
+    // The editor draws each fence in place: the diagram folded, the diff coloured.
+    const [diagram, diffView] = [...renderRoot(card).querySelectorAll<LitElement>(".context-editor .lp-fence-block formatted-text")];
+    await settleDeferredContent(requiredElement(diagram, "diagram drawn in the editor"));
+    await settleDeferredContent(requiredElement(diffView, "diff drawn in the editor"));
+    expect([...(diagram?.renderRoot.querySelectorAll("details.folded-media summary") ?? [])].map((summary) => summary.textContent)).toEqual(["Show diagram"]);
+    expect(diffView?.renderRoot.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
     for (const selector of ["formatted-text.question-detail"]) {
       const formatted = requiredElement(renderRoot(card).querySelector<LitElement>(selector), selector);
       const sourceChanges = watchImageSources(requiredElement(formatted.shadowRoot, "detail shadow root"));

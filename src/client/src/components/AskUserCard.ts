@@ -51,30 +51,6 @@ export function updatedAgo(iso: string, now = Date.now()): string {
   return hours < 24 ? `updated ${String(hours)} h ago` : `updated ${String(Math.floor(hours / 24))} d ago`;
 }
 
-/**
- * The fences of `markdown` that only the read view draws (mermaid, diff, worddiff), so the context editor can show
- * them rendered under it; empty when there are none.
- */
-export function renderedOnlyFences(markdown: string): string {
-  const blocks: string[] = [];
-  let open: { fence: string; lines: string[] } | undefined;
-  for (const line of markdown.split("\n")) {
-    if (open === undefined) {
-      const start = /^ {0,3}(`{3,}|~{3,})\s*(?:mermaid|diff|worddiff)(?:\s|$)/u.exec(line);
-      if (start?.[1] !== undefined) open = { fence: start[1], lines: [line] };
-      continue;
-    }
-    open.lines.push(line);
-    if (line.trim().startsWith(open.fence) && line.trim().replace(/[`~]/gu, "") === "") {
-      blocks.push(open.lines.join("\n"));
-      open = undefined;
-    }
-  }
-  // An unclosed fence runs to the end, as Markdown reads it.
-  if (open !== undefined) blocks.push(open.lines.join("\n"));
-  return blocks.join("\n\n");
-}
-
 /** May return a promise; resolving to `false` means the submit did not reach the daemon (the caller showed why), so the card keeps its draft. */
 export type AskUserSubmitCallback = (askId: string, submission: AskUserSubmission) => unknown;
 
@@ -207,7 +183,7 @@ export class AskUserCard extends LitElement {
 
   /**
    * The open set's context, editable from the start in the Markdown field styled as the read text. Diagrams and diffs
-   * the live preview leaves as code are drawn under it from the current text.
+   * are drawn in place, as the read view draws them, until the user clicks into one to edit its source.
    */
   private renderContextEditor(context: string | undefined): TemplateResult {
     // An absent context (cleared by a partial send) stays an empty field the user can write a new one into.
@@ -222,17 +198,15 @@ export class AskUserCard extends LitElement {
         </div>
       `;
     }
-    const media = renderedOnlyFences(text);
     return html`
       <div class="ask-context">
-        <ask-markdown-field class="context-editor" .label=${"Context (editable)"} .maxLength=${ASK_USER_CONTEXT_MAX_LENGTH} .workspaceContext=${this.workspaceContext} .value=${text} @ask-field-input=${this.changeContext}></ask-markdown-field>
+        <ask-markdown-field class="context-editor" .label=${"Context (editable)"} .maxLength=${ASK_USER_CONTEXT_MAX_LENGTH} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .renderFences=${true} .value=${text} @ask-field-input=${this.changeContext}></ask-markdown-field>
         ${this.editedContext === undefined ? null : html`
           <div class="context-actions">
             <span class="context-edited">Edited</span>
             <button class="revert-edit" type="button" title="Restore the agent's context" @click=${this.revertContext}>${UNDO_ICON}Revert</button>
           </div>
         `}
-        ${media === "" ? null : html`<formatted-text class="context-media" fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${media}></formatted-text>`}
       </div>
     `;
   }
@@ -811,14 +785,15 @@ export class AskUserCard extends LitElement {
     .question-ref { color: var(--pi-muted); font-size: 11px; font-weight: 500; }
     .recommended { margin-inline-start: 4px; padding: 1px 6px; border-radius: 999px; background: var(--pi-success-bg); color: var(--pi-success); font-size: 11px; font-weight: 650; }
     .ask-context { display: block; padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
-    /* The editable context reads as the rendered text: its font, size, line height and colours, a faint tint, a quiet focus ring. */
-    .card .context-editor { margin-inline: -6px; width: calc(100% + 12px); border: 0; border-radius: 6px; background: color-mix(in srgb, var(--pi-text) 4%, transparent); }
+    /* The editable context reads as one continuous text with the rendered view: its font, size, line height and colours; no frame, tint or focus ring (the caret shows focus). */
+    .card .context-editor { border: 0; border-radius: 0; background: transparent; }
     .card .context-editor .cm-editor { min-height: 0; max-height: none; }
     /* CodeMirror's base theme sets a monospace scroller; the context keeps the card's body font. */
     .card .context-editor .cm-scroller, .card .context-editor .cm-content { font: inherit; line-height: 1.45; }
     .card .context-editor .cm-content { padding: 4px 0; }
-    .card .context-editor .cm-line { padding: 0 6px; }
-    .card .context-editor:focus-within { outline: 1px solid color-mix(in srgb, var(--pi-accent) 60%, transparent); outline-offset: 0; }
+    .card .context-editor .cm-line { padding: 0; }
+    .card .context-editor .lp-fence-block { cursor: text; }
+    .card .context-editor:focus-within { outline: none; }
     /* A folded image in a Markdown field's live preview, styled like the Chat's folded media. */
     ask-markdown-field .folded-media > summary { width: fit-content; color: var(--pi-accent); cursor: pointer; }
     ask-markdown-field .folded-media > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; border-radius: 4px; }
@@ -826,7 +801,6 @@ export class AskUserCard extends LitElement {
     .context-edited { margin: 0; color: var(--pi-muted); font-size: 11px; }
     .record-card .context-edited { padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
     .record-card .context-edited + .ask-context { padding-top: 2px; }
-    .context-media { display: block; margin-top: 6px; }
     .questions { display: grid; padding-top: 8px; }
     fieldset.question {
       min-width: 0;

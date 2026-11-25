@@ -4,8 +4,9 @@ import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH } from "../../../shared/apiTypes";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
 import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
+import type { ChatContentRendering } from "../formatting/contentRendering";
 import { foldMediaMarkup, revealFoldedMedia } from "../formatting/foldedMedia";
-import { openChatFileLink } from "./FormattedText";
+import { FormattedText, openChatFileLink } from "./FormattedText";
 import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages, resetEditHistory } from "./workbenchFilesEditor";
 
 /**
@@ -15,6 +16,8 @@ import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages,
  */
 // eslint-disable-next-line @typescript-eslint/consistent-type-assertions, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unnecessary-condition -- plain-node tests (ChatView.test.ts) import the card where no DOM exists, though the types say HTMLElement always does.
 const ElementBase = (globalThis.HTMLElement ?? Object) as typeof HTMLElement;
+
+const RENDERED_FENCE = /^ {0,3}(?:`{3,}|~{3,})\s*(?:mermaid|diff|worddiff)(?:\s|$)/u;
 
 export class AskMarkdownField extends ElementBase {
   #view: EditorView | undefined;
@@ -30,6 +33,10 @@ export class AskMarkdownField extends ElementBase {
   placeholderText = "";
   /** Resolves workspace image paths in the live preview, as the Chat does. */
   workspaceContext: MarkdownWorkspaceContext | undefined;
+  /** Draws ```mermaid, ```diff and ```worddiff blocks in place as the Chat does while the cursor is outside them; read when the field connects. */
+  renderFences = false;
+  /** The Chat's content renderers (Mermaid) for those blocks. */
+  contentRendering: ChatContentRendering | undefined;
 
   get value(): string {
     return this.#view?.state.doc.toString() ?? this.#value;
@@ -82,7 +89,7 @@ export class AskMarkdownField extends ElementBase {
           // File links open as in the Chat (Files pane, Finder); other links in a new tab.
           const context = this.workspaceContext;
           if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
-        }),
+        }, this.renderFences ? { languages: RENDERED_FENCE, render: (source) => this.#renderFence(source) } : undefined),
         // The textarea's maxlength: an edit that would pass the limit is refused.
         EditorState.transactionFilter.of((tr) => tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr),
         this.placeholderText === "" ? [] : placeholder(this.placeholderText),
@@ -123,6 +130,16 @@ export class AskMarkdownField extends ElementBase {
     if (view === undefined) return;
     view.focus();
     view.dispatch({ selection: { anchor: view.state.doc.length } });
+  }
+
+  #renderFence(source: string): HTMLElement {
+    const view = new FormattedText();
+    view.foldMedia = true;
+    view.diffViews = true;
+    view.contentRendering = this.contentRendering;
+    view.workspaceContext = this.workspaceContext;
+    view.text = source;
+    return view;
   }
 
   #foldSummary(event: Event): HTMLDetailsElement | undefined {

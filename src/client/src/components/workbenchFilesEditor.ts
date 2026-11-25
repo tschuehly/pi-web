@@ -83,12 +83,30 @@ const rendered = (kind: "tbl" | "img", source: string, render: (markdown: string
   return box;
 });
 
+/** A fenced block `renderFence` draws (a diagram, a diff); the editor leaves its events to it, and a click outside its controls opens the source. */
+class FenceWidget extends WidgetType {
+  constructor(readonly source: string, readonly renderFence: (source: string) => HTMLElement) { super(); }
+  override eq(other: FenceWidget): boolean { return other.source === this.source; }
+  override ignoreEvent(): boolean { return true; }
+  toDOM(view: EditorView): HTMLElement {
+    const box = el("div", "lp-fence-block");
+    box.append(this.renderFence(this.source));
+    box.addEventListener("mousedown", (event) => {
+      if (event.composedPath().some((node) => node instanceof Element && node.matches("summary, a, button, input"))) return;
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: view.state.doc.lineAt(view.posAtDOM(box)).to } });
+      view.focus();
+    });
+    return box;
+  }
+}
+
 type SyntaxNode = ReturnType<typeof syntaxTree>["topNode"];
 const LIST_NAMES = new Set(["BulletList", "OrderedList"]);
 const INLINE_MARKS = new Set(["EmphasisMark", "StrikethroughMark", "CodeMark", "LinkMark", "URL", "LinkTitle"]);
 
 // ponytail: rebuilds over the whole doc per transaction; split into a visibleRanges ViewPlugin + block field for huge files.
-function buildPreview(state: EditorState, render: (markdown: string) => string): DecorationSet {
+function buildPreview(state: EditorState, render: (markdown: string) => string, renderFence?: RenderFence): DecorationSet {
   const deco: Range<Decoration>[] = [];
   const doc = state.doc;
   const sel = state.selection.ranges;
@@ -131,6 +149,11 @@ function buildPreview(state: EditorState, render: (markdown: string) => string):
           return false;
         case "Blockquote": lines(from, to, "lp-quote"); return;
         case "FencedCode": {
+          // The cursor just after the closing fence (where a field starts) leaves it drawn; at its start, as Up arrow reaches it, it opens.
+          if (renderFence !== undefined && !sel.some((r) => r.from < to && r.to >= from) && renderFence.languages.test(doc.lineAt(from).text)) {
+            deco.push(Decoration.replace({ widget: new FenceWidget(doc.sliceString(from, to), renderFence.render), block: true }).range(from, to));
+            return false;
+          }
           lines(from, to, "lp-code");
           const first = doc.lineAt(from), last = doc.lineAt(to);
           deco.push(Decoration.line({ class: "lp-code-first" }).range(first.from));
@@ -207,14 +230,17 @@ export const filesHighlighting = syntaxHighlighting(HighlightStyle.define([
   { tag: tags.propertyName, color: "var(--pi-text-secondary)" },
 ]));
 
+/** Fenced blocks whose opening line matches `languages` show as `render` draws them while the cursor is outside. */
+export interface RenderFence { languages: RegExp; render: (source: string) => HTMLElement }
+
 /**
  * Obsidian-style live preview: markup hides unless the cursor is inside its element.
  * A click on a rendered link (or ⌘/Ctrl-click anywhere on one) hands `open` the link rendered as an anchor.
  */
-export function livePreview(render: (markdown: string) => string, open: (anchor: HTMLAnchorElement) => void): Extension {
+export function livePreview(render: (markdown: string) => string, open: (anchor: HTMLAnchorElement) => void, renderFence?: RenderFence): Extension {
   const field = StateField.define<DecorationSet>({
-    create: (state) => buildPreview(state, render),
-    update: (value, tr) => tr.docChanged || tr.selection !== undefined || syntaxTree(tr.state) !== syntaxTree(tr.startState) ? buildPreview(tr.state, render) : value,
+    create: (state) => buildPreview(state, render, renderFence),
+    update: (value, tr) => tr.docChanged || tr.selection !== undefined || syntaxTree(tr.state) !== syntaxTree(tr.startState) ? buildPreview(tr.state, render, renderFence) : value,
     provide: (f) => EditorView.decorations.from(f),
   });
   const links = EditorView.domEventHandlers({
