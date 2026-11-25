@@ -528,7 +528,7 @@ export class AskUserCard extends LitElement {
     const images = ownEntry(this.images, key) ?? [];
     const accept = SUPPORTED_IMAGE_MIME_TYPES.join(",");
     return html`
-      <div class="with-images" @paste=${(event: ClipboardEvent) => { this.pasteImages(target, event); }} @dragover=${(event: DragEvent) => { if (event.dataTransfer !== null && dataTransferHasFiles(event.dataTransfer)) event.preventDefault(); }} @drop=${(event: DragEvent) => { this.dropImages(target, event); }}>
+      <div class="with-images" @paste=${{ capture: true, handleEvent: (event: ClipboardEvent) => { this.pasteImages(target, event); } }} @dragover=${(event: DragEvent) => { if (event.dataTransfer !== null && dataTransferHasFiles(event.dataTransfer)) event.preventDefault(); }} @drop=${{ capture: true, handleEvent: (event: DragEvent) => { this.dropImages(target, event); } }}>
         <div class="field-row">
           ${field}
           <button class="attach-image" type="button" title=${`Attach images to ${label}`} aria-label=${`Attach images to ${label}`} @click=${(event: Event) => { const picker = event.currentTarget instanceof HTMLElement ? event.currentTarget.nextElementSibling : null; if (picker instanceof HTMLInputElement) picker.click(); }}>${renderAttachIcon()}</button>
@@ -571,6 +571,7 @@ export class AskUserCard extends LitElement {
   /** Which field the last image error belongs to, so it shows under that field alone. */
   private imageErrorTarget: string | undefined;
 
+  /** Runs in the capture phase: the prevented default keeps CodeMirror from pasting (and replacing the selection) or dropping file text. */
   private pasteImages(target: AskUserImageTarget, event: ClipboardEvent): void {
     const files = filesFromDataTransfer(event.clipboardData);
     if (files.length === 0) return;

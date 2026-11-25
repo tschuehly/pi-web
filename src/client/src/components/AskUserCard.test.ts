@@ -1328,6 +1328,23 @@ describe("ask-user-card answer images", () => {
     expect(root.querySelectorAll(".answer-image")).toHaveLength(0);
   });
 
+  it("keeps the note's selected text when an image-only paste lands on its editor", async () => {
+    const card = await mountOpenAsk({ ...openAsk([textQuestion("why", "Why?")]), askId: "ask-paste-selection" });
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    const note = markdownField(root, ".ask-note");
+    typeInto(note, "keep this");
+    const view = editorView(note);
+    view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+    const event = new Event("paste", { bubbles: true, cancelable: true, composed: true });
+    // An image-only clipboard: CodeMirror's own paste would put its empty text over the selection.
+    Reflect.set(event, "clipboardData", { files: [pngFile("shot.png")], items: [{ kind: "file" }], types: ["Files"], getData: () => "" });
+    view.contentDOM.dispatchEvent(event);
+    await vi.waitFor(() => { expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(1); });
+    expect(view.state.doc.toString()).toBe("keep this");
+  });
+
   it("offers no attaching when the Chat's host cannot take images", async () => {
     const card = await mountOpenAsk(openAsk([textQuestion("why", "Why?")]));
     const root = renderRoot(card);
