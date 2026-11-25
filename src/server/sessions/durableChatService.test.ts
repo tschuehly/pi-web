@@ -486,8 +486,8 @@ describe("Durable Chats", () => {
     const ref = { id: chat.id, cwd: chat.cwd };
     const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "why", question: "Why?", kind: "text", options: [] }] };
     only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"] } : { ...status, pendingAsks: [ask] });
-    const closed = await durable.submitAsk(ref, "ask-1", { answers: [{ id: "why", values: [], value: "Look" }], revision: "r1", images: [{ target: "why", mimeType: "image/png", data: png, name: "shot.png" }] }, "op-i");
-    expect(closed.outcome?.images).toEqual([{ target: "why", reference: "[PIC_1]", mimeType: "image/png", name: "shot.png" }]);
+    const closed = await durable.submitAsk(ref, "ask-1", { answers: [{ id: "why", values: [], value: "Look" }], revision: "r1", images: [{ target: { kind: "question", id: "why" }, mimeType: "image/png", data: png, name: "shot.png" }] }, "op-i");
+    expect(closed.outcome?.images).toEqual([{ target: { kind: "question", id: "why" }, reference: "[PIC_1]", mimeType: "image/png", name: "shot.png" }]);
     const params = only(only(launched).requests.filter((r) => r.method === "closeAsk")).params ?? {};
     expect(params["images"]).toMatchObject([{ type: "image", mimeType: "image/png" }]);
     expect(JSON.stringify(params["images"])).toMatch(/"data":"[A-Za-z0-9+/]+=*"/u);
@@ -501,7 +501,7 @@ describe("Durable Chats", () => {
     const ref = { id: chat.id, cwd: chat.cwd };
     const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "why", question: "Why?", kind: "text", options: [] }] };
     only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"] } : { ...status, pendingAsks: [ask] });
-    await expect(durable.submitAsk(ref, "ask-1", { answers: [{ id: "why", values: [], value: "Look" }], revision: "r1", images: [{ target: "why", mimeType: "image/png", data: "iVBORw0KGgo=" }] })).rejects.toThrow(/Images in answers/u);
+    await expect(durable.submitAsk(ref, "ask-1", { answers: [{ id: "why", values: [], value: "Look" }], revision: "r1", images: [{ target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw0KGgo=" }] })).rejects.toThrow(/Images in answers/u);
     expect(only(launched).requests.filter((r) => r.method === "closeAsk")).toEqual([]);
   });
 

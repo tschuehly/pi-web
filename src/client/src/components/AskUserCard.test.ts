@@ -1358,8 +1358,8 @@ describe("ask-user-card answer images", () => {
     expect(onSubmit).toHaveBeenCalledWith("ask-1", expect.objectContaining({
       answers: [{ id: "why", values: [], value: "Look" }],
       images: [
-        { target: "why", mimeType: "image/png", data: "iVBORw==", name: "answer.png" },
-        { target: "note", mimeType: "image/png", data: "iVBORw==", name: "note.png" },
+        { target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw==", name: "answer.png" },
+        { target: { kind: "note" }, mimeType: "image/png", data: "iVBORw==", name: "note.png" },
       ],
     }));
   });
@@ -1380,7 +1380,7 @@ describe("ask-user-card answer images", () => {
     await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(3); });
     requiredElement(root.querySelector<HTMLButtonElement>(".send-one"), "send one").click();
     await Promise.resolve();
-    expect(onSubmit).toHaveBeenCalledWith("ask-1", expect.objectContaining({ partial: true, images: [{ target: "why", mimeType: "image/png", data: "iVBORw==", name: "why.png" }] }));
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", expect.objectContaining({ partial: true, images: [{ target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw==", name: "why.png" }] }));
   });
 
   it("shows the record's thumbnails under their answer and the note, opening the gallery on click", async () => {
@@ -1389,7 +1389,7 @@ describe("ask-user-card answer images", () => {
     card.outcome = {
       askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
       questions: [{ question: why, answered: true, values: [], value: "Look" }], note: "See",
-      images: [{ target: "why", reference: "[PIC_1]", mimeType: "image/png" }, { target: "note", reference: "[PIC_2]", mimeType: "image/png" }],
+      images: [{ target: { kind: "question", id: "why" }, reference: "[PIC_1]", mimeType: "image/png" }, { target: { kind: "note" }, reference: "[PIC_2]", mimeType: "image/png" }],
       answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1; none left unanswered",
     };
     card.recordImages = ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"];
@@ -1402,6 +1402,48 @@ describe("ask-user-card answer images", () => {
     const show = vi.spyOn(gallery, "show");
     requiredElement(root.querySelector<HTMLButtonElement>(".record-note .answer-image-open"), "thumbnail").click();
     expect(show).toHaveBeenCalledWith([expect.objectContaining({ src: "data:image/png;base64,AAAA" }), expect.objectContaining({ src: "data:image/png;base64,BBBB" })], 1);
+  });
+
+  it("stages a question with id note apart from the note and sends each with its own target", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    // Its own set: staged images stay in memory per set, and earlier tests leave some on ask-1.
+    const card = await mountOpenAsk({ ...openAsk([textQuestion("note", "Note?")]), askId: "ask-note" }, onSubmit);
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    const input = requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-0"), "text answer");
+    input.value = "Mine";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    paste(input, [pngFile("answer.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(0);
+    paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("note.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(2); });
+    buttonWithText(root, "Send answers").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenCalledWith("ask-note", expect.objectContaining({ images: [
+      { target: { kind: "question", id: "note" }, mimeType: "image/png", data: "iVBORw==", name: "answer.png" },
+      { target: { kind: "note" }, mimeType: "image/png", data: "iVBORw==", name: "note.png" },
+    ] }));
+  });
+
+  it("shows a whole-set record's images under their own answers when an earlier send's bytes are elsewhere", async () => {
+    const [a, b] = [textQuestion("a", "A?"), textQuestion("b", "B?")];
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [{ question: a, answered: true, values: [], value: "One" }, { question: b, answered: true, values: [], value: "Two" }],
+      images: [{ target: { kind: "question", id: "a" }, reference: "[PIC_1]", mimeType: "image/png", name: "a.png", revision: "r2" }, { target: { kind: "question", id: "b" }, reference: "[PIC_1]", mimeType: "image/png", name: "b.png" }],
+      answeredCount: 2, unansweredIds: [], summary: "Answered 2 of 2; none left unanswered",
+    };
+    // As the transcript pairs them: the earlier send's entry is not on this page, the final send's block is.
+    card.recordImages = [undefined, "data:image/png;base64,BBBB"];
+    document.body.append(card);
+    await card.updateComplete;
+    const lines = [...renderRoot(card).querySelectorAll(".record-line")];
+    expect(lines[0]?.querySelector("img")).toBeNull();
+    expect(lines[0]?.querySelector(".answer-image-missing")?.textContent).toBe("a.png");
+    expect(lines[1]?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,BBBB");
   });
 
   it("ends the partial-send question with one question mark", async () => {

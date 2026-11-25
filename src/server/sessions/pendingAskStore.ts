@@ -12,12 +12,14 @@ import {
   type AskUserAnswer,
   type AskUserCloseReason,
   type AskUserOutcome,
+  type AskUserImageTarget,
   type AskUserOutcomeImage,
   type AskUserQuestion,
   type AskUserQuestionOption,
   type AskUserQuestionRecord,
   type AskUserShowIf,
   type AskUserSubmission,
+  type AskUserSubmissionImage,
   type PendingAskUser,
   ASK_USER_QUESTION_KINDS,
   askAnswerSelection,
@@ -27,6 +29,7 @@ import {
   hiddenAskQuestionIds,
 } from "../../shared/apiTypes.js";
 import { appendInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
+import { parseAskUserSubmissionImages, sameAskImageTarget } from "../../shared/askUserImages.js";
 
 export interface PendingAskStoreOptions {
   now?: (() => Date) | undefined;
@@ -296,10 +299,10 @@ export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
     : outcome.reason === "submitted"
     ? `The user submitted answers to question set ${outcome.askId}.`
     : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
-  const noteImages = imagesLine(outcome, "note");
+  const noteImages = imagesLine(outcome, { kind: "note" });
   const note = outcome.note === undefined && noteImages.length === 0 ? [] : ["", outcome.note === undefined ? "Note from the user: images only" : `Note from the user: ${JSON.stringify(outcome.note)}`, ...noteImages];
   const edited = outcome.editedContext === undefined ? [] : outcome.editedContext === "" ? ["The user cleared the context.", ""] : ["The user edited the context:", fenced(outcome.editedContext), ""];
-  return [...(outcome.approved === true ? ["The user approved the context."] : []), lead, "", ...edited, ...outcome.questions.map((record) => [...questionLines(outcome.askId, record), ...imagesLine(outcome, record.question.id)]).flat(), ...note, "", outcome.summary].join("\n");
+  return [...(outcome.approved === true ? ["The user approved the context."] : []), lead, "", ...edited, ...outcome.questions.map((record) => [...questionLines(outcome.askId, record), ...imagesLine(outcome, { kind: "question", id: record.question.id })]).flat(), ...note, "", outcome.summary].join("\n");
 }
 
 /**
@@ -312,8 +315,8 @@ export function renderAskUserFollowUp(outcome: AskUserOutcome, openAsks: readonl
 }
 
 /** `  Images: [PIC_1], [PIC_2]` under an answer or the note; the placeholders never join the answer itself, so its length limits hold. */
-function imagesLine(outcome: AskUserOutcome, target: string): string[] {
-  const references = (outcome.images ?? []).filter((image) => image.target === target).map((image) => image.reference);
+function imagesLine(outcome: AskUserOutcome, target: AskUserImageTarget): string[] {
+  const references = (outcome.images ?? []).filter((image) => sameAskImageTarget(image.target, target)).map((image) => image.reference);
   return references.length === 0 ? [] : [`  Images: ${references.join(", ")}`];
 }
 
@@ -322,11 +325,18 @@ function imagesLine(outcome: AskUserOutcome, target: string): string[] {
  * note of a whole-set send or to a `kind: "text"` question this send answers.
  */
 function outcomeImages(ask: PendingAskUser, answers: RecordedAnswers, submission: AskUserSubmission): AskUserOutcomeImage[] {
-  return (submission.images ?? []).map((image, index) => {
-    if (image.target === "note") {
+  let images: AskUserSubmissionImage[];
+  try {
+    images = parseAskUserSubmissionImages(submission.images);
+  } catch (error) {
+    throw new PendingAskValidationError(error instanceof Error ? error.message : String(error));
+  }
+  return images.map((image, index) => {
+    const { target } = image;
+    if (target.kind === "note") {
       if (submission.partial === true) throw new PendingAskValidationError("A partial submit takes no note images; send them with the whole set");
-    } else if (!answers.has(image.target) || ask.questions.find((question) => question.id === image.target)?.kind !== "text") {
-      throw new PendingAskValidationError(`Image ${String(index + 1)} belongs to no answered text question: ${image.target}`);
+    } else if (!answers.has(target.id) || ask.questions.find((question) => question.id === target.id)?.kind !== "text") {
+      throw new PendingAskValidationError(`Image ${String(index + 1)} belongs to no answered text question: ${target.id}`);
     }
     return { target: image.target, reference: `[PIC_${String(index + 1)}]`, mimeType: image.mimeType, ...(image.name === undefined ? {} : { name: image.name }) };
   });
@@ -424,9 +434,12 @@ export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly As
   // it still applies while the closed set's `contextEdited` says the user supplied its context: an agent's later revision wins.
   const lastEdit = [...earlier].reverse().find((each) => each.askId === outcome.askId && each.editedContext !== undefined)?.editedContext;
   const editedContext = outcome.editedContext ?? (contextEdited ? lastEdit : undefined);
-  // Image metadata follows its questions; references repeat across sends, so the record matches images by target.
-  const shown = new Set(["note", ...questions.map((record) => record.question.id)]);
-  const images = [...earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.images ?? []), ...(outcome.images ?? [])].filter((image) => shown.has(image.target));
+  // Image metadata follows its questions (a hidden answer's images drop out). `[PIC_n]` restarts per send, so each earlier
+  // send's images carry that send's revision, naming the answers entry that holds their bytes (as the Durable host's wholeRecord).
+  const shown = new Set(questions.map((record) => record.question.id));
+  const sentImages = (each: AskUserOutcome, revision?: string): AskUserOutcomeImage[] => (each.images ?? []).map((image) => revision === undefined ? image : { ...image, revision });
+  const images = [...earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => sentImages(each, each.revision)), ...sentImages(outcome)]
+    .filter((image) => image.target.kind === "note" || shown.has(image.target.id));
   return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), ...(images.length === 0 ? {} : { images }), questions, answeredCount, unansweredIds, summary: summaryLine(questions.length + hidden.length - skipped - hidden.filter((record) => record.skipped === true).length, answeredCount + hidden.filter((record) => record.answered).length, unansweredIds) + skippedSummary(questions)
       + (hidden.length === 0 ? "" : `; ${hidden.length.toString()} earlier ${hidden.length === 1 ? "answer" : "answers"} not shown`) };
 }

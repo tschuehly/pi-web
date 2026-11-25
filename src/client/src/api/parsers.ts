@@ -4,6 +4,7 @@ import type { JsonValue, PiPackageInfo, PiPackageInstallableSuggestion, PiPackag
 
 import { parseKnownPiWebCapabilities } from "../../../shared/capabilities";
 import { isSupportedImageMimeType, MAX_PROMPT_ATTACHMENTS } from "../../../shared/promptAttachments";
+import { askUserImageTarget } from "../../../shared/askUserImages";
 import { parseDeprecatedAgentInputs } from "../../../shared/piWebStatusParsing";
 import { PI_WEB_PLUGIN_RECOVERY_COMMANDS, pluginDisableRecoveryCommand } from "../../../shared/pluginRecoveryCommands";
 import { parseServerNoticeScope } from "../../../shared/serverNoticeContract";
@@ -487,8 +488,10 @@ function parseAskUserOutcomeImage(value: unknown): AskUserOutcomeImage {
   const mimeType = record["mimeType"];
   if (!/^\[PIC_[1-9]\d*\]$/u.test(reference)) throw new Error("Invalid ask image reference");
   if (!isSupportedImageMimeType(mimeType)) throw new Error("Invalid ask image type");
+  const target = askUserImageTarget(record["target"]);
+  if (target === undefined) throw new Error("Invalid ask image target");
   const name = record["name"];
-  return { target: requireBoundedNonEmptyString(record, "target", ASK_USER_ID_MAX_LENGTH), reference, mimeType, ...(typeof name === "string" && name !== "" ? { name } : {}) };
+  return { target, reference, mimeType, ...(typeof name === "string" && name !== "" ? { name } : {}), ...optionalField("revision", optionalBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH)) };
 }
 
 export function parseAskUserOutcome(value: unknown): AskUserOutcome {

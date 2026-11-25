@@ -1003,14 +1003,16 @@ export interface AskUserSubmission {
   context?: string;
   /** The user pressed Approve on a set with {@link PendingAskUser.approval}: the whole set closes, approved. Not with `partial`. */
   approved?: boolean;
-  /** Images attached to the note (`target: "note"`, not with `partial`) or to an answered `kind: "text"` question; in this order they become `[PIC_1]`, `[PIC_2]`, …. */
+  /** Images attached to the note (not with `partial`) or to an answered `kind: "text"` question; in this order they become `[PIC_1]`, `[PIC_2]`, …. */
   images?: AskUserSubmissionImage[];
 }
 
+/** What an answer image belongs to: the set's note, or one question (an object, so a question id "note" stays a question). */
+export type AskUserImageTarget = { kind: "note" } | { kind: "question"; id: string };
+
 /** One image the user attached to an answer or the note. */
 export interface AskUserSubmissionImage {
-  /** An answered question's id, or `"note"`. */
-  target: string;
+  target: AskUserImageTarget;
   mimeType: string;
   /** Base64 without a `data:` prefix. */
   data: string;
@@ -1019,11 +1021,16 @@ export interface AskUserSubmissionImage {
 
 /** What a closed ask records of an attached image: no bytes; they travel in the answers message's image blocks, in this order. */
 export interface AskUserOutcomeImage {
-  target: string;
+  target: AskUserImageTarget;
   /** `[PIC_n]`, as the model's text names it; unique within one send only. */
   reference: string;
   mimeType: string;
   name?: string;
+  /**
+   * In a whole-set record, set on an image an earlier partial send carried: the revision that send continued under,
+   * which its own answers entry also carries and whose message holds the bytes. Absent: this record's own message holds them.
+   */
+  revision?: string;
 }
 
 /**

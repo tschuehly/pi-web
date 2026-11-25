@@ -316,7 +316,7 @@ export function renderPart(context: TranscriptRenderContext, part: ChatPart, mes
       <ask-user-card
         class="part"
         .outcome=${part.outcome}
-        .recordImages=${part.images?.map((image) => context.behaviors.loadImages ? transcriptImageSource(image, context.session, context.machineId)?.src : undefined)}
+        .recordImages=${part.images?.map((image) => image !== undefined && context.behaviors.loadImages ? transcriptImageSource(image, context.session, context.machineId)?.src : undefined)}
         .draftSessionId=${context.askDraftSessionId}
         .workspaceContext=${context.workspaceContext}
         .contentRendering=${context.contentRendering}

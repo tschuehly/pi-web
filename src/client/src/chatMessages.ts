@@ -5,7 +5,28 @@ import type { ChatImagePart, ChatLine, ChatPart, GoalLifecycleDetails, ToolExecu
 import { validGoalId, WORKING_MODE_AXES as WORKING_MODE_VALUES, WORKING_MODE_AXIS_NAMES, workingModeState, type WorkingModeState } from "./extensionStatusSnapshots";
 
 export function normalizeMessages(messages: unknown[]): ChatLine[] {
-  return coalesceToolExecutions(messages.flatMap(normalizeMessage)).filter((message) => message.parts.length > 0);
+  return linkEarlierAskImages(coalesceToolExecutions(messages.flatMap(normalizeMessage)).filter((message) => message.parts.length > 0));
+}
+
+/**
+ * A whole-set record's images from earlier one-by-one sends name their send's `revision`; their bytes are in that send's
+ * own answers entry, so they are taken from it when it is on this page (matched by `[PIC_n]`, unique within one send).
+ */
+function linkEarlierAskImages(lines: ChatLine[]): ChatLine[] {
+  const records = lines.flatMap((line) => line.parts.flatMap((part) => part.type === "askUserRecord" ? [part] : []));
+  if (!records.some((part) => part.outcome.images?.some((image) => image.revision !== undefined) === true)) return lines;
+  const sends = new Map(records.flatMap((part) => part.outcome.partial === true && part.outcome.revision !== undefined ? [[`${part.outcome.askId}@${part.outcome.revision}`, part] as const] : []));
+  for (const part of records) {
+    const images = part.outcome.images;
+    if (images === undefined || images.every((image) => image.revision === undefined)) continue;
+    part.images = images.map((image, index) => {
+      if (image.revision === undefined) return part.images?.[index];
+      const send = sends.get(`${part.outcome.askId}@${image.revision}`);
+      const own = send?.outcome.images?.findIndex((each) => each.reference === image.reference) ?? -1;
+      return own < 0 ? undefined : send?.images?.[own];
+    });
+  }
+  return lines;
 }
 
 export function textMessage(role: ChatLine["role"], text: string): ChatLine {
@@ -376,8 +397,11 @@ function askUserRecordPart(message: unknown): Extract<ChatPart, { type: "askUser
   const record = parsedAskUserRecord(getProperty(message, "details"));
   // A host that took images sends text then image blocks; a string content carries none.
   const content = getProperty(message, "content");
-  const images = Array.isArray(content) ? content.filter((part) => getString(part, "type") === "image").flatMap((part) => normalizeImage(part).filter((each): each is ChatImagePart => each.type === "image")) : [];
-  return record === undefined || images.length === 0 ? record : { ...record, images };
+  const blocks = Array.isArray(content) ? content.filter((part) => getString(part, "type") === "image").flatMap((part) => normalizeImage(part).filter((each): each is ChatImagePart => each.type === "image")) : [];
+  if (record === undefined || blocks.length === 0) return record;
+  // The blocks are this send's images in order; an earlier send's (tagged with its revision) are in that send's entry.
+  let next = 0;
+  return { ...record, images: (record.outcome.images ?? []).map((image) => image.revision === undefined ? blocks[next++] : undefined) };
 }
 
 /** Project the withdrawn (or legacy superseded) ask carried by an `ask_user` tool result, if any. */

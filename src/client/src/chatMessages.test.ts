@@ -138,9 +138,26 @@ describe("chat message normalization", () => {
   });
 
   it("pairs an answers message's image blocks with its record's images, from array content", () => {
-    const outcome: AskUserOutcome = { ...askUserOutcome, images: [{ target: "note", reference: "[PIC_1]", mimeType: "image/png" }] };
+    const outcome: AskUserOutcome = { ...askUserOutcome, images: [{ target: { kind: "note" }, reference: "[PIC_1]", mimeType: "image/png" }] };
     const normalized = normalizeMessage({ role: "custom", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content: [{ type: "text", text: "answers" }, { type: "image", data: "AAAA", mimeType: "image/png" }], details: outcome });
     expect(normalized).toEqual([{ role: "system", parts: [{ type: "askUserRecord", outcome, images: [{ type: "image", data: "AAAA", mimeType: "image/png" }] }] }]);
+  });
+
+  it("takes a whole-set record's earlier-send images from that send's own entry, by its revision, and its own from its blocks", () => {
+    const [first, second] = askUserOutcome.questions;
+    if (first === undefined || second === undefined) throw new Error("fixture has two questions");
+    const image = (id: string, revision?: string) => ({ target: { kind: "question" as const, id }, reference: "[PIC_1]", mimeType: "image/png", ...(revision === undefined ? {} : { revision }) });
+    const partial: AskUserOutcome = { ...askUserOutcome, questions: [first], answeredCount: 1, unansweredIds: [], summary: "Answered 1", partial: true, revision: "r2", images: [image(first.question.id)] };
+    const whole: AskUserOutcome = { ...askUserOutcome, images: [image(first.question.id, "r2"), image(second.question.id)] };
+    const entry = (details: AskUserOutcome, data: string) => ({ role: "custom", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content: [{ type: "text", text: "answers" }, { type: "image", data, mimeType: "image/png" }], details });
+
+    const [, record] = normalizeMessages([entry(partial, "AAAA"), entry(whole, "BBBB")]);
+    const part = record?.parts[0];
+    expect(part?.type === "askUserRecord" ? part.images?.map((each) => each?.data) : undefined).toEqual(["AAAA", "BBBB"]);
+    // Without the earlier entry on the page, its image has no bytes here; the final send's still pairs with its own block.
+    const [alone] = normalizeMessages([entry(whole, "BBBB")]);
+    const lonePart = alone?.parts[0];
+    expect(lonePart?.type === "askUserRecord" ? lonePart.images?.map((each) => each?.data) : undefined).toEqual([undefined, "BBBB"]);
   });
 
   it("keeps the partial flag and continuing revision of a single answer sent early", () => {

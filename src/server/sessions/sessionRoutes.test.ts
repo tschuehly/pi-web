@@ -612,7 +612,7 @@ describe("session routes", () => {
           partial: true,
           context: "My version",
           approved: true,
-          images: [{ target: "cache", mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" }, { target: "note", mimeType: "image/jpeg", data: "/9j/" }],
+          images: [{ target: { kind: "question", id: "cache" }, mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" }, { target: { kind: "note" }, mimeType: "image/jpeg", data: "/9j/" }],
         },
       });
       const cancelled = await routeApp.inject({
@@ -626,7 +626,7 @@ describe("session routes", () => {
       expect(routeService.submitAskCalls).toEqual([{
         lookup: { id: "session-1", cwd: resolve("/repo") },
         askId: "ask-1",
-        submission: { answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }, { id: "copies", values: [], value: 3 }], note: "Ship it.", revision: "r3", partial: true, context: "My version", approved: true, images: [{ target: "cache", mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" }, { target: "note", mimeType: "image/jpeg", data: "/9j/" }] },
+        submission: { answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }, { id: "copies", values: [], value: 3 }], note: "Ship it.", revision: "r3", partial: true, context: "My version", approved: true, images: [{ target: { kind: "question", id: "cache" }, mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" }, { target: { kind: "note" }, mimeType: "image/jpeg", data: "/9j/" }] },
       }]);
       expect(cancelled.statusCode).toBe(200);
       expect(cancelled.json()).toMatchObject({ result: "stale" });
@@ -738,9 +738,13 @@ describe("session routes", () => {
       { cwd: "/repo", askId: "ask-1", answers: [], context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) },
       { cwd: "/repo", askId: "ask-1", answers: [], images: "png" },
       { cwd: "/repo", askId: "ask-1", answers: [], images: [{ mimeType: "image/png", data: "iVBORw0KGgo=" }] },
-      { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: "note", mimeType: "image/bmp", data: "Qk0=" }] },
-      { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: "note", mimeType: "image/png", data: "not base64!" }] },
-      { cwd: "/repo", askId: "ask-1", answers: [], images: new Array<unknown>(17).fill({ target: "note", mimeType: "image/png", data: "iVBORw0KGgo=" }) },
+      // A plain string target is the old wire form: a question id "note" collided with the note.
+      { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: "note", mimeType: "image/png", data: "iVBORw0KGgo=" }] },
+      { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: { kind: "question" }, mimeType: "image/png", data: "iVBORw0KGgo=" }] },
+      { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: { kind: "note" }, mimeType: "image/bmp", data: "Qk0=" }] },
+      { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: { kind: "note" }, mimeType: "image/png", data: "not base64!" }] },
+      { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: { kind: "note" }, mimeType: "image/png", data: "iVBORw0KGgo" }] },
+      { cwd: "/repo", askId: "ask-1", answers: [], images: new Array<unknown>(17).fill({ target: { kind: "note" }, mimeType: "image/png", data: "iVBORw0KGgo=" }) },
     ];
 
     try {

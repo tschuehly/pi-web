@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_DETAIL_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, ASK_USER_RECORD_QUESTION_LIMIT, type AskUserOutcome, type AskUserQuestion } from "../../shared/apiTypes.js";
+import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_DETAIL_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, ASK_USER_RECORD_QUESTION_LIMIT, type AskUserOutcome, type AskUserQuestion, type AskUserSubmission } from "../../shared/apiTypes.js";
 import { parseAskUserOutcome } from "../../client/src/api/parsers.js";
 import {
   PendingAskStore,
@@ -940,6 +940,8 @@ describe("PendingAskStore dependent questions (showIf)", () => {
 
 describe("PendingAskStore images", () => {
   const png = { mimeType: "image/png", data: "iVBORw0KGgo=" };
+  const note = { kind: "note" as const };
+  const q = (id: string) => ({ kind: "question" as const, id });
   const textAsk = (store: PendingAskStore) => store.open({ sessionId, context, questions: [question("why", { kind: "text", options: [], minLength: 3 }), question("how", { kind: "text", options: [] })] });
 
   it("names each answer's and the note's images on an Images line, never inside the answer, and ends with the legend", () => {
@@ -949,13 +951,13 @@ describe("PendingAskStore images", () => {
       revision: ask.revision,
       answers: [{ id: "why", values: [], value: "Fast" }, { id: "how", values: [], value: "Like this" }],
       note: "See both.",
-      images: [{ target: "why", ...png, name: "a.png" }, { target: "why", ...png }, { target: "note", ...png }],
+      images: [{ target: q("why"), ...png, name: "a.png" }, { target: q("why"), ...png }, { target: note, ...png }],
     });
     if (result.status !== "closed") throw new Error("expected closed");
     expect(result.outcome.images).toEqual([
-      { target: "why", reference: "[PIC_1]", mimeType: "image/png", name: "a.png" },
-      { target: "why", reference: "[PIC_2]", mimeType: "image/png" },
-      { target: "note", reference: "[PIC_3]", mimeType: "image/png" },
+      { target: q("why"), reference: "[PIC_1]", mimeType: "image/png", name: "a.png" },
+      { target: q("why"), reference: "[PIC_2]", mimeType: "image/png" },
+      { target: note, reference: "[PIC_3]", mimeType: "image/png" },
     ]);
     // minLength 3 holds for "Fast": the placeholders never join the value.
     expect(result.outcome.questions[0]?.value).toBe("Fast");
@@ -970,21 +972,52 @@ describe("PendingAskStore images", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("why", { kind: "text", options: [] }), question("pick"), question("how", { kind: "text", options: [] })] });
     const answers = [{ id: "why", values: [], value: "Fast" }, { id: "pick", values: ["yes"] }];
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: "how", ...png }] })).toThrow(PendingAskValidationError);
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: "pick", ...png }] })).toThrow(PendingAskValidationError);
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, partial: true, images: [{ target: "note", ...png }] })).toThrow(PendingAskValidationError);
-    const partial = store.submit(sessionId, ask.askId, { revision: ask.revision, answers, partial: true, images: [{ target: "why", ...png }] });
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: q("how"), ...png }] })).toThrow(PendingAskValidationError);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: q("pick"), ...png }] })).toThrow(PendingAskValidationError);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, partial: true, images: [{ target: note, ...png }] })).toThrow(PendingAskValidationError);
+    const partial = store.submit(sessionId, ask.askId, { revision: ask.revision, answers, partial: true, images: [{ target: q("why"), ...png }] });
     if (partial.status !== "closed") throw new Error("expected closed");
-    expect(partial.outcome.images).toEqual([{ target: "why", reference: "[PIC_1]", mimeType: "image/png" }]);
+    expect(partial.outcome.images).toEqual([{ target: q("why"), reference: "[PIC_1]", mimeType: "image/png" }]);
   });
 
   it("keeps earlier sends' image metadata in the whole set's record", () => {
     const store = testStore();
     const ask = textAsk(store);
-    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "why", values: [], value: "Fast" }], partial: true, images: [{ target: "why", ...png }] });
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "why", values: [], value: "Fast" }], partial: true, images: [{ target: q("why"), ...png }] });
     if (first.status !== "closed" || first.ask === undefined) throw new Error("expected partial");
-    const last = store.submit(sessionId, ask.askId, { revision: first.ask.revision, answers: [{ id: "how", values: [], value: "So" }], images: [{ target: "how", ...png }] });
+    const last = store.submit(sessionId, ask.askId, { revision: first.ask.revision, answers: [{ id: "how", values: [], value: "So" }], images: [{ target: q("how"), ...png }] });
     if (last.status !== "closed") throw new Error("expected closed");
-    expect(withEarlierAnswers(last.outcome, [first.outcome]).images?.map((image) => image.target)).toEqual(["why", "how"]);
+    // The earlier send's image names its send's revision, whose answers entry holds the bytes; the final send's carries none.
+    expect(withEarlierAnswers(last.outcome, [first.outcome]).images).toEqual([
+      { target: q("why"), reference: "[PIC_1]", mimeType: "image/png", revision: first.ask.revision },
+      { target: q("how"), reference: "[PIC_1]", mimeType: "image/png" },
+    ]);
+  });
+
+  it("keeps a question with id note apart from the note", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("note", { kind: "text", options: [] })] });
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "note", values: [], value: "Mine" }], images: [{ target: q("note"), ...png }, { target: note, ...png }] });
+    if (result.status !== "closed") throw new Error("expected closed");
+    const text = renderAskUserFollowUp(result.outcome, []);
+    expect(text).toContain(['  Answered: "Mine"', "  Images: [PIC_1]"].join("\n"));
+    expect(text).toContain(["Note from the user: images only", "  Images: [PIC_2]"].join("\n"));
+  });
+
+  it("refuses images the Durable host would refuse, leaving the set open: a bad type, loose base64, more than 16, over 10 MiB", () => {
+    const store = testStore();
+    const ask = textAsk(store);
+    const send = (images: unknown[]) => () => {
+      const submission: AskUserSubmission = { revision: ask.revision, answers: [{ id: "why", values: [], value: "Fast" }] };
+      // Untrusted wire shapes the types forbid.
+      Reflect.set(submission, "images", images);
+      return store.submit(sessionId, ask.askId, submission);
+    };
+    expect(send([{ target: note, mimeType: "image/bmp", data: "Qk0=" }])).toThrow("image 1 must be image/jpeg, image/png, image/gif, image/webp");
+    expect(send([{ target: note, ...png, data: "iVBORw0KGgo" }])).toThrow("image 1 is not valid base64");
+    expect(send([{ target: "note", ...png }])).toThrow('image 1 needs a target: { kind: "note" } or { kind: "question", id }');
+    expect(send(new Array<unknown>(17).fill({ target: note, ...png }))).toThrow("answers take at most 16 images");
+    expect(send([{ target: note, ...png, data: "A".repeat(13_981_016) }])).toThrow("image 1 is larger than 10 MiB");
+    expect(store.pendingAsks(sessionId)).toHaveLength(1);
   });
 });

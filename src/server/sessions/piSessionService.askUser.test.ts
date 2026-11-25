@@ -310,7 +310,7 @@ describe("PiSessionService.submitAsk", () => {
     const { service, store, fake } = askService({ withActiveSession: true });
     await service.openAsk({ sessionId: ACTIVE_SESSION_ID, context, questions });
     const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: [], otherText: "DuckDB" }], revision: "r1", images: [{ target: "note", mimeType: "image/png", data: png }] }))
+    await expect(service.submitAsk(sessionRef(ACTIVE_SESSION_ID), "ask-1", { answers: [{ id: "db", values: [], otherText: "DuckDB" }], revision: "r1", images: [{ target: { kind: "note" }, mimeType: "image/png", data: png }] }))
       .rejects.toThrow("Images in answers need a Durable Chat; this Chat takes text answers only");
     expect(fake.calls.sendCustomMessage).toEqual([]);
     expect(store.pendingAsks(ACTIVE_SESSION_ID).map((ask) => ask.askId)).toEqual(["ask-1"]);

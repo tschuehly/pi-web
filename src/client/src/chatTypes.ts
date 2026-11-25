@@ -43,8 +43,8 @@ export type ChatPart =
   | { type: "thinking"; text: string; displayText?: string }
   | { type: "skillInvocation"; name: string; location: string; content: string }
   | { type: "skillRead"; name: string; path: string; toolCallId?: string }
-  /** `images`: the answers message's image blocks, in the order of `outcome.images`. */
-  | { type: "askUserRecord"; outcome: AskUserOutcome; images?: ChatImagePart[] }
+  /** `images`: each `outcome.images` entry's bytes, at its index; `undefined` where they are not on this transcript page. */
+  | { type: "askUserRecord"; outcome: AskUserOutcome; images?: (ChatImagePart | undefined)[] }
   | { type: "goalLifecycle"; details: GoalLifecycleDetails }
   | { type: "subagentCompletion"; text: string }
   | { type: "backgroundBash"; details: { id: string; command: string; description?: string; state: "complete" | "failed" | "cancelled"; elapsedSeconds: number; logPath: string; exitCode?: number }; output: string }
