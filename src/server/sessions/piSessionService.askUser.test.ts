@@ -396,6 +396,10 @@ describe("PiSessionService.submitAsk", () => {
     // The transcript and the model keep the last send's own record.
     const recorded = branch.filter((entry) => typeof entry === "object" && entry !== null && Reflect.get(entry, "customType") === ASK_USER_CLOSED_CUSTOM_TYPE).at(-1);
     expect(recorded).toMatchObject({ data: { answeredCount: 1, questions: [{ question: { id: "db" } }] } });
+    // The answers card a reload shows is the whole set; its text, which the model reads, only this send's answer.
+    const delivered = restarted.fake.calls.sendCustomMessage.at(-1)?.message;
+    expect(delivered?.details).toMatchObject({ answeredCount: 2, questions: [{ question: { id: "db" } }, { question: { id: "why" } }] });
+    expect(delivered?.content).not.toContain("Launch");
     await restarted.service.dispose();
   });
 
