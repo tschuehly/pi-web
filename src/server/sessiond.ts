@@ -385,6 +385,7 @@ async function createSessionDaemonRuntime() {
     sessionsForFailedConstruction = sessions;
     const durableHostOptions: DurableHostOptions | undefined = durableHostEntry === undefined || durableHostEntry === "" ? undefined : {
       entry: durableHostEntry,
+      webPort: config.port ?? 8504,
       // A new Chat's model: PI_WEB_DURABLE_MODEL, else the active profile's default model, as for legacy Chats.
       model: (cwd) => durableDefaultModel(cwd, activeAgentProfile.dir, daemonEnvironment),
       // The host reads only the Claude subscription login (auth.json, under Pi's own lock) from this directory.
@@ -587,6 +588,9 @@ async function listenSessionDaemon({ shutdown, projects, workspaceProviders, ses
 
   if (port !== undefined) {
     await app.listen({ port, host });
+    // A port-zero trial: hosts started after bind must fence the allocated port, not zero.
+    const address = app.server.address();
+    if (port === 0 && address && typeof address !== "string") process.env["PI_WEB_SESSIOND_PORT"] = String(address.port);
   } else {
     const path = sessiondSocketPath(daemonEnvironment);
     await claimSessiondSocketPath(path);

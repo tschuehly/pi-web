@@ -73,7 +73,7 @@ function familyEntry(context: LaunchContext, record: DurableChatRecord): string 
 
 /** The daemon's environment, as a forked host inherited it, less secret-named variables (a plist is a file on disk). */
 function hostEnvironment(context: LaunchContext) {
-  return Object.fromEntries(Object.entries({ ...process.env, ...daemonPathEnvironment(), PI_CODING_AGENT_DIR: context.agentDir }).filter(([name]) => !SECRET_NAME.test(name)));
+  return Object.fromEntries(Object.entries({ ...process.env, ...daemonPathEnvironment(process.env, context.webPort), PI_CODING_AGENT_DIR: context.agentDir }).filter(([name]) => !SECRET_NAME.test(name)));
 }
 
 /** Unload the family's job (bootout returns once its process is gone), remove its plist and forget the host. */

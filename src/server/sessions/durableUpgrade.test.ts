@@ -5,6 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, fullAccessNonceArgs, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
 import type { DurableChatRecord } from "./sessionRuntimeLocator.js";
+import { effectivePiWebConfig } from "../../config.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 
 // Daemon orchestration of the seamless host upgrades (idle close, Upgrade now, automatic upgrade) against host doubles:
@@ -455,6 +456,11 @@ describe("seamless upgrade orchestration", () => {
     expect(s.hosts[2]?.requests.filter((request) => request.method === "resume")).toHaveLength(1);
     expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
     await s.durable.dispose();
+  });
+
+  it("hosts get the resolved web port even after the daemon scrubs PORT", () => {
+    const parsed = effectivePiWebConfig({ env: { PORT: "9.321e3", PI_WEB_CONFIG: join(tmpdir(), "unused-durable-port-test.json") } });
+    expect(daemonPathEnvironment({}, parsed.config.port)).toEqual({ PI_WEB_PORT: "9321" });
   });
 
   it("hosts get PI WEB's folder and socket overrides absolute, resolved against the daemon's folder", () => {

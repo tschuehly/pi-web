@@ -80,15 +80,17 @@ export const fullAccessNonceArgs = (nonce: string | undefined, entry: string): s
  * PI WEB's folder and socket overrides, absolute as this daemon resolves them (against its own folder, config.ts and
  * sessiond.ts), for its hosts: their fenced commands are then denied the same paths from any folder.
  */
-export function daemonPathEnvironment(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  return Object.fromEntries(["PI_WEB_DATA_DIR", "PI_WEB_DURABLE_HOST_DIR", "PI_WEB_SESSIOND_SOCKET"].flatMap((name) => {
+export function daemonPathEnvironment(env: NodeJS.ProcessEnv = process.env, webPort?: number): Record<string, string> {
+  const paths = Object.fromEntries(["PI_WEB_DATA_DIR", "PI_WEB_DURABLE_HOST_DIR", "PI_WEB_SESSIOND_SOCKET"].flatMap((name) => {
     const value = env[name];
     return value === undefined || value === "" ? [] : [[name, resolve(value)]];
   }));
+  // PORT has already been scrubbed from process.env; use the server parser’s result, not a second config read.
+  return webPort === undefined ? paths : { ...paths, PI_WEB_PORT: String(webPort) };
 }
 
 /** What starts a family's host: the Workbench host entry, the model and Pi agent dir it runs with. */
-export interface DurableHostOptions { entry: string; model: string | ((cwd: string) => string); agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
+export interface DurableHostOptions { webPort?: number; entry: string; model: string | ((cwd: string) => string); agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
 
 /** The host's arguments for one family; a new Chat starts at the thinking level Pi would pick (a reopened one keeps its own). */
 export function durableHostLaunchArgs(options: DurableHostOptions, record: Pick<DurableChatRecord, "id" | "cwd">, storeDir: string): string[] {
@@ -119,7 +121,7 @@ export function forkDurableHost(options: DurableHostOptions): DurableHostLaunche
       return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : []), ...(launch?.readTranscript === true ? ["--read-transcript"] : []), ...fullAccessNonceArgs(launch?.fullAccessNonce, options.entry)], {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
-        env: { ...process.env, ...daemonPathEnvironment(), PI_CODING_AGENT_DIR: options.agentDir },
+        env: { ...process.env, ...daemonPathEnvironment(process.env, options.webPort), PI_CODING_AGENT_DIR: options.agentDir },
       });
     } finally {
       closeSync(log);
