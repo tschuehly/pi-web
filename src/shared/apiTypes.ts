@@ -950,6 +950,8 @@ export interface PendingAskUser {
   turnsSinceUpdate: number;
   /** Markdown the user needs to answer, shown above the questions. */
   context?: string;
+  /** The user's edit in a partial send supplied the current context (absent when cleared); an agent revision that sets context ends it. */
+  contextEdited?: true;
   questions: AskUserQuestion[];
 }
 

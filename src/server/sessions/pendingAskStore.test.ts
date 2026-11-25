@@ -462,9 +462,26 @@ describe("PendingAskStore edited context", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
     const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, context: "Mine" });
+    const edited = store.pendingAsks(sessionId)[0]?.contextEdited === true;
     const rest = store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }] });
     if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
-    expect(withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"])).toMatchObject({ editedContext: "Mine", answeredCount: 2 });
+    expect(withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"], edited)).toMatchObject({ editedContext: "Mine", answeredCount: 2 });
+  });
+
+  it("tracks who supplied the context: an agent revision back to the user's text is the agent's, not the user's edit", () => {
+    const store = testStore();
+    const ask = openTwoQuestions(store);
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, context: "Mine" });
+    expect(store.pendingAsks(sessionId)[0]?.contextEdited).toBe(true);
+    expect(store.update({ sessionId, askId: ask.askId })?.contextEdited).toBe(true);
+    store.update({ sessionId, askId: ask.askId, context: "Agent's revision" });
+    const back = store.update({ sessionId, askId: ask.askId, context: "Mine" });
+    expect(back).not.toHaveProperty("contextEdited");
+    const rest = store.submit(sessionId, ask.askId, { revision: back?.revision ?? "", answers: [{ id: "q2", values: ["no"] }] });
+    if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
+    const whole = withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"], back?.contextEdited === true);
+    expect(whole.context).toBe("Mine");
+    expect(whole).not.toHaveProperty("editedContext");
   });
 
   it("drops an earlier edit from the whole set's record once the agent revised the context after it", () => {
@@ -494,6 +511,20 @@ describe("PendingAskStore whole-set record", () => {
     expect(parseAskUserOutcome(whole).questions).toHaveLength(ASK_USER_QUESTION_LIMIT + 1);
   });
 
+  it("names the unanswered questions in the whole record's set order, so the browser accepts a set revised to another order", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("a"), question("b"), question("c")] });
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "a", values: ["yes"] }], partial: true });
+    const revised = store.update({ sessionId, askId: ask.askId, questions: [question("c"), question("b")] });
+    const rest = store.submit(sessionId, ask.askId, { revision: revised?.revision ?? "", answers: [] });
+    if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
+    const whole = withEarlierAnswers(rest.outcome, [first.outcome], ["a", "b", "c"]);
+    expect(whole.questions.map((record) => record.question.id)).toEqual(["a", "b", "c"]);
+    expect(whole.unansweredIds).toEqual(["b", "c"]);
+    expect(whole.summary).toBe("Answered 1 of 3; unanswered: b, c");
+    expect(() => parseAskUserOutcome(whole)).not.toThrow();
+  });
+
   it("bounds the record, dropping the oldest earlier answers first", () => {
     const records = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => ({ question: question(`${prefix}${index.toString()}`), answered: true, values: ["yes"] }));
     const send = (questions: AskUserOutcome["questions"], partial: boolean): AskUserOutcome => ({ askId: "ask-1", reason: "submitted", askedAt: "t", closedAt: "t", questions, answeredCount: questions.length, unansweredIds: [], summary: "s", ...(partial ? { partial: true as const, revision: "r" } : {}) });
@@ -503,6 +534,9 @@ describe("PendingAskStore whole-set record", () => {
     expect(whole.questions[0]?.question.id).toBe("s1-5");
     expect(whole.questions.at(-1)?.question.id).toBe("last-4");
     expect(whole).toMatchObject({ answeredCount: ASK_USER_RECORD_QUESTION_LIMIT });
+    // The summary still states the whole set and says how many answers the record leaves out.
+    const total = 6 * ASK_USER_QUESTION_LIMIT + 5;
+    expect(whole.summary).toBe(`Answered ${total.toString()} of ${total.toString()}; none left unanswered; ${(total - ASK_USER_RECORD_QUESTION_LIMIT).toString()} earlier answers not shown`);
     expect(() => parseAskUserOutcome(whole)).not.toThrow();
   });
 });

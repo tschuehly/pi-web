@@ -94,7 +94,7 @@ describe("openAsksFromTranscript", () => {
     live.submit(SESSION, "a1", { revision: "r1", answers: [{ id: "db", values: [], otherText: "pg" }], partial: true, context: "Mine" }, (outcome) => branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }));
 
     expect(openAsksFromTranscript(branch, SESSION).open).toEqual(live.pendingAsks(SESSION));
-    expect(live.pendingAsks(SESSION)[0]?.context).toBe("Mine");
+    expect(live.pendingAsks(SESSION)[0]).toMatchObject({ context: "Mine", contextEdited: true });
   });
 
   it("rebuilds the rest of a set without the context its partial send cleared", () => {

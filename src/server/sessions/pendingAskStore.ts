@@ -128,9 +128,12 @@ export class PendingAskStore {
     const sessionId = requireSessionId(input.sessionId);
     const ask = this.asksOf(sessionId).get(input.askId);
     if (ask === undefined) return undefined;
-    const context = validateContext(input.context) ?? ask.context;
+    const supplied = validateContext(input.context);
+    const context = supplied ?? ask.context;
     const questions = input.questions === undefined ? ask.questions : validateQuestions(input.questions);
     const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), revision: this.createRevision(), turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
+    // The agent supplied this context, even when its text equals the user's earlier edit.
+    if (supplied !== undefined) delete updated.contextEdited;
     this.setAsk(sessionId, updated);
     return cloneAsk(updated);
   }
@@ -180,6 +183,7 @@ export class PendingAskStore {
         const updated: PendingAskUser = { ...ask, revision, questions: remaining };
         if (editedContext === "") delete updated.context;
         else if (editedContext !== undefined) updated.context = editedContext;
+        if (editedContext !== undefined) updated.contextEdited = true;
         this.setAsk(sessionId, updated);
         return { status: "closed", outcome, ask: cloneAsk(updated) };
       }
@@ -345,22 +349,28 @@ function askUserOutcome(
 /**
  * The browser's record of a set closed after partial sends: the final close's record with the questions the
  * earlier partial records closed, in `order` (the set's question ids; others keep send order), counts and summary
- * over all of them. The transcript and the model keep each send's own record.
+ * over all of them; `contextEdited` is the closed set's flag of that name. The transcript and the model keep each send's own record.
  */
-export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly AskUserOutcome[], order: readonly string[] = []): AskUserOutcome {
-  // shortcut: past the record limit the oldest earlier answers drop out (each send's own record keeps them), raise the limit if sets get revised that often.
+export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly AskUserOutcome[], order: readonly string[] = [], contextEdited = false): AskUserOutcome {
+  // shortcut: past the record limit the oldest earlier answers drop out (each send's own record keeps them; the summary
+  // counts them and says how many are not shown), page the record if sets get revised that often.
   const all = earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.questions);
-  const records = all.slice(Math.max(0, all.length + outcome.questions.length - ASK_USER_RECORD_QUESTION_LIMIT));
+  const cut = Math.max(0, all.length + outcome.questions.length - ASK_USER_RECORD_QUESTION_LIMIT);
+  const records = all.slice(cut);
+  const hidden = all.slice(0, cut);
   if (outcome.partial === true || records.length === 0) return outcome;
   const rank = (record: AskUserQuestionRecord) => { const index = order.indexOf(record.question.id); return index < 0 ? order.length : index; };
   const questions = [...records, ...outcome.questions].sort((a, b) => rank(a) - rank(b));
   const answeredCount = questions.filter((record) => record.answered).length;
   const skipped = questions.filter((record) => record.skipped === true).length;
+  // From the sorted records, not the final send's: a revision may list the open questions in another order.
+  const unansweredIds = questions.filter((record) => !record.answered && record.skipped !== true).map((record) => record.question.id);
   // An edit goes out once, with the send that carried it, so the last send may carry none. It became the set's context, so
-  // it still applies only while the final context is that edit ("" = cleared): an agent's later revision wins.
+  // it still applies while the closed set's `contextEdited` says the user supplied its context: an agent's later revision wins.
   const lastEdit = [...earlier].reverse().find((each) => each.askId === outcome.askId && each.editedContext !== undefined)?.editedContext;
-  const editedContext = outcome.editedContext ?? (lastEdit !== undefined && lastEdit === (outcome.context ?? "") ? lastEdit : undefined);
-  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, summary: summaryLine(questions.length - skipped, answeredCount, outcome.unansweredIds) + skippedSummary(questions) };
+  const editedContext = outcome.editedContext ?? (contextEdited ? lastEdit : undefined);
+  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), questions, answeredCount, unansweredIds, summary: summaryLine(questions.length + hidden.length - skipped - hidden.filter((record) => record.skipped === true).length, answeredCount + hidden.filter((record) => record.answered).length, unansweredIds) + skippedSummary(questions)
+      + (hidden.length === 0 ? "" : `; ${hidden.length.toString()} earlier ${hidden.length === 1 ? "answer" : "answers"} not shown`) };
 }
 
 /** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
