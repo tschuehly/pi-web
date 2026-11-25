@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -866,7 +866,7 @@ describe("Durable Chats", () => {
       const host = new FakeHost(DURABLE_HOST_PROTOCOL, ["viewed"]);
       const answer = host.answer;
       host.answer = (request) => {
-        if (request.method === "setViewed" && failFalse && (request.params as { viewed: boolean }).viewed === false) {
+        if (request.method === "setViewed" && failFalse && request.params?.viewed === false) {
           failFalse = false;
           throw new Error("no");
         }
@@ -877,7 +877,7 @@ describe("Durable Chats", () => {
     const chat = await durable.start("/work/a");
     await durable.status({ id: chat.id, cwd: chat.cwd });
     const viewed = () => only(launched).requests.filter((request) => request.method === "setViewed").map((request) => request.params);
-    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const settle = () => new Promise<void>((resolve) => { setTimeout(resolve, 0); });
     const browser = Object.assign(new EventEmitter(), { OPEN: 1, readyState: 1, send: () => undefined, terminate: () => undefined });
     hub.add(chat.id, browser);
     await settle();
@@ -886,7 +886,7 @@ describe("Durable Chats", () => {
     // The last browser leaves and that send fails; the Chat stays closed, yet the host hears false again by itself.
     failFalse = true;
     browser.emit("close");
-    await vi.waitFor(() => expect(viewed()).toEqual([{ viewed: false }, { viewed: true }, { viewed: false }, { viewed: false }]), { timeout: 3000 });
+    await vi.waitFor(() => { expect(viewed()).toEqual([{ viewed: false }, { viewed: true }, { viewed: false }, { viewed: false }]); }, { timeout: 3000 });
     // Taken: nothing more goes out.
     await new Promise((resolve) => setTimeout(resolve, 1200));
     expect(viewed()).toHaveLength(4);
@@ -2020,7 +2020,8 @@ describe("the owner's run button", () => {
     expect(results.find((result) => result.status === "fulfilled")).toEqual({ status: "fulfilled", value: { status: "started" } });
     const [run, ...more] = runs(launched);
     expect(more).toEqual([]);
-    expect(run?.params).toEqual({ operationId: expect.stringMatching(/^owner-run:[0-9a-f]{32}$/), cwd, command: `cd -P -- '${cwd}' && [ "$PWD" = '${cwd}' ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\npwd; exit 7\n` });
+    expect(run?.params).toMatchObject({ cwd, command: `cd -P -- '${cwd}' && [ "$PWD" = '${cwd}' ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\npwd; exit 7\n` });
+    expect(run?.params?.operationId).toEqual(expect.stringMatching(/^owner-run:[0-9a-f]{32}$/));
     // The agent learns the result from the job's completion, not from a prompt of PI WEB's.
     expect(launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"))).toEqual([]);
   });
