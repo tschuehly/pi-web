@@ -66,12 +66,14 @@ describe("createAskUserToolDefinition", () => {
       type: "object",
       properties: {
         context: { type: "string", maxLength: 4000 },
-        questions: { type: "array", minItems: 1, maxItems: 20 },
+        questions: { type: "array", maxItems: 20 },
         update: { type: "string" },
         withdraw: { type: "string" },
       },
     });
     expect(tool.parameters).not.toHaveProperty("required");
+    // An approval set may be the context alone (questions: []).
+    expect(tool.parameters).not.toHaveProperty("properties.questions.minItems");
     expect(tool.parameters).toHaveProperty("properties.questions.items.properties.options.items.properties.recommended.type", "boolean");
     // Every question carries its own Markdown detail, so the set answers without the Chat.
     expect(tool.parameters).toHaveProperty("properties.questions.items.required", expect.arrayContaining(["id", "question", "detail"]));

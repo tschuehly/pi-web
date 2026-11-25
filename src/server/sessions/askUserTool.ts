@@ -91,9 +91,8 @@ const AskUserParams = Type.Object({
     description: "Required for a new set. Markdown shown above the questions: what all the questions share, so the user can answer without reading the Chat. Put each question's specifics in its `detail` and each option's consequence in the option's `detail`.",
   })),
   questions: Type.Optional(Type.Array(AskUserQuestionParams, {
-    minItems: 1,
     maxItems: ASK_USER_QUESTION_LIMIT,
-    description: "Required for a new set: the questions in reading order. Every question may be left unanswered.",
+    description: "Required for a new set, except one with approval: true that only asks to approve the context: the questions in reading order. Every question may be left unanswered.",
   })),
   update: Type.Optional(Type.String({
     maxLength: ASK_USER_ID_MAX_LENGTH,
@@ -147,6 +146,7 @@ function refs(ask: PendingAskUser): string {
 
 function postedText(ask: PendingAskUser): string {
   const count = ask.questions.length;
+  if (count === 0) return `Posted the context to the user for approval as question set ${ask.askId}, shown above their composer. You are not paused: keep working on whatever does not depend on the approval, and end your turn if nothing does. The answer arrives later as a follow-up message. Do not repost it; revise it with update or drop it with withdraw.`;
   return `Posted ${count.toString()} question${count === 1 ? "" : "s"} to the user as question chips above their composer, ask ${ask.askId} (${refs(ask)}). You are not paused: keep working on whatever does not depend on the answers, and end your turn if nothing does. The answers arrive later as a follow-up message. Do not repost these questions; revise them with update or drop them with withdraw.`;
 }
 

@@ -121,9 +121,10 @@ export class PendingAskStore {
     if (context === undefined) {
       throw new PendingAskValidationError("context is required: say what the questions share so the user can answer without reading the Chat");
     }
-    if (input.questions === undefined) throw new PendingAskValidationError("questions are required for a new question set");
-    const questions = validateQuestions(input.questions);
     const approval = validateApproval(input.approval);
+    // Only an approval set may be the context alone.
+    if (input.questions === undefined && approval !== true) throw new PendingAskValidationError("questions are required for a new question set");
+    const questions = validateQuestions(input.questions ?? [], approval);
     const askedAt = this.timestamp();
     const ask: PendingAskUser = { askId: this.distinctAskId(sessionId), askedAt, updatedAt: askedAt, revision: this.createRevision(), turnsSinceUpdate: 0, context, ...(approval === undefined ? {} : { approval }), questions };
     this.setAsk(sessionId, ask);
@@ -137,8 +138,10 @@ export class PendingAskStore {
     if (ask === undefined) return undefined;
     const supplied = validateContext(input.context);
     const context = supplied ?? ask.context;
-    const questions = input.questions === undefined ? ask.questions : validateQuestions(input.questions);
     const approval = validateApproval(input.approval);
+    // Given, approval replaces the set's; absent, it stays. Either way only an approval set may have no questions.
+    const approved = input.approval === undefined ? ask.approval : approval;
+    const questions = validateQuestions(input.questions ?? ask.questions, approved);
     const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), revision: this.createRevision(), turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
     // The agent supplied this context, even when its text equals the user's earlier edit.
     if (supplied !== undefined) delete updated.contextEdited;
@@ -337,7 +340,7 @@ export function renderOpenAsksReminder(asks: readonly PendingAskUser[]): string 
   if (asks.length === 0) return "";
   return [
     "Question sets still open for the user (answers arrive as a follow-up message):",
-    ...asks.map((ask) => `- ${ask.askId} (${ask.questions.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}; updated ${ask.updatedAt}, ${ask.turnsSinceUpdate.toString()} turns ago): ${ask.questions[0]?.question ?? ""}`),
+    ...asks.map((ask) => `- ${ask.askId} (${ask.questions.length === 0 ? "approval of the context" : ask.questions.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}; updated ${ask.updatedAt}, ${ask.turnsSinceUpdate.toString()} turns ago): ${ask.questions[0]?.question ?? ask.context?.split("\n")[0] ?? ""}`),
     "If one no longer matches the situation and ask_user is available, update or withdraw it; otherwise leave it.",
   ].join("\n");
 }
@@ -485,8 +488,8 @@ function validateContext(context: string | undefined): string | undefined {
   return context;
 }
 
-function validateQuestions(questions: AskUserQuestion[]): AskUserQuestion[] {
-  if (questions.length === 0) throw new PendingAskValidationError("An ask must contain at least one question");
+function validateQuestions(questions: readonly AskUserQuestion[], approval?: true): AskUserQuestion[] {
+  if (questions.length === 0 && approval !== true) throw new PendingAskValidationError("An ask must contain at least one question");
   if (questions.length > ASK_USER_QUESTION_LIMIT) {
     throw new PendingAskValidationError(`An ask must not contain more than ${ASK_USER_QUESTION_LIMIT.toString()} questions`);
   }

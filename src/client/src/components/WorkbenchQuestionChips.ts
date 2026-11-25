@@ -18,9 +18,12 @@ const CHEVRON_DOWN_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusa
 /** The submit callback resolves to the closed record when its send closed or partly sent the set (the session controller returns it). */
 const isOutcome = (value: unknown): value is AskUserOutcome => typeof value === "object" && value !== null && "reason" in value && "askId" in value;
 
-/** Open questions across a Chat's sets, without those a dependent `showIf` hides under the stored drafts; a Chat tab shows this count. */
+/**
+ * Open questions across a Chat's sets, without those a dependent `showIf` hides under the stored drafts; a Chat tab
+ * shows this count. An approval set without questions counts as one: it still waits for the user.
+ */
 export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined, draftSessionId: string): number =>
-  (asks ?? []).reduce((sum, ask) => sum + visibleQuestions(ask.questions, loadAskDraft(draftSessionId, ask.askId, undefined, ask.questions)).length, 0);
+  (asks ?? []).reduce((sum, ask) => sum + (ask.questions.length === 0 ? 1 : visibleQuestions(ask.questions, loadAskDraft(draftSessionId, ask.askId, undefined, ask.questions)).length), 0);
 
 /**
  * The row above a Chat's composer: its Activity roster and, beside the roster's header, one bar for the open questions

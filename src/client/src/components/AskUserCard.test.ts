@@ -832,6 +832,24 @@ describe("ask-user-card context", () => {
     expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", context: "My plan.", approved: true, answers: [{ id: "db", values: ["pg"] }] });
   });
 
+  it("shows an approval set without questions as its context, the note and Approve, with Send note in place of Send answers", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk({ ...openAsk([]), context: "Plan.", approval: true }, onSubmit);
+    const root = renderRoot(card);
+    const buttons = (): string[] => [...root.querySelectorAll(".form-footer button")].map((button) => button.textContent.trim());
+    expect(buttons()).toEqual(["Approve", "Send note"]);
+    expect(root.querySelector(".header-status")).toBeNull();
+    expect(root.querySelector(".questions")).toBeNull();
+    expect(buttonWithText(root, "Send note").disabled).toBe(true);
+    typeInto(markdownField(root, ".ask-note"), "Ship it.");
+    await card.updateComplete;
+    expect(buttonWithText(root, "Send note").disabled).toBe(false);
+    buttonWithText(root, "Approve").click();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", note: "Ship it.", approved: true, answers: [] });
+  });
+
   it("marks an approved set's record Approved", async () => {
     const card = new AskUserCard();
     card.outcome = {

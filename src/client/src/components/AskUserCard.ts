@@ -154,6 +154,8 @@ export class AskUserCard extends LitElement {
     const unanswered = unansweredQuestions(ask.questions, this.answers);
     // A question whose showIf is unmet is left out; ids keep the question's place in the set, numbers count the shown ones.
     const visible = visibleQuestions(ask.questions, this.answers);
+    // An approval set may be the context alone: Approve, or send a note (with any context edit) instead of answers.
+    const contextOnly = ask.questions.length === 0;
     return html`
       <article class="ui-transcript-surface card open-card" aria-labelledby="ask-user-heading">
         <header class="card-header">
@@ -162,16 +164,16 @@ export class AskUserCard extends LitElement {
             <time datetime=${ask.updatedAt} title=${ask.updatedAt}>${updatedAgo(ask.updatedAt)}</time>
             ${ask.turnsSinceUpdate > ASK_USER_STALE_TURNS ? html`<span class="stale" title=${`${String(ask.turnsSinceUpdate)} agent turns without an update`}>may be stale</span>` : null}
           </span>
-          <span class="header-status" role="status" aria-live="polite" aria-atomic="true">
+          ${contextOnly ? null : html`<span class="header-status" role="status" aria-live="polite" aria-atomic="true">
             ${count} of ${visible.length} answered
-          </span>
+          </span>`}
           <slot name="actions"></slot>
         </header>
         ${this.renderContextEditor(ask.context)}
         <form class="ask-form" @submit=${(event: SubmitEvent) => { this.handleSubmit(event, ask); }}>
-          <div class="questions">
+          ${contextOnly ? null : html`<div class="questions">
             ${repeat(visible, (question) => question.id, (question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
-          </div>
+          </div>`}
           <footer class="form-footer">
             <div class="note-column">
               ${this.renderWithImages("note", "the note", html`<ask-markdown-field class="ask-note" .label=${"Note for the whole set"} .placeholderText=${"Note for the whole set (optional)"} .value=${this.note} @ask-field-input=${this.changeNote}></ask-markdown-field>`)}
@@ -181,8 +183,8 @@ export class AskUserCard extends LitElement {
               : html`
                   <label class="keep-context"><input type="checkbox" .checked=${this.keepContextOpen} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.keepContextOpen = event.currentTarget.checked; }} />Keep context open</label>
                   ${ask.approval === true ? html`<button class="approve" type="button" title="Approve the context (your edited version, if you changed it) and send the answers; unanswered questions close too" ?disabled=${this.submitting} @click=${() => { void this.submitAnswers(ask, true); }}>Approve</button>` : null}
-                  <button class="primary-action" type="submit" ?disabled=${this.submitting}>
-                    ${this.submitting ? "Sending…" : "Send answers"}
+                  <button class="primary-action" type="submit" ?disabled=${this.submitting || (contextOnly && this.note.trim() === "" && this.contextSubmission().context === undefined)}>
+                    ${this.submitting ? "Sending…" : contextOnly ? "Send note" : "Send answers"}
                   </button>
                 `}
           </footer>

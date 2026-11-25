@@ -411,7 +411,8 @@ function parseAskTypedFields(record: Record<string, unknown>): Partial<AskUserQu
 function parsePendingAskUser(value: unknown): PendingAskUser {
   const record = requireRecord(value);
   const questions = boundedArrayOf(record["questions"], parseAskUserQuestion, ASK_USER_QUESTION_LIMIT, "questions");
-  if (questions.length === 0) throw new Error("Pending ask has no questions");
+  // Only an approval set may be the context alone.
+  if (questions.length === 0 && record["approval"] !== true) throw new Error("Pending ask has no questions");
   assertUniqueStrings(questions.map((question) => question.id), "ask question id");
   const askedAt = requireNonEmptyString(record, "askedAt");
   // A daemon older than the Questions pane sends neither staleness field.

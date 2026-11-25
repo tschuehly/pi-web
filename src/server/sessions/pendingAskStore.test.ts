@@ -350,6 +350,23 @@ describe("PendingAskStore approval", () => {
     expect(text).toContain("The user edited the context:\n```markdown\nMy plan.\n```");
   });
 
+  it("opens an approval set without questions, keeps it one, and closes it approved; without approval questions stay required", () => {
+    const store = testStore();
+    expect(() => store.open({ sessionId, context })).toThrow("questions are required for a new question set");
+    expect(() => store.open({ sessionId, context, questions: [] })).toThrow("An ask must contain at least one question");
+    const ask = store.open({ sessionId, context, approval: true });
+    expect(ask.questions).toEqual([]);
+    expect(store.update({ sessionId, askId: ask.askId, context: "Plan v2." })?.questions).toEqual([]);
+    expect(() => store.update({ sessionId, askId: ask.askId, approval: false })).toThrow("An ask must contain at least one question");
+    const revised = store.pendingAsks(sessionId)[0];
+    if (revised === undefined) throw new Error("expected the set to stay open");
+    expect(renderOpenAsksReminder([revised])).toContain(`- ${ask.askId} (approval of the context; `);
+    const result = store.submit(sessionId, ask.askId, { revision: revised.revision, answers: [], note: "Go.", approved: true });
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+    expect(result.outcome).toMatchObject({ approved: true, note: "Go.", questions: [] });
+    expect(parseAskUserOutcome(result.outcome).approved).toBe(true);
+  });
+
   it("refuses an approval of a set that asks for none", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("q1")] });

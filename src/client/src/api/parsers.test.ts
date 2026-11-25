@@ -1328,6 +1328,9 @@ describe("API parsers", () => {
     expect(parseAskUserCloseResponse({ result: "closed", outcome: { ...askOutcomeWire(), context, editedContext: "Mine" }, sessionStatus: statusWire() }).outcome?.editedContext).toBe("Mine");
     expect(parseAskUserOutcome({ ...askOutcomeWire(), context, editedContext: "" }).editedContext).toBe("");
     expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: true } }).pendingAsks?.[0]?.approval).toBe(true);
+    // Only an approval set may come without questions.
+    expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: true, questions: [] } }).pendingAsks?.[0]?.questions).toEqual([]);
+    expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), questions: [] } })).toThrow("Pending ask has no questions");
     expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: "yes" } }).pendingAsks?.[0]).not.toHaveProperty("approval");
     expect(parseAskUserOutcome({ ...askOutcomeWire(), approved: true }).approved).toBe(true);
     const images = [{ target: "note", reference: "[PIC_1]", mimeType: "image/png", name: "a.png" }];

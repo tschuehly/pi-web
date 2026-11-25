@@ -81,6 +81,8 @@ describe("WorkbenchQuestionChips", () => {
     expect(bar(chips)?.getAttribute("aria-expanded")).toBe("false");
     expect(drawer(chips)).toBeNull();
     expect(openQuestionCount([ask("abc-1"), twoQuestions], "")).toBe(3);
+    // An approval set of the context alone still waits for the user.
+    expect(openQuestionCount([{ ...ask("ctx-1"), approval: true, questions: [] }], "")).toBe(1);
   });
 
   it("counts answered questions from the drafts and as the user answers in the drawer", async () => {
