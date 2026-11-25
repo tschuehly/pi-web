@@ -575,9 +575,12 @@ function validateLabels(labels: unknown, id: string): [string, string] {
 
 function validateOption(option: AskUserQuestionOption, value: string, questionId: string): AskUserQuestionOption {
   const detail = option.detail;
+  const label = requireText(option.label, `label of option ${value} in question ${questionId}`);
+  // The panel adds its own Custom choice; an agent's second one could never be picked as Custom.
+  if (/^custom$|\(custom\)$/iu.test(label.trim())) throw new PendingAskValidationError(`Option ${value} is labelled Custom; a Custom choice is always added, so drop this option`);
   return {
     value,
-    label: requireText(option.label, `label of option ${value} in question ${questionId}`),
+    label,
     ...(detail === undefined ? {} : { detail: requireText(detail, `detail of option ${value} in question ${questionId}`) }),
     ...(option.recommended === true ? { recommended: true } : {}),
   };

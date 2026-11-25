@@ -108,6 +108,13 @@ describe("ask draft storage", () => {
     expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])["q2"]?.values).toEqual([]);
   });
 
+  it("drops a drafted selection of an option value the question does not offer", () => {
+    const storage = new MemoryStorage();
+    storage.setItem("pi-web:ask-draft:local:s1:ask-1", JSON.stringify({ q1: { values: ["gone", "pg"], asked: askedFingerprint(singleSelect) } }));
+
+    expect(loadAskDraft("local:s1", "ask-1", storage, [singleSelect])["q1"]?.values).toEqual(["pg"]);
+  });
+
   it("keys answers by own question ids, so ids like constructor and __proto__ work", () => {
     const storage = new MemoryStorage();
     const untouched: AskUserQuestion = { ...singleSelect, id: "constructor" };

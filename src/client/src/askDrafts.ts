@@ -57,13 +57,15 @@ export function loadAskDraft(sessionId: string, askId: string, storage = browser
     answers = {};
   }
   if (questions === undefined) return answers;
-  const current = new Map(questions.map((question) => [question.id, askedFingerprint(question)]));
-  return { ...presetAnswers(questions), ...Object.fromEntries(Object.entries(answers).filter(([id, answer]) => answer.asked !== undefined && answer.asked === current.get(id))) };
-}
-
-/** An agent option whose label names Custom ("Correct it (Custom)") is the question's Custom choice: the card adds no second one. */
-export function customLabelledOption(question: Pick<AskUserQuestion, "options">): AskUserQuestion["options"][number] | undefined {
-  return question.options.find((option) => /custom/iu.test(option.label));
+  const current = new Map(questions.map((question) => [question.id, question]));
+  const kept = Object.entries(answers).flatMap(([id, answer]): [string, AskDraftAnswer][] => {
+    const question = current.get(id);
+    if (question === undefined || answer.asked === undefined || answer.asked !== askedFingerprint(question)) return [];
+    // A selection of an option the question no longer offers (a draft from an older panel) would be refused on send.
+    const offered = new Set(question.options.map((option) => option.value));
+    return [[id, { ...answer, values: answer.values.filter((value) => offered.has(value)) }]];
+  });
+  return { ...presetAnswers(questions), ...Object.fromEntries(kept) };
 }
 
 /**
@@ -79,9 +81,7 @@ function presetAnswers(questions: readonly AskUserQuestion[]): AskDraftAnswers {
       if (preset !== undefined) answers.push([question.id, { values: [], value: preset, asked: askedFingerprint(question) }]);
       continue;
     }
-    // The option standing in for Custom has no value of its own to preselect.
-    const custom = customLabelledOption(question);
-    const recommended = question.options.filter((option) => option.recommended === true && option !== custom).map((option) => option.value);
+    const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
     if (recommended.length > 0) answers.push([question.id, { values: question.multiple === true ? recommended : recommended.slice(0, 1), asked: askedFingerprint(question) }]);
   }
   return Object.fromEntries(answers);

@@ -138,29 +138,20 @@ describe("ask-user-card live form", () => {
     });
   });
 
-  it("lets an agent option labelled Custom stand in for the automatic Custom choice", async () => {
+  it("keeps an option labelled Custom (from a set posted before the store refused them) an ordinary option beside the automatic Custom", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([
       question("fix", "Land it?", [option("merge", "Merge it"), { ...option("correct", "Correct it (custom)"), recommended: true }]),
     ]), onSubmit);
     const root = renderRoot(card);
-    // Recommended, it has no value to preselect: the Custom text is the answer.
-    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("0 of 1 answered");
     const labels = [...root.querySelectorAll(".option-label")].map((label) => label.textContent.trim());
 
-    expect(labels).toEqual(["Merge it", "Correct it (custom) Recommended"]);
-    expect(root.querySelectorAll("input[value='correct']")).toHaveLength(0);
-    inputWithValue(root, "__pi_web_other__").click();
-    await card.updateComplete;
-    await Promise.resolve();
-    const field = markdownField(root, ".other-answer ask-markdown-field");
-    expect(field.contains(root.activeElement)).toBe(true);
-    typeInto(field, "Rename it first");
-    await card.updateComplete;
+    expect(labels).toEqual(["Merge it", "Correct it (custom) Recommended", "Custom"]);
+    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 1 answered");
     buttonWithText(root, "Send answers").click();
     await Promise.resolve();
 
-    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", answers: [{ id: "fix", values: [], otherText: "Rename it first" }] });
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", answers: [{ id: "fix", values: ["correct"] }] });
   });
 
   it("edits a proposed option in its own row into the custom answer for single and multi-select questions", async () => {
