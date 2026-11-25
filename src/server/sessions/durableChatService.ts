@@ -1043,10 +1043,10 @@ export class DurableChatService {
     const observed = status.extensionStatuses?.["working-mode"];
     const record = this.deps.locator.durable(id);
     if (observed === undefined || record === undefined) return status;
-    const sampled = (status as { workingModeSample?: unknown }).workingModeSample;
+    const sampled: unknown = Reflect.get(status, "workingModeSample");
     const sample = typeof sampled === "number" ? sampled : undefined;
     const last = this.#modeSample.get(id);
-    if (last === undefined || last.connection !== connection || (sample !== undefined && last.sample !== undefined ? sample > last.sample : seq > last.seq)) {
+    if (last?.connection !== connection || (sample !== undefined && last.sample !== undefined ? sample > last.sample : seq > last.seq)) {
       this.#modeSample.set(id, { connection, sample, seq });
       if (observed !== record.workingMode) this.deps.locator.update(id, { workingMode: observed, workingModeVersion: (record.workingModeVersion ?? 0) + 1 });
     }
