@@ -1458,6 +1458,35 @@ describe("ask-user-card answer images", () => {
     expect(root.querySelector(".stranded-images")).toBeNull();
   });
 
+  it("refuses a one-question send whose answer hides a follow-up holding images, offering their removal", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const details: AskUserQuestion = { ...textQuestion("details", "Details?"), showIf: { question: "proceed", values: ["yes"] } };
+    const card = await mountOpenAsk({ ...openAsk([question("proceed", "Proceed?", [option("yes", "Yes"), option("no", "No")]), details, textQuestion("other", "Other?")]), askId: "ask-hidden-one" }, onSubmit);
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    inputWithValue(root, "yes").click();
+    await card.updateComplete;
+    paste(requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-1"), "details"), [pngFile("details.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    inputWithValue(root, "no").click();
+    await card.updateComplete;
+    requiredElement(root.querySelector<HTMLButtonElement>(".send-one"), "send proceed").click();
+    await card.updateComplete;
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(card.sendAnswered()).toBeDefined();
+    await card.updateComplete;
+    expect(onSubmit).not.toHaveBeenCalled();
+    const bar = requiredElement(root.querySelector(".stranded-images"), "stranded images in the send bar");
+    expect(bar.textContent).toContain("Details?");
+    requiredElement(bar.querySelector<HTMLButtonElement>(".answer-image-remove"), "remove").click();
+    await card.updateComplete;
+    requiredElement(root.querySelector<HTMLButtonElement>(".send-one"), "send proceed").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenCalledWith("ask-hidden-one", expect.objectContaining({ partial: true, answers: [{ id: "proceed", values: ["no"] }] }));
+    expect(onSubmit.mock.calls[0]?.[1]).not.toHaveProperty("images");
+  });
+
   it("enables Send note on an approval-only set once only a note image is staged", async () => {
     const card = await mountOpenAsk({ ...openAsk([]), askId: "ask-note-image", approval: true });
     card.imagesEnabled = true;

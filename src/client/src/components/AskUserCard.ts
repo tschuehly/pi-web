@@ -14,7 +14,9 @@ import {
   type AskUserQuestionRecord,
   type AskUserSubmission,
   type PendingAskUser,
+  askAnswerSelection,
   askBooleanLabel,
+  hiddenAskQuestionIds,
 } from "../../../shared/apiTypes";
 import {
   answeredCount,
@@ -798,15 +800,32 @@ export class AskUserCard extends LitElement {
     // A closing send carries only answered (so shown) questions' images; any other staged one would be lost with the set.
     const sendable = new Set([NOTE, ...questionTargets(submission.answers)].map(askImageTargetKey));
     const stranded = Object.entries(this.images).filter(([key, images]) => !sendable.has(key) && images.length > 0).map(([key]) => key);
-    if (stranded.length > 0) {
-      const shown = new Set(visibleQuestions(ask.questions, this.answers).map((question) => askImageTargetKey({ kind: "question", id: question.id })));
-      // A shown field takes the message under it; hidden ones are listed in the send bar.
-      this.imageErrorTarget = stranded.find((key) => shown.has(key));
-      this.imageError = this.imageErrorTarget === undefined ? undefined : "Add an answer or remove the image";
-      this.hiddenImagesRefused = stranded.some((key) => !shown.has(key));
-      return Promise.resolve(false);
-    }
+    if (this.refuseStranded(ask, stranded)) return Promise.resolve(false);
     return this.send(ask, { ...submission, ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision, ...(approved ? { approved } : {}), ...this.imagesFor([...questionTargets(submission.answers), NOTE]) });
+  }
+
+  /** True when `stranded` image targets refuse the send: a shown field takes the message under it; hidden ones are listed in the send bar. */
+  private refuseStranded(ask: PendingAskUser, stranded: readonly string[]): boolean {
+    if (stranded.length === 0) return false;
+    const shown = new Set(visibleQuestions(ask.questions, this.answers).map((question) => askImageTargetKey({ kind: "question", id: question.id })));
+    this.imageErrorTarget = stranded.find((key) => shown.has(key));
+    this.imageError = this.imageErrorTarget === undefined ? undefined : "Add an answer or remove the image";
+    this.hiddenImagesRefused = stranded.some((key) => !shown.has(key));
+    return true;
+  }
+
+  /** The staged image targets a partial send of `answers` would lose: follow-ups the store skips, as their condition this send settles hides them. */
+  private partialStranded(ask: PendingAskUser, answers: readonly AskUserAnswer[]): string[] {
+    // Mirrors pendingAskStore.submit's partial branch.
+    const sent = new Map(answers.map((answer) => [answer.id, answer]));
+    const hidden = hiddenAskQuestionIds(ask.questions, (id) => askAnswerSelection(sent.get(id)));
+    for (const id of hidden) sent.delete(id);
+    const skipped = new Set<string>();
+    for (const question of ask.questions) {
+      const parent = question.showIf?.question;
+      if (hidden.has(question.id) && parent !== undefined && (sent.has(parent) || skipped.has(parent))) skipped.add(question.id);
+    }
+    return [...skipped].map((id) => askImageTargetKey({ kind: "question", id })).filter((key) => (ownEntry(this.images, key)?.length ?? 0) > 0);
   }
 
   /**
@@ -820,6 +839,7 @@ export class AskUserCard extends LitElement {
     const answers = toSubmission(ask.questions, this.answers).answers;
     if (answers.length === 0) return undefined;
     if (unansweredQuestions(ask.questions, this.answers).length === 0) return this.submitAnswers(ask);
+    if (this.refuseStranded(ask, this.partialStranded(ask, answers))) return Promise.resolve(false);
     return this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission(), ...this.imagesFor(questionTargets(answers)) });
   }
 
@@ -865,6 +885,7 @@ export class AskUserCard extends LitElement {
       void this.submitAnswers(ask);
       return;
     }
+    if (this.refuseStranded(ask, this.partialStranded(ask, answers))) return;
     // The sent questions leave the form, taking the focused button with them; the next revision focuses the question in its place.
     this.focusAfterRevision = index - parents.length;
     void this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission(), ...this.imagesFor(questionTargets(answers)) });
