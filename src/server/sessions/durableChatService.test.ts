@@ -626,6 +626,37 @@ describe("Durable Chats", () => {
     await restarted.durable.dispose();
   });
 
+  it("orders a Working Mode by when the host sampled it: an older reply released after a newer event and an unrelated delta loses", async () => {
+    const { durable, launched, locator, root } = await service();
+    const chat = await durable.start("/work/a");
+    const [before, unaligned, aligned] = ['{"phase":"pending"}', '{"aligned":false}', '{"aligned":true}'];
+    only(launched).push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": before } } });
+    await durable.dispose();
+
+    locator.setHost(chat.id, { label: "l", socket: "s", revision: "r", ownerEpoch: 1, pid: 1 });
+    const restarted = await service(() => {
+      const host = new FakeHost();
+      let held = false;
+      host.answer = (request) => {
+        if (request.method !== "status") return null;
+        if (held) return { ...status, extensionStatuses: { "working-mode": aligned }, workingModeSample: 3 };
+        held = true;
+        // The host samples unaligned (1) for the reattach read, then reports aligned (2) and a delta before its reply goes out.
+        queueMicrotask(() => {
+          host.push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": aligned }, workingModeSample: 2 } });
+          host.push({ type: "message.end", message: { role: "user", content: "hi", entryId: "1" } });
+          host.emit("message", { id: request.id, result: { ...status, extensionStatuses: { "working-mode": unaligned }, workingModeSample: 1 } });
+        });
+        return NO_REPLY;
+      };
+      return host;
+    }, undefined, { locator: new SessionRuntimeLocator(root) });
+    await restarted.durable.reattach();
+    expect(new SessionRuntimeLocator(root).durable(chat.id)).toMatchObject({ workingMode: aligned, workingModeVersion: 2 });
+    await expect(restarted.durable.workingMode({ id: chat.id, cwd: chat.cwd })).resolves.toEqual({ workingMode: aligned, workingModeVersion: 2 });
+    await restarted.durable.dispose();
+  });
+
   it("labels the whole record's context as the user's edit only while the host's set says the user supplied it", async () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");
