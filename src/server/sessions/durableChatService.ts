@@ -126,6 +126,8 @@ interface HostTranscript {
   messages: unknown[];
   partial: unknown;
   status: Omit<ClientSessionStatus, "sessionId">;
+  /** A paged read's page (a host that pages): its start, the whole transcript's total, and every turn's usage. */
+  page?: { start: number; total: number; usage: unknown[] };
 }
 
 export class DurableChatUnavailable extends Error {
@@ -513,8 +515,15 @@ export class DurableChatService {
   async messages(ref: SessionRouteRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
     const record = this.#record(ref);
     const cold = this.#connections.has(record.id) || record.host !== undefined || record.upgrade !== undefined ? undefined : await this.#readCold(record);
-    const messages = cold ?? hostTranscript((await (await this.#connection(record)).request("transcript")).result).messages;
-    return pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, messages).map(displayPromptMessage), page);
+    const transcript = cold !== undefined ? { messages: cold } : hostTranscript((await (await this.#connection(record)).request("transcript", hostPageArgs(page))).result);
+    return this.#page(ref, transcript, page);
+  }
+
+  /** The host's page, else (a reader, or an older host that sends the whole transcript) the whole transcript paged here. */
+  #page(ref: SessionRouteRef, transcript: Pick<HostTranscript, "messages" | "page">, page?: { before?: number; limit?: number }): ClientMessagePage {
+    const hosted = transcript.page;
+    if (hosted === undefined) return pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, transcript.messages).map(displayPromptMessage), page);
+    return { messages: this.#withCacheMissNotices(ref, transcript.messages, hosted.usage).map(displayPromptMessage), start: hosted.start, total: hosted.total };
   }
 
   /** The reader's messages, or undefined when it failed; a host start waits for a read of its store (`#connection`). */
@@ -566,25 +575,29 @@ export class DurableChatService {
   }
 
   async streamSnapshot(ref: SessionRouteRef): Promise<SessionStreamSnapshot> {
-    const { result, seq } = await (await this.#for(ref)).request("transcript");
+    // Only the partial is read, so a host that pages sends one message.
+    const { result, seq } = await (await this.#for(ref)).request("transcript", { limit: 1 });
     return { seq, partial: hostTranscript(result).partial };
   }
 
   async transcriptSnapshot(ref: SessionRouteRef, page?: { limit?: number }): Promise<SessionTranscriptSnapshot> {
     const connection = await this.#for(ref);
-    const { result, seq } = await connection.request("transcript");
+    const { result, seq } = await connection.request("transcript", hostPageArgs({ limit: page?.limit ?? 20 }));
     const transcript = hostTranscript(result);
-    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, transcript.messages).map(displayPromptMessage), { limit: page?.limit ?? 20 }), status: { ...browserStatus(transcript.status, connection), sessionId: ref.id } };
+    return { seq, partial: transcript.partial, page: this.#page(ref, transcript, { limit: page?.limit ?? 20 }), status: { ...browserStatus(transcript.status, connection), sessionId: ref.id } };
   }
 
-  /** History with Pi's cache-miss notices re-derived onto the assistant turns that paid for them (legacy `historyWithCacheMissNotices`). */
-  #withCacheMissNotices(ref: SessionRouteRef, messages: unknown[]): unknown[] {
+  /**
+   * Messages with Pi's cache-miss notices re-derived onto the assistant turns that paid for them (legacy
+   * `historyWithCacheMissNotices`), from the whole `history`: the messages, or a host page's usage-only turns.
+   */
+  #withCacheMissNotices(ref: SessionRouteRef, messages: unknown[], history = messages): unknown[] {
     const notices = this.deps.cacheMissNotices;
     if (notices === undefined) return messages;
     // Every event before this reply is published, so later message.end events extend exactly this history.
-    this.#cacheScan.set(ref.id, cacheScanEntries(messages, "usage"));
+    this.#cacheScan.set(ref.id, cacheScanEntries(history, "usage"));
     if (!notices.enabled(ref.cwd)) return messages;
-    const byEntryId = cacheMissNoticesByEntryId(cacheScanEntries(messages), notices.models);
+    const byEntryId = cacheMissNoticesByEntryId(cacheScanEntries(history), notices.models);
     if (byEntryId.size === 0) return messages;
     return messages.map((message) => {
       const cacheMissNotice = isRecord(message) && typeof message["entryId"] === "string" ? byEntryId.get(message["entryId"]) : undefined;
@@ -2169,5 +2182,17 @@ function hostStatus(value: unknown): HostTranscript["status"] {
 
 function hostTranscript(value: unknown): HostTranscript {
   if (!isRecord(value) || !Array.isArray(value["messages"]) || !("partial" in value)) throw new Error("Durable host sent a malformed transcript");
-  return { messages: value["messages"], partial: value["partial"], status: hostStatus(value["status"]) };
+  const { start, total, usage } = value;
+  // An older host ignores page args and sends the whole transcript without these.
+  const page = typeof start === "number" && typeof total === "number" && Array.isArray(usage) ? { page: { start, total, usage } } : {};
+  return { messages: value["messages"], partial: value["partial"], status: hostStatus(value["status"]), ...page };
+}
+
+/** Page args as the host takes them (non-negative integers); none asks for the whole transcript. */
+function hostPageArgs(page?: { before?: number; limit?: number }): { before?: number; limit?: number } | undefined {
+  const clean = (value?: number) => (value !== undefined && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined);
+  const before = clean(page?.before);
+  const limit = clean(page?.limit);
+  if (before === undefined && limit === undefined) return undefined;
+  return { ...(before === undefined ? {} : { before }), ...(limit === undefined ? {} : { limit }) };
 }

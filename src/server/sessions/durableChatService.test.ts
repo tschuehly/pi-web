@@ -131,6 +131,29 @@ describe("Durable Chats", () => {
     expect(snapshot.status.sessionId).toBe(chat.id);
   });
 
+  it("asks the host for the page only, and pages here when an older host sends the whole transcript", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const host = only(launched);
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const asked: unknown[] = [];
+    const history = [{ role: "user", content: "one", entryId: "1" }, { role: "assistant", content: [], entryId: "2" }, { role: "user", content: "two", entryId: "3" }];
+    let paging = true;
+    host.answer = (request) => {
+      if (request.method !== "transcript") return status;
+      asked.push(request.params);
+      return paging ? { messages: history.slice(2), start: 2, total: 3, usage: [], partial: null, status } : { messages: history, partial: null, status };
+    };
+    expect((await durable.transcriptSnapshot(ref, { limit: 1 })).page).toEqual({ messages: history.slice(2), start: 2, total: 3 });
+    expect((await durable.messages(ref, { before: 2, limit: 1.5 })).total).toBe(3);
+    await durable.messages(ref);
+    await durable.streamSnapshot(ref);
+    expect(asked).toEqual([{ limit: 1 }, { before: 2, limit: 1 }, undefined, { limit: 1 }]);
+    paging = false;
+    expect((await durable.transcriptSnapshot(ref, { limit: 1 })).page).toEqual({ messages: history.slice(2), start: 2, total: 3 });
+    expect(await durable.messages(ref, { before: 2, limit: 1 })).toEqual({ messages: history.slice(1, 2), start: 1, total: 3 });
+  });
+
   it("adds the Chat id to host status, publishes it globally and keeps the listing's first message", async () => {
     const { durable, hub, launched, locator } = await service();
     const chat = await durable.start("/work/a");
@@ -287,6 +310,10 @@ describe("Durable Chats", () => {
     // A context reset, or the setting off, shows none.
     history = [{ role: "user", content: "hi", entryId: "u1" }, warm, { role: "system", source: "compaction", content: "Compacted", entryId: "c1" }, missed];
     expect(await notices()).toEqual([undefined, undefined, undefined, undefined]);
+    // A host page: the notice from the whole history's usage, on the one message sent.
+    host.answer = (request) => (request.method === "transcript" ? { messages: [missed], start: 2, total: 3, usage: [warm, missed].map(({ role, provider, model, usage, timestamp, stopReason, entryId }) => ({ role, provider, model, usage, timestamp, stopReason, entryId })), partial: null, status } : status);
+    expect((await durable.transcriptSnapshot(ref, { limit: 1 })).page).toEqual({ messages: [{ ...missed, cacheMissNotice: notice }], start: 2, total: 3 });
+    host.answer = (request) => (request.method === "transcript" ? { messages: history, partial: null, status } : request.method === "status" ? status : null);
     enabled = false;
     history = [warm, missed];
     expect(await notices()).toEqual([undefined, undefined]);
