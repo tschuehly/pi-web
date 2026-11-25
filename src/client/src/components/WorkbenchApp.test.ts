@@ -2523,6 +2523,27 @@ describe("window tabs", () => {
     await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
   });
 
+  it("lets an unversioned connect read after a reconnect replace the status cached before it, and a later unversioned status replace the read", async () => {
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    const app = await mountWithWorkstreamChats();
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const dashed = () => tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned");
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) } } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+
+    // Neither side carries a version (an older PI WEB or host): the read fetched after the cached status wins.
+    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: mode(true) } : { pendingAsks: [] }));
+    sockets.at(-1)?.onopen?.();
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(false); });
+
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) } } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+  });
+
   it("keeps a live status newer than a connect read that arrives after it, for Alignment and Attention", async () => {
     const sockets: SilentWebSocket[] = [];
     vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });

@@ -51,7 +51,7 @@ import type { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import "./WorkbenchSettingsPanel";
 import "./WorkbenchFilesPane";
 import { openQuestionCount } from "./WorkbenchQuestionChips";
-import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
+import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_STATUS_KEY, workingModeSupersedes } from "../extensionStatusSnapshots";
 import { workingModeIcon } from "./WorkingModeControls";
 import { carriesChats, chatStatusDotStyles, chatTabStatus, droppedChats, endedOutside, renderChatStatusDot, startChatDrag, type ChatTabCloseDetail, type ChatTabMenuDetail, type ChatTabSelectDetail, type ChatTabStatus, type DraggedChats, type TabRenameDetail } from "./WorkbenchWindowTabs";
 import type { WorkbenchChatPane } from "./WorkbenchChatPane";
@@ -1101,8 +1101,10 @@ export class WorkbenchApp extends LitElement {
     const live = this.chatStatus(chat);
     const status = live?.extensionStatuses?.[WORKING_MODE_STATUS_KEY];
     const read = this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)];
-    // The value with the higher version wins, whichever arrived last; ties: the live status.
-    const readWins = read?.workingMode !== undefined && (status === undefined || (read.workingModeVersion ?? 0) > (live?.workingModeVersion ?? 0));
+    // The read arrived after the status it landed over (cached from before a reconnect), before any status received since.
+    const readWins = read?.workingMode !== undefined && (status === undefined || (read.over === live
+      ? workingModeSupersedes(read.workingModeVersion, live?.workingModeVersion)
+      : !workingModeSupersedes(live?.workingModeVersion, read.workingModeVersion)));
     return parseWorkingModeSnapshot(readWins ? read.workingMode : status);
   }
 
@@ -1364,7 +1366,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** Open asks and attention requests read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
-  @state() private restoredAsks: Record<string, SessionOpenAsks> = {};
+  @state() private restoredAsks: Record<string, SessionOpenAsks & { over: SessionStatus | undefined }> = {};
 
   /** Open-ask reads in flight, by machine-scoped session key. */
   private readonly askRequests = new Set<string>();
@@ -1382,7 +1384,7 @@ export class WorkbenchApp extends LitElement {
       this.askRequests.add(key);
       void this.windowChatWorkspace(chat)
         .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, chat.machineId))
-        .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: asks }; })
+        .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: { ...asks, over: this.chatStatus(chat) } }; })
         .catch(() => undefined)
         .finally(() => { this.askRequests.delete(key); });
     }
