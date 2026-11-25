@@ -48,6 +48,14 @@ describe("install latest routes", () => {
     expect(await readFile(join(dir, "args"), "utf8")).toBe("latest\n--dry-run\n--json\n");
   });
 
+  it("GET preserves a blocked preview reason", async () => {
+    const blocked = { ...PREVIEW, blocked: "refusing downgrade" };
+    await fake(JSON.stringify(blocked));
+    const response = await (await app()).inject({ method: "GET", url: "/api/install/latest" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(blocked);
+  });
+
   it("GET maps a script failure to 409 with its stderr and bad output to 502", async () => {
     await fake("", 2, "git fetch failed");
     expect((await (await app()).inject({ method: "GET", url: "/api/install/latest" })).json()).toEqual({ error: "git fetch failed" });

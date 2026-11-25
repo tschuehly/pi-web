@@ -53,6 +53,7 @@ export class InstallLatestDialog extends LitElement {
               <dt>Pi Workbench</dt><dd><code>${short(preview.installed.workbench)} → ${short(preview.latest.workbench)}</code></dd>
               <dt>PI WEB</dt><dd><code>${short(preview.installed.piWeb)} → ${short(preview.latest.piWeb)}</code></dd>
             </dl>
+            ${preview.blocked === undefined ? null : html`<p class="dialog-error" role="alert">${preview.blocked}</p>`}
             ${preview.upToDate ? html`<p class="result">Up to date: ${pair(preview.installed)} is the latest.</p>` : html`
               ${nothingInstalled(preview.installed)
                 ? html`<p class="result">Nothing installed yet: Install sets up the latest pair ${pair(preview.latest)}.</p>`
@@ -65,8 +66,8 @@ export class InstallLatestDialog extends LitElement {
         </div>
         <footer>
           <button class="cancel" @click=${() => { this.remove(); }}>${phase === "done" ? "Close" : "Cancel"}</button>
-          ${phase === "review" && this.message !== "" ? html`<button class="recheck" @click=${() => { void this.load(); }}>Check again</button>` : null}
-          ${phase === "done" ? null : html`<button class="install" ?disabled=${phase !== "review" || preview === undefined || preview.upToDate} @click=${() => { void this.install(); }}>${preview?.upToDate === true ? "Up to date" : "Install"}</button>`}
+          ${phase === "review" && (this.message !== "" || preview?.blocked !== undefined) ? html`<button class="recheck" @click=${() => { void this.load(); }}>Check again</button>` : null}
+          ${phase === "done" ? null : html`<button class="install" ?disabled=${phase !== "review" || preview === undefined || preview.upToDate || preview.blocked !== undefined} @click=${() => { void this.install(); }}>${preview?.upToDate === true ? "Up to date" : "Install"}</button>`}
         </footer>
       </modal-surface>
     `;

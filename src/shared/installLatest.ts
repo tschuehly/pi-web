@@ -11,7 +11,7 @@ export const nothingInstalled = (pair: InstallPair): boolean => pair.workbench =
 export interface InstallMerge { repo: "pi-workbench" | "pi-web"; sha: string; subject: string }
 
 /** `promote-installed latest --dry-run --json`. */
-export interface InstallLatestPreview { installed: InstallPair; latest: InstallPair; merges: InstallMerge[]; upToDate: boolean }
+export interface InstallLatestPreview { installed: InstallPair; latest: InstallPair; merges: InstallMerge[]; upToDate: boolean; blocked?: string }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 // A Git object name or `none`: the script passes these back as arguments, so nothing else may get through.
@@ -31,5 +31,6 @@ export function parseInstallLatestPreview(value: unknown): InstallLatestPreview 
     }
     return { repo: merge["repo"], sha: merge["sha"], subject: merge["subject"] };
   });
-  return { installed: parseInstallPair(value["installed"]), latest: parseInstallPair(value["latest"]), merges, upToDate: value["upToDate"] };
+  if (value["blocked"] !== undefined && typeof value["blocked"] !== "string") throw new TypeError("Unexpected install preview");
+  return { installed: parseInstallPair(value["installed"]), latest: parseInstallPair(value["latest"]), merges, upToDate: value["upToDate"], ...(value["blocked"] === undefined ? {} : { blocked: value["blocked"] }) };
 }

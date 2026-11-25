@@ -41,6 +41,18 @@ it("lists the merges and pairs, then installs exactly the installed and latest p
   expect(button(dialog)).toBeNull();
 });
 
+it("blocked preview shows the reason and disables Install", async () => {
+  const reason = "refusing downgrade from the installed pair";
+  vi.spyOn(piWebApi, "installLatestPreview").mockResolvedValue({ ...PREVIEW, blocked: reason });
+  const install = vi.spyOn(piWebApi, "installLatest");
+  const dialog = await open();
+  expect(dialog.renderRoot.querySelector("[role=alert]")?.textContent).toBe(reason);
+  expect(button(dialog)?.disabled).toBe(true);
+  expect(dialog.renderRoot.querySelector(".recheck")).not.toBeNull();
+  button(dialog)?.click();
+  expect(install).not.toHaveBeenCalled();
+});
+
 it("up to date disables Install", async () => {
   vi.spyOn(piWebApi, "installLatestPreview").mockResolvedValue({ ...PREVIEW, latest: PREVIEW.installed, merges: [], upToDate: true });
   const dialog = await open();
