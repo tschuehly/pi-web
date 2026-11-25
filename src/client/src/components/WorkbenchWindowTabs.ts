@@ -6,6 +6,7 @@ import { ACTIVITY_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY, delegateOutcome, parse
 import { gridPage, gridPageCount, gridPageLead, NO_WORKSTREAM_KEY, windowGroups, workstreamKey, workstreamTabTarget, type ChatGroup, type WindowChat, type WindowLayout, type WorkbenchWindow } from "../workbenchWindows";
 import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import { renderBuiltinTabIcon } from "./tabIcons";
+import { workingModeIcon } from "./WorkingModeControls";
 
 export type ChatTabStatus = "needs" | "running" | "waiting" | "shell" | "done" | "idle";
 
@@ -114,6 +115,8 @@ export class WorkbenchWindowTabs extends LitElement {
   @property({ attribute: false }) statuses: Record<string, ChatTabStatus> = {};
   /** Each Chat's open `ask_user` questions, shown in place of its dot. */
   @property({ attribute: false }) questionCounts: Record<string, number> = {};
+  /** Each Chat's selected Attention value; a value other than Default shows as its icon. */
+  @property({ attribute: false }) attention: Record<string, string> = {};
   /** This window's id, carried by a drag so the receiving window knows where the Chats come from. */
   @property({ attribute: false }) windowId = "";
 
@@ -268,6 +271,7 @@ export class WorkbenchWindowTabs extends LitElement {
             @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}>
             ${this.renderChatMarker(chat)}
             <span class="title">${chat.title}</span>
+            ${this.renderAttention(chat)}
             ${chat.workstream === undefined ? nothing : html`<span class="solo-ws">${chat.workstream.title}</span>`}
           </div>
           <slot name="tools"></slot>
@@ -318,6 +322,7 @@ export class WorkbenchWindowTabs extends LitElement {
         ${only === undefined ? nothing : this.renderChatMarker(only)}
         ${workstream === undefined ? nothing : workstreamIcon}
         <span class="title">${workstream?.shortTitle ?? label}</span>
+        ${only === undefined ? nothing : this.renderAttention(only)}
         ${only === undefined
           ? html`<span class="count" aria-label=${`${String(group.chats.length)} Chats`}>${String(group.chats.length)}</span>`
           : this.renderCloseButton(only)}
@@ -336,6 +341,7 @@ export class WorkbenchWindowTabs extends LitElement {
         @dblclick=${() => { this.rename({ sessionId: chat.sessionId }, chat.shortName ?? ""); }}>
         ${this.renderChatMarker(chat)}
         <span class="title">${chat.shortName ?? chat.title}</span>
+        ${this.renderAttention(chat)}
         ${this.renderCloseButton(chat)}
       </div>`;
   }
@@ -344,6 +350,13 @@ export class WorkbenchWindowTabs extends LitElement {
   private renderChatMarker(chat: WindowChat) {
     const questions = this.questionCounts[chat.sessionId] ?? 0;
     return questions === 0 ? renderChatStatusDot(this.status(chat)) : html`<span class="questions" role="img" aria-label=${`${String(questions)} open ${questions === 1 ? "question" : "questions"}`}>${String(questions)}</span>`;
+  }
+
+  /** The Chat's Attention icon, as the composer shows it, unless it is Default. */
+  private renderAttention(chat: WindowChat) {
+    const value = this.attention[chat.sessionId];
+    if (value === undefined || value === "Default") return nothing;
+    return html`<svg class="attention" viewBox="0 0 24 24" role="img" aria-label=${`Attention: ${value}`}><title>${`Attention: ${value}`}</title>${workingModeIcon("attention", value)}</svg>`;
   }
 
   private renderCloseButton(chat: WindowChat) {
@@ -383,6 +396,8 @@ export class WorkbenchWindowTabs extends LitElement {
     .workstream-tab { padding: 0 10px; font-weight: 500; }
     .workstream-tab[data-session] { padding-right: 4px; }
     .ws-icon { flex: 0 0 auto; width: 12px; height: 12px; color: var(--ws, var(--pi-muted)); }
+    /* The composer's Attention hue. */
+    .attention { flex: 0 0 auto; color: light-dark(#7644d4, #bc8cff); }
     .count { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
     .tabs.chats { min-width: 120px; font-size: 12px; }
     .workstreams .chat-tab { font-weight: 500; }

@@ -51,6 +51,8 @@ import type { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import "./WorkbenchSettingsPanel";
 import "./WorkbenchFilesPane";
 import { openQuestionCount } from "./WorkbenchQuestionChips";
+import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
+import { workingModeIcon } from "./WorkingModeControls";
 import { carriesChats, chatStatusDotStyles, chatTabStatus, droppedChats, endedOutside, renderChatStatusDot, startChatDrag, type ChatTabCloseDetail, type ChatTabMenuDetail, type ChatTabSelectDetail, type ChatTabStatus, type DraggedChats, type TabRenameDetail } from "./WorkbenchWindowTabs";
 import type { WorkbenchChatPane } from "./WorkbenchChatPane";
 import "./WorkbenchChatPane";
@@ -1056,9 +1058,45 @@ export class WorkbenchApp extends LitElement {
         ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id, undefined, true); }}>Move to ${windowChatSummary(other)}</button>`)}
         ${shared ? html`<hr>` : nothing}
         ${sizing ? html`<button role="menuitem" @click=${() => { this.windowMenu = undefined; void this.updateWindow(toggleMaximized); }}>${window.maximized ? "Restore grid" : "Full size"}</button>` : nothing}
+        ${this.renderAttentionMenu(menu.sessionIds)}
         <button role="menuitem" @click=${() => { void this.closeWindowChats(menu.sessionIds); }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>
       </div>
     `;
+  }
+
+  /** Attention for the menu's Chats; a value is checked when every reporting Chat has it. Chats without a live status are left out. */
+  private renderAttentionMenu(sessionIds: readonly string[]) {
+    const attention = this.chatAttention();
+    const known = sessionIds.filter((id) => attention[id] !== undefined);
+    if (known.length === 0) return nothing;
+    return html`
+      <div class="menu-label">Attention</div>
+      ${WORKING_MODE_AXES.attention.map((value) => html`<button role="menuitemradio" aria-checked=${String(known.every((id) => attention[id] === value))} @click=${() => { this.windowMenu = undefined; void this.setChatAttention(known, value); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${workingModeIcon("attention", value)}</svg>${value}</button>`)}
+      <hr>`;
+  }
+
+  /** Selects the value as the composer does (`/mode attention`); the Chat's next status shows it. */
+  private async setChatAttention(sessionIds: readonly string[], value: string): Promise<void> {
+    for (const sessionId of sessionIds) {
+      const chat = this.windows.window?.chats.find((row) => row.sessionId === sessionId);
+      if (chat === undefined) continue;
+      try {
+        const { cwd } = await api.locate(chat.sessionId, chat.machineId);
+        const result = await api.runCommand({ id: chat.sessionId, cwd }, `/mode attention ${value.toLowerCase()}`, chat.machineId);
+        if (result.type === "unsupported") throw new Error(result.message);
+      } catch (error) {
+        this.setApp({ error: `Could not set Attention for ${chat.title}: ${error instanceof Error ? error.message : String(error)}` });
+      }
+    }
+  }
+
+  /** Each Chat's selected Attention, from its live status; absent until the Chat reports one. */
+  private chatAttention(): Record<string, string> {
+    return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
+      const status = this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId];
+      const value = parseWorkingModeSnapshot(status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY])?.selected.attention;
+      return value === undefined ? [] : [[chat.sessionId, value]];
+    }));
   }
 
   /** The home: projects, Workstreams and All sessions, with this window's tabs still above it. */
@@ -1814,7 +1852,7 @@ export class WorkbenchApp extends LitElement {
   override render() {
     const selected = this.app.selectedSession?.id;
     return html`
-      <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()}
+      <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()} .attention=${this.chatAttention()}
         @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { this.swipe.cancel(); void this.showWindowChat(event.detail.sessionId); }}
         @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { void this.closeWindowChats(event.detail.sessionIds); }}
         @tab-rename=${(event: CustomEvent<TabRenameDetail>) => { void this.renameTab(event.detail); }}
@@ -2369,6 +2407,10 @@ export class WorkbenchApp extends LitElement {
     .window-menu { position: fixed; z-index: 40; min-width: 220px; display: grid; padding: 4px; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); box-shadow: 0 10px 30px var(--pi-shadow); }
     .window-menu button { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 0; padding: 6px 10px; border: 0; border-radius: 5px; background: none; text-align: left; font-size: 13px; }
     .window-menu button:hover, .window-menu button:focus-visible { background: var(--pi-surface-hover); }
+    .window-menu .menu-label { padding: 4px 10px 2px; color: var(--pi-muted); font-size: 11px; }
+    .window-menu button[role="menuitemradio"] { display: flex; align-items: center; gap: 8px; }
+    .window-menu button[role="menuitemradio"] svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: light-dark(#7644d4, #bc8cff); }
+    .window-menu button[aria-checked="true"] { font-weight: 600; background: color-mix(in srgb, light-dark(#7644d4, #bc8cff) 14%, transparent); }
     .window-menu hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--pi-border-muted); }
     .chooser { flex: 1 1 0; min-width: 0; box-sizing: border-box; height: 100%; overflow: auto; display: grid; place-items: start center; padding: min(10vh, 72px) 24px 32px; }
     .chooser > section { box-sizing: border-box; width: min(960px, 100%); display: grid; gap: 16px; padding: 24px; border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-surface); box-shadow: 0 18px 50px var(--pi-shadow); }

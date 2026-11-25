@@ -80,6 +80,15 @@ describe("window tabs", () => {
     expect(root.querySelector('.chat-tab[data-session="a2"] .dot')?.getAttribute("aria-label")).toBe("Needs you");
   });
 
+  it("shows a Chat's Attention icon unless it is Default", async () => {
+    const { tabs, root } = await mount("a1");
+    tabs.attention = { a1: "Default", a2: "AFK" };
+    await tabs.updateComplete;
+
+    expect(root.querySelector('.chat-tab[data-session="a2"] .attention')?.getAttribute("aria-label")).toBe("Attention: AFK");
+    expect(root.querySelector('.chat-tab[data-session="a1"] .attention')).toBeNull();
+  });
+
   it("opens with Enter or Space, reopening a Workstream's last-active Chat", async () => {
     const { root, events } = await mount("x", workingSet("a2"));
 

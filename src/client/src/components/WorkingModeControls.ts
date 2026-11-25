@@ -37,7 +37,7 @@ const PENDING_LABEL = "Working Mode change not sent yet";
 const ALIGNED_LABEL = "Aligned: Thomas confirmed the agreement";
 const NOT_ALIGNED_LABEL = "Not aligned: AFK waits until Thomas confirms the agreement";
 
-function icon(axis: WorkingModeAxis, value: string | undefined): TemplateResult {
+export function workingModeIcon(axis: WorkingModeAxis, value: string | undefined): TemplateResult {
   const icons: Record<string, TemplateResult> = ICONS[axis];
   return icons[value ?? ""] ?? icons[WORKING_MODE_AXES[axis][0]] ?? svg``;
 }
@@ -89,7 +89,7 @@ export class WorkingModeControls extends LitElement {
         ${WORKING_MODE_AXIS_NAMES.map((axis) => {
           const value = selected?.[axis];
           const changed = value !== undefined && value !== WORKING_MODE_AXES[axis][0];
-          return html`<span class=${`axis ${axis}${changed ? " changed" : ""}`} data-axis=${axis}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>${changed ? html`<span class="value">${value}</span>` : null}</span>${axis === "alignment" && aligned
+          return html`<span class=${`axis ${axis}${changed ? " changed" : ""}`} data-axis=${axis}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${workingModeIcon(axis, value)}</svg>${changed ? html`<span class="value">${value}</span>` : null}</span>${axis === "alignment" && aligned
             // Lucide circle-check
             ? html`<span class="aligned-chip alignment" title=${ALIGNED_LABEL}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><path d="m9 12 2 2 4-4"></path></svg><span class="value">Aligned</span></span>`
             : axis === "alignment" && waiting
@@ -108,7 +108,7 @@ export class WorkingModeControls extends LitElement {
                 const checked = value === selected[axis];
                 // The axis default (Default, or Main) is icon-only; its name stays in the accessible label and tooltip.
                 const iconOnly = value === WORKING_MODE_AXES[axis][0];
-                return html`<button class=${iconOnly ? "icon-only" : ""} type="button" role="radio" aria-checked=${checked ? "true" : "false"} tabindex=${checked ? "0" : "-1"} data-value=${value} aria-label=${iconOnly ? value : nothing} title=${iconOnly ? value : nothing} @click=${() => { this.choose(axis, value); }} @keydown=${(event: KeyboardEvent) => { this.handleRadioKey(event, axis); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon(axis, value)}</svg>${iconOnly ? null : value}</button>`;
+                return html`<button class=${iconOnly ? "icon-only" : ""} type="button" role="radio" aria-checked=${checked ? "true" : "false"} tabindex=${checked ? "0" : "-1"} data-value=${value} aria-label=${iconOnly ? value : nothing} title=${iconOnly ? value : nothing} @click=${() => { this.choose(axis, value); }} @keydown=${(event: KeyboardEvent) => { this.handleRadioKey(event, axis); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${workingModeIcon(axis, value)}</svg>${iconOnly ? null : value}</button>`;
               })}
             </div>
           `)}
