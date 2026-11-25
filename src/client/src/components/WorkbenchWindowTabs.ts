@@ -269,7 +269,7 @@ export class WorkbenchWindowTabs extends LitElement {
     return html`
       <nav aria-label=${window.name} @dragover=${this.onDragOver} @drop=${this.onDrop}>
         <div class="bar" @mousedown=${this.onBarMouseDown}>
-          <div class=${chat.workstream === undefined ? "solo" : "solo tinted"} style=${workstreamStyle(chat.workstream?.id)} data-session=${chat.sessionId} data-status=${this.status(chat)} ?data-unaligned=${this.isUnaligned(chat)} role="button" tabindex="0" aria-current=${this.selected === chat.sessionId ? "page" : "false"} title=${`${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`}${this.unalignedSuffix(chat)}`} draggable="true"
+          <div class=${chat.workstream === undefined ? "solo" : "solo tinted"} style=${workstreamStyle(chat.workstream?.id)} data-session=${chat.sessionId} data-status=${this.status(chat)} ?data-unaligned=${this.isUnaligned(chat)} role="button" tabindex="0" aria-current=${this.selected === chat.sessionId ? "page" : "false"} title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`} draggable="true"
             @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}>
             ${this.renderChatMarker(chat)}
             <span class="title">${chat.title}</span>
@@ -317,7 +317,7 @@ export class WorkbenchWindowTabs extends LitElement {
     const only = group.chats.length === 1 ? group.chats[0] : undefined;
     const move = this.moveHandlers(group.chats.map((chat) => chat.sessionId), only?.title ?? label);
     return html`
-      <div role="tab" tabindex="0" class=${group.workstream === undefined ? "workstream-tab" : "workstream-tab tinted"} data-session=${only?.sessionId ?? nothing} ?data-unaligned=${only !== undefined && this.isUnaligned(only)} style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${only === undefined ? `Workstream: ${label}` : `Workstream: ${label} · ${only.title}${this.unalignedSuffix(only)}`} draggable="true"
+      <div role="tab" tabindex="0" class=${group.workstream === undefined ? "workstream-tab" : "workstream-tab tinted"} data-session=${only?.sessionId ?? nothing} ?data-unaligned=${only !== undefined && this.isUnaligned(only)} style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${only === undefined ? `Workstream: ${label}` : `Workstream: ${label} · ${only.title}`} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
         @auxclick=${(event: MouseEvent) => { if (only !== undefined && event.button === 1) this.close([only.sessionId]); }}
         @dblclick=${() => { if (workstream !== undefined) this.rename({ workstreamId: workstream.id }, workstream.shortTitle ?? ""); }}>
@@ -337,7 +337,7 @@ export class WorkbenchWindowTabs extends LitElement {
     const open = () => { this.select(chat.sessionId); };
     const move = this.moveHandlers([chat.sessionId], chat.title);
     return html`
-      <div role="tab" tabindex="0" class=${tintFrom === undefined ? "chat-tab" : "chat-tab tinted"} style=${workstreamStyle(tintFrom)} data-session=${chat.sessionId} data-status=${status} ?data-unaligned=${this.isUnaligned(chat)} aria-selected=${String(chat.sessionId === this.selected)} title=${`${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`}${this.unalignedSuffix(chat)}`} draggable="true"
+      <div role="tab" tabindex="0" class=${tintFrom === undefined ? "chat-tab" : "chat-tab tinted"} style=${workstreamStyle(tintFrom)} data-session=${chat.sessionId} data-status=${status} ?data-unaligned=${this.isUnaligned(chat)} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
         @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([chat.sessionId]); }}
         @dblclick=${() => { this.rename({ sessionId: chat.sessionId }, chat.shortName ?? ""); }}>
@@ -365,11 +365,7 @@ export class WorkbenchWindowTabs extends LitElement {
     return this.unaligned[chat.sessionId] === true;
   }
 
-  private unalignedSuffix(chat: WindowChat): string {
-    return this.isUnaligned(chat) ? " · not aligned" : "";
-  }
-
-  /** Names the dashed border for screen readers, which skip the tab's title. */
+  /** Names the dashed border once, in the accessible name; the title stays the Chat's name so it is not read twice. */
   private renderUnaligned(chat: WindowChat) {
     return this.isUnaligned(chat) ? html`<span class="visually-hidden">, not aligned</span>` : nothing;
   }

@@ -96,8 +96,11 @@ describe("window tabs", () => {
 
     const tab = () => root.querySelector('.chat-tab[data-session="a2"]');
     expect(tab()?.hasAttribute("data-unaligned")).toBe(true);
-    expect(tab()?.getAttribute("title")).toBe("Workstream: Release · Chat a2 · not aligned");
+    // Named once, in the accessible name; a title saying it too would be read again as the description.
     expect(tab()?.querySelector(".visually-hidden")?.textContent).toBe(", not aligned");
+    expect(tab()?.textContent.match(/not aligned/gu)).toHaveLength(1);
+    expect(tab()?.getAttribute("title")).not.toMatch(/not aligned/u);
+    expect(tab()?.hasAttribute("aria-describedby")).toBe(false);
     expect(root.querySelector('.chat-tab[data-session="a1"]')?.hasAttribute("data-unaligned")).toBe(false);
 
     tabs.unaligned = {};
