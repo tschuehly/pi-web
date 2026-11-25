@@ -147,9 +147,10 @@ export class WorkbenchQuestionChips extends LitElement {
     this.close();
   };
 
-  /** Opens the drawer at one question (the bar opens it at the first); false when no open set asks it. */
+  /** Opens the drawer at one question (the bar opens it at the first; an approval-only set at Approve); false when no open set asks it. */
   async openQuestion(askId: string, questionIndex: number): Promise<boolean> {
-    if (this.asks.find((ask) => ask.askId === askId)?.questions[questionIndex] === undefined) return false;
+    const questions = this.asks.find((ask) => ask.askId === askId)?.questions;
+    if (questions === undefined || (questions[questionIndex] === undefined && !(questions.length === 0 && questionIndex === 0))) return false;
     this.open = true;
     await this.updateComplete;
     const card = this.renderRoot.querySelector<AskUserCard>(`ask-user-card[data-ask="${CSS.escape(askId)}"]`);

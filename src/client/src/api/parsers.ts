@@ -411,8 +411,8 @@ function parseAskTypedFields(record: Record<string, unknown>): Partial<AskUserQu
  */
 function parsePendingAskUser(value: unknown): PendingAskUser {
   const record = requireRecord(value);
-  const questions = boundedArrayOf(record["questions"], parseAskUserQuestion, ASK_USER_QUESTION_LIMIT, "questions");
-  // Only an approval set may be the context alone.
+  // Only an approval set may be the context alone, and may then omit its questions.
+  const questions = record["questions"] === undefined && record["approval"] === true ? [] : boundedArrayOf(record["questions"], parseAskUserQuestion, ASK_USER_QUESTION_LIMIT, "questions");
   if (questions.length === 0 && record["approval"] !== true) throw new Error("Pending ask has no questions");
   assertUniqueStrings(questions.map((question) => question.id), "ask question id");
   const askedAt = requireNonEmptyString(record, "askedAt");

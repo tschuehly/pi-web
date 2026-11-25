@@ -156,6 +156,15 @@ describe("WorkbenchQuestionChips", () => {
     expect(chips.shadowRoot?.querySelector<HTMLElement>(".sets")?.scrollTop).toBe(0);    vi.restoreAllMocks();
   });
 
+  it("opens an approval-only set from the bar with Approve focused", async () => {
+    const { chips } = await mount([ask("ctx-1", { approval: true, questions: [] })]);
+    await openWith(chips);
+    expect(drawer(chips)).not.toBeNull();
+    const card = cards(chips)[0];
+    await vi.waitFor(() => { expect(card?.shadowRoot?.activeElement?.classList.contains("approve")).toBe(true); });
+    expect(await chips.openQuestion("ctx-1", 1)).toBe(false);
+  });
+
   it("opens a question for a caller and refuses one no open set asks", async () => {
     const { chips } = await mount([ask("abc-1"), twoQuestions]);
     const focus = vi.spyOn(AskUserCard.prototype, "focusQuestion");

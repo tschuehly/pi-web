@@ -1331,6 +1331,11 @@ describe("API parsers", () => {
     // Only an approval set may come without questions.
     expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: true, questions: [] } }).pendingAsks?.[0]?.questions).toEqual([]);
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), questions: [] } })).toThrow("Pending ask has no questions");
+    // An approval set may omit questions altogether; any other set still needs them.
+    const withoutQuestions: Partial<ReturnType<typeof pendingAskWire>> = pendingAskWire();
+    delete withoutQuestions.questions;
+    expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...withoutQuestions, approval: true } }).pendingAsks?.[0]?.questions).toEqual([]);
+    expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: withoutQuestions })).toThrow("Expected array field: questions");
     expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: "yes" } }).pendingAsks?.[0]).not.toHaveProperty("approval");
     expect(parseAskUserOutcome({ ...askOutcomeWire(), approved: true }).approved).toBe(true);
     const images = [{ target: { kind: "note" }, reference: "[PIC_1]", mimeType: "image/png", name: "a.png" }, { target: { kind: "question", id: "note" }, reference: "[PIC_1]", mimeType: "image/png", revision: "r2" }];

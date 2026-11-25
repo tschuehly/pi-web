@@ -854,6 +854,8 @@ export class AskUserCard extends LitElement {
   focusQuestion(index: number, preventScroll = false): Promise<void> {
     if (index < 0) return Promise.resolve();
     return this.updateComplete.then(() => {
+      // A set of the context alone has no question to focus: its first action (Approve) takes focus.
+      if (this.ask?.questions.length === 0) { this.renderRoot.querySelector<HTMLElement>(".approve, .form-footer .primary-action")?.focus({ preventScroll }); return; }
       const fieldset = this.renderRoot.querySelector<HTMLElement>(`#${this.questionFieldsetId(index)}`);
       const firstControl = fieldset?.querySelector<HTMLElement>("input, ask-markdown-field");
       (firstControl ?? fieldset)?.focus({ preventScroll });
