@@ -51,6 +51,7 @@ if (process.argv.includes("--end-jobs")) {
   cancelJobs();
   process.exit(0);
 }
+writeFileSync(join(store, "argv.json"), JSON.stringify(process.argv));
 const ownerEpoch = (existsSync(epochFile) ? Number(readFileSync(epochFile, "utf8")) : 0) + 1;
 writeFileSync(epochFile, String(ownerEpoch));
 const server = createServer((socket) => {
@@ -192,6 +193,24 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
       for (const name of Object.keys(process.env)) if (!(name in saved)) Reflect.deleteProperty(process.env, name);
       Object.assign(process.env, saved);
     }
+  }, 60_000);
+
+  it("an upgrade restart's full-access nonce reaches the host's arguments but leaves the job's plist once launchd read it", async () => {
+    const { root, hostsDir } = await fixture();
+    // Host code that lists --full-access-nonce in its host-args.json (beside the Pi Durable it runs).
+    await mkdir(join(root, "node_modules", "@earendil-works", "pi-durable"), { recursive: true });
+    await writeFile(join(root, "node_modules", "@earendil-works", "pi-durable", "package.json"), JSON.stringify({ version: "1.5.2" }));
+    await writeFile(join(root, "host-args.json"), JSON.stringify({ accepts: ["--full-access-nonce"] }));
+    const locator = new SessionRuntimeLocator(join(root, "data"));
+    const record = locator.create("/work/a", "chat");
+    const launch = launchdDurableHost({ entry: join(root, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, startTimeoutMs: 15_000 });
+    const nonce = "0123456789abcdef0123456789abcdef";
+    const storeDir = join(root, "data", "durable", record.storeId);
+    const host = launch(record, storeDir, { fullAccessNonce: nonce });
+    await new Promise<void>((resolve, reject) => { host.on("message", (message: unknown) => { if (isReady(message)) resolve(); }); host.on("exit", () => { reject(new Error("host exited")); }); });
+    expect(JSON.parse(readFileSync(join(storeDir, "argv.json"), "utf8"))).toEqual(expect.arrayContaining(["--full-access-nonce", nonce]));
+    expect(readFileSync(join(hostsDir, `${PREFIX}.${record.storeId}.plist`), "utf8")).not.toContain(nonce);
+    host.kill();
   }, 60_000);
 
   it("decodes a handshake and messages whose multi-byte characters are split across chunks at any byte", async () => {

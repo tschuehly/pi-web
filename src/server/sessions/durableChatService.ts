@@ -30,7 +30,7 @@ import { cleanSessionName, cleanTabName, fallbackSessionName, SESSION_TITLE_SYST
 import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
 import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 import { PendingAskStore, renderAskUserFollowUp, withEarlierAnswers, type PendingAskCloseResult } from "./pendingAskStore.js";
-import { type DurableChatRecord, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
+import { type DurableChatRecord, hostAcceptsArg, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
 import { committedOwnerRun, openOwnerCommandInTerminal, ownerRunFolder, ownerRunResultText, ownerRunScript, type OwnerRunResult } from "./ownerRuns.js";
@@ -70,8 +70,11 @@ export interface DurableHostProcess {
  */
 export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean; endJobs?: boolean; readTranscript?: boolean; fullAccessNonce?: string }) => DurableHostProcess;
 
-/** The host argument that lets its first resume carry the owner's `/full-access` (an upgrade restart's random nonce). */
-export const fullAccessNonceArgs = (nonce: string | undefined): string[] => (nonce === undefined ? [] : ["--full-access-nonce", nonce]);
+/**
+ * The host argument that lets its first resume carry the owner's `/full-access` (an upgrade restart's random nonce), for
+ * host code at `entry` that accepts it. Older code (a rollback to its pin) starts without it: full access off.
+ */
+export const fullAccessNonceArgs = (nonce: string | undefined, entry: string): string[] => (nonce === undefined || !hostAcceptsArg(entry, "--full-access-nonce") ? [] : ["--full-access-nonce", nonce]);
 
 /** What starts a family's host: the Workbench host entry, the model and Pi agent dir it runs with. */
 export interface DurableHostOptions { entry: string; model: string | ((cwd: string) => string); agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
@@ -102,7 +105,7 @@ export function forkDurableHost(options: DurableHostOptions): DurableHostLaunche
     const log = openSync(join(storeDir, "host.log"), "a", 0o600);
     try {
       // No inherited loader flags (tsx): the host is plain Node with type stripping and its own pinned dependencies.
-      return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : []), ...(launch?.readTranscript === true ? ["--read-transcript"] : []), ...fullAccessNonceArgs(launch?.fullAccessNonce)], {
+      return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : []), ...(launch?.readTranscript === true ? ["--read-transcript"] : []), ...fullAccessNonceArgs(launch?.fullAccessNonce, options.entry)], {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
         env: { ...process.env, PI_CODING_AGENT_DIR: options.agentDir },

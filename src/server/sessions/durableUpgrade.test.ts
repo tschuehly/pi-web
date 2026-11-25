@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
+import { DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, fullAccessNonceArgs, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
 import type { DurableChatRecord } from "./sessionRuntimeLocator.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 
@@ -23,14 +23,18 @@ afterEach(() => { if (ROOT !== "") rmSync(ROOT, { recursive: true, force: true }
 
 const SCHEMA = { documents: { "workbench.delegation": 1 }, tasks: { "workbench.child-reporter": 1 } };
 
-/** A revision folder whose host entry runs Pi Durable `version` and writes the store `schema` (null: no store-schema.json). */
-function revision(name: string, version: string, schema: object | null = SCHEMA): string {
+/**
+ * A revision folder whose host entry runs Pi Durable `version` and writes the store `schema` (null: no store-schema.json);
+ * `accepts` lists the optional launch arguments in its host-args.json (none: code older than the file).
+ */
+function revision(name: string, version: string, schema: object | null = SCHEMA, accepts?: string[]): string {
   const entry = join(ROOT, name, "main.mjs");
   const manifest = join(ROOT, name, "node_modules", "@earendil-works", "pi-durable");
   mkdirSync(manifest, { recursive: true });
   writeFileSync(entry, "");
   writeFileSync(join(manifest, "package.json"), JSON.stringify({ version }));
   if (schema !== null) writeFileSync(join(ROOT, name, "store-schema.json"), JSON.stringify(schema));
+  if (accepts !== undefined) writeFileSync(join(ROOT, name, "host-args.json"), JSON.stringify({ accepts }));
   return entry;
 }
 
@@ -51,6 +55,8 @@ class Fake extends EventEmitter implements DurableHostProcess {
   fullAccess = false;
   /** The `/full-access` nonce the service launched this host with (an upgrade restart's), if any. */
   fullAccessNonce: string | undefined;
+  /** The nonce argument a real launcher would put in this host's arguments (only code that accepts it gets one). */
+  nonceArgs: string[] = [];
   kills = 0;
 
   constructor(readonly code: { entry: string; current: string }, readonly exitHook: () => void, fail: boolean | "hang" = false) {
@@ -127,6 +133,7 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; f
     if (!fail) locator.setHostEntry(chat.id, entry);
     host.resumeError = entry === current && options.failResume === true;
     host.fullAccessNonce = launched?.fullAccessNonce;
+    host.nonceArgs = fullAccessNonceArgs(launched?.fullAccessNonce, entry);
     hosts.push(host);
     return host;
   };
@@ -432,6 +439,22 @@ describe("seamless upgrade orchestration", () => {
     expect(now.hosts[1]?.fullAccessNonce).not.toBe(auto.hosts[1]?.fullAccessNonce);
     expect(resumes(now.hosts[1])).toEqual([{ reason: "upgrade-restart", fullAccess: now.hosts[1]?.fullAccessNonce }]);
     await now.durable.dispose();
+  });
+
+  it("a rollback to host code without --full-access-nonce starts it without the argument: full access off, the Chat back on its pin and resumed", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", SCHEMA, ["--full-access-nonce"])];
+    const s = setup(a, b, { failCurrent: true });
+    await s.durable.status(s.ref);
+    for (const host of s.hosts) host.fullAccess = true;
+    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/This Chat is back on its old host code \(rev-a\)\.$/);
+    expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b, a]);
+    // The new code would have got the nonce; the old pin, whose strict parser refuses it, starts without.
+    expect(s.hosts[1]?.nonceArgs).toEqual(["--full-access-nonce", s.hosts[1]?.fullAccessNonce]);
+    expect(s.hosts[2]?.nonceArgs).toEqual([]);
+    expect(s.hosts[2]?.requests.filter((request) => request.method === "resume")).toHaveLength(1);
+    expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
+    await s.durable.dispose();
   });
 
   it("finding 4: an automatic upgrade never closes a host that admitted input after the quiet check", async () => {

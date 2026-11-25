@@ -188,9 +188,11 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     rmSync(socket, { force: true });
     const plist = join(hostsDir, `${this.#label}.plist`);
     this.#entry = entry;
-    writeFileSync(plist, launchdPlist({
+    const programArguments = [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket];
+    const nonce = fullAccessNonceArgs(this.fullAccessNonce, entry);
+    const job = (args: string[]) => launchdPlist({
       Label: this.#label,
-      ProgramArguments: [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket, ...fullAccessNonceArgs(this.fullAccessNonce)],
+      ProgramArguments: args,
       EnvironmentVariables: hostEnvironment(this.context),
       WorkingDirectory: this.storeDir,
       StandardOutPath: join(this.storeDir, "host.log"),
@@ -202,8 +204,11 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
       AbandonProcessGroup: true,
       ExitTimeOut: 10,
       MaterializeDatalessFiles: true,
-    }), { mode: 0o600 });
+    });
+    writeFileSync(plist, job([...programArguments, ...nonce]), { mode: 0o600 });
     await this.context.launchctl(["bootstrap", this.#domain, plist]);
+    // launchd read the job at bootstrap: the one-shot nonce leaves the file at once (it stays in the host's arguments).
+    if (nonce.length > 0) writeFileSync(plist, job(programArguments), { mode: 0o600 });
     const deadline = Date.now() + this.context.startTimeoutMs;
     for (;;) {
       try {
