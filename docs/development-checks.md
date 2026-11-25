@@ -55,6 +55,10 @@ The suite builds an isolated component fixture into `node_modules/.cache/pi-web/
 
 These tests prove browser painting, hit targeting, anchoring, and focus/dismissal composition; happy-dom tests remain responsible for component event wiring and state. They are a separate CI job, not part of `npm test` or `npm run verify`.
 
+## Full verification
+
+`npm run verify` (the same command CI runs) starts typecheck, lint, Knip and the Vitest suite at once through `scripts/verify-parallel.mjs`. Each output line is prefixed with its check name, a failed check's output is repeated at the end, and a summary lists each check's result and time. `npm run verify:serial` runs them one after another when you need unmixed output or less CPU load.
+
 ## Check ownership
 
 | Stage | Required checks | Where they run |

@@ -66,7 +66,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify
+      # typecheck, lint, knip and vitest run in parallel in this one job: a second job would pay a
+      # second install, and vitest dominates the wall time either way.
+      - name: Verify (typecheck, lint, knip, test in parallel)
         run: pnpm run verify
 
       - name: Build
