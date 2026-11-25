@@ -1098,10 +1098,12 @@ export class WorkbenchApp extends LitElement {
 
   /** A Chat's Working Mode from the fresher of its status and the window's connect read (a restored Chat not yet opened). */
   private chatWorkingMode(chat: WindowChat) {
-    const status = this.chatStatus(chat);
+    const live = this.chatStatus(chat);
+    const status = live?.extensionStatuses?.[WORKING_MODE_STATUS_KEY];
     const read = this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)];
-    // The read beats the status it landed over (cached from before a reconnect); a status received after it wins.
-    return parseWorkingModeSnapshot(read?.workingMode !== undefined && read.over === status ? read.workingMode : status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY]);
+    // The value with the higher version wins, whichever arrived last; ties: the live status.
+    const readWins = read?.workingMode !== undefined && (status === undefined || (read.workingModeVersion ?? 0) > (live?.workingModeVersion ?? 0));
+    return parseWorkingModeSnapshot(readWins ? read.workingMode : status);
   }
 
   /** Each Chat's selected Attention, from its live status or the connect read; absent until the Chat reports one. */
@@ -1362,7 +1364,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** Open asks and attention requests read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
-  @state() private restoredAsks: Record<string, SessionOpenAsks & { over: SessionStatus | undefined }> = {};
+  @state() private restoredAsks: Record<string, SessionOpenAsks> = {};
 
   /** Open-ask reads in flight, by machine-scoped session key. */
   private readonly askRequests = new Set<string>();
@@ -1380,7 +1382,7 @@ export class WorkbenchApp extends LitElement {
       this.askRequests.add(key);
       void this.windowChatWorkspace(chat)
         .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, chat.machineId))
-        .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: { ...asks, over: this.chatStatus(chat) } }; })
+        .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: asks }; })
         .catch(() => undefined)
         .finally(() => { this.askRequests.delete(key); });
     }

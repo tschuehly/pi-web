@@ -581,27 +581,48 @@ describe("Durable Chats", () => {
     const mode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
     only(launched).push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": mode } } });
     only(launched).kill();
-    await expect(durable.workingMode(ref)).resolves.toBe(mode);
+    await expect(durable.workingMode(ref)).resolves.toEqual({ workingMode: mode, workingModeVersion: 1 });
     expect(launched).toHaveLength(1);
   });
 
   it("reads a running host's Working Mode over the saved one, and a reattached host refreshes the saved one", async () => {
     const { durable, launched, locator, root } = await service();
     const chat = await durable.start("/work/a");
-    const ref = { id: chat.id, cwd: chat.cwd };
     const [saved, live] = ['{"aligned":false}', '{"aligned":true}'];
     only(launched).push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": saved } } });
-    // The host changed mode while no daemon listened (no status.update reached the record).
-    only(launched).answer = (request) => (request.method === "status" ? { ...status, extensionStatuses: { "working-mode": live } } : null);
-    await expect(durable.workingMode(ref)).resolves.toBe(live);
     await durable.dispose();
 
-    // A restarted daemon reattaches a host whose mode moved on: the record follows it before any read.
-    locator.update(chat.id, { workingMode: saved });
+    // A restarted daemon reattaches a host whose mode moved on while no daemon listened: the record follows it before any read.
     locator.setHost(chat.id, { label: "l", socket: "s", revision: "r", ownerEpoch: 1, pid: 1 });
     const restarted = await service(() => { const host = new FakeHost(); host.answer = (request) => (request.method === "status" ? { ...status, extensionStatuses: { "working-mode": live } } : null); return host; }, undefined, { locator: new SessionRuntimeLocator(root) });
     await restarted.durable.reattach();
-    expect(new SessionRuntimeLocator(root).durable(chat.id)?.workingMode).toBe(live);
+    expect(new SessionRuntimeLocator(root).durable(chat.id)).toMatchObject({ workingMode: live, workingModeVersion: 2 });
+    await expect(restarted.durable.workingMode({ id: chat.id, cwd: chat.cwd })).resolves.toEqual({ workingMode: live, workingModeVersion: 2 });
+    await restarted.durable.dispose();
+  });
+
+  it("keeps a newer Working Mode event over a status read that crossed it, as a reattached host sends both in one batch", async () => {
+    const { durable, launched, locator, root } = await service();
+    const chat = await durable.start("/work/a");
+    const [before, unaligned, aligned] = ['{"phase":"pending"}', '{"aligned":false}', '{"aligned":true}'];
+    only(launched).push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": before } } });
+    await durable.dispose();
+
+    locator.setHost(chat.id, { label: "l", socket: "s", revision: "r", ownerEpoch: 1, pid: 1 });
+    const restarted = await service(() => {
+      const host = new FakeHost();
+      let replied = false;
+      // The host answers the reattach read with its old mode, then reports the new one before the daemon handles the reply.
+      host.answer = (request) => {
+        if (request.method !== "status" || replied) return request.method === "status" ? { ...status, extensionStatuses: { "working-mode": aligned } } : null;
+        replied = true;
+        queueMicrotask(() => { host.push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": aligned } } }); });
+        return { ...status, extensionStatuses: { "working-mode": unaligned } };
+      };
+      return host;
+    }, undefined, { locator: new SessionRuntimeLocator(root) });
+    await restarted.durable.reattach();
+    expect(new SessionRuntimeLocator(root).durable(chat.id)).toMatchObject({ workingMode: aligned, workingModeVersion: 2 });
     await restarted.durable.dispose();
   });
 

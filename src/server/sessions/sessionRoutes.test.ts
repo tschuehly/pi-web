@@ -1214,10 +1214,10 @@ describe("session routes", () => {
 
       // A Durable Chat whose host is not running: nothing was read, and the read started nothing; its last Working Mode still comes along.
       routeService.openAsksResponse = undefined;
-      routeService.workingModeResponse = '{"aligned":false}';
+      routeService.workingModeResponse = { workingMode: '{"aligned":false}', workingModeVersion: 3 };
       routeService.calls.length = 0;
       const cold = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
-      expect(cold.json()).toEqual({ pendingAsks: [], running: false, workingMode: '{"aligned":false}' });
+      expect(cold.json()).toEqual({ pendingAsks: [], running: false, workingMode: '{"aligned":false}', workingModeVersion: 3 });
       expect(routeService.calls).toEqual([{ openAsks: { id: "session-1", cwd: requestCwd } }]);
 
       // A deleted Chat is a 404, so a caller can tell it from a failed read.
@@ -1964,7 +1964,7 @@ class CapturingRouteSessionService implements SessionRouteService {
     return this.openAsksError === undefined ? Promise.resolve(this.openAsksResponse) : Promise.reject(this.openAsksError);
   }
 
-  workingModeResponse: string | undefined;
+  workingModeResponse: { workingMode: string; workingModeVersion: number } | undefined;
   workingMode() {
     return this.workingModeResponse;
   }

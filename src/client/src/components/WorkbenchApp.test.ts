@@ -2511,16 +2511,43 @@ describe("window tabs", () => {
     const dashed = () => tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned");
     workstreamTab(app, "Release").click();
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
-    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) } } });
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 1 } });
     await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
 
-    // The Chat was aligned while the window was offline; the read on reconnect knows it, the cached status does not.
-    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: mode(true) } : { pendingAsks: [] }));
+    // The Chat was aligned while the window was offline; the read on reconnect knows it (a higher version), the cached status does not.
+    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: mode(true), workingModeVersion: 2 } : { pendingAsks: [] }));
     sockets.at(-1)?.onopen?.();
     await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(false); });
 
-    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) } } });
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 3 } });
     await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+  });
+
+  it("keeps a live status newer than a connect read that arrives after it, for Alignment and Attention", async () => {
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    const app = await mountWithWorkstreamChats();
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (aligned: boolean, attention: string) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention, checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const tab = () => tabsRoot(app).querySelector('[data-session="a1"]');
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+
+    // The reconnect read is answered with the old mode but held in flight; the newer status renders meanwhile.
+    let release!: () => void;
+    vi.spyOn(api, "openAsks").mockImplementation((ref) => ref.id !== "a1" ? Promise.resolve({ pendingAsks: [] }) : new Promise((resolve) => { release = () => { resolve({ pendingAsks: [], workingMode: mode(false, "AFK"), workingModeVersion: 1 }); }; }));
+    sockets.at(-1)?.onopen?.();
+    await vi.waitFor(() => { expect(release).toBeDefined(); });
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(true, "Focused") }, workingModeVersion: 2 } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(false); expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused"); });
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    app.requestUpdate();
+    await app.updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
+    expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused");
   });
 
   it("seeds a restored tab whose Chat lives on another machine through that machine, on connect", async () => {

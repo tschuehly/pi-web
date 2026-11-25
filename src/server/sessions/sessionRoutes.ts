@@ -269,8 +269,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       throw error;
     }
     // A cold Durable Chat: not read, so the caller keeps what it knew, and nothing started its host.
-    const workingMode = await sessions.workingMode?.(ref);
-    const mode = workingMode === undefined ? {} : { workingMode };
+    const mode = await sessions.workingMode?.(ref) ?? {};
     if (pendingAsks === undefined) return { pendingAsks: [], running: false, ...mode };
     const attentionRequest = await sessions.attentionRequest(ref);
     return attentionRequest === undefined ? { pendingAsks, ...mode } : { pendingAsks, attentionRequest, ...mode };
