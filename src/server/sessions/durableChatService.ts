@@ -1018,6 +1018,11 @@ export class DurableChatService {
     return status === undefined ? undefined : status.pendingAsks ?? [];
   }
 
+  /** The Chat's last reported Working Mode status, kept on its record: read without a running host. */
+  workingMode(ref: SessionRouteRef): string | undefined {
+    return this.#record(ref).workingMode;
+  }
+
   async attentionRequest(ref: SessionRouteRef): Promise<SessionAttentionRequest | undefined> {
     return (await this.#runningStatus(ref))?.attentionRequest;
   }
@@ -1907,9 +1912,12 @@ export class DurableChatService {
       const status = { ...browserStatus(event.status, connection), sessionId };
       this.deps.events.publish(sessionId, { type: "status.update", status }, scope);
       this.deps.events.publishGlobal({ type: "status.update", status });
-      if (status.messageCount !== undefined && status.messageCount !== record.messageCount) {
-        this.deps.locator.update(sessionId, { messageCount: status.messageCount, modified: new Date().toISOString() });
-      }
+      const workingMode = status.extensionStatuses?.["working-mode"];
+      const change = {
+        ...(status.messageCount !== undefined && status.messageCount !== record.messageCount ? { messageCount: status.messageCount, modified: new Date().toISOString() } : {}),
+        ...(workingMode !== undefined && workingMode !== record.workingMode ? { workingMode } : {}),
+      };
+      if (Object.keys(change).length > 0) this.deps.locator.update(sessionId, change);
       return;
     }
     this.deps.events.publish(sessionId, event.type === "message.end" ? { ...event, message: displayPromptMessage(this.#liveCacheMissNotice(sessionId, record.cwd, event.message)) } : event, scope);

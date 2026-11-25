@@ -1092,20 +1092,24 @@ export class WorkbenchApp extends LitElement {
     }
   }
 
-  /** Each Chat's selected Attention, from its live status; absent until the Chat reports one. */
+  /** A Chat's Working Mode from its live status, else as the window read it on connect (a restored Chat not yet opened). */
+  private chatWorkingMode(chat: WindowChat) {
+    const status = this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId];
+    return parseWorkingModeSnapshot(status === undefined ? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)]?.workingMode : status.extensionStatuses?.[WORKING_MODE_STATUS_KEY]);
+  }
+
+  /** Each Chat's selected Attention, from its live status or the connect read; absent until the Chat reports one. */
   private chatAttention(): Record<string, string> {
     return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
-      const status = this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId];
-      const value = parseWorkingModeSnapshot(status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY])?.selected.attention;
+      const value = this.chatWorkingMode(chat)?.selected.attention;
       return value === undefined ? [] : [[chat.sessionId, value]];
     }));
   }
 
-  /** Chats whose selected Alignment asks for an agreement not yet reached (or reset), from their live status. */
+  /** Chats whose selected Alignment asks for an agreement not yet reached (or reset), from their live status or the connect read. */
   private chatUnaligned(): Record<string, boolean> {
     return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
-      const status = this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId];
-      const mode = parseWorkingModeSnapshot(status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY]);
+      const mode = this.chatWorkingMode(chat);
       return mode === undefined || mode.selected.alignment === "Default" || mode.aligned ? [] : [[chat.sessionId, true]];
     }));
   }

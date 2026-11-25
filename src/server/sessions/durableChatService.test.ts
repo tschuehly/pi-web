@@ -573,6 +573,18 @@ describe("Durable Chats", () => {
     await expect(durable.openAsks({ id: "missing", cwd: "/work/a" })).rejects.toThrow("Session not found");
   });
 
+  it("keeps a Chat's last Working Mode status on its record, so a cold Chat's tab still knows it", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    expect(durable.workingMode(ref)).toBeUndefined();
+    const mode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
+    only(launched).push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": mode } } });
+    only(launched).kill();
+    expect(durable.workingMode(ref)).toBe(mode);
+    expect(launched).toHaveLength(1);
+  });
+
   it("labels the whole record's context as the user's edit only while the host's set says the user supplied it", async () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");

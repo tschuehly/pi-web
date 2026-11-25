@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { isLiveReviewPairing, type LiveReviewPairing } from "./liveReview.js";
 
-type RecordChange = Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "shortNameSource" | "key">> & { shortName?: string | undefined; liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined };
+type RecordChange = Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "shortNameSource" | "key" | "workingMode">> & { shortName?: string | undefined; liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined };
 
 /**
  * Which runtime owns a Chat. Legacy Chats have no record: the legacy runtime stays the default. A Durable Chat's
@@ -20,6 +20,8 @@ export interface DurableChatRecord {
   /** Listing projection, refreshed from host events; the host's store stays the authority. */
   firstMessage: string;
   messageCount: number;
+  /** The host's last `working-mode` status (a Working Mode snapshot), so a tab shows it before its Chat is opened. */
+  workingMode?: string;
   /** Set with `/name`, a Workstream checkpoint, or generated from the first prompt. */
   name?: string;
   /** Who set `name`; absent means the owner (`/name`), which generated titles never replace. */

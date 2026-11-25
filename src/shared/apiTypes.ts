@@ -1759,6 +1759,8 @@ export interface SessionAttentionRequest {
 export interface SessionOpenAsks {
   pendingAsks: PendingAskUser[];
   attentionRequest?: SessionAttentionRequest;
+  /** The Chat's last known `working-mode` extension status, so its tab shows its Working Mode before it is opened. */
+  workingMode?: string;
 }
 
 export interface SessionAttentionEvent {

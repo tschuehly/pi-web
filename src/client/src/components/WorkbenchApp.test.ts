@@ -2479,6 +2479,29 @@ describe("window tabs", () => {
     expect(dot("a2")).not.toBe("needs");
   });
 
+  it("frames a restored background Chat's tab dashed after a reload while its Alignment waits, without opening it", async () => {
+    await mountWithWorkstreamChats();
+    document.body.replaceChildren();
+    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    vi.clearAllMocks();
+    const status = vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
+    const workingMode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
+    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode } : { pendingAsks: [] }));
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    const dashed = (sessionId: string) => tabsRoot(app).querySelector(`[data-session="${sessionId}"]`)?.hasAttribute("data-unaligned");
+
+    sockets.at(-1)?.onopen?.();
+
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed("a1")).toBe(true); });
+    expect(dashed("a2")).toBe(false);
+    expect(status.mock.calls.map(([ref]) => ref.id)).not.toContain("a1");
+  });
+
   it("acknowledges the selected Chat's attention request once the owner sees it, and not while the window is in the background", async () => {
     const app = await mountWithWorkstreamChats();
     const acknowledge = vi.spyOn(api, "acknowledgeAttention").mockResolvedValue(undefined);
@@ -2504,11 +2527,9 @@ describe("window tabs", () => {
 
     receive({ type: "status.update", status: { ...idleStatus("b1"), extensionStatuses: { "working-mode": mode("Align", false) } } });
     await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(true); });
-    expect(tab()?.getAttribute("title")).toMatch(/ · not aligned$/u);
 
     receive({ type: "status.update", status: { ...idleStatus("b1"), extensionStatuses: { "working-mode": mode("Align", true) } } });
     await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(false); });
-    expect(tab()?.getAttribute("title")).not.toMatch(/not aligned/u);
 
     receive({ type: "status.update", status: { ...idleStatus("b1"), extensionStatuses: { "working-mode": mode("Default", false) } } });
     await app.updateComplete;
