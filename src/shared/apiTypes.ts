@@ -1046,6 +1046,11 @@ export interface AskUserQuestionRecord {
   value?: boolean | number | string;
   /** The question stayed hidden because its {@link AskUserQuestion.showIf} condition was not met; never answered. */
   skipped?: true;
+  /**
+   * In a whole-set record, set on a row an earlier partial send carried: the revision that send continued under, as its
+   * images carry it. Rows and images are matched by (revision, question id), since a revision may reuse a question id.
+   */
+  revision?: string;
 }
 
 /**

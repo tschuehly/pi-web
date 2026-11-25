@@ -421,7 +421,8 @@ function askUserOutcome(
 export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly AskUserOutcome[], order: readonly string[] = [], contextEdited = false): AskUserOutcome {
   // shortcut: past the record limit the oldest earlier answers drop out (each send's own record keeps them; the summary
   // counts them and says how many are not shown), page the record if sets get revised that often.
-  const all = earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.questions);
+  // Each earlier send's rows carry its revision, as its images do, so a question id a revision reused stays apart.
+  const all = earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.questions.map((record) => each.revision === undefined ? record : { ...record, revision: each.revision }));
   const cut = Math.max(0, all.length + outcome.questions.length - ASK_USER_RECORD_QUESTION_LIMIT);
   const records = all.slice(cut);
   const hidden = all.slice(0, cut);
@@ -438,10 +439,11 @@ export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly As
   const editedContext = outcome.editedContext ?? (contextEdited ? lastEdit : undefined);
   // Image metadata follows its questions (a hidden answer's images drop out). `[PIC_n]` restarts per send, so each earlier
   // send's images carry that send's revision, naming the answers entry that holds their bytes (as the Durable host's wholeRecord).
-  const shown = new Set(questions.map((record) => record.question.id));
+  const sendKey = (revision: string | undefined, id: string) => JSON.stringify([revision ?? null, id]);
+  const shown = new Set(questions.map((record) => sendKey(record.revision, record.question.id)));
   const sentImages = (each: AskUserOutcome, revision?: string): AskUserOutcomeImage[] => (each.images ?? []).map((image) => revision === undefined ? image : { ...image, revision });
   const images = [...earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => sentImages(each, each.revision)), ...sentImages(outcome)]
-    .filter((image) => image.target.kind === "note" || shown.has(image.target.id));
+    .filter((image) => image.target.kind === "note" || shown.has(sendKey(image.revision, image.target.id)));
   return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), ...(images.length === 0 ? {} : { images }), questions, answeredCount, unansweredIds, summary: summaryLine(questions.length + hidden.length - skipped - hidden.filter((record) => record.skipped === true).length, answeredCount + hidden.filter((record) => record.answered).length, unansweredIds) + skippedSummary(questions)
       + (hidden.length === 0 ? "" : `; ${hidden.length.toString()} earlier ${hidden.length === 1 ? "answer" : "answers"} not shown`) };
 }

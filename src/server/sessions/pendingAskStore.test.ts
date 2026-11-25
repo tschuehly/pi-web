@@ -1007,6 +1007,21 @@ describe("PendingAskStore images", () => {
     ]);
   });
 
+  it("tags each earlier send's rows with the revision its images carry, so a reused question id keeps each send's own image", () => {
+    const store = testStore();
+    const ask = textAsk(store);
+    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "why", values: [], value: "Fast" }], partial: true, images: [{ target: q("why"), ...png, name: "A.png" }] });
+    if (first.status !== "closed" || first.ask === undefined) throw new Error("expected partial");
+    const revised = store.update({ sessionId, askId: ask.askId, questions: [question("why", { question: "Why, really?", kind: "text", options: [] })] });
+    if (revised === undefined) throw new Error("expected revised");
+    const last = store.submit(sessionId, ask.askId, { revision: revised.revision, answers: [{ id: "why", values: [], value: "Cheap" }], images: [{ target: q("why"), ...png, name: "B.png" }] });
+    if (last.status !== "closed") throw new Error("expected closed");
+    const whole = withEarlierAnswers(last.outcome, [first.outcome], ["why"]);
+    expect(whole.questions.map((record) => [record.question.question, record.revision])).toEqual([["Question why?", first.ask.revision], ["Why, really?", undefined]]);
+    expect(whole.images?.map((image) => [image.name, image.revision])).toEqual([["A.png", first.ask.revision], ["B.png", undefined]]);
+    expect(parseAskUserOutcome(whole).questions[0]?.revision).toBe(first.ask.revision);
+  });
+
   it("keeps a question with id note apart from the note", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("note", { kind: "text", options: [] })] });

@@ -499,7 +499,7 @@ export class AskUserCard extends LitElement {
             : answer === undefined
             ? html`<span class="unanswered-record">Unanswered</span>`
             : html`<span class="record-answer other-record-text">${parts.join(", ")}</span>${answer.fromDraft ? html` <span class="draft-note">Draft answer · not sent</span>` : null}`}
-          ${this.renderRecordImages(outcome, { kind: "question", id: record.question.id })}
+          ${this.renderRecordImages(outcome, { kind: "question", id: record.question.id }, record.revision)}
         </span>
       </li>
     `;
@@ -549,10 +549,13 @@ export class AskUserCard extends LitElement {
     `;
   }
 
-  /** The record's thumbnails of one target: a click opens them all in the gallery; one without bytes shows its reference. */
-  private renderRecordImages(outcome: AskUserOutcome, target: AskUserImageTarget): TemplateResult | null {
+  /**
+   * The record's thumbnails of one target of one send (`revision`, as its row carries it; none for the final send): a
+   * click opens them all in the gallery; one without bytes shows its reference.
+   */
+  private renderRecordImages(outcome: AskUserOutcome, target: AskUserImageTarget, revision?: string): TemplateResult | null {
     const all = outcome.images ?? [];
-    const own = all.flatMap((image, index) => sameAskImageTarget(image.target, target) ? [{ image, src: this.recordImages?.[index] }] : []);
+    const own = all.flatMap((image, index) => image.revision === revision && sameAskImageTarget(image.target, target) ? [{ image, src: this.recordImages?.[index] }] : []);
     if (own.length === 0) return null;
     return html`
       <span class="answer-images" data-target=${askImageTargetKey(target)}>

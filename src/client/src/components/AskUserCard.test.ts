@@ -1472,7 +1472,7 @@ describe("ask-user-card answer images", () => {
     const card = new AskUserCard();
     card.outcome = {
       askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
-      questions: [{ question: a, answered: true, values: [], value: "One" }, { question: b, answered: true, values: [], value: "Two" }],
+      questions: [{ question: a, answered: true, values: [], value: "One", revision: "r2" }, { question: b, answered: true, values: [], value: "Two" }],
       images: [{ target: { kind: "question", id: "a" }, reference: "[PIC_1]", mimeType: "image/png", name: "a.png", revision: "r2" }, { target: { kind: "question", id: "b" }, reference: "[PIC_1]", mimeType: "image/png", name: "b.png" }],
       answeredCount: 2, unansweredIds: [], summary: "Answered 2 of 2; none left unanswered",
     };
@@ -1484,6 +1484,23 @@ describe("ask-user-card answer images", () => {
     expect(lines[0]?.querySelector("img")).toBeNull();
     expect(lines[0]?.querySelector(".answer-image-missing")?.textContent).toBe("a.png");
     expect(lines[1]?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,BBBB");
+  });
+
+  it("matches a whole-set record's images to rows by send and question, so a reused question id keeps each send's own image", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      // q was sent, then the set was revised reusing id q with new wording, and q was sent again.
+      questions: [{ question: textQuestion("q", "Old q?"), answered: true, values: [], value: "One", revision: "r2" }, { question: textQuestion("q", "New q?"), answered: true, values: [], value: "Two" }],
+      images: [{ target: { kind: "question", id: "q" }, reference: "[PIC_1]", mimeType: "image/png", name: "A.png", revision: "r2" }, { target: { kind: "question", id: "q" }, reference: "[PIC_1]", mimeType: "image/png", name: "B.png" }],
+      answeredCount: 2, unansweredIds: [], summary: "Answered 2 of 2; none left unanswered",
+    };
+    card.recordImages = ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"];
+    document.body.append(card);
+    await card.updateComplete;
+    const lines = [...renderRoot(card).querySelectorAll(".record-line")];
+    expect([...(lines[0]?.querySelectorAll("img") ?? [])].map((img) => img.getAttribute("src"))).toEqual(["data:image/png;base64,AAAA"]);
+    expect([...(lines[1]?.querySelectorAll("img") ?? [])].map((img) => img.getAttribute("src"))).toEqual(["data:image/png;base64,BBBB"]);
   });
 
   it("ends the partial-send question with one question mark", async () => {

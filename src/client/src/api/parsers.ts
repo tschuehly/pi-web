@@ -479,7 +479,7 @@ function parseAskUserQuestionRecord(value: unknown): AskUserQuestionRecord {
   if (answered !== (values.length > 0 || otherText !== undefined || typed !== undefined)) throw new Error("Ask answer contradicts its answered flag");
   const skipped = record["skipped"] === true;
   if (skipped && answered) throw new Error("Ask answer is both skipped and answered");
-  return { question, answered, values, ...(otherText === undefined ? {} : { otherText }), ...(typed === undefined ? {} : { value: typed }), ...(skipped ? { skipped: true as const } : {}) };
+  return { question, answered, values, ...(otherText === undefined ? {} : { otherText }), ...(typed === undefined ? {} : { value: typed }), ...(skipped ? { skipped: true as const } : {}), ...optionalField("revision", optionalBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH)) };
 }
 
 function parseAskUserOutcomeImage(value: unknown): AskUserOutcomeImage {
