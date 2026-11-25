@@ -1404,6 +1404,35 @@ describe("ask-user-card answer images", () => {
     expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
   });
 
+  it("refuses a closing send while a hidden follow-up holds images but no answer, offering their removal in the send bar", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const details: AskUserQuestion = { ...textQuestion("details", "Details?"), showIf: { question: "proceed", values: ["yes"] } };
+    const card = await mountOpenAsk({ ...openAsk([question("proceed", "Proceed?", [option("yes", "Yes"), option("no", "No")]), details]), askId: "ask-hidden" }, onSubmit);
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    inputWithValue(root, "yes").click();
+    await card.updateComplete;
+    paste(requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-1"), "details"), [pngFile("details.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    inputWithValue(root, "no").click();
+    await card.updateComplete;
+    expect(root.querySelector("#ask-user-other-1")).toBeNull();
+    buttonWithText(root, "Send answers").click();
+    await card.updateComplete;
+    expect(onSubmit).not.toHaveBeenCalled();
+    const bar = requiredElement(root.querySelector(".stranded-images"), "stranded images in the send bar");
+    expect(bar.querySelector(".field-error")?.textContent).toContain("Add an answer or remove the image");
+    expect(bar.textContent).toContain("Details?");
+    requiredElement(bar.querySelector<HTMLButtonElement>(".answer-image-remove"), "remove").click();
+    await card.updateComplete;
+    expect(root.querySelector(".stranded-images")).toBeNull();
+    buttonWithText(root, "Send answers").click();
+    await card.updateComplete;
+    expect(onSubmit.mock.calls[0]?.[0]).toBe("ask-hidden");
+    expect(onSubmit.mock.calls[0]?.[1]).not.toHaveProperty("images");
+  });
+
   it("sends only the question's own images with its Send; the note's wait for the whole set", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([textQuestion("why", "Why?"), textQuestion("how", "How?"), textQuestion("when", "When?")]), onSubmit);

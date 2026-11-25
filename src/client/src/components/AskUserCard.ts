@@ -122,6 +122,8 @@ export class AskUserCard extends LitElement {
   /** Unsent images per {@link askImageTargetKey} (the note or a text question), mirrored in memory by askImageStaging. */
   @state() private images: Record<string, readonly StagedAskImage[]> = {};
   @state() private imageError: string | undefined;
+  /** A closing send was refused for images staged on questions now hidden by their condition; the send bar lists them. */
+  @state() private hiddenImagesRefused = false;
   private imageSeq = 0;
   private modelIdentity: string | undefined;
   /** Question index to focus once a single-answer send comes back as the ask's next revision. */
@@ -147,6 +149,7 @@ export class AskUserCard extends LitElement {
     this.inlineEdits = {};
     this.images = this.loadImages();
     this.imageError = undefined;
+    this.hiddenImagesRefused = false;
     const focusIndex = this.focusAfterRevision;
     this.focusAfterRevision = undefined;
     if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0) void this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
@@ -190,6 +193,7 @@ export class AskUserCard extends LitElement {
             ${this.confirmingPartialSubmit && unanswered.length > 0
               ? this.renderPartialSubmitConfirmation(ask, unanswered)
               : html`
+                  ${this.renderHiddenImages(ask)}
                   <label class="keep-context"><input type="checkbox" .checked=${this.keepContextOpen} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.keepContextOpen = event.currentTarget.checked; }} />Keep context open</label>
                   ${ask.approval === true ? html`<button class="approve" type="button" title="Approve the context (your edited version, if you changed it) and send the answers; unanswered questions close too" ?disabled=${this.submitting} @click=${() => { void this.submitAnswers(ask, true); }}>Approve</button>` : null}
                   <button class="primary-action" type="submit" ?disabled=${this.submitting || (contextOnly && this.note.trim() === "" && this.contextSubmission().context === undefined)}>
@@ -550,6 +554,33 @@ export class AskUserCard extends LitElement {
   }
 
   /**
+   * After a refused closing send: the images staged on questions their condition now hides, which no send can carry,
+   * each removable here since its field is not shown.
+   */
+  private renderHiddenImages(ask: PendingAskUser): TemplateResult | null {
+    if (!this.hiddenImagesRefused) return null;
+    const visible = new Set(visibleQuestions(ask.questions, this.answers).map((question) => question.id));
+    const hidden = ask.questions.flatMap((question) => {
+      const images = visible.has(question.id) ? [] : ownEntry(this.images, askImageTargetKey({ kind: "question", id: question.id })) ?? [];
+      return images.length === 0 ? [] : [{ question, images }];
+    });
+    if (hidden.length === 0) return null;
+    return html`
+      <div class="stranded-images" role="alert">
+        <p class="field-error">Add an answer or remove the image: ${hidden.map(({ question }) => question.question).join(", ")} is hidden by an earlier answer</p>
+        <div class="answer-images">
+          ${hidden.flatMap(({ question, images }) => images.map((image) => html`
+            <span class="answer-image">
+              <img src=${`data:${image.mimeType};base64,${image.data}`} alt=${image.name ?? "attached image"} />
+              <button class="answer-image-remove" type="button" title="Remove image" aria-label=${`Remove image ${image.name ?? ""} from ${question.question}`.replace(/\s+/gu, " ")} @click=${() => { this.removeImage({ kind: "question", id: question.id }, image.id); }}>×</button>
+            </span>
+          `))}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
    * The record's thumbnails of one target of one send (`revision`, as its row carries it; none for the final send): a
    * click opens them all in the gallery; one without bytes shows its reference.
    */
@@ -764,13 +795,15 @@ export class AskUserCard extends LitElement {
   private submitAnswers(ask: PendingAskUser, approved = false): Promise<boolean> {
     const note = this.note.trim();
     const submission = toSubmission(ask.questions, this.answers);
-    // A closing send carries only answered questions' images; one staged on a blank answer would be lost with the set.
-    const stranded = visibleQuestions(ask.questions, this.answers).find((question) => question.kind === "text"
-      && !submission.answers.some((answer) => answer.id === question.id)
-      && (ownEntry(this.images, askImageTargetKey({ kind: "question", id: question.id }))?.length ?? 0) > 0);
-    if (stranded !== undefined) {
-      this.imageErrorTarget = askImageTargetKey({ kind: "question", id: stranded.id });
-      this.imageError = "Add an answer or remove the image";
+    // A closing send carries only answered (so shown) questions' images; any other staged one would be lost with the set.
+    const sendable = new Set([NOTE, ...questionTargets(submission.answers)].map(askImageTargetKey));
+    const stranded = Object.entries(this.images).filter(([key, images]) => !sendable.has(key) && images.length > 0).map(([key]) => key);
+    if (stranded.length > 0) {
+      const shown = new Set(visibleQuestions(ask.questions, this.answers).map((question) => askImageTargetKey({ kind: "question", id: question.id })));
+      // A shown field takes the message under it; hidden ones are listed in the send bar.
+      this.imageErrorTarget = stranded.find((key) => shown.has(key));
+      this.imageError = this.imageErrorTarget === undefined ? undefined : "Add an answer or remove the image";
+      this.hiddenImagesRefused = stranded.some((key) => !shown.has(key));
       return Promise.resolve(false);
     }
     return this.send(ask, { ...submission, ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision, ...(approved ? { approved } : {}), ...this.imagesFor([...questionTargets(submission.answers), NOTE]) });
@@ -1190,6 +1223,8 @@ export class AskUserCard extends LitElement {
     .context-folded:hover:not(:disabled) { background: transparent; color: var(--pi-text); }
     .context-folded-label { flex: 0 0 auto; font-weight: 650; }
     .context-folded-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Its own line in the send bar, above the buttons it blocks. */
+    .stranded-images { flex: 1 1 100%; display: grid; gap: 6px; }
     .form-footer {
       display: flex;
       flex-wrap: wrap;
