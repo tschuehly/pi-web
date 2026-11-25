@@ -277,9 +277,11 @@ describe("ask-user-card live form", () => {
     document.body.removeEventListener("keydown", outside);
   });
 
-  it("shows the pencil only on row hover or focus, as a sized icon button", () => {
+  it("shows the pencil only on row hover or focus, as a sized icon button; every button is a 32px target", () => {
     const styles = AskUserCard.styles.cssText;
-    expect(styles).toMatch(/\.edit-option \{[^}]*width: 26px;[^}]*height: 26px;[^}]*opacity: 0;/);
+    expect(styles).toMatch(/\.edit-option \{[^}]*width: 32px;[^}]*height: 32px;[^}]*opacity: 0;/);
+    expect(styles).toMatch(/\n\s*button \{[^}]*min-height: 32px;/);
+    expect(styles).toMatch(/\.option \{[^}]*min-height: 32px;/);
     expect(styles).toContain(".option-row:hover > .edit-option, .option-row:focus-within > .edit-option { opacity: 1; }");
     expect(styles).toMatch(/\.edit-option:hover:not\(:disabled\) \{ background:/);
   });
@@ -956,6 +958,8 @@ describe("ask-user-card context", () => {
     expect([style.borderTopWidth, style.backgroundColor]).toEqual(["0px", "transparent"]);
     expect(AskUserCard.styles.cssText).toContain(".card .context-editor { border: 0; border-radius: 0; background: transparent; }");
     expect(AskUserCard.styles.cssText).toContain(".card .context-editor:focus-within { outline: none; }");
+    // A wide diff or code block scrolls in its own box instead of widening the text, so long lines and inline code wrap.
+    expect(AskUserCard.styles.cssText).toMatch(/\.card ask-markdown-field \.cm-content \{[^}]*min-width: 0;/);
   });
 
   it("renders the context of a closed ask record in its full-questions disclosure, after the answers", async () => {

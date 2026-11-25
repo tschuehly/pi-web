@@ -777,14 +777,23 @@ export class AskUserCard extends LitElement {
       display: block;
       box-sizing: border-box;
       width: 100%;
-      margin: 0 0 14px;
+      margin: 0 0 12px;
       color: var(--pi-text);
       font: 14px var(--pi-font, system-ui, sans-serif);
       container-type: inline-size;
     }
+    /*
+     * One reading column (--ask-x): context, questions, details and answers start there; question numbers hang in the
+     * gutter to its left, and boxed controls (options, fields, the note) bleed 8px into it so their text lines up too.
+     * Spacing steps are 4, 8 and 12px: tight inside a question, wider between questions and around the send bar.
+     */
     .card {
-      --question-number-column: 25px;
-      --question-copy-gap: 5px;
+      --ask-x: var(--ui-transcript-inline-start, 28px);
+      --ask-end: 16px;
+      --question-number-column: 16px;
+      --question-copy-gap: 4px;
+      /* Accent-coloured words: the accent alone reads under 4.5:1 on some dark themes (pi-web-dark 3.7:1); mixing in the text colour lifts it in light and dark themes alike. */
+      --ask-accent-text: color-mix(in srgb, var(--pi-accent) 65%, var(--pi-text));
       /* A transcript that draws its own frame (the Workbench rail) replaces these and aligns text with --ui-transcript-inline-start. */
       border: var(--ask-card-border, 1px solid var(--pi-border));
       border-radius: var(--ask-card-radius, 10px);
@@ -798,8 +807,8 @@ export class AskUserCard extends LitElement {
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      min-height: 22px;
-      padding: 7px 10px 6px var(--ui-transcript-inline-start, 10px);
+      min-height: 20px;
+      padding: 6px var(--ask-end) 6px var(--ask-x);
       border-bottom: 1px solid color-mix(in srgb, var(--pi-border-muted) 35%, transparent);
       border-radius: var(--ask-card-radius, 9px) var(--ask-card-radius, 9px) 0 0;
       background: var(--ask-card-bg, var(--pi-surface));
@@ -808,7 +817,7 @@ export class AskUserCard extends LitElement {
     h2, h3, p { margin-top: 0; }
     h2 {
       margin-bottom: 0;
-      color: var(--pi-accent);
+      color: var(--ask-accent-text);
       font-size: 12px;
       line-height: 1.3;
       text-transform: uppercase;
@@ -819,66 +828,76 @@ export class AskUserCard extends LitElement {
     .ask-meta { flex: 1 1 auto; min-width: 0; display: flex; gap: 8px; color: var(--pi-muted); font-size: 11px; }
     .stale { color: var(--pi-warning); font-weight: 650; }
     .question-ref { color: var(--pi-muted); font-size: 11px; font-weight: 500; }
-    .recommended { margin-inline-start: 4px; padding: 1px 6px; border-radius: 999px; background: var(--pi-success-bg); color: var(--pi-success); font-size: 11px; font-weight: 650; }
-    .ask-context { display: block; padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
+    .recommended { margin-inline-start: 4px; padding: 0 6px; border-radius: 999px; background: var(--pi-success-bg); color: var(--pi-success); font-size: 11px; font-weight: 650; }
+    .ask-context { display: block; min-width: 0; padding: 8px var(--ask-end) 0 var(--ask-x); }
     /* The editable context reads as one continuous text with the rendered view: its font, size, line height and colours; no frame, tint or focus ring (the caret shows focus). */
     .card .context-editor { border: 0; border-radius: 0; background: transparent; }
     .card .context-editor .cm-editor { min-height: 0; max-height: none; }
     /* CodeMirror's base theme sets a monospace scroller; the context keeps the card's body font. */
     .card .context-editor .cm-scroller, .card .context-editor .cm-content { font: inherit; line-height: 1.45; }
-    .card .context-editor .cm-content { padding: 4px 0; }
+    .card .context-editor .cm-content { padding: 0; }
     .card .context-editor .cm-line { padding: 0; }
+    /* A blank source line stands for the read view's paragraph gap, not a whole empty line. */
+    .card .context-editor .cm-line:has(> br:only-child) { line-height: 8px; }
+    /* Headings and lists sit where the read view puts them: no extra top air on the first line, bullets in a 22px indent. */
+    .card .context-editor .lp-h { padding-top: 8px; padding-bottom: 4px; }
+    .card .context-editor .cm-line:first-child { padding-top: 0; }
+    .card .context-editor .lp-li { --m: 14px; padding-left: calc(8px + var(--depth) * 1.6em + var(--m)) !important; }
+    /* Inline code as the read view draws it; slice, not clone, so a wrapped code run adds no padding at the line's end to push it past the edge. */
+    .card .context-editor .lp-inline-code { padding: 1px 4px; border-radius: 3px; background: var(--pi-surface-hover); font-size: 13px; -webkit-box-decoration-break: slice; box-decoration-break: slice; }
     .card .context-editor .lp-fence-block { cursor: text; }
     .card .context-editor:focus-within { outline: none; }
     /* A folded image in a Markdown field's live preview, styled like the Chat's folded media. */
-    ask-markdown-field .folded-media > summary { width: fit-content; color: var(--pi-accent); cursor: pointer; }
+    ask-markdown-field .folded-media > summary { width: fit-content; color: var(--ask-accent-text); cursor: pointer; }
     ask-markdown-field .folded-media > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; border-radius: 4px; }
-    .context-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 2px; }
+    .context-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
     .context-edited { margin: 0; color: var(--pi-muted); font-size: 11px; }
-    .record-card .context-edited { padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
+    .record-card .context-edited { padding: 8px var(--ask-end) 0 var(--ask-x); }
     .record-card .context-edited + .ask-context { padding-top: 2px; }
-    .questions { display: grid; padding-top: 8px; }
+    /* The widest step: context and questions are the card's two groups. */
+    .questions { display: grid; padding-top: 16px; }
     fieldset.question {
       min-width: 0;
       margin: 0;
       border: 0;
-      padding: 0 16px 16px var(--ui-transcript-inline-start, 16px);
+      /* No top padding: a fieldset puts it between the legend and the rest, so the space above a question is the separator's. */
+      padding: 0 var(--ask-end) 12px var(--ask-x);
       background: transparent;
     }
     /* Its own element: a fieldset's top border would paint through the middle of its legend. */
-    .question-separator { margin: 0 0 10px; border: 0; border-top: 1px solid var(--pi-border-muted); }
+    .question-separator { margin: 0 var(--ask-end) 12px var(--ask-x); border: 0; border-top: 1px solid var(--pi-border-muted); }
     fieldset.question:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -3px; }
+    /* The number hangs in the gutter, so the question's words start on the reading column. */
     legend {
       box-sizing: border-box;
-      width: 100%;
+      width: calc(100% + var(--question-number-column) + var(--question-copy-gap));
       display: grid;
       grid-template-columns: var(--question-number-column) minmax(0, 1fr);
       align-items: start;
       gap: var(--question-copy-gap);
-      color: var(--pi-text);
+      margin-inline-start: calc(-1 * (var(--question-number-column) + var(--question-copy-gap)));
       padding: 0;
+      color: var(--pi-text);
       font-weight: 650;
-      line-height: 1.35;
+      line-height: 1.4;
     }
     .question-number { justify-self: end; color: var(--pi-muted); }
     fieldset.question.answered .question-number { color: var(--pi-success); }
-    .question-detail { display: block; margin: 4px 0 10px; color: var(--pi-text); overflow-wrap: anywhere; }
-    fieldset.question > .question-detail {
-      padding-inline-start: calc(var(--question-number-column) + var(--question-copy-gap));
-    }
-    .options { display: grid; gap: 7px; }
-    legend + .options { margin-top: 10px; }
+    /* Below the question in a quieter voice; the options carry the answer. */
+    .question-detail { display: block; margin: 2px 0 0; color: var(--pi-text-secondary, var(--pi-muted)); font-size: 13px; overflow-wrap: anywhere; }
+    .options { display: grid; gap: 0; margin: 6px 0 0 -8px; }
     /* The pencil sits in the option's trailing padding, so every option, Custom and the textarea end at one edge. */
     .option-row { position: relative; }
-    .option-row > .option { padding-inline-end: 36px; }
+    .option-row > .option { padding-inline-end: 40px; }
     .edit-option {
       position: absolute;
-      top: 4px;
-      right: 4px;
+      top: 0;
+      right: 0;
       display: grid;
       place-items: center;
-      width: 26px;
-      height: 26px;
+      width: 32px;
+      height: 32px;
+      min-height: 0;
       padding: 0;
       border: 0;
       border-radius: 6px;
@@ -892,109 +911,120 @@ export class AskUserCard extends LitElement {
     @media (hover: none) { .edit-option { opacity: 1; } }
     .edit-option:hover:not(:disabled) { background: color-mix(in srgb, var(--pi-text) 9%, transparent); color: var(--pi-text); }
     .option-row svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    /* The edited option keeps its row and its selected look; the pencil stands in for the control. */
+    /* The edited option keeps its row and its selected tint; the pencil stands in for the control. */
     .inline-edit {
       display: grid;
       grid-template-columns: 16px minmax(0, 1fr);
-      gap: 5px;
-      padding: 7px 8px;
-      border: 1px solid var(--pi-accent);
-      border-radius: 8px;
+      gap: 4px 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
       background: var(--pi-selection-bg);
     }
-    .inline-edit-marker { display: flex; margin-top: 3px; color: var(--pi-accent); }
-    .card .inline-edit ask-markdown-field { flex: 1; min-width: 0; background: var(--pi-surface); }
+    .inline-edit-marker { display: flex; margin-top: 9px; color: var(--pi-accent); }
+    .card .inline-edit ask-markdown-field { flex: 1; min-width: 0; }
     .card .inline-edit ask-markdown-field .cm-editor { min-height: 52px; }
-    .revert-edit { grid-column: 2; justify-self: end; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-color: transparent; background: transparent; color: var(--pi-muted); font-size: 12px; }
+    .revert-edit { grid-column: 2; justify-self: end; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-color: transparent; background: transparent; color: var(--pi-muted); font-size: 12px; }
     .revert-edit:hover:not(:disabled) { color: var(--pi-text); }
-    /* 1px border + 8px padding + 16px control + 5px gap = the number gutter, so option text starts where question text does. */
+    .revert-edit svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    /* One row per option, its tint the only box: hover lightens it, the selected one carries the selection colour. */
     .option {
       display: grid;
       grid-template-columns: 16px minmax(0, 1fr);
       align-items: start;
-      gap: 5px;
-      border: 1px solid transparent;
-      border-radius: 8px;
-      padding: 7px 8px;
+      gap: 8px;
+      min-height: 32px;
+      box-sizing: border-box;
+      border-radius: 6px;
+      padding: 6px 8px;
       cursor: pointer;
     }
-    .option:hover, :where(.option-row:hover) > .option { border-color: var(--pi-border); background: var(--pi-surface-hover); }
-    .option:has(input:checked) { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
+    .option:hover, :where(.option-row:hover) > .option { background: var(--pi-surface-hover); }
+    .option:has(input:checked) { background: var(--pi-selection-bg); }
     input { margin: 2px 0 0; accent-color: var(--pi-accent); }
     input:focus-visible, button:focus-visible, ask-markdown-field:focus-within { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .option-copy { min-width: 0; display: grid; gap: 2px; }
-    .option-label { line-height: 1.35; }
-    .option-detail { color: var(--pi-muted); font-size: 12px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .other-answer { display: grid; gap: 5px; color: var(--pi-muted); font-size: 12px; padding: 4px 0 4px calc(var(--question-number-column) + var(--question-copy-gap)); }
-    .typed-field { display: grid; gap: 4px; padding: 4px 0 4px calc(var(--question-number-column) + var(--question-copy-gap)); }
+    .option-copy { min-width: 0; display: grid; gap: 0; }
+    .option-label { line-height: 1.4; }
+    .option-detail { color: var(--pi-muted); font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+    /* Under its choice: the field's text starts where the option labels do (8px pad + 16px control + 8px gap, less its own 9px inset). */
+    .other-answer { display: grid; gap: 2px; color: var(--pi-muted); font-size: 12px; padding: 2px 0 4px 23px; }
+    .other-answer > span { padding-inline-start: 9px; }
+    .typed-field { display: grid; gap: 4px; margin-top: 8px; }
     .typed-field input:not([type="checkbox"]) {
       box-sizing: border-box;
-      width: 100%;
-      margin: 0;
+      width: calc(100% + 8px);
+      min-height: 32px;
+      margin: 0 0 0 -8px;
       border: 1px solid var(--pi-border);
-      border-radius: 8px;
+      border-radius: 6px;
       background: var(--pi-bg);
       color: var(--pi-text);
-      padding: 8px;
+      padding: 4px 8px;
       font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif);
     }
+    .typed-field ask-markdown-field { width: calc(100% + 8px); margin-inline-start: -8px; }
     .typed-field input[type="number"], .typed-field input[type="date"] { width: auto; min-width: 11em; justify-self: start; }
     .typed-field [aria-invalid="true"] { border-color: var(--pi-danger); }
     .field-error { margin: 0; color: var(--pi-danger); font-size: 12px; }
-    .switch { position: relative; display: inline-flex; align-items: center; gap: 8px; justify-self: start; cursor: pointer; }
+    .switch { position: relative; display: inline-flex; align-items: center; gap: 8px; justify-self: start; min-height: 32px; cursor: pointer; }
     /* The real checkbox stays focusable and clickable over the drawn track. */
-    .switch input { position: absolute; inset-inline-start: calc(var(--question-number-column) + var(--question-copy-gap)); width: 36px; height: 20px; margin: 0; opacity: 0; cursor: pointer; }
+    .switch input { position: absolute; inset-inline-start: 0; top: 6px; width: 36px; height: 20px; margin: 0; opacity: 0; cursor: pointer; }
     .switch-track { position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--pi-border); transition: background 0.15s; }
     .switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--pi-surface); transition: transform 0.15s; }
     .switch input:checked + .switch-track { background: var(--pi-accent); }
     .switch input:checked + .switch-track::after { transform: translateX(16px); }
     .switch input:focus-visible + .switch-track { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .boolean-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+    .boolean-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 4px; }
+    .boolean-field > .switch { margin-top: 0; }
     /* Words replace the switch's value, so it reads as set aside while they hold text. */
     .switch.overridden .switch-track, .switch.overridden .switch-state { opacity: .45; }
-    .answer-in-words { padding: 2px 8px; border-color: transparent; background: transparent; color: var(--pi-muted); font-size: 12px; }
+    .answer-in-words { padding: 0 8px; border-color: transparent; background: transparent; color: var(--pi-muted); font-size: 12px; }
     .answer-in-words:hover:not(:disabled) { color: var(--pi-text); }
-    .boolean-words { flex: 1 1 14em; min-width: 0; box-sizing: border-box; margin: 0; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); color: var(--pi-text); padding: 6px 8px; font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); }
-    .approve { border-color: var(--pi-accent); color: var(--pi-accent); font-weight: 650; }
-    .question-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
-    .send-one { padding: 3px 10px; font-size: 12px; }
-    .send-one:not(:disabled) { border-color: var(--pi-accent); color: var(--pi-accent); font-weight: 650; }
-    .send-one:disabled { cursor: default; }
+    .boolean-words { flex: 1 1 14em; min-width: 0; min-height: 32px; box-sizing: border-box; margin: 0; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-bg); color: var(--pi-text); padding: 4px 8px; font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); }
+    .approve { border-color: var(--pi-accent); color: var(--ask-accent-text); font-weight: 650; }
+    .question-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
+    .send-one { padding: 0 12px; font-size: 12px; }
+    /* Quiet beside Send answers: accent text, no frame until hovered. */
+    .send-one { border-color: transparent; background: transparent; color: var(--ask-accent-text); font-weight: 650; }
+    .send-one:disabled { color: var(--pi-muted); font-weight: 400; cursor: default; }
     /* Multi-line answers: the Files pane's Markdown editor in a textarea's frame; .card outranks CodeMirror's base theme. */
     ${livePreviewStyles}
-    ask-markdown-field { display: block; box-sizing: border-box; width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); color: var(--pi-text); }
+    ask-markdown-field { display: block; box-sizing: border-box; width: 100%; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-bg); color: var(--pi-text); }
     .card ask-markdown-field .cm-editor { min-height: 68px; max-height: 50vh; background: transparent; color: var(--pi-text); }
     .card ask-markdown-field .cm-editor.cm-focused { outline: none; }
     .card ask-markdown-field .cm-scroller { overflow: auto; }
-    .card ask-markdown-field .cm-content { padding: 8px 0; font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); caret-color: var(--pi-accent); }
+    /* min-width: a wide diff or code block scrolls in its own box instead of widening the text, so long lines and inline code wrap. */
+    .card ask-markdown-field .cm-content { min-width: 0; padding: 6px 0; font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); caret-color: var(--pi-accent); }
     .card ask-markdown-field .cm-line { padding: 0 8px; }
     .card ask-markdown-field .cm-placeholder { color: var(--pi-muted); }
     ask-markdown-field.invalid { border-color: var(--pi-danger); }
-    /* The note fills the send bar beside its button: two lines tall, growing with its text; focus tints the border instead of a second ring. */
-    ask-markdown-field.ask-note { flex: 1 1 auto; min-width: 0; width: auto; border-color: var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); }
+    /* The note fills the send bar beside its buttons: two lines tall, growing with its text; focus tints the border instead of a second ring. */
+    ask-markdown-field.ask-note { flex: 1 1 auto; min-width: 0; width: auto; border-color: var(--pi-border-muted); background: var(--pi-surface); }
     .card ask-markdown-field.ask-note .cm-editor { min-height: calc(2lh + 10px); max-height: 8lh; }
     .card ask-markdown-field.ask-note .cm-content { padding: 5px 0; }
     ask-markdown-field.ask-note:focus-within { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent); }
-    .keep-context { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; color: var(--pi-muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
+    .keep-context { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; min-height: 32px; color: var(--pi-muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
     .keep-context input { margin: 0; accent-color: var(--pi-accent); }
-    .context-folded { display: flex; gap: 8px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--pi-muted); text-align: start; }
+    .context-folded { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--pi-muted); text-align: start; }
     .context-folded:hover:not(:disabled) { background: transparent; color: var(--pi-text); }
     .context-folded-label { flex: 0 0 auto; font-weight: 650; }
     .context-folded-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .form-footer {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: flex-end;
-      gap: 12px;
+      gap: 8px 12px;
       border-top: 1px solid var(--pi-border-muted);
-      padding: 12px 16px;
+      padding: 8px var(--ask-end) 8px calc(var(--ask-x) - 8px);
     }
     button {
+      box-sizing: border-box;
+      min-height: 32px;
       border: 1px solid var(--pi-border);
-      border-radius: 8px;
+      border-radius: 6px;
       background: var(--pi-surface);
       color: var(--pi-text);
-      padding: 7px 10px;
+      padding: 0 12px;
       font: inherit;
       cursor: pointer;
     }
@@ -1002,10 +1032,11 @@ export class AskUserCard extends LitElement {
     button:disabled { cursor: wait; opacity: .65; }
     .primary-action { border-color: var(--pi-accent); background: var(--pi-accent); color: var(--pi-accent-contrast, white); font-weight: 650; }
     .primary-action:hover:not(:disabled) { background: color-mix(in srgb, var(--pi-accent) 86%, white); }
-    .partial-confirmation { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+    .partial-confirmation { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
     .partial-confirmation p { min-width: 0; margin: 0; color: var(--pi-warning); font-size: 12px; line-height: 1.4; }
     .question-jump {
       display: inline;
+      min-height: 0;
       border: 0;
       border-radius: 3px;
       background: transparent;
@@ -1014,61 +1045,48 @@ export class AskUserCard extends LitElement {
       text-decoration: underline;
       text-underline-offset: 2px;
     }
-    .confirmation-actions { flex: 0 0 auto; display: flex; gap: 7px; }
-    .record-summary { margin: 0; color: var(--pi-muted); padding: 12px 16px 12px var(--ui-transcript-inline-start, 16px); font-size: 12px; }
-    .record-lines { display: grid; gap: 6px; margin: 0; padding: 12px 16px 12px var(--ui-transcript-inline-start, 16px); list-style: none; line-height: 1.4; }
-    /* Numbers hang in the gutter so question and answer words stay in the transcript's text column. */
+    .confirmation-actions { flex: 0 0 auto; display: flex; gap: 8px; }
+    .record-summary { margin: 0; color: var(--pi-muted); padding: 8px var(--ask-end) 8px var(--ask-x); font-size: 12px; }
+    .record-lines { display: grid; gap: 4px; margin: 0; padding: 8px var(--ask-end) 8px var(--ask-x); list-style: none; line-height: 1.4; }
+    /* Numbers hang in the gutter so question and answer words stay in the reading column. */
     .record-line { display: grid; grid-template-columns: var(--question-number-column) minmax(0, 1fr); align-items: start; gap: var(--question-copy-gap); margin-inline-start: calc(-1 * (var(--question-number-column) + var(--question-copy-gap))); }
     .record-line-copy { min-width: 0; overflow-wrap: anywhere; }
     .record-line-question { font-weight: 600; }
     .record-note { border-top: 1px solid var(--pi-border-muted); }
     .record-full { border-top: 1px solid var(--pi-border-muted); }
-    .record-full > summary { width: fit-content; padding: 8px 16px 8px var(--ui-transcript-inline-start, 16px); color: var(--pi-accent); font-size: 12px; cursor: pointer; }
+    .record-full > summary { width: fit-content; padding: 8px var(--ask-end) 8px var(--ask-x); color: var(--ask-accent-text); font-size: 12px; cursor: pointer; }
     .record-full > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; border-radius: 4px; }
+    .record-full > .ask-context { padding-top: 0; }
     .record-full > .record-question { border-top: 1px solid var(--pi-border-muted); }
-    .record-question { min-width: 0; padding: 14px 16px 14px var(--ui-transcript-inline-start, 16px); }
-    .record-question h3 { display: grid; grid-template-columns: var(--question-number-column) minmax(0, 1fr); align-items: start; gap: var(--question-copy-gap); margin-bottom: 8px; font-size: 14px; line-height: 1.35; }
-    /* Numbers and bullets hang in the gutter so question and answer words stay in the transcript's text column. */
+    .record-question { min-width: 0; padding: 8px var(--ask-end) 12px var(--ask-x); }
+    .record-question h3 { display: grid; grid-template-columns: var(--question-number-column) minmax(0, 1fr); align-items: start; gap: var(--question-copy-gap); margin-bottom: 2px; font-size: 14px; line-height: 1.4; }
+    /* Numbers hang in the gutter so question and answer words stay in the reading column. */
     .record-question h3 { margin-inline-start: calc(-1 * (var(--question-number-column) + var(--question-copy-gap))); }
-    /* The note has no number to hang, so its heading sits in the text column like the answers. */
-    .record-note h3 { display: block; margin-inline-start: 0; }
+    /* The note has no number to hang, so its label sits in the reading column like the answers. */
+    .record-note h3 { display: block; margin-inline-start: 0; color: var(--pi-muted); font-size: 12px; font-weight: 600; }
     .other-record-text { white-space: pre-wrap; overflow-wrap: anywhere; }
     .unanswered-record { color: var(--pi-muted); font-style: italic; }
     .draft-note { color: var(--pi-warning); font-size: 11px; }
     @container (max-width: 580px) {
-      fieldset.question { padding: 0 12px 14px var(--ui-transcript-inline-start, 12px); }
-      .record-question { padding: 14px 12px 14px var(--ui-transcript-inline-start, 12px); }
-      .record-summary, .ask-context, .record-lines, .record-full > summary { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
-      .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
-      .partial-confirmation { align-items: stretch; flex-direction: column; }
+      .card { --ask-end: 12px; }
+      /* The note takes the bar's first line; Keep context open and the buttons share the second. */
+      .form-footer > ask-markdown-field.ask-note { flex-basis: 100%; }
+      .keep-context { margin-inline-end: auto; }
+      .partial-confirmation { flex: 1 1 100%; align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }
-      .primary-action, .approve { min-height: 42px; }
+      .primary-action, .approve, .confirmation-actions > button { min-height: 42px; }
     }
-    /* Embedded in the question drawer: no frame of its own, one header line, composer-dense spacing. */
+    /* Embedded in the question drawer: no frame of its own, one header line, composer-dense type. */
     :host([flat]) { margin: 0; font-size: 13px; }
-    :host([flat]) .card { border: 0; border-radius: 0; background: transparent; }
-    :host([flat]) .card-header { justify-content: flex-start; gap: 6px; min-height: 28px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--pi-border-muted); border-radius: 0; box-shadow: none; }
+    :host([flat]) .card { --ask-x: 32px; --ask-end: 12px; border: 0; border-radius: 0; background: transparent; }
+    :host([flat]) .card-header { justify-content: flex-start; gap: 6px; min-height: 32px; padding: 0 4px 0 12px; border-bottom: 1px solid var(--pi-border-muted); border-radius: 0; box-shadow: none; }
     :host([flat]) h2 { color: var(--pi-muted); font-weight: 600; text-transform: none; white-space: nowrap; }
     :host([flat]) .ask-meta { flex: 0 1 auto; gap: 6px; font-size: 12px; }
     :host([flat]) .header-status { flex: 1 1 auto; font-size: 12px; text-align: start; }
     :host([flat]) .ask-meta::before, :host([flat]) .header-status::before { content: "·" / ""; margin-inline-end: 6px; }
-    /* One reading column: numbers and controls hang in the gutter between the 12px inset and the text. */
-    :host([flat]) .card { --ask-reading-start: calc(12px + var(--question-number-column) + var(--question-copy-gap)); }
-    :host([flat]) .open-card .ask-context { padding: 8px 12px 8px var(--ask-reading-start); }
-    /* A sent record kept in the drawer reads in the same column, its numbers and bullets hanging in the gutter. */
-    :host([flat]) .record-card :is(.ask-context, .context-edited, .record-summary, .record-question, .record-lines, .record-full > summary) { padding-inline: var(--ask-reading-start) 12px; }
-    :host([flat]) .questions { padding-top: 8px; }
-    :host([flat]) .question-separator { margin-bottom: 8px; }
-    :host([flat]) fieldset.question { padding: 0 12px 8px; }
-    :host([flat]) .question-detail { margin: 2px 0 6px; }
-    :host([flat]) legend + .options { margin-top: 6px; }
-    :host([flat]) .options { gap: 2px; }
-    :host([flat]) .option { padding-block: 4px; }
+    :host([flat]) .question-detail { font-size: 12px; }
     /* The drawer scrolls the questions under their actions, which stay in view. */
-    :host([flat]) .form-footer { position: sticky; bottom: 0; z-index: 6; padding: 6px 12px; background: var(--pi-surface); }
-    :host([flat]) .form-footer button:not(.question-jump) { padding: 5px 10px; }
-    :host([flat]) .edit-option { top: 1px; }
-    :host([flat]) .inline-edit { padding-block: 4px; }
+    :host([flat]) .form-footer { position: sticky; bottom: 0; z-index: 6; background: var(--pi-surface); }
     @media (prefers-reduced-motion: reduce) { .edit-option, .switch-track, .switch-track::after { transition: none; } }
   `;
 }

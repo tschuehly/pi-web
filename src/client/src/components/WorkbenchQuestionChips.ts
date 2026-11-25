@@ -179,14 +179,14 @@ export class WorkbenchQuestionChips extends LitElement {
     .close:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     /* Fills the transcript's area above the Activity and questions row, flush with the Chat's edges. */
     .drawer { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--pi-surface); animation: rise .22s cubic-bezier(.16, 1, .3, 1); }
-    header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); font: 12px system-ui, sans-serif; }
+    header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 4px 0 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-muted); font: 12px system-ui, sans-serif; }
     .header-actions { display: flex; align-items: center; gap: 6px; }
-    .send-all { min-height: 24px; padding: 2px 10px; border: 1px solid var(--pi-accent); border-radius: 6px; background: var(--pi-accent); color: var(--pi-accent-contrast, white); font: 600 12px system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+    .send-all { min-height: 32px; padding: 0 12px; border: 1px solid var(--pi-accent); border-radius: 6px; background: var(--pi-accent); color: var(--pi-accent-contrast, white); font: 600 12px system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
     .send-all:hover:not(:disabled) { background: color-mix(in srgb, var(--pi-accent) 86%, white); }
     .send-all:disabled { cursor: wait; opacity: .75; }
     .send-all:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .send-all-error { flex: 0 0 auto; margin: 0; padding: 6px 12px; border-bottom: 1px solid var(--pi-border-muted); color: var(--pi-danger); font: 12px system-ui, sans-serif; }
-    .close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); cursor: pointer; }
+    .close { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--pi-muted); cursor: pointer; }
     .close:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .close svg { width: 16px; height: 16px; }
     /* Keeps a focused field clear of the sticky Send bar. */
