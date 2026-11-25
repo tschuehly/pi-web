@@ -12,7 +12,7 @@ import { workspaceFilePreviewUrl } from "../api/urls";
 import { writeClipboardText } from "../clipboard";
 import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import { MAX_INLINE_PREVIEW_BYTES, MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../../shared/workspaceFiles";
-import { applyDiskChange, bulkHunkAction, clearHunks, editHistory, filesHighlighting, hunkField, languageFor, lineRangeHighlight, lineRangeSpec, livePreview, markdownWithCodeLanguages } from "./workbenchFilesEditor";
+import { applyDiskChange, bulkHunkAction, clearHunks, editHistory, filesHighlighting, hunkField, languageFor, lineRangeHighlight, lineRangeSpec, livePreview, livePreviewStyles, markdownWithCodeLanguages } from "./workbenchFilesEditor";
 
 const isMarkdown = (path: string): boolean => /\.(?:md|markdown|mdx)$/i.test(path);
 /** SVG is text the editor can change and an image the pane can preview. */
@@ -762,45 +762,10 @@ export class WorkbenchFilesPane extends LitElement {
     .pane .editor .cm-line { padding: 0 18px; }
     .pane .editor .cm-gutters { background: var(--pi-bg); border: 0; color: var(--pi-dim); font: 12px/1.6 var(--mono); padding-left: 8px; }
     .pane .editor .cm-activeLineGutter { background: transparent; color: var(--pi-muted); }
-    .cm-cursor { border-left: 2px solid var(--pi-accent) !important; }
-    .cm-selectionBackground, .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--pi-accent) 22%, transparent) !important; }
+    ${livePreviewStyles}
     .cm-range { background: color-mix(in srgb, var(--pi-accent) 12%, transparent); }
-
     /* Markdown live preview */
     .pane .editor .cm-content.lp-on { font-family: inherit; font-size: 14.5px; line-height: 1.65; }
-    .lp-on .lp-h { font-weight: 650; line-height: 1.3; letter-spacing: -.01em; }
-    .lp-on .lp-h1 { font-size: 1.6em; padding-top: .3em; padding-bottom: .25em; }
-    .lp-on .lp-h2 { font-size: 1.28em; padding-top: 1.1em; padding-bottom: .15em; }
-    .lp-on .lp-h3 { font-size: 1.12em; padding-top: .9em; }
-    .lp-on .lp-h4, .lp-on .lp-h5, .lp-on .lp-h6 { font-size: 1em; padding-top: .7em; }
-    .lp-on .lp-quote { border-left: 3px solid var(--pi-border); color: var(--pi-muted); margin-left: 18px; padding-left: 12px !important; }
-    .lp-on .lp-code { background: var(--pi-surface); font-family: var(--mono); font-size: 12.5px; line-height: 1.6; margin: 0 18px; padding: 0 14px !important; }
-    .lp-on .lp-code-first { border-radius: 8px 8px 0 0; padding-top: 8px !important; }
-    .lp-on .lp-code-last { border-radius: 0 0 8px 8px; padding-bottom: 8px !important; }
-    .lp-on .lp-fence { color: var(--pi-muted); font-size: 11px; opacity: .55; }
-    .lp-on .lp-inline-code { font-family: var(--mono); font-size: .86em; background: var(--pi-surface); padding: .12em .35em; border-radius: 4px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-    .lp-on .lp-link { color: var(--pi-accent); border-bottom: 1px solid color-mix(in srgb, var(--pi-accent) 35%, transparent); }
-    .lp-on .lp-done { color: var(--pi-muted); text-decoration: line-through; text-decoration-color: var(--pi-dim); }
-    .lp-on .lp-table-src { font-family: var(--mono); font-size: 12.5px; }
-    /* lists: hanging indent so wrapped lines align with the text, not the bullet */
-    .lp-on .lp-li { --m: 1.6em; padding-left: calc(18px + var(--depth) * 1.6em + var(--m)) !important; text-indent: calc(-1 * var(--m)); }
-    .lp-on .lp-li-cont { text-indent: 0; }
-    .lp-on .lp-li > * { text-indent: 0; }
-    .lp-marker { display: inline-block; width: 1.6em; text-indent: 0; color: var(--pi-muted); }
-    .lp-bullet { text-align: center; padding-right: .35em; box-sizing: border-box; }
-    .lp-num { font-variant-numeric: tabular-nums; }
-    .lp-check { margin: 0; width: 14px; height: 14px; vertical-align: -2px; cursor: pointer; accent-color: var(--pi-accent); }
-    .lp-hr { display: inline-block; width: 100%; border-top: 1px solid var(--pi-border-muted); vertical-align: middle; }
-    .lp-img { display: block; }
-    .lp-img p { margin: 0; }
-    .lp-img img { max-width: 100%; border-radius: 6px; }
-    /* wide tables scroll inside their own box; cells keep a readable width instead of squishing */
-    .lp-table { box-sizing: border-box; margin: 0 18px; max-width: calc(100% - 36px); cursor: text; overflow-x: auto; border: 1px solid var(--pi-border-muted); border-radius: 8px; font-family: inherit; }
-    .lp-table table { border-collapse: collapse; margin: 0; border-style: hidden; font-size: 14px; line-height: 1.5; }
-    .lp-table th, .lp-table td { min-width: 7em; max-width: 26em; border: 1px solid var(--pi-border-muted); padding: 6px 12px; text-align: left; vertical-align: top; }
-    .lp-table th { background: var(--pi-surface); font-weight: 600; }
-    .lp-table code { font: .86em var(--mono); background: var(--pi-surface); padding: .1em .3em; border-radius: 4px; }
-    .lp-table a { color: var(--pi-accent); }
 
     /* inline agent hunks */
     .hunk-new { background: color-mix(in srgb, var(--ok) 13%, transparent); box-shadow: inset 3px 0 0 var(--ok); }

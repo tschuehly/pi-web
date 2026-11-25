@@ -501,6 +501,70 @@ describe("Durable Chats", () => {
     expect(content).toMatch(/Question sets still open for the user[^\n]*\n- ask-1 \(ask\.cache; [^)]*\): Which cache\?/);
   });
 
+  it("returns the whole set's record on its last send, from the earlier partial sends the host recorded", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const db = { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] };
+    const cache = { id: "cache", question: "Which cache?", options: [{ value: "redis", label: "Redis" }] };
+    // Only cache is left: db went with a partial send, e.g. from another device.
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r2", turnsSinceUpdate: 0, context: "Pick", questions: [cache] };
+    const earlier = { askId: "ask-1", reason: "submitted", askedAt: ask.askedAt, closedAt: ask.askedAt, context: "Pick", questions: [{ question: db, answered: true, values: ["pg"] }], answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.cache", partial: true, revision: "r2" };
+    only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"], earlier: [earlier] } : { ...status, pendingAsks: [ask] });
+    const closed = await durable.submitAsk(ref, "ask-1", { answers: [{ id: "cache", values: ["redis"] }], revision: "r2" }, "op-f");
+    expect(closed.outcome?.questions.map((record) => [record.question.id, record.values])).toEqual([["db", ["pg"]], ["cache", ["redis"]]]);
+    expect(closed.outcome).toMatchObject({ answeredCount: 2, summary: "Answered 2 of 2; none left unanswered" });
+    // The model hears only this send's answer.
+    expect(String(only(only(launched).requests.filter((r) => r.method === "closeAsk")).params?.["content"])).not.toContain("selected pg");
+  });
+
+  it("numbers the whole set's record in the set's question order the host returns, not in send order", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const db = { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] };
+    const cache = { id: "cache", question: "Which cache?", options: [{ value: "redis", label: "Redis" }] };
+    // The second question, cache, went first with a partial send; db is left.
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r2", turnsSinceUpdate: 0, context: "Pick", questions: [db] };
+    const earlier = { askId: "ask-1", reason: "submitted", askedAt: ask.askedAt, closedAt: ask.askedAt, context: "Pick", questions: [{ question: cache, answered: true, values: ["redis"] }], answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.db", partial: true, revision: "r2" };
+    only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"], earlier: [earlier], order: ["db", "cache"] } : { ...status, pendingAsks: [ask] });
+    const closed = await durable.submitAsk(ref, "ask-1", { answers: [{ id: "db", values: ["pg"] }], revision: "r2" }, "op-o");
+    expect(closed.outcome?.questions.map((record) => record.question.id)).toEqual(["db", "cache"]);
+  });
+
+  it("reads open asks and attention only from a running host: a cold Chat answers undefined and starts no host", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, context: "Pick", questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] }] };
+    only(launched).answer = (request) => (request.method === "status" ? { ...status, pendingAsks: [ask], attentionRequest: { id: "att-1", reason: "Look" } } : null);
+    await expect(durable.openAsks(ref)).resolves.toEqual([ask]);
+    await expect(durable.attentionRequest(ref)).resolves.toEqual({ id: "att-1", reason: "Look" });
+    only(launched).kill();
+    await expect(durable.openAsks(ref)).resolves.toBeUndefined();
+    await expect(durable.attentionRequest(ref)).resolves.toBeUndefined();
+    expect(launched).toHaveLength(1);
+    await expect(durable.openAsks({ id: "missing", cwd: "/work/a" })).rejects.toThrow("Session not found");
+  });
+
+  it("labels the whole record's context as the user's edit only while the host's set says the user supplied it", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const db = { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] };
+    const cache = { id: "cache", question: "Which cache?", options: [{ value: "redis", label: "Redis" }] };
+    // db went with the user's edit "Mine"; the context of the rest reads "Mine" either way.
+    const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-10-22T10:00:00.000Z", updatedAt: "2026-10-22T10:00:00.000Z", revision: "r2", turnsSinceUpdate: 0, context: "Mine", questions: [cache] };
+    const earlier = { askId: "ask-1", reason: "submitted", askedAt: ask.askedAt, closedAt: ask.askedAt, context: "Pick", editedContext: "Mine", questions: [{ question: db, answered: true, values: ["pg"] }], answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.cache", partial: true, revision: "r2" };
+    const close = async (open: PendingAskUser, operationId: string) => {
+      only(launched).answer = (request) => (request.method === "closeAsk" ? { result: "closed", outcome: request.params?.["outcome"], earlier: [earlier] } : { ...status, pendingAsks: [open] });
+      return (await durable.submitAsk(ref, "ask-1", { answers: [{ id: "cache", values: ["redis"] }], revision: "r2" }, operationId)).outcome;
+    };
+    expect(await close({ ...ask, contextEdited: true }, "op-u")).toMatchObject({ editedContext: "Mine" });
+    // The agent revised the context back to the same text: its revision, not the user's edit.
+    expect(await close(ask, "op-a")).not.toHaveProperty("editedContext");
+  });
+
   it("turns a host attention signal into one global session.attention event", async () => {
     const { durable, hub, launched } = await service();
     const chat = await durable.start("/work/a");

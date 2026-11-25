@@ -54,6 +54,8 @@ describe("createAskUserToolDefinition", () => {
     expect(advertised).not.toContain("five short lines");
     expect(advertised).toContain("update: <askId>");
     expect(advertised).toContain("withdraw: <askId>");
+    expect(advertised).toContain("Markdown images (https or workspace file path) and ```mermaid diagrams");
+    expect(advertised).toContain("```worddiff (old text, a `>>>` line, new text)");
     expect(advertised).not.toMatch(/ends? (this|the) run|alone and last/);
   });
 
@@ -170,6 +172,8 @@ describe("createAskUserToolDefinition", () => {
 
     expect(store.pendingAsks("session-1")[0]?.questions[1]?.showIf).toEqual({ question: "db", values: ["pg"] });
     expect(tool.description).toContain("Give a follow-up question `showIf` instead of writing 'If X:' in its text");
+    expect(tool.description).toContain("The user can edit the context; treat an edited context as his version, so put text for approval (a plan, draft or message) there.");
+    expect(tool.description).toContain("Unlike ask_human (Telegram, blocks until he replies), it stays in this Chat.");
     await expect(tool.execute("call-bad", { context, questions: [{ ...dependent, showIf: { question: "later", values: ["pg"] } }] }, undefined, undefined, ctxFor("session-1")))
       .rejects.toThrow(/must name an earlier question/);
   });

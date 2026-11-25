@@ -1,7 +1,9 @@
 import { LitElement, css, html, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { repeat } from "lit/directives/repeat.js";
 import {
+  ASK_USER_CONTEXT_MAX_LENGTH,
   ASK_USER_OTHER_TEXT_MAX_LENGTH,
   ASK_USER_STALE_TURNS,
   askQuestionRef,
@@ -14,19 +16,26 @@ import {
 import {
   answeredCount,
   askedFingerprint,
+  loadAskContext,
   loadAskDraft,
   loadAskNote,
+  ownEntry,
+  saveAskContext,
   saveAskDraft,
   saveAskNote,
   toSubmission,
+  typedDraftValue,
   unansweredQuestions,
   visibleQuestions,
   type AskDraftAnswer,
   type AskDraftAnswers,
 } from "../askDrafts";
 import "./FormattedText";
+import { AskMarkdownField } from "./AskMarkdownField";
+import { livePreviewStyles } from "./workbenchFilesEditor";
 import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { workspaceContextChanged, type MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
+import type { ChatContentRendering } from "../formatting/contentRendering";
 
 // Lucide "pencil", "undo-2" and "sticky-note" (https://lucide.dev, ISC).
 const PENCIL_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg>`;
@@ -42,12 +51,37 @@ export function updatedAgo(iso: string, now = Date.now()): string {
   return hours < 24 ? `updated ${String(hours)} h ago` : `updated ${String(Math.floor(hours / 24))} d ago`;
 }
 
+/**
+ * The fences of `markdown` that only the read view draws (mermaid, diff, worddiff), so the context editor can show
+ * them rendered under it; empty when there are none.
+ */
+export function renderedOnlyFences(markdown: string): string {
+  const blocks: string[] = [];
+  let open: { fence: string; lines: string[] } | undefined;
+  for (const line of markdown.split("\n")) {
+    if (open === undefined) {
+      const start = /^ {0,3}(`{3,}|~{3,})\s*(?:mermaid|diff|worddiff)(?:\s|$)/u.exec(line);
+      if (start?.[1] !== undefined) open = { fence: start[1], lines: [line] };
+      continue;
+    }
+    open.lines.push(line);
+    if (line.trim().startsWith(open.fence) && line.trim().replace(/[`~]/gu, "") === "") {
+      blocks.push(open.lines.join("\n"));
+      open = undefined;
+    }
+  }
+  // An unclosed fence runs to the end, as Markdown reads it.
+  if (open !== undefined) blocks.push(open.lines.join("\n"));
+  return blocks.join("\n\n");
+}
+
 /** May return a promise; resolving to `false` means the submit did not reach the daemon (the caller showed why), so the card keeps its draft. */
 export type AskUserSubmitCallback = (askId: string, submission: AskUserSubmission) => unknown;
 
 interface DisplayedRecordAnswer {
   values: string[];
   otherText?: string;
+  value?: boolean | number | string;
   fromDraft: boolean;
 }
 
@@ -73,10 +107,14 @@ export class AskUserCard extends LitElement {
   @property({ attribute: false }) onSubmit?: AskUserSubmitCallback;
   /** Lets file links in the context open in the Files pane, as they do in the Chat. */
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
+  /** The Chat's content renderers (Mermaid), so context and details draw diagrams like Chat messages. */
+  @property({ attribute: false }) contentRendering: ChatContentRendering | undefined;
 
   @state() private answers: AskDraftAnswers = {};
   /** Free text on the whole set, sent with the answers. */
   @state() private note = "";
+  /** The user's edit of the ask's context; `undefined` while it is unchanged. */
+  @state() private editedContext: string | undefined;
   /** The Note field hides behind its icon until opened; a saved note keeps it open. */
   @state() private noteOpen = false;
   @state() private confirmingPartialSubmit = false;
@@ -95,12 +133,15 @@ export class AskUserCard extends LitElement {
     this.answers = this.loadCurrentDraft();
     this.note = this.ask === undefined || this.draftSessionId === "" ? "" : loadAskNote(this.draftSessionId, this.ask.askId);
     this.noteOpen = this.note !== "";
+    // A context the user cleared with a partial send is absent: his new edit is made against "".
+    const context = this.ask?.context ?? "";
+    this.editedContext = this.ask === undefined || this.draftSessionId === "" || this.outcome !== undefined ? undefined : loadAskContext(this.draftSessionId, this.ask.askId, context);
     this.confirmingPartialSubmit = false;
     this.submitting = false;
     this.inlineEdits = {};
     const focusIndex = this.focusAfterRevision;
     this.focusAfterRevision = undefined;
-    if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0) this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
+    if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0) void this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
   }
 
   override render(): TemplateResult | null {
@@ -127,15 +168,15 @@ export class AskUserCard extends LitElement {
           </span>
           <slot name="actions"></slot>
         </header>
-        ${this.renderContext(ask.context)}
+        ${this.renderContextEditor(ask.context)}
         <form class="ask-form" @submit=${(event: SubmitEvent) => { this.handleSubmit(event, ask); }}>
           <div class="questions">
-            ${visible.map((question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
+            ${repeat(visible, (question) => question.id, (question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
           </div>
           ${this.noteOpen ? html`
-            <label class="ask-note">
-              <textarea rows="1" aria-label="Note for the whole set" maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)} placeholder="Note for the whole set (optional)" .value=${this.note} @input=${this.changeNote}></textarea>
-            </label>
+            <div class="ask-note">
+              <ask-markdown-field .label=${"Note for the whole set"} .placeholderText=${"Note for the whole set (optional)"} .value=${this.note} @ask-field-input=${this.changeNote}></ask-markdown-field>
+            </div>
           ` : null}
           <footer class="form-footer">
             ${this.confirmingPartialSubmit && unanswered.length > 0
@@ -152,19 +193,45 @@ export class AskUserCard extends LitElement {
     `;
   }
 
-  /** The model's explanation for the question set, rendered like Chat Markdown. */
-  private renderContext(context: string | undefined): TemplateResult | null {
-    return context === undefined ? null : html`<formatted-text class="ask-context" .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>`;
+  /** The model's explanation for the question set, rendered like Chat Markdown; a record marks the user's edit of it. */
+  private renderContext(context: string | undefined, edited = false): TemplateResult | null {
+    if (edited && context === "") return html`<p class="context-edited">Context cleared by you</p>`;
+    return context === undefined ? null : html`
+      ${edited ? html`<p class="context-edited">Context edited by you</p>` : null}
+      <formatted-text class="ask-context" fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>
+    `;
+  }
+
+  /**
+   * The open set's context, editable from the start in the Markdown field styled as the read text. Diagrams and diffs
+   * the live preview leaves as code are drawn under it from the current text.
+   */
+  private renderContextEditor(context: string | undefined): TemplateResult {
+    // An absent context (cleared by a partial send) stays an empty field the user can write a new one into.
+    const text = this.editedContext ?? context ?? "";
+    const media = renderedOnlyFences(text);
+    return html`
+      <div class="ask-context">
+        <ask-markdown-field class="context-editor" .label=${"Context (editable)"} .maxLength=${ASK_USER_CONTEXT_MAX_LENGTH} .workspaceContext=${this.workspaceContext} .value=${text} @ask-field-input=${this.changeContext}></ask-markdown-field>
+        ${this.editedContext === undefined ? null : html`
+          <div class="context-actions">
+            <span class="context-edited">Edited</span>
+            <button class="revert-edit" type="button" title="Restore the agent's context" @click=${this.revertContext}>${UNDO_ICON}Revert</button>
+          </div>
+        `}
+        ${media === "" ? null : html`<formatted-text class="context-media" fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${media}></formatted-text>`}
+      </div>
+    `;
   }
 
   private renderQuestion(ask: PendingAskUser, question: AskUserQuestion, index: number, number: number, sendOne: boolean): TemplateResult {
-    const answer = this.answers[question.id];
+    const answer = ownEntry(this.answers, question.id);
     const answered = answeredCount([question], this.answers) === 1;
     const detailId = question.detail === undefined ? undefined : this.questionDetailId(index);
     const freeTextOnly = question.options.length === 0;
     const customSelected = freeTextOnly || this.isOtherSelected(question, answer);
     // The edited row holds the Custom text itself, so Custom and its own textarea step aside while it lasts.
-    const inlineEdit = customSelected ? this.inlineEdits[question.id]?.value : undefined;
+    const inlineEdit = customSelected ? ownEntry(this.inlineEdits, question.id)?.value : undefined;
     const inputType = question.multiple === true ? "checkbox" : "radio";
     return html`
       <fieldset
@@ -178,6 +245,7 @@ export class AskUserCard extends LitElement {
           <span>${question.question} <code class="question-ref" title="Reference for this question">${askQuestionRef(ask.askId, question.id)}</code></span>
         </legend>
         ${this.renderDetail(question.detail, detailId)}
+        ${(question.kind ?? "choice") !== "choice" ? this.renderTypedField(question, index, answer) : html`
         <div class="options">
           ${question.options.map((option) => option.value === inlineEdit ? this.renderInlineEdit(question, index, option.label, answer?.otherText ?? "") : html`
             <div class="option-row">
@@ -216,18 +284,19 @@ export class AskUserCard extends LitElement {
             </label>
           `}
           ${customSelected && inlineEdit === undefined ? html`
-            <label class="other-answer" for=${this.otherInputId(index)}>
-              <span>Custom answer</span>
-              <textarea
+            <div class="other-answer">
+              <span aria-hidden="true">Custom answer</span>
+              <ask-markdown-field
                 id=${this.otherInputId(index)}
-                rows="3"
-                maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)}
+                .label=${"Custom answer"}
+                .historyKey=${this.historyKey(question)}
                 .value=${answer?.otherText ?? ""}
-                @input=${(event: Event) => { this.changeOtherText(question, event); }}
-              ></textarea>
-            </label>
+                @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
+              ></ask-markdown-field>
+            </div>
           ` : null}
         </div>
+        `}
         ${sendOne ? html`
           <div class="question-actions">
             <button class="send-one" type="button" ?disabled=${!answered || this.submitting} title="Send just this answer now; the other questions stay open" @click=${() => { this.submitOne(ask, question, index); }}>Send</button>
@@ -237,20 +306,69 @@ export class AskUserCard extends LitElement {
     `;
   }
 
+  /** A typed question's input: a switch, a text field or textarea, a number, or a date, with why its value does not fit under it. */
+  private renderTypedField(question: AskUserQuestion, index: number, answer: AskDraftAnswer | undefined): TemplateResult {
+    const id = this.otherInputId(index);
+    if (question.kind === "boolean") {
+      const on = answer?.value === true;
+      return html`
+        <label class="typed-field switch">
+          <input id=${id} type="checkbox" role="switch" aria-label=${question.question} .checked=${on} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.setAnswer(question, { values: [], value: event.currentTarget.checked }); }} />
+          <span class="switch-track" aria-hidden="true"></span>
+          <span class="switch-state" aria-hidden="true">${on ? "On" : "Off"}</span>
+        </label>
+      `;
+    }
+    const raw = typeof answer?.value === "string" ? answer.value : "";
+    const error = typedDraftValue(question, answer)?.error;
+    const errorId = error === undefined ? undefined : `${id}-error`;
+    const change = (event: Event): void => {
+      const input = event.currentTarget;
+      if (input instanceof HTMLInputElement || input instanceof AskMarkdownField) this.setAnswer(question, { values: [], value: input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) });
+    };
+    const maxLength = String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH);
+    return html`
+      <div class="typed-field">
+        ${question.kind === "text" && question.multiline === true
+          ? html`<ask-markdown-field id=${id} class=${error === undefined ? "" : "invalid"} .label=${question.question} .maxLength=${question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH} .invalid=${error !== undefined} .describedBy=${errorId} .historyKey=${this.historyKey(question)} .value=${raw} @ask-field-input=${change}></ask-markdown-field>`
+          : html`<input
+              id=${id}
+              type=${question.kind === "number" ? "number" : question.kind === "date" ? "date" : "text"}
+              aria-label=${question.question}
+              min=${ifDefined(question.integer === true && question.minimum !== undefined ? Math.ceil(question.minimum) : question.minimum)}
+              max=${ifDefined(question.integer === true && question.maximum !== undefined ? Math.floor(question.maximum) : question.maximum)}
+              step=${ifDefined(question.kind === "number" ? (question.integer === true ? "1" : "any") : undefined)}
+              inputmode=${ifDefined(question.kind === "number" ? (question.integer === true ? "numeric" : "decimal") : undefined)}
+              minlength=${ifDefined(question.kind === "text" ? question.minLength : undefined)}
+              maxlength=${ifDefined(question.kind === "text" ? maxLength : undefined)}
+              aria-invalid=${error === undefined ? "false" : "true"}
+              aria-describedby=${ifDefined(errorId)}
+              .value=${raw}
+              @input=${change}
+            />`}
+        ${errorId === undefined ? null : html`<p class="field-error" id=${errorId}>${error?.replace(/^m/u, "M")}</p>`}
+      </div>
+    `;
+  }
+
+  /** What a question's field answers: Undo never crosses into another ask or another wording of the question. */
+  private historyKey(question: AskUserQuestion): string {
+    return `${this.ask?.askId ?? ""}\n${askedFingerprint(question)}`;
+  }
+
   /** An option being edited in place: its row becomes the Custom answer's textarea, selected, with a way back. */
   private renderInlineEdit(question: AskUserQuestion, index: number, label: string, text: string): TemplateResult {
     return html`
       <div class="option-row inline-edit">
         <span class="inline-edit-marker">${PENCIL_ICON}</span>
-        <textarea
+        <ask-markdown-field
           id=${this.otherInputId(index)}
-          rows="2"
-          aria-label=${`Custom answer, edited from ${label}`}
-          maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)}
+          .label=${`Custom answer, edited from ${label}`}
+          .historyKey=${this.historyKey(question)}
           .value=${text}
-          @input=${(event: Event) => { this.changeOtherText(question, event); }}
+          @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
           @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.revertEdit(question, index); } }}
-        ></textarea>
+        ></ask-markdown-field>
         <button class="revert-edit" type="button" title="Revert to the option (Esc)" @click=${() => { this.revertEdit(question, index); }}>${UNDO_ICON}Revert</button>
       </div>
     `;
@@ -258,7 +376,7 @@ export class AskUserCard extends LitElement {
 
   /** A question's Markdown detail, in body text like the context. */
   private renderDetail(detail: string | undefined, id?: string): TemplateResult | null {
-    return detail === undefined ? null : html`<formatted-text class="question-detail" id=${ifDefined(id)} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
+    return detail === undefined ? null : html`<formatted-text class="question-detail" id=${ifDefined(id)} fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
   }
 
   private renderPartialSubmitConfirmation(ask: PendingAskUser, unanswered: AskUserQuestion[]): TemplateResult {
@@ -269,7 +387,7 @@ export class AskUserCard extends LitElement {
           ${unanswered.map((question, index) => html`${index === 0 ? " " : ", "}<button
             class="question-jump"
             type="button"
-            @click=${() => { this.focusQuestion(ask.questions.indexOf(question)); }}
+            @click=${() => { void this.focusQuestion(ask.questions.indexOf(question)); }}
           >${question.question}</button>`)}?
         </p>
         <div class="confirmation-actions">
@@ -286,28 +404,63 @@ export class AskUserCard extends LitElement {
     const recordLabel = outcome.partial === true
       ? `${outcome.answeredCount === 1 ? "Answer" : "Answers"} sent · others still open`
       : { submitted: "Answers sent", superseded: "Superseded", cancelled: "Cancelled", withdrawn: "Withdrawn" }[outcome.reason];
+    // Superseded and withdrawn explain their status, so that line stays in view; the summary only repeats the answers.
+    const statusLine = outcome.reason === "superseded"
+      ? "A newer question set replaced this one. Draft answers shown below were not sent to the model."
+      : outcome.reason === "withdrawn" ? "The agent withdrew these questions." : undefined;
+    const context = this.renderContext(outcome.editedContext ?? outcome.context, outcome.editedContext !== undefined);
+    const details = outcome.questions.flatMap((record, index) => record.question.detail === undefined ? [] : [this.renderQuestionDetailRecord(record, index)]);
+    const full = context !== null || details.length > 0 || statusLine === undefined;
     return html`
       <article class="ui-transcript-surface card record-card" aria-labelledby="ask-user-record-heading">
         <header class="card-header">
           <h2 id="ask-user-record-heading">Questions</h2>
           <span class=${`header-status ${outcome.reason}`}>${recordLabel}</span>
+          <slot name="actions"></slot>
         </header>
-        ${this.renderContext(outcome.context)}
-        <p class="record-summary">
-          ${outcome.reason === "superseded"
-            ? "A newer question set replaced this one. Draft answers shown below were not sent to the model."
-            : outcome.reason === "withdrawn" ? "The agent withdrew these questions." : outcome.summary}
-        </p>
-        <div class="record-questions">
+        ${statusLine === undefined ? null : html`<p class="record-summary record-status">${statusLine}</p>`}
+        <ol class="record-lines" aria-label="Questions and answers">
           ${outcome.questions.map((record, index) => this.renderQuestionRecord(outcome, record, index))}
-        </div>
+        </ol>
         ${outcome.note === undefined ? null : html`<section class="record-question record-note"><h3>Note</h3><p class="other-record-text">${outcome.note}</p></section>`}
+        ${full ? html`
+          <details class="record-full">
+            <summary>Show full questions</summary>
+            ${context}
+            ${statusLine === undefined ? html`<p class="record-summary">${outcome.summary}</p>` : null}
+            ${details}
+          </details>
+        ` : null}
       </article>
     `;
   }
 
+  /** One compact line: number, question, then its answer as text. */
   private renderQuestionRecord(outcome: AskUserOutcome, record: AskUserQuestionRecord, index: number): TemplateResult {
     const answer = this.displayedRecordAnswer(outcome, record);
+    const parts = answer === undefined ? [] : [
+      ...answer.values.map((value) => this.optionLabel(record.question, value)),
+      ...(answer.otherText === undefined ? [] : [`Custom: ${answer.otherText}`]),
+      ...(answer.value === undefined ? [] : [typeof answer.value === "boolean" ? (answer.value ? "On" : "Off") : String(answer.value)]),
+    ];
+    return html`
+      <li class="record-line">
+        <span class="question-number">${String(index + 1)}.</span>
+        <span class="record-line-copy">
+          <span class="record-line-question">${record.question.question}</span>
+          <span aria-hidden="true"> — </span>
+          ${record.skipped === true
+            ? html`<span class="unanswered-record">Skipped · condition not met</span>`
+            : answer === undefined
+            ? html`<span class="unanswered-record">Unanswered</span>`
+            : html`<span class="record-answer other-record-text">${parts.join(", ")}</span>${answer.fromDraft ? html` <span class="draft-note">Draft answer · not sent</span>` : null}`}
+        </span>
+      </li>
+    `;
+  }
+
+  /** A question's detail inside the record's disclosure, under its number and wording. */
+  private renderQuestionDetailRecord(record: AskUserQuestionRecord, index: number): TemplateResult {
     return html`
       <section class="record-question" aria-labelledby=${this.recordQuestionHeadingId(index)}>
         <h3 id=${this.recordQuestionHeadingId(index)}>
@@ -315,17 +468,6 @@ export class AskUserCard extends LitElement {
           <span>${record.question.question}</span>
         </h3>
         ${this.renderDetail(record.question.detail)}
-        ${record.skipped === true
-          ? html`<p class="unanswered-record">Skipped · condition not met</p>`
-          : answer === undefined
-          ? html`<p class="unanswered-record">Unanswered</p>`
-          : html`
-              <ul class="record-answers">
-                ${answer.values.map((value) => html`<li>${this.optionLabel(record.question, value)}</li>`)}
-                ${answer.otherText === undefined ? null : html`<li><strong>Custom:</strong> <span class="other-record-text">${answer.otherText}</span></li>`}
-              </ul>
-              ${answer.fromDraft ? html`<p class="draft-note">Draft answer · not sent</p>` : null}
-            `}
       </section>
     `;
   }
@@ -338,7 +480,7 @@ export class AskUserCard extends LitElement {
       if (input.checked) this.setAnswer(question, { values: [value] });
       return;
     }
-    const current = this.answers[question.id];
+    const current = ownEntry(this.answers, question.id);
     const values = input.checked
       ? [...new Set([...(current?.values ?? []), value])]
       : (current?.values ?? []).filter((selected) => selected !== value);
@@ -351,7 +493,7 @@ export class AskUserCard extends LitElement {
   private changeOther(question: AskUserQuestion, index: number, event: Event): void {
     const input = event.currentTarget;
     if (!(input instanceof HTMLInputElement)) return;
-    const current = this.answers[question.id];
+    const current = ownEntry(this.answers, question.id);
     // Choosing Custom moves an inline edit's text into Custom's own textarea.
     this.endInlineEdit(question);
     if (question.multiple === true) {
@@ -365,13 +507,14 @@ export class AskUserCard extends LitElement {
     if (input.checked) void this.focusOtherInput(index);
   }
 
-  /** Starts a Custom answer from an option's label and detail, edited in that option's row; the option itself stays unchanged. */
+  /** Starts a Custom answer from an option's label and detail, edited in that option's row in place of the option. */
   private editOption(question: AskUserQuestion, index: number, value: string, text: string): void {
-    const current = this.answers[question.id];
-    const previous = this.inlineEdits[question.id]?.previous ?? current;
+    const current = ownEntry(this.answers, question.id);
+    const previous = ownEntry(this.inlineEdits, question.id)?.previous ?? current;
     this.inlineEdits = { ...this.inlineEdits, [question.id]: { value, previous } };
     this.setAnswer(question, {
-      values: question.multiple === true ? [...(current?.values ?? [])] : [],
+      // The edit replaces the option, so its own value leaves the selection; Revert brings it back.
+      values: question.multiple === true ? (current?.values ?? []).filter((selected) => selected !== value) : [],
       otherText: text.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH),
     });
     void this.focusOtherInput(index, true);
@@ -379,22 +522,22 @@ export class AskUserCard extends LitElement {
 
   /** Drops an inline edit, restoring the answer from before it began, and returns focus to the question. */
   private revertEdit(question: AskUserQuestion, index: number): void {
-    const edit = this.inlineEdits[question.id];
+    const edit = ownEntry(this.inlineEdits, question.id);
     if (edit === undefined) return;
     this.endInlineEdit(question);
     this.setAnswer(question, edit.previous ?? { values: [] });
-    this.focusQuestion(index);
+    void this.focusQuestion(index);
   }
 
   private endInlineEdit(question: AskUserQuestion): void {
-    if (this.inlineEdits[question.id] === undefined) return;
+    if (ownEntry(this.inlineEdits, question.id) === undefined) return;
     this.inlineEdits = Object.fromEntries(Object.entries(this.inlineEdits).filter(([id]) => id !== question.id));
   }
 
   private changeOtherText(question: AskUserQuestion, event: Event): void {
     const input = event.currentTarget;
-    if (!(input instanceof HTMLTextAreaElement)) return;
-    const current = this.answers[question.id];
+    if (!(input instanceof AskMarkdownField)) return;
+    const current = ownEntry(this.answers, question.id);
     this.setAnswer(question, {
       values: [...(current?.values ?? [])],
       otherText: input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH),
@@ -403,24 +546,44 @@ export class AskUserCard extends LitElement {
 
   private readonly changeNote = (event: Event): void => {
     const input = event.currentTarget;
-    if (!(input instanceof HTMLTextAreaElement)) return;
+    if (!(input instanceof AskMarkdownField)) return;
     this.note = input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH);
-    // One line that grows with its text (up to the CSS max-height), where field-sizing is unsupported.
-    input.style.height = "auto";
-    input.style.height = `${String(input.scrollHeight + 2)}px`;
     if (this.ask !== undefined && this.draftSessionId !== "") saveAskNote(this.draftSessionId, this.ask.askId, this.note);
   };
+
+  private readonly changeContext = (event: Event): void => {
+    const input = event.currentTarget;
+    const ask = this.ask;
+    if (!(input instanceof AskMarkdownField) || ask === undefined) return;
+    const context = ask.context ?? "";
+    this.editedContext = input.value === context ? undefined : input.value;
+    if (this.draftSessionId !== "") saveAskContext(this.draftSessionId, ask.askId, context, input.value);
+  };
+
+  private readonly revertContext = (): void => {
+    const ask = this.ask;
+    if (ask === undefined) return;
+    this.editedContext = undefined;
+    if (this.draftSessionId !== "") saveAskContext(this.draftSessionId, ask.askId, ask.context ?? "", ask.context ?? "");
+    this.renderRoot.querySelector<HTMLElement>(".context-editor")?.focus();
+  };
+
+  /** The edited context for a submission: nothing when unchanged, `""` when the user cleared it. */
+  private contextSubmission(): Pick<AskUserSubmission, "context"> {
+    const context = this.editedContext;
+    // Blank over an absent context changes nothing, so it is no edit.
+    if (context === undefined || (context.trim() === "" && (this.ask?.context ?? "") === "")) return {};
+    return { context: context.trim() === "" ? "" : context };
+  }
 
   private readonly openNote = async (): Promise<void> => {
     this.noteOpen = true;
     await this.updateComplete;
-    this.renderRoot.querySelector<HTMLTextAreaElement>(".ask-note textarea")?.focus();
+    this.renderRoot.querySelector<HTMLElement>(".ask-note ask-markdown-field")?.focus();
   };
 
   private setAnswer(question: AskUserQuestion, answer: AskDraftAnswer): void {
-    const next: AskDraftAnswers = answer.values.length === 0 && answer.otherText === undefined
-      ? Object.fromEntries(Object.entries(this.answers).filter(([id]) => id !== question.id))
-      : { ...this.answers, [question.id]: { ...answer, asked: askedFingerprint(question) } };
+    const next: AskDraftAnswers = { ...this.answers, [question.id]: { ...answer, asked: askedFingerprint(question) } };
     this.answers = next;
     this.confirmingPartialSubmit = false;
     if (this.ask !== undefined && this.draftSessionId !== "") saveAskDraft(this.draftSessionId, this.ask.askId, next);
@@ -440,7 +603,7 @@ export class AskUserCard extends LitElement {
 
   private submitAnswers(ask: PendingAskUser): Promise<boolean> {
     const note = this.note.trim();
-    return this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), revision: ask.revision });
+    return this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision });
   }
 
   /**
@@ -454,7 +617,7 @@ export class AskUserCard extends LitElement {
     const answers = toSubmission(ask.questions, this.answers).answers;
     if (answers.length === 0) return undefined;
     if (unansweredQuestions(ask.questions, this.answers).length === 0) return this.submitAnswers(ask);
-    return this.send(ask, { answers, revision: ask.revision, partial: true });
+    return this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission() });
   }
 
   /** True when the submit reached the daemon; on false the card and its draft stay intact. */
@@ -478,11 +641,24 @@ export class AskUserCard extends LitElement {
 
   /** Sends one question's answer at once (a partial submit); the daemon keeps the other questions open under a new revision. */
   private submitOne(ask: PendingAskUser, question: AskUserQuestion, index: number): void {
-    const answer = toSubmission([question], this.answers).answers[0];
-    if (answer === undefined) return;
-    // The sent question leaves the form, taking the focused button with it; the next revision focuses the question in its place.
-    this.focusAfterRevision = index;
-    void this.send(ask, { answers: [answer], revision: ask.revision, partial: true });
+    // A follow-up shows because of its unsent parents' draft answers; they go with it, as the daemon judges showIf on the submission.
+    const parents: AskUserQuestion[] = [];
+    for (let id = question.showIf?.question; id !== undefined;) {
+      const parent = ask.questions.find((each) => each.id === id);
+      if (parent === undefined) break;
+      parents.unshift(parent);
+      id = parent.showIf?.question;
+    }
+    const answers = toSubmission([...parents, question], this.answers).answers;
+    if (!answers.some((answer) => answer.id === question.id)) return;
+    // A send that answers every visible question closes the set, so it goes as the full submit that carries the note.
+    if (visibleQuestions(ask.questions, this.answers).every((each) => answers.some((answer) => answer.id === each.id))) {
+      void this.submitAnswers(ask);
+      return;
+    }
+    // The sent questions leave the form, taking the focused button with them; the next revision focuses the question in its place.
+    this.focusAfterRevision = index - parents.length;
+    void this.send(ask, { answers, revision: ask.revision, partial: true, ...this.contextSubmission() });
   }
 
   private async showPartialSubmitConfirmation(): Promise<void> {
@@ -494,24 +670,26 @@ export class AskUserCard extends LitElement {
   private keepEditing(ask: PendingAskUser, unanswered: AskUserQuestion[]): void {
     this.confirmingPartialSubmit = false;
     const first = unanswered[0];
-    if (first !== undefined) this.focusQuestion(ask.questions.indexOf(first));
+    if (first !== undefined) void this.focusQuestion(ask.questions.indexOf(first));
   }
 
   /** Focus the `index`th question's first control, as a chip opening this set does. */
-  focusQuestion(index: number): void {
-    if (index < 0) return;
-    void this.updateComplete.then(() => {
+  /** Focuses a question's first control; `preventScroll` leaves the scrolling to the caller, e.g. to show the set's context first. */
+  focusQuestion(index: number, preventScroll = false): Promise<void> {
+    if (index < 0) return Promise.resolve();
+    return this.updateComplete.then(() => {
       const fieldset = this.renderRoot.querySelector<HTMLElement>(`#${this.questionFieldsetId(index)}`);
-      const firstControl = fieldset?.querySelector<HTMLElement>("input, textarea");
-      (firstControl ?? fieldset)?.focus();
+      const firstControl = fieldset?.querySelector<HTMLElement>("input, ask-markdown-field");
+      (firstControl ?? fieldset)?.focus({ preventScroll });
     });
   }
 
   private async focusOtherInput(index: number, cursorAtEnd = false): Promise<void> {
     await this.updateComplete;
-    const input = this.renderRoot.querySelector<HTMLTextAreaElement>(`#${this.otherInputId(index)}`);
-    input?.focus();
-    if (cursorAtEnd && input !== null) input.setSelectionRange(input.value.length, input.value.length);
+    const input = this.renderRoot.querySelector(`#${this.otherInputId(index)}`);
+    if (!(input instanceof AskMarkdownField)) return;
+    if (cursorAtEnd) input.focusEnd();
+    else input.focus();
   }
 
   private isOtherSelected(question: AskUserQuestion, answer: AskDraftAnswer | undefined): boolean {
@@ -524,6 +702,7 @@ export class AskUserCard extends LitElement {
       return {
         values: [...record.values],
         ...(record.otherText === undefined ? {} : { otherText: record.otherText }),
+        ...(record.value === undefined ? {} : { value: record.value }),
         fromDraft: false,
       };
     }
@@ -533,6 +712,7 @@ export class AskUserCard extends LitElement {
     return {
       values: [...answer.values],
       ...(answer.otherText === undefined ? {} : { otherText: answer.otherText }),
+      ...(answer.value === undefined ? {} : { value: answer.value }),
       fromDraft: true,
     };
   }
@@ -623,6 +803,22 @@ export class AskUserCard extends LitElement {
     .question-ref { color: var(--pi-muted); font-size: 11px; font-weight: 500; }
     .recommended { margin-inline-start: 4px; padding: 1px 6px; border-radius: 999px; background: var(--pi-success-bg); color: var(--pi-success); font-size: 11px; font-weight: 650; }
     .ask-context { display: block; padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
+    /* The editable context reads as the rendered text: its font, size, line height and colours, a faint tint, a quiet focus ring. */
+    .card .context-editor { margin-inline: -6px; width: calc(100% + 12px); border: 0; border-radius: 6px; background: color-mix(in srgb, var(--pi-text) 4%, transparent); }
+    .card .context-editor .cm-editor { min-height: 0; max-height: none; }
+    /* CodeMirror's base theme sets a monospace scroller; the context keeps the card's body font. */
+    .card .context-editor .cm-scroller, .card .context-editor .cm-content { font: inherit; line-height: 1.45; }
+    .card .context-editor .cm-content { padding: 4px 0; }
+    .card .context-editor .cm-line { padding: 0 6px; }
+    .card .context-editor:focus-within { outline: 1px solid color-mix(in srgb, var(--pi-accent) 60%, transparent); outline-offset: 0; }
+    /* A folded image in a Markdown field's live preview, styled like the Chat's folded media. */
+    ask-markdown-field .folded-media > summary { width: fit-content; color: var(--pi-accent); cursor: pointer; }
+    ask-markdown-field .folded-media > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; border-radius: 4px; }
+    .context-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 2px; }
+    .context-edited { margin: 0; color: var(--pi-muted); font-size: 11px; }
+    .record-card .context-edited { padding: 12px 16px 0 var(--ui-transcript-inline-start, 16px); }
+    .record-card .context-edited + .ask-context { padding-top: 2px; }
+    .context-media { display: block; margin-top: 6px; }
     .questions { display: grid; padding-top: 8px; }
     fieldset.question {
       min-width: 0;
@@ -689,7 +885,8 @@ export class AskUserCard extends LitElement {
       background: var(--pi-selection-bg);
     }
     .inline-edit-marker { display: flex; margin-top: 3px; color: var(--pi-accent); }
-    .inline-edit textarea { min-height: 52px; background: var(--pi-surface); }
+    .card .inline-edit ask-markdown-field { flex: 1; min-width: 0; background: var(--pi-surface); }
+    .card .inline-edit ask-markdown-field .cm-editor { min-height: 52px; }
     .revert-edit { grid-column: 2; justify-self: end; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-color: transparent; background: transparent; color: var(--pi-muted); font-size: 12px; }
     .revert-edit:hover:not(:disabled) { color: var(--pi-text); }
     /* 1px border + 8px padding + 16px control + 5px gap = the number gutter, so option text starts where question text does. */
@@ -706,20 +903,16 @@ export class AskUserCard extends LitElement {
     .option:hover, :where(.option-row:hover) > .option { border-color: var(--pi-border); background: var(--pi-surface-hover); }
     .option:has(input:checked) { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     input { margin: 2px 0 0; accent-color: var(--pi-accent); }
-    input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    input:focus-visible, button:focus-visible, ask-markdown-field:focus-within { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .option-copy { min-width: 0; display: grid; gap: 2px; }
     .option-label { line-height: 1.35; }
     .option-detail { color: var(--pi-muted); font-size: 12px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
     .other-answer { display: grid; gap: 5px; color: var(--pi-muted); font-size: 12px; padding: 4px 0 4px calc(var(--question-number-column) + var(--question-copy-gap)); }
-    .question-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
-    .send-one { padding: 3px 10px; font-size: 12px; }
-    .send-one:not(:disabled) { border-color: var(--pi-accent); color: var(--pi-accent); font-weight: 650; }
-    .send-one:disabled { cursor: default; }
-    textarea {
+    .typed-field { display: grid; gap: 4px; padding: 4px 0 4px calc(var(--question-number-column) + var(--question-copy-gap)); }
+    .typed-field input:not([type="checkbox"]) {
       box-sizing: border-box;
       width: 100%;
-      min-height: 68px;
-      resize: vertical;
+      margin: 0;
       border: 1px solid var(--pi-border);
       border-radius: 8px;
       background: var(--pi-bg);
@@ -727,10 +920,37 @@ export class AskUserCard extends LitElement {
       padding: 8px;
       font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif);
     }
+    .typed-field input[type="number"], .typed-field input[type="date"] { width: auto; min-width: 11em; justify-self: start; }
+    .typed-field [aria-invalid="true"] { border-color: var(--pi-danger); }
+    .field-error { margin: 0; color: var(--pi-danger); font-size: 12px; }
+    .switch { position: relative; display: inline-flex; align-items: center; gap: 8px; justify-self: start; cursor: pointer; }
+    /* The real checkbox stays focusable and clickable over the drawn track. */
+    .switch input { position: absolute; inset-inline-start: calc(var(--question-number-column) + var(--question-copy-gap)); width: 36px; height: 20px; margin: 0; opacity: 0; cursor: pointer; }
+    .switch-track { position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--pi-border); transition: background 0.15s; }
+    .switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--pi-surface); transition: transform 0.15s; }
+    .switch input:checked + .switch-track { background: var(--pi-accent); }
+    .switch input:checked + .switch-track::after { transform: translateX(16px); }
+    .switch input:focus-visible + .switch-track { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .question-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+    .send-one { padding: 3px 10px; font-size: 12px; }
+    .send-one:not(:disabled) { border-color: var(--pi-accent); color: var(--pi-accent); font-weight: 650; }
+    .send-one:disabled { cursor: default; }
+    /* Multi-line answers: the Files pane's Markdown editor in a textarea's frame; .card outranks CodeMirror's base theme. */
+    ${livePreviewStyles}
+    ask-markdown-field { display: block; box-sizing: border-box; width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); color: var(--pi-text); }
+    .card ask-markdown-field .cm-editor { min-height: 68px; max-height: 50vh; background: transparent; color: var(--pi-text); }
+    .card ask-markdown-field .cm-editor.cm-focused { outline: none; }
+    .card ask-markdown-field .cm-scroller { overflow: auto; }
+    .card ask-markdown-field .cm-content { padding: 8px 0; font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); caret-color: var(--pi-accent); }
+    .card ask-markdown-field .cm-line { padding: 0 8px; }
+    .card ask-markdown-field .cm-placeholder { color: var(--pi-muted); }
+    ask-markdown-field.invalid { border-color: var(--pi-danger); }
     .ask-note { display: grid; padding: 0 16px 10px var(--ui-transcript-inline-start, 16px); }
     /* A quiet one-line field that grows with its text; focus tints the border instead of a second ring. */
-    .ask-note textarea { min-height: 0; max-height: 8lh; field-sizing: content; resize: none; padding: 5px 10px; border-color: var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); }
-    .ask-note textarea:focus-visible { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent); }
+    .ask-note ask-markdown-field { border-color: var(--pi-border-muted); border-radius: 6px; background: var(--pi-surface); }
+    .card .ask-note ask-markdown-field .cm-editor { min-height: 0; max-height: 8lh; }
+    .card .ask-note ask-markdown-field .cm-content { padding: 5px 0; }
+    .ask-note ask-markdown-field:focus-within { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent); }
     .note-toggle { display: grid; place-items: center; padding: 6px; border-color: transparent; background: transparent; color: var(--pi-muted); }
     .note-toggle:hover:not(:disabled) { color: var(--pi-text); }
     .note-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -769,22 +989,29 @@ export class AskUserCard extends LitElement {
     }
     .confirmation-actions { flex: 0 0 auto; display: flex; gap: 7px; }
     .record-summary { margin: 0; color: var(--pi-muted); padding: 12px 16px 12px var(--ui-transcript-inline-start, 16px); font-size: 12px; }
-    .record-questions { display: grid; }
+    .record-lines { display: grid; gap: 6px; margin: 0; padding: 12px 16px 12px var(--ui-transcript-inline-start, 16px); list-style: none; line-height: 1.4; }
+    /* Numbers hang in the gutter so question and answer words stay in the transcript's text column. */
+    .record-line { display: grid; grid-template-columns: var(--question-number-column) minmax(0, 1fr); align-items: start; gap: var(--question-copy-gap); margin-inline-start: calc(-1 * (var(--question-number-column) + var(--question-copy-gap))); }
+    .record-line-copy { min-width: 0; overflow-wrap: anywhere; }
+    .record-line-question { font-weight: 600; }
+    .record-note { border-top: 1px solid var(--pi-border-muted); }
+    .record-full { border-top: 1px solid var(--pi-border-muted); }
+    .record-full > summary { width: fit-content; padding: 8px 16px 8px var(--ui-transcript-inline-start, 16px); color: var(--pi-accent); font-size: 12px; cursor: pointer; }
+    .record-full > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; border-radius: 4px; }
+    .record-full > .record-question { border-top: 1px solid var(--pi-border-muted); }
     .record-question { min-width: 0; padding: 14px 16px 14px var(--ui-transcript-inline-start, 16px); }
-    .record-question + .record-question { border-top: 1px solid var(--pi-border-muted); }
     .record-question h3 { display: grid; grid-template-columns: var(--question-number-column) minmax(0, 1fr); align-items: start; gap: var(--question-copy-gap); margin-bottom: 8px; font-size: 14px; line-height: 1.35; }
     /* Numbers and bullets hang in the gutter so question and answer words stay in the transcript's text column. */
     .record-question h3 { margin-inline-start: calc(-1 * (var(--question-number-column) + var(--question-copy-gap))); }
     /* The note has no number to hang, so its heading sits in the text column like the answers. */
     .record-note h3 { display: block; margin-inline-start: 0; }
-    .record-answers { display: grid; gap: 4px; margin: 0; padding-left: 0; line-height: 1.4; }
     .other-record-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-    .unanswered-record { margin: 0; color: var(--pi-muted); font-style: italic; }
-    .draft-note { margin: 7px 0 0; color: var(--pi-warning); font-size: 11px; }
+    .unanswered-record { color: var(--pi-muted); font-style: italic; }
+    .draft-note { color: var(--pi-warning); font-size: 11px; }
     @container (max-width: 580px) {
       fieldset.question { padding: 0 12px 14px var(--ui-transcript-inline-start, 12px); }
       .record-question { padding: 14px 12px 14px var(--ui-transcript-inline-start, 12px); }
-      .record-summary, .ask-context, .ask-note { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
+      .record-summary, .ask-context, .ask-note, .record-lines, .record-full > summary { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
       .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
       .partial-confirmation { align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }
@@ -802,6 +1029,8 @@ export class AskUserCard extends LitElement {
     /* One reading column: numbers and controls hang in the gutter between the 12px inset and the text. */
     :host([flat]) .card { --ask-reading-start: calc(12px + var(--question-number-column) + var(--question-copy-gap)); }
     :host([flat]) .open-card .ask-context { padding: 8px 12px 8px var(--ask-reading-start); }
+    /* A sent record kept in the drawer reads in the same column, its numbers and bullets hanging in the gutter. */
+    :host([flat]) .record-card :is(.ask-context, .context-edited, .record-summary, .record-question, .record-lines, .record-full > summary) { padding-inline: var(--ask-reading-start) 12px; }
     :host([flat]) .questions { padding-top: 8px; }
     :host([flat]) .question-separator { margin-bottom: 8px; }
     :host([flat]) fieldset.question { padding: 0 12px 8px; }
@@ -815,7 +1044,7 @@ export class AskUserCard extends LitElement {
     :host([flat]) .form-footer button:not(.question-jump) { padding: 5px 10px; }
     :host([flat]) .edit-option { top: 1px; }
     :host([flat]) .inline-edit { padding-block: 4px; }
-    @media (prefers-reduced-motion: reduce) { .edit-option { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .edit-option, .switch-track, .switch-track::after { transition: none; } }
   `;
 }
 

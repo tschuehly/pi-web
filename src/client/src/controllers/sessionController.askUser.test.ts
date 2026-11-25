@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
-import { loadAskDraft, saveAskDraft } from "../askDrafts";
+import { loadAskContext, loadAskDraft, saveAskContext, saveAskDraft } from "../askDrafts";
 import type { AskUserCloseResponse, AskUserQuestion, PendingAskUser } from "../api";
 import { SessionController } from "./sessionController";
 import { defaultApi, EmitSocket, emptyPage, FakeSocket, MemoryStorage, oldSession, sessionKey, status, workspace, type AppState, type SessionStatus } from "./sessionController.testSupport";
@@ -151,7 +151,7 @@ describe("SessionController ask submission", () => {
     );
     saveAskDraft(sessionKey(oldSession.id), "ask-1", { q1: { values: ["pg"] } });
 
-    expect(await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }] })).toBe(true);
+    expect(await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }] })).toMatchObject({ askId: "ask-1", reason: "submitted" });
 
     expect(submitCalls).toEqual([{ askId: "ask-1", answers: [{ id: "q1", values: ["pg"] }], machineId: "local" }]);
     expect(loadAskDraft(sessionKey(oldSession.id), "ask-1")).toEqual({});
@@ -226,6 +226,40 @@ describe("SessionController ask submission", () => {
 
     expect(state.pendingAsks).toEqual([revised]);
     expect(loadAskDraft(sessionKey(oldSession.id), "ask-1")).toEqual({ q1: { values: ["pg"] } });
+  });
+
+  it("consumes a context edit a partial send carried, keeping only typing newer than the send", async () => {
+    const key = sessionKey(oldSession.id);
+    let state = selectedSessionState({ pendingAsks: [{ ...ask("ask-1"), context: "A" }] });
+    let typeDuringSend = false;
+    const api: typeof defaultApi = {
+      ...defaultApi,
+      submitAsk: () => {
+        if (typeDuringSend) saveAskContext(key, "ask-1", "A", "B, more");
+        return Promise.resolve(closeResponse(statusWithAsk(oldSession.id, { ...ask("ask-1"), revision: "r2", context: "B" })));
+      },
+    };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api, socket: new FakeSocket() },
+    );
+    saveAskContext(key, "ask-1", "A", "B");
+
+    await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }], revision: "r1", partial: true, context: "B" });
+
+    // The agent later revises the context back to A: the user's sent B must not come back over it.
+    expect(loadAskContext(key, "ask-1", "A")).toBeUndefined();
+    expect(loadAskContext(key, "ask-1", "B")).toBeUndefined();
+
+    saveAskContext(key, "ask-1", "A", "B");
+    typeDuringSend = true;
+    await controller.submitAsk("ask-1", { answers: [{ id: "q1", values: ["pg"] }], revision: "r1", partial: true, context: "B" });
+
+    expect(loadAskContext(key, "ask-1", "B")).toBe("B, more");
+    expect(loadAskContext(key, "ask-1", "A")).toBeUndefined();
   });
 
   it("keeps the draft and reports the failure when the submit request fails", async () => {

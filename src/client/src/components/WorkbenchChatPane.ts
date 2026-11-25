@@ -208,7 +208,7 @@ export class WorkbenchChatPane extends LitElement {
             .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
           ></chat-view>
           <div class="composer-area" slot="composer">
-          <workbench-question-chips @question-drawer-toggle=${(event: CustomEvent<boolean>) => { this.questionsOpen = event.detail; }} .status=${state.status} .rosterCompact=${this.dense} .rosterCollapsed=${this.rosterCollapsed} .onToggleRoster=${this.toggleRoster} .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
+          <workbench-question-chips @question-drawer-toggle=${(event: CustomEvent<boolean>) => { this.questionsOpen = event.detail; }} .status=${state.status} .rosterCompact=${this.dense} .rosterCollapsed=${this.rosterCollapsed} .onToggleRoster=${this.toggleRoster} .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .contentRendering=${this.contentRendering} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
           <goal-status-chip .status=${state.status}></goal-status-chip>
           <prompt-editor
             .draftStorage=${this.draftStorage}

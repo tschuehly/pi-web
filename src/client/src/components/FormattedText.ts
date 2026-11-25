@@ -13,10 +13,62 @@ import { formattedTextStyles } from "./formattedTextStyles";
 import { codeBlockFrameStyles } from "./codeBlockFrameStyles";
 import { openOwnerRunDialog, type OwnerRunTarget } from "./OwnerRunDialog";
 import { ownerRunFromJson } from "../../../shared/ownerRun";
+import { foldMediaMarkup, revealFoldedMedia } from "../formatting/foldedMedia";
+import { diffLineStyles, enhanceDiffBlocks, wordDiffStyles } from "../formatting/diffViews";
 
 const FILE_LINK_SELECTOR = "a[data-workspace-file], a[data-outside-file]";
 // ponytail: binary documents the Files pane cannot show; others (text, code, Makefile, .mp4/.mov/.webm video) open in the pane. Extend as needed.
 const REVEAL_IN_FINDER = /\.(docx?|docm|xlsx?|xlsm|xlsb|pptx?|pptm|ppsx|key|pages|numbers|odt|ods|odp|odg|rtf|epub|zip|dmg|pkg|mp3|m4a|wav|flac|aac|mkv)$/i;
+
+/** The absolute local path of a Chat file link: outside links carry it, workspace links are relative to the root. */
+function absoluteLinkPath(anchor: Element, context: MarkdownWorkspaceContext): string | null {
+  const path = anchor.getAttribute("data-workspace-file");
+  return anchor.getAttribute("data-outside-file") ?? (path === null ? null : `${context.root.replace(/\/+$/, "")}/${path}`);
+}
+
+/** Asks the host to open a Chat file link from `source`; true when a host handled (cancelled) the request. */
+function requestFileOpen(source: EventTarget, context: MarkdownWorkspaceContext, path: string | null, outside: string | null, anchor: Element): boolean {
+  const [start = 0, end = start] = (anchor.getAttribute("data-lines") ?? "").split("-").map(Number);
+  const lines = start > 0 ? { lines: { start, end } } : {};
+  const request = path !== null
+    ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...context, path, ...lines }, bubbles: true, composed: true, cancelable: true })
+    : outside === null ? undefined
+    : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: context.machineId, path: outside, ...lines }, bubbles: true, composed: true, cancelable: true });
+  return request !== undefined && !source.dispatchEvent(request);
+}
+
+/**
+ * Opens a rendered Chat file link (`data-workspace-file` / `data-outside-file`) as clicking it in the Chat does, with
+ * events dispatched from `source`; true when something took it, so the caller cancels the browser's navigation.
+ */
+export function openChatFileLink(source: EventTarget, context: MarkdownWorkspaceContext, anchor: Element): boolean {
+  if (!anchor.matches(FILE_LINK_SELECTOR)) return false;
+  const path = anchor.getAttribute("data-workspace-file");
+  const outside = anchor.getAttribute("data-outside-file");
+  const absolute = absoluteLinkPath(anchor, context);
+  // The macOS app expands `~/` itself.
+  const native = context.machineId === "local" ? window.piWebNative : undefined;
+  // The macOS app reveals documents the Files pane cannot show (e.g. .docx) in Finder; nothing opens.
+  if (absolute !== null && native?.revealLocalFile !== undefined && REVEAL_IN_FINDER.test(absolute)) {
+    void native.revealLocalFile(absolute).catch((error: unknown) => {
+      console.warn("Could not show the file in Finder", error);
+      requestFileOpen(source, context, path, outside, anchor);
+    });
+    return true;
+  }
+  // The macOS app opens local HTML pages in the browser (their scripts and assets work there) and folders in Finder.
+  // It alone knows what is a folder, so every link asks it first; the files it refuses open in the pane.
+  const openLocalFile = native?.openLocalFile;
+  const html = absolute !== null && /\.html?$/i.test(absolute);
+  if (absolute !== null && openLocalFile !== undefined) {
+    void openLocalFile(absolute).catch((error: unknown) => {
+      if (html) { console.warn("Could not open HTML file in the browser", error); return; }
+      requestFileOpen(source, context, path, outside, anchor);
+    });
+    return true;
+  }
+  return requestFileOpen(source, context, path, outside, anchor);
+}
 // Lucide folder-search.
 const REVEAL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1"/><path d="m21 21-1.9-1.9"/><circle cx="17" cy="17" r="3"/></svg>';
 // Lucide copy.
@@ -36,6 +88,10 @@ export class FormattedText extends LitElement {
   @property({ attribute: false }) codeBlocks: CodeBlockPolicy = DEFAULT_CODE_BLOCK_POLICY;
   @property({ attribute: false }) contentRendering: ChatContentRendering | undefined;
   @property() machineId = "local";
+  /** Fold each image and Mermaid diagram behind a one-line disclosure (the ask card's context and details). */
+  @property({ type: Boolean, attribute: "fold-media" }) foldMedia = false;
+  /** Draw ```diff fences as coloured lines and ```worddiff fences as word diffs (the ask card's context and details). */
+  @property({ type: Boolean, attribute: "diff-views" }) diffViews = false;
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
   /** The committed assistant message this text belongs to: its pi-run blocks get a run button. */
   @property({ attribute: false, hasChanged: (next?: OwnerRunTarget, previous?: OwnerRunTarget) => JSON.stringify(next) !== JSON.stringify(previous) }) ownerRun: OwnerRunTarget | undefined;
@@ -78,7 +134,7 @@ export class FormattedText extends LitElement {
     // that view until its update is ready: a raw tail after a Markdown block adds
     // a temporary line on every streaming chunk.
     const showSource = this.replacing || this.content === undefined;
-    return html`<div class=${className} dir="auto" @load=${this.onImageLoad} @click=${this.onFormattedClick}><div class="enhanced-content" ?hidden=${this.replacing}>${this.content}</div><span class="pending-source" ?hidden=${!showSource}>${showSource ? this.text : ""}</span></div>`;
+    return html`<div class=${className} dir="auto" @load=${this.onImageLoad} @toggle=${this.onFoldToggle} @click=${this.onFormattedClick}><div class="enhanced-content" ?hidden=${this.replacing}>${this.content}</div><span class="pending-source" ?hidden=${!showSource}>${showSource ? this.text : ""}</span></div>`;
   }
 
   protected override update(changes: PropertyValues<this>): void {
@@ -100,6 +156,7 @@ export class FormattedText extends LitElement {
     // HTML is memoized independently of geometry; apply hints on every DOM mount,
     // in this update's microtask before paint or the chat's position-restoration frame.
     restoreExternalMarkdownImageDimensions(this.renderRoot);
+    if (this.diffViews) enhanceDiffBlocks(this.renderRoot);
     this.enhanceQuotes();
     this.enhanceFileLinks();
     if (this.layoutChanged) {
@@ -110,7 +167,7 @@ export class FormattedText extends LitElement {
 
   private formatMarkdown(): void {
     try {
-      this.markup = toSafeMarkdownHtml(this.text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks, this.ownerRun !== undefined);
+      this.markup = this.safeHtml(this.text);
       if (this.codeBlocks.previews && this.contentRendering !== undefined) {
         this.phase = "preview";
         if (this.content === undefined) this.showMarkdown();
@@ -138,8 +195,7 @@ export class FormattedText extends LitElement {
       this.content = this.contentRendering?.renderMarkdown({
         text: this.text,
         machineId: this.workspaceContext?.machineId ?? this.machineId,
-        toSafeHtml: (text) => text === this.text && this.markup !== undefined ? this.markup
-          : toSafeMarkdownHtml(text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks, this.ownerRun !== undefined),
+        toSafeHtml: (text) => text === this.text && this.markup !== undefined ? this.markup : this.safeHtml(text),
       }, this.intentKey, this.codeBlocks);
       this.displayedText = this.text;
       this.replacing = false;
@@ -149,6 +205,20 @@ export class FormattedText extends LitElement {
     }
     this.phase = "done";
   }
+
+  /** Sanitized HTML of `text`; with `foldMedia` its images are folded before they mount, so none loads unopened. */
+  private safeHtml(text: string): string {
+    const markup = toSafeMarkdownHtml(text, this.workspaceContext, this.intentKey, this.imagesEnabled, this.codeBlocks, this.ownerRun !== undefined);
+    return this.foldMedia ? foldMediaMarkup(markup) : markup;
+  }
+
+  private readonly onFoldToggle = {
+    // Toggle does not bubble.
+    capture: true,
+    handleEvent: (event: Event): void => {
+      if (event.target instanceof HTMLDetailsElement) revealFoldedMedia(event.target);
+    },
+  };
 
   private readonly onImageLoad = {
     // Native image loads do not bubble. Capture only inside this formatting root.
@@ -168,7 +238,7 @@ export class FormattedText extends LitElement {
     if (context === undefined) return;
     const reveal = context.machineId === "local" && window.piWebNative?.revealLocalFile !== undefined;
     this.renderRoot.querySelectorAll(FILE_LINK_SELECTOR).forEach((anchor) => {
-      const absolute = this.absoluteLinkPath(anchor, context);
+      const absolute = absoluteLinkPath(anchor, context);
       if (absolute === null || anchor.hasAttribute("data-full-path")) return;
       anchor.setAttribute("data-full-path", absolute);
       anchor.setAttribute("title", absolute);
@@ -186,12 +256,6 @@ export class FormattedText extends LitElement {
     button.setAttribute("aria-label", label);
     button.innerHTML = icon;
     return button;
-  }
-
-  /** The absolute local path of a Chat file link: outside links carry it, workspace links are relative to the root. */
-  private absoluteLinkPath(anchor: Element, context: MarkdownWorkspaceContext): string | null {
-    const path = anchor.getAttribute("data-workspace-file");
-    return anchor.getAttribute("data-outside-file") ?? (path === null ? null : `${context.root.replace(/\/+$/, "")}/${path}`);
   }
 
   private enhanceQuotes(): void {
@@ -227,7 +291,7 @@ export class FormattedText extends LitElement {
     const reveal = event.target.closest(".file-reveal-button");
     const revealed = reveal?.previousElementSibling;
     if (revealed instanceof Element && this.workspaceContext !== undefined) {
-      const absolute = this.absoluteLinkPath(revealed, this.workspaceContext);
+      const absolute = absoluteLinkPath(revealed, this.workspaceContext);
       if (absolute !== null) void window.piWebNative?.revealLocalFile?.(absolute).catch((error: unknown) => { console.warn("Could not show the file in Finder", error); });
       return;
     }
@@ -242,34 +306,7 @@ export class FormattedText extends LitElement {
     if (anchor instanceof HTMLAnchorElement && this.workspaceContext !== undefined
       && !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
       && (!anchor.target || anchor.target === "_self")) {
-      const path = anchor.getAttribute("data-workspace-file");
-      const outside = anchor.getAttribute("data-outside-file");
-      const absolute = this.absoluteLinkPath(anchor, this.workspaceContext);
-      // The macOS app expands `~/` itself.
-      const native = this.workspaceContext.machineId === "local" ? window.piWebNative : undefined;
-      const context = this.workspaceContext;
-      // The macOS app reveals documents the Files pane cannot show (e.g. .docx) in Finder; nothing opens.
-      if (absolute !== null && native?.revealLocalFile !== undefined && REVEAL_IN_FINDER.test(absolute)) {
-        event.preventDefault();
-        void native.revealLocalFile(absolute).catch((error: unknown) => {
-          console.warn("Could not show the file in Finder", error);
-          this.requestFileOpen(context, path, outside, anchor);
-        });
-        return;
-      }
-      // The macOS app opens local HTML pages in the browser (their scripts and assets work there) and folders in Finder.
-      // It alone knows what is a folder, so every link asks it first; the files it refuses open in the pane.
-      const openLocalFile = native?.openLocalFile;
-      const html = absolute !== null && /\.html?$/i.test(absolute);
-      if (absolute !== null && openLocalFile !== undefined) {
-        event.preventDefault();
-        void openLocalFile(absolute).catch((error: unknown) => {
-          if (html) { console.warn("Could not open HTML file in the browser", error); return; }
-          this.requestFileOpen(context, path, outside, anchor);
-        });
-        return;
-      }
-      if (this.requestFileOpen(this.workspaceContext, path, outside, anchor)) event.preventDefault();
+      if (openChatFileLink(this, this.workspaceContext, anchor)) event.preventDefault();
       return;
     }
     const button = event.target.closest(".code-copy-button, .quote-copy-button");
@@ -284,17 +321,6 @@ export class FormattedText extends LitElement {
     if (!(code instanceof HTMLElement)) return;
     void this.copyText(code.textContent, button, "code block");
   };
-
-  /** Asks the host to open a Chat file link; true when a host handled (cancelled) the request. */
-  private requestFileOpen(context: NonNullable<FormattedText["workspaceContext"]>, path: string | null, outside: string | null, anchor: Element): boolean {
-    const [start = 0, end = start] = (anchor.getAttribute("data-lines") ?? "").split("-").map(Number);
-    const lines = start > 0 ? { lines: { start, end } } : {};
-    const request = path !== null
-      ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...context, path, ...lines }, bubbles: true, composed: true, cancelable: true })
-      : outside === null ? undefined
-      : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: context.machineId, path: outside, ...lines }, bubbles: true, composed: true, cancelable: true });
-    return request !== undefined && !this.dispatchEvent(request);
-  }
 
   private async copyText(text: string, button: HTMLButtonElement, kind: CopyKind): Promise<void> {
     const copied = await writeClipboardText(text);
@@ -312,12 +338,16 @@ export class FormattedText extends LitElement {
     button.setAttribute("aria-label", label);
   }
 
-  static override styles = [formattedTextStyles, codeBlockFrameStyles, css`
+  static override styles = [formattedTextStyles, codeBlockFrameStyles, diffLineStyles, wordDiffStyles, css`
     .pending-source { white-space: pre-wrap; overflow-wrap: anywhere; }
     .owner-run-block .code-block-header { justify-content: space-between; }
     .owner-run-invalid { color: var(--pi-muted); font-size: 12px; }
     .enhanced-content { display: contents; }
     .enhanced-content[hidden] { display: none; }
+    .folded-media { display: block; margin: 4px 0; }
+    .folded-media > summary { width: fit-content; color: var(--pi-accent); cursor: pointer; }
+    .folded-media > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; border-radius: 4px; }
+    .folded-media[open] > summary { margin-bottom: 6px; }
     .quote-copy-button { position: absolute; top: 6px; right: 6px; z-index: 1; display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 0; font: 14px system-ui, sans-serif; line-height: 1; cursor: pointer; opacity: 0; }
     .quote-copy-button:hover, .quote-copy-button:focus { color: var(--pi-text); border-color: var(--pi-accent); opacity: 1; }
     .copyable-quote { position: relative; padding-right: 40px; }

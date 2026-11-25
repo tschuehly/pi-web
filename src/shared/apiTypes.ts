@@ -803,6 +803,11 @@ export const ASK_USER_ANSWERS_CUSTOM_TYPE = "pi-web.ask.answers";
 
 /** Largest question set one `ask_user` call may post. */
 export const ASK_USER_QUESTION_LIMIT = 20;
+/**
+ * Largest record of one closed set: its sends over every revision together (an agent may
+ * revise an open set to new questions after a partial send). Larger than one post.
+ */
+export const ASK_USER_RECORD_QUESTION_LIMIT = 100;
 /** Largest option list one question may offer. */
 export const ASK_USER_OPTION_LIMIT = 12;
 /** Length bound for ids: the ask id, question ids, and option values. */
@@ -851,8 +856,60 @@ export interface AskUserQuestion {
   options: AskUserQuestionOption[];
   /** When true, several options may be selected at once. */
   multiple?: boolean;
-  /** Show the question only while an earlier question of the set has one of these option values selected. */
+  /** Show the question only while an earlier question of the set has one of these option values selected ("true"/"false" for a boolean one). */
   showIf?: AskUserShowIf;
+  /** Absent means "choice" (options). The other kinds take no options and answer with {@link AskUserAnswer.value}. */
+  kind?: AskUserQuestionKind;
+  /** Prefilled answer of a typed kind (boolean, text, number, or YYYY-MM-DD); a boolean without one starts off. */
+  default?: boolean | number | string;
+  /** text: a textarea instead of one line. */
+  multiline?: boolean;
+  /** text: bounds on the answer's length. */
+  minLength?: number;
+  maxLength?: number;
+  /** number: bounds on the answer. */
+  minimum?: number;
+  maximum?: number;
+  /** number: whole numbers only. */
+  integer?: boolean;
+}
+
+export type AskUserQuestionKind = "choice" | "boolean" | "text" | "number" | "date";
+export const ASK_USER_QUESTION_KINDS: readonly AskUserQuestionKind[] = ["choice", "boolean", "text", "number", "date"];
+
+/**
+ * Why `value` does not fit a typed question ("must be at most 10"), or `undefined` when it does. Shared by the
+ * daemon's checks of defaults and answers and the card's field errors; the Durable host keeps a copy for defaults.
+ */
+export function askValueError(question: Pick<AskUserQuestion, "kind" | "multiline" | "minLength" | "maxLength" | "minimum" | "maximum" | "integer">, value: unknown): string | undefined {
+  switch (question.kind) {
+    case "boolean":
+      return typeof value === "boolean" ? undefined : "must be true or false";
+    case "text":
+      if (typeof value !== "string") return "must be text";
+      // Text is kept verbatim, but blank reads as unanswered, so a blank default could never be sent.
+      if (value.trim() === "") return "must not be blank";
+      // A one-line field cannot show or edit a line break, yet would send it.
+      if (question.multiline !== true && /[\r\n]/u.test(value)) return "must be one line";
+      if (value.length > (question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)) return `must be at most ${String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)} characters`;
+      return question.minLength !== undefined && value.length < question.minLength ? `must be at least ${String(question.minLength)} characters` : undefined;
+    case "number":
+      if (typeof value !== "number" || !Number.isFinite(value)) return "must be a number";
+      if (question.integer === true && !Number.isInteger(value)) return "must be a whole number";
+      if (question.minimum !== undefined && value < question.minimum) return `must be at least ${String(question.minimum)}`;
+      return question.maximum !== undefined && value > question.maximum ? `must be at most ${String(question.maximum)}` : undefined;
+    case "date":
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().startsWith(value) ? undefined : "must be a date as YYYY-MM-DD";
+    case "choice":
+    case undefined:
+      return undefined;
+  }
+  return undefined;
+}
+
+/** What a `showIf` tests of an answer: its selected options, or "true"/"false" for a boolean answer. */
+export function askAnswerSelection(answer: { values: readonly string[]; value?: unknown } | undefined): readonly string[] {
+  return typeof answer?.value === "boolean" ? [String(answer.value)] : answer?.values ?? [];
 }
 
 /** Condition of a dependent question: an earlier question's id and the option values that show it. */
@@ -893,6 +950,8 @@ export interface PendingAskUser {
   turnsSinceUpdate: number;
   /** Markdown the user needs to answer, shown above the questions. */
   context?: string;
+  /** The user's edit in a partial send supplied the current context (absent when cleared); an agent revision that sets context ends it. */
+  contextEdited?: true;
   questions: AskUserQuestion[];
 }
 
@@ -911,6 +970,8 @@ export interface AskUserAnswer {
   values: string[];
   /** Free text typed as the question's custom answer. */
   otherText?: string;
+  /** The answer to a typed question ({@link AskUserQuestion.kind} other than "choice"); `values` is then empty. */
+  value?: boolean | number | string;
 }
 
 /** One submit of the open ask: answers for some or all of its questions. */
@@ -926,6 +987,8 @@ export interface AskUserSubmission {
    * takes no note. One that answers every remaining question closes the ask like a full submit.
    */
   partial?: boolean;
+  /** The user's edit of {@link PendingAskUser.context}; sent only when it differs; blank means the user cleared it. A partial send that carries it makes it the open ask's context. */
+  context?: string;
 }
 
 /**
@@ -938,6 +1001,7 @@ export interface AskUserQuestionRecord {
   answered: boolean;
   values: string[];
   otherText?: string;
+  value?: boolean | number | string;
   /** The question stayed hidden because its {@link AskUserQuestion.showIf} condition was not met; never answered. */
   skipped?: true;
 }
@@ -954,6 +1018,8 @@ export interface AskUserOutcome {
   closedAt: string;
   /** The ask's {@link PendingAskUser.context}, so the record shows it too. */
   context?: string;
+  /** The user's edited version of `context`; `""` when he cleared it, absent when he left it unchanged. */
+  editedContext?: string;
   questions: AskUserQuestionRecord[];
   /** The user's note on the whole set, trimmed; absent when none was given. */
   note?: string;
@@ -980,7 +1046,10 @@ export interface AskUserOutcome {
  */
 export interface AskUserCloseResponse {
   result: "closed" | "stale";
-  /** Present only when this call is the one that closed the ask, or (with `partial`) that sent part of it. */
+  /**
+   * Present only when this call is the one that closed the ask, or (with `partial`) that sent part of it. The last
+   * send's record is the whole set's: questions earlier partial sends closed, from any browser, are included.
+   */
   outcome?: AskUserOutcome;
   sessionStatus: SessionStatus;
 }

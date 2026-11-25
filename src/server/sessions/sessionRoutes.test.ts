@@ -3,7 +3,7 @@ import { once } from "node:events";
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ASK_USER_ID_MAX_LENGTH, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../shared/apiTypes.js";
+import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_ID_MAX_LENGTH, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../shared/apiTypes.js";
 import type {
   AskUserCloseResponse,
   AskUserSubmission,
@@ -11,6 +11,7 @@ import type {
   ExtensionDialogAnswer,
   ExtensionDialogCloseResponse,
   MessagePage,
+  PendingAskUser,
   SessionBulkArchiveResponse,
   SessionBulkDeleteArchivedResponse,
   SessionBulkMutationRef,
@@ -605,10 +606,11 @@ describe("session routes", () => {
         payload: {
           cwd: "/repo/./",
           askId: "ask-1",
-          answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }],
+          answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }, { id: "copies", values: [], value: 3 }],
           note: "Ship it.",
           revision: "r3",
           partial: true,
+          context: "My version",
         },
       });
       const cancelled = await routeApp.inject({
@@ -622,7 +624,7 @@ describe("session routes", () => {
       expect(routeService.submitAskCalls).toEqual([{
         lookup: { id: "session-1", cwd: resolve("/repo") },
         askId: "ask-1",
-        submission: { answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }], note: "Ship it.", revision: "r3", partial: true },
+        submission: { answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }, { id: "copies", values: [], value: 3 }], note: "Ship it.", revision: "r3", partial: true, context: "My version" },
       }]);
       expect(cancelled.statusCode).toBe(200);
       expect(cancelled.json()).toMatchObject({ result: "stale" });
@@ -730,6 +732,8 @@ describe("session routes", () => {
       { cwd: "/repo", askId: "ask-1", answers: [], note: 7 },
       { cwd: "/repo", askId: "ask-1", answers: [], partial: "yes" },
       { cwd: "/repo", askId: "ask-1", answers: [], note: "x".repeat(ASK_USER_OTHER_TEXT_MAX_LENGTH + 1) },
+      { cwd: "/repo", askId: "ask-1", answers: [], context: 7 },
+      { cwd: "/repo", askId: "ask-1", answers: [], context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) },
     ];
 
     try {
@@ -1196,6 +1200,18 @@ describe("session routes", () => {
       routeService.attentionResponse = { id: "attention-1", reason: "Review the PR" };
       const restored = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
       expect(restored.json()).toEqual({ pendingAsks: [], attentionRequest: { id: "attention-1", reason: "Review the PR" } });
+
+      // A Durable Chat whose host is not running: nothing was read, and the read started nothing.
+      routeService.openAsksResponse = undefined;
+      routeService.calls.length = 0;
+      const cold = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
+      expect(cold.json()).toEqual({ pendingAsks: [], running: false });
+      expect(routeService.calls).toEqual([{ openAsks: { id: "session-1", cwd: requestCwd } }]);
+
+      // A deleted Chat is a 404, so a caller can tell it from a failed read.
+      routeService.openAsksError = new Error("Session not found");
+      const gone = await routeApp.inject({ method: "GET", url: `/sessions/session-1/asks?cwd=${encodeURIComponent(requestCwd)}` });
+      expect(gone.statusCode).toBe(404);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -1929,9 +1945,11 @@ class CapturingRouteSessionService implements SessionRouteService {
     return this.mediaError === undefined ? Promise.resolve(this.mediaResponse) : Promise.reject(this.mediaError);
   }
 
+  openAsksResponse: PendingAskUser[] | undefined = [];
+  openAsksError: Error | undefined;
   openAsks(lookup: SessionRouteRef) {
     this.calls.push({ openAsks: lookup });
-    return Promise.resolve([]);
+    return this.openAsksError === undefined ? Promise.resolve(this.openAsksResponse) : Promise.reject(this.openAsksError);
   }
 
   attentionResponse: SessionAttentionRequest | undefined;

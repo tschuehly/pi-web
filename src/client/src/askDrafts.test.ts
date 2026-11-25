@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserQuestion } from "../../shared/apiTypes";
-import { answeredCount, clearAskDraft, loadAskDraft, saveAskDraft, toSubmission, unansweredQuestions, type AskDraftAnswers } from "./askDrafts";
+import { answeredCount, askedFingerprint, clearAskDraft, loadAskContext, loadAskDraft, saveAskContext, saveAskDraft, toSubmission, typedDraftValue, unansweredQuestions, visibleQuestions, type AskDraftAnswers } from "./askDrafts";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -94,6 +94,75 @@ describe("ask draft storage", () => {
     expect(loadAskDraft("local:s1", "ask-1", storage)).toEqual({});
   });
 
+  it("starts an undrafted question on its recommended options but keeps a draft the user cleared", () => {
+    const storage = new MemoryStorage();
+    const single: AskUserQuestion = { ...singleSelect, options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite", recommended: true }] };
+    const multi: AskUserQuestion = { ...multiSelect, options: multiSelect.options.map((option) => ({ ...option, recommended: true })) };
+    const preselected = loadAskDraft("local:s1", "ask-1", storage, [single, multi]);
+    expect(preselected["q1"]?.values).toEqual(["pg"]);
+    expect(preselected["q2"]?.values).toEqual(["metrics", "tracing"]);
+    expect(answeredCount([single, multi], preselected)).toBe(2);
+
+    saveAskDraft("local:s1", "ask-1", { ...preselected, q2: { values: [], asked: askedFingerprint(multi) } }, storage);
+
+    expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])["q2"]?.values).toEqual([]);
+  });
+
+  it("keys answers by own question ids, so ids like constructor and __proto__ work", () => {
+    const storage = new MemoryStorage();
+    const untouched: AskUserQuestion = { ...singleSelect, id: "constructor" };
+    const preset: AskUserQuestion = { ...singleSelect, id: "__proto__", options: [{ value: "pg", label: "Postgres", recommended: true }] };
+    const asked = [untouched, preset];
+
+    const draft = loadAskDraft("local:s1", "ask-1", storage, asked);
+    expect(answeredCount(asked, draft)).toBe(1);
+    expect(unansweredQuestions(asked, draft)).toEqual([untouched]);
+    expect(toSubmission(asked, draft)).toEqual({ answers: [{ id: "__proto__", values: ["pg"] }] });
+
+    saveAskDraft("local:s1", "ask-1", { ...draft, constructor: { values: ["sqlite"], asked: askedFingerprint(untouched) } }, storage);
+    expect(toSubmission(asked, loadAskDraft("local:s1", "ask-1", storage, asked))).toEqual({ answers: [{ id: "constructor", values: ["sqlite"] }, { id: "__proto__", values: ["pg"] }] });
+  });
+
+  it("starts typed questions on their defaults, a switch on off, and keeps a field the user cleared", () => {
+    const storage = new MemoryStorage();
+    const typed = (id: string, extra: Partial<AskUserQuestion>): AskUserQuestion => ({ id, question: `${id}?`, options: [], ...extra });
+    const questions = [
+      typed("on", { kind: "boolean" }),
+      typed("t", { kind: "text", default: "hi" }),
+      typed("n", { kind: "number", default: 7, maximum: 10 }),
+      typed("d", { kind: "date", default: "2026-12-01" }),
+      typed("empty", { kind: "text" }),
+      typed("child", { kind: "text", showIf: { question: "on", values: ["true"] } }),
+    ];
+    const [, text, number] = questions;
+    if (text === undefined || number === undefined) throw new Error("expected the typed questions");
+    const preset = loadAskDraft("local:s1", "ask-1", storage, questions);
+    expect(toSubmission(questions, preset).answers).toEqual([
+      { id: "on", values: [], value: false },
+      { id: "t", values: [], value: "hi" },
+      { id: "n", values: [], value: 7 },
+      { id: "d", values: [], value: "2026-12-01" },
+    ]);
+    expect(answeredCount(questions, preset)).toBe(4);
+    expect(visibleQuestions(questions, preset).map((question) => question.id)).not.toContain("child");
+    expect(visibleQuestions(questions, { ...preset, on: { values: [], value: true } }).map((question) => question.id)).toContain("child");
+
+    // An out-of-range number is not sent; the card shows why.
+    expect(typedDraftValue(number, { values: [], value: "11" })).toEqual({ value: 11, error: "must be at most 10" });
+    expect(toSubmission(questions, { ...preset, n: { values: [], value: "11" } }).answers.map((answer) => answer.id)).not.toContain("n");
+
+    // Text goes as typed: a padded Markdown default fits its minimum and sends unchanged; blank sends nothing.
+    const padded = typed("code", { kind: "text", multiline: true, minLength: 6, default: "  code" });
+    expect(typedDraftValue(padded, loadAskDraft("local:s1", "ask-2", storage, [padded])["code"])).toEqual({ value: "  code" });
+    expect(typedDraftValue(padded, { values: [], value: "   " })).toBeUndefined();
+    // A one-line field cannot show a line break, so it does not send one; a multiline field does.
+    expect(typedDraftValue(typed("line", { kind: "text" }), { values: [], value: "first\nsecond" })).toEqual({ value: "first\nsecond", error: "must be one line" });
+    expect(typedDraftValue(padded, { values: [], value: "first\nsecond" })).toEqual({ value: "first\nsecond" });
+
+    saveAskDraft("local:s1", "ask-1", { ...preset, t: { values: [], value: "", asked: askedFingerprint(text) } }, storage);
+    expect(loadAskDraft("local:s1", "ask-1", storage, questions)["t"]?.value).toBe("");
+  });
+
   it("clears a draft once its ask is closed", () => {
     const storage = new MemoryStorage();
     saveAskDraft("local:s1", "ask-1", { q1: { values: ["pg"] } }, storage);
@@ -101,6 +170,21 @@ describe("ask draft storage", () => {
     clearAskDraft("local:s1", "ask-1", storage);
 
     expect(loadAskDraft("local:s1", "ask-1", storage)).toEqual({});
+  });
+
+  it("keeps an edited context only for the context it was made from, and clears it with the draft", () => {
+    const storage = new MemoryStorage();
+    saveAskContext("local:s1", "ask-1", "Plan A", "Plan A, mine", storage);
+
+    expect(loadAskContext("local:s1", "ask-1", "Plan A", storage)).toBe("Plan A, mine");
+    expect(loadAskContext("local:s1", "ask-1", "Plan B", storage)).toBeUndefined();
+    saveAskContext("local:s1", "ask-1", "Plan A", "Plan A", storage);
+    expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1:context")).toBeNull();
+    saveAskContext("local:s1", "ask-1", "Plan A", "Plan A, mine", storage);
+    clearAskDraft("local:s1", "ask-1", storage);
+    expect(loadAskContext("local:s1", "ask-1", "Plan A", storage)).toBeUndefined();
+    storage.setItem("pi-web:ask-draft:local:s1:ask-1:context", "{not json");
+    expect(loadAskContext("local:s1", "ask-1", "Plan A", storage)).toBeUndefined();
   });
 
   it("treats unreadable and malformed drafts as empty instead of failing", () => {

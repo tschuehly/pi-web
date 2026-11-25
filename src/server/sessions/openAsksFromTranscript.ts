@@ -48,7 +48,12 @@ export function openAsksFromTranscript(branch: readonly unknown[], sessionId: st
         // A partial send: the sent questions leave the ask, which continues under the recorded revision.
         if (ask === undefined) continue;
         const sent = new Set(outcome.questions.map((record) => record.question.id));
-        open.set(ask.askId, { ...ask, revision: outcome.revision, questions: ask.questions.filter((question) => !sent.has(question.id)) });
+        // A context the user edited in that send became the ask's context, as the store does; a cleared one ("") is gone.
+        const rest: PendingAskUser = { ...ask, revision: outcome.revision, questions: ask.questions.filter((question) => !sent.has(question.id)) };
+        if (outcome.editedContext === "") delete rest.context;
+        else if (typeof outcome.editedContext === "string") rest.context = outcome.editedContext;
+        if (typeof outcome.editedContext === "string") rest.contextEdited = true;
+        open.set(ask.askId, rest);
         undelivered.set(deliveryKey(outcome.askId, outcome.partial, outcome.revision), outcome);
       } else if (open.delete(outcome.askId)) undelivered.set(deliveryKey(outcome.askId, outcome.partial, outcome.revision), outcome);
     } else if (entry["type"] === "custom_message" && entry["customType"] === ASK_USER_ANSWERS_CUSTOM_TYPE) {
@@ -60,6 +65,24 @@ export function openAsksFromTranscript(branch: readonly unknown[], sessionId: st
     }
   }
   return { open: [...open.values()], undelivered: [...undelivered.values()] };
+}
+
+/** The branch's partial-send records of one ask, oldest first, and its question order: each id where its post or a revision first listed it. */
+export function partialAsksFromTranscript(branch: readonly unknown[], askId: string): { earlier: AskUserOutcome[]; order: string[] } {
+  const earlier: AskUserOutcome[] = [];
+  const order: string[] = [];
+  for (const entry of branch) {
+    if (!isRecord(entry)) continue;
+    const message = entry["type"] === "message" ? entry["message"] : undefined;
+    if (isRecord(message) && message["role"] === "toolResult" && message["toolName"] === "ask_user" && isRecord(message["details"])) {
+      const ask = parseAsk(message["details"]["ask"]);
+      // A revision lists only the questions still open, so the order keeps every id where it first appeared.
+      if (ask?.askId === askId) order.push(...ask.questions.map((question) => question.id).filter((id) => !order.includes(id)));
+    } else if (entry["type"] === "custom" && entry["customType"] === ASK_USER_CLOSED_CUSTOM_TYPE && isOutcome(entry["data"]) && entry["data"].askId === askId && entry["data"].partial === true) {
+      earlier.push(entry["data"]);
+    }
+  }
+  return { earlier, order };
 }
 
 /** One ask can send several partial answers before it closes, so each delivery is keyed by the revision it left. */

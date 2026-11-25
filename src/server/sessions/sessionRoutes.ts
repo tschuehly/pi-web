@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type AskUserAnswer, type AskUserCloseResponse, type AskUserSubmission, type ExtensionDialogAnswerRequest, type ExtensionDialogCancelRequest, type SessionBulkMutationRequest, type SessionBulkMutationRef, type SessionCleanupRequest, type SessionModelScopeMode, type SessionTreeForkRequest, type SessionTreeNavigateRequest, type SessionTreeSummaryChoice, type SessionUnreadAcknowledgeRequest } from "../../shared/apiTypes.js";
+import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type AskUserAnswer, type AskUserCloseResponse, type AskUserSubmission, type ExtensionDialogAnswerRequest, type ExtensionDialogCancelRequest, type SessionBulkMutationRequest, type SessionBulkMutationRef, type SessionCleanupRequest, type SessionModelScopeMode, type SessionTreeForkRequest, type SessionTreeNavigateRequest, type SessionTreeSummaryChoice, type SessionUnreadAcknowledgeRequest } from "../../shared/apiTypes.js";
 import { parseSessionDefaultsUpdate } from "../../shared/sessionDefaults.js";
 import { projectBrowserMessageResponse, projectBrowserStreamSnapshot, projectBrowserTranscriptSnapshot, type BrowserImageProjector } from "../browserMessageProjection.js";
 import { isSessionMediaId, SESSION_MEDIA_MODE } from "../../shared/sessionMedia.js";
@@ -259,7 +259,16 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/asks`, async (request, reply) => {
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
     if (ref === undefined) return reply;
-    const pendingAsks = await sessions.openAsks(ref);
+    let pendingAsks;
+    try {
+      pendingAsks = await sessions.openAsks(ref);
+    } catch (error) {
+      // A deleted Chat is a 404, so a watcher can tell it from a failed read.
+      if (isSessionNotFoundError(error)) return reply.code(404).send({ error: errorMessage(error) });
+      throw error;
+    }
+    // A cold Durable Chat: not read, so the caller keeps what it knew, and nothing started its host.
+    if (pendingAsks === undefined) return { pendingAsks: [], running: false };
     const attentionRequest = await sessions.attentionRequest(ref);
     return attentionRequest === undefined ? { pendingAsks } : { pendingAsks, attentionRequest };
   });
@@ -831,7 +840,10 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   if (typeof note === "string" && note.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("note field is too long");
   const partial = body["partial"];
   if (partial !== undefined && typeof partial !== "boolean") throw new Error("partial field must be a boolean");
-  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}) };
+  const context = body["context"];
+  if (context !== undefined && typeof context !== "string") throw new Error("context field must be a string");
+  if (typeof context === "string" && context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new Error("context field is too long");
+  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}), ...(context === undefined ? {} : { context }) };
 }
 
 function askUserAnswerFromValue(value: unknown): AskUserAnswer {
@@ -842,10 +854,14 @@ function askUserAnswerFromValue(value: unknown): AskUserAnswer {
   const otherText = record["otherText"];
   if (otherText !== undefined && typeof otherText !== "string") throw new Error("otherText field must be a string");
   if (typeof otherText === "string" && otherText.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("otherText field is too long");
+  const typed = record["value"];
+  if (typed !== undefined && typeof typed !== "boolean" && !(typeof typed === "number" && Number.isFinite(typed)) && typeof typed !== "string") throw new Error("value field must be a boolean, number, or string");
+  if (typeof typed === "string" && typed.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("value field is too long");
   return {
     id: requireBoundedId(record["id"], "id"),
     values: values.map((entry) => requireBoundedId(entry, "values entry")),
     ...(otherText === undefined ? {} : { otherText }),
+    ...(typed === undefined ? {} : { value: typed }),
   };
 }
 

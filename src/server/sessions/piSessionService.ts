@@ -106,8 +106,8 @@ import { DAEMON_RESTART_CUSTOM_TYPE, renderDaemonRestartMessage, takeInterrupted
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
 import { createAskUserToolDefinition, type AskUserToolDeps } from "./askUserTool.js";
 import { createRequestAttentionToolDefinition, type RequestAttentionToolDeps } from "./requestAttentionTool.js";
-import { openAsksFromTranscript } from "./openAsksFromTranscript.js";
-import { ASK_USER_CLOSED_CUSTOM_TYPE, ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
+import { openAsksFromTranscript, partialAsksFromTranscript } from "./openAsksFromTranscript.js";
+import { ASK_USER_CLOSED_CUSTOM_TYPE, ASK_USER_REMINDER_CUSTOM_TYPE, PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, withEarlierAnswers, type PendingAskCloseResult, type PendingAskOpenInput, type PendingAskUpdateInput } from "./pendingAskStore.js";
 import { PendingExtensionDialogStore, type ExtensionDialogCancelReason } from "./pendingExtensionDialogStore.js";
 import { ExtensionDialogWaiters, effectiveExtensionDialogTimeoutMs, extensionDialogCancelValue } from "./extensionDialogWaiters.js";
 import { DEFAULT_EXTENSION_DIALOGS_TIMEOUT_MS } from "../../config.js";
@@ -2241,7 +2241,8 @@ export class PiSessionService implements SessionRouteService {
     // Checked before the store closes the ask so a refused delivery cannot
     // discard answers the user already submitted.
     this.assertTreeNavigationInactive(session, "answer questions");
-    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission, (outcome) => { this.recordAskClosed(session, outcome); }));
+    const edited = this.contextEdited(session, askId);
+    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission, (outcome) => { this.recordAskClosed(session, outcome); }), edited);
   }
 
   /**
@@ -2253,7 +2254,13 @@ export class PiSessionService implements SessionRouteService {
     await this.assertWritable(ref);
     const session = await this.getOrOpen(ref);
     this.assertTreeNavigationInactive(session, "dismiss questions");
-    return this.closeAsk(session, this.pendingAskStore.cancel(session.sessionId, askId, (outcome) => { this.recordAskClosed(session, outcome); }));
+    const edited = this.contextEdited(session, askId);
+    return this.closeAsk(session, this.pendingAskStore.cancel(session.sessionId, askId, (outcome) => { this.recordAskClosed(session, outcome); }), edited);
+  }
+
+  /** Whether the user's edit supplied the open set's context, read before a close drops the set. */
+  private contextEdited(session: PiAgentSession, askId: string): boolean {
+    return this.pendingAskStore.pendingAsks(session.sessionId).find((ask) => ask.askId === askId)?.contextEdited === true;
   }
 
   /**
@@ -2272,22 +2279,26 @@ export class PiSessionService implements SessionRouteService {
    * that went away is ordinary, and the returned status tells the browser what
    * the session's open ask is now.
    */
-  private async closeAsk(session: PiAgentSession, result: PendingAskCloseResult): Promise<AskUserCloseResponse> {
+  private async closeAsk(session: PiAgentSession, result: PendingAskCloseResult, contextEdited: boolean): Promise<AskUserCloseResponse> {
     if (result.status === "stale") return { result: "stale", sessionStatus: this.statusFromSession(session) };
     const { outcome, ask } = result;
     // A partial send keeps the ask open under a new revision; browsers replace its card as on an update.
     if (ask === undefined) this.publishAskClosed(session.sessionId, outcome);
     else this.events.publish(session.sessionId, { type: "ask.opened", ask });
-    await this.deliverAskOutcome(session, outcome);
+    // The browser and the answers card keep the whole set's record, answers its earlier partial sends gave (from any browser) included.
+    const { earlier, order } = ask === undefined ? partialAsksFromTranscript(session.sessionManager.getBranch(), outcome.askId) : { earlier: [], order: [] };
+    const record = withEarlierAnswers(outcome, earlier, order, contextEdited);
+    await this.deliverAskOutcome(session, outcome, record);
     this.publishStatus(session);
-    return { result: "closed", outcome, sessionStatus: this.statusFromSession(session) };
+    return { result: "closed", outcome: record, sessionStatus: this.statusFromSession(session) };
   }
 
-  private deliverAskOutcome(session: PiAgentSession, outcome: AskUserOutcome): Promise<void> {
+  /** The model reads `outcome`'s text; the card shows `record` (the whole set after one-by-one sends). */
+  private deliverAskOutcome(session: PiAgentSession, outcome: AskUserOutcome, record = outcome): Promise<void> {
     const reminder = renderOpenAsksReminder(this.pendingAskStore.pendingAsks(session.sessionId));
     const content = [renderAskUserAnswersText(outcome), ...(reminder === "" ? [] : [reminder])].join("\n\n");
     return this.runSessionEntryMutation(session, "deliver answers to your questions", () => session.sendCustomMessage(
-      { customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content, display: true, details: outcome },
+      { customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content, display: true, details: record },
       { triggerTurn: true, deliverAs: "followUp" },
     ));
   }

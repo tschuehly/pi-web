@@ -29,7 +29,7 @@ import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import { cleanSessionName, cleanTabName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, sessionTitleInput, shortSessionNamePrompt, tabNamePrompt } from "./sessionNameGenerator.js";
 import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
 import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
-import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, type PendingAskCloseResult } from "./pendingAskStore.js";
+import { PendingAskStore, renderAskUserAnswersText, renderOpenAsksReminder, withEarlierAnswers, type PendingAskCloseResult } from "./pendingAskStore.js";
 import { type DurableChatRecord, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
@@ -1003,12 +1003,23 @@ export class DurableChatService {
     ].join("\n");
   }
 
-  async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[]> {
-    return (await this.status(ref)).pendingAsks ?? [];
+  /** The running host's open asks; undefined when none runs, as this read never starts one. */
+  async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[] | undefined> {
+    const status = await this.#runningStatus(ref);
+    return status === undefined ? undefined : status.pendingAsks ?? [];
   }
 
   async attentionRequest(ref: SessionRouteRef): Promise<SessionAttentionRequest | undefined> {
-    return (await this.status(ref)).attentionRequest;
+    return (await this.#runningStatus(ref))?.attentionRequest;
+  }
+
+  /**
+   * The status of the Chat's connected (or connecting) host, else undefined: never starts a host. A host with an open
+   * ask is never idle-closed (`familyBusy`), so only a crash or the owner's stop leaves an open ask on a cold Chat.
+   */
+  async #runningStatus(ref: SessionRouteRef): Promise<HostTranscript["status"] | undefined> {
+    const connection = await this.#connections.get(this.#record(ref).id)?.catch(() => undefined);
+    return connection === undefined ? undefined : hostStatus((await connection.request("status")).result);
   }
 
   async acknowledgeAttention(ref: SessionRouteRef, requestId: string): Promise<boolean> {
@@ -1043,7 +1054,11 @@ export class DurableChatService {
       ...(outcome === undefined ? { revision: "stale" } : {}),
     });
     const sessionStatus = await this.status(ref);
-    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"])) return { result: "closed", outcome: result["outcome"], sessionStatus };
+    // The host's earlier partial-send records of the set (`earlier`, oldest first) make the browser's record whole.
+    const earlier = isRecord(result) && Array.isArray(result["earlier"]) ? result["earlier"].filter(isAskOutcome) : [];
+    // `order`: the set's question ids as posted and revised, so the record numbers them in set order, as a legacy Chat's.
+    const order = isRecord(result) && Array.isArray(result["order"]) ? result["order"].filter((id) => typeof id === "string") : [];
+    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"])) return { result: "closed", outcome: withEarlierAnswers(result["outcome"], earlier, order, asks.find((ask) => ask.askId === askId)?.contextEdited === true), sessionStatus };
     return { result: "stale", sessionStatus };
   }
 

@@ -15,6 +15,7 @@ import { rust } from "@codemirror/lang-rust";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { yaml } from "@codemirror/legacy-modes/mode/yaml";
 import { tags } from "@lezer/highlight";
+import { css as styles } from "lit";
 
 const sh = new LanguageSupport(StreamLanguage.define(shell));
 const yml = new LanguageSupport(StreamLanguage.define(yaml));
@@ -236,6 +237,46 @@ export function livePreview(render: (markdown: string) => string, open: (anchor:
   });
   return [field, links, EditorView.contentAttributes.of({ class: "lp-on" })];
 }
+
+/** Cursor, selection and {@link livePreview} styles, shared by the Files pane and the ask card's Markdown fields. */
+export const livePreviewStyles = styles`
+    .cm-cursor { border-left: 2px solid var(--pi-accent) !important; }
+    .cm-selectionBackground, .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--pi-accent) 22%, transparent) !important; }
+
+    .lp-on .lp-h { font-weight: 650; line-height: 1.3; letter-spacing: -.01em; }
+    .lp-on .lp-h1 { font-size: 1.6em; padding-top: .3em; padding-bottom: .25em; }
+    .lp-on .lp-h2 { font-size: 1.28em; padding-top: 1.1em; padding-bottom: .15em; }
+    .lp-on .lp-h3 { font-size: 1.12em; padding-top: .9em; }
+    .lp-on .lp-h4, .lp-on .lp-h5, .lp-on .lp-h6 { font-size: 1em; padding-top: .7em; }
+    .lp-on .lp-quote { border-left: 3px solid var(--pi-border); color: var(--pi-muted); margin-left: 18px; padding-left: 12px !important; }
+    .lp-on .lp-code { background: var(--pi-surface); font-family: var(--mono); font-size: 12.5px; line-height: 1.6; margin: 0 18px; padding: 0 14px !important; }
+    .lp-on .lp-code-first { border-radius: 8px 8px 0 0; padding-top: 8px !important; }
+    .lp-on .lp-code-last { border-radius: 0 0 8px 8px; padding-bottom: 8px !important; }
+    .lp-on .lp-fence { color: var(--pi-muted); font-size: 11px; opacity: .55; }
+    .lp-on .lp-inline-code { font-family: var(--mono); font-size: .86em; background: var(--pi-surface); padding: .12em .35em; border-radius: 4px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+    .lp-on .lp-link { color: var(--pi-accent); border-bottom: 1px solid color-mix(in srgb, var(--pi-accent) 35%, transparent); }
+    .lp-on .lp-done { color: var(--pi-muted); text-decoration: line-through; text-decoration-color: var(--pi-dim); }
+    .lp-on .lp-table-src { font-family: var(--mono); font-size: 12.5px; }
+    /* lists: hanging indent so wrapped lines align with the text, not the bullet */
+    .lp-on .lp-li { --m: 1.6em; padding-left: calc(18px + var(--depth) * 1.6em + var(--m)) !important; text-indent: calc(-1 * var(--m)); }
+    .lp-on .lp-li-cont { text-indent: 0; }
+    .lp-on .lp-li > * { text-indent: 0; }
+    .lp-marker { display: inline-block; width: 1.6em; text-indent: 0; color: var(--pi-muted); }
+    .lp-bullet { text-align: center; padding-right: .35em; box-sizing: border-box; }
+    .lp-num { font-variant-numeric: tabular-nums; }
+    .lp-check { margin: 0; width: 14px; height: 14px; vertical-align: -2px; cursor: pointer; accent-color: var(--pi-accent); }
+    .lp-hr { display: inline-block; width: 100%; border-top: 1px solid var(--pi-border-muted); vertical-align: middle; }
+    .lp-img { display: block; }
+    .lp-img p { margin: 0; }
+    .lp-img img { max-width: 100%; border-radius: 6px; }
+    /* wide tables scroll inside their own box; cells keep a readable width instead of squishing */
+    .lp-table { box-sizing: border-box; margin: 0 18px; max-width: calc(100% - 36px); cursor: text; overflow-x: auto; border: 1px solid var(--pi-border-muted); border-radius: 8px; font-family: inherit; }
+    .lp-table table { border-collapse: collapse; margin: 0; border-style: hidden; font-size: 14px; line-height: 1.5; }
+    .lp-table th, .lp-table td { min-width: 7em; max-width: 26em; border: 1px solid var(--pi-border-muted); padding: 6px 12px; text-align: left; vertical-align: top; }
+    .lp-table th { background: var(--pi-surface); font-weight: 600; }
+    .lp-table code { font: .86em var(--mono); background: var(--pi-surface); padding: .1em .3em; border-radius: 4px; }
+    .lp-table a { color: var(--pi-accent); }
+`;
 
 // ---------------- agent hunks: inline diff of what the agent changed on disk ----------------
 /** A range in the doc holding the agent's text, plus the text it replaced. */
@@ -501,11 +542,14 @@ export const editHistory = (): Extension => historySlot.of(history());
 export function applyDiskChange(view: EditorView, base: string, disk: string): boolean {
   const { spec, overlaps } = diskChangeSpec(view.state, base, disk);
   view.dispatch(spec);
-  if (overlaps) {
-    view.dispatch({ effects: historySlot.reconfigure([]) });
-    view.dispatch({ effects: historySlot.reconfigure(history()) });
-  }
+  if (overlaps) resetEditHistory(view);
   return overlaps;
+}
+
+/** Drops the editor's undo history, so Undo cannot bring back text replaced underneath the user. */
+export function resetEditHistory(view: EditorView): void {
+  view.dispatch({ effects: historySlot.reconfigure([]) });
+  view.dispatch({ effects: historySlot.reconfigure(history()) });
 }
 
 // ---------------- highlighted line range (Chat links with #L40-L58) ----------------

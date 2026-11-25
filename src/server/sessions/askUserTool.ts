@@ -5,6 +5,7 @@ import {
   ASK_USER_DETAIL_MAX_LENGTH,
   ASK_USER_ID_MAX_LENGTH,
   ASK_USER_OPTION_LIMIT,
+  ASK_USER_OTHER_TEXT_MAX_LENGTH,
   ASK_USER_QUESTION_LIMIT,
   ASK_USER_TEXT_MAX_LENGTH,
   type AskUserOutcome,
@@ -45,7 +46,7 @@ const AskUserOptionParams = Type.Object({
     description: "Optional clarification shown under the label.",
   })),
   recommended: Type.Optional(Type.Boolean({
-    description: "Mark the option you recommend.",
+    description: "Mark the option you recommend; it starts selected.",
   })),
 });
 
@@ -71,8 +72,16 @@ const AskUserQuestionParams = Type.Object({
   })),
   showIf: Type.Optional(Type.Object({
     question: Type.String({ maxLength: ASK_USER_ID_MAX_LENGTH, description: "id of an earlier question in this set." }),
-    values: Type.Array(Type.String({ maxLength: ASK_USER_ID_MAX_LENGTH }), { minItems: 1, maxItems: ASK_USER_OPTION_LIMIT, description: "Its option values that show this question." }),
+    values: Type.Array(Type.String({ maxLength: ASK_USER_ID_MAX_LENGTH }), { minItems: 1, maxItems: ASK_USER_OPTION_LIMIT, description: "Its option values (boolean: \"true\"/\"false\") that show this question." }),
   }, { description: "Show this question only while that earlier question has one of these options picked; hidden, it is skipped." })),
+  kind: Type.Optional(Type.Union([Type.Literal("choice"), Type.Literal("boolean"), Type.Literal("text"), Type.Literal("number"), Type.Literal("date")], { description: "Default choice; other kinds take no options." })),
+  default: Type.Optional(Type.Union([Type.Boolean(), Type.Number(), Type.String({ maxLength: ASK_USER_OTHER_TEXT_MAX_LENGTH })], { description: "Prefilled answer; date as YYYY-MM-DD." })),
+  multiline: Type.Optional(Type.Boolean({ description: "text: a textarea." })),
+  minLength: Type.Optional(Type.Integer({ minimum: 0, maximum: ASK_USER_OTHER_TEXT_MAX_LENGTH })),
+  maxLength: Type.Optional(Type.Integer({ minimum: 0, maximum: ASK_USER_OTHER_TEXT_MAX_LENGTH })),
+  minimum: Type.Optional(Type.Number()),
+  maximum: Type.Optional(Type.Number()),
+  integer: Type.Optional(Type.Boolean()),
 });
 
 const AskUserParams = Type.Object({
@@ -97,7 +106,18 @@ const AskUserParams = Type.Object({
 
 /** Shapes one schema question into the domain question; the store owns validation. */
 function toQuestion(param: Static<typeof AskUserQuestionParams>): AskUserQuestion {
-  const { options, multiple, showIf } = param;
+  const { options, multiple, showIf, kind, multiline, minLength, maxLength, minimum, maximum, integer } = param;
+  // Typed-kind fields copy as given; the store keeps those the kind takes.
+  const typed = {
+    ...(kind === undefined ? {} : { kind }),
+    ...(param.default === undefined ? {} : { default: param.default }),
+    ...(multiline === undefined ? {} : { multiline }),
+    ...(minLength === undefined ? {} : { minLength }),
+    ...(maxLength === undefined ? {} : { maxLength }),
+    ...(minimum === undefined ? {} : { minimum }),
+    ...(maximum === undefined ? {} : { maximum }),
+    ...(integer === undefined ? {} : { integer }),
+  };
   return {
     id: param.id,
     question: param.question,
@@ -105,6 +125,7 @@ function toQuestion(param: Static<typeof AskUserQuestionParams>): AskUserQuestio
     options: (options ?? []).map(toOption),
     ...(multiple === undefined ? {} : { multiple }),
     ...(showIf === undefined ? {} : { showIf: { question: showIf.question, values: [...showIf.values] } }),
+    ...typed,
   };
 }
 
@@ -143,11 +164,11 @@ export function createAskUserToolDefinition(deps: AskUserToolDeps) {
     name: "ask_user",
     exposure: "model-only",
     label: "Ask user",
-    description: "Post a self-contained question set, shown as question chips above the user's composer, and return immediately. The set carries all explanation; your Chat message only says that questions were posted. Answers arrive later as a follow-up message; the user may leave any question unanswered. Give a follow-up question `showIf` instead of writing 'If X:' in its text. Pass update: <askId> to revise or confirm an open set, or withdraw: <askId> to drop one.",
+    description: "Post a self-contained question set, shown as question chips above the user's composer, and return immediately. Unlike ask_human (Telegram, blocks until he replies), it stays in this Chat. The set carries all explanation; your Chat message only says that questions were posted. Answers arrive later as a follow-up message; the user may leave any question unanswered. Give a follow-up question `showIf` instead of writing 'If X:' in its text. `context` and `detail` may hold Markdown images (https or workspace file path) and ```mermaid diagrams, including pie and xychart-beta charts, each shown folded until opened; to approve a code or text change, show it as ```diff or ```worddiff (old text, a `>>>` line, new text). The user can edit the context; treat an edited context as his version, so put text for approval (a plan, draft or message) there. Pass update: <askId> to revise or confirm an open set, or withdraw: <askId> to drop one.",
     promptSnippet: "ask_user: post, revise, or withdraw a self-contained question set for the user; returns immediately, answers arrive later as a follow-up",
     promptGuidelines: [
       "Use ask_user to batch the decisions you need from the user into one question set rather than asking in prose. It returns immediately: keep working on anything that does not depend on the answers, and end your turn if nothing does. The answers come back as a follow-up message that wakes you; do not poll or repost.",
-      "Put all explanation into the ask_user set and none into your Chat message, which only says that questions were posted: the panel covers the Chat. `context` holds what all questions share; each question's `detail` says what the item is, gives an example, and where it stands; each option's `detail` states its consequence, and the recommended option is marked. Do not number the question text; the panel numbers it.",
+      "Put all explanation into the ask_user set and none into your Chat message, which only says that questions were posted: the panel covers the Chat. `context` holds what all questions share; each question's `detail` says what the item is, gives an example, and where it stands; each option's `detail` states its consequence, and the recommended option starts selected. Do not number the question text; the panel numbers it. When one decision covers several independent items, use multiple: true with one option per item.",
       "Keep open ask_user sets current: when the facts change, call ask_user with update: <askId> (no other fields just confirms it) or withdraw: <askId>.",
     ],
     parameters: AskUserParams,
