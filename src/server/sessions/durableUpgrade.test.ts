@@ -47,6 +47,8 @@ class Fake extends EventEmitter implements DurableHostProcess {
   /** Answers resume, or B's conditional close, with an error; or never answers that close ("hang"). */
   resumeError = false;
   closeError: boolean | "hang" = false;
+  /** The owner's `/full-access` is on: an upgrade close answers so, as the Workbench host does. */
+  fullAccess = false;
   kills = 0;
 
   constructor(readonly code: { entry: string; current: string }, readonly exitHook: () => void, fail: boolean | "hang" = false) {
@@ -83,7 +85,8 @@ class Fake extends EventEmitter implements DurableHostProcess {
         return;
       }
       // As the Workbench host: B's close is accepted affirmatively.
-      this.reply(request, request.method === "status" ? { ...status, isStreaming: this.streaming } : request.params?.["ifRestartSafe"] === true ? { closed: true } : null);
+      const closed = request.params?.["ifRestartSafe"] === true ? { closed: true } : null;
+      this.reply(request, request.method === "status" ? { ...status, isStreaming: this.streaming } : request.method === "close" && this.fullAccess && request.params?.["reason"] === "upgrade" ? { ...closed, fullAccess: true } : closed);
       if (request.method === "close") {
         this.exitHook();
         this.emit("exit", 0, null);
@@ -401,6 +404,26 @@ describe("seamless upgrade orchestration", () => {
     expect(s.hosts).toHaveLength(2);
     expect(s.hosts.flatMap((host) => host.requests.map((request) => request.method)).filter((method) => method === "resume" || method === "close")).toEqual(["close", "resume"]);
     await s.durable.dispose();
+  });
+
+  it("an upgrade restart, automatic or Upgrade now, hands the old host's full access to the new host's resume, and only then", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b, c, d] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2"), revision("rev-c", "1.5.2"), revision("rev-d", "1.5.2")];
+    const resumes = (host: Fake | undefined) => host?.requests.filter((request) => request.method === "resume").map((request) => request.params);
+    const auto = setup(a, b, { autoUpgrade: true });
+    await auto.durable.status(auto.ref);
+    for (const host of auto.hosts) host.fullAccess = true;
+    await auto.durable.upgradePendingHosts();
+    expect(auto.hosts).toHaveLength(2);
+    expect(resumes(auto.hosts[1])).toEqual([{ reason: "upgrade-restart", fullAccess: true }]);
+    await auto.durable.dispose();
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const now = setup(c, d);
+    await now.durable.status(now.ref);
+    for (const host of now.hosts) host.fullAccess = true;
+    await now.durable.upgradeHost(now.ref, "now");
+    expect(resumes(now.hosts[1])).toEqual([{ reason: "upgrade-restart", fullAccess: true }]);
+    await now.durable.dispose();
   });
 
   it("finding 4: an automatic upgrade never closes a host that admitted input after the quiet check", async () => {
