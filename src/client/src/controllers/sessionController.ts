@@ -5,7 +5,7 @@ import { retriesOperations, withOperationRetry } from "../api/operationRetry";
 import { chatSupports, type AskUserOutcome, type ChatCapability, type SessionEffectResolution } from "../../../shared/apiTypes";
 import { BrowserErrorReporter, sessionBrowserErrorScope, workspaceBrowserErrorScope, type SessionBrowserErrorOwner } from "../browserErrors";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
-import { textMessage } from "../chatMessages";
+import { linkEarlierAskImages, normalizeMessages, textMessage } from "../chatMessages";
 import { machineSessionKey } from "../machineKeys";
 import { samePromptChipTarget, type PromptChipTarget } from "../promptChips";
 import { isCreatingSessionId } from "../route";
@@ -562,7 +562,16 @@ export class SessionController {
       const page = await this.api.messages(session, { before: state.messagePageStart, limit: MESSAGE_PAGE_SIZE }, machineId);
       if (!isCurrentSelection() || this.transcripts.historyRevision(key) !== historyRevision) return;
       const history = this.transcripts.mergeHistory(key, page);
-      this.setState(history);
+      // Prepend only the earlier rows: the visible tail may hold live replies the history cache has not seen yet.
+      const visible = this.getState();
+      const raw = this.transcripts.rawHistoryPage(key);
+      const earlier = raw === undefined ? [] : normalizeMessages(raw.messages.slice(0, Math.max(0, visible.messagePageStart - raw.start)));
+      this.setState({
+        messages: linkEarlierAskImages([...earlier, ...visible.messages]),
+        messagePageStart: Math.min(history.messagePageStart, visible.messagePageStart),
+        messagePageEnd: Math.max(history.messagePageEnd, visible.messagePageEnd),
+        messagePageTotal: Math.max(history.messagePageTotal, visible.messagePageTotal),
+      });
     } catch (error) {
       this.reportSessionError(session, machineId, error, errorOwner);
     } finally {

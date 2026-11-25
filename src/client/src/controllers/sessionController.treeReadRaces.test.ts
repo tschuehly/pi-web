@@ -177,3 +177,26 @@ describe("SessionController branch read ownership", () => {
 function page(branch: string, start: number, total: number): MessagePage {
   return { start, total, messages: Array.from({ length: 100 }, (_, index) => ({ role: "user", content: `${branch} ${String(start + index)}`, timestamp: start + index })) };
 }
+
+describe("SessionController earlier pages", () => {
+  it("keeps a live reply delivered while an earlier page loads", async () => {
+    const f = fixture();
+    const earlier = deferred<MessagePage>();
+    f.messages.mockReturnValueOnce(earlier.promise);
+    try {
+      await f.controller.selectSession(oldSession, { updateUrl: false });
+      const loading = f.controller.loadEarlierMessages();
+      await vi.waitFor(() => { expect(f.messages).toHaveBeenCalledOnce(); });
+      f.socket.emit({ type: "message.append", message: { role: "user", content: "live reply", timestamp: 999 } });
+      await vi.waitFor(() => { expect(f.state().messages).toHaveLength(101); });
+      earlier.resolve(oldEarlier);
+      await loading;
+      expect(f.state().messagePageStart).toBe(100);
+      expect(f.state().messages).toHaveLength(201);
+      expect(f.state().messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ type: "text", text: "live reply" }));
+    } finally {
+      earlier.resolve(oldEarlier);
+      f.controller.dispose();
+    }
+  });
+});
