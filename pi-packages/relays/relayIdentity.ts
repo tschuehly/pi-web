@@ -23,9 +23,11 @@ export function relayIdentityFromMetadata(metadata: SessionUiMetadata | undefine
   return { version: 1, packetPath, relayName, leg };
 }
 
+// eslint-disable-next-line no-control-regex -- packet paths must not contain control characters.
+const PACKET_PATH_FORBIDDEN = /[\\\u0000-\u001f\u007f]/u;
+
 export function isRelayPacketPath(value: string): boolean {
-  // eslint-disable-next-line no-control-regex -- packet paths must not contain control characters.
-  return value.length > 0 && value.length <= 4096 && !/[\\\u0000-\u001f\u007f]/u.test(value)
+  return value.length > 0 && value.length <= 4096 && !PACKET_PATH_FORBIDDEN.test(value)
     && value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && segment === segment.trim());
 }
 

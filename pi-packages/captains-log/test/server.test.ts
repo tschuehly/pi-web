@@ -24,7 +24,7 @@ it("pushes admission, native receipt, running and saved completion; scope/channe
   });
   // Generic host capability resolution is the sole type-erased boundary in this fake.
   const capabilities: ServerPluginCapabilityResolver = {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters, @typescript-eslint/consistent-type-assertions
+    /* eslint-disable @typescript-eslint/no-unnecessary-type-parameters, @typescript-eslint/consistent-type-assertions */
     resolve: <Value>(capability: Parameters<ServerPluginCapabilityResolver["resolve"]>[0]) => (capability === PI_WEB_HOST_PI_SESSIONS_CAPABILITY ? { create } : {
       connect: () => Promise.resolve({ signal: lifetime.signal, close: closeNative,
         on(name: string, handler: (data: unknown) => void) { bus.on(name, handler); return () => bus.off(name, handler); },
@@ -39,6 +39,7 @@ it("pushes admission, native receipt, running and saved completion; scope/channe
         },
       }),
     }) as Value,
+    /* eslint-enable @typescript-eslint/no-unnecessary-type-parameters, @typescript-eslint/consistent-type-assertions */
   };
   await required(activation.start?.bind(activation))({ capabilities, signal: new AbortController().signal });
   const scope = { project: { id: "project", name: "Project", path: directory }, workspace: { id: "workspace", projectId: "project", path: directory, label: "Workspace", isMain: true } };
@@ -123,8 +124,9 @@ it("automatically replaces only an exactly unhosted pirate session and durably r
   });
   const capabilities: ServerPluginCapabilityResolver = {
     // Generic capability resolution is the sole type-erased host boundary.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters, @typescript-eslint/consistent-type-assertions
+    /* eslint-disable @typescript-eslint/no-unnecessary-type-parameters, @typescript-eslint/consistent-type-assertions */
     resolve: <Value>(capability: Parameters<ServerPluginCapabilityResolver["resolve"]>[0]) => (capability === PI_WEB_HOST_PI_SESSIONS_CAPABILITY ? { create } : { connect }) as Value,
+    /* eslint-enable @typescript-eslint/no-unnecessary-type-parameters, @typescript-eslint/consistent-type-assertions */
   };
   const activate = async () => {
     const activation = await plugin.activate({ apiVersion: 3, pluginId: "captain", packageRoot: directory, dataDirectory: directory, settings: {}, signal: lifetime.signal, lifetimeSignal: lifetime.signal,

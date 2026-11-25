@@ -40,6 +40,10 @@ The first cached typecheck still pays for a full check; subsequent runs reuse `n
 
 Documentation/comment-only changes need link/path review, relevant documentation or asset tests, and `git diff --check`; they do not need a local typecheck or whole-project lint. Use the [testing guide](../.agents/skills/testing-guide/SKILL.md#decide-whether-a-test-adds-protection) to choose the smallest boundary that proves the behavior.
 
+## Formatting
+
+[oxfmt](https://oxc.rs/docs/guide/usage/formatter) formats code, JSON, YAML, CSS, and HTML with `.oxfmtrc.json` (160 columns, leading operators, embedded `css`/`html` templates left as written, Markdown and vendored files excluded). Run `pnpm fmt` before committing; CI runs `pnpm fmt:check`. When rebasing a branch across the bulk reformat commit, take your side of each conflict and rerun `pnpm fmt` rather than resolving formatting by hand. `.git-blame-ignore-revs` lists that commit for `git blame`.
+
 ## Browser surface contracts
 
 For popup, modal, or conversation-boundary changes, run the isolated component browser suite:
@@ -62,7 +66,7 @@ These tests prove browser painting, hit targeting, anchoring, and focus/dismissa
 | Local iteration | Focused tests, optionally in watch mode | Developer/agent workspace |
 | Local completion | Relevant tests; scoped ESLint and cached typecheck for TypeScript changes; diff/link checks as applicable | Developer/agent workspace |
 | Commit | `git diff --cached --check` only, through the pre-commit hook | Local workspace after `npm install`/`npm ci` configures `.githooks` |
-| Pull request | `npm run verify`, build, artifact checks; browser surface contracts in a separate Linux job | GitHub Actions CI, Linux and Windows |
+| Pull request | `pnpm fmt:check`, `npm run verify`, build, artifact checks; browser surface contracts in a separate Linux job | GitHub Actions CI, Linux and Windows |
 | Merge/push to `main` | Same full CI and browser checks; installed-package smoke on Linux | GitHub Actions CI |
 | Manual CI run | Same full CI checks; installed-package smoke on Linux | GitHub Actions `workflow_dispatch`, selected ref |
 | Package publication | Full verification, build, artifact checks, installed-package smoke, then publish | GitHub Actions publish workflow, Linux |
