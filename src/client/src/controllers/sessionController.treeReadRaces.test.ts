@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
+import type { ChatLine } from "../chatTypes";
 import { ChatTranscriptStore } from "../chatTranscriptStore";
+import { pageMessagesAtSafeBoundary } from "../../../server/sessions/messagePaging";
 import { machineSessionKey } from "../machineKeys";
 import { SessionController } from "./sessionController";
 import {
@@ -210,35 +212,85 @@ describe("SessionController earlier pages leave the live tail alone", () => {
     return { start: 10, total: 10 + messages.length, messages };
   }
 
-  it("keeps one read row when its result lands live while the earlier page loads", async () => {
-    // [prompt, call of 20 reads, 19 results, notice] paged by 20: the leading results go to the earlier page, so the
-    // visible tail is the notice alone and the last result arrives live after it, its call on the earlier page
-    // (messagePaging.test.ts "a notice-only tail" pins that split).
-    const calls = Array.from({ length: 20 }, (_, index) => ({ type: "toolCall", id: `c${String(index)}`, name: "read", arguments: { path: `f${String(index)}.ts` } }));
-    const results = calls.slice(0, 19).map((call) => ({ role: "toolResult", toolCallId: call.id, toolName: "read", content: [{ type: "text", text: `${call.id} body` }], isError: false, timestamp: 600 }));
-    const all = [{ role: "user", content: "prompt", timestamp: 500 }, { role: "assistant", content: calls, timestamp: 501 }, ...results, notice];
+  // Pages come from the real pager: the newest page starts at every call still waiting for its result, so a result or
+  // update arriving live always finds its call in the visible tail and Load earlier never has to join across pages.
+  async function loadEarlierWhileLive(all: unknown[], limit: number, events: Parameters<EmitSocket["emit"]>[0][]) {
+    const tailPage = pageMessagesAtSafeBoundary(all, { limit });
+    const earlierPage = pageMessagesAtSafeBoundary(all, { before: tailPage.start, limit: 100 });
     const f = fixture();
     const earlier = deferred<MessagePage>();
-    f.transcriptSnapshot.mockReset().mockImplementation(() => transcriptSnapshotFixture({ start: 21, total: 22, messages: [notice] }, status(oldSession.id)));
+    f.transcriptSnapshot.mockReset().mockImplementation(() => transcriptSnapshotFixture(tailPage, status(oldSession.id)));
     f.messages.mockReturnValueOnce(earlier.promise);
-    const earlierPage: MessagePage = { start: 0, total: 22, messages: all.slice(0, 21) };
     try {
       await f.controller.selectSession(oldSession, { updateUrl: false });
       const loading = f.controller.loadEarlierMessages();
       await vi.waitFor(() => { expect(f.messages).toHaveBeenCalledOnce(); });
-      const body = [{ type: "text", text: "c19 body" }];
-      f.socket.emit({ type: "tool.end", toolName: "read", toolCallId: "c19", text: "c19 body", isError: false, content: body });
-      f.socket.emit({ type: "message.end", message: { role: "toolResult", toolCallId: "c19", toolName: "read", content: body, isError: false, timestamp: 700 } });
+      for (const event of events) f.socket.emit(event);
       earlier.resolve(earlierPage);
       await loading;
-      const rows = f.state().messages.flatMap((line) => line.parts).filter((part) => part.type === "toolExecution" && part.toolCallId === "c19");
-      expect(rows).toEqual([expect.objectContaining({ status: "success", summary: "f19.ts", resultText: "c19 body" })]);
-      expect(f.state().messages).toHaveLength(1 + 20 + 1);
-      expect(JSON.stringify(f.state().messages.at(-1))).toContain("child finished");
+      expect(f.state().messagePageStart).toBe(0);
+      return { tailStart: tailPage.start, messages: f.state().messages };
     } finally {
       earlier.resolve(earlierPage);
       f.controller.dispose();
     }
+  }
+  const parts = (messages: ChatLine[]) => messages.flatMap((line) => line.parts);
+  const readCall = (id: string, path: string) => ({ type: "toolCall", id, name: "read", arguments: { path } });
+  const resultEvents = (toolCallId: string, text: string) => {
+    const content = [{ type: "text", text }];
+    return [
+      { type: "tool.end" as const, toolName: "read", toolCallId, text, isError: false, content },
+      { type: "message.end" as const, message: { role: "toolResult", toolCallId, toolName: "read", content, isError: false, timestamp: 700 } },
+    ];
+  };
+
+  it("keeps one read row when its result lands live while the earlier page loads", async () => {
+    // Before the pending-call rule, [prompt, call of 20 reads, 19 results, notice] paged by 20 left the notice alone in the
+    // tail and the call on the earlier page; now the tail starts at the call (messagePaging.test.ts "a notice-only tail").
+    const calls = Array.from({ length: 20 }, (_, index) => readCall(`c${String(index)}`, `f${String(index)}.ts`));
+    const results = calls.slice(0, 19).map((call) => ({ role: "toolResult", toolCallId: call.id, toolName: "read", content: [{ type: "text", text: `${call.id} body` }], isError: false, timestamp: 600 }));
+    const all = [{ role: "user", content: "prompt", timestamp: 500 }, { role: "assistant", content: calls, timestamp: 501 }, ...results, notice];
+    const { tailStart, messages } = await loadEarlierWhileLive(all, 20, resultEvents("c19", "c19 body"));
+    expect(tailStart).toBe(1);
+    const rows = parts(messages).filter((part) => part.type === "toolExecution" && part.toolCallId === "c19");
+    expect(rows).toEqual([expect.objectContaining({ status: "success", summary: "f19.ts", resultText: "c19 body" })]);
+    expect(messages).toHaveLength(1 + 20 + 1);
+    expect(JSON.stringify(messages.at(-1))).toContain("child finished");
+  });
+
+  it("leaves an earlier turn's unanswered call alone when the running turn reuses its id", async () => {
+    const all = [
+      { role: "user", content: "old", timestamp: 1 }, { role: "assistant", content: [readCall("c1", "a.ts")], timestamp: 2 },
+      { role: "user", content: "prompt", timestamp: 3 }, { role: "assistant", content: [readCall("c1", "b.ts")], timestamp: 4 }, notice,
+    ];
+    const { tailStart, messages } = await loadEarlierWhileLive(all, 1, resultEvents("c1", "b body"));
+    expect(tailStart).toBe(3);
+    expect(parts(messages).filter((part) => part.type === "toolExecution")).toEqual([
+      expect.objectContaining({ toolCallId: "c1", summary: "a.ts", status: "pending" }),
+      expect.objectContaining({ toolCallId: "c1", summary: "b.ts", status: "success", resultText: "b body" }),
+    ]);
+  });
+
+  it("shows one Read skill row when a skill read's result lands live while the earlier page loads", async () => {
+    const all = [
+      { role: "user", content: "old", timestamp: 1 }, { role: "user", content: "prompt", timestamp: 2 },
+      { role: "assistant", content: [readCall("s1", "/skills/guide/SKILL.md")], timestamp: 3 }, notice,
+    ];
+    const { tailStart, messages } = await loadEarlierWhileLive(all, 1, resultEvents("s1", "skill body"));
+    expect(tailStart).toBe(2);
+    expect(parts(messages).filter((part) => part.type === "skillRead")).toEqual([expect.objectContaining({ name: "guide", toolCallId: "s1" })]);
+    expect(parts(messages).filter((part) => part.type === "toolExecution")).toEqual([]);
+  });
+
+  it("keeps a running tool's live update when it arrives while the earlier page loads", async () => {
+    const all = [
+      { role: "user", content: "old", timestamp: 1 }, { role: "user", content: "prompt", timestamp: 2 },
+      { role: "assistant", content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "make" } }], timestamp: 3 }, notice,
+    ];
+    const { tailStart, messages } = await loadEarlierWhileLive(all, 1, [{ type: "tool.update", toolName: "bash", toolCallId: "b1", text: "line 1" }]);
+    expect(tailStart).toBe(2);
+    expect(parts(messages).filter((part) => part.type === "toolExecution")).toEqual([expect.objectContaining({ toolCallId: "b1", status: "running", resultText: "line 1" })]);
   });
 
   it("keeps a reply above a notice that lands after its empty start while the earlier page loads", async () => {

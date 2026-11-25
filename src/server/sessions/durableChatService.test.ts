@@ -893,7 +893,7 @@ describe("Durable Chats", () => {
       const host = new FakeHost(DURABLE_HOST_PROTOCOL, ["viewed"]);
       const answer = host.answer;
       host.answer = (request) => {
-        if (request.method === "setViewed" && failFalse && request.params?.viewed === false) {
+        if (request.method === "setViewed" && failFalse && request.params?.["viewed"] === false) {
           failFalse = false;
           throw new Error("no");
         }
@@ -2048,7 +2048,7 @@ describe("the owner's run button", () => {
     const [run, ...more] = runs(launched);
     expect(more).toEqual([]);
     expect(run?.params).toMatchObject({ cwd, command: `cd -P -- '${cwd}' && [ "$PWD" = '${cwd}' ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\npwd; exit 7\n` });
-    expect(run?.params?.operationId).toEqual(expect.stringMatching(/^owner-run:[0-9a-f]{32}$/));
+    expect(run?.params?.["operationId"]).toEqual(expect.stringMatching(/^owner-run:[0-9a-f]{32}$/));
     // The agent learns the result from the job's completion, not from a prompt of PI WEB's.
     expect(launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"))).toEqual([]);
   });

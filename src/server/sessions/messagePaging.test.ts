@@ -33,11 +33,16 @@ describe("message paging", () => {
     }
   });
 
-  it("a notice-only tail: results before a trailing notice go to the earlier page with their call", () => {
+  it("a notice-only tail: results before a trailing notice go to the earlier page with their call once every result is in", () => {
     const notice = { role: "custom", content: "child finished" };
-    const messages = [user("prompt"), toolCall("read"), ...Array.from({ length: 19 }, (_, index) => toolResult(String(index))), notice];
-    expect(pageMessagesAtSafeBoundary(messages, { limit: 20 })).toEqual(page(21, 22, [notice]));
-    expect(pageMessagesAtSafeBoundary(messages, { before: 21, limit: 100 })).toEqual(page(0, 22, messages.slice(0, 21)));
+    const call = { role: "assistant", content: Array.from({ length: 20 }, (_, index) => ({ type: "toolCall", id: `c${String(index)}`, name: "read" })) };
+    const results = (count: number) => Array.from({ length: count }, (_, index) => ({ role: "toolResult", toolCallId: `c${String(index)}`, content: "ok" }));
+    const done = [user("prompt"), call, ...results(20), notice];
+    expect(pageMessagesAtSafeBoundary(done, { limit: 20 })).toEqual(page(22, 23, [notice]));
+    expect(pageMessagesAtSafeBoundary(done, { before: 22, limit: 100 })).toEqual(page(0, 23, done.slice(0, 22)));
+    // One result still missing: its call stays on the newest page, so the result arriving live finds it there.
+    const waiting = [user("prompt"), call, ...results(19), notice];
+    expect(pageMessagesAtSafeBoundary(waiting, { limit: 20 })).toEqual(page(1, 22, waiting.slice(1)));
   });
 
   it("chains pages of a call with 20 results, every message exactly once", () => {
@@ -47,7 +52,7 @@ describe("message paging", () => {
     for (let guard = 0; guard < 10; guard += 1) {
       const result = pageMessagesAtSafeBoundary(messages, { ...(before === undefined ? {} : { before }), limit: 5 });
       expect(result.messages.length).toBeGreaterThan(0);
-      expect((result.messages[0] as { role: string }).role).not.toBe("toolResult");
+      expect(result.messages[0]?.role).not.toBe("toolResult");
       seen.unshift(...result.messages);
       if (result.start === 0) break;
       before = result.start;
