@@ -207,7 +207,7 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     const nonce = "0123456789abcdef0123456789abcdef";
     const storeDir = join(root, "data", "durable", record.storeId);
     const host = launch(record, storeDir, { fullAccessNonce: nonce });
-    await new Promise<void>((resolve, reject) => { host.on("message", (message: unknown) => { if (isReady(message)) resolve(); }); host.on("exit", () => { reject(new Error("host exited")); }); });
+    await new Promise<void>((resolve, reject) => { host.on("message", (message: unknown) => { if (isReady(message)) resolve(); }); host.on("error", reject); host.on("exit", () => { reject(new Error("host exited")); }); });
     expect(JSON.parse(readFileSync(join(storeDir, "argv.json"), "utf8"))).toEqual(expect.arrayContaining(["--full-access-nonce", nonce]));
     expect(readFileSync(join(hostsDir, `${PREFIX}.${record.storeId}.plist`), "utf8")).not.toContain(nonce);
     host.kill();
