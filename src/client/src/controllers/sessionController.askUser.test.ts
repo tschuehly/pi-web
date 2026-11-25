@@ -200,7 +200,8 @@ describe("SessionController ask submission", () => {
       { api, socket: new FakeSocket() },
     );
 
-    await controller.submitAsk("ask-1", { answers: [] });
+    // Not sent: the card keeps what it holds only in memory (its staged images) for the revised set.
+    expect(await controller.submitAsk("ask-1", { answers: [] })).toBe(false);
 
     expect(state.error).toBe("");
     expect(state.pendingAsks).toEqual([supersedingAsk]);

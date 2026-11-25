@@ -1483,7 +1483,7 @@ export class SessionController {
   }
 
   /** Send the answers the user entered for the session's open ask. */
-  /** False when the submit did not reach the daemon (the session error says why); the closed record when this send closed or partly sent the ask. */
+  /** False when nothing was sent (the session error says why, or the ask was stale); the closed record when this send closed or partly sent the ask. */
   submitAsk(askId: string, submission: AskUserSubmission): Promise<AskUserOutcome | boolean> {
     return this.closeOpenAsk(askId, (session, machineId) => retriesOperations(session)
       ? withOperationRetry((operationId) => this.api.submitAsk(session, askId, submission, machineId, operationId))
@@ -1616,6 +1616,8 @@ export class SessionController {
       // Both outcomes carry the recomputed status, so no follow-up status
       // request is needed to learn what the session's open ask is now.
       if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(response.sessionStatus);
+      // A stale close sent nothing, so the card keeps what it holds only in memory (its unsent images).
+      if (response.result === "stale") return false;
       return response.outcome ?? true;
     } catch (error) {
       this.reportSessionError(session, machineId, error, errorOwner);
