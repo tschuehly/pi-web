@@ -91,6 +91,7 @@ import { registerPairedPluginBackendRoutes } from "./sessiond/pluginBackendRoute
 import { registerWorkspaceRemovalRoutes } from "./sessiond/workspaceRemovalRoutes.js";
 import { createWorkspaceProviderRuntimeSnapshot } from "./workspaces/workspaceCatalog.js";
 import { WorkspaceRemovalService } from "./workspaces/workspaceRemovalService.js";
+import { nativeConfirm } from "./nativeConfirm.js";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
 const serverPluginRecovery = loadServerPluginRecoveryConfig({ env: daemonEnvironment });
@@ -421,6 +422,7 @@ async function createSessionDaemonRuntime() {
       // As a legacy Chat's session reads it: Pi's setting for the workspace under the active profile.
       cacheMissNotices: { enabled: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getShowCacheMissNotices(), models: auth.runtime },
       enabledModels: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getEnabledModels(),
+      confirm: nativeConfirm(),
     });
     durableChatsForFailedConstruction = durableChats;
     // Hosts that outlived the previous daemon (launchd) get their connection back now, not at the Chat's next read.

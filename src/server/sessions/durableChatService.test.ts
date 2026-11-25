@@ -1936,15 +1936,15 @@ function isTitleRequest(request: { method: string; params?: Record<string, unkno
 
 describe("the owner's run button", () => {
   /** A Chat whose assistant message `a1` proposes `command` in `cwd`, on a host with `capabilities`; `ownerRun` answers as `launch`. */
-  async function proposing(command: string, { capabilities = ["owner-run"], launch = () => ({ jobId: "job-1", logPath: "/jobs/job-1/output.log" }) }: { capabilities?: string[]; launch?: () => unknown } = {}) {
+  async function proposing(command: string, { capabilities = ["owner-run"], launch = () => ({ jobId: "job-1", logPath: "/jobs/job-1/output.log" }), confirm = () => Promise.resolve(true), mode = "run" }: { capabilities?: string[]; launch?: () => unknown; confirm?: ((text: string) => Promise<boolean>) | null; mode?: "run" | "terminal" } = {}) {
     const cwd = await realpath(await mkdtemp(join(tmpdir(), "pi-web-owner-run-")));
     roots.push(cwd);
-    const text = `Run it:\n\n\`\`\`pi-run cwd="${cwd}"\n${command}\n\`\`\`\n`;
+    const text = `Run it:\n\n\`\`\`pi-run ${mode === "terminal" ? "terminal " : ""}cwd="${cwd}"\n${command}\n\`\`\`\n`;
     const answer = (request: Request) => request.method === "transcript" ? { messages: [{ entryId: "a1", role: "assistant", content: [{ type: "text", text }] }], partial: null, status }
       : request.method === "ownerRun" ? launch() : request.method === "status" ? status : null;
-    const made = await service(() => { const host = new FakeHost(DURABLE_HOST_PROTOCOL, capabilities); host.answer = answer; return host; });
+    const made = await service(() => { const host = new FakeHost(DURABLE_HOST_PROTOCOL, capabilities); host.answer = answer; return host; }, undefined, confirm === null ? {} : { confirm });
     const chat = await made.durable.start(cwd);
-    return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode: "run", cwd, command } };
+    return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode, cwd, command } };
   }
   const runs = (launched: FakeHost[]) => launched.flatMap((host) => host.requests.filter((request) => request.method === "ownerRun"));
 
@@ -1974,5 +1974,32 @@ describe("the owner's run button", () => {
     await expect(durable.ownerRun(ref, "a1", proposal)).resolves.toEqual({ status: "started" });
     const [first, second] = runs(launched);
     expect(second?.params?.["operationId"]).toBe(first?.params?.["operationId"]);
+  });
+
+  it("starts only after the owner allows a native dialog naming the exact folder and command", async () => {
+    const asked: string[] = [];
+    const { durable, launched, ref, proposal, cwd } = await proposing("echo hi", { confirm: (text) => { asked.push(text); return Promise.resolve(true); } });
+    await expect(durable.ownerRun(ref, "a1", proposal)).resolves.toEqual({ status: "started" });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain(`Folder: ${cwd}`);
+    expect(asked[0]).toContain("Command:\necho hi");
+    expect(runs(launched)).toHaveLength(1);
+  });
+
+  for (const [name, confirm] of [["deny", () => Promise.resolve(false)], ["timeout", () => Promise.resolve(false)], ["dialog error", () => Promise.reject(new Error("osascript failed"))]] as const) {
+    for (const mode of ["run", "terminal"] as const) {
+      it(`a ${name} refuses a ${mode} pi-run with 403 and starts nothing; it can be asked again`, async () => {
+        const { durable, launched, ref, proposal } = await proposing("echo hi", { confirm, mode });
+        await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toMatchObject({ statusCode: 403 });
+        await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toMatchObject({ statusCode: 403 });
+        expect(runs(launched)).toEqual([]);
+      });
+    }
+  }
+
+  it("refuses with 501 where no native dialog exists", async () => {
+    const { durable, launched, ref, proposal } = await proposing("echo hi", { confirm: null });
+    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toMatchObject({ statusCode: 501 });
+    expect(runs(launched)).toEqual([]);
   });
 });

@@ -33,7 +33,8 @@ import { PendingAskStore, renderAskUserFollowUp, withEarlierAnswers, type Pendin
 import { type DurableChatRecord, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
-import { committedOwnerRun, openOwnerCommandInTerminal, ownerRunFolder, ownerRunResultText, ownerRunScript, type OwnerRunResult } from "./ownerRuns.js";
+import type { NativeConfirm } from "../nativeConfirm.js";
+import { committedOwnerRun, openOwnerCommandInTerminal, OwnerRunNotConfirmedError, ownerRunConfirmText, ownerRunFolder, ownerRunResultText, ownerRunScript, type OwnerRunResult } from "./ownerRuns.js";
 
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
 export const DURABLE_HOST_PROTOCOL = 2;
@@ -328,6 +329,11 @@ export class DurableChatService {
     logger?: { warn(object: object, message: string): void; info?(object: object, message: string): void };
     /** The project-scoped targets of spawn_session (legacy `spawnSessions`); without it, hosts are told spawning is off. */
     spawnTargets?: SpawnTargetResolver;
+    /**
+     * The owner's Allow at this Mac (nativeConfirm.ts): any same-user process passes the request-source guard, so a
+     * pi-run starts only after it. Undefined (not macOS): pi-runs are refused.
+     */
+    confirm?: NativeConfirm | undefined;
     /** Stop's wait before SIGTERM, and again before SIGKILL; default 5 s. */
     closeGraceMs?: number;
     /** How long `stopIfUnwatched` waits for the closing tab's own socket to go; default 2 s. */
@@ -676,6 +682,13 @@ export class DurableChatService {
     const key = JSON.stringify([ref.id, entryId, run.mode, run.cwd, run.command]);
     if (this.#ownerRuns.has(key)) throw new Error("This command already ran");
     this.#ownerRuns.add(key);
+    const { confirm } = this.deps;
+    const allowed = confirm === undefined ? undefined : await confirm(ownerRunConfirmText(run)).catch(() => false);
+    if (allowed !== true) {
+      this.#ownerRuns.delete(key);
+      throw allowed === undefined ? new OwnerRunNotConfirmedError(501, "Run buttons need a macOS confirmation dialog, which this platform lacks")
+        : new OwnerRunNotConfirmedError(403, "not confirmed: the macOS dialog was not answered with Allow");
+    }
     if (run.mode === "run") {
       // Named by the proposal, so the host launches it once even when this request is retried or the daemon restarted.
       const operationId = `owner-run:${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;

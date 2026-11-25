@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,6 +32,22 @@ export function committedOwnerRun(messages: readonly unknown[], entryId: string,
   const found = texts.flatMap(ownerRunProposals).find((proposal) => sameOwnerRun(proposal, wanted));
   if (found === undefined) throw new Error("That command is not a pi-run block of this message");
   return found;
+}
+
+/** A run the owner did not allow at this Mac (403), or this platform has no native dialog to ask with (501). */
+export class OwnerRunNotConfirmedError extends Error {
+  constructor(readonly statusCode: 403 | 501, message: string) { super(message); }
+}
+
+const SHOWN_COMMAND_CHARS = 600;
+
+/** The native dialog's question: the exact folder and command (a long one cut with a marker and its full hash). */
+export function ownerRunConfirmText(proposal: OwnerRunProposal): string {
+  const where = proposal.mode === "terminal" ? "in Terminal" : "with its output sent back to the agent";
+  const { command } = proposal;
+  const shown = command.length <= SHOWN_COMMAND_CHARS ? command
+    : `${command.slice(0, SHOWN_COMMAND_CHARS)}\n[… TRUNCATED: ${String(command.length - SHOWN_COMMAND_CHARS)} more characters not shown; full command sha256 ${createHash("sha256").update(command).digest("hex")}]`;
+  return `Run this pi-run command outside the sandbox, ${where}?\n\nFolder: ${proposal.cwd}\n\nCommand:\n${shown}`;
 }
 
 /** The folder as it is, checked again just before the launch: an existing directory named by its real path. */
