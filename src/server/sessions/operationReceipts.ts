@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /** Rejected reuse of an operation ID for a different request. */
 export class OperationPayloadMismatch extends Error {
   constructor(operationId: string) {
@@ -20,14 +22,15 @@ export class OperationReceipts<T> {
   run(scope: string, operationId: string | undefined, payload: unknown, operation: () => Promise<T>): Promise<T> {
     if (operationId === undefined) return operation();
     const key = `${scope}\0${operationId}`;
-    const serialized = JSON.stringify(payload);
+    // A digest, not the request: a retained ask submit would otherwise keep its image bytes for the daemon's lifetime.
+    const digest = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
     const existing = this.#receipts.get(key);
     if (existing !== undefined) {
-      if (existing.payload !== serialized) return Promise.reject(new OperationPayloadMismatch(operationId));
+      if (existing.payload !== digest) return Promise.reject(new OperationPayloadMismatch(operationId));
       return existing.result;
     }
     const result = operation();
-    this.#receipts.set(key, { payload: serialized, result });
+    this.#receipts.set(key, { payload: digest, result });
     result.catch(() => { if (this.#receipts.get(key)?.result === result) this.#receipts.delete(key); });
     for (const oldest of this.#receipts.keys()) {
       if (this.#receipts.size <= this.limit) break;
