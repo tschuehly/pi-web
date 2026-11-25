@@ -3,6 +3,7 @@ import type { SessionDefaultsUpdate, SessionEffectResolution } from "../../../sh
 import type { AskUserSubmission, DeleteWorkspaceFileResponse, ExtensionDialogAnswer,  MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, QueuedSessionMessage, ServerNoticeDismissRequest, SessionBulkMutationRef, SessionCleanupRequest, SessionModelScopeMode, SessionNotificationDismissThrough, SessionQueueMessageMutation, SessionRef, SessionTreeForkRequest, SessionTreeForkResult, SessionTreeNavigateRequest, SessionUnreadAcknowledgeRequest, WorkspaceRemovalRequest, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
 import { WORKSPACE_SEARCH_CURSOR } from "../../../shared/workspaceFiles";
 import type { OwnerRunProposal } from "../../../shared/ownerRun";
+import { parseInstallLatestPreview, type InstallPair } from "../../../shared/installLatest";
 import { resolveAppUrl } from "../appUrl";
 import { request } from "./http";
 
@@ -110,6 +111,8 @@ export const piWebApi = {
   piWebStatus: (machineId = "local") => request(piWebStatusPath(machineId), parsePiWebStatusResponse),
   checkForUpdates: (machineId = "local") => request(`${piWebStatusPath(machineId)}?refresh=1`, parsePiWebStatusResponse, { cache: "no-store" }),
   piWebRuntime: () => request("api/pi-web/runtime", parsePiWebRuntimeResponse),
+  installLatestPreview: () => request("api/install/latest", parseInstallLatestPreview, { cache: "no-store" }),
+  installLatest: (from: InstallPair) => request("api/install/latest", (value) => value, { method: "POST", body: JSON.stringify({ from }) }),
 };
 
 export const machinesApi = {
