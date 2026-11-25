@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, fullAccessNonceArgs, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
+import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, fullAccessNonceArgs, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
 import type { DurableChatRecord } from "./sessionRuntimeLocator.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 
@@ -455,6 +455,10 @@ describe("seamless upgrade orchestration", () => {
     expect(s.hosts[2]?.requests.filter((request) => request.method === "resume")).toHaveLength(1);
     expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
     await s.durable.dispose();
+  });
+
+  it("hosts get PI WEB's folder and socket overrides absolute, resolved against the daemon's folder", () => {
+    expect(daemonPathEnvironment({ PI_WEB_DATA_DIR: "data", PI_WEB_DURABLE_HOST_DIR: "/abs/hosts", PI_WEB_SESSIOND_SOCKET: "", PI_WEB_PORT: "1" })).toEqual({ PI_WEB_DATA_DIR: join(process.cwd(), "data"), PI_WEB_DURABLE_HOST_DIR: "/abs/hosts" });
   });
 
   it("finding 4: an automatic upgrade never closes a host that admitted input after the quiet check", async () => {

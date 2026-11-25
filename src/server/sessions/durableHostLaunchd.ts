@@ -5,7 +5,7 @@ import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, realp
 import { connect, type Socket } from "node:net";
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
-import { DURABLE_HOST_PROTOCOL, durableHostLaunchArgs, fullAccessNonceArgs, type DurableHostLauncher, type DurableHostOptions, type DurableHostProcess } from "./durableChatService.js";
+import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, durableHostLaunchArgs, fullAccessNonceArgs, type DurableHostLauncher, type DurableHostOptions, type DurableHostProcess } from "./durableChatService.js";
 import { type DurableChatRecord, type DurableHostAttachment, type SessionRuntimeLocator, storeCode, storeCodeRefusal } from "./sessionRuntimeLocator.js";
 
 /** Runs `launchctl` with these arguments; rejects with its output on failure. Tests may pass their own. */
@@ -73,7 +73,7 @@ function familyEntry(context: LaunchContext, record: DurableChatRecord): string 
 
 /** The daemon's environment, as a forked host inherited it, less secret-named variables (a plist is a file on disk). */
 function hostEnvironment(context: LaunchContext) {
-  return Object.fromEntries(Object.entries({ ...process.env, PI_CODING_AGENT_DIR: context.agentDir }).filter(([name]) => !SECRET_NAME.test(name)));
+  return Object.fromEntries(Object.entries({ ...process.env, ...daemonPathEnvironment(), PI_CODING_AGENT_DIR: context.agentDir }).filter(([name]) => !SECRET_NAME.test(name)));
 }
 
 /** Unload the family's job (bootout returns once its process is gone), remove its plist and forget the host. */

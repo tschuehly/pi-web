@@ -2,7 +2,7 @@ import { execFile, fork } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { CHAT_CAPABILITY_LABELS, type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
 import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, AskUserSubmissionImage, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionNotificationDismissAllRequest, SessionNotificationDismissRequest, SessionNotificationInboxSnapshot, SessionNotificationSummaryEvent, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
@@ -76,6 +76,17 @@ export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, 
  */
 export const fullAccessNonceArgs = (nonce: string | undefined, entry: string): string[] => (nonce === undefined || !hostAcceptsArg(entry, "--full-access-nonce") ? [] : ["--full-access-nonce", nonce]);
 
+/**
+ * PI WEB's folder and socket overrides, absolute as this daemon resolves them (against its own folder, config.ts and
+ * sessiond.ts), for its hosts: their fenced commands are then denied the same paths from any folder.
+ */
+export function daemonPathEnvironment(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  return Object.fromEntries(["PI_WEB_DATA_DIR", "PI_WEB_DURABLE_HOST_DIR", "PI_WEB_SESSIOND_SOCKET"].flatMap((name) => {
+    const value = env[name];
+    return value === undefined || value === "" ? [] : [[name, resolve(value)]];
+  }));
+}
+
 /** What starts a family's host: the Workbench host entry, the model and Pi agent dir it runs with. */
 export interface DurableHostOptions { entry: string; model: string | ((cwd: string) => string); agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
 
@@ -108,7 +119,7 @@ export function forkDurableHost(options: DurableHostOptions): DurableHostLaunche
       return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : []), ...(launch?.readTranscript === true ? ["--read-transcript"] : []), ...fullAccessNonceArgs(launch?.fullAccessNonce, options.entry)], {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
-        env: { ...process.env, PI_CODING_AGENT_DIR: options.agentDir },
+        env: { ...process.env, ...daemonPathEnvironment(), PI_CODING_AGENT_DIR: options.agentDir },
       });
     } finally {
       closeSync(log);
