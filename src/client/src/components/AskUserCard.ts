@@ -17,6 +17,7 @@ import {
 import {
   answeredCount,
   askedFingerprint,
+  customLabelledOption,
   loadAskContext,
   loadAskDraft,
   loadAskNote,
@@ -221,6 +222,33 @@ export class AskUserCard extends LitElement {
     // The edited row holds the Custom text itself, so Custom and its own textarea step aside while it lasts.
     const inlineEdit = customSelected ? ownEntry(this.inlineEdits, question.id)?.value : undefined;
     const inputType = question.multiple === true ? "checkbox" : "radio";
+    const customOption = customLabelledOption(question);
+    const customField = customSelected && inlineEdit === undefined ? html`
+      <div class="other-answer">
+        <span aria-hidden="true">Custom answer</span>
+        <ask-markdown-field
+          id=${this.otherInputId(index)}
+          .label=${"Custom answer"}
+          .historyKey=${this.historyKey(question)}
+          .value=${answer?.otherText ?? ""}
+          @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
+        ></ask-markdown-field>
+      </div>
+    ` : null;
+    // The Custom choice: the automatic one, or the agent's option that names Custom in its label, in that option's place.
+    const customChoice = (choice: Pick<AskUserQuestion["options"][number], "label" | "detail" | "recommended">): TemplateResult => html`
+      <label class="option other-option">
+        <input
+          type=${inputType}
+          name=${this.questionGroupName(ask, question)}
+          value="__pi_web_other__"
+          .checked=${customSelected && inlineEdit === undefined}
+          @change=${(event: Event) => { this.changeOther(question, index, event); }}
+        />
+        ${this.renderOptionCopy(choice)}
+      </label>
+      ${customField}
+    `;
     return html`
       <fieldset
         id=${this.questionFieldsetId(index)}
@@ -235,7 +263,7 @@ export class AskUserCard extends LitElement {
         ${this.renderDetail(question.detail, detailId)}
         ${(question.kind ?? "choice") !== "choice" ? this.renderTypedField(question, index, answer) : html`
         <div class="options">
-          ${question.options.map((option) => option.value === inlineEdit ? this.renderInlineEdit(question, index, option.label, answer?.otherText ?? "") : html`
+          ${question.options.map((option) => option === customOption ? customChoice(option) : option.value === inlineEdit ? this.renderInlineEdit(question, index, option.label, answer?.otherText ?? "") : html`
             <div class="option-row">
               <label class="option">
                 <input
@@ -245,10 +273,7 @@ export class AskUserCard extends LitElement {
                   .checked=${answer?.values.includes(option.value) === true}
                   @change=${(event: Event) => { this.changeOption(question, option.value, event); }}
                 />
-                <span class="option-copy">
-                  <span class="option-label">${option.label}${option.recommended === true ? html` <span class="recommended">Recommended</span>` : null}</span>
-                  ${option.detail === undefined ? null : html`<span class="option-detail">${option.detail}</span>`}
-                </span>
+                ${this.renderOptionCopy(option)}
               </label>
               <button
                 class="edit-option"
@@ -259,30 +284,7 @@ export class AskUserCard extends LitElement {
               >${PENCIL_ICON}</button>
             </div>
           `)}
-          ${freeTextOnly ? null : html`
-            <label class="option other-option">
-              <input
-                type=${inputType}
-                name=${this.questionGroupName(ask, question)}
-                value="__pi_web_other__"
-                .checked=${customSelected && inlineEdit === undefined}
-                @change=${(event: Event) => { this.changeOther(question, index, event); }}
-              />
-              <span class="option-copy"><span class="option-label">Custom</span></span>
-            </label>
-          `}
-          ${customSelected && inlineEdit === undefined ? html`
-            <div class="other-answer">
-              <span aria-hidden="true">Custom answer</span>
-              <ask-markdown-field
-                id=${this.otherInputId(index)}
-                .label=${"Custom answer"}
-                .historyKey=${this.historyKey(question)}
-                .value=${answer?.otherText ?? ""}
-                @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
-              ></ask-markdown-field>
-            </div>
-          ` : null}
+          ${customOption !== undefined ? null : freeTextOnly ? customField : customChoice({ label: "Custom" })}
         </div>
         `}
         ${sendOne ? html`
@@ -291,6 +293,15 @@ export class AskUserCard extends LitElement {
           </div>
         ` : null}
       </fieldset>
+    `;
+  }
+
+  private renderOptionCopy(option: Pick<AskUserQuestion["options"][number], "label" | "detail" | "recommended">): TemplateResult {
+    return html`
+      <span class="option-copy">
+        <span class="option-label">${option.label}${option.recommended === true ? html` <span class="recommended">Recommended</span>` : null}</span>
+        ${option.detail === undefined ? null : html`<span class="option-detail">${option.detail}</span>`}
+      </span>
     `;
   }
 
@@ -446,7 +457,7 @@ export class AskUserCard extends LitElement {
     const answer = this.displayedRecordAnswer(outcome, record);
     const parts = answer === undefined ? [] : [
       ...answer.values.map((value) => this.optionLabel(record.question, value)),
-      ...(answer.otherText === undefined ? [] : [`Custom: ${answer.otherText}`]),
+      ...(answer.otherText === undefined ? [] : [`${customLabelledOption(record.question)?.label ?? "Custom"}: ${answer.otherText}`]),
       ...(answer.value === undefined ? [] : [typeof answer.value === "boolean" ? askBooleanLabel(record.question, answer.value) : String(answer.value)]),
     ];
     return html`

@@ -61,6 +61,11 @@ export function loadAskDraft(sessionId: string, askId: string, storage = browser
   return { ...presetAnswers(questions), ...Object.fromEntries(Object.entries(answers).filter(([id, answer]) => answer.asked !== undefined && answer.asked === current.get(id))) };
 }
 
+/** An agent option whose label names Custom ("Correct it (Custom)") is the question's Custom choice: the card adds no second one. */
+export function customLabelledOption(question: Pick<AskUserQuestion, "options">): AskUserQuestion["options"][number] | undefined {
+  return question.options.find((option) => /custom/iu.test(option.label));
+}
+
 /**
  * A question with no draft starts with its recommended options selected (the first one if single choice), a typed one
  * on its default (a switch without one on off); any draft, even a cleared one, wins.
@@ -74,7 +79,9 @@ function presetAnswers(questions: readonly AskUserQuestion[]): AskDraftAnswers {
       if (preset !== undefined) answers.push([question.id, { values: [], value: preset, asked: askedFingerprint(question) }]);
       continue;
     }
-    const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
+    // The option standing in for Custom has no value of its own to preselect.
+    const custom = customLabelledOption(question);
+    const recommended = question.options.filter((option) => option.recommended === true && option !== custom).map((option) => option.value);
     if (recommended.length > 0) answers.push([question.id, { values: question.multiple === true ? recommended : recommended.slice(0, 1), asked: askedFingerprint(question) }]);
   }
   return Object.fromEntries(answers);
