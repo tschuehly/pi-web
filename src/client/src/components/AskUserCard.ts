@@ -196,7 +196,7 @@ export class AskUserCard extends LitElement {
                   ${this.renderHiddenImages(ask)}
                   <label class="keep-context"><input type="checkbox" .checked=${this.keepContextOpen} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.keepContextOpen = event.currentTarget.checked; }} />Keep context open</label>
                   ${ask.approval === true ? html`<button class="approve" type="button" title="Approve the context (your edited version, if you changed it) and send the answers; unanswered questions close too" ?disabled=${this.submitting} @click=${() => { void this.submitAnswers(ask, true); }}>Approve</button>` : null}
-                  <button class="primary-action" type="submit" ?disabled=${this.submitting || (contextOnly && this.note.trim() === "" && this.contextSubmission().context === undefined)}>
+                  <button class="primary-action" type="submit" ?disabled=${this.submitting || (contextOnly && this.note.trim() === "" && this.contextSubmission().context === undefined && (ownEntry(this.images, askImageTargetKey(NOTE))?.length ?? 0) === 0)}>
                     ${this.submitting ? "Sending…" : contextOnly ? "Send note" : "Send answers"}
                   </button>
                 `}

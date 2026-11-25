@@ -1433,6 +1433,17 @@ describe("ask-user-card answer images", () => {
     expect(onSubmit.mock.calls[0]?.[1]).not.toHaveProperty("images");
   });
 
+  it("enables Send note on an approval-only set once only a note image is staged", async () => {
+    const card = await mountOpenAsk({ ...openAsk([]), askId: "ask-note-image", approval: true });
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    expect(buttonWithText(root, "Send note").disabled).toBe(true);
+    paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("note.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    expect(buttonWithText(root, "Send note").disabled).toBe(false);
+  });
+
   it("sends only the question's own images with its Send; the note's wait for the whole set", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([textQuestion("why", "Why?"), textQuestion("how", "How?"), textQuestion("when", "When?")]), onSubmit);
