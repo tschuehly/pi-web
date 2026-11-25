@@ -2399,6 +2399,27 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
   });
 
+  // An open socket does not prove the view current (a reply before subscribe, a failed tree-change refresh, a host restart reusing ids): refocus always reads a snapshot.
+  it("refocusing a retained Chat whose socket stayed open still reads one snapshot", async () => {
+    const sessionSockets = new Map<string, SilentWebSocket>();
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); const id = /sessions\/([^/?]+)/.exec(url)?.[1]; if (id !== undefined && !url.endsWith("/api/machines/local/events")) sessionSockets.set(id, this); } });
+    const app = await mountWithWorkstreamChats();
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sessionSockets.has("a2")).toBe(true); });
+    await settled(app);
+    for (const id of ["a2", "b1"]) { const socket = sessionSockets.get(id); if (socket === undefined) throw new Error(`no socket for ${id}`); socket.readyState = SilentWebSocket.OPEN; socket.onopen?.(); }
+    await settled(app);
+    const snapshot = vi.mocked(api.transcriptSnapshot);
+    snapshot.mockClear();
+
+    workstreamTab(app, "Docs").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    snapshot.mockClear();
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => { expect(snapshot.mock.calls.map(([row]) => row.id)).toEqual(["a2"]); });
+  });
+
   it("counts each Chat's open questions on its tab, live from this window and from status another window caused", async () => {
     const app = await mountWithWorkstreamChats();
     workstreamTab(app, "Release").click();
