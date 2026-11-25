@@ -1364,6 +1364,29 @@ describe("ask-user-card answer images", () => {
     }));
   });
 
+  it("refuses a closing send (Send anyway, Approve) while a text question holds images but no answer", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk({ ...openAsk([textQuestion("why", "Why?"), textQuestion("how", "How?")]), askId: "ask-stranded", approval: true }, onSubmit);
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    const why = requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-0"), "why");
+    why.value = "Fast";
+    why.dispatchEvent(new Event("input", { bubbles: true }));
+    paste(requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-1"), "how"), [pngFile("how.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    buttonWithText(root, "Approve").click();
+    await card.updateComplete;
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-target="question:how"] ~ .field-error')?.textContent).toBe("Add an answer or remove the image");
+    buttonWithText(root, "Send answers").click();
+    await card.updateComplete;
+    requiredElement(root.querySelector<HTMLButtonElement>(".send-anyway"), "send anyway").click();
+    await card.updateComplete;
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
+  });
+
   it("sends only the question's own images with its Send; the note's wait for the whole set", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([textQuestion("why", "Why?"), textQuestion("how", "How?"), textQuestion("when", "When?")]), onSubmit);

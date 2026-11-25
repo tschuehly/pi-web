@@ -760,6 +760,15 @@ export class AskUserCard extends LitElement {
   private submitAnswers(ask: PendingAskUser, approved = false): Promise<boolean> {
     const note = this.note.trim();
     const submission = toSubmission(ask.questions, this.answers);
+    // A closing send carries only answered questions' images; one staged on a blank answer would be lost with the set.
+    const stranded = visibleQuestions(ask.questions, this.answers).find((question) => question.kind === "text"
+      && !submission.answers.some((answer) => answer.id === question.id)
+      && (ownEntry(this.images, askImageTargetKey({ kind: "question", id: question.id }))?.length ?? 0) > 0);
+    if (stranded !== undefined) {
+      this.imageErrorTarget = askImageTargetKey({ kind: "question", id: stranded.id });
+      this.imageError = "Add an answer or remove the image";
+      return Promise.resolve(false);
+    }
     return this.send(ask, { ...submission, ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision, ...(approved ? { approved } : {}), ...this.imagesFor([...questionTargets(submission.answers), NOTE]) });
   }
 
