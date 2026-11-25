@@ -5,12 +5,8 @@ describe("OperationReceipts", () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
   it("joins a retry with the same payload, rejects another payload, and keeps a fixed-size digest, not the payload", async () => {
-    const stored: unknown[] = [];
-    const set = Map.prototype.set;
-    vi.spyOn(Map.prototype, "set").mockImplementation(function (this: Map<unknown, unknown>, key, value) {
-      stored.push(value);
-      return set.call(this, key, value);
-    });
+    // Calls through; the recorded calls show every value any Map kept.
+    const set = vi.spyOn(Map.prototype, "set");
     const receipts = new OperationReceipts<string>();
     const image = "A".repeat(1_000_000);
     const operation = vi.fn(() => Promise.resolve("done"));
@@ -20,6 +16,6 @@ describe("OperationReceipts", () => {
     await expect(receipts.run("ask:s", "op-1", ["submit", { images: [] }], operation)).rejects.toThrow(OperationPayloadMismatch);
 
     expect(operation).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(stored)).not.toContain(image);
+    expect(JSON.stringify(set.mock.calls)).not.toContain(image);
   });
 });
