@@ -792,6 +792,13 @@ describe("API parsers", () => {
     expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, unansweredIds: ["machine"] }, sessionStatus: statusWire() })).toThrow("unanswered ids mismatch");
   });
 
+  it("keeps a boolean question's labels", () => {
+    const ship = { id: "ship", question: "Ship?", options: [], kind: "boolean", labels: ["Ship it", "Hold"] };
+    const ask = { askId: "ask-1", askedAt: "now", updatedAt: "now", revision: "r1", turnsSinceUpdate: 0, questions: [ship] };
+    expect(parseOpenAsks({ pendingAsks: [ask] }).pendingAsks[0]?.questions[0]?.labels).toEqual(["Ship it", "Hold"]);
+    expect(() => parseOpenAsks({ pendingAsks: [{ ...ask, questions: [{ ...ship, labels: ["Ship it"] }] }] })).toThrow("Invalid ask question labels");
+  });
+
   it("rejects malformed or unbounded active tool executions", () => {
     const execution = { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" };
     expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: Array.from({ length: ACTIVE_TOOL_EXECUTION_LIMIT + 1 }, (_, index) => ({ ...execution, id: `tool:${String(index)}` })) })).toThrow("Array field exceeds limit: activeToolExecutions");

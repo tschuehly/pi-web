@@ -706,11 +706,27 @@ describe("ask outcome rendering", () => {
     if (result.status !== "closed") throw new Error("expected the ask to close");
     expect(result.outcome.questions.map((record) => [record.answered, record.value])).toStrictEqual([[true, false], [true, false], [true, 7], [true, "  hi "], [true, "2026-12-01"], [false, undefined]]);
     const text = renderAskUserAnswersText(result.outcome);
-    expect(text).toContain("- ask.on: Question on?\n  Answered: off (default, unchanged)\n");
-    expect(text).toContain("- ask.off: Question off?\n  Answered: off\n");
+    expect(text).toContain("- ask.on: Question on?\n  Answered: no (default, unchanged)\n");
+    expect(text).toContain("- ask.off: Question off?\n  Answered: no\n");
     expect(text).toContain("  Answered: 7 (default, unchanged)\n");
     expect(text).toContain("  Answered: \"  hi \"\n");
     expect(text).toContain("  Answered: 2026-12-01 (default, unchanged)\n");
+  });
+
+  it("answers a boolean question with the agent's labels, quoted, or plain yes and no", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [
+      question("ship", { options: [], kind: "boolean", default: true, labels: ["Ship it", "Hold"] }),
+      question("hold", { options: [], kind: "boolean", labels: ["Ship it", "Hold"] }),
+      question("plain", { options: [], kind: "boolean", default: true }),
+    ] });
+    expect(ask.questions[0]?.labels).toStrictEqual(["Ship it", "Hold"]);
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "ship", values: [], value: true }, { id: "hold", values: [], value: false }, { id: "plain", values: [], value: true }] });
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+    const text = renderAskUserAnswersText(result.outcome);
+    expect(text).toContain("- ask.ship: Question ship?\n  Answered: \"Ship it\" (default, unchanged)\n");
+    expect(text).toContain("- ask.hold: Question hold?\n  Answered: \"Hold\" (default, unchanged)\n");
+    expect(text).toContain("- ask.plain: Question plain?\n  Answered: yes (default, unchanged)\n");
   });
 
   it("keeps typed text verbatim, so a padded Markdown default opens, passes its minimum and reads as unchanged; blank is no answer and no default", () => {

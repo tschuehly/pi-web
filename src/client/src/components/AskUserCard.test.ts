@@ -319,6 +319,15 @@ describe("ask-user-card live form", () => {
     expect([copies.min, copies.max, copies.step]).toEqual(["1", "5", "1"]);
   });
 
+  it("labels a boolean switch with the agent's labels and flips between them", async () => {
+    const card = await mountOpenAsk(openAsk([{ id: "ship", question: "Ship?", options: [], kind: "boolean", default: true, labels: ["Ship it", "Hold"] }]));
+    const root = renderRoot(card);
+    expect(root.querySelector(".switch-state")?.textContent).toBe("Ship it");
+    requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch").click();
+    await card.updateComplete;
+    expect(root.querySelector(".switch-state")?.textContent).toBe("Hold");
+  });
+
   it("renders typed questions as a switch, text, number and date fields on their defaults, shows a field's error, and sends values", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([
@@ -331,6 +340,7 @@ describe("ask-user-card live form", () => {
     const toggle = requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch");
     expect(toggle.checked).toBe(false);
     expect(toggle.getAttribute("aria-label")).toBe("Enable backup?");
+    expect(root.querySelector(".switch-state")?.textContent).toBe("No");
     expect(root.querySelector(".questions ask-markdown-field")).toBeNull();
     expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("2 of 3 answered");
 
@@ -529,12 +539,16 @@ describe("ask-user-card dependent questions", () => {
     const card = new AskUserCard();
     card.outcome = {
       askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
-      questions: [{ question: { id: "b", question: "On?", options: [], kind: "boolean" }, answered: true, values: [], value: true }, { question: { id: "n", question: "N?", options: [], kind: "number" }, answered: true, values: [], value: 7 }],
-      answeredCount: 2, unansweredIds: [], summary: "Answered 2 of 2; none left unanswered",
+      questions: [
+        { question: { id: "b", question: "On?", options: [], kind: "boolean" }, answered: true, values: [], value: true },
+        { question: { id: "n", question: "N?", options: [], kind: "number" }, answered: true, values: [], value: 7 },
+        { question: { id: "s", question: "Ship?", options: [], kind: "boolean", labels: ["Ship it", "Hold"] }, answered: true, values: [], value: false },
+      ],
+      answeredCount: 3, unansweredIds: [], summary: "Answered 3 of 3; none left unanswered",
     };
     document.body.append(card);
     await card.updateComplete;
-    expect([...renderRoot(card).querySelectorAll(".record-answer")].map((item) => item.textContent)).toEqual(["On", "7"]);
+    expect([...renderRoot(card).querySelectorAll(".record-answer")].map((item) => item.textContent)).toEqual(["Yes", "7", "Hold"]);
   });
 });
 
@@ -1128,7 +1142,7 @@ describe("ask-user-card record mode", () => {
     const details = requiredElement(root.querySelector<HTMLDetailsElement>("details.record-full"), "full questions");
 
     expect([...root.querySelectorAll("ol.record-lines > li")].map((line) => line.textContent.replace(/\s+/gu, " ").trim())).toEqual([
-      "1. Which database? — Postgres", "2. Deploy day? — Custom: Tuesday", "3. Enable cache? — Off", "4. Why? — Unanswered", "5. Which GPU? — Skipped · condition not met",
+      "1. Which database? — Postgres", "2. Deploy day? — Custom: Tuesday", "3. Enable cache? — No", "4. Why? — Unanswered", "5. Which GPU? — Skipped · condition not met",
     ]);
     expect(root.querySelector(".record-note")?.textContent).toContain("Ship it.");
     expect([details.open, details.querySelector("summary")?.textContent]).toEqual([false, "Show full questions"]);

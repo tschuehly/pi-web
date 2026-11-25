@@ -12,6 +12,7 @@ import {
   type AskUserQuestionRecord,
   type AskUserSubmission,
   type PendingAskUser,
+  askBooleanLabel,
 } from "../../../shared/apiTypes";
 import {
   answeredCount,
@@ -315,7 +316,7 @@ export class AskUserCard extends LitElement {
         <label class="typed-field switch">
           <input id=${id} type="checkbox" role="switch" aria-label=${question.question} .checked=${on} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.setAnswer(question, { values: [], value: event.currentTarget.checked }); }} />
           <span class="switch-track" aria-hidden="true"></span>
-          <span class="switch-state" aria-hidden="true">${on ? "On" : "Off"}</span>
+          <span class="switch-state" aria-hidden="true">${askBooleanLabel(question, on)}</span>
         </label>
       `;
     }
@@ -441,7 +442,7 @@ export class AskUserCard extends LitElement {
     const parts = answer === undefined ? [] : [
       ...answer.values.map((value) => this.optionLabel(record.question, value)),
       ...(answer.otherText === undefined ? [] : [`Custom: ${answer.otherText}`]),
-      ...(answer.value === undefined ? [] : [typeof answer.value === "boolean" ? (answer.value ? "On" : "Off") : String(answer.value)]),
+      ...(answer.value === undefined ? [] : [typeof answer.value === "boolean" ? askBooleanLabel(record.question, answer.value) : String(answer.value)]),
     ];
     return html`
       <li class="record-line">

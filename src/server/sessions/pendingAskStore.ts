@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  ASK_USER_BOOLEAN_LABEL_MAX_LENGTH,
   ASK_USER_CONTEXT_MAX_LENGTH,
   ASK_USER_DETAIL_MAX_LENGTH,
   ASK_USER_ID_MAX_LENGTH,
@@ -20,6 +21,7 @@ import {
   ASK_USER_QUESTION_KINDS,
   askAnswerSelection,
   askQuestionRef,
+  askBooleanLabel,
   askValueError,
   hiddenAskQuestionIds,
 } from "../../shared/apiTypes.js";
@@ -306,8 +308,9 @@ function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
   if (!record.answered) return [header, "  Unanswered."];
   const { value, question } = record;
   if (value !== undefined) {
-    const shown = typeof value === "boolean" ? (value ? "on" : "off") : question.kind === "text" ? JSON.stringify(value) : String(value);
-    // A typed field starts on its default (a boolean on off); say when the user left it so.
+    // An agent's labels are quoted like text; the default Yes/No read as plain words.
+    const shown = typeof value === "boolean" ? (question.labels === undefined ? (value ? "yes" : "no") : JSON.stringify(askBooleanLabel(question, value))) : question.kind === "text" ? JSON.stringify(value) : String(value);
+    // A typed field starts on its default (a boolean on false); say when the user left it so.
     return [header, `  Answered: ${shown}${value === (question.default ?? (question.kind === "boolean" ? false : undefined)) ? " (default, unchanged)" : ""}`];
   }
   const parts = [...record.values.map((value) => `selected ${value}`)];
@@ -479,6 +482,8 @@ function validateQuestion(question: AskUserQuestion, id: string): AskUserQuestio
 /** A typed question's kind and the fields that kind takes; other fields are dropped, as unknown ones are. */
 function validateTyped(question: AskUserQuestion, id: string): Partial<AskUserQuestion> {
   const kind = question.kind ?? "choice";
+  const { labels } = question;
+  if (labels !== undefined && kind !== "boolean") throw new PendingAskValidationError(`labels of question ${id} need kind boolean, not ${kind}`);
   if (kind === "choice") return {};
   if (!ASK_USER_QUESTION_KINDS.includes(kind)) throw new PendingAskValidationError(`Question ${id} has unknown kind ${kind}`);
   if (question.options.length > 0 || question.multiple === true) throw new PendingAskValidationError(`Question ${id} of kind ${kind} takes no options or multiple`);
@@ -487,7 +492,7 @@ function validateTyped(question: AskUserQuestion, id: string): Partial<AskUserQu
     ? { kind, ...(question.multiline === true ? { multiline: true } : {}), ...(minLength === undefined ? {} : { minLength }), ...(maxLength === undefined ? {} : { maxLength }) }
     : kind === "number"
     ? { kind, ...(minimum === undefined ? {} : { minimum }), ...(maximum === undefined ? {} : { maximum }), ...(question.integer === true ? { integer: true } : {}) }
-    : { kind };
+    : kind === "boolean" && labels !== undefined ? { kind, labels: validateLabels(labels, id) } : { kind };
   for (const [field, bound] of Object.entries({ minLength: typed.minLength, maxLength: typed.maxLength })) {
     if (bound !== undefined && !(Number.isInteger(bound) && bound >= 0 && bound <= ASK_USER_OTHER_TEXT_MAX_LENGTH)) throw new PendingAskValidationError(`${field} of question ${id} must be a whole number from 0 to ${ASK_USER_OTHER_TEXT_MAX_LENGTH.toString()}`);
   }
@@ -500,6 +505,13 @@ function validateTyped(question: AskUserQuestion, id: string): Partial<AskUserQu
   const error = askValueError(typed, question.default);
   if (error !== undefined) throw new PendingAskValidationError(`default of question ${id} ${error}`);
   return { ...typed, default: question.default };
+}
+
+/** A boolean question's [true, false] labels, each one non-blank line of at most ASK_USER_BOOLEAN_LABEL_MAX_LENGTH characters. */
+function validateLabels(labels: unknown, id: string): [string, string] {
+  const fits = (label: unknown): label is string => typeof label === "string" && label.trim() !== "" && !/[\r\n]/u.test(label) && label.length <= ASK_USER_BOOLEAN_LABEL_MAX_LENGTH;
+  if (!Array.isArray(labels) || labels.length !== 2 || !fits(labels[0]) || !fits(labels[1])) throw new PendingAskValidationError(`labels of question ${id} must be two one-line texts of at most ${ASK_USER_BOOLEAN_LABEL_MAX_LENGTH.toString()} characters, [true, false]`);
+  return [labels[0], labels[1]];
 }
 
 function validateOption(option: AskUserQuestionOption, value: string, questionId: string): AskUserQuestionOption {

@@ -862,6 +862,8 @@ export interface AskUserQuestion {
   kind?: AskUserQuestionKind;
   /** Prefilled answer of a typed kind (boolean, text, number, or YYYY-MM-DD); a boolean without one starts off. */
   default?: boolean | number | string;
+  /** boolean: what its switch reads for true and for false, one line of at most {@link ASK_USER_BOOLEAN_LABEL_MAX_LENGTH} characters each; absent reads Yes and No. */
+  labels?: [string, string];
   /** text: a textarea instead of one line. */
   multiline?: boolean;
   /** text: bounds on the answer's length. */
@@ -872,6 +874,13 @@ export interface AskUserQuestion {
   maximum?: number;
   /** number: whole numbers only. */
   integer?: boolean;
+}
+
+export const ASK_USER_BOOLEAN_LABEL_MAX_LENGTH = 40;
+
+/** What a boolean question's switch reads for `value`: the agent's label, else Yes or No. */
+export function askBooleanLabel(question: Pick<AskUserQuestion, "labels">, value: boolean): string {
+  return question.labels?.[value ? 0 : 1] ?? (value ? "Yes" : "No");
 }
 
 export type AskUserQuestionKind = "choice" | "boolean" | "text" | "number" | "date";

@@ -385,10 +385,14 @@ function parseAskTypedFields(record: Record<string, unknown>): Partial<AskUserQu
   if (fallback !== undefined && typeof fallback !== "boolean" && typeof fallback !== "number" && typeof fallback !== "string") throw new Error("Invalid ask question default");
   const multiline = parseOptionalBoolean(record["multiline"], "multiline");
   const integer = parseOptionalBoolean(record["integer"], "integer");
+  const labels = record["labels"];
+  if (labels !== undefined && !(Array.isArray(labels) && labels.length === 2 && labels.every((label) => typeof label === "string"))) throw new Error("Invalid ask question labels");
   return {
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- checked against ASK_USER_QUESTION_KINDS above.
     kind: kind as AskUserQuestionKind,
     ...optionalField("default", fallback),
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- checked as two strings above.
+    ...(labels === undefined ? {} : { labels: [...labels] as [string, string] }),
     ...(multiline === undefined ? {} : { multiline }),
     ...optionalField("minLength", optionalNumber(record, "minLength")),
     ...optionalField("maxLength", optionalNumber(record, "maxLength")),

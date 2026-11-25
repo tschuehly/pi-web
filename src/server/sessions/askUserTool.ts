@@ -76,6 +76,7 @@ const AskUserQuestionParams = Type.Object({
   }, { description: "Show this question only while that earlier question has one of these options picked; hidden, it is skipped." })),
   kind: Type.Optional(Type.Union([Type.Literal("choice"), Type.Literal("boolean"), Type.Literal("text"), Type.Literal("number"), Type.Literal("date")], { description: "Default choice; other kinds take no options." })),
   default: Type.Optional(Type.Union([Type.Boolean(), Type.Number(), Type.String({ maxLength: ASK_USER_OTHER_TEXT_MAX_LENGTH })], { description: "Prefilled answer; date as YYYY-MM-DD." })),
+  labels: Type.Optional(Type.Array(Type.String({ maxLength: ASK_USER_TEXT_MAX_LENGTH }), { maxItems: ASK_USER_OPTION_LIMIT, description: "boolean: [true, false] labels, default [\"Yes\", \"No\"]." })),
   multiline: Type.Optional(Type.Boolean({ description: "text: a textarea." })),
   minLength: Type.Optional(Type.Integer({ minimum: 0, maximum: ASK_USER_OTHER_TEXT_MAX_LENGTH })),
   maxLength: Type.Optional(Type.Integer({ minimum: 0, maximum: ASK_USER_OTHER_TEXT_MAX_LENGTH })),
@@ -106,11 +107,14 @@ const AskUserParams = Type.Object({
 
 /** Shapes one schema question into the domain question; the store owns validation. */
 function toQuestion(param: Static<typeof AskUserQuestionParams>): AskUserQuestion {
-  const { options, multiple, showIf, kind, multiline, minLength, maxLength, minimum, maximum, integer } = param;
+  const { options, multiple, showIf, kind, labels, multiline, minLength, maxLength, minimum, maximum, integer } = param;
   // Typed-kind fields copy as given; the store keeps those the kind takes.
   const typed = {
     ...(kind === undefined ? {} : { kind }),
     ...(param.default === undefined ? {} : { default: param.default }),
+    // The store checks the shape; the schema's array type cannot say "exactly two".
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    ...(labels === undefined ? {} : { labels: [...labels] as [string, string] }),
     ...(multiline === undefined ? {} : { multiline }),
     ...(minLength === undefined ? {} : { minLength }),
     ...(maxLength === undefined ? {} : { maxLength }),
