@@ -144,6 +144,9 @@ describe("ask draft storage", () => {
       { id: "d", values: [], value: "2026-12-01" },
     ]);
     expect(answeredCount(questions, preset)).toBe(4);
+    // A yes/no answered in words sends them as its Custom answer; blank words leave the switch's value.
+    expect(toSubmission(questions, { ...preset, on: { values: [], value: true, otherText: " Later " } }).answers[0]).toEqual({ id: "on", values: [], otherText: "Later" });
+    expect(toSubmission(questions, { ...preset, on: { values: [], value: true, otherText: "  " } }).answers[0]).toEqual({ id: "on", values: [], value: true });
     expect(visibleQuestions(questions, preset).map((question) => question.id)).not.toContain("child");
     expect(visibleQuestions(questions, { ...preset, on: { values: [], value: true } }).map((question) => question.id)).toContain("child");
 

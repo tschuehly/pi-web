@@ -325,6 +325,38 @@ describe("PendingAskStore submit", () => {
   });
 });
 
+describe("PendingAskStore approval", () => {
+  it("keeps approval: true on the set, through a revision without it, and drops it on approval: false", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1")], approval: true });
+    expect(ask.approval).toBe(true);
+    expect(store.update({ sessionId, askId: ask.askId })?.approval).toBe(true);
+    expect(store.update({ sessionId, askId: ask.askId, approval: false })?.approval).toBeUndefined();
+    expect(() => store.open({ sessionId, context, questions: [question("q1")], approval: "yes" })).toThrow("approval must be true or false");
+  });
+
+  it("closes the whole set approved, unanswered questions too, and tells the model first; with the user's edited context", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1"), question("q2")], approval: true });
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, approved: true })).toThrow("A partial submit cannot approve");
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], context: "My plan.", approved: true });
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+    expect(result.ask).toBeUndefined();
+    expect(result.outcome).toMatchObject({ approved: true, editedContext: "My plan.", unansweredIds: ["q2"] });
+    expect(parseAskUserOutcome(result.outcome).approved).toBe(true);
+    const text = renderAskUserAnswersText(result.outcome);
+    expect(text.split("\n")[0]).toBe("The user approved the context.");
+    expect(text).toContain("The user edited the context:\n```markdown\nMy plan.\n```");
+  });
+
+  it("refuses an approval of a set that asks for none", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("q1")] });
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], approved: true })).toThrow(`Question set ${ask.askId} asks for no approval`);
+    expect(store.pendingAsks(sessionId)).toHaveLength(1);
+  });
+});
+
 describe("PendingAskStore partial submit", () => {
   it("records only the sent answer and keeps the rest open under a new revision, the old one now stale", () => {
     const store = testStore();
@@ -727,6 +759,20 @@ describe("ask outcome rendering", () => {
     expect(text).toContain("- ask.ship: Question ship?\n  Answered: \"Ship it\" (default, unchanged)\n");
     expect(text).toContain("- ask.hold: Question hold?\n  Answered: \"Hold\" (default, unchanged)\n");
     expect(text).toContain("- ask.plain: Question plain?\n  Answered: yes (default, unchanged)\n");
+  });
+
+  it("takes a yes/no answered in words as its Custom answer, checked like a choice's, and the switch when the words are blank", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("ship", { options: [], kind: "boolean", default: true }), question("blank", { options: [], kind: "boolean" })] });
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "ship", values: [], otherText: "x".repeat(ASK_USER_OTHER_TEXT_MAX_LENGTH + 1) }] })).toThrow("Other text of question ship exceeds its length limit");
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "ship", values: [], value: true, otherText: "Only after review" }] })).toThrow("Question ship accepts a single answer");
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "ship", values: [], otherText: "  Only after review " }, { id: "blank", values: [], value: true, otherText: "  " }] });
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+    expect(result.outcome.questions[0]).toMatchObject({ answered: true, otherText: "Only after review" });
+    expect(result.outcome.questions[0]?.value).toBeUndefined();
+    const text = renderAskUserAnswersText(result.outcome);
+    expect(text).toContain("- ask.ship: Question ship?\n  Answered: custom: \"Only after review\"\n");
+    expect(text).toContain("- ask.blank: Question blank?\n  Answered: yes\n");
   });
 
   it("keeps typed text verbatim, so a padded Markdown default opens, passes its minimum and reads as unchanged; blank is no answer and no default", () => {

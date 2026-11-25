@@ -103,6 +103,9 @@ const AskUserParams = Type.Object({
     maxLength: ASK_USER_ID_MAX_LENGTH,
     description: "askId of an open set to withdraw because it no longer matters. Send nothing else.",
   })),
+  approval: Type.Optional(Type.Boolean({
+    description: "true for a plan or text in context to approve, instead of a separate confirm question: adds an Approve button.",
+  })),
 });
 
 /** Shapes one schema question into the domain question; the store owns validation. */
@@ -181,17 +184,17 @@ export function createAskUserToolDefinition(deps: AskUserToolDeps) {
       const content = params.context;
       const questions = params.questions?.map(toQuestion);
       if (params.withdraw !== undefined) {
-        if (params.update !== undefined || content !== undefined || questions !== undefined) throw new Error("withdraw takes no other parameters");
+        if (params.update !== undefined || content !== undefined || questions !== undefined || params.approval !== undefined) throw new Error("withdraw takes no other parameters");
         const withdrawn = await deps.withdraw(sessionId, params.withdraw);
         if (withdrawn === undefined) throw closedAskError(params.withdraw);
         return { content: [{ type: "text", text: `Withdrew question set ${withdrawn.askId}; its question chips are gone from the user's composer.` }], details: { withdrawn } };
       }
       if (params.update !== undefined) {
-        const ask = await deps.update({ sessionId, askId: params.update, context: content, questions });
+        const ask = await deps.update({ sessionId, askId: params.update, context: content, questions, approval: params.approval });
         if (ask === undefined) throw closedAskError(params.update);
         return { content: [{ type: "text", text: `Updated open question set ${ask.askId} (${refs(ask)}). The answers still arrive later as a follow-up message.` }], details: { ask, sessionId } };
       }
-      const ask = await deps.open({ sessionId, context: content, questions });
+      const ask = await deps.open({ sessionId, context: content, questions, approval: params.approval });
       return { content: [{ type: "text", text: postedText(ask) }], details: { ask, sessionId } };
     },
   });

@@ -1327,6 +1327,9 @@ describe("API parsers", () => {
     expect(parseAskUserCloseResponse({ result: "closed", outcome: askOutcomeWire(), sessionStatus: statusWire() }).outcome).not.toHaveProperty("context");
     expect(parseAskUserCloseResponse({ result: "closed", outcome: { ...askOutcomeWire(), context, editedContext: "Mine" }, sessionStatus: statusWire() }).outcome?.editedContext).toBe("Mine");
     expect(parseAskUserOutcome({ ...askOutcomeWire(), context, editedContext: "" }).editedContext).toBe("");
+    expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: true } }).pendingAsks?.[0]?.approval).toBe(true);
+    expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: "yes" } }).pendingAsks?.[0]).not.toHaveProperty("approval");
+    expect(parseAskUserOutcome({ ...askOutcomeWire(), approved: true }).approved).toBe(true);
     expect(() => parseAskUserOutcome({ ...askOutcomeWire(), editedContext: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) })).toThrow("String field exceeds limit: editedContext");
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) } }))
       .toThrow("String field exceeds limit: context");

@@ -7,6 +7,7 @@ import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserAnswer, type AskUserQuestio
  */
 export interface AskDraftAnswer {
   values: string[];
+  /** A choice's Custom answer, or a yes/no answered in words (present while its field is open). */
   otherText?: string;
   /** A typed question's field as entered: a boolean for a switch, the input's text otherwise. */
   value?: boolean | string;
@@ -235,6 +236,9 @@ export function toSubmission(questions: readonly AskUserQuestion[], answers: Ask
 function submittableAnswer(question: AskUserQuestion, answer: AskDraftAnswer | undefined): AskUserAnswer | undefined {
   if (answer === undefined) return undefined;
   if ((question.kind ?? "choice") !== "choice") {
+    // A yes/no answered in words sends them as its Custom answer; blank words fall back to the switch.
+    const words = question.kind === "boolean" ? normalizedOtherText(answer.otherText) : undefined;
+    if (words !== undefined) return { id: question.id, values: [], otherText: words };
     const typed = typedDraftValue(question, answer);
     // A field with an error sends nothing: it counts as unanswered while the card shows why.
     return typed === undefined || typed.error !== undefined ? undefined : { id: question.id, values: [], value: typed.value };

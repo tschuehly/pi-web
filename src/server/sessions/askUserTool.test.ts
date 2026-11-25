@@ -138,6 +138,7 @@ describe("createAskUserToolDefinition", () => {
     expect(store.pendingAsks("session-1")).toEqual([]);
     await expect(tool.execute("call-3", { withdraw: "abc-1" }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(/No open question set abc-1/);
     await expect(tool.execute("call-4", { withdraw: "abc-1", context }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(/withdraw takes no other parameters/);
+    await expect(tool.execute("call-5", { withdraw: "abc-1", approval: false }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(/withdraw takes no other parameters/);
   });
 
   it("defaults a question without options to an empty option list so free text alone is expressible", async () => {

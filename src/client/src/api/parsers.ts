@@ -423,6 +423,7 @@ function parsePendingAskUser(value: unknown): PendingAskUser {
     revision: optionalString(record, "revision") ?? "",
     turnsSinceUpdate: turnsSinceUpdate === undefined || !Number.isSafeInteger(turnsSinceUpdate) || turnsSinceUpdate < 0 ? 0 : turnsSinceUpdate,
     ...optionalField("context", optionalBoundedNonEmptyString(record, "context", ASK_USER_CONTEXT_MAX_LENGTH)),
+    ...(record["approval"] === true ? { approval: true as const } : {}),
     questions,
   };
 }
@@ -496,6 +497,7 @@ export function parseAskUserOutcome(value: unknown): AskUserOutcome {
     ...optionalField("context", optionalBoundedNonEmptyString(record, "context", ASK_USER_CONTEXT_MAX_LENGTH)),
     // "" records that the user cleared the context.
     ...optionalField("editedContext", record["editedContext"] === "" ? "" : optionalBoundedNonEmptyString(record, "editedContext", ASK_USER_CONTEXT_MAX_LENGTH)),
+    ...(record["approved"] === true ? { approved: true as const } : {}),
     questions,
     ...optionalField("note", optionalBoundedNonEmptyString(record, "note", ASK_USER_OTHER_TEXT_MAX_LENGTH)),
     answeredCount,

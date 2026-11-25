@@ -37,6 +37,8 @@ export interface PendingAskOpenInput {
   sessionId: string;
   context?: string | undefined;
   questions?: AskUserQuestion[] | undefined;
+  /** true adds an Approve button; on a revision, false drops it and absent keeps it. Anything else is rejected. */
+  approval?: unknown;
 }
 
 /** A revision of one open ask; omitted fields keep their value, so an empty revision only confirms it. */
@@ -119,8 +121,9 @@ export class PendingAskStore {
     }
     if (input.questions === undefined) throw new PendingAskValidationError("questions are required for a new question set");
     const questions = validateQuestions(input.questions);
+    const approval = validateApproval(input.approval);
     const askedAt = this.timestamp();
-    const ask: PendingAskUser = { askId: this.distinctAskId(sessionId), askedAt, updatedAt: askedAt, revision: this.createRevision(), turnsSinceUpdate: 0, context, questions };
+    const ask: PendingAskUser = { askId: this.distinctAskId(sessionId), askedAt, updatedAt: askedAt, revision: this.createRevision(), turnsSinceUpdate: 0, context, ...(approval === undefined ? {} : { approval }), questions };
     this.setAsk(sessionId, ask);
     return cloneAsk(ask);
   }
@@ -133,9 +136,15 @@ export class PendingAskStore {
     const supplied = validateContext(input.context);
     const context = supplied ?? ask.context;
     const questions = input.questions === undefined ? ask.questions : validateQuestions(input.questions);
+    const approval = validateApproval(input.approval);
     const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), revision: this.createRevision(), turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
     // The agent supplied this context, even when its text equals the user's earlier edit.
     if (supplied !== undefined) delete updated.contextEdited;
+    // Given, approval replaces the set's; absent, it stays.
+    if (input.approval !== undefined) {
+      if (approval === undefined) delete updated.approval;
+      else updated.approval = approval;
+    }
     this.setAsk(sessionId, updated);
     return cloneAsk(updated);
   }
@@ -167,7 +176,10 @@ export class PendingAskStore {
     for (const id of hidden) answers.delete(id);
     const note = normalizeNote(submission.note);
     const editedContext = normalizeEditedContext(ask, submission.context);
+    const approved = submission.approved === true;
+    if (approved && ask.approval !== true) throw new PendingAskValidationError(`Question set ${askId} asks for no approval`);
     if (submission.partial === true) {
+      if (approved) throw new PendingAskValidationError("A partial submit cannot approve; approve with the whole set");
       if (note !== undefined) throw new PendingAskValidationError("A partial submit takes no note; send the note with the whole set");
       if (answers.size === 0) throw new PendingAskValidationError("A partial submit needs at least one answer");
       // Hidden questions whose condition this send settles leave with it as skipped; the others wait for their parent.
@@ -190,7 +202,7 @@ export class PendingAskStore {
         return { status: "closed", outcome, ask: cloneAsk(updated) };
       }
     }
-    return closed(this.close(sessionId, askId, "submitted", answers, record, note, hidden, editedContext));
+    return closed(this.close(sessionId, askId, "submitted", answers, record, note, hidden, editedContext, approved));
   }
 
   /**
@@ -245,11 +257,12 @@ export class PendingAskStore {
     this.openBySessionId.set(sessionId, asks);
   }
 
-  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string, skipped: ReadonlySet<string> = new Set(), editedContext?: string): AskUserOutcome | undefined {
+  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string, skipped: ReadonlySet<string> = new Set(), editedContext?: string, approved = false): AskUserOutcome | undefined {
     const asks = this.openBySessionId.get(sessionId);
     const ask = asks?.get(askId);
     if (asks === undefined || ask === undefined) return undefined;
     const outcome = askUserOutcome(ask, answers, reason, this.timestamp(), note, skipped, editedContext);
+    if (approved) outcome.approved = true;
     record?.(outcome);
     asks.delete(askId);
     if (asks.size === 0) this.openBySessionId.delete(sessionId);
@@ -277,7 +290,7 @@ export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
     : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
   const note = outcome.note === undefined ? [] : ["", `Note from the user: ${JSON.stringify(outcome.note)}`];
   const edited = outcome.editedContext === undefined ? [] : outcome.editedContext === "" ? ["The user cleared the context.", ""] : ["The user edited the context:", fenced(outcome.editedContext), ""];
-  return [lead, "", ...edited, ...outcome.questions.map((record) => questionLines(outcome.askId, record)).flat(), ...note, "", outcome.summary].join("\n");
+  return [...(outcome.approved === true ? ["The user approved the context."] : []), lead, "", ...edited, ...outcome.questions.map((record) => questionLines(outcome.askId, record)).flat(), ...note, "", outcome.summary].join("\n");
 }
 
 /**
@@ -419,6 +432,13 @@ function skippedSummary(questions: readonly AskUserQuestionRecord[]): string {
   return ids.length === 0 ? "" : `; skipped (condition not met): ${ids.join(", ")}`;
 }
 
+/** true asks the user to approve the context (an Approve button); false or absent asks none. The Durable host checks it the same way. */
+export function validateApproval(value: unknown): true | undefined {
+  if (value === undefined || value === false) return undefined;
+  if (value === true) return true;
+  throw new PendingAskValidationError("approval must be true or false");
+}
+
 /** Blank context reads as absent; a new ask then rejects it as missing. */
 function validateContext(context: string | undefined): string | undefined {
   if (context === undefined || context.trim() === "") return undefined;
@@ -541,7 +561,13 @@ function validateSubmission(ask: PendingAskUser, submission: AskUserSubmission):
 
 function validateAnswer(question: AskUserQuestion, answer: AskUserAnswer): AskUserAnswer | undefined {
   if ((question.kind ?? "choice") !== "choice") {
-    if (answer.values.length > 0 || answer.otherText !== undefined) throw new PendingAskValidationError(`Question ${question.id} takes a value, not options`);
+    // A yes/no may be answered in words instead, checked as a choice's Custom answer.
+    const words = question.kind === "boolean" ? normalizeOtherText(question, answer.otherText) : undefined;
+    if (words !== undefined) {
+      if (answer.values.length > 0 || answer.value !== undefined) throw new PendingAskValidationError(`Question ${question.id} accepts a single answer`);
+      return { id: question.id, values: [], otherText: words };
+    }
+    if (answer.values.length > 0 || (answer.otherText !== undefined && question.kind !== "boolean")) throw new PendingAskValidationError(`Question ${question.id} takes a value, not options`);
     // Blank reads as untouched; other text is kept as typed (Markdown indentation, a default left unchanged).
     const value = typeof answer.value === "string" && question.kind !== "text" ? answer.value.trim() : answer.value;
     if (value === undefined || (typeof value === "string" && value.trim() === "")) return undefined;

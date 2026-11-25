@@ -800,6 +800,61 @@ describe("ask-user-card context", () => {
     expect(renderRoot(card).querySelector("formatted-text.ask-context")).toBeNull();
   });
 
+  it("offers Approve only on a set that asks for approval; it sends the whole set approved with the edited context, unanswered questions too", async () => {
+    expect([...renderRoot(await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]))).querySelectorAll("button")].map((button) => button.textContent.trim())).not.toContain("Approve");
+    document.body.replaceChildren();
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")]), question("cache", "Which cache?", [])]), context: "Plan.", approval: true }, onSubmit);
+    typeInto(markdownField(renderRoot(card), ".context-editor"), "My plan.");
+    inputWithValue(renderRoot(card), "pg").click();
+    await card.updateComplete;
+    buttonWithText(renderRoot(card), "Approve").click();
+    await Promise.resolve();
+
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r1", context: "My plan.", approved: true, answers: [{ id: "db", values: ["pg"] }] });
+  });
+
+  it("marks an approved set's record Approved", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z", context: "Plan.", approved: true,
+      questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
+      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+
+    expect(renderRoot(card).querySelector(".header-status")?.textContent).toBe("Approved");
+  });
+
+  it("answers a yes/no in words: the text replaces the switch, is kept as a draft, and clearing it sends the switch again", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const card = await mountOpenAsk(openAsk([{ id: "ship", question: "Ship?", options: [], kind: "boolean", default: true }]), onSubmit);
+    const root = renderRoot(card);
+    buttonWithText(root, "Answer in words").click();
+    await card.updateComplete;
+    const words = requiredElement(root.querySelector<HTMLInputElement>("input.boolean-words"), "words field");
+    expect(root.activeElement).toBe(words);
+    words.value = "Only after review";
+    words.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await card.updateComplete;
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ ship: { value: true, otherText: "Only after review" } });
+    buttonWithText(root, "Send answers").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenLastCalledWith("ask-1", { revision: "r1", answers: [{ id: "ship", values: [], otherText: "Only after review" }] });
+
+    document.body.replaceChildren();
+    const reloaded = await mountOpenAsk(openAsk([{ id: "ship", question: "Ship?", options: [], kind: "boolean", default: true }]), onSubmit);
+    const again = requiredElement(renderRoot(reloaded).querySelector<HTMLInputElement>("input.boolean-words"), "words field after reload");
+    expect(again.value).toBe("Only after review");
+    again.value = "";
+    again.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await reloaded.updateComplete;
+    buttonWithText(renderRoot(reloaded), "Send answers").click();
+    await Promise.resolve();
+    expect(onSubmit).toHaveBeenLastCalledWith("ask-1", { revision: "r1", answers: [{ id: "ship", values: [], value: true }] });
+  });
+
   it("carries the edited context with a single-answer send", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")]), question("cache", "Which cache?", [])]), context: "Plan." }, onSubmit);

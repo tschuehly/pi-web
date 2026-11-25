@@ -961,6 +961,8 @@ export interface PendingAskUser {
   context?: string;
   /** The user's edit in a partial send supplied the current context (absent when cleared); an agent revision that sets context ends it. */
   contextEdited?: true;
+  /** The agent asks the user to approve the context: the card adds an Approve button. */
+  approval?: true;
   questions: AskUserQuestion[];
 }
 
@@ -998,6 +1000,8 @@ export interface AskUserSubmission {
   partial?: boolean;
   /** The user's edit of {@link PendingAskUser.context}; sent only when it differs; blank means the user cleared it. A partial send that carries it makes it the open ask's context. */
   context?: string;
+  /** The user pressed Approve on a set with {@link PendingAskUser.approval}: the whole set closes, approved. Not with `partial`. */
+  approved?: boolean;
 }
 
 /**
@@ -1029,6 +1033,8 @@ export interface AskUserOutcome {
   context?: string;
   /** The user's edited version of `context`; `""` when he cleared it, absent when he left it unchanged. */
   editedContext?: string;
+  /** The user approved the context (his edited version, when `editedContext` is set). */
+  approved?: true;
   questions: AskUserQuestionRecord[];
   /** The user's note on the whole set, trimmed; absent when none was given. */
   note?: string;

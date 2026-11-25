@@ -470,7 +470,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; note?: unknown; revision?: unknown; partial?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; note?: unknown; revision?: unknown; partial?: unknown; approved?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
     try {
       const body = requireRecord(request.body);
       const askId = requireBoundedId(body["askId"], "askId");
@@ -840,10 +840,12 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   if (typeof note === "string" && note.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("note field is too long");
   const partial = body["partial"];
   if (partial !== undefined && typeof partial !== "boolean") throw new Error("partial field must be a boolean");
+  const approved = body["approved"];
+  if (approved !== undefined && typeof approved !== "boolean") throw new Error("approved field must be a boolean");
   const context = body["context"];
   if (context !== undefined && typeof context !== "string") throw new Error("context field must be a string");
   if (typeof context === "string" && context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new Error("context field is too long");
-  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}), ...(context === undefined ? {} : { context }) };
+  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}), ...(context === undefined ? {} : { context }), ...(approved === true ? { approved } : {}) };
 }
 
 function askUserAnswerFromValue(value: unknown): AskUserAnswer {

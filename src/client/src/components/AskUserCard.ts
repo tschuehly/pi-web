@@ -162,6 +162,7 @@ export class AskUserCard extends LitElement {
               ? this.renderPartialSubmitConfirmation(ask, unanswered)
               : html`
                   <label class="keep-context"><input type="checkbox" .checked=${this.keepContextOpen} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.keepContextOpen = event.currentTarget.checked; }} />Keep context open</label>
+                  ${ask.approval === true ? html`<button class="approve" type="button" title="Approve the context (your edited version, if you changed it) and send the answers; unanswered questions close too" ?disabled=${this.submitting} @click=${() => { void this.submitAnswers(ask, true); }}>Approve</button>` : null}
                   <button class="primary-action" type="submit" ?disabled=${this.submitting}>
                     ${this.submitting ? "Sending…" : "Send answers"}
                   </button>
@@ -298,12 +299,29 @@ export class AskUserCard extends LitElement {
     const id = this.otherInputId(index);
     if (question.kind === "boolean") {
       const on = answer?.value === true;
+      // Words, once opened, ride along with the switch; non-blank they replace its value, as a choice's Custom answer does.
+      const words = answer?.otherText;
+      const keep = (): AskDraftAnswer => ({ values: [], ...(answer?.value === undefined ? {} : { value: answer.value }) });
       return html`
-        <label class="typed-field switch">
-          <input id=${id} type="checkbox" role="switch" aria-label=${question.question} .checked=${on} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.setAnswer(question, { values: [], value: event.currentTarget.checked }); }} />
-          <span class="switch-track" aria-hidden="true"></span>
-          <span class="switch-state" aria-hidden="true">${askBooleanLabel(question, on)}</span>
-        </label>
+        <div class="boolean-field">
+          <label class=${`typed-field switch${(words ?? "").trim() === "" ? "" : " overridden"}`}>
+            <input id=${id} type="checkbox" role="switch" aria-label=${question.question} .checked=${on} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.setAnswer(question, { values: [], value: event.currentTarget.checked, ...(words === undefined ? {} : { otherText: words }) }); }} />
+            <span class="switch-track" aria-hidden="true"></span>
+            <span class="switch-state" aria-hidden="true">${askBooleanLabel(question, on)}</span>
+          </label>
+          ${words === undefined
+            ? html`<button class="answer-in-words" type="button" @click=${() => { this.setAnswer(question, { ...keep(), otherText: "" }); void this.focusWords(index); }}>Answer in words</button>`
+            : html`<input
+                id=${`${id}-words`}
+                class="boolean-words"
+                type="text"
+                aria-label=${`${question.question}: answer in words`}
+                placeholder="Answer in words"
+                maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)}
+                .value=${words}
+                @input=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.setAnswer(question, { ...keep(), otherText: event.currentTarget.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) }); }}
+              />`}
+        </div>
       `;
     }
     const raw = typeof answer?.value === "string" ? answer.value : "";
@@ -390,6 +408,7 @@ export class AskUserCard extends LitElement {
   private renderRecord(outcome: AskUserOutcome): TemplateResult {
     const recordLabel = outcome.partial === true
       ? `${outcome.answeredCount === 1 ? "Answer" : "Answers"} sent · others still open`
+      : outcome.approved === true ? "Approved"
       : { submitted: "Answers sent", superseded: "Superseded", cancelled: "Cancelled", withdrawn: "Withdrawn" }[outcome.reason];
     // Superseded and withdrawn explain their status, so that line stays in view; the summary only repeats the answers.
     const statusLine = outcome.reason === "superseded"
@@ -582,9 +601,10 @@ export class AskUserCard extends LitElement {
     void this.submitAnswers(ask);
   }
 
-  private submitAnswers(ask: PendingAskUser): Promise<boolean> {
+  /** `approved`: Approve, which closes the whole set even with questions unanswered. */
+  private submitAnswers(ask: PendingAskUser, approved = false): Promise<boolean> {
     const note = this.note.trim();
-    return this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision });
+    return this.send(ask, { ...toSubmission(ask.questions, this.answers), ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision, ...(approved ? { approved } : {}) });
   }
 
   /**
@@ -672,6 +692,11 @@ export class AskUserCard extends LitElement {
     if (!(input instanceof AskMarkdownField)) return;
     if (cursorAtEnd) input.focusEnd();
     else input.focus();
+  }
+
+  private async focusWords(index: number): Promise<void> {
+    await this.updateComplete;
+    this.renderRoot.querySelector<HTMLInputElement>(`#${this.otherInputId(index)}-words`)?.focus();
   }
 
   private isOtherSelected(question: AskUserQuestion, answer: AskDraftAnswer | undefined): boolean {
@@ -913,6 +938,13 @@ export class AskUserCard extends LitElement {
     .switch input:checked + .switch-track { background: var(--pi-accent); }
     .switch input:checked + .switch-track::after { transform: translateX(16px); }
     .switch input:focus-visible + .switch-track { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+    .boolean-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+    /* Words replace the switch's value, so it reads as set aside while they hold text. */
+    .switch.overridden .switch-track, .switch.overridden .switch-state { opacity: .45; }
+    .answer-in-words { padding: 2px 8px; border-color: transparent; background: transparent; color: var(--pi-muted); font-size: 12px; }
+    .answer-in-words:hover:not(:disabled) { color: var(--pi-text); }
+    .boolean-words { flex: 1 1 14em; min-width: 0; box-sizing: border-box; margin: 0; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); color: var(--pi-text); padding: 6px 8px; font: var(--pi-control-font-size, 16px)/1.4 var(--pi-control-font-family, system-ui, sans-serif); }
+    .approve { border-color: var(--pi-accent); color: var(--pi-accent); font-weight: 650; }
     .question-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
     .send-one { padding: 3px 10px; font-size: 12px; }
     .send-one:not(:disabled) { border-color: var(--pi-accent); color: var(--pi-accent); font-weight: 650; }
@@ -999,7 +1031,7 @@ export class AskUserCard extends LitElement {
       .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
       .partial-confirmation { align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }
-      .primary-action { min-height: 42px; }
+      .primary-action, .approve { min-height: 42px; }
     }
     /* Embedded in the question drawer: no frame of its own, one header line, composer-dense spacing. */
     :host([flat]) { margin: 0; font-size: 13px; }
