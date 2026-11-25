@@ -26,6 +26,7 @@ import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { AnchoredPopupController, cssZoom } from "./anchoredPopup";
 import { renderActivityIcon, renderAttachIcon, renderCameraIcon, renderPhotosIcon, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
+import "./FullAccessToggle";
 import "./WorkingModeControls";
 import "./ModelEffortPicker";
 import { formatCost, formatTokenCount } from "../utils/format";
@@ -338,6 +339,7 @@ export class PromptEditor extends LitElement {
           ${this.renderCompactStatus()}
           ${this.showUsage ? this.renderUsage() : null}
           <working-mode-controls ?compact=${this.dense} .status=${this.status} .transcriptSelection=${this.workingModeTranscriptSelection} .onRunCommand=${this.onRunCommand}></working-mode-controls>
+          <full-access-toggle ?compact=${this.dense} .status=${this.status} .onRunCommand=${this.onRunCommand}></full-access-toggle>
       `;
     return html`
       <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => { void this.handlePaste(event); }} @dragover=${(event: DragEvent) => { this.handleDragOver(event); }} @drop=${(event: DragEvent) => { void this.handleDrop(event); }}>

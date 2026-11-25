@@ -30,7 +30,6 @@ import { PluginRegistry } from "../plugins/registry";
 import { themePackPlugin } from "../plugins/themes";
 import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile } from "../presentationProfiles";
 import { applyCheckpointSessionTitle } from "../workstreamCheckpointTitle";
-import { workstreamOrientationDepth } from "../workstreamOrientation";
 import { focusTopModal, hasRenderedModal } from "./modalLayerRegistry";
 import { isCreatingSessionId, readRoute, takeMessageAnchor, writeRoute, type ParsedAppRoute } from "../route";
 import { sessionTitle } from "../sessionLabels";
@@ -217,7 +216,6 @@ export class WorkbenchApp extends LitElement {
   private readonly workstreamContexts = new Map<string, WorkstreamServiceContext | undefined>();
   private readonly attemptedCheckpointTitles = new Set<string>();
   private readonly pendingWorkstreamContexts = new Map<string, Promise<WorkstreamServiceContext | undefined>>();
-  private orientationPendingSessionId: string | undefined;
   private workstreamWatchTimer: number | undefined;
   private readonly plugins = new PluginRegistry();
   @state() private contentRendering: ChatContentRendering | undefined;
@@ -250,6 +248,8 @@ export class WorkbenchApp extends LitElement {
     this.applyPreferredTheme();
   }
 
+  /** Chats this window started from a Workstream. */
+  private readonly workstreamChats = new Set<string>();
   private readonly desktopNotifications = new DesktopNotificationController(
     desktopNotifications(),
     () => { this.requestUpdate(); },
@@ -1554,6 +1554,8 @@ export class WorkbenchApp extends LitElement {
       const started = await this.startSessionWithOptions({ startupToken: associationKey, propagateError: true });
       if (started === undefined) throw new Error("PI WEB did not start a Chat.");
       session = started;
+      // Known before the Workstream lookup names the tab, so even an immediate first request orients for it.
+      this.workstreamChats.add(session.id);
     } catch (error) {
       const prefix = detail.sessionId === undefined
         ? "Chat creation outcome is unknown after the pending Workstream launch was recorded. Do not start another Chat until Pia reconciles it."
@@ -1562,7 +1564,6 @@ export class WorkbenchApp extends LitElement {
       return;
     }
 
-    this.orientationPendingSessionId = session.id;
     this.updateUrl();
     await this.updateComplete;
     if (this.selectedChatIs(session.id, machineId)) await this.focusChatComposer();
@@ -1578,23 +1579,8 @@ export class WorkbenchApp extends LitElement {
       await appendWorkstream(confirmationContext, { workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:confirmed`, records: [record] });
       await this.loadCurrentWorkstream();
     } catch (error) {
-      if (this.orientationPendingSessionId === session.id) this.orientationPendingSessionId = undefined;
       this.setApp({ error: `Chat ${session.id} was created, but PI WEB could not record its Workstream confirmation. ${error instanceof Error ? error.message : String(error)}` });
       return;
-    }
-    if (!this.selectedChatIs(session.id, machineId)) return;
-    try {
-      let depth: "brief" | "full" = "full"; // Unknown recency gets the complete re-entry story.
-      try {
-        const confirmed = await inspectWorkstream(this.workstreamServiceContext ?? workstreamContext, detail.workstreamId);
-        depth = await workstreamOrientationDepth(confirmed, session.id, machineId);
-      } catch { /* Keep full orientation. */ }
-      if (this.orientationPendingSessionId === session.id && this.selectedChatIs(session.id, machineId)
-        && !this.app.messages.some((message) => message.role === "user")) await this.sessions.runCommand(`/skill:orient ${depth}`);
-    } catch (error) {
-      this.setApp({ error: `Automatic orientation could not start. Run /skill:orient in this Chat. ${error instanceof Error ? error.message : String(error)}` });
-    } finally {
-      if (this.orientationPendingSessionId === session.id) this.orientationPendingSessionId = undefined;
     }
   }
 
@@ -2003,10 +1989,9 @@ export class WorkbenchApp extends LitElement {
           this.tileFocusOnClick = undefined;
           if (hasRenderedModal(this.ownerDocument) || !event.composedPath().some((target) => target instanceof HTMLElement && (target.matches("button, input, textarea, summary, a") || target.isContentEditable))) void this.focusChatComposer();
         }}
-        @workspace-file-open=${this.openWorkspaceFile} @outside-file-open=${this.openOutsideFile}
-        @workbench-prompt=${() => { if (this.orientationPendingSessionId === chat.sessionId) this.orientationPendingSessionId = undefined; }}>
+        @workspace-file-open=${this.openWorkspaceFile} @outside-file-open=${this.openOutsideFile}>
         ${this.renderTileBar(tile, status)}
-        <workbench-chat-pane .runtime=${runtime} .app=${runtime?.state} .focused=${focused} .loadError=${this.chatLoadErrors.get(machineSessionKey(chat.machineId, chat.sessionId))} .draftStorage=${this.windows.draftStorage} .defaultStreamingBehavior=${this.defaultStreamingBehavior} .dense=${!single} .contentRendering=${this.contentRendering} .revealTarget=${focused ? this.revealTarget : undefined}></workbench-chat-pane>
+        <workbench-chat-pane .runtime=${runtime} .app=${runtime?.state} .focused=${focused} .loadError=${this.chatLoadErrors.get(machineSessionKey(chat.machineId, chat.sessionId))} .draftStorage=${this.windows.draftStorage} .defaultStreamingBehavior=${this.defaultStreamingBehavior} .dense=${!single} .orientFirstRequest=${chat.workstream !== undefined || this.workstreamChats.has(chat.sessionId)} .contentRendering=${this.contentRendering} .revealTarget=${focused ? this.revealTarget : undefined}></workbench-chat-pane>
       </section>
     `;
   }
