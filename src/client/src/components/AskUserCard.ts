@@ -191,7 +191,7 @@ export class AskUserCard extends LitElement {
               ${this.renderWithImages(NOTE, "the note", html`<ask-markdown-field class="ask-note" .label=${"Note for the whole set"} .placeholderText=${"Note for the whole set (optional)"} .value=${this.note} @ask-field-input=${this.changeNote}></ask-markdown-field>`)}
             </div>
             ${this.confirmingPartialSubmit && unanswered.length > 0
-              ? this.renderPartialSubmitConfirmation(ask, unanswered)
+              ? html`${this.renderHiddenImages(ask)}${this.renderPartialSubmitConfirmation(ask, unanswered)}`
               : html`
                   ${this.renderHiddenImages(ask)}
                   <label class="keep-context"><input type="checkbox" .checked=${this.keepContextOpen} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.keepContextOpen = event.currentTarget.checked; }} />Keep context open</label>

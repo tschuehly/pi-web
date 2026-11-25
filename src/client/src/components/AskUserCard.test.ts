@@ -1433,6 +1433,31 @@ describe("ask-user-card answer images", () => {
     expect(onSubmit.mock.calls[0]?.[1]).not.toHaveProperty("images");
   });
 
+  it("lists a hidden follow-up's images with their removal when Send anyway is refused", async () => {
+    const onSubmit = vi.fn<AskUserSubmitCallback>();
+    const details: AskUserQuestion = { ...textQuestion("details", "Details?"), showIf: { question: "proceed", values: ["yes"] } };
+    const card = await mountOpenAsk({ ...openAsk([question("proceed", "Proceed?", [option("yes", "Yes"), option("no", "No")]), details, textQuestion("other", "Other?")]), askId: "ask-hidden-anyway" }, onSubmit);
+    card.imagesEnabled = true;
+    await card.updateComplete;
+    const root = renderRoot(card);
+    inputWithValue(root, "yes").click();
+    await card.updateComplete;
+    paste(requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-1"), "details"), [pngFile("details.png")]);
+    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    inputWithValue(root, "no").click();
+    await card.updateComplete;
+    buttonWithText(root, "Send answers").click();
+    await card.updateComplete;
+    requiredElement(root.querySelector<HTMLButtonElement>(".send-anyway"), "send anyway").click();
+    await card.updateComplete;
+    expect(onSubmit).not.toHaveBeenCalled();
+    const bar = requiredElement(root.querySelector(".stranded-images"), "stranded images beside Send anyway");
+    expect(bar.textContent).toContain("Details?");
+    requiredElement(bar.querySelector<HTMLButtonElement>(".answer-image-remove"), "remove").click();
+    await card.updateComplete;
+    expect(root.querySelector(".stranded-images")).toBeNull();
+  });
+
   it("enables Send note on an approval-only set once only a note image is staged", async () => {
     const card = await mountOpenAsk({ ...openAsk([]), askId: "ask-note-image", approval: true });
     card.imagesEnabled = true;
