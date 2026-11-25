@@ -2502,6 +2502,27 @@ describe("window tabs", () => {
     expect(status.mock.calls.map(([ref]) => ref.id)).not.toContain("a1");
   });
 
+  it("lets the connect read after a reconnect replace a Chat's status cached before it, and a status received later replace the read", async () => {
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    const app = await mountWithWorkstreamChats();
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const dashed = () => tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned");
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) } } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+
+    // The Chat was aligned while the window was offline; the read on reconnect knows it, the cached status does not.
+    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: mode(true) } : { pendingAsks: [] }));
+    sockets.at(-1)?.onopen?.();
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(false); });
+
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) } } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+  });
+
   it("acknowledges the selected Chat's attention request once the owner sees it, and not while the window is in the background", async () => {
     const app = await mountWithWorkstreamChats();
     const acknowledge = vi.spyOn(api, "acknowledgeAttention").mockResolvedValue(undefined);

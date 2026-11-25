@@ -1092,10 +1092,16 @@ export class WorkbenchApp extends LitElement {
     }
   }
 
-  /** A Chat's Working Mode from its live status, else as the window read it on connect (a restored Chat not yet opened). */
+  private chatStatus(chat: WindowChat): SessionStatus | undefined {
+    return this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId];
+  }
+
+  /** A Chat's Working Mode from the fresher of its status and the window's connect read (a restored Chat not yet opened). */
   private chatWorkingMode(chat: WindowChat) {
-    const status = this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId];
-    return parseWorkingModeSnapshot(status === undefined ? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)]?.workingMode : status.extensionStatuses?.[WORKING_MODE_STATUS_KEY]);
+    const status = this.chatStatus(chat);
+    const read = this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)];
+    // The read beats the status it landed over (cached from before a reconnect); a status received after it wins.
+    return parseWorkingModeSnapshot(read?.workingMode !== undefined && read.over === status ? read.workingMode : status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY]);
   }
 
   /** Each Chat's selected Attention, from its live status or the connect read; absent until the Chat reports one. */
@@ -1356,7 +1362,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   /** Open asks and attention requests read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
-  @state() private restoredAsks: Record<string, SessionOpenAsks> = {};
+  @state() private restoredAsks: Record<string, SessionOpenAsks & { over: SessionStatus | undefined }> = {};
 
   /** Open-ask reads in flight, by machine-scoped session key. */
   private readonly askRequests = new Set<string>();
@@ -1373,7 +1379,7 @@ export class WorkbenchApp extends LitElement {
       this.askRequests.add(key);
       void this.windowChatWorkspace(chat)
         .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, machineId))
-        .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: asks }; })
+        .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: { ...asks, over: this.chatStatus(chat) } }; })
         .catch(() => undefined)
         .finally(() => { this.askRequests.delete(key); });
     }
