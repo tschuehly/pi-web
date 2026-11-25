@@ -49,6 +49,8 @@ class Fake extends EventEmitter implements DurableHostProcess {
   closeError: boolean | "hang" = false;
   /** The owner's `/full-access` is on: an upgrade close answers so, as the Workbench host does. */
   fullAccess = false;
+  /** The `/full-access` nonce the service launched this host with (an upgrade restart's), if any. */
+  fullAccessNonce: string | undefined;
   kills = 0;
 
   constructor(readonly code: { entry: string; current: string }, readonly exitHook: () => void, fail: boolean | "hang" = false) {
@@ -113,7 +115,7 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; f
   const storesDir = join(ROOT, "stores");
   const hosts: Fake[] = [];
   let now = 0;
-  const launch: DurableHostLauncher = (chat: DurableChatRecord, storeDir: string) => {
+  const launch: DurableHostLauncher = (chat: DurableChatRecord, storeDir: string, launched) => {
     const entry = locator.durable(chat.id)?.hostEntry ?? current;
     mkdirSync(storeDir, { recursive: true });
     // Every host that opens the store leaves its Pi Durable version there (a newer one migrates it).
@@ -124,6 +126,7 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; f
     const host = new Fake({ entry, current }, () => { locator.setHost(chat.id, undefined); }, fail);
     if (!fail) locator.setHostEntry(chat.id, entry);
     host.resumeError = entry === current && options.failResume === true;
+    host.fullAccessNonce = launched?.fullAccessNonce;
     hosts.push(host);
     return host;
   };
@@ -415,14 +418,19 @@ describe("seamless upgrade orchestration", () => {
     for (const host of auto.hosts) host.fullAccess = true;
     await auto.durable.upgradePendingHosts();
     expect(auto.hosts).toHaveLength(2);
-    expect(resumes(auto.hosts[1])).toEqual([{ reason: "upgrade-restart", fullAccess: true }]);
+    // The resume repeats the random nonce the new host was launched with; only that host knows it.
+    expect(auto.hosts[0]?.fullAccessNonce).toBeUndefined();
+    expect(auto.hosts[1]?.fullAccessNonce).toMatch(/^[0-9a-f]{32}$/);
+    expect(resumes(auto.hosts[1])).toEqual([{ reason: "upgrade-restart", fullAccess: auto.hosts[1]?.fullAccessNonce }]);
     await auto.durable.dispose();
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
     const now = setup(c, d);
     await now.durable.status(now.ref);
     for (const host of now.hosts) host.fullAccess = true;
     await now.durable.upgradeHost(now.ref, "now");
-    expect(resumes(now.hosts[1])).toEqual([{ reason: "upgrade-restart", fullAccess: true }]);
+    expect(now.hosts[1]?.fullAccessNonce).toMatch(/^[0-9a-f]{32}$/);
+    expect(now.hosts[1]?.fullAccessNonce).not.toBe(auto.hosts[1]?.fullAccessNonce);
+    expect(resumes(now.hosts[1])).toEqual([{ reason: "upgrade-restart", fullAccess: now.hosts[1]?.fullAccessNonce }]);
     await now.durable.dispose();
   });
 
