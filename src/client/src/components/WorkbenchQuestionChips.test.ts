@@ -444,9 +444,12 @@ describe("WorkbenchQuestionChips", () => {
     expect(updatedAgo("2026-10-17T09:00:00.000Z", now)).toBe("updated 2 d ago");
   });
 
-  it("lets its cards attach images only when the Chat's host reports ask-images", async () => {
+  it("lets its cards attach images only when the Chat's host reports ask-images; a legacy Chat reports no capabilities and takes none", async () => {
     const { chips } = await mount([ask("abc-1", { questions: [{ id: "why", question: "Why?", kind: "text", options: [] }] })], (each) => { each.status = { ...running, capabilities: ["attachments"] }; });
     await openWith(chips);
+    expect(cards(chips)[0]?.imagesEnabled).toBe(false);
+    chips.status = running;
+    await chips.updateComplete;
     expect(cards(chips)[0]?.imagesEnabled).toBe(false);
     chips.status = { ...running, capabilities: ["ask-images"] };
     await chips.updateComplete;

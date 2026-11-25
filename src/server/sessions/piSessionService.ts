@@ -562,7 +562,7 @@ export interface PiAgentSession {
   prompt(text: string, options?: { streamingBehavior?: "steer" | "followUp"; images?: ImageContent[]; expandPromptTemplates?: boolean }): Promise<void>;
   steer(text: string, images?: ImageContent[]): Promise<unknown>;
   followUp(text: string, images?: ImageContent[]): Promise<unknown>;
-  sendCustomMessage(message: { customType: string; content: string | ({ type: "text"; text: string } | ImageContent)[]; display: boolean; details?: unknown }, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void>;
+  sendCustomMessage(message: { customType: string; content: string; display: boolean; details?: unknown }, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void>;
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string }>;
   navigateTree?(targetId: string, options?: PiTreeNavigationOptions): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: unknown }>;
   abortBranchSummary?(): void;
@@ -2241,10 +2241,10 @@ export class PiSessionService implements SessionRouteService {
     // Checked before the store closes the ask so a refused delivery cannot
     // discard answers the user already submitted.
     this.assertTreeNavigationInactive(session, "answer questions");
+    // A legacy Chat reports no ask-images capability, so the browser offers no attaching; refused before the set closes.
+    if ((submission.images?.length ?? 0) > 0) throw new Error("Images in answers need a Durable Chat; this Chat takes text answers only");
     const edited = this.contextEdited(session, askId);
-    // Resized as prompt images are, before the set closes, so a failed conversion keeps it open.
-    const images = (await attachmentsToInlineImages((submission.images ?? []).map((image, index) => ({ kind: "image", reference: `[PIC_${String(index + 1)}]`, mimeType: image.mimeType, data: image.data })), true)).map((entry) => entry.image);
-    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission, (outcome) => { this.recordAskClosed(session, outcome); }), edited, images);
+    return this.closeAsk(session, this.pendingAskStore.submit(session.sessionId, askId, submission, (outcome) => { this.recordAskClosed(session, outcome); }), edited);
   }
 
   /**
@@ -2281,7 +2281,7 @@ export class PiSessionService implements SessionRouteService {
    * that went away is ordinary, and the returned status tells the browser what
    * the session's open ask is now.
    */
-  private async closeAsk(session: PiAgentSession, result: PendingAskCloseResult, contextEdited: boolean, images: readonly ImageContent[] = []): Promise<AskUserCloseResponse> {
+  private async closeAsk(session: PiAgentSession, result: PendingAskCloseResult, contextEdited: boolean): Promise<AskUserCloseResponse> {
     if (result.status === "stale") return { result: "stale", sessionStatus: this.statusFromSession(session) };
     const { outcome, ask } = result;
     // A partial send keeps the ask open under a new revision; browsers replace its card as on an update.
@@ -2290,18 +2290,14 @@ export class PiSessionService implements SessionRouteService {
     // The browser and the answers card keep the whole set's record, answers its earlier partial sends gave (from any browser) included.
     const { earlier, order } = ask === undefined ? partialAsksFromTranscript(session.sessionManager.getBranch(), outcome.askId) : { earlier: [], order: [] };
     const record = withEarlierAnswers(outcome, earlier, order, contextEdited);
-    await this.deliverAskOutcome(session, outcome, record, images);
+    await this.deliverAskOutcome(session, outcome, record);
     this.publishStatus(session);
     return { result: "closed", outcome: record, sessionStatus: this.statusFromSession(session) };
   }
 
-  /**
-   * The model reads `outcome`'s text and its images; the card shows `record` (the whole set after one-by-one sends).
-   * shortcut: a redelivery after a restart has no image bytes (the closed entry keeps metadata only), so it sends the text alone.
-   */
-  private deliverAskOutcome(session: PiAgentSession, outcome: AskUserOutcome, record = outcome, images: readonly ImageContent[] = []): Promise<void> {
-    const text = renderAskUserFollowUp(images.length === 0 ? { ...outcome, images: [] } : outcome, this.pendingAskStore.pendingAsks(session.sessionId));
-    const content = images.length === 0 ? text : [{ type: "text" as const, text }, ...images];
+  /** The model reads `outcome`'s text; the card shows `record` (the whole set after one-by-one sends). */
+  private deliverAskOutcome(session: PiAgentSession, outcome: AskUserOutcome, record = outcome): Promise<void> {
+    const content = renderAskUserFollowUp(outcome, this.pendingAskStore.pendingAsks(session.sessionId));
     return this.runSessionEntryMutation(session, "deliver answers to your questions", () => session.sendCustomMessage(
       { customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content, display: true, details: record },
       { triggerTurn: true, deliverAs: "followUp" },

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it } from "vitest";
-import type { AskUserOutcome, PendingAskUser } from "../../../shared/apiTypes";
+import type { AskUserOutcome, PendingAskUser, SessionStatus } from "../../../shared/apiTypes";
 import { AskUserCard } from "./AskUserCard";
 import { ChatView } from "./ChatView";
 
@@ -20,6 +20,24 @@ describe("ChatView open ask_user form", () => {
 
     const cards = [...(view.shadowRoot?.querySelectorAll<AskUserCard>("ask-user-card") ?? [])];
     expect(cards.map((card) => card.ask?.askId)).toEqual(["abc-1", "def-2"]);
+  });
+
+  it("lets its cards attach images only when the status reports ask-images, never for a legacy Chat that reports no capabilities", async () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    view.pendingAsks = [openAsk("abc-1")];
+    document.body.append(view);
+    await view.updateComplete;
+    const card = (): AskUserCard | null | undefined => view.shadowRoot?.querySelector<AskUserCard>("ask-user-card");
+
+    expect(card()?.imagesEnabled).toBe(false);
+    const status: SessionStatus = { sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    view.status = status;
+    await view.updateComplete;
+    expect(card()?.imagesEnabled).toBe(false);
+    view.status = { ...status, capabilities: ["ask-images"] };
+    await view.updateComplete;
+    expect(card()?.imagesEnabled).toBe(true);
   });
 });
 

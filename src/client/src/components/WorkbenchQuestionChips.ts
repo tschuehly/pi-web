@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import { chatSupports, type AskUserOutcome, type PendingAskUser } from "../../../shared/apiTypes";
+import type { AskUserOutcome, PendingAskUser } from "../../../shared/apiTypes";
 import type { SessionStatus } from "../api";
 import type { AskUserCard, AskUserSubmitCallback } from "./AskUserCard";
 import "./AskUserCard";
@@ -107,7 +107,7 @@ export class WorkbenchQuestionChips extends LitElement {
           ${single ? nothing : html`<header><span>${title}</span><span class="header-actions">${sendAll}${closeButton}</span></header>`}
           ${this.sendAllError === "" ? nothing : html`<p class="send-all-error" role="alert">${this.sendAllError}</p>`}
           <div class="sets">
-            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .imagesEnabled=${chatSupports(this.status, "ask-images")} .onSubmit=${this.onSubmit === undefined ? undefined : this.submit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
+            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .imagesEnabled=${this.status?.capabilities?.includes("ask-images") === true} .onSubmit=${this.onSubmit === undefined ? undefined : this.submit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
             ${repeat(this.sent, (outcome) => outcome.askId, (outcome) => html`<ask-user-card flat data-record=${outcome.askId} .outcome=${outcome} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering}><button type="button" class="close" slot="actions" title="Dismiss" aria-label="Dismiss sent answers" @click=${() => { this.sent = this.sent.filter((each) => each !== outcome); }}>${X_ICON}</button></ask-user-card>`)}
           </div>
         </section>`,

@@ -874,7 +874,7 @@ export class ChatView extends LitElement {
         .draftSessionId=${this.askDraftSessionId}
         .workspaceContext=${this.workspaceContext}
         .contentRendering=${this.contentRendering}
-        .imagesEnabled=${chatSupports(this.status, "ask-images")}
+        .imagesEnabled=${/* Explicitly reported: a legacy Chat reports no capabilities and takes no answer images. */ this.status?.capabilities?.includes("ask-images") === true}
         .onSubmit=${this.onSubmitAsk}
       ></ask-user-card>
     `);
