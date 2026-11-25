@@ -1358,7 +1358,7 @@ export class WorkbenchApp extends LitElement {
     this.realtime.close();
     const machineId = selectedMachineId(this.app);
     this.realtimeMachineId = machineId;
-    this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, () => { this.refreshWindowChatAsks(machineId); }, machineId);
+    this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, () => { this.refreshWindowChatAsks(); }, machineId);
   }
 
   /** Open asks and attention requests read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
@@ -1368,17 +1368,18 @@ export class WorkbenchApp extends LitElement {
   private readonly askRequests = new Set<string>();
 
   /**
-   * On every (re)connect, reads once the open asks of each other Chat this window holds on the machine, so a restored
+   * On every (re)connect, reads once the open asks of each other Chat this window holds, on its own machine (the API
+   * proxies a remote one; an older remote PI WEB sends no Working Mode, so its tab stays unknown), so a restored
    * idle Chat's tab counts its questions before anything streams. The read never opens a Chat: opening a cold one would
    * redeliver its recorded answers and start a turn nobody asked for. Live status updates take over from there.
    */
-  private refreshWindowChatAsks(machineId: string): void {
+  private refreshWindowChatAsks(): void {
     for (const chat of this.windows.window?.chats ?? []) {
-      const key = machineSessionKey(machineId, chat.sessionId);
-      if (chat.machineId !== machineId || chat.sessionId === this.app.selectedSession?.id || this.askRequests.has(key)) continue;
+      const key = machineSessionKey(chat.machineId, chat.sessionId);
+      if ((chat.machineId === selectedMachineId(this.app) && chat.sessionId === this.app.selectedSession?.id) || this.askRequests.has(key)) continue;
       this.askRequests.add(key);
       void this.windowChatWorkspace(chat)
-        .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, machineId))
+        .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, chat.machineId))
         .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: { ...asks, over: this.chatStatus(chat) } }; })
         .catch(() => undefined)
         .finally(() => { this.askRequests.delete(key); });

@@ -29,7 +29,7 @@ import { SessionController } from "../controllers/sessionController";
 import { WorkbenchWindowController, WINDOW_CHANNEL, WINDOW_HEARTBEAT_KEY, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY, WINDOW_STORE_LOCK } from "../controllers/workbenchWindowController";
 import { WorkbenchChatSession, WorkbenchSessionFocus } from "../controllers/workbenchSessionFocus";
 import { FakeLocks } from "../controllers/webLocks.testSupport";
-import { emptyWindow, focusChat, moveChats, openChat, parseWindowStore } from "../workbenchWindows";
+import { emptyWindow, focusChat, moveChats, openChat, parseWindowStore, type WorkbenchWindow } from "../workbenchWindows";
 import { installNativeDialogFake } from "./nativeDialog.testSupport";
 
 installNativeDialogFake();
@@ -2521,6 +2521,32 @@ describe("window tabs", () => {
 
     receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) } } });
     await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+  });
+
+  it("seeds a restored tab whose Chat lives on another machine through that machine, on connect", async () => {
+    await mountWithWorkstreamChats();
+    document.body.replaceChildren();
+    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    vi.clearAllMocks();
+    vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
+    const workingMode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
+    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref, machineId) => Promise.resolve(ref.id === "a1" && machineId === "remote" ? { pendingAsks: [], workingMode } : { pendingAsks: [] }));
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    // a1's Chat lives on the remote machine (a federated PI WEB).
+    const windows = Reflect.get(app, "windows") as { window: WorkbenchWindow | undefined }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private controller
+    const held = windows.window;
+    if (held === undefined) throw new Error("no window");
+    Object.defineProperty(windows, "window", { configurable: true, get: () => ({ ...held, chats: held.chats.map((chat) => chat.sessionId === "a1" ? { ...chat, machineId: "remote" } : chat) }) });
+
+    sockets.at(-1)?.onopen?.();
+
+    await vi.waitFor(() => { expect(openAsks.mock.calls.map(([ref, machineId]) => `${ref.id}@${machineId ?? ""}`)).toContain("a1@remote"); });
+    await vi.waitFor(async () => { app.requestUpdate(); await app.updateComplete; expect(tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned")).toBe(true); });
   });
 
   it("acknowledges the selected Chat's attention request once the owner sees it, and not while the window is in the background", async () => {
