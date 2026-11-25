@@ -144,7 +144,9 @@ export class PendingAskStore {
     const approval = validateApproval(input.approval);
     // Given, approval replaces the set's; absent, it stays. Either way only an approval set may have no questions.
     const approved = input.approval === undefined ? ask.approval : approval;
-    const questions = validateQuestions(input.questions ?? ask.questions, approved);
+    // Only replacement questions are validated: the open ones may follow a parent an earlier partial send already took.
+    if (input.questions === undefined && ask.questions.length === 0 && approved !== true) throw new PendingAskValidationError("An ask must contain at least one question");
+    const questions = input.questions === undefined ? ask.questions : validateQuestions(input.questions, approved);
     const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), revision: this.createRevision(), turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
     // The agent supplied this context, even when its text equals the user's earlier edit.
     if (supplied !== undefined) delete updated.contextEdited;

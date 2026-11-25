@@ -919,6 +919,19 @@ describe("PendingAskStore dependent questions (showIf)", () => {
     expect(() => store.submit(sessionId, third.askId, { revision: other.status === "closed" ? other.ask?.revision ?? "" : "", answers: [{ id: "machine", values: ["yes"] }], partial: true })).toThrow(/needs at least one answer/);
   });
 
+  it("revises only the context of a set whose open follow-up's parent was already sent, and still refuses an empty set without approval", () => {
+    const store = testStore();
+    const ask = store.open({ sessionId, context, questions: [question("proceed"), question("details", { showIf: { question: "proceed", values: ["yes"] } })] });
+    const sent = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "proceed", values: ["yes"] }], partial: true });
+    if (sent.status !== "closed" || sent.ask === undefined) throw new Error("expected partial");
+    expect(sent.ask.questions.map((q) => q.id)).toEqual(["details"]);
+    expect(store.update({ sessionId, askId: ask.askId, context: "New context" })?.context).toBe("New context");
+
+    const approval = store.open({ sessionId, context, approval: true });
+    expect(() => store.update({ sessionId, askId: approval.askId, approval: false })).toThrow(/at least one question/);
+    expect(store.update({ sessionId, askId: approval.askId, context: "Still approval" })?.questions).toEqual([]);
+  });
+
   it("keeps a follow-up's answer sent alone with the choice or boolean parent answer that shows it", () => {
     const store = testStore();
     const ask = openDependent(store);
