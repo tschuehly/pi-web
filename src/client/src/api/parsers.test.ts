@@ -1340,6 +1340,9 @@ describe("API parsers", () => {
     expect(parseAskUserOutcome({ ...askOutcomeWire(), approved: true }).approved).toBe(true);
     const images = [{ target: { kind: "note" }, reference: "[PIC_1]", mimeType: "image/png", name: "a.png" }, { target: { kind: "question", id: "note" }, reference: "[PIC_1]", mimeType: "image/png", revision: "r2" }];
     expect(parseAskUserOutcome({ ...askOutcomeWire(), images }).images).toEqual(images);
+    // 100 kept rows of 16 images plus a final note-only send of 16 (an approval set without questions).
+    const most = Array.from({ length: 101 * 16 }, (_, index) => ({ target: { kind: "note" }, reference: `[PIC_${String(index + 1)}]`, mimeType: "image/png" }));
+    expect(parseAskUserOutcome({ ...askOutcomeWire(), images: most }).images).toHaveLength(1616);
     expect(() => parseAskUserOutcome({ ...askOutcomeWire(), images: [{ target: { kind: "note" }, reference: "PIC", mimeType: "image/png" }] })).toThrow();
     expect(() => parseAskUserOutcome({ ...askOutcomeWire(), images: [{ target: "note", reference: "[PIC_1]", mimeType: "image/png" }] })).toThrow("Invalid ask image target");
     expect(() => parseAskUserOutcome({ ...askOutcomeWire(), editedContext: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) })).toThrow("String field exceeds limit: editedContext");

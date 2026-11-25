@@ -515,8 +515,8 @@ export function parseAskUserOutcome(value: unknown): AskUserOutcome {
     ...(record["approved"] === true ? { approved: true as const } : {}),
     questions,
     ...optionalField("note", optionalBoundedNonEmptyString(record, "note", ASK_USER_OTHER_TEXT_MAX_LENGTH)),
-    // A whole-set record gathers every send's images, each send at most MAX_PROMPT_ATTACHMENTS.
-    ...(record["images"] === undefined ? {} : { images: boundedArrayOf(record["images"], parseAskUserOutcomeImage, ASK_USER_RECORD_QUESTION_LIMIT * MAX_PROMPT_ATTACHMENTS, "images") }),
+    // A whole-set record gathers every kept row's send plus a final note-only send, each at most MAX_PROMPT_ATTACHMENTS.
+    ...(record["images"] === undefined ? {} : { images: boundedArrayOf(record["images"], parseAskUserOutcomeImage, (ASK_USER_RECORD_QUESTION_LIMIT + 1) * MAX_PROMPT_ATTACHMENTS, "images") }),
     answeredCount,
     unansweredIds,
     summary: requireNonEmptyString(record, "summary"),
