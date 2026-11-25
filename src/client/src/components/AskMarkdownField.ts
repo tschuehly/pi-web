@@ -13,8 +13,8 @@ import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages,
  * Light DOM, so the card's shadow root carries its styles and focus moves into it like into a textarea.
  * Dispatches `ask-field-input` after each edit by the user; setting `value` replaces the text without one and drops the undo history.
  */
-// Modules importing the card also load in plain-node tests (ChatView.test.ts) where no DOM exists.
-const ElementBase = (globalThis.HTMLElement ?? class {}) as typeof HTMLElement;
+// eslint-disable-next-line @typescript-eslint/consistent-type-assertions, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unnecessary-condition -- plain-node tests (ChatView.test.ts) import the card where no DOM exists, though the types say HTMLElement always does.
+const ElementBase = (globalThis.HTMLElement ?? Object) as typeof HTMLElement;
 
 export class AskMarkdownField extends ElementBase {
   #view: EditorView | undefined;
