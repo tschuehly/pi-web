@@ -26,6 +26,8 @@ import { readWithNetworkRecovery } from "./networkReadRecovery";
 import { randomHex } from "../randomHex";
 
 const MESSAGE_PAGE_SIZE = 100;
+// Small first page keeps tab switches fast; scrolling up loads MESSAGE_PAGE_SIZE more at a time.
+const INITIAL_PAGE_SIZE = 20;
 const PENDING_SESSION_START_SCOPE = ["machine", "project", "workspace", "session"] as const;
 const SESSION_RESTORE_SCOPE = ["machine", "project", "workspace", "session"] as const;
 
@@ -408,7 +410,7 @@ export class SessionController {
     const key = machineSessionKey(machineId, session.id);
     if (session.persisted === false || session.archived === true || this.transcripts.cachedView(key).messages.length > 0) return;
     // A failed read leaves selection to load and report it as usual.
-    const page = await this.api.messages(session, { limit: MESSAGE_PAGE_SIZE }, machineId).catch(() => undefined);
+    const page = await this.api.messages(session, { limit: INITIAL_PAGE_SIZE }, machineId).catch(() => undefined);
     if (page !== undefined && this.transcripts.cachedView(key).messages.length === 0) this.transcripts.mergeHistory(key, page);
   }
 
@@ -471,7 +473,7 @@ export class SessionController {
     try {
       if (session.archived === true) {
         const recoveryError = this.browserErrors.captureRecovery(sessionBrowserErrorScope(machineId, session.id, errorOwner), "session-refresh");
-        const page = await this.api.messages(session, { limit: MESSAGE_PAGE_SIZE }, machineId);
+        const page = await this.api.messages(session, { limit: INITIAL_PAGE_SIZE }, machineId);
         if (seq !== this.selectionSeq || this.getState().selectedSession?.id !== session.id || !navigationIsCurrent(options?.navigation)) return;
         this.browserErrors.clearRecovered(recoveryError);
         const history = this.transcripts.mergeHistory(transcriptKey, page);
@@ -1761,7 +1763,7 @@ export class SessionController {
       sessionBrowserErrorScope(target.machineId, target.session.id, target.errorOwner), "session-refresh",
     );
     try {
-      const snapshot = await this.api.transcriptSnapshot(target.session, { limit: MESSAGE_PAGE_SIZE }, target.machineId);
+      const snapshot = await this.api.transcriptSnapshot(target.session, { limit: INITIAL_PAGE_SIZE }, target.machineId);
       if (!this.isCurrentRefreshTarget(target) || this.transcripts.historyRevision(key) !== historyRevision) return;
       this.browserErrors.clearRecovered(recoveryError);
       const { page, status } = snapshot;

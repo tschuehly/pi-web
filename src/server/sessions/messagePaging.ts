@@ -18,21 +18,15 @@ export function pageMessagesAtSafeBoundary<T>(messages: T[], page?: MessagePageR
   const before = clampInteger(page.before ?? total, 0, total);
   const limit = clampInteger(page.limit ?? DEFAULT_LIMIT, 1, MAX_LIMIT);
   const requestedStart = Math.max(0, before - limit);
-  const start = expandStartToSafeBoundary(messages, requestedStart);
+  const start = shrinkStartPastToolResults(messages, requestedStart, before);
   return { messages: messages.slice(start, before), start, total };
 }
 
-export function expandStartToSafeBoundary(messages: unknown[], requestedStart: number): number {
-  const start = clampInteger(requestedStart, 0, messages.length);
-  if (start === 0 || isTurnBoundary(messages[start])) return start;
-  for (let index = start - 1; index >= 0; index -= 1) {
-    if (isTurnBoundary(messages[index])) return index;
-  }
-  return 0;
-}
-
-function isTurnBoundary(message: unknown): boolean {
-  return getString(message, "role") === "user";
+/** The limit is hard: a page never starts on a tool result orphaned from its call; those results go to the earlier page. */
+export function shrinkStartPastToolResults(messages: unknown[], requestedStart: number, before: number): number {
+  let start = requestedStart;
+  while (start < before && getString(messages[start], "role") === "toolResult") start += 1;
+  return start < before ? start : requestedStart;
 }
 
 function getProperty(value: unknown, key: string): unknown {

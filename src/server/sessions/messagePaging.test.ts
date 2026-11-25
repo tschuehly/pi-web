@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { expandStartToSafeBoundary, pageMessagesAtSafeBoundary } from "./messagePaging";
+import { pageMessagesAtSafeBoundary } from "./messagePaging";
 
 const user = (content: string) => ({ role: "user", content });
 const assistantText = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
@@ -22,21 +22,30 @@ describe("message paging", () => {
     expect(pageMessagesAtSafeBoundary(messages, { limit: 1 })).toEqual(page(2, 3, messages.slice(2)));
   });
 
-  it("expands a page start backward to avoid splitting a turn", () => {
-    const messages = [
-      user("prompt"),
-      thinking("plan"),
-      toolCall("read"),
-      toolResult("ok"),
-      thinking("next"),
-      assistantText("answer"),
-    ];
-
-    expect(pageMessagesAtSafeBoundary(messages, { before: 5, limit: 2 })).toEqual(page(0, 6, messages.slice(0, 5)));
+  it("never returns more than the limit, even mid-turn", () => {
+    const messages = [user("prompt"), thinking("plan"), toolCall("read"), toolResult("ok"), thinking("next"), assistantText("answer")];
+    expect(pageMessagesAtSafeBoundary(messages, { before: 5, limit: 2 })).toEqual(page(4, 6, messages.slice(4, 5)));
   });
 
-  it("does not split a readable assistant answer from its user prompt", () => {
-    const messages = [user("prompt"), thinking("plan"), assistantText("answer")];
-    expect(expandStartToSafeBoundary(messages, 2)).toBe(0);
+  it("does not start a page on a tool result orphaned from its call", () => {
+    const messages = [user("prompt"), toolCall("read"), toolResult("a"), toolResult("b"), assistantText("answer")];
+    expect(pageMessagesAtSafeBoundary(messages, { limit: 3 })).toEqual(page(4, 5, messages.slice(4)));
+    expect(pageMessagesAtSafeBoundary(messages, { before: 4, limit: 3 })).toEqual(page(1, 5, messages.slice(1, 4)));
+  });
+
+  it("pages a single 1,700-message turn within the limit and chains back to the start", () => {
+    const messages: unknown[] = [user("prompt")];
+    while (messages.length < 1_700) messages.push(...(messages.length % 3 === 1 ? [toolCall("read")] : messages.length % 3 === 2 ? [toolResult("ok")] : [thinking("next")]));
+    const seen: unknown[] = [];
+    let before: number | undefined;
+    for (let guard = 0; guard < 1_700; guard += 1) {
+      const result = pageMessagesAtSafeBoundary(messages, { ...(before === undefined ? {} : { before }), limit: 20 });
+      expect(result.messages.length).toBeGreaterThan(0);
+      expect(result.messages.length).toBeLessThanOrEqual(20);
+      seen.unshift(...result.messages);
+      if (result.start === 0) break;
+      before = result.start;
+    }
+    expect(seen).toEqual(messages);
   });
 });

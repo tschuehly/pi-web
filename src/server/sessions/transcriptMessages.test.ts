@@ -37,9 +37,7 @@ describe("durable transcript identity", () => {
     expect(linesForPage().map((line) => line.entryId)).toEqual([
       "user-1", "assistant-1", "custom-1", "compact-1", "branch-1", "user-2", "bash-1",
     ]);
-    expect(linesForPage(5, 1).map((line) => line.entryId)).toEqual([
-      "user-1", "assistant-1", "custom-1", "compact-1", "branch-1",
-    ]);
+    expect(linesForPage(5, 1).map((line) => line.entryId)).toEqual(["branch-1"]);
     expect(linesForPage()[1]?.meta?.thinkingLevel).toBe("high");
     expect(historyMessagesFromEntries(entries)).toEqual(messages);
     expect(entries).toEqual(original);

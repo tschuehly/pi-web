@@ -138,7 +138,7 @@ describe("SessionController deferred chat loading", () => {
     await test.controller.refreshSelectedSession();
     expect(test.api.messages).not.toHaveBeenCalled();
     await test.controller.loadSelectedSession();
-    expect(test.api.messages).toHaveBeenCalledWith(archived, { limit: 100 }, "local");
+    expect(test.api.messages).toHaveBeenCalledWith(archived, { limit: 20 }, "local");
     expect(test.socket.connectedSessionIds).toEqual([]);
     expect(test.ready).toHaveBeenCalledWith({ machineId: "local", session: archived });
   });
@@ -153,7 +153,7 @@ describe("SessionController deferred chat loading", () => {
     test.snapshot.resolve(snapshot(oldSession));
     await test.controller.loadSelectedSession();
 
-    expect(test.api.transcriptSnapshot).toHaveBeenCalledExactlyOnceWith(oldSession, { limit: 100 }, "remote");
+    expect(test.api.transcriptSnapshot).toHaveBeenCalledExactlyOnceWith(oldSession, { limit: 20 }, "remote");
     expect(test.ready).toHaveBeenCalledWith({ machineId: "remote", session: oldSession });
   });
 

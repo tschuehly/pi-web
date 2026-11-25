@@ -305,7 +305,7 @@ describe("SessionController selected-session refresh", () => {
 
     await controller.refreshSelectedSession();
 
-    expect(transcriptSnapshot).toHaveBeenCalledExactlyOnceWith(oldSession, { limit: 100 }, "local");
+    expect(transcriptSnapshot).toHaveBeenCalledExactlyOnceWith(oldSession, { limit: 20 }, "local");
     expect(messages).not.toHaveBeenCalled();
     expect(selectedStatus).not.toHaveBeenCalled();
     expect(streamSnapshot).not.toHaveBeenCalled();
