@@ -200,3 +200,23 @@ describe("SessionController earlier pages", () => {
     }
   });
 });
+
+describe("SessionController earlier pages join tool calls", () => {
+  it("merges a tool result at the top of the visible tail into its call on the earlier page", async () => {
+    const f = fixture();
+    const call = { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "read", arguments: { path: "a.ts" } }], timestamp: 199 };
+    const result = { role: "toolResult", toolCallId: "c1", toolName: "read", content: [{ type: "text", text: "file body" }], isError: false, timestamp: 200 };
+    f.transcriptSnapshot.mockReset().mockImplementation(() => transcriptSnapshotFixture({ ...oldTail, messages: [result, ...oldTail.messages.slice(1)] }, status(oldSession.id)));
+    f.messages.mockResolvedValueOnce({ ...oldEarlier, messages: [...oldEarlier.messages.slice(0, -1), call] });
+    try {
+      await f.controller.selectSession(oldSession, { updateUrl: false });
+      await f.controller.loadEarlierMessages();
+      const tools = f.state().messages.filter((line) => line.parts.some((part) => part.type === "toolExecution" || part.type === "toolResult"));
+      expect(tools).toHaveLength(1);
+      expect(tools[0]?.parts[0]).toMatchObject({ type: "toolExecution", toolCallId: "c1" });
+      expect(JSON.stringify(tools[0])).toContain("file body");
+    } finally {
+      f.controller.dispose();
+    }
+  });
+});
