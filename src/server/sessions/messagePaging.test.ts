@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { pageMessagesAtSafeBoundary } from "./messagePaging";
+// Copied verbatim to pi-workbench packages/durable-pilot/test/transcript-paging.fixtures.json; both pagers must agree on it.
+import fixtures from "./messagePaging.fixtures.json";
 
 const user = (content: string) => ({ role: "user", content });
 const assistantText = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
@@ -12,6 +14,25 @@ function page(start: number, total: number, messages: unknown[]) {
 }
 
 describe("message paging", () => {
+  it.each(fixtures)("shared fixture: $name", ({ messages, page: request, start, end }) => {
+    expect(pageMessagesAtSafeBoundary<unknown>(messages, request ?? undefined)).toEqual(page(start, messages.length, messages.slice(start, end)));
+  });
+
+  it("chains pages of a call with 20 results, every message exactly once", () => {
+    const messages = [user("prompt"), toolCall("read"), ...Array.from({ length: 20 }, (_, index) => toolResult(String(index))), assistantText("answer")];
+    const seen: unknown[] = [];
+    let before: number | undefined;
+    for (let guard = 0; guard < 10; guard += 1) {
+      const result = pageMessagesAtSafeBoundary(messages, { ...(before === undefined ? {} : { before }), limit: 5 });
+      expect(result.messages.length).toBeGreaterThan(0);
+      expect((result.messages[0] as { role: string }).role).not.toBe("toolResult");
+      seen.unshift(...result.messages);
+      if (result.start === 0) break;
+      before = result.start;
+    }
+    expect(seen).toEqual(messages);
+  });
+
   it("wraps the full history in a page when paging is not requested", () => {
     const messages = [user("hello")];
     expect(pageMessagesAtSafeBoundary(messages)).toEqual(page(0, 1, messages));

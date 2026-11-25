@@ -1,4 +1,4 @@
-const DEFAULT_LIMIT = 100;
+const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 500;
 
 export interface MessagePageRequest {
@@ -22,11 +22,18 @@ export function pageMessagesAtSafeBoundary<T>(messages: T[], page?: MessagePageR
   return { messages: messages.slice(start, before), start, total };
 }
 
-/** The limit is hard: a page never starts on a tool result orphaned from its call; those results go to the earlier page. */
+/**
+ * The limit is hard, with one exception: a page never starts on a tool result orphaned from its call. Leading results go
+ * to the earlier page; a page of only results moves its start back to their call message, exceeding the limit just to reach it.
+ */
 export function shrinkStartPastToolResults(messages: unknown[], requestedStart: number, before: number): number {
+  const isResult = (index: number) => getString(messages[index], "role") === "toolResult";
   let start = requestedStart;
-  while (start < before && getString(messages[start], "role") === "toolResult") start += 1;
-  return start < before ? start : requestedStart;
+  while (start < before && isResult(start)) start += 1;
+  if (start < before) return start;
+  start = requestedStart;
+  while (start > 0 && isResult(start - 1)) start -= 1;
+  return Math.max(0, start - 1);
 }
 
 function getProperty(value: unknown, key: string): unknown {
