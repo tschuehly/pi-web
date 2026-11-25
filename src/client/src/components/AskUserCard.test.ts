@@ -534,7 +534,7 @@ describe("ask-user-card dependent questions", () => {
     };
     document.body.append(card);
     await card.updateComplete;
-    expect([...renderRoot(card).querySelectorAll(".record-answers li")].map((item) => item.textContent)).toEqual(["On", "7"]);
+    expect([...renderRoot(card).querySelectorAll(".record-answer")].map((item) => item.textContent)).toEqual(["On", "7"]);
   });
 });
 
@@ -815,7 +815,7 @@ describe("ask-user-card context", () => {
     expect(media.renderRoot.querySelector("pre.diff .added")?.textContent).toBe("+b\n");
   });
 
-  it("renders the context above the questions of a closed ask record", async () => {
+  it("renders the context of a closed ask record in its full-questions disclosure, after the answers", async () => {
     const card = new AskUserCard();
     card.outcome = {
       askId: "ask-1", reason: "cancelled", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
@@ -828,7 +828,7 @@ describe("ask-user-card context", () => {
     const context = await renderedContext(card);
 
     expect(context.innerHTML).toContain("<strong>Postgres</strong>");
-    expect(renderRoot(card).querySelector(".ask-context ~ .record-questions")).not.toBeNull();
+    expect(renderRoot(card).querySelector(".record-lines ~ details.record-full formatted-text.ask-context")).not.toBeNull();
     expect(renderRoot(card).querySelector(".context-edited")).toBeNull();
   });
 
@@ -949,6 +949,7 @@ describe("renderedOnlyFences", () => {
 });
 
 async function renderedContext(card: AskUserCard): Promise<ShadowRoot> {
+  openFullRecord(card);
   const formatted = requiredElement(renderRoot(card).querySelector<LitElement>("formatted-text.ask-context"), "ask context");
   await formatted.updateComplete;
   // Markdown formatting is deferred to a later frame.
@@ -1105,7 +1106,69 @@ describe("ask-user-card record mode", () => {
     expect(renderRoot(card).querySelector<HTMLElement & { text: string }>(".record-question formatted-text.question-detail")?.text).toBe("The **cache** store.");
     expect(renderRoot(card).querySelector(".record-note")?.textContent).toContain("Ship it this week.");
   });
+
+  it("shows a closed record as one line per question and answer, the context, details and summary folded until opened", async () => {
+    const card = new AskUserCard();
+    card.outcome = {
+      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      context: "Recommend **Postgres**.", editedContext: "Recommend **SQLite**.",
+      questions: [
+        { question: question("db", "Which database?", [option("pg", "Postgres")], { detail: "The **main** store." }), answered: true, values: ["pg"] },
+        { question: question("day", "Deploy day?", [option("mon", "Monday")]), answered: true, values: [], otherText: "Tuesday" },
+        { question: { id: "on", question: "Enable cache?", options: [], kind: "boolean" }, answered: true, values: [], value: false },
+        unansweredRecord(question("why", "Why?", [])),
+        { question: question("gpu", "Which GPU?", []), answered: false, values: [], skipped: true },
+      ],
+      note: "Ship it.",
+      answeredCount: 3, unansweredIds: ["why"], summary: "Answered 3 of 4; unanswered: why",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+    const root = renderRoot(card);
+    const details = requiredElement(root.querySelector<HTMLDetailsElement>("details.record-full"), "full questions");
+
+    expect([...root.querySelectorAll("ol.record-lines > li")].map((line) => line.textContent.replace(/\s+/gu, " ").trim())).toEqual([
+      "1. Which database? — Postgres", "2. Deploy day? — Custom: Tuesday", "3. Enable cache? — Off", "4. Why? — Unanswered", "5. Which GPU? — Skipped · condition not met",
+    ]);
+    expect(root.querySelector(".record-note")?.textContent).toContain("Ship it.");
+    expect([details.open, details.querySelector("summary")?.textContent]).toEqual([false, "Show full questions"]);
+    expect([...root.querySelectorAll(".ask-context, .context-edited, .question-detail, .record-summary")].every((element) => details.contains(element))).toBe(true);
+
+    const context = await renderedContext(card);
+    expect(details.open).toBe(true);
+    expect(context.innerHTML).toContain("<strong>SQLite</strong>");
+    expect(details.querySelector(".context-edited")?.textContent).toBe("Context edited by you");
+    expect(details.querySelector<HTMLElement & { text: string }>(".record-question formatted-text.question-detail")?.text).toBe("The **main** store.");
+    expect(details.querySelector(".record-summary")?.textContent.trim()).toBe("Answered 3 of 4; unanswered: why");
+  });
+
+  it("keeps a superseded record's explanation and unsent draft in view outside the disclosure", async () => {
+    const db = question("db", "Which database?", [option("pg", "Postgres")]);
+    saveAskDraft("session-1", "ask-1", { db: { values: ["pg"] } });
+    const card = new AskUserCard();
+    card.draftSessionId = "session-1";
+    card.outcome = {
+      askId: "ask-1", reason: "superseded", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [unansweredRecord(db)], answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+    };
+    document.body.append(card);
+    await card.updateComplete;
+    const root = renderRoot(card);
+
+    expect(root.querySelector(".record-status")?.textContent).toContain("A newer question set replaced this one.");
+    expect(root.querySelector("ol.record-lines > li")?.textContent.replace(/\s+/gu, " ").trim()).toBe("1. Which database? — Postgres Draft answer · not sent");
+    // Nothing more to show: no context, no detail, and the explanation stands in for the summary.
+    expect(root.querySelector("details.record-full")).toBeNull();
+  });
 });
+
+/** Opens a record's "Show full questions" disclosure; an open card has none. */
+function openFullRecord(card: AskUserCard): void {
+  const details = renderRoot(card).querySelector<HTMLDetailsElement>("details.record-full");
+  if (details === null || details.open) return;
+  details.open = true;
+  details.dispatchEvent(new Event("toggle"));
+}
 
 async function mountOpenAsk(ask: PendingAskUser, onSubmit?: AskUserSubmitCallback): Promise<AskUserCard> {
   const card = new AskUserCard();

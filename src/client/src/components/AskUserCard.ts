@@ -404,6 +404,13 @@ export class AskUserCard extends LitElement {
     const recordLabel = outcome.partial === true
       ? `${outcome.answeredCount === 1 ? "Answer" : "Answers"} sent · others still open`
       : { submitted: "Answers sent", superseded: "Superseded", cancelled: "Cancelled", withdrawn: "Withdrawn" }[outcome.reason];
+    // Superseded and withdrawn explain their status, so that line stays in view; the summary only repeats the answers.
+    const statusLine = outcome.reason === "superseded"
+      ? "A newer question set replaced this one. Draft answers shown below were not sent to the model."
+      : outcome.reason === "withdrawn" ? "The agent withdrew these questions." : undefined;
+    const context = this.renderContext(outcome.editedContext ?? outcome.context, outcome.editedContext !== undefined);
+    const details = outcome.questions.flatMap((record, index) => record.question.detail === undefined ? [] : [this.renderQuestionDetailRecord(record, index)]);
+    const full = context !== null || details.length > 0 || statusLine === undefined;
     return html`
       <article class="ui-transcript-surface card record-card" aria-labelledby="ask-user-record-heading">
         <header class="card-header">
@@ -411,22 +418,49 @@ export class AskUserCard extends LitElement {
           <span class=${`header-status ${outcome.reason}`}>${recordLabel}</span>
           <slot name="actions"></slot>
         </header>
-        ${this.renderContext(outcome.editedContext ?? outcome.context, outcome.editedContext !== undefined)}
-        <p class="record-summary">
-          ${outcome.reason === "superseded"
-            ? "A newer question set replaced this one. Draft answers shown below were not sent to the model."
-            : outcome.reason === "withdrawn" ? "The agent withdrew these questions." : outcome.summary}
-        </p>
-        <div class="record-questions">
+        ${statusLine === undefined ? null : html`<p class="record-summary record-status">${statusLine}</p>`}
+        <ol class="record-lines" aria-label="Questions and answers">
           ${outcome.questions.map((record, index) => this.renderQuestionRecord(outcome, record, index))}
-        </div>
+        </ol>
         ${outcome.note === undefined ? null : html`<section class="record-question record-note"><h3>Note</h3><p class="other-record-text">${outcome.note}</p></section>`}
+        ${full ? html`
+          <details class="record-full">
+            <summary>Show full questions</summary>
+            ${context}
+            ${statusLine === undefined ? html`<p class="record-summary">${outcome.summary}</p>` : null}
+            ${details}
+          </details>
+        ` : null}
       </article>
     `;
   }
 
+  /** One compact line: number, question, then its answer as text. */
   private renderQuestionRecord(outcome: AskUserOutcome, record: AskUserQuestionRecord, index: number): TemplateResult {
     const answer = this.displayedRecordAnswer(outcome, record);
+    const parts = answer === undefined ? [] : [
+      ...answer.values.map((value) => this.optionLabel(record.question, value)),
+      ...(answer.otherText === undefined ? [] : [`Custom: ${answer.otherText}`]),
+      ...(answer.value === undefined ? [] : [typeof answer.value === "boolean" ? (answer.value ? "On" : "Off") : String(answer.value)]),
+    ];
+    return html`
+      <li class="record-line">
+        <span class="question-number">${String(index + 1)}.</span>
+        <span class="record-line-copy">
+          <span class="record-line-question">${record.question.question}</span>
+          <span aria-hidden="true"> — </span>
+          ${record.skipped === true
+            ? html`<span class="unanswered-record">Skipped · condition not met</span>`
+            : answer === undefined
+            ? html`<span class="unanswered-record">Unanswered</span>`
+            : html`<span class="record-answer other-record-text">${parts.join(", ")}</span>${answer.fromDraft ? html` <span class="draft-note">Draft answer · not sent</span>` : null}`}
+        </span>
+      </li>
+    `;
+  }
+
+  /** A question's detail inside the record's disclosure, under its number and wording. */
+  private renderQuestionDetailRecord(record: AskUserQuestionRecord, index: number): TemplateResult {
     return html`
       <section class="record-question" aria-labelledby=${this.recordQuestionHeadingId(index)}>
         <h3 id=${this.recordQuestionHeadingId(index)}>
@@ -434,18 +468,6 @@ export class AskUserCard extends LitElement {
           <span>${record.question.question}</span>
         </h3>
         ${this.renderDetail(record.question.detail)}
-        ${record.skipped === true
-          ? html`<p class="unanswered-record">Skipped · condition not met</p>`
-          : answer === undefined
-          ? html`<p class="unanswered-record">Unanswered</p>`
-          : html`
-              <ul class="record-answers">
-                ${answer.values.map((value) => html`<li>${this.optionLabel(record.question, value)}</li>`)}
-                ${answer.otherText === undefined ? null : html`<li><strong>Custom:</strong> <span class="other-record-text">${answer.otherText}</span></li>`}
-                ${answer.value === undefined ? null : html`<li class="other-record-text">${typeof answer.value === "boolean" ? (answer.value ? "On" : "Off") : String(answer.value)}</li>`}
-              </ul>
-              ${answer.fromDraft ? html`<p class="draft-note">Draft answer · not sent</p>` : null}
-            `}
       </section>
     `;
   }
@@ -967,22 +989,29 @@ export class AskUserCard extends LitElement {
     }
     .confirmation-actions { flex: 0 0 auto; display: flex; gap: 7px; }
     .record-summary { margin: 0; color: var(--pi-muted); padding: 12px 16px 12px var(--ui-transcript-inline-start, 16px); font-size: 12px; }
-    .record-questions { display: grid; }
+    .record-lines { display: grid; gap: 6px; margin: 0; padding: 12px 16px 12px var(--ui-transcript-inline-start, 16px); list-style: none; line-height: 1.4; }
+    /* Numbers hang in the gutter so question and answer words stay in the transcript's text column. */
+    .record-line { display: grid; grid-template-columns: var(--question-number-column) minmax(0, 1fr); align-items: start; gap: var(--question-copy-gap); margin-inline-start: calc(-1 * (var(--question-number-column) + var(--question-copy-gap))); }
+    .record-line-copy { min-width: 0; overflow-wrap: anywhere; }
+    .record-line-question { font-weight: 600; }
+    .record-note { border-top: 1px solid var(--pi-border-muted); }
+    .record-full { border-top: 1px solid var(--pi-border-muted); }
+    .record-full > summary { width: fit-content; padding: 8px 16px 8px var(--ui-transcript-inline-start, 16px); color: var(--pi-accent); font-size: 12px; cursor: pointer; }
+    .record-full > summary:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: -2px; border-radius: 4px; }
+    .record-full > .record-question { border-top: 1px solid var(--pi-border-muted); }
     .record-question { min-width: 0; padding: 14px 16px 14px var(--ui-transcript-inline-start, 16px); }
-    .record-question + .record-question { border-top: 1px solid var(--pi-border-muted); }
     .record-question h3 { display: grid; grid-template-columns: var(--question-number-column) minmax(0, 1fr); align-items: start; gap: var(--question-copy-gap); margin-bottom: 8px; font-size: 14px; line-height: 1.35; }
     /* Numbers and bullets hang in the gutter so question and answer words stay in the transcript's text column. */
     .record-question h3 { margin-inline-start: calc(-1 * (var(--question-number-column) + var(--question-copy-gap))); }
     /* The note has no number to hang, so its heading sits in the text column like the answers. */
     .record-note h3 { display: block; margin-inline-start: 0; }
-    .record-answers { display: grid; gap: 4px; margin: 0; padding-left: 0; line-height: 1.4; }
     .other-record-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-    .unanswered-record { margin: 0; color: var(--pi-muted); font-style: italic; }
-    .draft-note { margin: 7px 0 0; color: var(--pi-warning); font-size: 11px; }
+    .unanswered-record { color: var(--pi-muted); font-style: italic; }
+    .draft-note { color: var(--pi-warning); font-size: 11px; }
     @container (max-width: 580px) {
       fieldset.question { padding: 0 12px 14px var(--ui-transcript-inline-start, 12px); }
       .record-question { padding: 14px 12px 14px var(--ui-transcript-inline-start, 12px); }
-      .record-summary, .ask-context, .ask-note { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
+      .record-summary, .ask-context, .ask-note, .record-lines, .record-full > summary { padding-inline: var(--ui-transcript-inline-start, 12px) 12px; }
       .form-footer { align-items: stretch; flex-direction: column; padding: 12px; }
       .partial-confirmation { align-items: stretch; flex-direction: column; }
       .confirmation-actions { justify-content: flex-end; }
@@ -1001,7 +1030,7 @@ export class AskUserCard extends LitElement {
     :host([flat]) .card { --ask-reading-start: calc(12px + var(--question-number-column) + var(--question-copy-gap)); }
     :host([flat]) .open-card .ask-context { padding: 8px 12px 8px var(--ask-reading-start); }
     /* A sent record kept in the drawer reads in the same column, its numbers and bullets hanging in the gutter. */
-    :host([flat]) .record-card :is(.ask-context, .context-edited, .record-summary, .record-question) { padding-inline: var(--ask-reading-start) 12px; }
+    :host([flat]) .record-card :is(.ask-context, .context-edited, .record-summary, .record-question, .record-lines, .record-full > summary) { padding-inline: var(--ask-reading-start) 12px; }
     :host([flat]) .questions { padding-top: 8px; }
     :host([flat]) .question-separator { margin-bottom: 8px; }
     :host([flat]) fieldset.question { padding: 0 12px 8px; }
