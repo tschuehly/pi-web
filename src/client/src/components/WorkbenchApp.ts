@@ -1101,6 +1101,15 @@ export class WorkbenchApp extends LitElement {
     }));
   }
 
+  /** Chats whose selected Alignment asks for an agreement not yet reached (or reset), from their live status. */
+  private chatUnaligned(): Record<string, boolean> {
+    return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
+      const status = this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId];
+      const mode = parseWorkingModeSnapshot(status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY]);
+      return mode === undefined || mode.selected.alignment === "Default" || mode.aligned ? [] : [[chat.sessionId, true]];
+    }));
+  }
+
   /** The home: projects, Workstreams and All sessions, with this window's tabs still above it. */
   private goHome(discardConfirmed = false): void {
     if (this.app.selectedSession === undefined || !discardConfirmed && !this.filesPaneCanClose()) return;
@@ -1854,7 +1863,7 @@ export class WorkbenchApp extends LitElement {
   override render() {
     const selected = this.app.selectedSession?.id;
     return html`
-      <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()} .attention=${this.chatAttention()}
+      <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()} .attention=${this.chatAttention()} .unaligned=${this.chatUnaligned()}
         @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { this.swipe.cancel(); void this.showWindowChat(event.detail.sessionId); }}
         @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { void this.closeWindowChats(event.detail.sessionIds); }}
         @tab-rename=${(event: CustomEvent<TabRenameDetail>) => { void this.renameTab(event.detail); }}

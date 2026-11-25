@@ -89,6 +89,23 @@ describe("window tabs", () => {
     expect(root.querySelector('.chat-tab[data-session="a1"] .attention')).toBeNull();
   });
 
+  it("frames a not-aligned Chat's tab dashed and names it for screen readers, until it is aligned", async () => {
+    const { tabs, root } = await mount("a1");
+    tabs.unaligned = { a2: true };
+    await tabs.updateComplete;
+
+    const tab = () => root.querySelector('.chat-tab[data-session="a2"]');
+    expect(tab()?.hasAttribute("data-unaligned")).toBe(true);
+    expect(tab()?.getAttribute("title")).toBe("Workstream: Release · Chat a2 · not aligned");
+    expect(tab()?.querySelector(".visually-hidden")?.textContent).toBe(", not aligned");
+    expect(root.querySelector('.chat-tab[data-session="a1"]')?.hasAttribute("data-unaligned")).toBe(false);
+
+    tabs.unaligned = {};
+    await tabs.updateComplete;
+    expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
+    expect(tab()?.querySelector(".visually-hidden")).toBeNull();
+  });
+
   it("opens with Enter or Space, reopening a Workstream's last-active Chat", async () => {
     const { root, events } = await mount("x", workingSet("a2"));
 

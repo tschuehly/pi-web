@@ -2496,6 +2496,25 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(acknowledge).toHaveBeenCalledExactlyOnceWith({ id: "b1", cwd: workspace.path }, "attention-1", "local"); });
   });
 
+  it("frames a Chat's tab dashed while its Alignment waits for an agreement, and drops the frame once aligned", async () => {
+    const app = await mountWithWorkstreamChats();
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (alignment: string, aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment, attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const tab = () => tabsRoot(app).querySelector('[data-session="b1"]');
+
+    receive({ type: "status.update", status: { ...idleStatus("b1"), extensionStatuses: { "working-mode": mode("Align", false) } } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(true); });
+    expect(tab()?.getAttribute("title")).toMatch(/ · not aligned$/u);
+
+    receive({ type: "status.update", status: { ...idleStatus("b1"), extensionStatuses: { "working-mode": mode("Align", true) } } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(false); });
+    expect(tab()?.getAttribute("title")).not.toMatch(/not aligned/u);
+
+    receive({ type: "status.update", status: { ...idleStatus("b1"), extensionStatuses: { "working-mode": mode("Default", false) } } });
+    await app.updateComplete;
+    expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
+  });
+
   it("puts the Chat's tools in the tab row, naming its folder in the Files tooltip, and gives them back to the tile in a grid", async () => {
     const app = await mountWithWorkstreamChats();
     const tools = () => app.shadowRoot?.querySelector('workbench-window-tabs > .chat-tools[slot="tools"]');

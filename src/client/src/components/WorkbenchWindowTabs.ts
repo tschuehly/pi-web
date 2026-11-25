@@ -117,6 +117,8 @@ export class WorkbenchWindowTabs extends LitElement {
   @property({ attribute: false }) questionCounts: Record<string, number> = {};
   /** Each Chat's selected Attention value; a value other than Default shows as its icon. */
   @property({ attribute: false }) attention: Record<string, string> = {};
+  /** Chats whose Alignment asks for an agreement not yet reached: a dashed border until it is. */
+  @property({ attribute: false }) unaligned: Record<string, boolean> = {};
   /** This window's id, carried by a drag so the receiving window knows where the Chats come from. */
   @property({ attribute: false }) windowId = "";
 
@@ -267,11 +269,11 @@ export class WorkbenchWindowTabs extends LitElement {
     return html`
       <nav aria-label=${window.name} @dragover=${this.onDragOver} @drop=${this.onDrop}>
         <div class="bar" @mousedown=${this.onBarMouseDown}>
-          <div class=${chat.workstream === undefined ? "solo" : "solo tinted"} style=${workstreamStyle(chat.workstream?.id)} data-session=${chat.sessionId} data-status=${this.status(chat)} role="button" tabindex="0" aria-current=${this.selected === chat.sessionId ? "page" : "false"} title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`} draggable="true"
+          <div class=${chat.workstream === undefined ? "solo" : "solo tinted"} style=${workstreamStyle(chat.workstream?.id)} data-session=${chat.sessionId} data-status=${this.status(chat)} ?data-unaligned=${this.isUnaligned(chat)} role="button" tabindex="0" aria-current=${this.selected === chat.sessionId ? "page" : "false"} title=${`${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`}${this.unalignedSuffix(chat)}`} draggable="true"
             @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}>
             ${this.renderChatMarker(chat)}
             <span class="title">${chat.title}</span>
-            ${this.renderAttention(chat)}
+            ${this.renderAttention(chat)}${this.renderUnaligned(chat)}
             ${chat.workstream === undefined ? nothing : html`<span class="solo-ws">${chat.workstream.title}</span>`}
           </div>
           <slot name="tools"></slot>
@@ -315,14 +317,14 @@ export class WorkbenchWindowTabs extends LitElement {
     const only = group.chats.length === 1 ? group.chats[0] : undefined;
     const move = this.moveHandlers(group.chats.map((chat) => chat.sessionId), only?.title ?? label);
     return html`
-      <div role="tab" tabindex="0" class=${group.workstream === undefined ? "workstream-tab" : "workstream-tab tinted"} data-session=${only?.sessionId ?? nothing} style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${only === undefined ? `Workstream: ${label}` : `Workstream: ${label} · ${only.title}`} draggable="true"
+      <div role="tab" tabindex="0" class=${group.workstream === undefined ? "workstream-tab" : "workstream-tab tinted"} data-session=${only?.sessionId ?? nothing} ?data-unaligned=${only !== undefined && this.isUnaligned(only)} style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${only === undefined ? `Workstream: ${label}` : `Workstream: ${label} · ${only.title}${this.unalignedSuffix(only)}`} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
         @auxclick=${(event: MouseEvent) => { if (only !== undefined && event.button === 1) this.close([only.sessionId]); }}
         @dblclick=${() => { if (workstream !== undefined) this.rename({ workstreamId: workstream.id }, workstream.shortTitle ?? ""); }}>
         ${only === undefined ? nothing : this.renderChatMarker(only)}
         ${workstream === undefined ? nothing : workstreamIcon}
         <span class="title">${workstream?.shortTitle ?? label}</span>
-        ${only === undefined ? nothing : this.renderAttention(only)}
+        ${only === undefined ? nothing : html`${this.renderAttention(only)}${this.renderUnaligned(only)}`}
         ${only === undefined
           ? html`<span class="count" aria-label=${`${String(group.chats.length)} Chats`}>${String(group.chats.length)}</span>`
           : this.renderCloseButton(only)}
@@ -335,13 +337,13 @@ export class WorkbenchWindowTabs extends LitElement {
     const open = () => { this.select(chat.sessionId); };
     const move = this.moveHandlers([chat.sessionId], chat.title);
     return html`
-      <div role="tab" tabindex="0" class=${tintFrom === undefined ? "chat-tab" : "chat-tab tinted"} style=${workstreamStyle(tintFrom)} data-session=${chat.sessionId} data-status=${status} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`} draggable="true"
+      <div role="tab" tabindex="0" class=${tintFrom === undefined ? "chat-tab" : "chat-tab tinted"} style=${workstreamStyle(tintFrom)} data-session=${chat.sessionId} data-status=${status} ?data-unaligned=${this.isUnaligned(chat)} aria-selected=${String(chat.sessionId === this.selected)} title=${`${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`}${this.unalignedSuffix(chat)}`} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
         @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([chat.sessionId]); }}
         @dblclick=${() => { this.rename({ sessionId: chat.sessionId }, chat.shortName ?? ""); }}>
         ${this.renderChatMarker(chat)}
         <span class="title">${chat.shortName ?? chat.title}</span>
-        ${this.renderAttention(chat)}
+        ${this.renderAttention(chat)}${this.renderUnaligned(chat)}
         ${this.renderCloseButton(chat)}
       </div>`;
   }
@@ -357,6 +359,19 @@ export class WorkbenchWindowTabs extends LitElement {
     const value = this.attention[chat.sessionId];
     if (value === undefined || value === "Default") return nothing;
     return html`<svg class="attention" viewBox="0 0 24 24" role="img" aria-label=${`Attention: ${value}`}><title>${`Attention: ${value}`}</title>${workingModeIcon("attention", value)}</svg>`;
+  }
+
+  private isUnaligned(chat: WindowChat): boolean {
+    return this.unaligned[chat.sessionId] === true;
+  }
+
+  private unalignedSuffix(chat: WindowChat): string {
+    return this.isUnaligned(chat) ? " · not aligned" : "";
+  }
+
+  /** Names the dashed border for screen readers, which skip the tab's title. */
+  private renderUnaligned(chat: WindowChat) {
+    return this.isUnaligned(chat) ? html`<span class="visually-hidden">, not aligned</span>` : nothing;
   }
 
   private renderCloseButton(chat: WindowChat) {
@@ -398,6 +413,10 @@ export class WorkbenchWindowTabs extends LitElement {
     .ws-icon { flex: 0 0 auto; width: 12px; height: 12px; color: var(--ws, var(--pi-muted)); }
     /* The composer's Attention hue. */
     .attention { flex: 0 0 auto; color: light-dark(#7644d4, #bc8cff); }
+    /* Not aligned: a dashed frame in the composer's Alignment hue, apart from the solid focus ring and the warning hue of "needs you". */
+    [data-unaligned] { border: 1px dashed light-dark(#0a5cc2, #58a6ff); }
+    .bar .tabs > [role="tab"][data-unaligned], .solo[data-unaligned] { border-bottom: 0; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .count { flex: 0 0 auto; color: var(--pi-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
     .tabs.chats { min-width: 120px; font-size: 12px; }
     .workstreams .chat-tab { font-weight: 500; }
