@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
-import { defaultApi, FakeSocket, oldSession, sessionLookupId, workspace, type AppState } from "./sessionController.testSupport";
+import { defaultApi, FakeSocket, oldSession, sessionLookupId, status as idleStatus, workspace, type AppState } from "./sessionController.testSupport";
 
 const catalogModels = [
   { provider: "openai", id: "gpt-5", enabled: true },
@@ -169,5 +169,23 @@ describe("SessionController model catalog", () => {
     expect(await controller.setModelEnabled("openai", "gpt-4o", true)).toBeUndefined();
     expect(await controller.setModelScope("current")).toBeUndefined();
     expect(state.error).toBe("");
+  });
+});
+
+describe("SessionController Working Mode versions", () => {
+  it("keeps a newer live Working Mode over a delayed model-change response that carries an older one", async () => {
+    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
+    let respond!: () => void;
+    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { socket: new FakeSocket(), api: {
+      ...defaultApi,
+      setModel: () => new Promise((resolve) => { respond = () => { resolve({ ...idleStatus(oldSession.id), model: { provider: "openai", id: "gpt-5" }, extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 1 }); }; }),
+    } });
+    const changing = controller.setModel("openai", "gpt-5");
+    controller.applySessionStatus({ ...idleStatus(oldSession.id), extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 });
+    respond();
+    await changing;
+    expect(state.status?.extensionStatuses?.["working-mode"]).toBe(mode(true));
+    expect(state.sessionStatuses[oldSession.id]).toMatchObject({ model: { provider: "openai", id: "gpt-5" }, workingModeVersion: 2 });
   });
 });

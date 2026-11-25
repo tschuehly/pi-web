@@ -206,6 +206,21 @@ export function workingModeState(value: unknown): WorkingModeState | undefined {
   return { alignment, attention, checking, orchestration };
 }
 
+/**
+ * The one compare-and-apply rule for a Chat's Working Mode: the value that arrived later wins unless both carry a
+ * version and the earlier one's is higher (newer-or-equal wins; without a version on either side, the fresher fetch).
+ */
+export function workingModeSupersedes(later: number | undefined, earlier: number | undefined): boolean {
+  return later === undefined || earlier === undefined || later >= earlier;
+}
+
+/** `next`, keeping `kept`'s Working Mode (and its version) when `next`'s is older: a delayed response never rolls it back. */
+export function withNewerWorkingMode(kept: SessionStatus | undefined, next: SessionStatus): SessionStatus {
+  const mode = kept?.extensionStatuses?.[WORKING_MODE_STATUS_KEY];
+  if (kept === undefined || mode === undefined || workingModeSupersedes(next.workingModeVersion, kept.workingModeVersion)) return next;
+  return { ...next, extensionStatuses: { ...next.extensionStatuses, [WORKING_MODE_STATUS_KEY]: mode }, ...(kept.workingModeVersion === undefined ? {} : { workingModeVersion: kept.workingModeVersion }) };
+}
+
 export function parseWorkingModeSnapshot(text: string | undefined): WorkingModeSnapshot | undefined {
   const value = parseJson(text);
   if (!record(value) || value["schemaVersion"] !== 2 || (value["phase"] !== "selected" && value["phase"] !== "applied")) return undefined;

@@ -6,6 +6,7 @@ import { chatSupports, type AskUserOutcome, type ChatCapability, type SessionEff
 import { BrowserErrorReporter, sessionBrowserErrorScope, workspaceBrowserErrorScope, type SessionBrowserErrorOwner } from "../browserErrors";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
 import { textMessage } from "../chatMessages";
+import { withNewerWorkingMode } from "../extensionStatusSnapshots";
 import { machineSessionKey } from "../machineKeys";
 import { samePromptChipTarget, type PromptChipTarget } from "../promptChips";
 import { isCreatingSessionId } from "../route";
@@ -1773,7 +1774,8 @@ export class SessionController {
         const history = this.transcripts.mergeSnapshot(key, page);
         const messages = this.transcripts.seedStreamingPartial(history.messages, snapshot.partial);
         this.streamWatermark = { sessionId: target.session.id, seq: snapshot.seq };
-        this.setState({ ...history, messages, status, activity: this.getState().sessionActivities[target.session.id] });
+        // applyStatus sets the status, so it never rolls back a newer Working Mode.
+        this.setState({ ...history, messages, activity: this.getState().sessionActivities[target.session.id] });
         this.applyStatus(status);
         this.lastAppliedSelectedRefresh = { selectionSeq: target.selectionSeq, partialJson: selectedRefreshPartialJson(snapshot) };
       }
@@ -2301,8 +2303,9 @@ export class SessionController {
     });
   }
 
-  private applyStatus(status: SessionStatus) {
+  private applyStatus(received: SessionStatus) {
     const state = this.getState();
+    const status = withNewerWorkingMode(state.sessionStatuses[received.sessionId], received);
     const isSelected = state.selectedSession?.id === status.sessionId;
     const clearsStaleActivity = state.sessionActivities[status.sessionId]?.phase === "active" && !isSessionActive(status);
     this.setState({
