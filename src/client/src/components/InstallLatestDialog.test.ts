@@ -37,7 +37,7 @@ it("lists the merges and pairs, then installs exactly the installed and latest p
   expect(dialog.renderRoot.querySelector(".merges")?.textContent).toContain("pi-web 7549a70 Install latest menu item");
   button(dialog)?.click();
   await vi.waitFor(() => { expect(dialog.renderRoot.textContent).toContain("Installing, PI WEB restarts in a few seconds."); });
-  expect(install).toHaveBeenCalledWith(PREVIEW.installed, PREVIEW.latest);
+  expect(install).toHaveBeenCalledWith(PREVIEW.installed, PREVIEW.latest, 1);
   expect(button(dialog)).toBeNull();
 });
 
@@ -63,7 +63,7 @@ it("shows the script's refusal and Check again reloads the preview", async () =>
   expect(dialog.renderRoot.querySelector("[role=alert]")).toBeNull();
   expect(dialog.renderRoot.querySelector(".recheck")).toBeNull();
   button(dialog)?.click();
-  await vi.waitFor(() => { expect(install).toHaveBeenLastCalledWith(PREVIEW.installed, newer.latest); });
+  await vi.waitFor(() => { expect(install).toHaveBeenLastCalledWith(PREVIEW.installed, newer.latest, 1); });
 });
 
 it("shows a failed check and offers no install", async () => {
@@ -80,6 +80,7 @@ it("nothing installed yet offers the first install of the latest pair", async ()
   const dialog = await open();
   expect(dialog.renderRoot.textContent).toContain("Nothing installed yet: Install sets up the latest pair 2bb37ed · 7549a70.");
   expect(dialog.renderRoot.querySelector(".warning")?.textContent).toContain("refuses if another install happened");
+  expect(dialog.renderRoot.querySelector(".warning")?.textContent).toContain("A macOS confirmation appears on this Mac first");
   button(dialog)?.click();
-  await vi.waitFor(() => { expect(install).toHaveBeenCalledWith(none, PREVIEW.latest); });
+  await vi.waitFor(() => { expect(install).toHaveBeenCalledWith(none, PREVIEW.latest, 0); });
 });

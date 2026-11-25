@@ -11,7 +11,7 @@ const pair = (value: InstallPair) => `${short(value.workbench)} · ${short(value
 /**
  * Install latest: reads `promote-installed latest --dry-run`, lists what the latest pi-workbench and PI WEB merges add,
  * and installs exactly the pairs shown, so the script refuses when another install happened or latest moved since;
- * after a refusal, Check again reloads the preview. Focus starts on Cancel.
+ * the server asks the owner to Allow it in a macOS dialog first. After a refusal, Check again reloads the preview. Focus starts on Cancel.
  */
 @customElement("install-latest-dialog")
 export class InstallLatestDialog extends LitElement {
@@ -59,7 +59,8 @@ export class InstallLatestDialog extends LitElement {
                 : html`<ul class="merges" aria-label="New merges">
                 ${preview.merges.map((merge) => html`<li><span class="repo">${merge.repo}</span> <code>${short(merge.sha)}</code> ${merge.subject}</li>`)}
               </ul>`}
-              <p class="warning">Install switches Pi Workbench and PI WEB to the latest pair at once. PI WEB restarts about 3 seconds later, which interrupts every open session except Durable Chats. It refuses if another install happened or a newer merge landed since this check, or while subagents or workers run.</p>`}`}
+              <p class="warning">Install switches Pi Workbench and PI WEB to the latest pair at once. PI WEB restarts about 3 seconds later, which interrupts every open session except Durable Chats. A macOS confirmation appears on this Mac first; Install runs only after you click Allow there. It refuses if another install happened or a newer merge landed since this check, or while subagents or workers run.</p>`}`}
+          ${phase === "sending" ? html`<p role="status">Answer the macOS confirmation on this Mac…</p>` : null}
           ${this.message === "" ? null : html`<p class=${phase === "done" ? "result" : "dialog-error"} role=${phase === "done" ? "status" : "alert"}>${this.message}</p>`}
         </div>
         <footer>
@@ -77,7 +78,7 @@ export class InstallLatestDialog extends LitElement {
     this.phase = "sending";
     this.message = "";
     try {
-      await piWebApi.installLatest(preview.installed, preview.latest);
+      await piWebApi.installLatest(preview.installed, preview.latest, preview.merges.length);
       this.phase = "done";
       this.message = "Installing, PI WEB restarts in a few seconds.";
     } catch (error) {

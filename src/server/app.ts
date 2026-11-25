@@ -26,6 +26,7 @@ import { PiWebPluginManifestRuntimeError, PiWebPluginService } from "./piWebPlug
 import { createActiveProfilePiPackageService, type PiPackageService } from "./piPackageService.js";
 import { registerPiPackageRoutes } from "./piPackageRoutes.js";
 import { promoteInstalledScript, registerInstallLatestRoutes } from "./installLatestRoutes.js";
+import { nativeConfirm } from "./nativeConfirm.js";
 import { createPiWebStatusCache, type PiWebStatusCache } from "./piWebStatusCache.js";
 import { detectPiWebInstallation, getPiWebRuntime, getPiWebStatus, getPiWebVersionStatus } from "./piWebStatus.js";
 import { createDeploymentFlavorResolver } from "./deploymentIdentity.js";
@@ -240,7 +241,7 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   app.get("/api/plugins", async (_request, reply) => withProfileDependency(reply, () => piWebPlugins.plugins()));
   app.get("/api/machines/local/plugins", async (_request, reply) => withProfileDependency(reply, () => piWebPlugins.plugins()));
   registerPiPackageRoutes(app, piPackages);
-  registerInstallLatestRoutes(app, deps.promoteInstalledScript ?? promoteInstalledScript());
+  registerInstallLatestRoutes(app, deps.promoteInstalledScript ?? promoteInstalledScript(), nativeConfirm());
   registerPiPackageRoutes(app, piPackages, "/api/machines/local");
   const invalidatingConfigService = invalidatePiWebStatusOnWrite(configService, piWebStatusCache);
   registerConfigRoutes(app, invalidatingConfigService);

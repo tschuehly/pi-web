@@ -85,7 +85,8 @@ function harness(script: string) {
 
 async function app(script: string) {
   const server = Fastify({ logger: false });
-  registerInstallLatestRoutes(server, script);
+  // The owner's native dialog is stubbed to Allow; the route tests cover Deny.
+  registerInstallLatestRoutes(server, script, () => Promise.resolve(true));
   await server.ready();
   return server;
 }
