@@ -113,7 +113,7 @@ describe("ask draft storage", () => {
     expect(loadAskDraft("local:s1", "ask-1", storage)).toEqual({});
   });
 
-  it("never preselects a recommended option, and an older panel's untouched preselection does not come back", () => {
+  it("never preselects a recommended option, and an older panel's untouched preselection comes back only for confirmation", () => {
     const storage = new MemoryStorage();
     const single: AskUserQuestion = {
       ...singleSelect,
@@ -128,12 +128,19 @@ describe("ask draft storage", () => {
     expect(answeredCount([single, multi], fresh)).toBe(0);
 
     // The old key held the preselection with the user's own picks: q1 left as preselected, q2 with one preselected
-    // option unticked. A preselected value still ticked may never have been picked, so neither comes back.
+    // option unticked. A preselected value still ticked may never have been picked: neither is selected or sent, each
+    // comes back for the user to confirm.
     storage.setItem(
       "pi-web:ask-draft:local:s1:ask-1",
       JSON.stringify({ q1: { values: ["pg"], asked: askedFingerprint(single) }, q2: { values: ["metrics"], asked: askedFingerprint(multi) } }),
     );
-    expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])).toEqual({});
+    const legacy = loadAskDraft("local:s1", "ask-1", storage, [single, multi]);
+    expect(legacy).toEqual({
+      q1: { values: [], reconfirm: { values: ["pg"] }, asked: askedFingerprint(single) },
+      q2: { values: [], reconfirm: { values: ["metrics"] }, asked: askedFingerprint(multi) },
+    });
+    expect(toSubmission([single, multi], legacy).answers).toEqual([]);
+    expect(answeredCount([single, multi], legacy)).toBe(0);
 
     // A pick of the recommended option saved now is the user's own and stays.
     saveAskDraft("local:s1", "ask-1", { q1: { values: ["pg"], asked: askedFingerprint(single) } }, storage);
@@ -162,6 +169,46 @@ describe("ask draft storage", () => {
       { id: "q2", values: ["tracing"] },
       { id: "q1", values: [], otherText: "MySQL" },
     ]);
+  });
+
+  it("an older panel's pick equal to its preset comes back for reconfirmation, unsent, and keeps doing so once saved under the new key", () => {
+    const storage = new MemoryStorage();
+    const single: AskUserQuestion = { ...singleSelect, options: singleSelect.options.map((option) => ({ ...option, recommended: option.value === "pg" })) };
+    const typed: AskUserQuestion = { id: "t", question: "Name?", options: [], kind: "text", default: "hi" };
+    const on: AskUserQuestion = { id: "on", question: "On?", options: [], kind: "boolean" };
+    const asked = [single, typed, on];
+    storage.setItem(
+      "pi-web:ask-draft:local:s1:ask-1",
+      JSON.stringify({
+        q1: { values: ["pg"], asked: askedFingerprint(single) },
+        t: { values: [], value: "hi", asked: askedFingerprint(typed) },
+        on: { values: [], value: false, asked: askedFingerprint(on) },
+      }),
+    );
+    const loaded = loadAskDraft("local:s1", "ask-1", storage, asked);
+    expect(loaded["q1"]?.reconfirm).toEqual({ values: ["pg"] });
+    expect(loaded["t"]?.reconfirm).toEqual({ values: [], value: "hi" });
+    expect(loaded["on"]?.reconfirm).toEqual({ values: [], value: false });
+    expect(toSubmission(asked, loaded).answers).toEqual([]);
+    // Saved under the new key, the ambiguous picks stay ambiguous: still shown for confirmation, still not sent.
+    saveAskDraft("local:s1", "ask-1", loaded, storage);
+    expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1")).toBeNull();
+    const again = loadAskDraft("local:s1", "ask-1", storage, asked);
+    expect(again).toEqual(loaded);
+    expect(toSubmission(asked, again).answers).toEqual([]);
+  });
+
+  it("keeps an older panel's draft until its replacement is saved: a refused write (quota) loses nothing", () => {
+    const storage = new MemoryStorage();
+    const legacy = JSON.stringify({ q1: { values: ["sqlite"], asked: askedFingerprint(singleSelect) } });
+    storage.setItem("pi-web:ask-draft:local:s1:ask-1", legacy);
+    const draft = loadAskDraft("local:s1", "ask-1", storage, [singleSelect]);
+    storage.setItem = () => {
+      throw new DOMException("full", "QuotaExceededError");
+    };
+    saveAskDraft("local:s1", "ask-1", draft, storage);
+    expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1")).toBe(legacy);
+    expect(loadAskDraft("local:s1", "ask-1", storage, [singleSelect])["q1"]?.values).toEqual(["sqlite"]);
   });
 
   it("drops a drafted selection of an option value the question does not offer", () => {

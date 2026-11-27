@@ -348,6 +348,7 @@ export class AskUserCard extends LitElement {
           <span>${question.question} <code class="question-ref" title="Reference for this question">${askQuestionRef(ask.askId, question.id)}</code></span>
         </legend>
         ${this.renderDetail(question.detail, detailId, this.ownerRunTarget(ask, question.id))}
+        ${this.renderReconfirm(question, answer)}
         ${
           (question.kind ?? "choice") !== "choice"
             ? this.renderTypedField(question, index, answer)
@@ -488,6 +489,25 @@ export class AskUserCard extends LitElement {
         ${this.renderSuggestion(question)}
       </div>
     `;
+  }
+
+  /** An older panel's draft value that may have been its preselection: named for the user to keep, never sent unless kept. */
+  private renderReconfirm(question: AskUserQuestion, answer: AskDraftAnswer | undefined): TemplateResult | null {
+    const ambiguous = answer?.reconfirm;
+    if (ambiguous === undefined) return null;
+    const shown = [
+      ...ambiguous.values.map((value) => this.optionLabel(question, value)),
+      ...(ambiguous.value === undefined ? [] : [typeof ambiguous.value === "boolean" ? askBooleanLabel(question, ambiguous.value) : ambiguous.value]),
+    ].join(", ");
+    const keep = (): void => {
+      const { reconfirm: _ambiguous, ...rest } = answer ?? { values: [] };
+      this.setAnswer(question, {
+        ...rest,
+        values: question.multiple === true ? [...new Set([...rest.values, ...ambiguous.values])] : ambiguous.values.length > 0 ? ambiguous.values.slice(0, 1) : rest.values,
+        ...(ambiguous.value === undefined ? {} : { value: ambiguous.value }),
+      });
+    };
+    return html`<p class="draft-reconfirm" role="note">An earlier draft had “${shown}”, which an older panel may have preset; it is not sent unless you keep it. <button type="button" class="keep-draft" @click=${keep}>Keep</button></p>`;
   }
 
   /** The agent's `default` is a suggestion shown beside the field, never a prefilled answer. */
@@ -1409,6 +1429,8 @@ export class AskUserCard extends LitElement {
     .switch input:checked + .switch-track::after { transform: translateX(16px); }
     .switch input:indeterminate + .switch-track::after { transform: translateX(8px); }
     .field-suggestion { margin: 2px 0 0; color: var(--pi-muted); font-size: 12px; }
+    .draft-reconfirm { margin: 4px 0; padding: 4px 8px; border: 1px solid var(--pi-warning-border, var(--pi-border)); border-radius: 6px; background: var(--pi-warning-surface, transparent); font-size: 12px; }
+    .draft-reconfirm .keep-draft { margin-left: 6px; font: inherit; }
     .switch input:focus-visible + .switch-track { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .boolean-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 4px; }
     .boolean-field > .switch { margin-top: 0; }

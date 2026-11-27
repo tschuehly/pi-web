@@ -3,7 +3,7 @@
 import type { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskUserOutcome, AskUserQuestion, PendingAskUser } from "../../../shared/apiTypes";
-import { loadAskContext, loadAskNote, saveAskDraft, saveAskNote } from "../askDrafts";
+import { askedFingerprint, loadAskContext, loadAskNote, saveAskDraft, saveAskNote } from "../askDrafts";
 import { undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { AskMarkdownField } from "./AskMarkdownField";
@@ -59,6 +59,24 @@ describe("ask-user-card live form", () => {
     expect(vim.checked).toBe(true);
     expect(code.checked).toBe(false);
     expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 2 answered");
+  });
+
+  it("shows an older panel's pick that equals its preselection for confirmation, unselected and unsent until the user keeps or changes it", async () => {
+    const asked = question("db", "Which database?", [{ ...option("pg", "Postgres"), recommended: true }, option("sqlite", "SQLite")]);
+    localStorage.setItem("pi-web:ask-draft:local:session-1:ask-1", JSON.stringify({ db: { values: ["pg"], asked: askedFingerprint(asked) } }));
+    const card = await mountOpenAsk(openAsk([asked]));
+    const root = renderRoot(card);
+    expect(inputWithValue(root, "pg").checked).toBe(false);
+    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("0 of 1 answered");
+    const note = requiredElement(root.querySelector(".draft-reconfirm"), "reconfirm note");
+    expect(note.textContent).toContain("Postgres");
+    requiredElement(note.querySelector("button"), "keep button").click();
+    await card.updateComplete;
+    expect(inputWithValue(root, "pg").checked).toBe(true);
+    expect(root.querySelector(".draft-reconfirm")).toBeNull();
+    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 1 answered");
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1:answers") ?? "{}")).toMatchObject({ db: { values: ["pg"] } });
+    expect(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1")).toBeNull();
   });
 
   it("renders and answers questions whose ids name Object properties", async () => {

@@ -21,6 +21,11 @@ export interface AskDraftAnswer {
   value?: boolean | string;
   /** {@link askedFingerprint} of the question as the user saw it; a revised question drops the answer. */
   asked?: string;
+  /**
+   * An older panel's draft value equal to what it preselected (picks, or a typed value), which may not be the user's:
+   * shown for the user to confirm, never selected or sent. Any answer the user gives the question replaces it.
+   */
+  reconfirm?: { values: string[]; value?: boolean | string };
 }
 
 /** Identity of a question's wording and options, so an answer is never carried over to a changed question. */
@@ -81,37 +86,45 @@ export function loadAskDraft(sessionId: string, askId: string, storage = browser
     if (question === undefined || answer.asked === undefined || answer.asked !== askedFingerprint(question)) return [];
     // An older panel saved its preselection with the user's picks; a preset value may never have been the user's choice.
     const own = legacy ? withoutLegacyPreset(question, answer) : answer;
-    if (own.values.length === 0 && own.otherText === undefined && own.value === undefined) return [];
+    if (own.values.length === 0 && own.otherText === undefined && own.value === undefined && own.reconfirm === undefined) return [];
     // A selection of an option the question no longer offers (a draft from an older panel) would be refused on send.
     const offered = new Set(question.options.map((option) => option.value));
-    return [[id, { ...own, values: own.values.filter((value) => offered.has(value)) }]];
+    const { reconfirm: ambiguous, ...rest } = own;
+    const reconfirm = ambiguous === undefined ? undefined : { ...ambiguous, values: ambiguous.values.filter((value) => offered.has(value)) };
+    const keep = reconfirm !== undefined && (reconfirm.values.length > 0 || reconfirm.value !== undefined);
+    return [[id, { ...rest, values: own.values.filter((value) => offered.has(value)), ...(keep ? { reconfirm } : {}) }]];
   });
   return Object.fromEntries(kept);
 }
 
 /**
- * A draft saved under the old key without what that panel preselected: the recommended options (the first if single
- * choice), a typed question's default, or a switch's start. Such a value is ambiguous even beside the user's own input
- * (a Custom answer, another pick), so it goes; the custom text and the other picks stay.
+ * A draft saved under the old key, with what that panel preselected set aside for confirmation: the recommended options
+ * (the first if single choice), a typed question's default, or a switch's start. Such a value is ambiguous even beside
+ * the user's own input (a Custom answer, another pick), so it is neither selected nor sent; the custom text and the
+ * other picks stay.
  */
 function withoutLegacyPreset(question: AskUserQuestion, answer: AskDraftAnswer): AskDraftAnswer {
   if ((question.kind ?? "choice") !== "choice") {
     const preset = question.kind === "boolean" ? question.default === true : question.default === undefined ? undefined : String(question.default);
-    if (answer.value !== preset) return answer;
-    const { value: _preset, ...rest } = answer;
-    return rest;
+    if (answer.value === undefined || answer.value !== preset) return answer;
+    const { value, ...rest } = answer;
+    return { ...rest, reconfirm: { values: [], value } };
   }
   const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
   const preset = new Set(question.multiple === true ? recommended : recommended.slice(0, 1));
-  return { ...answer, values: answer.values.filter((value) => !preset.has(value)) };
+  const ambiguous = answer.values.filter((value) => preset.has(value));
+  return { ...answer, values: answer.values.filter((value) => !preset.has(value)), ...(ambiguous.length === 0 ? {} : { reconfirm: { values: ambiguous } }) };
 }
 
 export function saveAskDraft(sessionId: string, askId: string, answers: AskDraftAnswers, storage = browserStorage()): void {
   try {
-    const entries = Object.entries(answers).filter(([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "" || answer.value !== undefined);
-    storage?.removeItem(draftStorageKey(sessionId, askId));
+    const entries = Object.entries(answers).filter(
+      ([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "" || answer.value !== undefined || answer.reconfirm !== undefined,
+    );
     if (entries.length === 0) storage?.removeItem(answersStorageKey(sessionId, askId));
     else storage?.setItem(answersStorageKey(sessionId, askId), JSON.stringify(Object.fromEntries(entries)));
+    // Only once its replacement is saved: a refused write (quota) keeps the older panel's draft.
+    storage?.removeItem(draftStorageKey(sessionId, askId));
   } catch {
     // Ignore localStorage quota/privacy errors.
   }
@@ -203,11 +216,13 @@ function draftAnswerFromValue(value: unknown): AskDraftAnswer | undefined {
   const field = record["value"];
   if (!Array.isArray(values) || !values.every((entry) => typeof entry === "string")) return undefined;
   if (otherText !== undefined && typeof otherText !== "string") return undefined;
+  const reconfirm = record["reconfirm"] === undefined ? undefined : draftAnswerFromValue(record["reconfirm"]);
   return {
     values: [...values],
     ...(otherText === undefined ? {} : { otherText }),
     ...(typeof field === "boolean" || typeof field === "string" ? { value: field } : {}),
     ...(typeof asked === "string" ? { asked } : {}),
+    ...(reconfirm === undefined ? {} : { reconfirm: { values: reconfirm.values, ...(reconfirm.value === undefined ? {} : { value: reconfirm.value }) } }),
   };
 }
 
