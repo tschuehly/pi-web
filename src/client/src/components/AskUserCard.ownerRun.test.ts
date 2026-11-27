@@ -114,6 +114,26 @@ it("the context editor draws the agent's pi-run block with its Review button; an
   expect(await reviewButton(legacyField?.querySelector<LitElement>(".lp-fence-block formatted-text") ?? null)).toBeNull();
 });
 
+it("two identical blocks in a detail are two blocks: each button names its own place", async () => {
+  const ownerRun = vi.spyOn(sessionsApi, "ownerRun").mockResolvedValue({ status: "started" });
+  const twice = `Before:\n\n${block("git status --short")}\n\nAfter the change:\n\n${block("git status --short")}\n`;
+  const card = await mount(ask({ questions: [{ id: "q1", question: "Done?", detail: twice, options: [{ value: "y", label: "Yes" }] }] }));
+  const detail = card.renderRoot.querySelector<LitElement>("formatted-text.question-detail");
+  await reviewButton(detail);
+  const buttons = [...(detail?.renderRoot.querySelectorAll<HTMLButtonElement>(".owner-run-button") ?? [])];
+  expect(buttons.map((button) => button.dataset["ownerRunBlock"])).toEqual(["0", "1"]);
+  buttons[1]?.click();
+  await runFromDialog();
+  await vi.waitFor(() => {
+    expect(ownerRun).toHaveBeenCalledWith(
+      session.session,
+      { askId: "ask-1", revision: "r1", questionId: "q1", block: 1 },
+      { mode: "run", cwd: "/work/repo", command: "git status --short" },
+      "local",
+    );
+  });
+});
+
 it("without this machine's Chat (another machine), pi-run blocks stay plain code", async () => {
   const card = await mount(ask(), false);
   expect(await reviewButton(card.renderRoot.querySelector<LitElement>("formatted-text.question-detail"))).toBeNull();

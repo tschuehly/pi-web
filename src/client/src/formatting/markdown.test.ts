@@ -155,7 +155,8 @@ describe("plain Markdown code blocks", () => {
   it("reuses HTML across overflow and preview choices but not presentation or copy choices", () => {
     const text = "```text\nindependent block policy cache\n```";
     const plain = toSafeMarkdownHtml(text, undefined, undefined, true, PLAIN_CODE_BLOCK_POLICY);
-    const parse = vi.spyOn(marked, "parse");
+    // Each uncached render lexes the text once (then parses those tokens).
+    const parse = vi.spyOn(marked.Lexer, "lex");
     expect(toSafeMarkdownHtml(text, undefined, undefined, true, { ...PLAIN_CODE_BLOCK_POLICY, overflow: "scroll", previews: true })).toBe(plain);
     expect(parse).not.toHaveBeenCalled();
     expect(toSafeMarkdownHtml(text, undefined, undefined, true, { ...PLAIN_CODE_BLOCK_POLICY, presentation: "code" })).toContain("<pre><code");

@@ -1,15 +1,15 @@
-import { marked, type Renderer, type TokenizerExtension } from "marked";
+import { marked, type MarkedOptions, type Renderer, type Token, type TokenizerExtension } from "marked";
 import { DEFAULT_CODE_BLOCK_POLICY, type CodeBlockPolicy } from "./codeBlockPolicy";
 import { replaceLocalMarkdownImages } from "./markdownImages";
 import { workspaceFilePreviewUrl } from "../api/urls";
 import { resolveAppUrl } from "../appUrl";
 import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
-import { isOwnerRunInfo, ownerRunProposal, ownerRunProposals, sameOwnerRun, type OwnerRunProposal } from "../../../shared/ownerRun";
+import { isOwnerRunInfo, ownerRunProposal, runnableOwnerRun } from "../../../shared/ownerRun";
 import { fileLinkLines, inlineCodeFileHref, outsideChatFilePath, workspaceMarkdownFilePath, type MarkdownWorkspaceContext } from "./workspaceLinks";
 
 const nativeCodeRenderer = new marked.Renderer();
 
-function markdownRenderer(codeBlocks: CodeBlockPolicy, runnable?: readonly OwnerRunProposal[]): Renderer {
+function markdownRenderer(codeBlocks: CodeBlockPolicy, runnable?: ReadonlyMap<Token, number>): Renderer {
   const renderer = new marked.Renderer();
   renderer.html = ({ text }) => escapeHtml(text);
   renderer.blockquote = function ({ text, tokens }) {
@@ -17,7 +17,7 @@ function markdownRenderer(codeBlocks: CodeBlockPolicy, runnable?: readonly Owner
     return `<blockquote data-quote-source="${escapeHtml(text).replaceAll('"', "&quot;")}">\n${this.parser.parse(tokens)}</blockquote>\n`;
   };
   renderer.code = (token) => {
-    if (runnable !== undefined && isOwnerRunInfo(token.lang)) return ownerRunBlock(token.lang ?? "", token.text, runnable);
+    if (runnable !== undefined && isOwnerRunInfo(token.lang)) return ownerRunBlock(token.lang ?? "", token.text, runnable.get(token));
     const block = codeBlocks.presentation === "code" ? nativeCodeRenderer.code(token) : `<div class="plain-code-block">${escapeHtml(token.text)}\n</div>\n`;
     // The literal, copy-free baseline has no frame or controls.
     if (codeBlocks.presentation === "plain" && !codeBlocks.copy) return block;
@@ -34,17 +34,15 @@ function markdownRenderer(codeBlocks: CodeBlockPolicy, runnable?: readonly Owner
 }
 
 /**
- * A pi-run block of a committed assistant message: always framed, with a Review button when the message's own top-level
- * parse (the one the server repeats) has the same proposal, else the reason it cannot run.
+ * A pi-run block of a committed assistant message: always framed, with a Review button naming its place (`block`) when it
+ * is one of the runnable top-level blocks of the text's own parse (the one the server repeats), else the reason it cannot run.
  */
-function ownerRunBlock(info: string, text: string, runnable: readonly OwnerRunProposal[]): string {
+function ownerRunBlock(info: string, text: string, block: number | undefined): string {
   const proposal = ownerRunProposal(info, text);
-  // Its place among the text's runnable blocks, which a question set's run names (OwnerRunAskSource.block).
-  const block = "error" in proposal ? -1 : runnable.findIndex((candidate) => sameOwnerRun(candidate, proposal));
   const control =
     "error" in proposal
       ? `<span class="owner-run-invalid">Not runnable: ${escapeHtml(proposal.error)}</span>`
-      : block >= 0
+      : block !== undefined
         ? `<button type="button" class="owner-run-button ui-button ui-button--compact" data-owner-run="${escapeHtml(JSON.stringify(proposal)).replaceAll('"', "&quot;")}" data-owner-run-block="${String(block)}">${proposal.mode === "terminal" ? "Review for Terminal…" : "Review command…"}</button>`
         : '<span class="owner-run-invalid">Not runnable: only a closed top-level block runs</span>';
   const label = `<span class="code-block-label">${"mode" in proposal && proposal.mode === "terminal" ? "pi-run terminal" : "pi-run"}</span>`;
@@ -99,12 +97,13 @@ export function toSafeMarkdownHtml(
   ]);
   const cached = markdownHtmlCache.get(key);
   if (cached !== undefined) return cached;
-  const html = marked.parse(text, {
-    async: false,
-    breaks: true,
-    gfm: true,
-    renderer: markdownRenderer(codeBlocks, ownerRuns ? ownerRunProposals(text) : undefined),
-  });
+  const options: MarkedOptions = { ...marked.defaults, async: false, breaks: true, gfm: true };
+  const tokens = marked.Lexer.lex(text, options);
+  // Each runnable block by its own place among the text's runnable blocks, as the server counts them (OwnerRunAskSource.block):
+  // two identical blocks are two places.
+  const runnable = new Map<Token, number>();
+  if (ownerRuns) for (const token of tokens) if (runnableOwnerRun(token) !== undefined) runnable.set(token, runnable.size);
+  const html = marked.Parser.parse(tokens, { ...options, renderer: markdownRenderer(codeBlocks, ownerRuns ? runnable : undefined) });
   const safeHtml = sanitizeHtml(html, workspace, imageIntentKey, imagesEnabled);
   markdownHtmlCache.set(key, safeHtml);
   if (markdownHtmlCache.size > MAX_MARKDOWN_CACHE_ENTRIES) {

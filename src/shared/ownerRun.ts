@@ -1,4 +1,4 @@
-import { marked } from "marked";
+import { marked, type Token } from "marked";
 
 /**
  * A command the agent proposes for the owner to run outside the write fence: a closed, top-level fenced code block
@@ -52,13 +52,19 @@ export function ownerRunProposal(info: string, command: string): OwnerRunProposa
 /** The runnable proposals of a Markdown message: closed top-level pi-run blocks only; quotes, lists and an unclosed fence stay inert. */
 export function ownerRunProposals(markdown: string): OwnerRunProposal[] {
   return marked.lexer(markdown, { gfm: true }).flatMap((token) => {
-    if (token.type !== "code") return [];
-    const lang: unknown = token.lang;
-    // Markdown unescapes the info string; a backslash in the authored line would show and run something else than written.
-    if (typeof lang !== "string" || !isOwnerRunInfo(lang) || !closedFence(token.raw) || (token.raw.split("\n", 1)[0] ?? "").includes("\\")) return [];
-    const proposal = ownerRunProposal(lang, typeof token.text === "string" ? token.text : "");
-    return "error" in proposal ? [] : [proposal];
+    const proposal = runnableOwnerRun(token);
+    return proposal === undefined ? [] : [proposal];
   });
+}
+
+/** The proposal of one top-level token of {@link ownerRunProposals}' parse, or undefined when it is not a runnable block. */
+export function runnableOwnerRun(token: Token): OwnerRunProposal | undefined {
+  if (token.type !== "code") return undefined;
+  const lang: unknown = token.lang;
+  // Markdown unescapes the info string; a backslash in the authored line would show and run something else than written.
+  if (typeof lang !== "string" || !isOwnerRunInfo(lang) || !closedFence(token.raw) || (token.raw.split("\n", 1)[0] ?? "").includes("\\")) return undefined;
+  const proposal = ownerRunProposal(lang, typeof token.text === "string" ? token.text : "");
+  return "error" in proposal ? undefined : proposal;
 }
 
 /** A proposal named in a request body or a button's data, checked as the block itself would be. */

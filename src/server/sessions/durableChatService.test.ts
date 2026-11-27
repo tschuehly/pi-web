@@ -3297,6 +3297,26 @@ describe("the owner's run button", () => {
     expect(order).not.toEqual(["closeAsk", "ownerRun"]);
   });
 
+  it("identical blocks are claimed apart by field and place, and a claim outlives an unrelated revision of the set", async () => {
+    const { durable, launched, ref, proposal, cwd } = await proposing("git status --short");
+    const one = `\`\`\`pi-run cwd="${cwd}"\ngit status --short\n\`\`\`\n`;
+    // Before and after a change: the same command twice in q1's detail, and once more in q2's.
+    const questions = [
+      { id: "q1", question: "Before and after?", detail: `${one}\n${one}`, options: [] },
+      { id: "q2", question: "Again?", detail: one, options: [] },
+    ];
+    openAsk(launched, "No blocks here.", "No blocks here.", "r1", questions);
+    const at = (questionId: string, block: number, revision = "r1") => ({ askId: "ask-1", revision, questionId, block });
+    await expect(durable.ownerRun(ref, at("q1", 0), proposal)).resolves.toEqual({ status: "started" });
+    await expect(durable.ownerRun(ref, at("q1", 1), proposal)).resolves.toEqual({ status: "started" });
+    await expect(durable.ownerRun(ref, at("q2", 0), proposal)).resolves.toEqual({ status: "started" });
+    expect(runs(launched)).toHaveLength(3);
+    // The agent confirms the set (a new revision, same blocks): each block still ran.
+    openAsk(launched, "No blocks here.", "No blocks here.", "r2", questions);
+    await expect(durable.ownerRun(ref, at("q1", 1, "r2"), proposal)).rejects.toThrow("already ran");
+    expect(runs(launched)).toHaveLength(3);
+  });
+
   it("a set the agent withdraws while the Terminal script is written opens nothing: the script is written before the last check", async () => {
     const opened = vi.mocked(openOwnerCommandInTerminal);
     opened.mockClear();

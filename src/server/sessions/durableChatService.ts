@@ -952,7 +952,8 @@ export class DurableChatService {
           openAskOwnerRun(status.pendingAsks ?? [], messages, source, proposal, connection.capabilities.includes("owner-run"));
     };
     const run = await read();
-    const entryId = typeof source === "string" ? source : `ask:${source.askId}`;
+    // A set's block is claimed by its field and place, not its revision: identical blocks are apart, a confirmation keeps the claim.
+    const entryId = typeof source === "string" ? source : `ask:${JSON.stringify([source.askId, source.questionId ?? null, source.block])}`;
     if (run.mode === "run") this.#require(connection, "owner-run");
     const confirmationText = ownerRunConfirmText(run);
     await ownerRunFolder(run.cwd);

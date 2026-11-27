@@ -315,7 +315,10 @@ export class FormattedText extends LitElement {
       const target = this.ownerRun;
       // A question set's run names the block; a target that does not (a question's detail) takes its place in this text.
       if (!("error" in proposal))
-        openOwnerRunDialog("askId" in target && target.block === undefined ? { ...target, block: Number(ownerRun.dataset["ownerRunBlock"]) } : target, proposal);
+        openOwnerRunDialog(
+          "askId" in target && target.block === undefined ? { ...target, block: Number(ownerRun.dataset["ownerRunBlock"]) } : target,
+          proposal,
+        );
       return;
     }
     const reveal = event.target.closest(".file-reveal-button");
