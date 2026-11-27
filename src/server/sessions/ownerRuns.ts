@@ -33,6 +33,22 @@ export function committedOwnerRun(messages: readonly unknown[], entryId: string,
   return found;
 }
 
+/** A run the owner did not allow at this Mac (403), or this platform has no native dialog to ask with (501). */
+export class OwnerRunNotConfirmedError extends Error {
+  constructor(readonly statusCode: 403 | 422 | 501, message: string) { super(message); }
+}
+
+export const MAX_OWNER_RUN_COMMAND_CHARS = 1500;
+
+/** The native dialog's question shows the complete folder and command without altering newlines. */
+export function ownerRunConfirmText(proposal: OwnerRunProposal): string {
+  if (proposal.command.length > MAX_OWNER_RUN_COMMAND_CHARS) {
+    throw new OwnerRunNotConfirmedError(422, `pi-run command exceeds ${MAX_OWNER_RUN_COMMAND_CHARS} characters; shorten it (for example, move the logic into a committed script file in the repository and run that file)`);
+  }
+  const where = proposal.mode === "terminal" ? "in Terminal" : "with its output sent back to the agent";
+  return `Run this pi-run command outside the sandbox, ${where}?\n\nFolder: ${proposal.cwd}\n\nCommand:\n${proposal.command}`;
+}
+
 /** The folder as it is, checked again just before the launch: an existing directory named by its real path. */
 export async function ownerRunFolder(cwd: string): Promise<string> {
   const real = await realpath(cwd).catch(() => undefined);

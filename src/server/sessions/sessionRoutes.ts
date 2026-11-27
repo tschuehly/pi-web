@@ -11,6 +11,7 @@ import { parseQueueMessageMutation } from "./queuedMessageMutation.js";
 import type { SessionRouteRef, SessionRouteService } from "./sessionService.js";
 import { normalizeSessionCleanupRequest } from "./sessionCleanup.js";
 import { OperationReceipts } from "./operationReceipts.js";
+import { OwnerRunNotConfirmedError } from "./ownerRuns.js";
 
 interface SessionQuery {
   cwd?: string;
@@ -568,7 +569,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       if (sessions.ownerRun === undefined) throw new Error("The run button works in Durable Chats only");
       return await sessions.ownerRun(sessionRefFromBody(request.params.sessionId, body), requireString(body, "entryId"), body["proposal"]);
     } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      return reply.code(error instanceof OwnerRunNotConfirmedError ? error.statusCode : mutationErrorStatus(error)).send({ error: errorMessage(error) });
     }
   });
 
