@@ -1749,9 +1749,9 @@ export class PiSessionService implements SessionRouteService {
         } finally {
           await active.runtime.dispose();
         }
-        // finally() awaits a returned promise; oxlint's no-misused-promises misreports it (ESLint does not).
-        // oxlint-disable-next-line typescript/no-misused-promises
       }),
+      // finally() awaits a returned promise; oxlint's no-misused-promises misreports it (ESLint does not).
+      // oxlint-disable-next-line typescript/no-misused-promises
     ).finally(async () => {
       this.extensionCommandExecution.disable();
       this.events.mediaIndex.clear();

@@ -3658,8 +3658,9 @@ describe("window tabs", () => {
     );
     const app = await mountWithWorkstreamChats();
     const receive = (event: unknown) => {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- private handler
       Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]);
-    }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    };
     const mode = (aligned: boolean) =>
       JSON.stringify({
         schemaVersion: 2,
@@ -3728,8 +3729,9 @@ describe("window tabs", () => {
     );
     const app = await mountWithWorkstreamChats();
     const receive = (event: unknown) => {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- private handler
       Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]);
-    }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    };
     const mode = (aligned: boolean, attention: string) =>
       JSON.stringify({
         schemaVersion: 2,
@@ -3922,8 +3924,9 @@ describe("window tabs", () => {
   it("frames a Chat's tab dashed while its Alignment waits for an agreement, and drops the frame once aligned", async () => {
     const app = await mountWithWorkstreamChats();
     const receive = (event: unknown) => {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- private handler
       Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]);
-    }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    };
     const mode = (alignment: string, aligned: boolean) =>
       JSON.stringify({
         schemaVersion: 2,
