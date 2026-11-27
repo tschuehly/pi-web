@@ -70,14 +70,14 @@ describe("SessionController snapshot reconciliation", () => {
       h.nextSnapshot(cancelled.promise);
       h.socket.emit({ type: "command.output", level: "info", message: "Compaction cancelled.", seq: 13 });
       cancelled.resolve(snapshot({ seq: 13 }));
-      await vi.waitFor(() => expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2));
-      await vi.waitFor(() => expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }));
+      await vi.waitFor(() => { expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2); });
+      await vi.waitFor(() => { expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }); });
       expect(h.state().messages).toHaveLength(3);
 
       h.nextSnapshot(Promise.resolve(snapshot({ page: secondQuestionPage, seq: 15 })));
       h.socket.emit(secondUserEvent(15));
-      await vi.waitFor(() => expect(h.transcriptSnapshot).toHaveBeenCalledTimes(3));
-      await vi.waitFor(() => expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2));
+      await vi.waitFor(() => { expect(h.transcriptSnapshot).toHaveBeenCalledTimes(3); });
+      await vi.waitFor(() => { expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2); });
       runPendingAnimationFrames();
       expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2);
     } finally {
@@ -93,7 +93,7 @@ describe("SessionController snapshot reconciliation", () => {
       h.nextSnapshot(restarted.promise);
       h.socket.emit({ type: "command.output", level: "info", message: "Compaction cancelled.", seq: 13 });
       restarted.resolve(snapshot({ generation: "new-host", seq: 14 }));
-      await vi.waitFor(() => expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }));
+      await vi.waitFor(() => { expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }); });
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2);
       expect(h.state().messages.filter((message) => message.parts.some((part) => part.type === "text" && part.text === "Compaction cancelled."))).toHaveLength(1);

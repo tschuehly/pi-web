@@ -43,7 +43,7 @@ export const MAX_OWNER_RUN_COMMAND_CHARS = 1500;
 /** The native dialog's question shows the complete folder and command without altering newlines. */
 export function ownerRunConfirmText(proposal: OwnerRunProposal): string {
   if (proposal.command.length > MAX_OWNER_RUN_COMMAND_CHARS) {
-    throw new OwnerRunNotConfirmedError(422, `pi-run command exceeds ${MAX_OWNER_RUN_COMMAND_CHARS} characters; shorten it (for example, move the logic into a committed script file in the repository and run that file)`);
+    throw new OwnerRunNotConfirmedError(422, `pi-run command exceeds ${String(MAX_OWNER_RUN_COMMAND_CHARS)} characters; shorten it (for example, move the logic into a committed script file in the repository and run that file)`);
   }
   const where = proposal.mode === "terminal" ? "in Terminal" : "with its output sent back to the agent";
   return `Run this pi-run command outside the sandbox, ${where}?\n\nFolder: ${proposal.cwd}\n\nCommand:\n${proposal.command}`;

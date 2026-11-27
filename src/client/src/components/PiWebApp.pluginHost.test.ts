@@ -1496,7 +1496,7 @@ describe("PiWebApp plugin host", () => {
       || !Reflect.set(sessions, "api", {
         transcriptSnapshot: async () => {
           await waitAt("refresh");
-          return { page: { messages: [], start: 0, total: 0 }, status, seq: 0, partial: null };
+          return { page: { messages: [], start: 0, total: 0 }, status, seq: 0, generation: "host-1", partial: null };
         },
         thinkingLevels: () => Promise.resolve({ levels: [] }),
       })) throw new Error("Could not stub session boundaries");
@@ -1509,7 +1509,7 @@ describe("PiWebApp plugin host", () => {
       joining = sessions.loadSelectedSession();
     }
     await vi.waitFor(() => { expect(waiting).toBe(true); });
-    const bufferedEvent: SessionUiEvent = { type: "status.update", status: { ...status, cost: 2 } };
+    const bufferedEvent: SessionUiEvent = { type: "status.update", seq: 1, generation: "host-1", status: { ...status, cost: 2 } };
     if (phase === "refresh") {
       handler?.(bufferedEvent);
       // An identical restore can reuse a selected session whose join is still
@@ -1548,7 +1548,7 @@ describe("PiWebApp plugin host", () => {
     expect(handler).toBeTypeOf("function");
     sessions.flushPendingUpdates();
     expect(appState(app).status?.cost).toBe(phase === "refresh" ? 2 : 0);
-    const liveEvent: SessionUiEvent = { type: "status.update", status: { ...status, cost: 1 } };
+    const liveEvent: SessionUiEvent = { type: "status.update", seq: phase === "refresh" ? 2 : 1, generation: "host-1", status: { ...status, cost: 1 } };
     handler?.(liveEvent);
     sessions.flushPendingUpdates();
     expect(appState(app).status?.cost).toBe(1);
@@ -1575,7 +1575,7 @@ describe("PiWebApp plugin host", () => {
       pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
     const snapshot = (text: string, seq: number): Awaited<ReturnType<typeof defaultApi.transcriptSnapshot>> => ({
       page: { messages: [{ role: "assistant", content: [{ type: "text", text }] }], start: 0, total: 1 },
-      status, seq, partial: null,
+      status, seq, generation: "host-1", partial: null,
     });
     const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>()
       .mockReturnValueOnce(firstSnapshot.promise)
@@ -1632,7 +1632,7 @@ describe("PiWebApp plugin host", () => {
     expect(handler).toBeTypeOf("function");
     // A retired join must not close the replacement connection when it settles.
     const closesAfterNavigation = close.mock.calls.length;
-    handler?.({ type: "status.update", seq: 3, status: { ...status, cost: 3 } });
+    handler?.({ type: "status.update", seq: needsNewJoin ? 3 : 2, generation: "host-1", status: { ...status, cost: 3 } });
     sessions.flushPendingUpdates();
     expect(appState(app).status?.cost).toBe(3);
     expect(close).toHaveBeenCalledTimes(closesAfterNavigation);
