@@ -12,6 +12,9 @@ import { SESSION_TITLE_SYSTEM_PROMPT } from "./sessionNameGenerator.js";
 import type { DurableChatResourceSet, DurableContributedResources } from "./durableChatResources.js";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
 
+// The Terminal run button opens Terminal.app; these tests only see what happens after it opened.
+vi.mock("./ownerRuns.js", async (importOriginal) => ({ ...await importOriginal<typeof import("./ownerRuns.js")>(), openOwnerCommandInTerminal: vi.fn(() => Promise.resolve({ status: "terminal opened" })) }));
+
 const status = { persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
 interface Request { id: number; method: string; params?: Record<string, unknown> }
 
@@ -2001,15 +2004,15 @@ function isTitleRequest(request: { method: string; params?: Record<string, unkno
 
 describe("the owner's run button", () => {
   /** A Chat whose assistant message `a1` proposes `command` in `cwd`, on a host with `capabilities`; `ownerRun` answers as `launch`. */
-  async function proposing(command: string, { capabilities = ["owner-run"], launch = () => ({ jobId: "job-1", logPath: "/jobs/job-1/output.log" }) }: { capabilities?: string[]; launch?: () => unknown } = {}) {
+  async function proposing(command: string, { capabilities = ["owner-run"], launch = () => ({ jobId: "job-1", logPath: "/jobs/job-1/output.log" }), mode = "run" }: { capabilities?: string[]; launch?: () => unknown; mode?: "run" | "terminal" } = {}) {
     const cwd = await realpath(await mkdtemp(join(tmpdir(), "pi-web-owner-run-")));
     roots.push(cwd);
-    const text = `Run it:\n\n\`\`\`pi-run cwd="${cwd}"\n${command}\n\`\`\`\n`;
+    const text = `Run it:\n\n\`\`\`pi-run${mode === "terminal" ? " terminal" : ""} cwd="${cwd}"\n${command}\n\`\`\`\n`;
     const answer = (request: Request) => request.method === "transcript" ? { messages: [{ entryId: "a1", role: "assistant", content: [{ type: "text", text }] }], partial: null, status }
       : request.method === "ownerRun" ? launch() : request.method === "status" ? status : null;
     const made = await service(() => { const host = new FakeHost(DURABLE_HOST_PROTOCOL, capabilities); host.answer = answer; return host; });
     const chat = await made.durable.start(cwd);
-    return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode: "run", cwd, command } };
+    return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode, cwd, command } };
   }
   const runs = (launched: FakeHost[]) => launched.flatMap((host) => host.requests.filter((request) => request.method === "ownerRun"));
 
@@ -2024,6 +2027,14 @@ describe("the owner's run button", () => {
     expect(run?.params?.operationId).toEqual(expect.stringMatching(/^owner-run:[0-9a-f]{32}$/));
     // The agent learns the result from the job's completion, not from a prompt of PI WEB's.
     expect(launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"))).toEqual([]);
+  });
+
+  it("a Terminal run's result reaches the agent as a follow-up marked machine, so it does not answer an open attention request", async () => {
+    const { durable, launched, ref, proposal } = await proposing("sudo true", { mode: "terminal" });
+    await expect(durable.ownerRun(ref, "a1", proposal)).resolves.toEqual({ status: "terminal opened" });
+    await vi.waitFor(() => expect(launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"))).toHaveLength(1));
+    const [prompt] = launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"));
+    expect(prompt?.params).toMatchObject({ operationId: expect.stringMatching(/^owner-run:/), mode: "followUp", machine: true });
   });
 
   it("refuses a host without run buttons before anything starts", async () => {
