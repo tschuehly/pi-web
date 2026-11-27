@@ -397,7 +397,7 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
           messages.push(message);
           if (messages.length === payload.length + 1) resolve();
         });
-        host.on("exit", () => reject(new Error("host exited before the reply was fully parsed")));
+        host.on("exit", () => { reject(new Error("host exited before the reply was fully parsed")); });
       });
       const elapsed = performance.now() - started;
       host.detach?.();
