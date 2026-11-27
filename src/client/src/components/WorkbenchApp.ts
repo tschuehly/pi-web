@@ -1368,8 +1368,8 @@ export class WorkbenchApp extends LitElement {
   /** Open asks and attention requests read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
   @state() private restoredAsks: Record<string, SessionOpenAsks & { over: SessionStatus | undefined }> = {};
 
-  /** Open-ask reads in flight, by machine-scoped session key. */
-  private readonly askRequests = new Set<string>();
+  /** Open-ask reads in flight, by machine-scoped session key: true when a (re)connect asked for another read after it. */
+  private readonly askRequests = new Map<string, boolean>();
 
   /**
    * On every (re)connect, reads once the open asks of each other Chat this window holds, on its own machine (the API
@@ -1378,16 +1378,28 @@ export class WorkbenchApp extends LitElement {
    * redeliver its recorded answers and start a turn nobody asked for. Live status updates take over from there.
    */
   private refreshWindowChatAsks(): void {
-    for (const chat of this.windows.window?.chats ?? []) {
-      const key = machineSessionKey(chat.machineId, chat.sessionId);
-      if ((chat.machineId === selectedMachineId(this.app) && chat.sessionId === this.app.selectedSession?.id) || this.askRequests.has(key)) continue;
-      this.askRequests.add(key);
-      void this.windowChatWorkspace(chat)
-        .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, chat.machineId))
-        .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: { ...asks, over: this.chatStatus(chat) } }; })
-        .catch(() => undefined)
-        .finally(() => { this.askRequests.delete(key); });
+    for (const chat of this.windows.window?.chats ?? []) this.refreshChatAsks(chat);
+  }
+
+  /** One Chat's connect read; a reconnect during a read queues one more after it, as the read may predate the gap. */
+  private refreshChatAsks(chat: WindowChat): void {
+    const key = machineSessionKey(chat.machineId, chat.sessionId);
+    if (chat.machineId === selectedMachineId(this.app) && chat.sessionId === this.app.selectedSession?.id) return;
+    if (this.askRequests.has(key)) {
+      this.askRequests.set(key, true);
+      return;
     }
+    this.askRequests.set(key, false);
+    void this.windowChatWorkspace(chat)
+      .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, chat.machineId))
+      .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: { ...asks, over: this.chatStatus(chat) } }; })
+      .catch(() => undefined)
+      .finally(() => {
+        const again = this.askRequests.get(key) === true;
+        this.askRequests.delete(key);
+        const current = this.windows.window?.chats.find((held) => machineSessionKey(held.machineId, held.sessionId) === key);
+        if (again && current !== undefined) this.refreshChatAsks(current);
+      });
   }
 
   private handleRealtimeEvent(event: BrowserRealtimeEvent): void {

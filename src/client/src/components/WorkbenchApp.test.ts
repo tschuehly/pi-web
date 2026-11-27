@@ -2442,13 +2442,15 @@ describe("window tabs", () => {
     expect(count("a1")).toBeNull();
     openAsks.mockClear();
 
-    // Opened twice before the first answers: each other Chat is asked once; the Chat on screen not at all.
+    // Opened twice before the first answers: each other Chat is asked once at a time, again after its read; the Chat on screen not at all.
     const realtime = sockets.at(-1);
     realtime?.onopen?.();
     realtime?.onopen?.();
-    await vi.waitFor(() => { expect(openAsks.mock.calls.map(([ref]) => ref.id).sort()).toEqual(["a1", "b1"]); });
+    const asked = () => openAsks.mock.calls.map(([ref]) => ref.id).sort();
+    await vi.waitFor(() => { expect(asked()).toEqual(["a1", "b1", "b1"]); });
     // A selection that lands as the answer arrives does not drop it.
     answerA1({ pendingAsks: [ask] });
+    await vi.waitFor(() => { expect(asked()).toEqual(["a1", "a1", "b1", "b1"]); });
     workstreamTab(app, "Docs").click();
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
     workstreamTab(app, "Release").click();
@@ -2569,6 +2571,34 @@ describe("window tabs", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
     expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused");
+  });
+
+  it("reads a Chat's open asks again after a reconnect that came while the previous connect read was in flight", async () => {
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    const app = await mountWithWorkstreamChats();
+    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const dashed = () => tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned");
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+
+    // The first read is answered with the mode from before the gap and held; the Chat is aligned during a second outage.
+    let release!: () => void;
+    let reads = 0;
+    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => {
+      if (ref.id !== "a1") return Promise.resolve({ pendingAsks: [] });
+      reads += 1;
+      return reads === 1
+        ? new Promise((resolve) => { release = () => { resolve({ pendingAsks: [], workingMode: mode(false), workingModeVersion: 1 }); }; })
+        : Promise.resolve({ pendingAsks: [], workingMode: mode(true), workingModeVersion: 2 });
+    });
+    sockets.at(-1)?.onopen?.();
+    await vi.waitFor(() => { expect(release).toBeDefined(); });
+    sockets.at(-1)?.onopen?.();
+
+    release();
+    await vi.waitFor(() => { expect(openAsks.mock.calls.filter(([ref]) => ref.id === "a1")).toHaveLength(2); });
+    await vi.waitFor(async () => { app.requestUpdate(); await app.updateComplete; expect(dashed()).toBe(false); });
   });
 
   it("seeds a restored tab whose Chat lives on another machine through that machine, on connect", async () => {
