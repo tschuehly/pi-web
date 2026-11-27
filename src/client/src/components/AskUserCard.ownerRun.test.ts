@@ -104,3 +104,20 @@ it("without this machine's Chat (another machine), pi-run blocks stay plain code
   // The context keeps its source in the editor, as before.
   expect(card.renderRoot.querySelector(".context-editor .lp-fence-block")).toBeNull();
 });
+
+it("a context fence indented as Markdown allows keeps its Review button and runs the command the Chat and server read", async () => {
+  const ownerRun = vi.spyOn(sessionsApi, "ownerRun").mockResolvedValue({ status: "started" });
+  // One space before each line: the Chat and the server read the command as "echo hi", without the space.
+  const card = await mount(ask({ context: `Run this first:\n\n \`\`\`pi-run cwd="/work/repo"\n echo hi\n \`\`\`\n` }));
+  const field = card.renderRoot.querySelector<AskMarkdownField>(".context-editor");
+  const button = await reviewButton(field?.querySelector<LitElement>(".lp-fence-block formatted-text") ?? null);
+  expect(button?.textContent).toBe("Review command…");
+  button?.click();
+  const dialog = document.querySelector<OwnerRunDialog>("owner-run-dialog");
+  await dialog?.updateComplete;
+  expect(dialog?.renderRoot.querySelector(".command")?.textContent).toBe("echo hi");
+  dialog?.renderRoot.querySelector<HTMLButtonElement>(".run")?.click();
+  await vi.waitFor(() => {
+    expect(ownerRun).toHaveBeenCalledWith(session.session, { askId: "ask-1" }, { mode: "run", cwd: "/work/repo", command: "echo hi" }, "local");
+  });
+});

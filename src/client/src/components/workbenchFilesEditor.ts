@@ -230,7 +230,11 @@ function buildPreview(state: EditorState, render: (markdown: string) => string, 
         case "FencedCode": {
           // The cursor just after the closing fence (where a field starts) leaves it drawn; at its start, as Up arrow reaches it, it opens.
           if (renderFence !== undefined && !sel.some((r) => r.from < to && r.to >= from) && renderFence.languages.test(doc.lineAt(from).text)) {
-            deco.push(Decoration.replace({ widget: new FenceWidget(doc.sliceString(from, to), renderFence.render), block: true }).range(from, to));
+            // From the line start when only spaces precede the fence: its indentation decides how much the content lines
+            // lose, so the drawn block reads the command as the Chat and the server do.
+            const line = doc.lineAt(from);
+            const start = doc.sliceString(line.from, from).trim() === "" ? line.from : from;
+            deco.push(Decoration.replace({ widget: new FenceWidget(doc.sliceString(start, to), renderFence.render), block: true }).range(start, to));
             return false;
           }
           lines(from, to, "lp-code");
