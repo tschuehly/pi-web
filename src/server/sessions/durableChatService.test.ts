@@ -657,6 +657,26 @@ describe("Durable Chats", () => {
     await restarted.durable.dispose();
   });
 
+  it("keeps a new host's Working Mode over a late status from the host it replaced, whatever that host's sample number", async () => {
+    const { durable, launched, locator } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const [stale, fresh] = ['{"aligned":false}', '{"aligned":true}'];
+    await durable.status(ref);
+    const first = only(launched);
+    first.push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": stale }, workingModeSample: 4 } });
+    first.kill();
+    await durable.status(ref);
+    const second = launched[1];
+    if (second === undefined) throw new Error("no second host");
+    second.push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": fresh }, workingModeSample: 1 } });
+    expect(locator.durable(chat.id)).toMatchObject({ workingMode: fresh, workingModeVersion: 2 });
+
+    // The replaced host's last status, still buffered on its channel, arrives after its successor's.
+    first.push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": stale }, workingModeSample: 5 } });
+    expect(locator.durable(chat.id)).toMatchObject({ workingMode: fresh, workingModeVersion: 2 });
+  });
+
   it("labels the whole record's context as the user's edit only while the host's set says the user supplied it", async () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");

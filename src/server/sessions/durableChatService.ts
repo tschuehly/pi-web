@@ -169,6 +169,9 @@ class DurableHostConnection {
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
+  static #opened = 0;
+  /** Which host life this is, counted up as the daemon opens hosts: a later host's Working Mode beats an earlier one's. */
+  readonly generation = ++DurableHostConnection.#opened;
   #next = 1;
   #exited: Error | undefined;
   readonly #pending = new Map<number, { resolve: (reply: { result: unknown; seq: number }) => void; reject: (error: Error) => void }>();
@@ -414,8 +417,8 @@ export class DurableChatService {
   readonly #hops = new Map<string, number>();
   /** Chats whose host last reported a running turn, for send_chat_message's list. */
   readonly #streaming = new Set<string>();
-  /** Per Chat, the host and its sample number of the last Working Mode the daemon observed (this daemon's life; see `#withWorkingMode`). */
-  readonly #modeSample = new Map<string, { connection: DurableHostConnection; sample: number | undefined; seq: number }>();
+  /** Per Chat, the order key of the last Working Mode the daemon observed (this daemon's life; see `#withWorkingMode`). */
+  readonly #modeSample = new Map<string, { generation: number; sample: number | undefined; seq: number }>();
   /** Live review: each paired main Chat's work since its last digest; in memory, so a daemon restart drops a partial digest. */
   readonly #liveReviews = new Map<string, LiveReviewCollector>();
   /** Reviewer Chats working on a digest (delivered, its turn not ended yet), so the next digest waits and merges. */
@@ -1066,10 +1069,11 @@ export class DurableChatService {
 
   /**
    * The one ordering rule for a host's Working Mode: a status (an event's or a reply's) replaces the saved one only if
-   * its host sampled the mode after the last one observed (`workingModeSample`, numbered by the host as it reads the
-   * mode), so a reply sampled before a newer event loses however late it arrives. A different value raises the
-   * record's version. Returns the status with the winner and its version. A new host's (or a restarted daemon's) first
-   * observation always wins: the saved value is from an earlier life.
+   * its order key is higher than the last one observed: first the host's life (`generation`), then when that host sampled
+   * the mode (`workingModeSample`, numbered by the host as it reads the mode). So a reply sampled before a newer event
+   * loses however late it arrives, and a replaced host's late status loses to its successor's. A different value raises
+   * the record's version. Returns the status with the winner and its version. A restarted daemon's first observation
+   * always wins: the saved value is from an earlier life.
    * shortcut: a host without `workingModeSample` (pinned older code) orders by the event-stream `seq` it arrived at (an
    * event's own, a reply's watermark), so a reply sampled before an event but sent after it still wins; drop once no such host runs.
    */
@@ -1080,8 +1084,9 @@ export class DurableChatService {
     const sampled: unknown = Reflect.get(status, "workingModeSample");
     const sample = typeof sampled === "number" ? sampled : undefined;
     const last = this.#modeSample.get(id);
-    if (last?.connection !== connection || (sample !== undefined && last.sample !== undefined ? sample > last.sample : seq > last.seq)) {
-      this.#modeSample.set(id, { connection, sample, seq });
+    if (last === undefined || connection.generation > last.generation
+      || (connection.generation === last.generation && (sample !== undefined && last.sample !== undefined ? sample > last.sample : seq > last.seq))) {
+      this.#modeSample.set(id, { generation: connection.generation, sample, seq });
       if (observed !== record.workingMode) this.deps.locator.update(id, { workingMode: observed, workingModeVersion: (record.workingModeVersion ?? 0) + 1 });
     }
     const saved = this.deps.locator.durable(id) ?? record;
