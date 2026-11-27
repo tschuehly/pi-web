@@ -51,7 +51,7 @@ import type { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import "./WorkbenchSettingsPanel";
 import "./WorkbenchFilesPane";
 import { openQuestionCount } from "./WorkbenchQuestionChips";
-import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_STATUS_KEY, workingModeSupersedes } from "../extensionStatusSnapshots";
+import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
 import { workingModeIcon } from "./WorkingModeControls";
 import { carriesChats, chatStatusDotStyles, chatTabStatus, droppedChats, endedOutside, renderChatStatusDot, startChatDrag, type ChatTabCloseDetail, type ChatTabMenuDetail, type ChatTabSelectDetail, type ChatTabStatus, type DraggedChats, type TabRenameDetail } from "./WorkbenchWindowTabs";
 import type { WorkbenchChatPane } from "./WorkbenchChatPane";
@@ -1101,17 +1101,14 @@ export class WorkbenchApp extends LitElement {
     const live = this.chatStatus(chat);
     const status = live?.extensionStatuses?.[WORKING_MODE_STATUS_KEY];
     const read = this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)];
-    // The read arrived after the status it landed over (cached from before a reconnect), before any status received since.
-    const readWins = read?.workingMode !== undefined && (status === undefined || (read.over === live
-      ? workingModeSupersedes(read.workingModeVersion, live?.workingModeVersion)
-      : !workingModeSupersedes(live?.workingModeVersion, read.workingModeVersion)));
-    return parseWorkingModeSnapshot(readWins ? read.workingMode : status);
+    const useRead = read?.workingMode !== undefined && (status === undefined || (live?.workingModeVersion !== undefined && (read.workingModeVersion ?? -1) > live.workingModeVersion));
+    return { mode: parseWorkingModeSnapshot(useRead ? read.workingMode : status), version: useRead ? read.workingModeVersion : live?.workingModeVersion };
   }
 
   /** Each Chat's selected Attention, from its live status or the connect read; absent until the Chat reports one. */
   private chatAttention(): Record<string, string> {
     return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
-      const value = this.chatWorkingMode(chat)?.selected.attention;
+      const value = this.chatWorkingMode(chat).mode?.selected.attention;
       return value === undefined ? [] : [[chat.sessionId, value]];
     }));
   }
@@ -1119,8 +1116,9 @@ export class WorkbenchApp extends LitElement {
   /** Chats whose selected Alignment asks for an agreement not yet reached (or reset), from their live status or the connect read. */
   private chatUnaligned(): Record<string, boolean> {
     return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
-      const mode = this.chatWorkingMode(chat);
-      return mode === undefined || mode.selected.alignment === "Default" || mode.aligned ? [] : [[chat.sessionId, true]];
+      if (chat.machineId !== selectedMachineId(this.app) && this.runtimeFor(chat.sessionId, chat.machineId)?.state.status === undefined) return [];
+      const { mode, version } = this.chatWorkingMode(chat);
+      return version === undefined || mode === undefined || mode.selected.alignment === "Default" || mode.aligned ? [] : [[chat.sessionId, true]];
     }));
   }
 
@@ -1362,11 +1360,19 @@ export class WorkbenchApp extends LitElement {
     this.realtime.close();
     const machineId = selectedMachineId(this.app);
     this.realtimeMachineId = machineId;
-    this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, () => { this.refreshWindowChatAsks(); }, machineId);
+    // The daemon sends its first frame after subscribing; browser socket open only reaches the proxy.
+    let joined = false;
+    this.realtime.connect((event) => {
+      if (!joined) {
+        joined = true;
+        this.refreshWindowChatAsks();
+      }
+      this.handleRealtimeEvent(event);
+    }, () => { joined = false; }, machineId);
   }
 
   /** Open asks and attention requests read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
-  @state() private restoredAsks: Record<string, SessionOpenAsks & { over: SessionStatus | undefined }> = {};
+  @state() private restoredAsks: Record<string, SessionOpenAsks> = {};
 
   /** Open-ask reads in flight, by machine-scoped session key: true when a (re)connect asked for another read after it. */
   private readonly askRequests = new Map<string, boolean>();
@@ -1392,7 +1398,7 @@ export class WorkbenchApp extends LitElement {
     this.askRequests.set(key, false);
     void this.windowChatWorkspace(chat)
       .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, chat.machineId))
-      .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: { ...asks, over: this.chatStatus(chat) } }; })
+      .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: asks }; })
       .catch(() => undefined)
       .finally(() => {
         const again = this.askRequests.get(key) === true;

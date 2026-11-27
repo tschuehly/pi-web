@@ -822,7 +822,7 @@ export class SessionController {
     // sequence changes, but the server mutation still belongs to the selected
     // identity and requires a fresh authoritative branch read.
     if (!this.isSelectedSessionIdentity(session.id, machineId)) return;
-    this.clearPendingUpdates();
+    this.clearPendingUpdates(session.id);
     // Only editable targets return editor text. Other history navigation keeps
     // the draft; refresh history either way, even if editor replacement fails.
     const editorReplacement = (async () => {
@@ -936,7 +936,7 @@ export class SessionController {
     const machineId = selectedMachineId(state);
     if (session === undefined || !this.isSelectedSessionIdentity(session.id, machineId)) return;
     this.transcripts.discard(machineSessionKey(machineId, session.id));
-    this.clearPendingUpdates();
+    this.clearPendingUpdates(session.id);
     void this.refreshSelectedSession(session.id);
 
     // Retire the separately loaded picker rather than issuing /tree while the
@@ -2626,9 +2626,14 @@ export class SessionController {
     }
   }
 
-  private clearPendingUpdates(): void {
+  private clearPendingUpdates(treeSessionId?: string): void {
     this.refreshEventBuffer = undefined;
     this.pendingTranscriptEvents = [];
+    if (treeSessionId !== undefined) {
+      this.pendingStatusBySession.delete(treeSessionId);
+      this.pendingActivityBySession.delete(treeSessionId);
+      return; // The scheduled frame still owns other Chats' updates.
+    }
     this.pendingStatusBySession.clear();
     this.pendingActivityBySession.clear();
     if (this.pendingFrame === undefined) return;
