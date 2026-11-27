@@ -361,8 +361,8 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     const record = locator.create("/work/a");
     const socket = durableHostSocketPath(hostsDir, record.storeId);
     const ready = { protocol: DURABLE_HOST_PROTOCOL, storeId: record.storeId, ownerEpoch: 1, revision: root, pid: process.pid };
-    // One 15 MB line: the old `buffer += chunk; indexOf` reader took ~2.6 s for it in 8 KB chunks, linear takes ~0.05 s.
-    const payload = [{ index: -1, text: "x".repeat(15_000_000) }, ...Array.from({ length: 3_000 }, (_, index) => ({ index, text: "x".repeat(1_000) }))];
+    // One 30 MB line in 8 KB chunks: the old `buffer += chunk; indexOf` reader is quadratic (15 MB took 1.2-2.6 s, so 30 MB ~5-10 s); linear takes ~0.05 s.
+    const payload = [{ index: -1, text: "x".repeat(30_000_000) }, ...Array.from({ length: 3_000 }, (_, index) => ({ index, text: "x".repeat(1_000) }))];
     const bytes = Buffer.from(payload.map((message) => `${JSON.stringify(message)}\n`).join(""));
     const server = createServer((connection) => {
       connection.on("error", () => undefined);
