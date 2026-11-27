@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import type { AskUserOutcome, PendingAskUser } from "../../../shared/apiTypes";
+import type { AskUserOutcome, PendingAskUser, SessionRef } from "../../../shared/apiTypes";
 import type { SessionStatus } from "../api";
 import type { AskUserCard, AskUserSubmitCallback } from "./AskUserCard";
 import "./AskUserCard";
@@ -45,6 +45,8 @@ export class WorkbenchQuestionChips extends LitElement {
   /** Machine-scoped session key the ask drafts are stored under. */
   @property({ attribute: false }) draftSessionId = "";
   @property({ attribute: false }) onSubmit?: AskUserSubmitCallback;
+  /** This machine's Chat, so pi-run blocks in the sets get the Chat's Review button. */
+  @property({ attribute: false }) ownerRunSession: { session: SessionRef; machineId: string } | undefined;
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
   @property({ attribute: false }) contentRendering: ChatContentRendering | undefined;
   /** Forwarded to the Activity roster. */
@@ -129,7 +131,7 @@ export class WorkbenchQuestionChips extends LitElement {
               this.asks,
               (ask) => ask.askId,
               (ask) =>
-                html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .imagesEnabled=${this.status?.capabilities?.includes("ask-images") === true} .onSubmit=${this.onSubmit === undefined ? undefined : this.submit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`,
+                html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .ownerRunSession=${this.ownerRunSession} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .imagesEnabled=${this.status?.capabilities?.includes("ask-images") === true} .onSubmit=${this.onSubmit === undefined ? undefined : this.submit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`,
             )}
             ${repeat(
               this.sent,

@@ -3,7 +3,16 @@ import { mkdtemp, readFile, realpath, rm, stat, symlink } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { committedOwnerRun, openOwnerCommandInTerminal, ownerRunConfirmText, ownerRunFolder, ownerRunResultText, ownerRunScript } from "./ownerRuns";
+import type { PendingAskUser } from "../../shared/apiTypes";
+import {
+  committedOwnerRun,
+  openAskOwnerRun,
+  openOwnerCommandInTerminal,
+  ownerRunConfirmText,
+  ownerRunFolder,
+  ownerRunResultText,
+  ownerRunScript,
+} from "./ownerRuns";
 
 const block = (cwd: string, command: string, mode = "") => `Please run:\n\n\`\`\`pi-run${mode} cwd="${cwd}"\n${command}\n\`\`\`\n`;
 const dirs: string[] = [];
@@ -39,6 +48,30 @@ describe("committedOwnerRun", () => {
     expect(() => committedOwnerRun(messages, "a1", { mode: "run", cwd: "/x", command: "echo thought" })).toThrow("not a pi-run block");
     expect(() => committedOwnerRun(messages, "u1", { mode: "run", cwd: "/x", command: "echo from user" })).toThrow("No assistant message");
     expect(() => committedOwnerRun(messages, "a1", { mode: "run", cwd: "/x" })).toThrow("proposal must name");
+  });
+});
+
+describe("openAskOwnerRun", () => {
+  const ask = (extra: Partial<PendingAskUser> = {}): PendingAskUser => ({
+    askId: "ask-1",
+    askedAt: "",
+    updatedAt: "",
+    revision: "r1",
+    turnsSinceUpdate: 0,
+    context: block("/x", "pwd"),
+    questions: [{ id: "q1", question: "Run?", detail: block("/x", "ls", " terminal"), options: [] }],
+    ...extra,
+  });
+
+  it("returns a proposal the agent wrote in the open set's context or a question's detail", () => {
+    expect(openAskOwnerRun([ask()], "ask-1", { mode: "run", cwd: "/x", command: "pwd" })).toEqual({ mode: "run", cwd: "/x", command: "pwd" });
+    expect(openAskOwnerRun([ask()], "ask-1", { mode: "terminal", cwd: "/x", command: "ls" })).toEqual({ mode: "terminal", cwd: "/x", command: "ls" });
+  });
+
+  it("refuses another command, another set, and a context the user's edit supplied", () => {
+    expect(() => openAskOwnerRun([ask()], "ask-1", { mode: "run", cwd: "/x", command: "rm -rf ~" })).toThrow("not a pi-run block the agent wrote");
+    expect(() => openAskOwnerRun([ask()], "ask-2", { mode: "run", cwd: "/x", command: "pwd" })).toThrow("No open question set");
+    expect(() => openAskOwnerRun([ask({ contextEdited: true })], "ask-1", { mode: "run", cwd: "/x", command: "pwd" })).toThrow("not a pi-run block");
   });
 });
 

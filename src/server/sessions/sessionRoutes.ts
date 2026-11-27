@@ -672,13 +672,15 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   );
 
   // The owner confirmed a pi-run block in the browser; the body names it, the Chat's transcript supplies what runs.
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; entryId?: unknown; proposal?: unknown } | undefined }>(
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; entryId?: unknown; askId?: unknown; proposal?: unknown } | undefined }>(
     `${prefix}/sessions/:sessionId/owner-runs`,
     async (request, reply) => {
       try {
         const body = optionalRecord(request.body);
         if (sessions.ownerRun === undefined) throw new Error("The run button works in Durable Chats only");
-        return await sessions.ownerRun(sessionRefFromBody(request.params.sessionId, body), requireString(body, "entryId"), body["proposal"]);
+        // A block of an assistant message (entryId) or of the agent's text in an open question set (askId).
+        const source = body["askId"] === undefined ? requireString(body, "entryId") : { askId: requireString(body, "askId") };
+        return await sessions.ownerRun(sessionRefFromBody(request.params.sessionId, body), source, body["proposal"]);
       } catch (error) {
         return reply.code(error instanceof OwnerRunNotConfirmedError ? error.statusCode : mutationErrorStatus(error)).send({ error: errorMessage(error) });
       }

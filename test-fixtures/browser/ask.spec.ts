@@ -65,3 +65,17 @@ test("a click on an option still selects it, and the context stays editable", as
   await page.keyboard.type(" Edited.");
   await expect(context).toContainText("After the block. Edited.");
 });
+
+test("the context's pi-run block shows the Chat's Review button, which opens its confirmation without editing the block", async ({ page }) => {
+  // The fixture's 720px pane overflows a phone's 412px; fit it so the button, at the block's right edge, is on screen.
+  await page.addStyleTag({ content: ".pane { width: min(720px, 100vw); }" });
+  const review = page.getByRole("button", { name: "Review command…" });
+  if (test.info().project.name === "touch") await review.tap();
+  else await review.click();
+  const dialog = page.locator("owner-run-dialog");
+  await expect(dialog.locator(".command")).toHaveText("echo run-in-pane");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+  // The block is still drawn, not opened as source.
+  await expect(page.locator("workbench-question-chips .context-editor .lp-fence-block")).toHaveCount(1);
+});

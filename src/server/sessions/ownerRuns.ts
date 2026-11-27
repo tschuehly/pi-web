@@ -2,11 +2,13 @@ import { spawn } from "node:child_process";
 import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { PendingAskUser } from "../../shared/apiTypes.js";
 import { ownerRunFromJson, ownerRunProposals, sameOwnerRun, type OwnerRunProposal } from "../../shared/ownerRun.js";
 
 /**
  * The owner's run button: a pi-run block of a committed assistant message runs outside the write fence as the owner,
- * once, after the owner confirmed it in PI WEB. The browser only names the block; what runs is the transcript's text.
+ * once, after the owner confirmed it in PI WEB. The browser only names the block; what runs is the transcript's text, or
+ * the agent's text of an open question set.
  */
 
 export interface OwnerRunResult {
@@ -34,6 +36,23 @@ export function committedOwnerRun(messages: readonly unknown[], entryId: string,
         : [];
   const found = texts.flatMap(ownerRunProposals).find((proposal) => sameOwnerRun(proposal, wanted));
   if (found === undefined) throw new Error("That command is not a pi-run block of this message");
+  return found;
+}
+
+/**
+ * The proposal the browser names, as the agent wrote it in the open question set `askId`: its context or a question's
+ * detail. A context the user's edit supplied (`contextEdited`) is not the agent's, so its blocks never run.
+ */
+export function openAskOwnerRun(asks: readonly PendingAskUser[], askId: string, requested: unknown): OwnerRunProposal {
+  const wanted = requestedProposal(requested);
+  const ask = asks.find((candidate) => candidate.askId === askId);
+  if (ask === undefined) throw new Error("No open question set with that id in this Chat");
+  const texts = [
+    ...(ask.context === undefined || ask.contextEdited === true ? [] : [ask.context]),
+    ...ask.questions.flatMap((question) => (question.detail === undefined ? [] : [question.detail])),
+  ];
+  const found = texts.flatMap(ownerRunProposals).find((proposal) => sameOwnerRun(proposal, wanted));
+  if (found === undefined) throw new Error("That command is not a pi-run block the agent wrote in this question set");
   return found;
 }
 

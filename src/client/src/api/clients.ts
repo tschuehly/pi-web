@@ -454,8 +454,12 @@ export const sessionsApi = {
     }),
   shell: (session: SessionRef, text: string, machineId = "local") =>
     request(sessionPath(session, "shell", machineId), parseAccepted, { method: "POST", body: sessionBody(session, { text }) }),
-  ownerRun: (session: SessionRef, entryId: string, proposal: OwnerRunProposal, machineId = "local") =>
-    request(sessionPath(session, "owner-runs", machineId), parseOwnerRunStatus, { method: "POST", body: sessionBody(session, { entryId, proposal }) }),
+  /** `source`: the assistant message's entryId, or the open question set whose agent-written text holds the block. */
+  ownerRun: (session: SessionRef, source: string | { askId: string }, proposal: OwnerRunProposal, machineId = "local") =>
+    request(sessionPath(session, "owner-runs", machineId), parseOwnerRunStatus, {
+      method: "POST",
+      body: sessionBody(session, { ...(typeof source === "string" ? { entryId: source } : source), proposal }),
+    }),
   runCommand: (session: SessionRef, text: string, machineId = "local") =>
     request(sessionPath(session, "commands/run", machineId), parseCommandResult, { method: "POST", body: sessionBody(session, { text }) }),
   respondToCommand: (session: SessionRef, requestId: string, value: string, machineId = "local") =>

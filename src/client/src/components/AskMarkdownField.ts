@@ -7,6 +7,8 @@ import type { MarkdownWorkspaceContext } from "../formatting/workspaceLinks";
 import type { ChatContentRendering } from "../formatting/contentRendering";
 import { foldMediaMarkup, revealFoldedMedia } from "../formatting/foldedMedia";
 import { FormattedText, openChatFileLink } from "./FormattedText";
+import type { OwnerRunTarget } from "./OwnerRunDialog";
+import { ownerRunProposals, sameOwnerRun } from "../../../shared/ownerRun";
 import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages, resetEditHistory } from "./workbenchFilesEditor";
 
 /**
@@ -18,6 +20,7 @@ import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages,
 const ElementBase = (globalThis.HTMLElement ?? Object) as typeof HTMLElement;
 
 const RENDERED_FENCE = /^ {0,3}(?:`{3,}|~{3,})\s*(?:mermaid|diff|worddiff)(?:\s|$)/u;
+const RENDERED_OR_RUN_FENCE = /^ {0,3}(?:`{3,}|~{3,})\s*(?:mermaid|diff|worddiff|pi-run)(?:\s|$)/u;
 
 export class AskMarkdownField extends ElementBase {
   #view: EditorView | undefined;
@@ -37,6 +40,10 @@ export class AskMarkdownField extends ElementBase {
   renderFences = false;
   /** The Chat's content renderers (Mermaid) for those blocks. */
   contentRendering: ChatContentRendering | undefined;
+  /** With `renderFences`, a ```pi-run block also draws as the Chat does, its Review button only for a block of `runnableText`; read when the field connects. */
+  ownerRun: OwnerRunTarget | undefined;
+  /** The agent's own text: a pi-run block runs only as the agent wrote it there, so an edited command shows no button. */
+  runnableText: string | undefined;
 
   get value(): string {
     return this.#view?.state.doc.toString() ?? this.#value;
@@ -122,7 +129,9 @@ export class AskMarkdownField extends ElementBase {
             const context = this.workspaceContext;
             if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
           },
-          this.renderFences ? { languages: RENDERED_FENCE, render: (source) => this.#renderFence(source) } : undefined,
+          this.renderFences
+            ? { languages: this.ownerRun === undefined ? RENDERED_FENCE : RENDERED_OR_RUN_FENCE, render: (source) => this.#renderFence(source) }
+            : undefined,
         ),
         // The textarea's maxlength: an edit that would pass the limit is refused.
         EditorState.transactionFilter.of((tr) => (tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr)),
@@ -172,6 +181,8 @@ export class AskMarkdownField extends ElementBase {
     view.diffViews = true;
     view.contentRendering = this.contentRendering;
     view.workspaceContext = this.workspaceContext;
+    const [proposal] = ownerRunProposals(source);
+    if (proposal !== undefined && ownerRunProposals(this.runnableText ?? "").some((agent) => sameOwnerRun(agent, proposal))) view.ownerRun = this.ownerRun;
     view.text = source;
     return view;
   }

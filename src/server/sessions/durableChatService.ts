@@ -88,13 +88,14 @@ import {
   storeCodeRefusal,
   type StoreSchema,
 } from "./sessionRuntimeLocator.js";
-import type { SessionRouteRef } from "./sessionService.js";
+import type { OwnerRunSource, SessionRouteRef } from "./sessionService.js";
 import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
 import type { NativeConfirm } from "../nativeConfirm.js";
 import {
   committedOwnerRun,
   openOwnerCommandInTerminal,
   OwnerRunNotConfirmedError,
+  openAskOwnerRun,
   ownerRunConfirmText,
   ownerRunFolder,
   ownerRunResultText,
@@ -926,14 +927,19 @@ export class DurableChatService {
   }
 
   /**
-   * The owner confirmed a pi-run block of the assistant message `entryId`: it runs once, outside the write fence, in its
+   * The owner confirmed a pi-run block of the assistant message `source` (its entryId) or of the agent's text in an open
+   * question set: it runs once, outside the write fence, in its
    * folder. The block is read from the transcript, never from the browser. A run is the Chat host's background job (its
    * own process group, log, 12-hour limit, cancel), whose completion reaches the agent as any job's does (an idle Chat
    * wakes); Terminal's opening reaches it as a follow-up, without slash or skill expansion.
    */
-  async ownerRun(ref: SessionRouteRef, entryId: string, proposal: unknown): Promise<{ status: "started" | "terminal opened" }> {
+  async ownerRun(ref: SessionRouteRef, source: OwnerRunSource, proposal: unknown): Promise<{ status: "started" | "terminal opened" }> {
     const connection = await this.#for(ref);
-    const run = committedOwnerRun(hostTranscript((await connection.request("transcript")).result).messages, entryId, proposal);
+    const run =
+      typeof source === "string"
+        ? committedOwnerRun(hostTranscript((await connection.request("transcript")).result).messages, source, proposal)
+        : openAskOwnerRun((await this.status(ref)).pendingAsks ?? [], source.askId, proposal);
+    const entryId = typeof source === "string" ? source : `ask:${source.askId}`;
     if (run.mode === "run") this.#require(connection, "owner-run");
     const confirmationText = ownerRunConfirmText(run);
     await ownerRunFolder(run.cwd);

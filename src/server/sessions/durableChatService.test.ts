@@ -3088,6 +3088,26 @@ describe("the owner's run button", () => {
     expect(prompt?.params?.["operationId"]).toEqual(expect.stringMatching(/^owner-run:/));
   });
 
+  it("runs a block of the agent's context in an open question set, named by the set, through the same confirmation", async () => {
+    const asked: string[] = [];
+    const { durable, launched, ref, proposal, cwd } = await proposing("pwd", {
+      confirm: (text) => {
+        asked.push(text);
+        return Promise.resolve(true);
+      },
+    });
+    const context = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
+    const pendingAsks = [{ askId: "ask-1", askedAt: "", updatedAt: "", revision: "r1", turnsSinceUpdate: 0, context, questions: [] }];
+    for (const host of launched) {
+      const previous = host.answer;
+      host.answer = (request) => (request.method === "status" ? { ...status, pendingAsks } : previous(request));
+    }
+    await expect(durable.ownerRun(ref, { askId: "ask-2" }, proposal)).rejects.toThrow("No open question set");
+    await expect(durable.ownerRun(ref, { askId: "ask-1" }, proposal)).resolves.toEqual({ status: "started" });
+    expect(asked).toHaveLength(1);
+    expect(runs(launched)).toHaveLength(1);
+  });
+
   it("refuses a host without run buttons before anything starts", async () => {
     const { durable, launched, ref, proposal } = await proposing("true", { capabilities: [] });
     await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("Run buttons");

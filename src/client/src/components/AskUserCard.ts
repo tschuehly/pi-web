@@ -14,6 +14,7 @@ import {
   type AskUserQuestionRecord,
   type AskUserSubmission,
   type PendingAskUser,
+  type SessionRef,
   askAnswerSelection,
   askBooleanLabel,
   hiddenAskQuestionIds,
@@ -36,6 +37,7 @@ import {
   type AskDraftAnswers,
 } from "../askDrafts";
 import "./FormattedText";
+import type { OwnerRunTarget } from "./OwnerRunDialog";
 import { AskMarkdownField } from "./AskMarkdownField";
 import { livePreviewStyles } from "./workbenchFilesEditor";
 import { stylesheetIntegrationCapability } from "../plugins/styles";
@@ -98,6 +100,8 @@ export class AskUserCard extends LitElement {
   /** Machine-scoped session cache key used by the ask draft store. */
   @property({ attribute: false }) draftSessionId = "";
   @property({ attribute: false }) onSubmit?: AskUserSubmitCallback;
+  /** This machine's Chat: pi-run blocks in the agent's context and question details get the Chat's Review button. */
+  @property({ attribute: false }) ownerRunSession: { session: SessionRef; machineId: string } | undefined;
   /** Lets file links in the context open in the Files pane, as they do in the Chat. */
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
   /** The Chat's content renderers (Mermaid), so context and details draw diagrams like Chat messages. */
@@ -191,7 +195,7 @@ export class AskUserCard extends LitElement {
           }
           <slot name="actions"></slot>
         </header>
-        ${this.renderContextEditor(ask.context)}
+        ${this.renderContextEditor(ask)}
         <form class="ask-form" @submit=${(event: SubmitEvent) => {
           this.handleSubmit(event, ask);
         }}>
@@ -252,7 +256,8 @@ export class AskUserCard extends LitElement {
    * The open set's context, editable from the start in the Markdown field styled as the read text. Diagrams and diffs
    * are drawn in place, as the read view draws them, until the user clicks into one to edit its source.
    */
-  private renderContextEditor(context: string | undefined): TemplateResult {
+  private renderContextEditor(ask: PendingAskUser): TemplateResult {
+    const { context } = ask;
     // An absent context (cleared by a partial send) stays an empty field the user can write a new one into.
     const text = this.editedContext ?? context ?? "";
     if (this.contextFolded && text.trim() !== "") {
@@ -273,7 +278,7 @@ export class AskUserCard extends LitElement {
     }
     return html`
       <div class="ask-context">
-        <ask-markdown-field class="context-editor" .label=${"Context (editable)"} .maxLength=${ASK_USER_CONTEXT_MAX_LENGTH} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .renderFences=${true} .value=${text} @ask-field-input=${this.changeContext}></ask-markdown-field>
+        <ask-markdown-field class="context-editor" .label=${"Context (editable)"} .maxLength=${ASK_USER_CONTEXT_MAX_LENGTH} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .renderFences=${true} .ownerRun=${this.ownerRunTarget(ask)} .runnableText=${ask.contextEdited === true ? undefined : context} .value=${text} @ask-field-input=${this.changeContext}></ask-markdown-field>
         ${
           this.editedContext === undefined
             ? null
@@ -340,7 +345,7 @@ export class AskUserCard extends LitElement {
           <span class="question-number">${String(number)}.</span>
           <span>${question.question} <code class="question-ref" title="Reference for this question">${askQuestionRef(ask.askId, question.id)}</code></span>
         </legend>
-        ${this.renderDetail(question.detail, detailId)}
+        ${this.renderDetail(question.detail, detailId, this.ownerRunTarget(ask))}
         ${
           (question.kind ?? "choice") !== "choice"
             ? this.renderTypedField(question, index, answer)
@@ -524,10 +529,15 @@ export class AskUserCard extends LitElement {
   }
 
   /** A question's Markdown detail, in body text like the context. */
-  private renderDetail(detail: string | undefined, id?: string): TemplateResult | null {
+  private renderDetail(detail: string | undefined, id?: string, ownerRun?: OwnerRunTarget): TemplateResult | null {
     return detail === undefined
       ? null
-      : html`<formatted-text class="question-detail" id=${ifDefined(id)} fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
+      : html`<formatted-text class="question-detail" id=${ifDefined(id)} fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .ownerRun=${ownerRun} .text=${detail}></formatted-text>`;
+  }
+
+  /** Pi-run blocks the agent wrote in this open set run through the Chat's Review dialog and route, named by the set. */
+  private ownerRunTarget(ask: PendingAskUser): OwnerRunTarget | undefined {
+    return this.ownerRunSession === undefined ? undefined : { ...this.ownerRunSession, askId: ask.askId };
   }
 
   private renderPartialSubmitConfirmation(ask: PendingAskUser, unanswered: AskUserQuestion[]): TemplateResult {
