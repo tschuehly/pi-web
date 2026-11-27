@@ -645,6 +645,7 @@ describe("session routes", () => {
             { target: { kind: "question", id: "cache" }, mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" },
             { target: { kind: "note" }, mimeType: "image/jpeg", data: "/9j/" },
           ],
+          noPreset: true,
         },
       });
       const cancelled = await routeApp.inject({
@@ -674,6 +675,7 @@ describe("session routes", () => {
               { target: { kind: "question", id: "cache" }, mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" },
               { target: { kind: "note" }, mimeType: "image/jpeg", data: "/9j/" },
             ],
+            noPreset: true,
           },
         },
       ]);

@@ -197,9 +197,14 @@ export class PendingAskStore {
    * revision, which the outcome carries so a transcript rebuild lands on the same
    * state. Answering every remaining question closes the ask as a full submit.
    */
-  submit(sessionId: string, askId: string, submission: AskUserSubmission, record?: RecordOutcome): PendingAskCloseResult {
+  submit(sessionId: string, askId: string, submission: AskUserSubmission, recordOutcome?: RecordOutcome): PendingAskCloseResult {
     const ask = this.asksOf(requireSessionId(sessionId)).get(askId);
     if (ask === undefined || submission.revision !== ask.revision) return { status: "stale" };
+    // A panel from before `noPreset` preselected and prefilled: what it sent equal to that may be untouched.
+    const record = (outcome: AskUserOutcome): void => {
+      if (submission.noPreset !== true) outcome.presetPanel = true;
+      recordOutcome?.(outcome);
+    };
     const answers = validateSubmission(ask, submission);
     // A question hidden by its condition is never answered: a stale draft answer to it is dropped.
     const hidden = hiddenAskQuestionIds(ask.questions, (id) => askAnswerSelection(answers.get(id)));
@@ -224,7 +229,7 @@ export class PendingAskStore {
         const revision = this.createRevision();
         const outcome = partialOutcome(ask, answers, skipped, remaining, revision, this.timestamp(), editedContext);
         if (images.length > 0) outcome.images = images;
-        record?.(outcome);
+        record(outcome);
         // The edited context goes out once, with this send; the questions left open then show the user's version (none when he cleared it).
         const updated: PendingAskUser = { ...ask, revision, questions: remaining };
         if (editedContext === "") delete updated.context;
@@ -353,7 +358,10 @@ export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
     "",
     ...edited,
     ...outcome.questions
-      .map((record) => [...questionLines(outcome.askId, record), ...imagesLine(outcome, { kind: "question", id: record.question.id })])
+      .map((record) => [
+        ...questionLines(outcome.askId, record, outcome.presetPanel === true),
+        ...imagesLine(outcome, { kind: "question", id: record.question.id }),
+      ])
       .flat(),
     ...note,
     "",
@@ -428,7 +436,7 @@ function fenced(text: string): string {
   return `${fence}markdown\n${text}\n${fence}`;
 }
 
-function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
+function questionLines(askId: string, record: AskUserQuestionRecord, presetPanel: boolean): string[] {
   const header = `- ${askQuestionRef(askId, record.question.id)}: ${record.question.question}`;
   const condition = record.question.showIf;
   if (record.skipped === true && condition !== undefined) {
@@ -451,12 +459,25 @@ function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
         : question.kind === "text"
           ? JSON.stringify(value)
           : String(value);
-    return [header, `  Answered: ${shown}`];
+    // That panel started a typed field on its default (a switch without one on off).
+    const preset = presetPanel && value === (question.default ?? (question.kind === "boolean" ? false : undefined));
+    return [header, `  Answered: ${shown}${preset ? ` (${PRESET_NOTE})` : ""}`];
   }
   const parts = [...record.values.map((value) => `selected ${value}`)];
   if (record.otherText !== undefined) parts.push(`custom: ${JSON.stringify(record.otherText)}`);
-  return [header, `  Answered: ${parts.join("; ")}`];
+  // That panel started a choice on its recommended options (the first one for single choice).
+  const recommended = record.question.options.filter((option) => option.recommended === true).map((option) => option.value);
+  const preselected = record.question.multiple === true ? recommended : recommended.slice(0, 1);
+  const preset =
+    presetPanel
+    && preselected.length > 0
+    && record.otherText === undefined
+    && record.values.length === preselected.length
+    && preselected.every((value) => record.values.includes(value));
+  return [header, `  Answered: ${parts.join("; ")}${preset ? ` (${PRESET_NOTE})` : ""}`];
 }
+
+const PRESET_NOTE = "what an older panel preset, sent unchanged: maybe not the user's choice";
 
 function askUserOutcome(
   ask: PendingAskUser,

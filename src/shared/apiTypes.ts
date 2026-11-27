@@ -1021,6 +1021,11 @@ export interface AskUserSubmission {
   approved?: boolean;
   /** Images attached to the note (not with `partial`) or to an answered `kind: "text"` question; in this order they become `[PIC_1]`, `[PIC_2]`, …. */
   images?: AskUserSubmissionImage[];
+  /**
+   * Sent by a panel that preselects nothing and prefills no default, so every value is the user's own. Absent (a tab
+   * loaded before that), a value equal to what that panel preset may be untouched: the outcome says so ({@link AskUserOutcome.presetPanel}).
+   */
+  noPreset?: true;
 }
 
 /** What an answer image belongs to: the set's note, or one question (an object, so a question id "note" stays a question). */
@@ -1101,6 +1106,8 @@ export interface AskUserOutcome {
    */
   partial?: true;
   revision?: string;
+  /** Sent by a panel that preset recommended options and defaults (no {@link AskUserSubmission.noPreset}): an answer equal to them may be untouched. */
+  presetPanel?: true;
 }
 
 /**

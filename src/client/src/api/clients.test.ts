@@ -497,7 +497,8 @@ describe("session API compatibility", () => {
       "https://pi.example.test/api/machines/remote%20%2F%3F/sessions/s%20%2F%3F/ask/submit",
       "https://pi.example.test/api/machines/remote%20%2F%3F/sessions/s%20%2F%3F/ask/cancel",
     ]);
-    expect(JSON.parse(requestBody(fetchCall(fetchMock, 0)[1]))).toEqual({ cwd: ref.cwd, askId: "ask 1", answers });
+    // This panel preselects nothing: every submission says so.
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 0)[1]))).toEqual({ cwd: ref.cwd, askId: "ask 1", answers, noPreset: true });
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ cwd: ref.cwd, askId: "ask 1" });
   });
 

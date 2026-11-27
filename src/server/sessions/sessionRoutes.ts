@@ -676,20 +676,17 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   app.post<{
     Params: { sessionId: string };
     Body: { cwd?: unknown; entryId?: unknown; askId?: unknown; revision?: unknown; questionId?: unknown; block?: unknown; proposal?: unknown } | undefined;
-  }>(
-    `${prefix}/sessions/:sessionId/owner-runs`,
-    async (request, reply) => {
-      try {
-        const body = optionalRecord(request.body);
-        if (sessions.ownerRun === undefined) throw new Error("The run button works in Durable Chats only");
-        // A block of an assistant message (entryId), or the `block`-th one of an open set's context or question `questionId`'s detail (askId).
-        const source = body["askId"] === undefined ? requireString(body, "entryId") : ownerRunAskSource(body);
-        return await sessions.ownerRun(sessionRefFromBody(request.params.sessionId, body), source, body["proposal"]);
-      } catch (error) {
-        return reply.code(error instanceof OwnerRunNotConfirmedError ? error.statusCode : mutationErrorStatus(error)).send({ error: errorMessage(error) });
-      }
-    },
-  );
+  }>(`${prefix}/sessions/:sessionId/owner-runs`, async (request, reply) => {
+    try {
+      const body = optionalRecord(request.body);
+      if (sessions.ownerRun === undefined) throw new Error("The run button works in Durable Chats only");
+      // A block of an assistant message (entryId), or the `block`-th one of an open set's context or question `questionId`'s detail (askId).
+      const source = body["askId"] === undefined ? requireString(body, "entryId") : ownerRunAskSource(body);
+      return await sessions.ownerRun(sessionRefFromBody(request.params.sessionId, body), source, body["proposal"]);
+    } catch (error) {
+      return reply.code(error instanceof OwnerRunNotConfirmedError ? error.statusCode : mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
 
   // shortcut: no owner check, so any local process (an agent's bash too) can POST a command such as /pair here, as on every PI WEB route; owner authentication for PI WEB closes it.
   app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; text?: unknown } | undefined }>(
@@ -984,6 +981,8 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   if (context !== undefined && typeof context !== "string") throw new Error("context field must be a string");
   if (typeof context === "string" && context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new Error("context field is too long");
   const images = parseAskUserSubmissionImages(body["images"]);
+  const noPreset = body["noPreset"];
+  if (noPreset !== undefined && noPreset !== true) throw new Error("noPreset field must be true");
   return {
     answers: answers.map(askUserAnswerFromValue),
     ...(note === undefined ? {} : { note }),
@@ -992,6 +991,7 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
     ...(context === undefined ? {} : { context }),
     ...(approved === true ? { approved } : {}),
     ...(images.length === 0 ? {} : { images }),
+    ...(noPreset === true ? { noPreset } : {}),
   };
 }
 

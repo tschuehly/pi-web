@@ -393,7 +393,8 @@ export const sessionsApi = {
   submitAsk: (session: SessionRef, askId: string, submission: AskUserSubmission, machineId = "local", operationId?: string) =>
     request(sessionPath(session, "ask/submit", machineId), parseAskUserCloseResponse, {
       method: "POST",
-      body: sessionBody(session, { askId, ...submission, ...(operationId === undefined ? {} : { operationId }) }),
+      // `noPreset`: this panel preselects nothing, so the daemon reads every value as the user's own.
+      body: sessionBody(session, { askId, ...submission, noPreset: true, ...(operationId === undefined ? {} : { operationId }) }),
     }),
   upgradeDurableHost: (session: SessionRef, machineId = "local", mode: "quiet" | "now" | "cancel" = "quiet") =>
     request(sessionPath(session, "durable-host/upgrade", machineId), parseSessionStatus, { method: "POST", body: sessionBody(session, { mode }) }),

@@ -15,7 +15,8 @@ const ask: PendingAskUser = {
   updatedAt: "2026-11-21T00:00:00Z",
   revision: "r1",
   turnsSinceUpdate: 0,
-  context: "Context prose to copy, with `inline-code-copy` in it.\n\n```sh\necho copied-command\n```\n\nAfter the block.\n\n```pi-run cwd=\"/work/repo\"\necho run-in-pane\n```",
+  context:
+    'Context prose to copy, with `inline-code-copy` in it.\n\n```sh\necho copied-command\n```\n\nAfter the block.\n\n```pi-run cwd="/work/repo"\necho run-in-pane\n```',
   questions: [
     {
       id: "q1",

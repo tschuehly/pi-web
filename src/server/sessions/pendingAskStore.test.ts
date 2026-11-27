@@ -195,7 +195,7 @@ describe("PendingAskStore submit", () => {
       questions: [question("q1"), question("q2"), question("q3")],
     });
 
-    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q2", values: ["no"] }] });
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q2", values: ["no"] }], noPreset: true });
 
     expect(result).toEqual({
       status: "closed",
@@ -467,8 +467,11 @@ describe("PendingAskStore partial submit", () => {
     const ask = store.open({ sessionId, context, questions: [question("q1"), question("q2"), question("q3")] });
     const recorded: unknown[] = [];
 
-    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q2", values: ["no"] }], partial: true }, (outcome) =>
-      recorded.push(outcome),
+    const result = store.submit(
+      sessionId,
+      ask.askId,
+      { revision: ask.revision, answers: [{ id: "q2", values: ["no"] }], partial: true, noPreset: true },
+      (outcome) => recorded.push(outcome),
     );
 
     expect(result).toEqual({
@@ -875,19 +878,51 @@ describe("ask outcome rendering", () => {
       multiple: true,
     };
     const ask = store.open({ sessionId, context, questions: [question("q1", recommended), question("q2", recommended)] });
-    const result = store.submit(sessionId, ask.askId, {
-      revision: ask.revision,
-      answers: [
-        { id: "q1", values: ["a", "b"] },
-        { id: "q2", values: ["a"] },
-      ],
-    });
+    const answers = [
+      { id: "q1", values: ["a", "b"] },
+      { id: "q2", values: ["a"] },
+    ];
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers, noPreset: true });
     if (result.status !== "closed") throw new Error("expected the ask to close");
 
     const text = renderAskUserAnswersText(result.outcome);
     expect(text).toContain("  Answered: selected a; selected b\n");
     expect(text).toContain("  Answered: selected a\n");
-    expect(text).not.toContain("unchanged");
+    expect(text).not.toContain("preset");
+  });
+
+  it("says when a tab loaded before never-preselect sent what it preset: the pick may be untouched, not the user's choice", () => {
+    const store = testStore();
+    const single = {
+      options: [
+        { value: "y", label: "Yes", recommended: true },
+        { value: "n", label: "No" },
+      ],
+    };
+    const typed = (id: string, extra: Partial<AskUserQuestion>) => question(id, { options: [], ...extra });
+    const ask = store.open({
+      sessionId,
+      context,
+      questions: [question("q1", single), question("q2", single), typed("on", { kind: "boolean" }), typed("n", { kind: "number", default: 7 })],
+    });
+    // No `noPreset`: the older panel preselected y, started the switch off and the number on 7.
+    const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [
+        { id: "q1", values: ["y"] },
+        { id: "q2", values: ["n"] },
+        { id: "on", values: [], value: false },
+        { id: "n", values: [], value: 7 },
+      ],
+    });
+    if (result.status !== "closed") throw new Error("expected the ask to close");
+    expect(result.outcome.presetPanel).toBe(true);
+    const text = renderAskUserAnswersText(result.outcome);
+    const note = " (what an older panel preset, sent unchanged: maybe not the user's choice)";
+    expect(text).toContain(`- ask.q1: Question q1?\n  Answered: selected y${note}\n`);
+    expect(text).toContain("- ask.q2: Question q2?\n  Answered: selected n\n");
+    expect(text).toContain(`- ask.on: Question on?\n  Answered: no${note}\n`);
+    expect(text).toContain(`  Answered: 7${note}\n`);
   });
 
   it("records typed answers as values, reports an answer equal to the default as plain, and rejects values that do not fit", () => {
@@ -907,7 +942,7 @@ describe("ask outcome rendering", () => {
       ],
     });
     const send = (answers: { id: string; values: string[]; value?: boolean | number | string }[]) => () =>
-      store.submit(sessionId, ask.askId, { revision: ask.revision, answers });
+      store.submit(sessionId, ask.askId, { revision: ask.revision, answers, noPreset: true });
     expect(send([{ id: "n", values: [], value: 11 }])).toThrow("Answer to question n must be at most 10");
     expect(send([{ id: "n", values: [], value: 2.5 }])).toThrow("Answer to question n must be a whole number");
     expect(send([{ id: "n", values: [], value: "7" }])).toThrow("Answer to question n must be a number");
@@ -959,6 +994,7 @@ describe("ask outcome rendering", () => {
         { id: "hold", values: [], value: false },
         { id: "plain", values: [], value: true },
       ],
+      noPreset: true,
     });
     if (result.status !== "closed") throw new Error("expected the ask to close");
     const text = renderAskUserAnswersText(result.outcome);
@@ -1014,7 +1050,7 @@ describe("ask outcome rendering", () => {
       context,
       questions: [question("code", { options: [], kind: "text", multiline: true, minLength: 6, default: "  code" })],
     });
-    const result = store.submit(sessionId, again.askId, { revision: again.revision, answers: [{ id: "code", values: [], value: "  code" }] });
+    const result = store.submit(sessionId, again.askId, { revision: again.revision, answers: [{ id: "code", values: [], value: "  code" }], noPreset: true });
     if (result.status !== "closed") throw new Error("expected closed");
     expect(result.outcome.questions[0]?.value).toBe("  code");
     expect(renderAskUserAnswersText(result.outcome)).toContain('  Answered: "  code"\n');
