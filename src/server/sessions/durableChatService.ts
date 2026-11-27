@@ -94,7 +94,9 @@ import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairComma
 import type { NativeConfirm } from "../nativeConfirm.js";
 import {
   committedOwnerRun,
+  discardOwnerCommandFile,
   openOwnerCommandInTerminal,
+  writeOwnerCommandFile,
   OwnerRunNotConfirmedError,
   OwnerRunNotStartedError,
   openAskOwnerRun,
@@ -471,7 +473,7 @@ export class DurableChatService {
    */
   readonly #ownerRuns = new Set<string>();
   readonly #ownerRunCancels = new Map<string, Set<AbortController>>();
-  /** Per Chat, the tail of its ask closes and owner-run launches (`#serializeAsk`). */
+  /** Per Chat, the tail of its ask closes, history navigation and owner-run launches (`#serializeAsk`). */
   readonly #askChanges = new Map<string, Promise<void>>();
 
   constructor(
@@ -986,16 +988,25 @@ export class DurableChatService {
       this.#ownerRuns.delete(key);
       await rm(claim, { force: true });
     };
-    // Admitted in order with this Chat's ask closes: no close of the owner's lands between the last check and the launch.
+    // Admitted in order with this Chat's ask closes and navigation: none of the owner's lands between the last check and the launch.
     return this.#serializeAsk(ref.id, async () => {
+      // Terminal's script is written before the last check, so nothing awaits between that check and opening it.
+      const script =
+        run.mode === "terminal"
+          ? await writeOwnerCommandFile(run).catch(async (error: unknown) => {
+              await unclaim();
+              throw error;
+            })
+          : undefined;
       // A set withdrawn, revised or closed since it was shown (the dialog, the claim) fails closed: Allow was for the set as shown.
       // shortcut: an agent's revision on the host can still land in the one host round trip between this read and the launch; closing that needs the host to check the revision as it admits ownerRun.
       if (typeof source !== "string")
         await read().catch(async (error: unknown) => {
+          if (script !== undefined) await discardOwnerCommandFile(script);
           await unclaim();
           throw error;
         });
-      if (run.mode === "run") {
+      if (script === undefined) {
         // Named by the proposal, so the host launches it once even when this request is retried or the daemon restarted.
         const operationId = `owner-run:${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
         await connection.request("ownerRun", { operationId, command: ownerRunScript(run), cwd: run.cwd });
@@ -1031,7 +1042,7 @@ export class DurableChatService {
         this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered");
       };
       try {
-        void deliver(await openOwnerCommandInTerminal(run)).catch(failed);
+        void deliver(await openOwnerCommandInTerminal(script)).catch(failed);
       } catch (error) {
         running.delete(cancel);
         if (error instanceof OwnerRunNotStartedError) await unclaim();
@@ -1041,7 +1052,7 @@ export class DurableChatService {
     });
   }
 
-  /** Run `change` after this Chat's earlier ask closes and owner-run launches, so a launch's last check and its launch never straddle a close. */
+  /** Run `change` after this Chat's earlier ask closes, navigation and owner-run launches, so a launch's last check and its launch never straddle a close or a move. */
   #serializeAsk<T>(sessionId: string, change: () => Promise<T>): Promise<T> {
     const run = (this.#askChanges.get(sessionId) ?? Promise.resolve()).then(change);
     this.#askChanges.set(
@@ -1244,11 +1255,14 @@ export class DurableChatService {
     const connection = await this.#for(ref);
     this.#require(connection, "tree");
     if (request.summary.mode !== "none") this.#require(connection, "tree.summary");
-    const { result } = await connection.request("navigate", {
-      targetId: request.targetId,
-      expectedLeafId: request.expectedLeafId,
-      ...(request.retainCheckpoint === true ? { retainCheckpoint: true } : {}),
-    });
+    // In order with this Chat's owner-run launches: a move off a set's branch never lands between a launch's last check and its launch.
+    const { result } = await this.#serializeAsk(ref.id, () =>
+      connection.request("navigate", {
+        targetId: request.targetId,
+        expectedLeafId: request.expectedLeafId,
+        ...(request.retainCheckpoint === true ? { retainCheckpoint: true } : {}),
+      }),
+    );
     const editorText = isRecord(result) && typeof result["editorText"] === "string" ? stripInlineImageReferenceMapping(result["editorText"]) : undefined;
     return { cancelled: false, ...(editorText === undefined ? {} : { editorText }) };
   }

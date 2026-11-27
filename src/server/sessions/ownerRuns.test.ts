@@ -6,8 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PendingAskUser } from "../../shared/apiTypes";
 import {
   committedOwnerRun,
+  discardOwnerCommandFile,
   openAskOwnerRun,
   openOwnerCommandInTerminal,
+  writeOwnerCommandFile,
   ownerRunConfirmText,
   ownerRunFolder,
   ownerRunResultText,
@@ -191,10 +193,12 @@ describe("ownerRunScript", () => {
 describe("openOwnerCommandInTerminal", () => {
   it("writes a private single-use script that enters the quoted folder, then opens it", async () => {
     let opened = "";
-    const result = await openOwnerCommandInTerminal({ mode: "terminal", cwd: "/tmp/it's here", command: "sudo true" }, (file) => {
-      opened = file;
+    const file = await writeOwnerCommandFile({ mode: "terminal", cwd: "/tmp/it's here", command: "sudo true" });
+    const result = await openOwnerCommandInTerminal(file, (named) => {
+      opened = named;
       return Promise.resolve();
     });
+    expect(opened).toBe(file);
     const script = await readFile(opened, "utf8");
     dirs.push(join(opened, ".."));
     expect(result).toEqual({ status: "terminal opened" });
@@ -204,14 +208,13 @@ describe("openOwnerCommandInTerminal", () => {
   });
 
   it("leaves no script behind when Terminal does not open", async () => {
-    let written = "";
-    await expect(
-      openOwnerCommandInTerminal({ mode: "terminal", cwd: "/tmp", command: "true" }, (file) => {
-        written = file;
-        return Promise.reject(new Error("no Terminal"));
-      }),
-    ).rejects.toThrow("no Terminal");
-    await expect(stat(written)).rejects.toThrow("ENOENT");
+    const written = await writeOwnerCommandFile({ mode: "terminal", cwd: "/tmp", command: "true" });
+    await expect(openOwnerCommandInTerminal(written, () => Promise.reject(new Error("no Terminal")))).rejects.toThrow("no Terminal");
+    await expect(stat(join(written, ".."))).rejects.toThrow("ENOENT");
+    // One the launch no longer opens (its set closed at the last check) goes as well.
+    const unused = await writeOwnerCommandFile({ mode: "terminal", cwd: "/tmp", command: "true" });
+    await discardOwnerCommandFile(unused);
+    await expect(stat(join(unused, ".."))).rejects.toThrow("ENOENT");
   });
 });
 

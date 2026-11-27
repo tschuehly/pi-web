@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
 import { ownerRunFromJson, ownerRunProposals, sameOwnerRun, type OwnerRunAskSource, type OwnerRunProposal } from "../../shared/ownerRun.js";
 
@@ -150,21 +150,35 @@ export function ownerRunScript(proposal: OwnerRunProposal): string {
 }
 
 /**
- * A private single-use .command file opened in Terminal.app; it deletes itself first. Output and exit are not observed.
- * Fails with {@link OwnerRunNotStartedError} only when Terminal cannot have opened it (no file, `open` never started).
+ * A private single-use .command file for Terminal.app that deletes itself first, written before the launch's last check
+ * so that Terminal opens right after it ({@link openOwnerCommandInTerminal}). Fails with {@link OwnerRunNotStartedError}.
  */
-export async function openOwnerCommandInTerminal(proposal: OwnerRunProposal, open: (file: string) => Promise<void> = openInTerminal): Promise<OwnerRunResult> {
+export async function writeOwnerCommandFile(proposal: OwnerRunProposal): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-owner-run-")).catch((error: unknown) => {
     throw new OwnerRunNotStartedError(error);
   });
   const file = join(dir, "run.command");
+  await writeFile(file, `#!/bin/bash\nrm -rf -- ${shellQuote(dir)}\n${ownerRunScript(proposal)}`, { mode: 0o700 }).catch(async (error: unknown) => {
+    await discardOwnerCommandFile(file);
+    throw new OwnerRunNotStartedError(error);
+  });
+  return file;
+}
+
+/** Removes a script {@link writeOwnerCommandFile} wrote that will not be opened. */
+export async function discardOwnerCommandFile(file: string): Promise<void> {
+  await rm(dirname(file), { recursive: true, force: true });
+}
+
+/**
+ * Opens a {@link writeOwnerCommandFile} script in Terminal.app, starting `open` before its first await. Output and exit
+ * are not observed. Fails with {@link OwnerRunNotStartedError} only when Terminal cannot have opened it (`open` never started).
+ */
+export async function openOwnerCommandInTerminal(file: string, open: (file: string) => Promise<void> = openInTerminal): Promise<OwnerRunResult> {
   try {
-    await writeFile(file, `#!/bin/bash\nrm -rf -- ${shellQuote(dir)}\n${ownerRunScript(proposal)}`, { mode: 0o700 }).catch((error: unknown) => {
-      throw new OwnerRunNotStartedError(error);
-    });
     await open(file);
   } catch (error) {
-    await rm(dir, { recursive: true, force: true });
+    await discardOwnerCommandFile(file);
     throw error;
   }
   return { status: "terminal opened" };

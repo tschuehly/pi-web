@@ -27,11 +27,20 @@ const claimWrite = vi.hoisted(() => {
   const hook: { during?: (() => void) | undefined } = {};
   return hook;
 });
+/** Runs while a Terminal run's script file is written. */
+const scriptWrite = vi.hoisted(() => {
+  const hook: { during?: (() => void) | undefined; files: string[] } = { files: [] };
+  return hook;
+});
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   const writeFile: typeof actual.writeFile = async (...args) => {
     const [file] = args;
     if (typeof file === "string" && file.includes("owner-runs")) claimWrite.during?.();
+    if (typeof file === "string" && file.endsWith("run.command")) {
+      scriptWrite.files.push(file);
+      scriptWrite.during?.();
+    }
     return actual.writeFile(...args);
   };
   return { ...actual, writeFile };
@@ -40,7 +49,12 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 // The Terminal run button opens Terminal.app; these tests only see what happens after it opened.
 vi.mock("./ownerRuns.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./ownerRuns.js")>()),
-  openOwnerCommandInTerminal: vi.fn(() => Promise.resolve({ status: "terminal opened" })),
+  // Its script would delete itself in Terminal; nothing runs it here.
+  openOwnerCommandInTerminal: vi.fn(async (file: string) => {
+    const [{ rm: remove }, { dirname }] = await Promise.all([import("node:fs/promises"), import("node:path")]);
+    await remove(dirname(file), { recursive: true, force: true });
+    return { status: "terminal opened" };
+  }),
 }));
 
 const status = {
@@ -3281,6 +3295,55 @@ describe("the owner's run button", () => {
     const order = launched.flatMap((host) => host.requests.map((request) => request.method)).filter((method) => method === "ownerRun" || method === "closeAsk");
     expect(order[0]).toBe(result instanceof Error ? "closeAsk" : "ownerRun");
     expect(order).not.toEqual(["closeAsk", "ownerRun"]);
+  });
+
+  it("a set the agent withdraws while the Terminal script is written opens nothing: the script is written before the last check", async () => {
+    const opened = vi.mocked(openOwnerCommandInTerminal);
+    opened.mockClear();
+    scriptWrite.files = [];
+    const { durable, launched, ref, proposal, cwd } = await proposing("pwd", { mode: "terminal" });
+    const context = `\`\`\`pi-run terminal cwd="${cwd}"\npwd\n\`\`\`\n`;
+    openAsk(launched, context, context);
+    scriptWrite.during = () => {
+      scriptWrite.during = undefined;
+      for (const host of launched)
+        host.answer = (request) => (request.method === "transcript" ? { messages: [], partial: null, status } : request.method === "status" ? status : null);
+    };
+    await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1", block: 0 }, proposal)).rejects.toThrow("No open question set");
+    expect(opened).not.toHaveBeenCalled();
+    // The unused script is gone with its folder.
+    expect(scriptWrite.files).toHaveLength(1);
+    await expect(stat(join(scriptWrite.files[0] ?? "", ".."))).rejects.toThrow("ENOENT");
+  });
+
+  it("a Terminal run is admitted in order with history navigation: Terminal never opens after the Chat moved to a branch without the set", async () => {
+    const opened = vi.mocked(openOwnerCommandInTerminal);
+    const { durable, launched, ref, proposal, cwd } = await proposing("pwd", { mode: "terminal", capabilities: ["owner-run", "tree"] });
+    const context = `\`\`\`pi-run terminal cwd="${cwd}"\npwd\n\`\`\`\n`;
+    openAsk(launched, context, context);
+    const order: string[] = [];
+    for (const host of launched) {
+      const previous = host.answer;
+      // The host moves to a branch without the set when it receives navigate.
+      host.answer = (request) => {
+        if (request.method !== "navigate") return previous(request);
+        order.push("navigate");
+        host.answer = (next) => (next.method === "transcript" ? { messages: [], partial: null, status } : next.method === "status" ? status : previous(next));
+        return {};
+      };
+    }
+    let navigating: Promise<unknown> | undefined;
+    opened.mockImplementationOnce(async () => {
+      // The owner navigates while Terminal's launch is under way (its script being written, Terminal opening).
+      navigating = durable.navigateTree(ref, { targetId: "e1", expectedLeafId: "e2", summary: { mode: "none" } });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      order.push("terminal");
+      return { status: "terminal opened" };
+    });
+    const result = await durable.ownerRun(ref, { askId: "ask-1", revision: "r1", block: 0 }, proposal).catch((error: unknown) => error);
+    await navigating;
+    expect(result).toEqual({ status: "terminal opened" });
+    expect(order).toEqual(["terminal", "navigate"]);
   });
 
   it("on a host that does not record who wrote the context, a context block never runs, even for Terminal; a question detail's does", async () => {
