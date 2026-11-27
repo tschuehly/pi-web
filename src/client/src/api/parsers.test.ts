@@ -1093,6 +1093,21 @@ describe("API parsers", () => {
     expect(() => parseOpenAsks({ pendingAsks: [{ ...ask, questions: [{ ...ship, labels: ["Ship it"] }] }] })).toThrow("Invalid ask question labels");
   });
 
+  it("keeps a set's contextEdited flag, so a context the user's edit supplied shows no Review button", () => {
+    const ask = {
+      askId: "ask-1",
+      askedAt: "now",
+      updatedAt: "now",
+      revision: "r1",
+      turnsSinceUpdate: 0,
+      context: "Mine",
+      contextEdited: true,
+      questions: [{ id: "q", question: "Q?", options: [] }],
+    };
+    expect(parseOpenAsks({ pendingAsks: [ask] }).pendingAsks[0]?.contextEdited).toBe(true);
+    expect(parseOpenAsks({ pendingAsks: [{ ...ask, contextEdited: false }] }).pendingAsks[0]).not.toHaveProperty("contextEdited");
+  });
+
   it("rejects malformed or unbounded active tool executions", () => {
     const execution = { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" };
     expect(() =>

@@ -935,10 +935,9 @@ export class DurableChatService {
    */
   async ownerRun(ref: SessionRouteRef, source: OwnerRunSource, proposal: unknown): Promise<{ status: "started" | "terminal opened" }> {
     const connection = await this.#for(ref);
+    const { messages, status } = hostTranscript((await connection.request("transcript")).result);
     const run =
-      typeof source === "string"
-        ? committedOwnerRun(hostTranscript((await connection.request("transcript")).result).messages, source, proposal)
-        : openAskOwnerRun((await this.status(ref)).pendingAsks ?? [], source.askId, proposal);
+      typeof source === "string" ? committedOwnerRun(messages, source, proposal) : openAskOwnerRun(status.pendingAsks ?? [], messages, source.askId, proposal);
     const entryId = typeof source === "string" ? source : `ask:${source.askId}`;
     if (run.mode === "run") this.#require(connection, "owner-run");
     const confirmationText = ownerRunConfirmText(run);

@@ -3046,6 +3046,23 @@ describe("the owner's run button", () => {
     return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode, cwd, command } };
   }
   const runs = (launched: FakeHost[]) => launched.flatMap((host) => host.requests.filter((request) => request.method === "ownerRun"));
+  /** Open set ask-1 showing `context` on every host, whose transcript records the agent posting it with `agentContext`. */
+  const openAsk = (launched: FakeHost[], context: string, agentContext: string, revision = "r1") => {
+    const pendingAsks = [{ askId: "ask-1", askedAt: "", updatedAt: "", revision, turnsSinceUpdate: 0, context, questions: [] }];
+    const messages = [
+      { entryId: "c", role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "ask_user", arguments: { context: agentContext } }] },
+      { entryId: "r", role: "toolResult", toolCallId: "call-1", toolName: "ask_user", isError: false, content: [], details: { ask: { askId: "ask-1" } } },
+    ];
+    for (const host of launched) {
+      const previous = host.answer;
+      host.answer = (request) =>
+        request.method === "status"
+          ? { ...status, pendingAsks }
+          : request.method === "transcript"
+            ? { messages, partial: null, status: { ...status, pendingAsks } }
+            : previous(request);
+    }
+  };
 
   it("two confirmations at once start it once, as the host's background job: the guarded script in its folder, named by the proposal", async () => {
     const { durable, launched, ref, proposal, cwd } = await proposing("pwd; exit 7");
@@ -3097,15 +3114,29 @@ describe("the owner's run button", () => {
       },
     });
     const context = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
-    const pendingAsks = [{ askId: "ask-1", askedAt: "", updatedAt: "", revision: "r1", turnsSinceUpdate: 0, context, questions: [] }];
-    for (const host of launched) {
-      const previous = host.answer;
-      host.answer = (request) => (request.method === "status" ? { ...status, pendingAsks } : previous(request));
-    }
+    openAsk(launched, context, context);
     await expect(durable.ownerRun(ref, { askId: "ask-2" }, proposal)).rejects.toThrow("No open question set");
     await expect(durable.ownerRun(ref, { askId: "ask-1" }, proposal)).resolves.toEqual({ status: "started" });
     expect(asked).toHaveLength(1);
     expect(runs(launched)).toHaveLength(1);
+  });
+
+  it("refuses a context an older host saved from the user's edit without contextEdited, even in Terminal mode on a host without run buttons", async () => {
+    const asked: string[] = [];
+    const { durable, launched, ref, cwd } = await proposing("pwd", {
+      capabilities: [],
+      confirm: (text) => {
+        asked.push(text);
+        return Promise.resolve(true);
+      },
+    });
+    const agent = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
+    const edited = `\`\`\`pi-run terminal cwd="${cwd}"\necho owner-edited\n\`\`\`\n`;
+    openAsk(launched, edited, agent);
+    await expect(durable.ownerRun(ref, { askId: "ask-1" }, { mode: "terminal", cwd, command: "echo owner-edited" })).rejects.toThrow(
+      "not a pi-run block the agent wrote",
+    );
+    expect(asked).toEqual([]);
   });
 
   it("refuses a host without run buttons before anything starts", async () => {

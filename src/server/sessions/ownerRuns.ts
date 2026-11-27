@@ -40,20 +40,44 @@ export function committedOwnerRun(messages: readonly unknown[], entryId: string,
 }
 
 /**
- * The proposal the browser names, as the agent wrote it in the open question set `askId`: its context or a question's
- * detail. A context the user's edit supplied (`contextEdited`) is not the agent's, so its blocks never run.
+ * The proposal the browser names, as the agent wrote it in the open question set `askId`: a question's detail, or its
+ * context when the host's transcript shows the agent wrote that block there. The context alone is not proof: a partial
+ * send can replace it with the user's edit, which an older host stores without `contextEdited`.
  */
-export function openAskOwnerRun(asks: readonly PendingAskUser[], askId: string, requested: unknown): OwnerRunProposal {
+export function openAskOwnerRun(asks: readonly PendingAskUser[], messages: readonly unknown[], askId: string, requested: unknown): OwnerRunProposal {
   const wanted = requestedProposal(requested);
   const ask = asks.find((candidate) => candidate.askId === askId);
   if (ask === undefined) throw new Error("No open question set with that id in this Chat");
-  const texts = [
-    ...(ask.context === undefined || ask.contextEdited === true ? [] : [ask.context]),
-    ...ask.questions.flatMap((question) => (question.detail === undefined ? [] : [question.detail])),
-  ];
-  const found = texts.flatMap(ownerRunProposals).find((proposal) => sameOwnerRun(proposal, wanted));
-  if (found === undefined) throw new Error("That command is not a pi-run block the agent wrote in this question set");
-  return found;
+  const agentContext = ask.context === undefined || ask.contextEdited === true ? undefined : agentAskContext(messages, askId);
+  const inContext = (text: string | undefined) => text !== undefined && ownerRunProposals(text).some((proposal) => sameOwnerRun(proposal, wanted));
+  const found = (inContext(ask.context) && inContext(agentContext)) || ask.questions.some((question) => inContext(question.detail));
+  if (!found) throw new Error("That command is not a pi-run block the agent wrote in this question set");
+  return wanted;
+}
+
+/** The context the agent last gave set `askId` in a successful ask_user call (post or revision), from the transcript. */
+function agentAskContext(messages: readonly unknown[], askId: string): string | undefined {
+  const calls = new Map<string, Record<string, unknown>>();
+  let latest: string | undefined;
+  for (const message of messages) {
+    if (!isRecord(message)) continue;
+    if (message["role"] === "assistant" && Array.isArray(message["content"])) {
+      for (const part of message["content"])
+        if (isRecord(part) && part["type"] === "toolCall" && part["name"] === "ask_user" && typeof part["id"] === "string" && isRecord(part["arguments"]))
+          calls.set(part["id"], part["arguments"]);
+    } else if (
+      message["role"] === "toolResult"
+      && message["toolName"] === "ask_user"
+      && message["isError"] !== true
+      && typeof message["toolCallId"] === "string"
+    ) {
+      const args = calls.get(message["toolCallId"]);
+      const details = message["details"];
+      const named = isRecord(details) && isRecord(details["ask"]) ? details["ask"]["askId"] : args?.["update"];
+      if (named === askId && typeof args?.["context"] === "string") latest = args["context"];
+    }
+  }
+  return latest;
 }
 
 /** A run the owner did not allow at this Mac (403), or this platform has no native dialog to ask with (501). */

@@ -597,6 +597,8 @@ function parsePendingAskUser(value: unknown): PendingAskUser {
     revision: optionalString(record, "revision") ?? "",
     turnsSinceUpdate: turnsSinceUpdate === undefined || !Number.isSafeInteger(turnsSinceUpdate) || turnsSinceUpdate < 0 ? 0 : turnsSinceUpdate,
     ...optionalField("context", optionalBoundedNonEmptyString(record, "context", ASK_USER_CONTEXT_MAX_LENGTH)),
+    // The user's edit supplied the context: its pi-run blocks are not the agent's and get no Review button.
+    ...(record["contextEdited"] === true ? { contextEdited: true as const } : {}),
     ...(record["approval"] === true ? { approval: true as const } : {}),
     questions,
   };
