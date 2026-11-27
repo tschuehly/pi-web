@@ -112,7 +112,7 @@ describe("WorkingModeControls", () => {
       ["", "Align", "Plan", "Spec"],
       ["", "Focused", "Switching", "Phone", "AFK"],
       ["", "Exercise", "Test", "Challenge"],
-      ["", "Subagents", "Workers"],
+      ["", "Subagents", "Workers", "Cockpit"],
     ]);
     // Each axis default shows only its icon; its name stays as the accessible name and tooltip.
     expect(

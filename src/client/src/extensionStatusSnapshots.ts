@@ -24,7 +24,7 @@ export const WORKING_MODE_AXES = {
   alignment: ["Default", "Align", "Plan", "Spec"],
   attention: ["Default", "Focused", "Switching", "Phone", "AFK"],
   checking: ["Default", "Exercise", "Test", "Challenge"],
-  orchestration: ["Main", "Subagents", "Workers"],
+  orchestration: ["Main", "Subagents", "Workers", "Cockpit"],
 } as const;
 export type WorkingModeAxis = keyof typeof WORKING_MODE_AXES;
 export const WORKING_MODE_AXIS_NAMES: readonly WorkingModeAxis[] = ["alignment", "attention", "checking", "orchestration"];
