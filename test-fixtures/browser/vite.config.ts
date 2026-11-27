@@ -14,6 +14,7 @@ export default defineConfig({
         overlays: fileURLToPath(new URL("overlays.html", import.meta.url)),
         terminal: fileURLToPath(new URL("terminal.html", import.meta.url)),
         composer: fileURLToPath(new URL("composer.html", import.meta.url)),
+        ask: fileURLToPath(new URL("ask.html", import.meta.url)),
       },
     },
   },

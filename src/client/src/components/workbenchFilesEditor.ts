@@ -357,6 +357,8 @@ export function livePreview(render: (markdown: string) => string, open: (anchor:
 export const livePreviewStyles = styles`
     .cm-cursor { border-left: 2px solid var(--pi-accent) !important; }
     .cm-selectionBackground, .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--pi-accent) 22%, transparent) !important; }
+    /* CodeMirror draws the selection behind the lines, so a code block's or inline code's background hid it; the translucent tint goes above the text. */
+    .cm-selectionLayer { z-index: 1 !important; pointer-events: none; }
 
     .lp-on .lp-h { font-weight: 650; line-height: 1.3; letter-spacing: -.01em; }
     .lp-on .lp-h1 { font-size: 1.6em; padding-top: .3em; padding-bottom: .25em; }
