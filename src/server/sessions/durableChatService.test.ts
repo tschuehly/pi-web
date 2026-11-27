@@ -573,6 +573,104 @@ describe("Durable Chats", () => {
     await expect(durable.openAsks({ id: "missing", cwd: "/work/a" })).rejects.toThrow("Session not found");
   });
 
+  it("keeps a Chat's last Working Mode status on its record, so a cold Chat's tab still knows it", async () => {
+    const { durable, launched } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await expect(durable.workingMode(ref)).resolves.toBeUndefined();
+    const mode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
+    only(launched).push({ type: "status.update", status: { ...status, workingModeSample: 1, extensionStatuses: { "working-mode": mode } } });
+    only(launched).kill();
+    await expect(durable.workingMode(ref)).resolves.toEqual({ workingMode: mode, workingModeVersion: 1 });
+    expect(launched).toHaveLength(1);
+  });
+
+  it("reads a running host's Working Mode over the saved one, and a reattached host refreshes the saved one", async () => {
+    const { durable, launched, locator, root } = await service();
+    const chat = await durable.start("/work/a");
+    const [saved, live] = ['{"aligned":false}', '{"aligned":true}'];
+    only(launched).push({ type: "status.update", status: { ...status, workingModeSample: 1, extensionStatuses: { "working-mode": saved } } });
+    await durable.dispose();
+
+    // A restarted daemon reattaches a host whose mode moved on while no daemon listened: the record follows it before any read.
+    locator.setHost(chat.id, { label: "l", socket: "s", revision: "r", ownerEpoch: 1, pid: 1 });
+    const restarted = await service(() => { const host = new FakeHost(); host.answer = (request) => (request.method === "status" ? { ...status, workingModeSample: 1, extensionStatuses: { "working-mode": live } } : null); return host; }, undefined, { locator: new SessionRuntimeLocator(root) });
+    await restarted.durable.reattach();
+    expect(new SessionRuntimeLocator(root).durable(chat.id)).toMatchObject({ sampledWorkingMode: live, workingModeVersion: 2 });
+    await expect(restarted.durable.workingMode({ id: chat.id, cwd: chat.cwd })).resolves.toEqual({ workingMode: live, workingModeVersion: 2 });
+    await restarted.durable.dispose();
+  });
+
+  it("never versions an unnumbered host's mode, even when a stale reply follows an event and an unrelated delta", async () => {
+    const { durable, launched, locator } = await service();
+    const ref = await durable.start("/work/a");
+    const host = only(launched);
+    const aligned = { ...status, extensionStatuses: { "working-mode": '{"aligned":true}' } };
+    const unaligned = { ...status, extensionStatuses: { "working-mode": '{"aligned":false}' } };
+    host.answer = (request) => {
+      host.answer = () => aligned;
+      host.push({ type: "status.update", status: aligned });
+      host.push({ type: "message.end", message: { role: "user", content: "hi", entryId: "1" } });
+      host.emit("message", { id: request.id, result: unaligned });
+      return NO_REPLY;
+    };
+    await expect(durable.workingMode(ref)).resolves.toBeUndefined();
+    await expect(durable.workingMode(ref)).resolves.toBeUndefined();
+    await expect(durable.status(ref)).resolves.toMatchObject({ extensionStatuses: aligned.extensionStatuses });
+    expect(locator.durable(ref.id)?.sampledWorkingMode).toBeUndefined();
+  });
+
+  it("orders a Working Mode by when the host sampled it: an older reply released after a newer event and an unrelated delta loses", async () => {
+    const { durable, launched, locator, root } = await service();
+    const chat = await durable.start("/work/a");
+    const [before, unaligned, aligned] = ['{"phase":"pending"}', '{"aligned":false}', '{"aligned":true}'];
+    only(launched).push({ type: "status.update", status: { ...status, workingModeSample: 1, extensionStatuses: { "working-mode": before } } });
+    await durable.dispose();
+
+    locator.setHost(chat.id, { label: "l", socket: "s", revision: "r", ownerEpoch: 1, pid: 1 });
+    const restarted = await service(() => {
+      const host = new FakeHost();
+      let held = false;
+      host.answer = (request) => {
+        if (request.method !== "status") return null;
+        if (held) return { ...status, extensionStatuses: { "working-mode": aligned }, workingModeSample: 3 };
+        held = true;
+        // The host samples unaligned (1) for the reattach read, then reports aligned (2) and a delta before its reply goes out.
+        queueMicrotask(() => {
+          host.push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": aligned }, workingModeSample: 2 } });
+          host.push({ type: "message.end", message: { role: "user", content: "hi", entryId: "1" } });
+          host.emit("message", { id: request.id, result: { ...status, extensionStatuses: { "working-mode": unaligned }, workingModeSample: 1 } });
+        });
+        return NO_REPLY;
+      };
+      return host;
+    }, undefined, { locator: new SessionRuntimeLocator(root) });
+    await restarted.durable.reattach();
+    expect(new SessionRuntimeLocator(root).durable(chat.id)).toMatchObject({ sampledWorkingMode: aligned, workingModeVersion: 2 });
+    await expect(restarted.durable.workingMode({ id: chat.id, cwd: chat.cwd })).resolves.toEqual({ workingMode: aligned, workingModeVersion: 2 });
+    await restarted.durable.dispose();
+  });
+
+  it("keeps a new host's Working Mode over a late status from the host it replaced, whatever that host's sample number", async () => {
+    const { durable, launched, locator } = await service();
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    const [stale, fresh] = ['{"aligned":false}', '{"aligned":true}'];
+    await durable.status(ref);
+    const first = only(launched);
+    first.push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": stale }, workingModeSample: 4 } });
+    first.kill();
+    await durable.status(ref);
+    const second = launched[1];
+    if (second === undefined) throw new Error("no second host");
+    second.push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": fresh }, workingModeSample: 1 } });
+    expect(locator.durable(chat.id)).toMatchObject({ sampledWorkingMode: fresh, workingModeVersion: 2 });
+
+    // The replaced host's last status, still buffered on its channel, arrives after its successor's.
+    first.push({ type: "status.update", status: { ...status, extensionStatuses: { "working-mode": stale }, workingModeSample: 5 } });
+    expect(locator.durable(chat.id)).toMatchObject({ sampledWorkingMode: fresh, workingModeVersion: 2 });
+  });
+
   it("labels the whole record's context as the user's edit only while the host's set says the user supplied it", async () => {
     const { durable, launched } = await service();
     const chat = await durable.start("/work/a");
@@ -866,7 +964,7 @@ describe("Durable Chats", () => {
       const host = new FakeHost(DURABLE_HOST_PROTOCOL, ["viewed"]);
       const answer = host.answer;
       host.answer = (request) => {
-        if (request.method === "setViewed" && failFalse && request.params?.viewed === false) {
+        if (request.method === "setViewed" && failFalse && request.params?.["viewed"] === false) {
           failFalse = false;
           throw new Error("no");
         }
@@ -2021,7 +2119,7 @@ describe("the owner's run button", () => {
     const [run, ...more] = runs(launched);
     expect(more).toEqual([]);
     expect(run?.params).toMatchObject({ cwd, command: `cd -P -- '${cwd}' && [ "$PWD" = '${cwd}' ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\npwd; exit 7\n` });
-    expect(run?.params?.operationId).toEqual(expect.stringMatching(/^owner-run:[0-9a-f]{32}$/));
+    expect(run?.params?.["operationId"]).toEqual(expect.stringMatching(/^owner-run:[0-9a-f]{32}$/));
     // The agent learns the result from the job's completion, not from a prompt of PI WEB's.
     expect(launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"))).toEqual([]);
   });

@@ -1092,12 +1092,33 @@ export class WorkbenchApp extends LitElement {
     }
   }
 
-  /** Each Chat's selected Attention, from its live status; absent until the Chat reports one. */
+  private chatStatus(chat: WindowChat): SessionStatus | undefined {
+    return this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId];
+  }
+
+  /** A Chat's Working Mode from the fresher of its status and the window's connect read (a restored Chat not yet opened). */
+  private chatWorkingMode(chat: WindowChat) {
+    const live = this.chatStatus(chat);
+    const status = live?.extensionStatuses?.[WORKING_MODE_STATUS_KEY];
+    const read = this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)];
+    const useRead = read?.workingMode !== undefined && (status === undefined || (live?.workingModeVersion !== undefined && (read.workingModeVersion ?? -1) > live.workingModeVersion));
+    return { mode: parseWorkingModeSnapshot(useRead ? read.workingMode : status), version: useRead ? read.workingModeVersion : live?.workingModeVersion };
+  }
+
+  /** Each Chat's selected Attention, from its live status or the connect read; absent until the Chat reports one. */
   private chatAttention(): Record<string, string> {
     return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
-      const status = this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId];
-      const value = parseWorkingModeSnapshot(status?.extensionStatuses?.[WORKING_MODE_STATUS_KEY])?.selected.attention;
+      const value = this.chatWorkingMode(chat).mode?.selected.attention;
       return value === undefined ? [] : [[chat.sessionId, value]];
+    }));
+  }
+
+  /** Chats whose selected Alignment asks for an agreement not yet reached (or reset), from their live status or the connect read. */
+  private chatUnaligned(): Record<string, boolean> {
+    return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
+      if (chat.machineId !== selectedMachineId(this.app) && this.runtimeFor(chat.sessionId, chat.machineId)?.state.status === undefined) return [];
+      const { mode, version } = this.chatWorkingMode(chat);
+      return version === undefined || mode === undefined || mode.selected.alignment === "Default" || mode.aligned ? [] : [[chat.sessionId, true]];
     }));
   }
 
@@ -1339,31 +1360,52 @@ export class WorkbenchApp extends LitElement {
     this.realtime.close();
     const machineId = selectedMachineId(this.app);
     this.realtimeMachineId = machineId;
-    this.realtime.connect((event) => { this.handleRealtimeEvent(event); }, () => { this.refreshWindowChatAsks(machineId); }, machineId);
+    // The daemon sends its first frame after subscribing; browser socket open only reaches the proxy.
+    let joined = false;
+    this.realtime.connect((event) => {
+      if (!joined) {
+        joined = true;
+        this.refreshWindowChatAsks();
+      }
+      this.handleRealtimeEvent(event);
+    }, () => { joined = false; }, machineId);
   }
 
   /** Open asks and attention requests read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
   @state() private restoredAsks: Record<string, SessionOpenAsks> = {};
 
-  /** Open-ask reads in flight, by machine-scoped session key. */
-  private readonly askRequests = new Set<string>();
+  /** Open-ask reads in flight, by machine-scoped session key: true when a (re)connect asked for another read after it. */
+  private readonly askRequests = new Map<string, boolean>();
 
   /**
-   * On every (re)connect, reads once the open asks of each other Chat this window holds on the machine, so a restored
+   * On every (re)connect, reads once the open asks of each other Chat this window holds, on its own machine (the API
+   * proxies a remote one; an older remote PI WEB sends no Working Mode, so its tab stays unknown), so a restored
    * idle Chat's tab counts its questions before anything streams. The read never opens a Chat: opening a cold one would
    * redeliver its recorded answers and start a turn nobody asked for. Live status updates take over from there.
    */
-  private refreshWindowChatAsks(machineId: string): void {
-    for (const chat of this.windows.window?.chats ?? []) {
-      const key = machineSessionKey(machineId, chat.sessionId);
-      if (chat.machineId !== machineId || chat.sessionId === this.app.selectedSession?.id || this.askRequests.has(key)) continue;
-      this.askRequests.add(key);
-      void this.windowChatWorkspace(chat)
-        .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, machineId))
-        .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: asks }; })
-        .catch(() => undefined)
-        .finally(() => { this.askRequests.delete(key); });
+  private refreshWindowChatAsks(): void {
+    for (const chat of this.windows.window?.chats ?? []) this.refreshChatAsks(chat);
+  }
+
+  /** One Chat's connect read; a reconnect during a read queues one more after it, as the read may predate the gap. */
+  private refreshChatAsks(chat: WindowChat): void {
+    const key = machineSessionKey(chat.machineId, chat.sessionId);
+    if (chat.machineId === selectedMachineId(this.app) && chat.sessionId === this.app.selectedSession?.id) return;
+    if (this.askRequests.has(key)) {
+      this.askRequests.set(key, true);
+      return;
     }
+    this.askRequests.set(key, false);
+    void this.windowChatWorkspace(chat)
+      .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, chat.machineId))
+      .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: asks }; })
+      .catch(() => undefined)
+      .finally(() => {
+        const again = this.askRequests.get(key) === true;
+        this.askRequests.delete(key);
+        const current = this.windows.window?.chats.find((held) => machineSessionKey(held.machineId, held.sessionId) === key);
+        if (again && current !== undefined) this.refreshChatAsks(current);
+      });
   }
 
   private handleRealtimeEvent(event: BrowserRealtimeEvent): void {
@@ -1854,7 +1896,7 @@ export class WorkbenchApp extends LitElement {
   override render() {
     const selected = this.app.selectedSession?.id;
     return html`
-      <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()} .attention=${this.chatAttention()}
+      <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()} .attention=${this.chatAttention()} .unaligned=${this.chatUnaligned()}
         @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { this.swipe.cancel(); void this.showWindowChat(event.detail.sessionId); }}
         @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { void this.closeWindowChats(event.detail.sessionIds); }}
         @tab-rename=${(event: CustomEvent<TabRenameDetail>) => { void this.renameTab(event.detail); }}

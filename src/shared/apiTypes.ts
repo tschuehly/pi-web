@@ -1452,6 +1452,8 @@ export interface SessionWarning {
 
 export interface SessionStatus {
   sessionId: string;
+  /** The version of the `working-mode` extension status (Durable Chats): a reader keeps the value with the highest. */
+  workingModeVersion?: number;
   /** True when the server has verified a backing session file exists; false when known transient. */
   persisted?: boolean;
   /**
@@ -1760,6 +1762,10 @@ export interface SessionAttentionRequest {
 export interface SessionOpenAsks {
   pendingAsks: PendingAskUser[];
   attentionRequest?: SessionAttentionRequest;
+  /** The Chat's last known `working-mode` extension status, so its tab shows its Working Mode before it is opened. */
+  workingMode?: string;
+  /** The version of `workingMode`: a reader keeps the value with the highest (ties: the live status). */
+  workingModeVersion?: number;
 }
 
 export interface SessionAttentionEvent {

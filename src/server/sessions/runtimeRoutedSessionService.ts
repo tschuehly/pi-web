@@ -86,6 +86,8 @@ export function createRuntimeRoutedSessionService(legacy: SessionRouteService, d
     media: (ref, mediaId) => isDurable(ref) ? durable.media(ref, mediaId) : legacy.media(ref, mediaId),
     status: (ref) => isDurable(ref) ? durable.status(ref) : legacy.status(ref),
     openAsks: (ref) => isDurable(ref) ? durable.openAsks(ref) : legacy.openAsks(ref),
+    // shortcut: a legacy Chat's Working Mode is known only once it is open; read its extension status if legacy tabs need it.
+    workingMode: (ref) => isDurable(ref) ? durable.workingMode(ref) : undefined,
     attentionRequest: (ref) => isDurable(ref) ? durable.attentionRequest(ref) : legacy.attentionRequest(ref),
     acknowledgeAttention: (ref, requestId) => isDurable(ref) ? durable.acknowledgeAttention(ref, requestId) : legacy.acknowledgeAttention(ref, requestId),
     streamSnapshot: (ref) => isDurable(ref) ? durable.streamSnapshot(ref) : legacy.streamSnapshot(ref),

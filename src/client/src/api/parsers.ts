@@ -440,7 +440,8 @@ function optionalPendingAsks(pendingAsks: unknown, legacyPendingAsk: unknown): P
 /** A session's open asks and attention request, read without opening it. */
 export function parseOpenAsks(value: unknown): SessionOpenAsks {
   const record = requireRecord(value);
-  return { pendingAsks: arrayOf(parsePendingAskUser)(record["pendingAsks"]), ...optionalAttentionRequest(record["attentionRequest"]) };
+  const workingMode = optionalString(record, "workingMode");
+  return { pendingAsks: arrayOf(parsePendingAskUser)(record["pendingAsks"]), ...optionalAttentionRequest(record["attentionRequest"]), ...(workingMode === undefined ? {} : { workingMode }), ...optionalField("workingModeVersion", optionalNumber(record, "workingModeVersion")) };
 }
 
 export function parseSessionAskOpenedEvent(value: unknown): { type: "ask.opened"; ask: PendingAskUser } {
@@ -757,6 +758,7 @@ export function parseSessionStatus(value: unknown): SessionStatus {
     ...optionalDurableHostPin(record["durableHostPin"]),
     ...optionalActiveToolExecutions(record["activeToolExecutions"]),
     ...optionalExtensionStatuses(record["extensionStatuses"]),
+    ...optionalField("workingModeVersion", optionalNumber(record, "workingModeVersion")),
     ...optionalField("suggestedInput", optionalString(record, "suggestedInput")),
     ...optionalCapabilities(record["capabilities"]),
   };

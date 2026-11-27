@@ -43,6 +43,9 @@ import type {
 import type { NormalizedSessionCleanupRequest } from "./sessionCleanup.js";
 import type { SessionMedia } from "./sessionMediaIndex.js";
 
+/** A Chat's `working-mode` status with its version: a reader keeps the value with the highest. */
+export interface SessionWorkingMode { workingMode: string; workingModeVersion: number }
+
 export type SessionRouteRef = ClientSessionRef;
 
 /**
@@ -70,6 +73,8 @@ export interface SessionRouteService {
   status(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   /** Open asks read without opening the session, so a cold one never starts; undefined: a Durable Chat whose host is not running, so nothing was read. */
   openAsks(ref: SessionRouteRef): Promise<PendingAskUser[] | undefined>;
+  /** The Chat's `working-mode` status and its version, read without opening it (the newer of a running host's and the saved one); undefined (or absent: legacy) when unknown. */
+  workingMode?(ref: SessionRouteRef): SessionWorkingMode | undefined | Promise<SessionWorkingMode | undefined>;
   /** The running session's unacknowledged `request_attention`, read without opening it (a Durable Chat asks its host). */
   attentionRequest(ref: SessionRouteRef): SessionAttentionRequest | undefined | Promise<SessionAttentionRequest | undefined>;
   /** Clears the attention request with this id; false when it is gone or a newer one replaced it. */

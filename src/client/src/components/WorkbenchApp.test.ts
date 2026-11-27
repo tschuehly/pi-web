@@ -29,7 +29,7 @@ import { SessionController } from "../controllers/sessionController";
 import { WorkbenchWindowController, WINDOW_CHANNEL, WINDOW_HEARTBEAT_KEY, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY, WINDOW_STORE_LOCK } from "../controllers/workbenchWindowController";
 import { WorkbenchChatSession, WorkbenchSessionFocus } from "../controllers/workbenchSessionFocus";
 import { FakeLocks } from "../controllers/webLocks.testSupport";
-import { emptyWindow, focusChat, moveChats, openChat, parseWindowStore } from "../workbenchWindows";
+import { emptyWindow, focusChat, moveChats, openChat, parseWindowStore, type WorkbenchWindow } from "../workbenchWindows";
 import { installNativeDialogFake } from "./nativeDialog.testSupport";
 
 installNativeDialogFake();
@@ -2442,13 +2442,18 @@ describe("window tabs", () => {
     expect(count("a1")).toBeNull();
     openAsks.mockClear();
 
-    // Opened twice before the first answers: each other Chat is asked once; the Chat on screen not at all.
+    // Opened twice before the first answers: each other Chat is asked once at a time, again after its read; the Chat on screen not at all.
     const realtime = sockets.at(-1);
     realtime?.onopen?.();
+    daemonJoined(realtime);
+    await vi.waitFor(() => { expect(openAsks).toHaveBeenCalled(); });
     realtime?.onopen?.();
-    await vi.waitFor(() => { expect(openAsks.mock.calls.map(([ref]) => ref.id).sort()).toEqual(["a1", "b1"]); });
+    daemonJoined(realtime);
+    const asked = () => openAsks.mock.calls.map(([ref]) => ref.id).sort();
+    await vi.waitFor(() => { expect(asked()).toEqual(["a1", "b1", "b1"]); });
     // A selection that lands as the answer arrives does not drop it.
     answerA1({ pendingAsks: [ask] });
+    await vi.waitFor(() => { expect(asked()).toEqual(["a1", "a1", "b1", "b1"]); });
     workstreamTab(app, "Docs").click();
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
     workstreamTab(app, "Release").click();
@@ -2474,9 +2479,161 @@ describe("window tabs", () => {
     const dot = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"]`)?.getAttribute("data-status");
 
     sockets.at(-1)?.onopen?.();
+    daemonJoined(sockets.at(-1));
 
     await vi.waitFor(async () => { await app.updateComplete; expect(dot("a1")).toBe("needs"); });
     expect(dot("a2")).not.toBe("needs");
+  });
+
+  it("reads a restored Chat after the daemon joins, not during the proxy gap, without opening it", async () => {
+    await mountWithWorkstreamChats();
+    document.body.replaceChildren();
+    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    vi.clearAllMocks();
+    const status = vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
+    let aligned = false;
+    const workingMode = () => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: workingMode(), workingModeVersion: aligned ? 2 : 1 } : { pendingAsks: [] }));
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    const dashed = (sessionId: string) => tabsRoot(app).querySelector(`[data-session="${sessionId}"]`)?.hasAttribute("data-unaligned");
+
+    sockets.at(-1)?.onopen?.();
+    daemonJoined(sockets.at(-1));
+
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed("a1")).toBe(true); });
+    expect(dashed("a2")).toBe(false);
+
+    // On reconnect the Chat is aligned after browser open but before the proxy subscribes. No live event is replayed.
+    sockets.at(-1)?.onopen?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    aligned = true;
+    daemonJoined(sockets.at(-1));
+    await vi.waitFor(() => { expect(dashed("a1")).toBe(false); });
+    expect(openAsks.mock.calls.filter(([ref]) => ref.id === "a1")).toHaveLength(2);
+    expect(status.mock.calls.map(([ref]) => ref.id)).not.toContain("a1");
+  });
+
+  it("lets the connect read after a reconnect replace a Chat's status cached before it, and a status received later replace the read", async () => {
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    const app = await mountWithWorkstreamChats();
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const dashed = () => tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned");
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 1 } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+
+    // The Chat was aligned while the window was offline; the read on reconnect knows it (a higher version), the cached status does not.
+    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: mode(true), workingModeVersion: 2 } : { pendingAsks: [] }));
+    sockets.at(-1)?.onopen?.();
+    daemonJoined(sockets.at(-1));
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(false); });
+
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 3 } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+  });
+
+  it("does not draw an Alignment border from an unnumbered host status", async () => {
+    const app = await mountWithWorkstreamChats();
+    const mode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Focused", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
+    const receive = Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    Reflect.apply(receive, app, [{ type: "status.update", status: { ...idleStatus("b1"), extensionStatuses: { "working-mode": mode } } }]);
+    const tab = () => tabsRoot(app).querySelector('[data-session="b1"]');
+    await vi.waitFor(() => { expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused"); });
+    expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
+  });
+
+  it("keeps a live status newer than a connect read that arrives after it, for Alignment and Attention", async () => {
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    const app = await mountWithWorkstreamChats();
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (aligned: boolean, attention: string) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention, checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const tab = () => tabsRoot(app).querySelector('[data-session="a1"]');
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+
+    // The reconnect read is answered with the old mode but held in flight; the newer status renders meanwhile.
+    let release!: () => void;
+    vi.spyOn(api, "openAsks").mockImplementation((ref) => ref.id !== "a1" ? Promise.resolve({ pendingAsks: [] }) : new Promise((resolve) => { release = () => { resolve({ pendingAsks: [], workingMode: mode(false, "AFK"), workingModeVersion: 1 }); }; }));
+    sockets.at(-1)?.onopen?.();
+    daemonJoined(sockets.at(-1));
+    await vi.waitFor(() => { expect(release).toBeDefined(); });
+    receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(true, "Focused") }, workingModeVersion: 2 } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(false); expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused"); });
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    app.requestUpdate();
+    await app.updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
+    expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused");
+  });
+
+  it("reads a Chat's open asks again after a reconnect that came while the previous connect read was in flight", async () => {
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    const app = await mountWithWorkstreamChats();
+    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const dashed = () => tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned");
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+
+    // The first read is answered with the mode from before the gap and held; the Chat is aligned during a second outage.
+    let release!: () => void;
+    let reads = 0;
+    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => {
+      if (ref.id !== "a1") return Promise.resolve({ pendingAsks: [] });
+      reads += 1;
+      return reads === 1
+        ? new Promise((resolve) => { release = () => { resolve({ pendingAsks: [], workingMode: mode(false), workingModeVersion: 1 }); }; })
+        : Promise.resolve({ pendingAsks: [], workingMode: mode(true), workingModeVersion: 2 });
+    });
+    sockets.at(-1)?.onopen?.();
+    daemonJoined(sockets.at(-1));
+    await vi.waitFor(() => { expect(release).toBeDefined(); });
+    sockets.at(-1)?.onopen?.();
+    daemonJoined(sockets.at(-1));
+
+    release();
+    await vi.waitFor(() => { expect(openAsks.mock.calls.filter(([ref]) => ref.id === "a1")).toHaveLength(2); });
+    await vi.waitFor(async () => { app.requestUpdate(); await app.updateComplete; expect(dashed()).toBe(false); });
+  });
+
+  it("does not frame a remote tab without a live feed, even when its seed reports unaligned", async () => {
+    await mountWithWorkstreamChats();
+    document.body.replaceChildren();
+    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    vi.clearAllMocks();
+    vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
+    const workingMode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Focused", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
+    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref, machineId) => Promise.resolve(ref.id === "a1" && machineId === "remote" ? { pendingAsks: [], workingMode, workingModeVersion: 1 } : { pendingAsks: [] }));
+    const sockets: SilentWebSocket[] = [];
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
+    const app = new WorkbenchApp();
+    document.body.append(app);
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    // a1's Chat lives on the remote machine (a federated PI WEB).
+    const windows = Reflect.get(app, "windows") as { window: WorkbenchWindow | undefined }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private controller
+    const held = windows.window;
+    if (held === undefined) throw new Error("no window");
+    Object.defineProperty(windows, "window", { configurable: true, get: () => ({ ...held, chats: held.chats.map((chat) => chat.sessionId === "a1" ? { ...chat, machineId: "remote" } : chat) }) });
+
+    sockets.at(-1)?.onopen?.();
+    daemonJoined(sockets.at(-1));
+
+    await vi.waitFor(() => { expect(openAsks.mock.calls.map(([ref, machineId]) => `${ref.id}@${machineId ?? ""}`)).toContain("a1@remote"); });
+    await vi.waitFor(async () => { app.requestUpdate(); await app.updateComplete; expect(tabsRoot(app).querySelector('[data-session="a1"] .attention')?.getAttribute("aria-label")).toBe("Attention: Focused"); });
+    expect(tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned")).toBe(false);
   });
 
   it("acknowledges the selected Chat's attention request once the owner sees it, and not while the window is in the background", async () => {
@@ -2494,6 +2651,23 @@ describe("window tabs", () => {
     window.dispatchEvent(new Event("focus"));
 
     await vi.waitFor(() => { expect(acknowledge).toHaveBeenCalledExactlyOnceWith({ id: "b1", cwd: workspace.path }, "attention-1", "local"); });
+  });
+
+  it("frames a Chat's tab dashed while its Alignment waits for an agreement, and drops the frame once aligned", async () => {
+    const app = await mountWithWorkstreamChats();
+    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (alignment: string, aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment, attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const tab = () => tabsRoot(app).querySelector('[data-session="b1"]');
+
+    receive({ type: "status.update", status: { ...idleStatus("b1"), workingModeVersion: 1, extensionStatuses: { "working-mode": mode("Align", false) } } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(true); });
+
+    receive({ type: "status.update", status: { ...idleStatus("b1"), workingModeVersion: 2, extensionStatuses: { "working-mode": mode("Align", true) } } });
+    await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(false); });
+
+    receive({ type: "status.update", status: { ...idleStatus("b1"), workingModeVersion: 3, extensionStatuses: { "working-mode": mode("Default", false) } } });
+    await app.updateComplete;
+    expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
   });
 
   it("puts the Chat's tools in the tab row, naming its folder in the Files tooltip, and gives them back to the tile in a grid", async () => {
@@ -4164,6 +4338,12 @@ class FakeBrowserNotification {
 
   onclick: ((event: Event) => void) | null = null;
   close = vi.fn();
+}
+
+function daemonJoined(socket: SilentWebSocket | undefined): void {
+  socket?.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "machine.status", status: {
+    epochId: "daemon", revision: 1, machine: {}, projects: {}, workspaces: {}, unattributed: {}, generatedAt: "2026-10-19T10:00:00Z",
+  } }) }));
 }
 
 class SilentWebSocket {

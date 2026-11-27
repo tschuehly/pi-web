@@ -86,6 +86,20 @@ describe("SessionController factual tree invalidation", () => {
     expect(loadDraft(forkKey)).toBe("unrelated fork draft");
   });
 
+  it("keeps a background Chat's queued aligned status across a tree refresh in the selected Chat", async () => {
+    const socket = new EmitSocket();
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession, replacementSession] };
+    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { api: defaultApi, socket });
+    await controller.selectSession(oldSession, { updateUrl: false });
+    const aligned = { ...status(replacementSession.id), extensionStatuses: { "working-mode": '{"aligned":true}' }, workingModeVersion: 2 };
+    controller.applyGlobalEvent({ type: "status.update", status: aligned });
+    socket.emit({ type: "session.tree.changed" });
+    runPendingAnimationFrames();
+    await controller.refreshSelectedSession();
+    expect(state.sessionStatuses[replacementSession.id]).toEqual(aligned);
+    controller.dispose();
+  });
+
   it("replays a change newer than a delayed join snapshot and reads the suggestion without applying it", async () => {
     saveDraft(sourceKey, "keep draft");
     const initial = deferred<SessionTranscriptSnapshot>();

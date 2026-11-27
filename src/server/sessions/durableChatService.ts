@@ -169,6 +169,9 @@ class DurableHostConnection {
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
+  static #opened = 0;
+  /** Which host life this is, counted up as the daemon opens hosts: a later host's Working Mode beats an earlier one's. */
+  readonly generation = ++DurableHostConnection.#opened;
   #next = 1;
   #exited: Error | undefined;
   readonly #pending = new Map<number, { resolve: (reply: { result: unknown; seq: number }) => void; reject: (error: Error) => void }>();
@@ -414,6 +417,8 @@ export class DurableChatService {
   readonly #hops = new Map<string, number>();
   /** Chats whose host last reported a running turn, for send_chat_message's list. */
   readonly #streaming = new Set<string>();
+  /** Per Chat, the order key of the last Working Mode the daemon observed (this daemon's life; see `#withWorkingMode`). */
+  readonly #modeSample = new Map<string, { generation: number; sample: number }>();
   /** Live review: each paired main Chat's work since its last digest; in memory, so a daemon restart drops a partial digest. */
   readonly #liveReviews = new Map<string, LiveReviewCollector>();
   /** Reviewer Chats working on a digest (delivered, its turn not ended yet), so the next digest waits and merges. */
@@ -584,7 +589,7 @@ export class DurableChatService {
   async status(ref: SessionRouteRef): Promise<ClientSessionStatus> {
     const connection = await this.#for(ref);
     const { result } = await connection.request("status");
-    return { ...browserStatus(hostStatus(result), connection), sessionId: ref.id };
+    return { ...this.#withWorkingMode(ref.id, browserStatus(hostStatus(result), connection), connection), sessionId: ref.id };
   }
 
   /** An image of the Chat's transcript (or its in-flight answer), bound to the Chat as a legacy Chat's media are. */
@@ -608,7 +613,7 @@ export class DurableChatService {
     const connection = await this.#for(ref);
     const { result, seq } = await connection.request("transcript");
     const transcript = hostTranscript(result);
-    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, transcript.messages).map(displayPromptMessage), { limit: page?.limit ?? 100 }), status: { ...browserStatus(transcript.status, connection), sessionId: ref.id } };
+    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, transcript.messages).map(displayPromptMessage), { limit: page?.limit ?? 100 }), status: { ...this.#withWorkingMode(ref.id, browserStatus(transcript.status, connection), connection), sessionId: ref.id } };
   }
 
   /** History with Pi's cache-miss notices re-derived onto the assistant turns that paid for them (legacy `historyWithCacheMissNotices`). */
@@ -1050,6 +1055,33 @@ export class DurableChatService {
   async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[] | undefined> {
     const status = await this.#runningStatus(ref);
     return status === undefined ? undefined : status.pendingAsks ?? [];
+  }
+
+  /** The newer of the connected host's Working Mode status and the saved one, with its version: never starts a host. */
+  async workingMode(ref: SessionRouteRef): Promise<{ workingMode: string; workingModeVersion: number } | undefined> {
+    const record = this.#record(ref);
+    const connection = await this.#connections.get(record.id)?.catch(() => undefined);
+    const reply = connection === undefined ? undefined : await connection.request("status").catch(() => undefined);
+    if (connection !== undefined && reply !== undefined) this.#withWorkingMode(record.id, hostStatus(reply.result), connection);
+    const saved = this.deps.locator.durable(record.id);
+    return saved?.sampledWorkingMode === undefined ? undefined : { workingMode: saved.sampledWorkingMode, workingModeVersion: saved.workingModeVersion ?? 0 };
+  }
+
+  /** Only host-numbered samples can seed tabs. Compare host life first, then sample, never transport arrival. */
+  #withWorkingMode<T extends { extensionStatuses?: Record<string, string> }>(id: string, status: T, connection: DurableHostConnection): T & { workingModeVersion?: number } {
+    const observed = status.extensionStatuses?.["working-mode"];
+    const record = this.deps.locator.durable(id);
+    if (observed === undefined || record === undefined) return status;
+    const raw: unknown = Reflect.get(status, "workingModeSample");
+    const sample = typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
+    const last = this.#modeSample.get(id);
+    if (last === undefined || connection.generation > last.generation || (connection.generation === last.generation && sample > last.sample)) {
+      this.#modeSample.set(id, { generation: connection.generation, sample });
+      const mode = sample === 0 ? undefined : observed;
+      if (mode !== record.sampledWorkingMode) this.deps.locator.update(id, { sampledWorkingMode: mode, workingModeVersion: (record.workingModeVersion ?? 0) + 1 });
+    }
+    const saved = this.deps.locator.durable(id) ?? record;
+    return saved.sampledWorkingMode === undefined ? status : { ...status, extensionStatuses: { ...status.extensionStatuses, "working-mode": saved.sampledWorkingMode }, workingModeVersion: saved.workingModeVersion ?? 0 };
   }
 
   async attentionRequest(ref: SessionRouteRef): Promise<SessionAttentionRequest | undefined> {
@@ -1511,7 +1543,8 @@ export class DurableChatService {
   async reattach(): Promise<void> {
     await Promise.all(this.deps.locator.all().map((record) => {
       if (record.upgrade !== undefined) return this.#recoverUpgrade(record, record.upgrade);
-      return record.host === undefined ? Promise.resolve() : this.#connection(record, true).then(() => undefined, () => undefined);
+      // A reattached host may have changed Working Mode while no daemon listened: refresh the record from it.
+      return record.host === undefined ? Promise.resolve() : this.#connection(record, true).then(() => this.workingMode(record), () => undefined).then(() => undefined, () => undefined);
     }));
   }
 
@@ -1940,12 +1973,11 @@ export class DurableChatService {
       // A reviewer that went idle takes the live review digest that waited for it.
       if (!event.status.isStreaming && record.reviewing !== undefined) void this.#sendDigest(record.reviewing);
       if (connection.upgradePending && restartSafe(event.status)) void this.upgradePendingHosts(sessionId);
-      const status = { ...browserStatus(event.status, connection), sessionId };
+      const status = { ...this.#withWorkingMode(sessionId, browserStatus(event.status, connection), connection), sessionId };
       this.deps.events.publish(sessionId, { type: "status.update", status }, scope);
       this.deps.events.publishGlobal({ type: "status.update", status });
-      if (status.messageCount !== undefined && status.messageCount !== record.messageCount) {
-        this.deps.locator.update(sessionId, { messageCount: status.messageCount, modified: new Date().toISOString() });
-      }
+      const change = status.messageCount !== undefined && status.messageCount !== record.messageCount ? { messageCount: status.messageCount, modified: new Date().toISOString() } : {};
+      if (Object.keys(change).length > 0) this.deps.locator.update(sessionId, change);
       return;
     }
     this.deps.events.publish(sessionId, event.type === "message.end" ? { ...event, message: displayPromptMessage(this.#liveCacheMissNotice(sessionId, record.cwd, event.message)) } : event, scope);

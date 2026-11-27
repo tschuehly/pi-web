@@ -6,6 +6,7 @@ import { chatSupports, type AskUserOutcome, type ChatCapability, type SessionEff
 import { BrowserErrorReporter, sessionBrowserErrorScope, workspaceBrowserErrorScope, type SessionBrowserErrorOwner } from "../browserErrors";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
 import { textMessage } from "../chatMessages";
+import { withNewerWorkingMode } from "../extensionStatusSnapshots";
 import { machineSessionKey } from "../machineKeys";
 import { samePromptChipTarget, type PromptChipTarget } from "../promptChips";
 import { isCreatingSessionId } from "../route";
@@ -272,7 +273,7 @@ export class SessionController {
     this.socket.close();
     this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
-    this.clearPendingUpdates();
+    this.clearPendingTranscript();
     // Note: sendingPrompts is intentionally NOT cleared here. Deselecting a
     // session must not cancel the in-flight upload indicator of the session
     // that is still sending; the per-session entry is cleared by send()'s
@@ -436,7 +437,7 @@ export class SessionController {
     this.selectedSessionJoinNavigation = options?.navigation;
     this.socket.close();
     this.streamWatermark = undefined;
-    this.clearPendingUpdates();
+    this.clearPendingTranscript();
     this.selectedSessionLoadDeferred = options?.deferChatLoading === true || !this.isChatVisible();
     if (this.selectedSessionLoadDeferred) this.notifications?.clearSelectedSession();
     else this.notifications?.prepareSelectedSession(session, machineId);
@@ -821,7 +822,7 @@ export class SessionController {
     // sequence changes, but the server mutation still belongs to the selected
     // identity and requires a fresh authoritative branch read.
     if (!this.isSelectedSessionIdentity(session.id, machineId)) return;
-    this.clearPendingUpdates();
+    this.clearPendingUpdates(session.id);
     // Only editable targets return editor text. Other history navigation keeps
     // the draft; refresh history either way, even if editor replacement fails.
     const editorReplacement = (async () => {
@@ -935,7 +936,7 @@ export class SessionController {
     const machineId = selectedMachineId(state);
     if (session === undefined || !this.isSelectedSessionIdentity(session.id, machineId)) return;
     this.transcripts.discard(machineSessionKey(machineId, session.id));
-    this.clearPendingUpdates();
+    this.clearPendingUpdates(session.id);
     void this.refreshSelectedSession(session.id);
 
     // Retire the separately loaded picker rather than issuing /tree while the
@@ -1773,7 +1774,8 @@ export class SessionController {
         const history = this.transcripts.mergeSnapshot(key, page);
         const messages = this.transcripts.seedStreamingPartial(history.messages, snapshot.partial);
         this.streamWatermark = { sessionId: target.session.id, seq: snapshot.seq };
-        this.setState({ ...history, messages, status, activity: this.getState().sessionActivities[target.session.id] });
+        // applyStatus sets the status, so it never rolls back a newer Working Mode.
+        this.setState({ ...history, messages, activity: this.getState().sessionActivities[target.session.id] });
         this.applyStatus(status);
         this.lastAppliedSelectedRefresh = { selectionSeq: target.selectionSeq, partialJson: selectedRefreshPartialJson(snapshot) };
       }
@@ -1994,7 +1996,7 @@ export class SessionController {
     this.socket.close();
     this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
-    this.clearPendingUpdates();
+    this.clearPendingTranscript();
     const state = this.getState();
     const pendingStart = this.pendingSessionStarts.get(session.id);
     const activity = options?.activity ?? state.sessionActivities[session.id] ?? (pendingStart !== undefined ? creatingPendingSessionActivity(session.id, pendingStart.queuedSends.length) : undefined);
@@ -2301,8 +2303,9 @@ export class SessionController {
     });
   }
 
-  private applyStatus(status: SessionStatus) {
+  private applyStatus(received: SessionStatus) {
     const state = this.getState();
+    const status = withNewerWorkingMode(state.sessionStatuses[received.sessionId], received);
     const isSelected = state.selectedSession?.id === status.sessionId;
     const clearsStaleActivity = state.sessionActivities[status.sessionId]?.phase === "active" && !isSessionActive(status);
     this.setState({
@@ -2463,7 +2466,7 @@ export class SessionController {
   }
 
   private queueStatusUpdate(status: SessionStatus): void {
-    this.pendingStatusBySession.set(status.sessionId, status);
+    this.pendingStatusBySession.set(status.sessionId, withNewerWorkingMode(this.pendingStatusBySession.get(status.sessionId), status));
     this.schedulePendingFlush();
   }
 
@@ -2600,8 +2603,8 @@ export class SessionController {
   // Apply buffered transcript deltas, activity, and status in one task. Activity
   // is applied before status to mirror the server's publish order, so an idle
   // status can clear the now-stale active activity it supersedes. Status and
-  // activity are last-write-wins per session, so iterating the maps applies only
-  // the latest buffered value per session. These writes run in a single task, so
+  // activity are last-write-wins per session (except an older Working Mode, see
+  // `queueStatusUpdate`), so iterating the maps applies only the latest buffered value per session. These writes run in a single task, so
   // Lit batches them into one render.
   flushPendingUpdates(): void {
     if (this.pendingTranscriptEvents.length > 0) {
@@ -2623,9 +2626,19 @@ export class SessionController {
     }
   }
 
-  private clearPendingUpdates(): void {
+  // A selection change retires only the selected Chat's transcript buffer; buffered statuses are per Chat and stay due.
+  private clearPendingTranscript(): void {
     this.refreshEventBuffer = undefined;
     this.pendingTranscriptEvents = [];
+  }
+
+  private clearPendingUpdates(treeSessionId?: string): void {
+    this.clearPendingTranscript();
+    if (treeSessionId !== undefined) {
+      this.pendingStatusBySession.delete(treeSessionId);
+      this.pendingActivityBySession.delete(treeSessionId);
+      return; // The scheduled frame still owns other Chats' updates.
+    }
     this.pendingStatusBySession.clear();
     this.pendingActivityBySession.clear();
     if (this.pendingFrame === undefined) return;
