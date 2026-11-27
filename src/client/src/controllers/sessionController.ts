@@ -273,7 +273,7 @@ export class SessionController {
     this.socket.close();
     this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
-    this.clearPendingUpdates();
+    this.clearPendingTranscript();
     // Note: sendingPrompts is intentionally NOT cleared here. Deselecting a
     // session must not cancel the in-flight upload indicator of the session
     // that is still sending; the per-session entry is cleared by send()'s
@@ -437,7 +437,7 @@ export class SessionController {
     this.selectedSessionJoinNavigation = options?.navigation;
     this.socket.close();
     this.streamWatermark = undefined;
-    this.clearPendingUpdates();
+    this.clearPendingTranscript();
     this.selectedSessionLoadDeferred = options?.deferChatLoading === true || !this.isChatVisible();
     if (this.selectedSessionLoadDeferred) this.notifications?.clearSelectedSession();
     else this.notifications?.prepareSelectedSession(session, machineId);
@@ -1996,7 +1996,7 @@ export class SessionController {
     this.socket.close();
     this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
-    this.clearPendingUpdates();
+    this.clearPendingTranscript();
     const state = this.getState();
     const pendingStart = this.pendingSessionStarts.get(session.id);
     const activity = options?.activity ?? state.sessionActivities[session.id] ?? (pendingStart !== undefined ? creatingPendingSessionActivity(session.id, pendingStart.queuedSends.length) : undefined);
@@ -2626,9 +2626,14 @@ export class SessionController {
     }
   }
 
-  private clearPendingUpdates(treeSessionId?: string): void {
+  // A selection change retires only the selected Chat's transcript buffer; buffered statuses are per Chat and stay due.
+  private clearPendingTranscript(): void {
     this.refreshEventBuffer = undefined;
     this.pendingTranscriptEvents = [];
+  }
+
+  private clearPendingUpdates(treeSessionId?: string): void {
+    this.clearPendingTranscript();
     if (treeSessionId !== undefined) {
       this.pendingStatusBySession.delete(treeSessionId);
       this.pendingActivityBySession.delete(treeSessionId);

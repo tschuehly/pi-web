@@ -198,4 +198,14 @@ describe("SessionController Working Mode versions", () => {
     runPendingAnimationFrames();
     expect(state.sessionStatuses[oldSession.id]).toMatchObject({ messageCount: 9, extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 });
   });
+
+  it("keeps a background Chat's buffered status when the selection changes before the frame", () => {
+    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
+    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { socket: new FakeSocket() });
+    controller.applyGlobalEvent({ type: "status.update", status: { ...idleStatus("chat-b"), extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 } });
+    controller.clearActiveSession();
+    runPendingAnimationFrames();
+    expect(state.sessionStatuses["chat-b"]).toMatchObject({ extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 });
+  });
 });
