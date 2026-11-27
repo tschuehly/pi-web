@@ -1,3 +1,3 @@
 # Bulk formatting commits; `git config blame.ignoreRevsFile .git-blame-ignore-revs` to skip them locally.
-# oxfmt: reformat (generated) — replace the placeholder with the reformat commit's full SHA once it lands on the integration branch.
-# <oxfmt-reformat-sha>
+# oxfmt: reformat (generated)
+a5e316b58fd67e7dd1f21c2954e3c8432cf3f3a1
