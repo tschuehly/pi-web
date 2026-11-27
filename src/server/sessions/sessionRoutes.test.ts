@@ -637,6 +637,24 @@ describe("session routes", () => {
     }
   });
 
+  it("never forwards a caller-supplied machine flag: a browser's send is always the owner's message", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const routeService = new CapturingRouteSessionService();
+    const forwarded: unknown[][] = [];
+    const prompt = routeService.prompt.bind(routeService);
+    routeService.prompt = (...args) => { forwarded.push(args); return prompt(...args); };
+    registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+    try {
+      const response = await routeApp.inject({ method: "POST", url: "/sessions/session-1/prompt", payload: { cwd: "/repo", text: "hello", operationId: "owner-run:custom", machine: true, source: "owner-run" } });
+      expect(response.json()).toEqual({ accepted: true });
+      expect(forwarded).toEqual([[{ id: "session-1", cwd: resolve("/repo") }, "hello", undefined, undefined, { operationId: "owner-run:custom" }]]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
   it("treats a retried send or answer under the same operation id as the same operation", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);

@@ -735,7 +735,8 @@ export class DurableChatService {
       const redacted = await host.request("redact", { text: ownerRunResultText(run, result) }).then(({ result: text }) => typeof text === "string" ? text : undefined, () => undefined);
       const text = redacted ?? ownerRunResultText(run, { status: result.status, ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }), error: "output withheld: the host could not redact it" });
       // shortcut: a result the host refuses is only logged (the command does not run again); keep it for a retry if that happens.
-      await host.request("prompt", { operationId, text, mode: "followUp" });
+      // `machine`: not the owner's message, so it leaves an open attention request open (an older host ignores it and clears it).
+      await host.request("prompt", { operationId, text, mode: "followUp", machine: true });
     };
     const failed = (error: unknown) => { this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered"); };
     try {
