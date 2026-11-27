@@ -667,7 +667,7 @@ export class DurableChatService {
    * Resolves once the host committed the input; a queued input shows in status until it is placed. The client's
    * operation ID makes a retried request the same input; `/skill:name` expands as in a legacy Chat.
    */
-  async prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string; spawned?: true }): Promise<void> {
+  async prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string; spawned?: true; machine?: true }): Promise<void> {
     const operationId = options?.operationId;
     if (typeof text !== "string") throw new Error("text field must be a non-empty string");
     if (streamingBehavior !== undefined && streamingBehavior !== "steer" && streamingBehavior !== "followUp") throw new Error("streamingBehavior must be steer or followUp");
@@ -694,6 +694,7 @@ export class DurableChatService {
     const { result } = await connection.request("prompt", {
       operationId: operationId ?? randomUUID(), text: providerText,
       ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }),
+      ...(options?.machine === true ? { machine: true } : {}),
       ...(images.length === 0 ? {} : {
         images,
         attachments: parsed.map((attachment) => ({ reference: attachment.reference, mimeType: attachment.mimeType, ...(attachment.name === undefined ? {} : { name: attachment.name }) })),
@@ -769,7 +770,8 @@ export class DurableChatService {
       const redacted = await host.request("redact", { text: ownerRunResultText(run, result) }).then(({ result: text }) => typeof text === "string" ? text : undefined, () => undefined);
       const text = redacted ?? ownerRunResultText(run, { status: result.status, ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }), error: "output withheld: the host could not redact it" });
       // shortcut: a result the host refuses is only logged (the command does not run again); keep it for a retry if that happens.
-      await host.request("prompt", { operationId, text, mode: "followUp" });
+      // `machine`: not the owner's message, so it leaves an open attention request open (an older host ignores it and clears it).
+      await host.request("prompt", { operationId, text, mode: "followUp", machine: true });
     };
     const failed = (error: unknown) => { this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered"); };
     try {
@@ -1672,7 +1674,7 @@ export class DurableChatService {
       if (model !== undefined) await this.setModel(ref, model.provider, model.modelId);
       // The host clamps the level to the Chat's model, as Pi does.
       if (event.thinkingLevel !== undefined) await (await this.#for(ref)).request("setThinkingLevel", { level: event.thinkingLevel });
-      await this.prompt(ref, event.prompt, undefined, undefined, { operationId: `spawn-${event.requestId}`, spawned: true });
+      await this.prompt(ref, event.prompt, undefined, undefined, { operationId: `spawn-${event.requestId}`, spawned: true, machine: true });
     } catch (error) {
       // A Chat a dead daemon started may already run: only a new one is undone.
       if (earlier !== undefined) throw error;

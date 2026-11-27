@@ -12,6 +12,9 @@ import { SESSION_TITLE_SYSTEM_PROMPT } from "./sessionNameGenerator.js";
 import type { DurableChatResourceSet, DurableContributedResources } from "./durableChatResources.js";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
 
+// The Terminal run button opens Terminal.app; these tests only see what happens after it opened.
+vi.mock("./ownerRuns.js", async (importOriginal) => ({ ...await importOriginal<typeof import("./ownerRuns.js")>(), openOwnerCommandInTerminal: vi.fn(() => Promise.resolve({ status: "terminal opened" })) }));
+
 const status = { persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
 interface Request { id: number; method: string; params?: Record<string, unknown> }
 
@@ -1313,7 +1316,7 @@ describe("Durable Chats: spawn_session (P064)", () => {
     const spawnedHost = only(launched.slice(1));
     expect(spawnedHost.requests.map((request) => request.method).filter((method) => ["setModel", "setThinkingLevel", "prompt"].includes(method))).toEqual(["setModel", "setThinkingLevel", "prompt"]);
     expect(spawnedHost.requests.find((request) => request.method === "setModel")?.params).toEqual({ provider: "anthropic", modelId: "claude-x" });
-    expect(spawnedHost.requests.find((request) => request.method === "prompt")?.params).toMatchObject({ text: "Fix the build" });
+    expect(spawnedHost.requests.find((request) => request.method === "prompt")?.params).toMatchObject({ text: "Fix the build", machine: true });
     expect(host.requests.find((request) => request.method === "spawned")?.params).toEqual({ requestId: "req-1", result: { sessionId: child.id, cwd: "/work/b", model: "anthropic/claude-x" } });
     expect(global.find((event) => event["type"] === "session.created")).toMatchObject({ session: { id: child.id, cwd: "/work/b" } });
     // The same request again (a retried event) starts nothing new.
@@ -2162,6 +2165,15 @@ describe("the owner's run button", () => {
     await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toMatchObject({ statusCode: 422 });
     expect(asked).toEqual([]);
     expect(runs(launched)).toEqual([]);
+  });
+
+  it("a Terminal run's result reaches the agent as a follow-up marked machine, so it does not answer an open attention request", async () => {
+    const { durable, launched, ref, proposal } = await proposing("sudo true", { mode: "terminal" });
+    await expect(durable.ownerRun(ref, "a1", proposal)).resolves.toEqual({ status: "terminal opened" });
+    await vi.waitFor(() => { expect(launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"))).toHaveLength(1); });
+    const [prompt] = launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"));
+    expect(prompt?.params).toMatchObject({ mode: "followUp", machine: true });
+    expect(prompt?.params?.["operationId"]).toEqual(expect.stringMatching(/^owner-run:/));
   });
 
   it("refuses a host without run buttons before anything starts", async () => {
